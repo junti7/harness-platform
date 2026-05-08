@@ -1,4 +1,5 @@
 import logging
+import sys
 import uuid
 
 class HarnessFilter(logging.Filter):
@@ -16,7 +17,7 @@ class HarnessFilter(logging.Filter):
         return True
 
 # 루트 로거에 포맷 + 필터 적용
-handler = logging.StreamHandler()
+handler = logging.StreamHandler(sys.stdout)
 handler.setFormatter(logging.Formatter(
     '%(asctime)s | tier=%(tier)s | cid=%(correlation_id)s | %(levelname)s | %(message)s'
 ))
