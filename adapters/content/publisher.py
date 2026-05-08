@@ -102,26 +102,30 @@ def publish_slack(items: list[dict], logger: HarnessLogger):
         return
 
     today = datetime.now().strftime("%Y-%m-%d")
-    lines = [f"*[Harness Daily Digest]* {today} — {len(items)}건\n"]
-
-    for i, item in enumerate(items, 1):
-        tags = _parse_tags(item["tags"])
-        tag_str = " ".join(f"`{t}`" for t in tags[:3])
-        body_preview = item["final_body"][:150]
-        if len(item["final_body"]) > 150:
-            body_preview += "..."
-        lines.append(f"{i}. *{item['final_title']}*\n{tag_str}\n{body_preview}\n")
+    if not items:
+        text = f"*[Harness Daily Digest]* {today} — 오늘의 새 기사가 없습니다."
+    else:
+        lines = [f"*[Harness Daily Digest]* {today} — {len(items)}건\n"]
+        for i, item in enumerate(items, 1):
+            tags = _parse_tags(item["tags"])
+            tag_str = " ".join(f"`{t}`" for t in tags[:3])
+            body_preview = item["final_body"][:150]
+            if len(item["final_body"]) > 150:
+                body_preview += "..."
+            lines.append(f"{i}. *{item['final_title']}*\n{tag_str}\n{body_preview}\n")
+        text = "\n".join(lines)
 
     for attempt in range(MAX_RETRIES):
         try:
             resp = httpx.post(
                 SLACK_WEBHOOK_URL,
-                json={"text": "\n".join(lines)},
+                json={"text": text},
                 timeout=10.0,
             )
             resp.raise_for_status()
-            logger.info(f"  → Slack 다이제스트 발송 완료 ({len(items)}건)")
+            logger.info(f"  → Slack 발송 완료 ({len(items)}건)")
             return
+
         except Exception as e:
             if attempt < MAX_RETRIES - 1:
                 wait = 2 ** attempt
@@ -183,6 +187,7 @@ def publish():
     rows = get_unpublished()
     if not rows:
         logger.info("발행할 데이터 없음")
+        publish_slack([], logger)
         return 0
 
     logger.info(f"발행 대상: {len(rows)}개")
