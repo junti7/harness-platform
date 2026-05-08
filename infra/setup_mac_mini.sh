@@ -114,7 +114,8 @@ echo "  → 패키지 설치..."
     psycopg2-binary \
     python-dotenv \
     feedparser \
-    requests
+    requests \
+    ollama
 
 echo "  → 설치 완료"
 
