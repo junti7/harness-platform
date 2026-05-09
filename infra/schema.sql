@@ -52,3 +52,16 @@ CREATE TABLE IF NOT EXISTS dead_letter_queue (
     raw_data       JSONB,
     created_at     TIMESTAMP DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+    id              SERIAL PRIMARY KEY,
+    correlation_id  VARCHAR(8) NOT NULL,
+    started_at      TIMESTAMP DEFAULT NOW(),
+    finished_at     TIMESTAMP,
+    tier1_count     INTEGER,
+    tier2_count     INTEGER,
+    tier3_count     INTEGER,
+    tier4_count     INTEGER,
+    status          VARCHAR(20) DEFAULT 'running',
+    error           TEXT
+);

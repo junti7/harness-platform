@@ -18,21 +18,28 @@ TIMEOUT_SECONDS = 20
 # 제목에 있어야 그 논문의 핵심 주제임.
 # ============================================
 
-WHITELIST = [
-    # 로보틱스
-    "robot", "humanoid", "robot hand", "dexterous", "manipulation",
-    "robotic", "robotics", "autonomous robot", "drone", "UAV", "quadrotor",
-    "reinforcement learning",
-    # AI / 모델
-    "world model", "foundation model", "vision-language",
-    "large language model", "LLM", "autonomous",
-    # 반도체
-    "GPU", "chip", "semiconductor", "NVIDIA", "AMD", "TSMC", "wafer",
-    # 항공우주
-    "satellite", "spacecraft", "rocket", "aerospace",
-    # 기업 키워드
-    "Tesla", "Optimus", "Figure AI", "Boston Dynamics", "OpenAI", "DeepMind",
-]
+# 키워드별 도메인 관련도 점수 (높을수록 핵심 주제)
+KEYWORD_SCORES: dict[str, float] = {
+    # 로보틱스 핵심 (0.85–0.95)
+    "humanoid": 0.95, "Boston Dynamics": 0.93, "Figure AI": 0.93,
+    "robot hand": 0.92, "dexterous": 0.90, "Optimus": 0.90,
+    "autonomous robot": 0.88, "quadrotor": 0.87, "UAV": 0.85,
+    "manipulation": 0.85, "robotic": 0.83, "robotics": 0.83,
+    "drone": 0.82, "robot": 0.80,
+    # 반도체 (0.78–0.93)
+    "TSMC": 0.92, "wafer": 0.85, "semiconductor": 0.85,
+    "NVIDIA": 0.83, "AMD": 0.80, "chip": 0.78, "GPU": 0.78,
+    # 항공우주 (0.82–0.90)
+    "spacecraft": 0.90, "rocket": 0.88, "aerospace": 0.85, "satellite": 0.82,
+    # AI / 기업 (0.70–0.85)
+    "Tesla": 0.85, "OpenAI": 0.80, "DeepMind": 0.80,
+    "reinforcement learning": 0.78, "world model": 0.78,
+    "vision-language": 0.75, "foundation model": 0.72,
+    "large language model": 0.72, "LLM": 0.70, "autonomous": 0.70,
+}
+
+# 하위 호환: WHITELIST 순서 보존 (keyword_filter 내부에서 KEYWORD_SCORES 키를 순회)
+WHITELIST = list(KEYWORD_SCORES.keys())
 
 BLACKLIST = [
     "education", "teacher", "student", "pedagog",
@@ -47,24 +54,23 @@ BLACKLIST = [
     "ocean corpus", "marine biology",
 ]
 
-def keyword_filter(title: str, summary: str) -> tuple[bool, str]:
+def keyword_filter(title: str, summary: str) -> tuple[bool, str, float]:
     """
     제목에서만 키워드 체크.
     블랙리스트가 화이트리스트보다 우선.
+    반환: (통과여부, 사유, 도메인관련도점수)
     """
     title_lower = title.lower()
 
-    # 블랙리스트 먼저 체크
     for kw in BLACKLIST:
         if kw.lower() in title_lower:
-            return False, f"blacklist:{kw}"
+            return False, f"blacklist:{kw}", 0.0
 
-    # 화이트리스트 체크
-    for kw in WHITELIST:
+    for kw, score in KEYWORD_SCORES.items():
         if kw.lower() in title_lower:
-            return True, f"whitelist:{kw}"
+            return True, f"whitelist:{kw}", score
 
-    return False, "no_keyword"
+    return False, "no_keyword", 0.0
 
 # ============================================
 # Tier 2b: LLM 한국어 요약 (단순 작업만)
@@ -119,8 +125,8 @@ def save_filtered_signal(raw_id, source, title, summary,
 # 메인 루프
 # ============================================
 
-def filter_signals():
-    logger = HarnessLogger(tier=2)
+def filter_signals(correlation_id: str = None):
+    logger = HarnessLogger(tier=2, correlation_id=correlation_id)
     logger.info("=== Tier 2 필터링 시작 ===")
     logger.info("2a: 키워드 필터 (제목 기준) / 2b: LLM 한국어 요약")
 
@@ -150,7 +156,7 @@ def filter_signals():
         summary = raw_data.get("summary", "")
 
         # === Tier 2a: 키워드 필터 ===
-        passed, reason = keyword_filter(title, summary)
+        passed, reason, score = keyword_filter(title, summary)
 
         if not passed:
             # 🤔 즉시 status 업데이트 → 중단돼도 재처리 안 함
@@ -186,7 +192,7 @@ def filter_signals():
         # DB 저장
         save_filtered_signal(
             raw_id, source, title, korean_summary,
-            0.7, "keyword_pass", content_hash
+            score, "keyword_pass", content_hash
         )
         execute_query(
             "UPDATE raw_signals SET status = 'filtered_pass' WHERE id = %s",

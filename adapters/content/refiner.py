@@ -28,7 +28,7 @@ def estimate_cost(input_tokens: int, output_tokens: int) -> float:
     return (input_tokens / 1000 * INPUT_COST_PER_1K +
             output_tokens / 1000 * OUTPUT_COST_PER_1K)
 
-def get_today_cost() -> float:
+def get_today_cost(logger=None) -> float:
     try:
         result = execute_query("""
             SELECT SUM(
@@ -40,9 +40,26 @@ def get_today_cost() -> float:
         """, fetch=True)
         if result and result[0]["total_cost"]:
             return float(result[0]["total_cost"])
-    except:
-        pass
+    except Exception as e:
+        if logger:
+            logger.warning(f"비용 조회 실패 — 킬스위치 무력화 위험: {e}")
     return 0.0
+
+
+def save_to_dlq(row: dict, error: str, logger):
+    try:
+        execute_query("""
+            INSERT INTO dead_letter_queue (tier, item_id, item_type, error_message, raw_data)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (
+            3,
+            row["id"],
+            "filtered_signal",
+            str(error)[:500],
+            json.dumps({k: str(v) for k, v in row.items()}, ensure_ascii=False),
+        ))
+    except Exception as dlq_err:
+        logger.error(f"  → DLQ 저장 실패: {dlq_err}")
 
 def log_api_cost(model: str, input_tokens: int, output_tokens: int):
     execute_query("""
@@ -90,15 +107,17 @@ def refine_signal(client, row: dict):
 
     return parsed
 
-def refine():
-    logger = HarnessLogger(tier=3)
+def refine(correlation_id: str = None):
+    logger = HarnessLogger(tier=3, correlation_id=correlation_id)
     logger.info("=== Tier 3 정제 시작 ===")
 
     rows = execute_query("""
-        SELECT fs.id, fs.title, fs.summary, fs.content_hash, fs.source
+        SELECT fs.id, fs.title, fs.summary, fs.content_hash, fs.source, fs.score
         FROM filtered_signals fs
         LEFT JOIN refined_outputs ro ON fs.id = ro.filtered_signal_id
         WHERE ro.id IS NULL
+        ORDER BY fs.score DESC
+        LIMIT 20
     """, fetch=True)
 
     if not rows:
@@ -113,7 +132,7 @@ def refine():
     total_cost = 0.0
 
     for i, row in enumerate(rows):
-        today_cost = get_today_cost()
+        today_cost = get_today_cost(logger)
         if today_cost >= DAILY_COST_LIMIT:
             logger.warning(f"일일 비용 한도 도달: ${today_cost:.4f}")
             break
@@ -123,12 +142,13 @@ def refine():
         try:
             result = refine_signal(client, row)
         except json.JSONDecodeError as e:
-            # 🤔 에러를 출력해서 원인 파악
             logger.error(f"  → JSON 파싱 실패: {e}")
+            save_to_dlq(dict(row), f"json_decode:{e}", logger)
             skipped += 1
             continue
         except Exception as e:
             logger.error(f"  → 에러: {type(e).__name__}: {e}")
+            save_to_dlq(dict(row), f"{type(e).__name__}:{e}", logger)
             skipped += 1
             continue
 

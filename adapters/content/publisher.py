@@ -172,8 +172,8 @@ def get_unpublished() -> list:
     """, fetch=True)
 
 
-def publish():
-    logger = HarnessLogger(tier=4)
+def publish(correlation_id: str = None):
+    logger = HarnessLogger(tier=4, correlation_id=correlation_id)
     logger.info("=== Tier 4 발행 시작 ===")
 
     if not NOTION_API_KEY:

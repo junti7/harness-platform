@@ -71,9 +71,9 @@ def save_raw_signal(source: str, entry: dict, content_hash: str):
     """
     execute_query(query, (source, json.dumps(entry), content_hash))
 
-def collect():
+def collect(correlation_id: str = None):
     """Tier 1 메인 수집 함수"""
-    logger = HarnessLogger(tier=1)
+    logger = HarnessLogger(tier=1, correlation_id=correlation_id)
     logger.info("=== Tier 1 수집 시작 ===")
 
     total_saved = 0
