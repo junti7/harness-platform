@@ -7,26 +7,45 @@ from core.database import execute_query
 from core.logger import HarnessLogger
 
 RSS_SOURCES = [
+    # ── 학술 논문 (arXiv) ─────────────────────────────────────
     {
         "name": "arXiv_robotics",
         "url": "https://rss.arxiv.org/rss/cs.RO",
-        "stale_minutes": 7 * 24 * 60  # 🤔 arXiv는 7일 — 학술 논문은 오래돼도 가치 있음
+        "stale_minutes": 7 * 24 * 60,
     },
     {
         "name": "arXiv_AI",
         "url": "https://rss.arxiv.org/rss/cs.AI",
-        "stale_minutes": 7 * 24 * 60  # 7일
+        "stale_minutes": 7 * 24 * 60,
     },
     {
+        "name": "arXiv_ML",
+        "url": "https://rss.arxiv.org/rss/cs.LG",
+        "stale_minutes": 7 * 24 * 60,  # RL 논문 상당수가 cs.LG에 분류됨
+    },
+    # ── 테크 미디어 ───────────────────────────────────────────
+    {
         "name": "IEEE_Spectrum",
-        "url": "https://spectrum.ieee.org/feeds/feed.rss",  # URL 수정
-        "stale_minutes": 3 * 24 * 60  # 3일
+        "url": "https://spectrum.ieee.org/feeds/feed.rss",
+        "stale_minutes": 3 * 24 * 60,
     },
     {
         "name": "MIT_Tech_Review",
         "url": "https://www.technologyreview.com/feed/",
-        "stale_minutes": 2 * 24 * 60  # 2일
+        "stale_minutes": 2 * 24 * 60,
     },
+    {
+        "name": "TechCrunch_robotics",
+        "url": "https://techcrunch.com/tag/robotics/feed/",
+        "stale_minutes": 3 * 24 * 60,
+    },
+    # ── 기업 블로그 ───────────────────────────────────────────
+    {
+        "name": "Boston_Dynamics",
+        "url": "https://feeds.feedburner.com/BostonDynamics",
+        "stale_minutes": 30 * 24 * 60,  # 블로그 포스팅 주기 느림
+    },
+    # Figure AI, Tesla: 공식 RSS 없음 → 미지원
 ]
 
 def check_liveness(url: str) -> bool:
