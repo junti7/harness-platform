@@ -19,23 +19,32 @@ TIMEOUT_SECONDS = 20
 # ============================================
 
 WHITELIST = [
-    "humanoid", "robot hand", "dexterous", "manipulation",
+    # 로보틱스
+    "robot", "humanoid", "robot hand", "dexterous", "manipulation",
+    "robotic", "robotics", "autonomous robot", "drone", "UAV", "quadrotor",
+    "reinforcement learning",
+    # AI / 모델
     "world model", "foundation model", "vision-language",
-    "robotic", "robotics",
-    "GPU", "chip", "semiconductor", "NVIDIA", "AMD",
+    "large language model", "LLM", "autonomous",
+    # 반도체
+    "GPU", "chip", "semiconductor", "NVIDIA", "AMD", "TSMC", "wafer",
+    # 항공우주
     "satellite", "spacecraft", "rocket", "aerospace",
-    "Tesla", "Optimus", "Figure AI", "Boston Dynamics",
+    # 기업 키워드
+    "Tesla", "Optimus", "Figure AI", "Boston Dynamics", "OpenAI", "DeepMind",
 ]
 
 BLACKLIST = [
     "education", "teacher", "student", "pedagog",
     "music", "audio", "speech",
-    "medical", "clinical", "patient", "disease",
+    "medical", "clinical", "patient", "disease", "glaucoma",
     "legal", "law", "court",
     "social bias", "fairness",
     "agriculture", "crop", "farm",
     "weather", "climate",
     "jailbreak",
+    "e-commerce", "ecommerce", "retail", "stock market", "financial market",
+    "ocean corpus", "marine biology",
 ]
 
 def keyword_filter(title: str, summary: str) -> tuple[bool, str]:
