@@ -24,13 +24,11 @@ def execute_query(query: str, params=None, fetch=False):
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(query, params)
-            if fetch:
-                result = cur.fetchall()
-                return result
+            result = cur.fetchall() if fetch else None
             conn.commit()
+            return result
     except Exception as e:
         conn.rollback()
         raise e
     finally:
-        # 🤔 왜 finally? 에러가 나도 반드시 연결 닫기
         conn.close()
