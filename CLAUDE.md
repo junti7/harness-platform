@@ -39,7 +39,7 @@
 ## 3. 스킬 설정 (Skill Setting)
 
 ### Filter Agent 스킬 (Tier 2)
-- 모델: Ollama + Gemma 4:latest (로컬, 무료)
+- 모델: Ollama + Gemma2:27b (로컬, 무료)
 - 스킬:
   * classify(text) → category 반환
   * score(text) → 0.0~1.0 가치 점수 반환

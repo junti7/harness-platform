@@ -76,12 +76,12 @@ else
     fi
 fi
 
-echo "  → gemma4:latest 모델 확인..."
-if ollama list 2>/dev/null | grep -q "gemma4"; then
+echo "  → gemma2:27b 모델 확인..."
+if ollama list 2>/dev/null | grep -q "gemma2:27b"; then
     echo "  → 이미 다운로드됨"
 else
-    echo "  → gemma4:latest 다운로드 중 (시간이 걸립니다)..."
-    ollama pull gemma4:latest
+    echo "  → gemma2:27b 다운로드 중 (시간이 걸립니다)..."
+    ollama pull gemma2:27b
 fi
 
 # ── 5. 레포 클론 ──────────────────────────
@@ -126,7 +126,7 @@ if [ ! -f "$REPO_DIR/.env" ]; then
     cat > "$REPO_DIR/.env" << 'ENV'
 # Tier 2 - 로컬 LLM
 OLLAMA_HOST=http://localhost:11434
-OLLAMA_MODEL=gemma4:latest
+OLLAMA_MODEL=gemma2:27b
 
 # Tier 3 - Premium AI
 ANTHROPIC_API_KEY=여기에_입력
