@@ -1,216 +1,152 @@
 import json
 import ollama
 import os
-import signal
+import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dotenv import load_dotenv
 from core.database import execute_query
 from core.logger import HarnessLogger
 
 load_dotenv()
 
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:latest")
-TIMEOUT_SECONDS = 20
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma2:27b")
+OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "45"))
+TIER2_BATCH_LIMIT = int(os.getenv("TIER2_BATCH_LIMIT", "50"))
 
-# ============================================
-# Tier 2a: 키워드 기반 화이트/블랙리스트
-# 🤔 왜 제목만 체크?
-# 요약/본문엔 키워드가 맥락 없이 언급될 수 있음.
-# 제목에 있어야 그 논문의 핵심 주제임.
-# ============================================
-
-# 키워드별 도메인 관련도 점수 (높을수록 핵심 주제)
-KEYWORD_SCORES: dict[str, float] = {
-    # 로보틱스 핵심 (0.85–0.95)
-    "humanoid": 0.95, "Boston Dynamics": 0.93, "Figure AI": 0.93,
-    "robot hand": 0.92, "dexterous": 0.90, "Optimus": 0.90,
-    "autonomous robot": 0.88, "quadrotor": 0.87, "UAV": 0.85,
-    "manipulation": 0.85, "robotic": 0.83, "robotics": 0.83,
-    "drone": 0.82, "robot": 0.80,
-    # 반도체 (0.78–0.93)
-    "TSMC": 0.92, "wafer": 0.85, "semiconductor": 0.85,
-    "NVIDIA": 0.83, "AMD": 0.80, "chip": 0.78, "GPU": 0.78,
-    # 항공우주 (0.82–0.90)
-    "spacecraft": 0.90, "rocket": 0.88, "aerospace": 0.85, "satellite": 0.82,
-    # AI / 기업 (0.70–0.85)
-    "Tesla": 0.85, "OpenAI": 0.80, "DeepMind": 0.80,
-    "reinforcement learning": 0.78, "world model": 0.78,
-    "vision-language": 0.75, "foundation model": 0.72,
-    "large language model": 0.72, "LLM": 0.70, "autonomous": 0.70,
-}
-
-# 하위 호환: WHITELIST 순서 보존 (keyword_filter 내부에서 KEYWORD_SCORES 키를 순회)
-WHITELIST = list(KEYWORD_SCORES.keys())
-
-BLACKLIST = [
-    "education", "teacher", "student", "pedagog",
-    "music", "audio", "speech",
-    "medical", "clinical", "patient", "disease", "glaucoma",
-    "legal", "law", "court",
-    "social bias", "fairness",
-    "agriculture", "crop", "farm",
-    "weather", "climate",
-    "jailbreak",
-    "e-commerce", "ecommerce", "retail", "stock market", "financial market",
-    "ocean corpus", "marine biology",
+# Physical AI / AGI 관련성 키워드 — 매칭 수로 relevance score 계산
+HIGH_VALUE_KEYWORDS = [
+    "humanoid", "robot", "robotics", "physical ai", "agi", "autonomous",
+    "semiconductor", "gpu", "nvidia", "tsmc", "chip", "wafer",
+    "inference", "llm", "foundation model", "multimodal",
+    "factory", "automation", "manufacturing", "assembly",
+    "figure", "boston dynamics", "tesla optimus", "1x", "apptronik",
+    "google deepmind", "openai", "anthropic", "gemini",
+    "dexterous", "manipulation", "grasping", "locomotion",
+    "actuator", "sensor", "lidar", "computer vision",
+    "fleet", "deployment", "production", "scale",
+    "korea", "samsung", "hyundai", "lg", "sk hynix",
 ]
 
-def keyword_filter(title: str, summary: str) -> tuple[bool, str, float]:
-    """
-    제목에서만 키워드 체크.
-    블랙리스트가 화이트리스트보다 우선.
-    반환: (통과여부, 사유, 도메인관련도점수)
-    """
-    title_lower = title.lower()
+LOW_VALUE_PATTERNS = [
+    r"\bjob posting\b", r"\bhiring\b.*\bjob\b", r"\bpress release\b",
+    r"\bsponsored\b", r"\badvertisement\b", r"\bcookies?\b.*\bprivacy\b",
+]
 
-    for kw in BLACKLIST:
-        if kw.lower() in title_lower:
-            return False, f"blacklist:{kw}", 0.0
+FACT_EXTRACTION_PROMPT = """너는 기술/경제 전문 분석가이다. 다음 기술 기사의 본문을 읽고, 핵심 수치 데이터를 추출하라.
 
-    for kw, score in KEYWORD_SCORES.items():
-        if kw.lower() in title_lower:
-            return True, f"whitelist:{kw}", score
+출력 형식 (반드시 JSON만 응답, 다른 텍스트 금지):
+{
+  "costs": [{"item": "이름", "value": "수치", "trend": "하락/상승/유지"}],
+  "performance": [{"metric": "항목", "value": "수치"}],
+  "market_size": [{"segment": "분야", "value": "수치", "year": "연도"}],
+  "key_players": ["기업1", "기업2"]
+}
 
-    return False, "no_keyword", 0.0
+없는 항목은 빈 배열로 반환. 추측 금지.
 
-# ============================================
-# Tier 2b: LLM 한국어 요약 (단순 작업만)
-# 🤔 LLM에게 판단/분류는 안 시킴.
-# 요약만 시켜서 불안정성 제거.
-# ============================================
+기사 본문:
+"""
 
-SUMMARY_PROMPT = """다음 영문 기술 기사 제목과 요약을 한국어로 2문장 이내로 요약하세요.
-다른 말 없이 요약문만 출력하세요."""
 
-def truncate_text(text: str, max_chars: int = 300) -> str:
-    return text[:max_chars] if len(text) > max_chars else text
+def compute_relevance_score(title: str, summary: str, full_content: str) -> float:
+    text = f"{title} {summary} {full_content[:2000]}".lower()
 
-def generate_summary(title: str, summary: str) -> str:
-    content = f"Title: {truncate_text(title, 150)}\n\n{truncate_text(summary, 300)}"
+    # 저품질 패턴 즉시 탈락
+    for pattern in LOW_VALUE_PATTERNS:
+        if re.search(pattern, text):
+            return 0.0
+
+    # 키워드 매칭으로 relevance 계산
+    hits = sum(1 for kw in HIGH_VALUE_KEYWORDS if kw in text)
+    score = min(1.0, hits * 0.08)  # 키워드 1개 = 0.08, 13개 이상이면 1.0
+
+    # 최소값 보장 (Physical AI 도메인 외 일반 tech 뉴스도 최소값 유지)
+    return max(0.1, score)
+
+
+def _ollama_call(text: str) -> dict:
+    response = ollama.chat(
+        model=OLLAMA_MODEL,
+        messages=[{"role": "user", "content": FACT_EXTRACTION_PROMPT + text[:3000]}],
+        options={"temperature": 0.0, "format": "json"},
+    )
+    return json.loads(response["message"]["content"])
+
+
+def extract_facts(text: str, logger: HarnessLogger) -> dict:
+    if not text or len(text) < 100:
+        return {}
 
     try:
-        response = ollama.chat(
-            model=OLLAMA_MODEL,
-            messages=[
-                {"role": "system", "content": SUMMARY_PROMPT},
-                {"role": "user", "content": content}
-            ],
-            options={
-                "temperature": 0.3,
-                "num_predict": 200,
-            }
-        )
-        return response['message']['content'].strip()
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_ollama_call, text)
+            return future.result(timeout=OLLAMA_TIMEOUT_SECONDS)
+    except FuturesTimeoutError:
+        logger.warning(f"Ollama timeout ({OLLAMA_TIMEOUT_SECONDS}s) — 팩트 추출 건너뜀")
+        return {}
+    except (json.JSONDecodeError, KeyError):
+        return {}
     except Exception as e:
-        return f"[요약 실패: {str(e)[:30]}]"
+        logger.warning(f"Ollama 호출 실패: {type(e).__name__}: {e}")
+        return {}
 
-# ============================================
-# DB 저장
-# ============================================
 
-def save_filtered_signal(raw_id, source, title, summary,
-                          score, category, content_hash):
-    query = """
+def save_filtered_signal(raw_id, source, title, summary, score, category, content_hash, facts):
+    execute_query("""
         INSERT INTO filtered_signals
-            (raw_signal_id, source, title, summary, score,
-             category, content_hash, tier2_model)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            (raw_signal_id, source, title, summary, score, category, content_hash, tier2_model, extracted_facts)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (content_hash) DO NOTHING
-    """
-    execute_query(query, (
-        raw_id, source, title, summary,
-        score, category, content_hash, OLLAMA_MODEL
-    ))
+    """, (raw_id, source, title, summary, score, category, content_hash, OLLAMA_MODEL, json.dumps(facts)))
 
-# ============================================
-# 메인 루프
-# ============================================
 
 def filter_signals(correlation_id: str = None):
     logger = HarnessLogger(tier=2, correlation_id=correlation_id)
-    logger.info("=== Tier 2 필터링 시작 ===")
-    logger.info("2a: 키워드 필터 (제목 기준) / 2b: LLM 한국어 요약")
+    logger.info(f"=== Tier 2 필터링 시작 (batch={TIER2_BATCH_LIMIT}, model={OLLAMA_MODEL}) ===")
 
-    # 🤔 status='pending'만 처리 → 중단 후 재시작해도 이어서 처리 가능
     rows = execute_query(
-        "SELECT id, source, raw_data, content_hash FROM raw_signals WHERE status = 'pending'",
-        fetch=True
+        "SELECT id, source, raw_data, content_hash, full_content FROM raw_signals WHERE status = 'pending' LIMIT %s",
+        (TIER2_BATCH_LIMIT,),
+        fetch=True,
     )
 
     if not rows:
-        logger.info("처리할 데이터 없음")
+        logger.info("처리할 pending signal 없음")
         return 0
 
     logger.info(f"처리 대상: {len(rows)}개")
+    passed = 0
+    failed = 0
 
-    keyword_pass = 0
-    keyword_fail = 0
-    summary_fail = 0
-
-    for i, row in enumerate(rows):
+    for row in rows:
         raw_id = row["id"]
+        source = row["source"]
         raw_data = row["raw_data"]
         content_hash = row["content_hash"]
-        source = row["source"]
-
+        full_content = row["full_content"] or ""
         title = raw_data.get("title", "")
         summary = raw_data.get("summary", "")
 
-        # === Tier 2a: 키워드 필터 ===
-        passed, reason, score = keyword_filter(title, summary)
+        score = compute_relevance_score(title, summary, full_content)
 
-        if not passed:
-            # 🤔 즉시 status 업데이트 → 중단돼도 재처리 안 함
-            execute_query(
-                "UPDATE raw_signals SET status = 'filtered_fail' WHERE id = %s",
-                (raw_id,)
-            )
-            keyword_fail += 1
-            if (i + 1) % 20 == 0:
-                logger.info(f"[{i+1}/{len(rows)}] 진행 중... 키워드 통과 {keyword_pass}개")
+        if score < 0.15:
+            execute_query("UPDATE raw_signals SET status = 'filtered_fail' WHERE id = %s", (raw_id,))
+            failed += 1
             continue
 
-        logger.info(f"[{i+1}/{len(rows)}] 키워드 통과 ({reason}): {title[:50]}")
+        # 점수가 0.4 이상인 고가치 신호만 Ollama 팩트 추출 (비용·시간 절감)
+        facts = {}
+        if score >= 0.4:
+            logger.info(f"  팩트 추출 중 (score={score:.2f}): {title[:50]}...")
+            facts = extract_facts(full_content if full_content else summary, logger)
 
-        # === Tier 2b: LLM 한국어 요약 ===
-        def timeout_handler(signum, frame):
-            raise TimeoutError("LLM 응답 초과")
+        save_filtered_signal(raw_id, source, title, summary, score, "physical_ai", content_hash, facts)
+        execute_query("UPDATE raw_signals SET status = 'filtered_pass' WHERE id = %s", (raw_id,))
+        passed += 1
 
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(TIMEOUT_SECONDS)
+    logger.info(f"=== Tier 2 완료: pass={passed}, fail={failed} ===")
+    return passed
 
-        try:
-            korean_summary = generate_summary(title, summary)
-        except TimeoutError:
-            logger.warning(f"  → 요약 타임아웃, 원문 사용")
-            korean_summary = f"[요약 실패] {summary[:200]}"
-            summary_fail += 1
-        finally:
-            signal.alarm(0)
-
-        logger.info(f"  → 요약: {korean_summary[:60]}...")
-
-        # DB 저장
-        save_filtered_signal(
-            raw_id, source, title, korean_summary,
-            score, "keyword_pass", content_hash
-        )
-        execute_query(
-            "UPDATE raw_signals SET status = 'filtered_pass' WHERE id = %s",
-            (raw_id,)
-        )
-        keyword_pass += 1
-
-    # 최종 리포트
-    total = keyword_pass + keyword_fail
-    logger.info("=" * 50)
-    logger.info(f"Tier 2 완료: 통과 {keyword_pass}개 / 탈락 {keyword_fail}개")
-    if summary_fail > 0:
-        logger.info(f"요약 실패: {summary_fail}개 (원문으로 대체)")
-    if total > 0:
-        logger.info(f"탈락률: {keyword_fail/total*100:.1f}%")
-    logger.info("=" * 50)
-
-    return keyword_pass
 
 if __name__ == "__main__":
     filter_signals()
