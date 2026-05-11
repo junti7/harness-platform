@@ -23,8 +23,8 @@ def _headers() -> dict:
         "Cookie": f"substack.sid={SUBSTACK_SESSION_TOKEN}",
         "Content-Type": "application/json",
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        "Referer": SUBSTACK_PUBLICATION_URL,
-        "Origin": SUBSTACK_PUBLICATION_URL,
+        "Referer": f"{SUBSTACK_PUBLICATION_URL.rstrip('/')}/publish/posts",
+        "Origin": SUBSTACK_PUBLICATION_URL.rstrip("/"),
     }
 
 
@@ -32,131 +32,166 @@ def _base_url() -> str:
     return SUBSTACK_PUBLICATION_URL.rstrip("/")
 
 
-# ─── HTML 포맷터 ───────────────────────────────────────────────────────────────
+def get_author_id(logger: HarnessLogger) -> int:
+    """publication subscription 정보에서 user_id 반환"""
+    r = httpx.get(f"{_base_url()}/api/v1/subscription", headers=_headers(), timeout=10)
+    r.raise_for_status()
+    user_id = r.json().get("user_id")
+    if not user_id:
+        raise ValueError("user_id를 가져올 수 없습니다. 세션 토큰을 확인하세요.")
+    logger.info(f"Substack user_id: {user_id}")
+    return user_id
 
-def _render_table(snapshot: dict) -> str:
+
+# ─── ProseMirror Doc 빌더 ─────────────────────────────────────────────────────
+
+def _text(content: str, bold: bool = False) -> dict:
+    node = {"type": "text", "text": content}
+    if bold:
+        node["marks"] = [{"type": "bold"}]
+    return node
+
+
+def _para(*texts) -> dict:
+    return {"type": "paragraph", "content": list(texts)}
+
+
+def _heading(text: str, level: int = 2) -> dict:
+    return {"type": "heading", "attrs": {"level": level}, "content": [_text(text)]}
+
+
+def _hr() -> dict:
+    return {"type": "horizontal_rule"}
+
+
+def _bullet_list(items: list[str]) -> dict:
+    return {
+        "type": "bullet_list",
+        "content": [
+            {"type": "list_item", "content": [_para(_text(item))]}
+            for item in items
+        ],
+    }
+
+
+def _callout(text: str) -> dict:
+    return {
+        "type": "blockquote",
+        "content": [_para(_text(text))],
+    }
+
+
+def _build_table(snapshot: dict) -> list[dict]:
     if not snapshot or not snapshot.get("rows"):
-        return ""
-    label = snapshot.get("label", "핵심 수치")
-    rows_html = "".join(
-        f"<tr><td><strong>{r.get('metric','')}</strong></td>"
-        f"<td>{r.get('value','')}</td>"
-        f"<td style='color:#6b7280;font-size:0.9em'>{r.get('context','')}</td></tr>"
-        for r in snapshot["rows"]
-    )
-    return f"""
-<div style="margin:24px 0">
-  <p style="font-weight:600;color:#4b5563;font-size:0.875rem;text-transform:uppercase;letter-spacing:0.05em">{label}</p>
-  <table style="width:100%;border-collapse:collapse;font-size:0.95em">
-    <thead>
-      <tr style="border-bottom:2px solid #e5e7eb">
-        <th style="text-align:left;padding:8px 4px;color:#111827">지표</th>
-        <th style="text-align:left;padding:8px 4px;color:#111827">수치</th>
-        <th style="text-align:left;padding:8px 4px;color:#111827">맥락</th>
-      </tr>
-    </thead>
-    <tbody>{rows_html}</tbody>
-  </table>
-</div>"""
+        return []
+    nodes = [_heading(snapshot.get("label", "핵심 수치"), level=3)]
+    for row in snapshot["rows"]:
+        line = f"• {row.get('metric', '')}: {row.get('value', '')}  ({row.get('context', '')})"
+        nodes.append(_para(_text(line)))
+    return nodes
 
 
-def _render_watchlist(watchlist: list) -> str:
+def _build_watchlist(watchlist: list) -> list[dict]:
     if not watchlist:
-        return ""
-    items_html = "".join(
-        f"<li style='margin-bottom:12px'>"
-        f"<strong>📌 {w.get('item','')}</strong><br>"
-        f"<span style='color:#4b5563'>{w.get('reason','')}</span><br>"
-        f"<span style='color:#2563eb;font-size:0.9em'>트리거: {w.get('trigger','')}</span>"
-        f"</li>"
-        for w in watchlist
-    )
-    return f"""
-<div style="background:#eff6ff;border-left:4px solid #2563eb;padding:16px;margin:24px 0;border-radius:4px">
-  <p style="font-weight:700;color:#1d4ed8;margin:0 0 12px">📡 다음 호까지 추적할 것들</p>
-  <ul style="margin:0;padding-left:20px">{items_html}</ul>
-</div>"""
+        return []
+    nodes = [_heading("📡 다음 호까지 추적할 것들", level=3)]
+    for w in watchlist:
+        nodes.append(_para(
+            _text(f"📌 {w.get('item', '')}", bold=True),
+        ))
+        nodes.append(_para(_text(f"이유: {w.get('reason', '')}")))
+        nodes.append(_para(_text(f"트리거: {w.get('trigger', '')}")))
+    return nodes
 
 
-def _render_decision_block(block: dict) -> str:
+def _build_decision_block(block: dict) -> list[dict]:
     if not block:
-        return ""
-    return f"""
-<div style="background:#f9fafb;border:1px solid #e5e7eb;padding:16px;margin:24px 0;border-radius:8px">
-  <p style="font-weight:700;color:#111827;margin:0 0 12px">⚡ 이번 호 Action Summary</p>
-  <p><strong>다음 주 주목:</strong> {block.get('what_to_track','')}</p>
-  <p><strong>수혜 대상:</strong> {block.get('who_benefits','')}</p>
-  <p><strong>리스크 노출:</strong> {block.get('who_is_exposed','')}</p>
-</div>"""
+        return []
+    return [
+        _heading("⚡ Action Summary", level=3),
+        _para(_text("다음 주 주목: ", bold=True), _text(block.get("what_to_track", ""))),
+        _para(_text("수혜 대상: ", bold=True), _text(block.get("who_benefits", ""))),
+        _para(_text("리스크 노출: ", bold=True), _text(block.get("who_is_exposed", ""))),
+    ]
 
 
-def signal_to_html(signal: dict, issue_number: int = 1) -> str:
-    """refined_output 구조화 JSON 1개를 Substack HTML 섹션으로 변환"""
-    return f"""
-<h2 style="color:#111827;border-bottom:2px solid #2563eb;padding-bottom:8px">{signal.get('final_title','')}</h2>
+def signal_to_doc_nodes(signal: dict) -> list[dict]:
+    """refined_output 1개를 ProseMirror 노드 리스트로 변환"""
+    nodes = []
 
-<p style="font-size:1.05em;color:#374151;font-style:italic;border-left:3px solid #2563eb;padding-left:12px;margin:16px 0">
-  {signal.get('hook','')}
-</p>
+    nodes.append(_heading(signal.get("final_title", ""), level=2))
 
-<h3 style="color:#374151">무슨 일이 있었나</h3>
-<p>{signal.get('what_happened','')}</p>
+    if signal.get("hook"):
+        nodes.append(_callout(signal["hook"]))
 
-<h3 style="color:#374151">왜 중요한가</h3>
-<p>{signal.get('why_it_matters','')}</p>
+    if signal.get("what_happened"):
+        nodes.append(_heading("무슨 일이 있었나", level=3))
+        nodes.append(_para(_text(signal["what_happened"])))
 
-{_render_table(signal.get('quantitative_snapshot'))}
+    if signal.get("why_it_matters"):
+        nodes.append(_heading("왜 중요한가", level=3))
+        nodes.append(_para(_text(signal["why_it_matters"])))
 
-<h3 style="color:#374151">🇰🇷 한국 독자 함의</h3>
-<p style="background:#f0fdf4;border-left:4px solid #059669;padding:12px;border-radius:4px">
-  {signal.get('korea_implication','')}
-</p>
+    nodes.extend(_build_table(signal.get("quantitative_snapshot")))
 
-<h3 style="color:#374151">⚠️ 리스크 / 반론</h3>
-<p style="color:#6b7280">{signal.get('risk_counterargument','')}</p>
+    if signal.get("korea_implication"):
+        nodes.append(_heading("🇰🇷 한국 독자 함의", level=3))
+        nodes.append(_para(_text(signal["korea_implication"])))
 
-{_render_watchlist(signal.get('watchlist', []))}
-{_render_decision_block(signal.get('decision_block'))}
+    if signal.get("risk_counterargument"):
+        nodes.append(_heading("⚠️ 리스크 / 반론", level=3))
+        nodes.append(_para(_text(signal["risk_counterargument"])))
 
-<hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0">
-"""
+    nodes.extend(_build_watchlist(signal.get("watchlist", [])))
+    nodes.extend(_build_decision_block(signal.get("decision_block")))
+    nodes.append(_hr())
+
+    return nodes
 
 
-def build_issue_html(signals: list[dict], issue_number: int, issue_date: str) -> str:
-    """여러 signal을 하나의 Weekly Issue HTML로 조립"""
-    header = f"""
-<div style="text-align:center;padding:24px 0;border-bottom:2px solid #111827;margin-bottom:32px">
-  <p style="color:#4b5563;font-size:0.875rem;text-transform:uppercase;letter-spacing:0.1em">
-    Physical AI Weekly #{issue_number:03d} · {issue_date}
-  </p>
-  <p style="color:#6b7280;font-size:0.875rem;margin-top:8px">
-    Physical AI / AGI / 반도체 핵심 신호 — 한국 독자를 위한 해석
-  </p>
-</div>
-"""
-    signals_html = "".join(
-        signal_to_html(s, issue_number) for s in signals
-    )
-    footer = """
-<div style="text-align:center;padding:24px 0;margin-top:32px;border-top:2px solid #e5e7eb;color:#6b7280;font-size:0.875rem">
-  <p>📬 이 뉴스레터가 유익했다면 주변에 공유해 주세요.</p>
-  <p>피드백·질문은 reply로 보내주세요. 모두 읽습니다.</p>
-</div>
-"""
-    return header + signals_html + footer
+def build_issue_doc(signals: list[dict], issue_number: int, issue_date: str) -> str:
+    """여러 signal을 하나의 Substack doc JSON 문자열로 조립"""
+    content = []
+
+    # 헤더
+    content.append(_para(
+        _text(f"Physical AI Weekly #{issue_number:03d}  ·  {issue_date}", bold=True),
+    ))
+    content.append(_para(_text(
+        f"Physical AI / AGI / 반도체 핵심 신호 {len(signals)}개 — 한국 독자를 위한 해석"
+    )))
+    content.append(_hr())
+
+    # Signal 본문
+    for s in signals:
+        content.extend(signal_to_doc_nodes(s))
+
+    # 푸터
+    content.append(_para(_text("📬 이 뉴스레터가 유익했다면 주변에 공유해 주세요.")))
+    content.append(_para(_text("피드백·질문은 reply로 보내주세요. 모두 읽습니다.")))
+
+    doc = {
+        "type": "doc",
+        "attrs": {"schemaVersion": "v1"},
+        "content": content,
+    }
+    return json.dumps(doc, ensure_ascii=False)
 
 
 # ─── Substack API 호출 ────────────────────────────────────────────────────────
 
-def create_draft(title: str, subtitle: str, body_html: str, logger: HarnessLogger) -> dict:
-    """Substack에 draft 생성. draft_id와 draft 정보를 반환."""
-    if not SUBSTACK_SESSION_TOKEN:
-        raise ValueError("SUBSTACK_SESSION_TOKEN이 설정되지 않았습니다. .env를 확인하세요.")
-
+def create_draft(
+    title: str,
+    subtitle: str,
+    body_doc: str,
+    author_id: int,
+    logger: HarnessLogger,
+) -> dict:
     payload = {
         "draft_title": title,
         "draft_subtitle": subtitle,
-        "draft_body": body_html,
+        "draft_body": body_doc,
+        "draft_bylines": [{"id": author_id, "is_lead_author": True, "guest_author_name": None}],
         "type": "newsletter",
         "draft_section_id": None,
         "section_chosen": False,
@@ -172,7 +207,7 @@ def create_draft(title: str, subtitle: str, body_html: str, logger: HarnessLogge
             )
             resp.raise_for_status()
             data = resp.json()
-            logger.info(f"Substack draft 생성: id={data.get('id')}, title={title[:40]}")
+            logger.info(f"Substack draft 생성: id={data.get('id')}")
             return data
         except Exception as e:
             if attempt < MAX_RETRIES - 1:
@@ -184,7 +219,6 @@ def create_draft(title: str, subtitle: str, body_html: str, logger: HarnessLogge
 
 
 def publish_draft(draft_id: int, logger: HarnessLogger, send_email: bool = False) -> dict:
-    """Draft를 Substack에 발행. send_email=True면 구독자에게 이메일 발송."""
     payload = {
         "send_email": send_email,
         "for_free_trial_preview": False,
@@ -200,7 +234,8 @@ def publish_draft(draft_id: int, logger: HarnessLogger, send_email: bool = False
             )
             resp.raise_for_status()
             data = resp.json()
-            logger.info(f"Substack 발행 완료: draft_id={draft_id}, url={data.get('canonical_url','')}")
+            url = data.get("canonical_url", "")
+            logger.info(f"Substack 발행 완료: {url}")
             return data
         except Exception as e:
             if attempt < MAX_RETRIES - 1:
@@ -219,38 +254,31 @@ def publish_weekly_issue(
     send_email: bool = False,
     correlation_id: str = None,
 ) -> dict:
-    """
-    signals 리스트로 Weekly Issue를 생성하고 Substack에 draft(또는 publish) 처리.
-
-    Args:
-        signals: refined_output 구조화 JSON 리스트
-        issue_number: 발행 번호
-        issue_date: 발행일 (YYYY-MM-DD)
-        publish: True이면 draft→publish까지 진행, False이면 draft 생성만
-        send_email: True이면 구독자 이메일 발송 (publish=True일 때만 적용)
-
-    Returns:
-        {"draft_id": ..., "url": ..., "status": "draft"|"published"}
-    """
     logger = HarnessLogger(tier=4, correlation_id=correlation_id)
     logger.info(f"=== Substack Weekly Issue #{issue_number:03d} 생성 시작 ===")
+
+    if not SUBSTACK_SESSION_TOKEN:
+        raise ValueError("SUBSTACK_SESSION_TOKEN 미설정")
 
     if not signals:
         logger.warning("발행할 signal이 없습니다.")
         return {}
 
+    author_id = get_author_id(logger)
+
     title = f"Physical AI Weekly #{issue_number:03d} — {issue_date}"
     subtitle = f"이번 주 Physical AI / AGI / 반도체 핵심 신호 {len(signals)}개 분석"
-    body_html = build_issue_html(signals, issue_number, issue_date)
+    body_doc = build_issue_doc(signals, issue_number, issue_date)
 
-    draft = create_draft(title, subtitle, body_html, logger)
+    draft = create_draft(title, subtitle, body_doc, author_id, logger)
     draft_id = draft.get("id")
+    draft_url = f"{_base_url()}/p/{draft.get('slug', '')}" if draft.get("slug") else f"{_base_url()}/publish/post/{draft_id}"
 
     if not publish:
-        logger.info(f"Draft 생성 완료 (미발행): {_base_url()}/p/{draft.get('slug','')}")
-        return {"draft_id": draft_id, "status": "draft", "url": f"{_base_url()}/p/{draft.get('slug','')}"}
+        logger.info(f"Draft 생성 완료 (미발행): {draft_url}")
+        return {"draft_id": draft_id, "status": "draft", "url": draft_url}
 
     result = publish_draft(draft_id, logger, send_email=send_email)
-    url = result.get("canonical_url", "")
+    url = result.get("canonical_url", draft_url)
     logger.info(f"=== Substack 발행 완료: {url} ===")
     return {"draft_id": draft_id, "status": "published", "url": url}
