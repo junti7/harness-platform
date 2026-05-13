@@ -158,9 +158,20 @@ def _callout(text: str) -> dict:
 def _build_table(snapshot: dict) -> list[dict]:
     if not snapshot or not snapshot.get("rows"):
         return []
-    nodes = [_heading(snapshot.get("label", "핵심 수치"), level=3)]
+    label = snapshot.get("title") or snapshot.get("label") or "핵심 수치"
+    nodes = [_heading(label, level=3)]
+    headers = snapshot.get("headers") or []
     for row in snapshot["rows"]:
-        line = f"• {row.get('metric', '')}: {row.get('value', '')}  ({row.get('context', '')})"
+        if isinstance(row, list):
+            parts = [str(v) for v in row]
+            line = " | ".join(parts)
+        elif isinstance(row, dict):
+            metric = row.get("metric") or (headers[0] if headers else "")
+            value = row.get("value") or (headers[1] if len(headers) > 1 else "")
+            context = row.get("context") or row.get("insight") or (headers[2] if len(headers) > 2 else "")
+            line = f"• {metric}: {value}  ({context})"
+        else:
+            line = str(row)
         nodes.append(_para(_text(line)))
     return nodes
 
