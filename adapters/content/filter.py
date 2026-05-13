@@ -4,28 +4,18 @@ import os
 import re
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dotenv import load_dotenv
+from core.domain_config import load_keyword_list
 from core.database import execute_query
 from core.logger import HarnessLogger
 
 load_dotenv()
 
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma2:27b")
-OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "45"))
-TIER2_BATCH_LIMIT = int(os.getenv("TIER2_BATCH_LIMIT", "50"))
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:latest")
+OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "30"))
+TIER2_BATCH_LIMIT = int(os.getenv("TIER2_BATCH_LIMIT", "20"))
+MAX_FACT_EXTRACTION_PER_BATCH = 5
 
-# Physical AI / AGI 관련성 키워드 — 매칭 수로 relevance score 계산
-HIGH_VALUE_KEYWORDS = [
-    "humanoid", "robot", "robotics", "physical ai", "agi", "autonomous",
-    "semiconductor", "gpu", "nvidia", "tsmc", "chip", "wafer",
-    "inference", "llm", "foundation model", "multimodal",
-    "factory", "automation", "manufacturing", "assembly",
-    "figure", "boston dynamics", "tesla optimus", "1x", "apptronik",
-    "google deepmind", "openai", "anthropic", "gemini",
-    "dexterous", "manipulation", "grasping", "locomotion",
-    "actuator", "sensor", "lidar", "computer vision",
-    "fleet", "deployment", "production", "scale",
-    "korea", "samsung", "hyundai", "lg", "sk hynix",
-]
+HIGH_VALUE_KEYWORDS = load_keyword_list("physical_ai")
 
 LOW_VALUE_PATTERNS = [
     r"\bjob posting\b", r"\bhiring\b.*\bjob\b", r"\bpress release\b",
@@ -117,6 +107,7 @@ def filter_signals(correlation_id: str = None):
     logger.info(f"처리 대상: {len(rows)}개")
     passed = 0
     failed = 0
+    facts_extracted = 0
 
     for row in rows:
         raw_id = row["id"]
@@ -135,16 +126,20 @@ def filter_signals(correlation_id: str = None):
             continue
 
         # 점수가 0.4 이상인 고가치 신호만 Ollama 팩트 추출 (비용·시간 절감)
+        # 배당 최대 추출 개수 제한 (Stuck 방지)
         facts = {}
-        if score >= 0.4:
-            logger.info(f"  팩트 추출 중 (score={score:.2f}): {title[:50]}...")
+        if score >= 0.4 and facts_extracted < MAX_FACT_EXTRACTION_PER_BATCH:
+            logger.info(f"  [{facts_extracted+1}/{MAX_FACT_EXTRACTION_PER_BATCH}] 팩트 추출 중 (score={score:.2f}): {title[:50]}...")
             facts = extract_facts(full_content if full_content else summary, logger)
+            facts_extracted += 1
+        elif score >= 0.4:
+            logger.info(f"  팩트 추출 스킵 (배치 한도 초과, score={score:.2f}): {title[:50]}...")
 
         save_filtered_signal(raw_id, source, title, summary, score, "physical_ai", content_hash, facts)
         execute_query("UPDATE raw_signals SET status = 'filtered_pass' WHERE id = %s", (raw_id,))
         passed += 1
 
-    logger.info(f"=== Tier 2 완료: pass={passed}, fail={failed} ===")
+    logger.info(f"=== Tier 2 완료: pass={passed}, fail={failed}, facts_extracted={facts_extracted} ===")
     return passed
 
 

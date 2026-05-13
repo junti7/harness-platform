@@ -211,6 +211,7 @@ CREATE TABLE IF NOT EXISTS customer_profiles (
     external_ref               TEXT UNIQUE,
     email_hash                 VARCHAR(64),
     tier                       VARCHAR(50) DEFAULT 'free',
+    persona_type               VARCHAR(50) DEFAULT 'general',
     country                    VARCHAR(50),
     timezone                   VARCHAR(50),
     preferred_language         VARCHAR(10) DEFAULT 'ko',
@@ -247,6 +248,22 @@ CREATE TABLE IF NOT EXISTS customer_interest_tags (
     UNIQUE (customer_id, tag)
 );
 
+CREATE TABLE IF NOT EXISTS customer_preference_overrides (
+    id               SERIAL PRIMARY KEY,
+    customer_id      INTEGER REFERENCES customer_profiles(id) ON DELETE CASCADE,
+    preference_key   TEXT NOT NULL,
+    preference_value JSONB DEFAULT '{}'::jsonb,
+    scope            VARCHAR(30) DEFAULT 'brief',
+    source           VARCHAR(50),
+    confidence       DOUBLE PRECISION DEFAULT 0.0,
+    priority         VARCHAR(30) DEFAULT 'medium',
+    effective_from   TIMESTAMP DEFAULT NOW(),
+    expires_at       TIMESTAMP,
+    active           BOOLEAN DEFAULT TRUE,
+    created_at       TIMESTAMP DEFAULT NOW(),
+    updated_at       TIMESTAMP DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS customer_watchlists (
     id             SERIAL PRIMARY KEY,
     customer_id    INTEGER REFERENCES customer_profiles(id) ON DELETE CASCADE,
@@ -265,9 +282,13 @@ CREATE TABLE IF NOT EXISTS customer_questions (
     customer_id            INTEGER REFERENCES customer_profiles(id) ON DELETE CASCADE,
     question               TEXT NOT NULL,
     status                 VARCHAR(30) DEFAULT 'open',
+    priority               VARCHAR(30) DEFAULT 'medium',
     topic_tags             JSONB DEFAULT '[]'::jsonb,
     last_answered_issue_id INTEGER REFERENCES newsletter_issues(id),
+    last_answered_artifact_type VARCHAR(50),
+    last_answered_artifact_id   INTEGER,
     sensitivity_level      VARCHAR(20) DEFAULT 'low',
+    due_at                 TIMESTAMP,
     created_at             TIMESTAMP DEFAULT NOW(),
     updated_at             TIMESTAMP DEFAULT NOW()
 );
@@ -290,7 +311,11 @@ CREATE TABLE IF NOT EXISTS artifact_memory_usage (
     id                   SERIAL PRIMARY KEY,
     artifact_type        VARCHAR(50) NOT NULL,
     artifact_id          INTEGER NOT NULL,
+    customer_id          INTEGER REFERENCES customer_profiles(id) ON DELETE SET NULL,
+    audience_scope       VARCHAR(30) DEFAULT 'segment',
+    audience_key         TEXT,
     memory_event_ids     JSONB DEFAULT '[]'::jsonb,
+    override_ids         JSONB DEFAULT '[]'::jsonb,
     watchlist_ids        JSONB DEFAULT '[]'::jsonb,
     question_ids         JSONB DEFAULT '[]'::jsonb,
     upgrade_event_ids    JSONB DEFAULT '[]'::jsonb,
@@ -431,11 +456,17 @@ CREATE INDEX IF NOT EXISTS idx_subscriber_snapshots_date
 CREATE INDEX IF NOT EXISTS idx_customer_profiles_tier
     ON customer_profiles(tier, created_at DESC);
 
+CREATE INDEX IF NOT EXISTS idx_customer_profiles_persona
+    ON customer_profiles(persona_type, tier, created_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_customer_memory_events_customer
     ON customer_memory_events(customer_id, event_type, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_customer_interest_tags_customer
     ON customer_interest_tags(customer_id, weight DESC);
+
+CREATE INDEX IF NOT EXISTS idx_customer_preference_overrides_customer
+    ON customer_preference_overrides(customer_id, active, preference_key, expires_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_customer_watchlists_customer
     ON customer_watchlists(customer_id, active, priority);
@@ -443,8 +474,14 @@ CREATE INDEX IF NOT EXISTS idx_customer_watchlists_customer
 CREATE INDEX IF NOT EXISTS idx_customer_questions_customer
     ON customer_questions(customer_id, status, created_at DESC);
 
+CREATE INDEX IF NOT EXISTS idx_customer_questions_due
+    ON customer_questions(status, priority, due_at);
+
 CREATE INDEX IF NOT EXISTS idx_product_upgrade_events_product
     ON product_upgrade_events(product_name, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_artifact_memory_usage_artifact
     ON artifact_memory_usage(artifact_type, artifact_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_artifact_memory_usage_customer
+    ON artifact_memory_usage(customer_id, audience_scope, created_at DESC);

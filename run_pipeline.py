@@ -1,6 +1,10 @@
 import sys
 import time
 import uuid
+import os
+import logging
+
+from adapters.content.slack_router import send_slack_route
 from core.logger import HarnessLogger
 from core.database import execute_query
 
@@ -13,21 +17,77 @@ def _save_run_start(cid: str) -> int:
     return result[0]["id"] if result else None
 
 
+def _truncate_error(error: str, limit: int = 500) -> str:
+    text = (error or "").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 3]}..."
+
+
+def _parse_failure(error: str) -> tuple[str, str]:
+    raw_error = error or "unknown"
+    if ":" not in raw_error:
+        return "?", raw_error
+
+    tier_label, detail = raw_error.split(":", 1)
+    tier = tier_label.replace("tier", "").strip() or "?"
+    return tier, detail.strip()
+
+
+def _notify_on_failure(run_id: int, correlation_id: str, error: str) -> None:
+    tier, detail = _parse_failure(error)
+    truncated_error = _truncate_error(detail)
+    text = (
+        f":fire: Pipeline {correlation_id} failed at Tier {tier}: "
+        f"{truncated_error} | pipeline_run_id={run_id or 'n/a'}"
+    )
+    payload = {
+        "text": text,
+        "blocks": [
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": text},
+            },
+            {
+                "type": "context",
+                "elements": [
+                    {"type": "mrkdwn", "text": f"correlation_id=`{correlation_id}`"},
+                    {"type": "mrkdwn", "text": f"pipeline_runs.id=`{run_id or 'n/a'}`"},
+                ],
+            },
+        ],
+    }
+    send_slack_route("ops_incidents", payload)
+
+
 def _save_run_end(run_id: int, results: dict, status: str, error: str = None):
-    if not run_id:
-        return
-    execute_query("""
-        UPDATE pipeline_runs
-        SET finished_at = NOW(),
-            tier1_count = %s, tier2_count = %s,
-            tier3_count = %s, tier4_count = %s,
-            status = %s, error = %s
-        WHERE id = %s
-    """, (
-        results.get("tier1"), results.get("tier2"),
-        results.get("tier3"), results.get("tier4"),
-        status, error, run_id,
-    ))
+    if run_id:
+        try:
+            execute_query("""
+                UPDATE pipeline_runs
+                SET finished_at = NOW(),
+                    tier1_count = %s, tier2_count = %s,
+                    tier3_count = %s, tier4_count = %s,
+                    status = %s, error = %s
+                WHERE id = %s
+            """, (
+                results.get("tier1"), results.get("tier2"),
+                results.get("tier3"), results.get("tier4"),
+                status, error, run_id,
+            ))
+        except Exception as exc:
+            logging.getLogger("harness.pipeline").warning(
+                "pipeline_runs 종료 기록 실패: %s", exc
+            )
+
+    if status == "failed":
+        correlation_id = results.get("correlation_id", "unknown")
+        try:
+            _notify_on_failure(run_id, correlation_id, error or "unknown")
+        except Exception as exc:
+            logging.getLogger("harness.pipeline").warning(
+                "Slack failure alert 전송 실패: %s", exc
+            )
 
 
 def run():
@@ -45,7 +105,7 @@ def run():
     except Exception as e:
         logger.warning(f"pipeline_runs 기록 실패 (비치명적): {e}")
 
-    results = {}
+    results = {"correlation_id": pipeline_cid}
 
     # Tier 1
     logger.info("[Tier 1] 수집 시작")
@@ -64,6 +124,10 @@ def run():
         from adapters.content.filter import filter_signals
         results["tier2"] = filter_signals(correlation_id=pipeline_cid)
         logger.info(f"[Tier 2] 완료: {results['tier2']}건 통과")
+
+        from adapters.content.signalizer import promote_signals
+        results["signals"] = promote_signals(correlation_id=pipeline_cid)
+        logger.info(f"[Tier 2] Signal 승격 완료: {results['signals']}건")
     except Exception as e:
         logger.error(f"[Tier 2] 실패: {e}")
         _save_run_end(run_id, results, "failed", f"tier2:{e}")
@@ -86,6 +150,12 @@ def run():
         from adapters.content.publisher import publish
         results["tier4"] = publish(correlation_id=pipeline_cid)
         logger.info(f"[Tier 4] 완료: {results['tier4']}건 발행")
+
+        if os.getenv("MOBILE_BRIEFING_ENABLED", "false").lower() == "true":
+            from adapters.content.daily_briefing import send_daily_mobile_briefing
+            briefing = send_daily_mobile_briefing(correlation_id=pipeline_cid)
+            results["mobile_briefing"] = briefing.get("sent", 0)
+            logger.info(f"[Tier 4] 모바일 브리핑 완료: {results['mobile_briefing']}건")
     except Exception as e:
         logger.error(f"[Tier 4] 실패: {e}")
         _save_run_end(run_id, results, "failed", f"tier4:{e}")

@@ -7,29 +7,39 @@ Substack 뉴스레터 발행 모듈
 import json
 import os
 import time
+from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 from core.logger import HarnessLogger
 
-load_dotenv()
-
-SUBSTACK_PUBLICATION_URL = os.getenv("SUBSTACK_PUBLICATION_URL", "https://junti7.substack.com")
-SUBSTACK_SESSION_TOKEN = os.getenv("SUBSTACK_SESSION_TOKEN", "")
+load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)
 MAX_RETRIES = 3
+
+
+def _publication_url() -> str:
+    return os.getenv("SUBSTACK_PUBLICATION_URL", "https://junti7.substack.com").rstrip("/")
+
+
+def _session_token() -> str:
+    return os.getenv("SUBSTACK_SESSION_TOKEN", "")
 
 
 def _headers() -> dict:
     return {
-        "Cookie": f"substack.sid={SUBSTACK_SESSION_TOKEN}",
+        "Cookie": f"substack.sid={_session_token()}",
         "Content-Type": "application/json",
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        "Referer": f"{SUBSTACK_PUBLICATION_URL.rstrip('/')}/publish/posts",
-        "Origin": SUBSTACK_PUBLICATION_URL.rstrip("/"),
+        "Referer": f"{_publication_url()}/publish/posts",
+        "Origin": _publication_url(),
     }
 
 
 def _base_url() -> str:
-    return SUBSTACK_PUBLICATION_URL.rstrip("/")
+    return _publication_url()
+
+
+def _draft_api_url(draft_id: int | str) -> str:
+    return f"{_base_url()}/api/v1/drafts/{draft_id}"
 
 
 def get_author_id(logger: HarnessLogger) -> int:
@@ -41,6 +51,70 @@ def get_author_id(logger: HarnessLogger) -> int:
         raise ValueError("user_id를 가져올 수 없습니다. 세션 토큰을 확인하세요.")
     logger.info(f"Substack user_id: {user_id}")
     return user_id
+
+
+def _pm_node_to_text(node: dict) -> str:
+    node_type = node.get("type")
+    if node_type == "text":
+        return node.get("text", "")
+
+    content = node.get("content") or []
+    child_text = "".join(_pm_node_to_text(child) for child in content)
+
+    if node_type in {"paragraph", "heading", "blockquote"}:
+        return child_text + "\n"
+    if node_type == "horizontal_rule":
+        return "\n---\n"
+    if node_type == "bullet_list":
+        lines: list[str] = []
+        for item in content:
+            item_text = _pm_node_to_text(item).strip()
+            if item_text:
+                lines.append(f"- {item_text}")
+        return "\n".join(lines) + "\n"
+    if node_type == "list_item":
+        return child_text.strip()
+    return child_text
+
+
+def _draft_body_to_text(draft_body: str | dict) -> str:
+    if isinstance(draft_body, str):
+        try:
+            draft_body = json.loads(draft_body)
+        except json.JSONDecodeError:
+            return draft_body
+
+    if not isinstance(draft_body, dict):
+        return str(draft_body)
+
+    content = draft_body.get("content") or []
+    text = "".join(_pm_node_to_text(node) for node in content)
+    return "\n".join(line.rstrip() for line in text.splitlines() if line.strip())
+
+
+def fetch_draft(draft_id: int | str, logger: HarnessLogger | None = None) -> dict:
+    resp = httpx.get(_draft_api_url(draft_id), headers=_headers(), timeout=15.0)
+    resp.raise_for_status()
+    data = resp.json()
+    if logger:
+        logger.info(f"Substack draft 조회: id={draft_id}")
+    return data
+
+
+def fetch_draft_as_text(draft_id: int | str, logger: HarnessLogger | None = None) -> dict:
+    data = fetch_draft(draft_id, logger=logger)
+    title = data.get("draft_title") or data.get("search_engine_title") or "Untitled draft"
+    subtitle = data.get("draft_subtitle") or data.get("description") or ""
+    body_text = _draft_body_to_text(data.get("draft_body") or "")
+    return {
+        "draft_id": int(draft_id),
+        "title": title,
+        "subtitle": subtitle,
+        "body_text": body_text,
+        "status": data.get("type") or "draft",
+        "slug": data.get("slug"),
+        "audience": data.get("audience"),
+    }
 
 
 # ─── ProseMirror Doc 빌더 ─────────────────────────────────────────────────────
@@ -257,7 +331,7 @@ def publish_weekly_issue(
     logger = HarnessLogger(tier=4, correlation_id=correlation_id)
     logger.info(f"=== Substack Weekly Issue #{issue_number:03d} 생성 시작 ===")
 
-    if not SUBSTACK_SESSION_TOKEN:
+    if not _session_token():
         raise ValueError("SUBSTACK_SESSION_TOKEN 미설정")
 
     if not signals:

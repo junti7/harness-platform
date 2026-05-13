@@ -1,0 +1,11 @@
+{
+  "sources": [
+    {"name": "arXiv_robotics", "url": "https://rss.arxiv.org/rss/cs.RO", "stale_minutes": 10080},
+    {"name": "arXiv_AI", "url": "https://rss.arxiv.org/rss/cs.AI", "stale_minutes": 10080},
+    {"name": "arXiv_ML", "url": "https://rss.arxiv.org/rss/cs.LG", "stale_minutes": 10080},
+    {"name": "IEEE_Spectrum", "url": "https://spectrum.ieee.org/feeds/feed.rss", "stale_minutes": 4320},
+    {"name": "MIT_Tech_Review", "url": "https://www.technologyreview.com/feed/", "stale_minutes": 2880},
+    {"name": "TechCrunch_robotics", "url": "https://techcrunch.com/tag/robotics/feed/", "stale_minutes": 4320},
+    {"name": "Boston_Dynamics", "url": "https://feeds.feedburner.com/BostonDynamics", "stale_minutes": 43200}
+  ]
+}
