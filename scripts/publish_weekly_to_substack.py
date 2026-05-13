@@ -24,6 +24,7 @@ from datetime import date
 from dotenv import load_dotenv
 from core.database import execute_query
 from core.logger import HarnessLogger
+from adapters.content.qa_agent import qa_check_newsletter_issue, has_qa_clear
 from adapters.content.substack_publisher import publish_weekly_issue
 
 load_dotenv()
@@ -78,26 +79,59 @@ def parse_body(row: dict) -> dict:
         }
 
 
-def save_issue_to_db(
+def upsert_issue_to_db(
     issue_number: int,
     issue_date: str,
     signal_ids: list[int],
-    substack_url: str,
     status: str,
-):
-    execute_query("""
-        INSERT INTO newsletter_issues
-            (issue_date, title, status, source_signal_ids, publishing_platform, public_url)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON CONFLICT DO NOTHING
+    substack_url: str = "",
+) -> int:
+    title = f"Physical AI Weekly #{issue_number:03d}"
+    existing = execute_query("""
+        SELECT id
+        FROM newsletter_issues
+        WHERE title = %s
+        ORDER BY created_at DESC
+        LIMIT 1
+    """, (title,), fetch=True)
+
+    if existing:
+        result = execute_query("""
+        UPDATE newsletter_issues
+        SET issue_date = %s,
+            status = %s,
+            source_signal_ids = %s,
+            publishing_platform = %s,
+            public_url = %s,
+            updated_at = NOW()
+        WHERE id = %s
+        RETURNING id
     """, (
         issue_date,
-        f"Physical AI Weekly #{issue_number:03d}",
         status,
         json.dumps(signal_ids),
         "substack",
         substack_url,
-    ))
+        existing[0]["id"],
+    ), fetch=True)
+        return result[0]["id"]
+
+    result = execute_query("""
+        INSERT INTO newsletter_issues
+            (issue_date, title, status, source_signal_ids, publishing_platform, public_url)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        RETURNING id
+    """, (
+        issue_date,
+        title,
+        status,
+        json.dumps(signal_ids),
+        "substack",
+        substack_url,
+    ), fetch=True)
+    if not result:
+        raise RuntimeError("newsletter_issues insert failed")
+    return result[0]["id"]
 
 
 def main():
@@ -133,6 +167,21 @@ def main():
 
     logger.info(f"발행 대상 signal {len(signals)}개: {[s['final_title'][:30] for s in signals]}")
 
+    issue_id = upsert_issue_to_db(args.issue, args.date, signal_ids, "pending_qa")
+    logger.info(f"newsletter_issue DB 기록: id={issue_id}")
+
+    # QA gate — CLAUDE.md Must: qa_clear 없이 발행 불가
+    if not has_qa_clear(issue_id):
+        logger.info("QA 게이트 실행 중...")
+        approved = qa_check_newsletter_issue(issue_id, correlation_id=f"substack-{args.issue:03d}")
+        if not approved:
+            logger.error("❌ QA 실패 — 발행 중단. docs/reports/qa/ 메모를 확인하세요.")
+            sys.exit(1)
+    else:
+        logger.info(f"QA gate: 이미 approved (issue_id={issue_id})")
+
+    upsert_issue_to_db(args.issue, args.date, signal_ids, "draft")
+
     result = publish_weekly_issue(
         signals=signals,
         issue_number=args.issue,
@@ -144,7 +193,7 @@ def main():
 
     if result:
         status = "published" if args.publish else "draft"
-        save_issue_to_db(args.issue, args.date, signal_ids, result.get("url", ""), status)
+        upsert_issue_to_db(args.issue, args.date, signal_ids, status, result.get("url", ""))
         print(f"\n✅ 완료!")
         print(f"   Status : {result.get('status')}")
         print(f"   URL    : {result.get('url', '(draft - Substack 대시보드에서 확인)')}")
