@@ -189,8 +189,53 @@ def _build_decision_block(block: dict) -> list[dict]:
     ]
 
 
+def _build_deep_analysis(deep: dict) -> list[dict]:
+    if not deep or not isinstance(deep, dict):
+        return []
+    nodes = []
+    if deep.get("technical_breakdown"):
+        nodes.append(_heading("🔬 기술 분석", level=3))
+        nodes.append(_para(_text(deep["technical_breakdown"])))
+    if deep.get("economic_implication"):
+        nodes.append(_heading("💰 경제적 함의", level=3))
+        nodes.append(_para(_text(deep["economic_implication"])))
+    if deep.get("supply_chain_dynamics"):
+        nodes.append(_heading("🏭 공급망 역학", level=3))
+        nodes.append(_para(_text(deep["supply_chain_dynamics"])))
+    return nodes
+
+
+def _build_executive_decision(block: dict) -> list[dict]:
+    if not block or not isinstance(block, dict):
+        return []
+    nodes = [_heading("⚡ Executive Decision", level=3)]
+    if block.get("buy_signal"):
+        nodes.append(_para(_text("매수 신호: ", bold=True), _text(block["buy_signal"])))
+    if block.get("sell_signal"):
+        nodes.append(_para(_text("매도 신호: ", bold=True), _text(block["sell_signal"])))
+    if block.get("ceo_priority"):
+        nodes.append(_para(_text("CEO 오늘 체크: ", bold=True), _text(block["ceo_priority"])))
+    return nodes
+
+
+def _build_watchlist_v2(watchlist: list) -> list[dict]:
+    if not watchlist:
+        return []
+    nodes = [_heading("📡 추적 대상", level=3)]
+    for w in watchlist:
+        entity = w.get("entity") or w.get("item", "")
+        relevance = w.get("relevance") or w.get("reason", "")
+        signal = w.get("monitoring_signal") or w.get("trigger", "")
+        nodes.append(_para(_text(f"📌 {entity}", bold=True)))
+        if relevance:
+            nodes.append(_para(_text(f"관련성: {relevance}")))
+        if signal:
+            nodes.append(_para(_text(f"트리거: {signal}")))
+    return nodes
+
+
 def signal_to_doc_nodes(signal: dict) -> list[dict]:
-    """refined_output 1개를 ProseMirror 노드 리스트로 변환"""
+    """refined_output 1개를 ProseMirror 노드 리스트로 변환 (v10.0 + legacy 스키마 지원)"""
     nodes = []
 
     nodes.append(_heading(signal.get("final_title", ""), level=2))
@@ -198,26 +243,38 @@ def signal_to_doc_nodes(signal: dict) -> list[dict]:
     if signal.get("hook"):
         nodes.append(_callout(signal["hook"]))
 
-    if signal.get("what_happened"):
-        nodes.append(_heading("무슨 일이 있었나", level=3))
-        nodes.append(_para(_text(signal["what_happened"])))
-
-    if signal.get("why_it_matters"):
-        nodes.append(_heading("왜 중요한가", level=3))
-        nodes.append(_para(_text(signal["why_it_matters"])))
+    deep = signal.get("deep_analysis")
+    if deep:
+        nodes.extend(_build_deep_analysis(deep))
+    else:
+        if signal.get("what_happened"):
+            nodes.append(_heading("무슨 일이 있었나", level=3))
+            nodes.append(_para(_text(signal["what_happened"])))
+        if signal.get("why_it_matters"):
+            nodes.append(_heading("왜 중요한가", level=3))
+            nodes.append(_para(_text(signal["why_it_matters"])))
 
     nodes.extend(_build_table(signal.get("quantitative_snapshot")))
 
-    if signal.get("korea_implication"):
-        nodes.append(_heading("🇰🇷 한국 독자 함의", level=3))
-        nodes.append(_para(_text(signal["korea_implication"])))
+    korea = signal.get("korea_strategic_context") or signal.get("korea_implication")
+    if korea:
+        nodes.append(_heading("🇰🇷 한국 전략적 맥락", level=3))
+        nodes.append(_para(_text(korea)))
 
-    if signal.get("risk_counterargument"):
-        nodes.append(_heading("⚠️ 리스크 / 반론", level=3))
-        nodes.append(_para(_text(signal["risk_counterargument"])))
+    risk = signal.get("risk_and_bottlenecks") or signal.get("risk_counterargument")
+    if risk:
+        nodes.append(_heading("⚠️ 리스크 및 병목", level=3))
+        nodes.append(_para(_text(risk)))
 
-    nodes.extend(_build_watchlist(signal.get("watchlist", [])))
-    nodes.extend(_build_decision_block(signal.get("decision_block")))
+    nodes.extend(_build_watchlist_v2(signal.get("watchlist", [])))
+
+    exec_block = signal.get("executive_decision_block") or signal.get("decision_block")
+    if exec_block and isinstance(exec_block, dict):
+        if "buy_signal" in exec_block:
+            nodes.extend(_build_executive_decision(exec_block))
+        else:
+            nodes.extend(_build_decision_block(exec_block))
+
     nodes.append(_hr())
 
     return nodes

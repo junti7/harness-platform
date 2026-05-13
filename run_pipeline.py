@@ -3,6 +3,13 @@ import time
 import uuid
 import os
 import logging
+from pathlib import Path
+
+# load .env from repo root before importing any module that calls load_dotenv()
+_env_path = Path(__file__).resolve().parent / ".env"
+if _env_path.exists():
+    from dotenv import load_dotenv
+    load_dotenv(_env_path, override=True)
 
 from adapters.content.slack_router import send_slack_route
 from core.logger import HarnessLogger
@@ -174,4 +181,23 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    import argparse
+    parser = argparse.ArgumentParser(description="Harness 파이프라인 실행")
+    parser.add_argument(
+        "--tier", type=int, default=None,
+        help="특정 Tier만 실행 (예: --tier 3). 생략 시 전체 실행."
+    )
+    args, _ = parser.parse_known_args()
+
+    if args.tier == 3:
+        from dotenv import load_dotenv as _ld
+        _ld(_env_path, override=True)
+        from adapters.content.refiner import refine
+        import uuid as _uuid
+        cid = str(_uuid.uuid4())[:8]
+        logger = HarnessLogger(tier=3, correlation_id=cid)
+        logger.info(f"=== Tier 3 단독 실행 (run_id={cid}) ===")
+        count = refine(correlation_id=cid)
+        logger.info(f"=== Tier 3 완료: {count}건 ===")
+    else:
+        run()

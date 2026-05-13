@@ -26,6 +26,7 @@ from core.database import execute_query
 from core.logger import HarnessLogger
 from adapters.content.qa_agent import qa_check_newsletter_issue, has_qa_clear
 from adapters.content.substack_publisher import publish_weekly_issue
+from adapters.content.slack_router import send_slack_route
 
 load_dotenv()
 
@@ -134,6 +135,52 @@ def upsert_issue_to_db(
     return result[0]["id"]
 
 
+def _notify_slack_publish(
+    issue_label: str,
+    issue_date: str,
+    status: str,
+    url: str,
+    signal_count: int,
+    correlation_id: str,
+) -> None:
+    emoji = "🚀" if status == "published" else "📝"
+    status_kor = "발행 완료" if status == "published" else "Draft 저장"
+    url_line = f"<{url}|{url}>" if url else "_(Substack 대시보드에서 확인)_"
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"{emoji} {issue_label} {status_kor}"},
+        },
+        {"type": "divider"},
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*이슈*\n{issue_label}"},
+                {"type": "mrkdwn", "text": f"*발행일*\n{issue_date}"},
+                {"type": "mrkdwn", "text": f"*상태*\n{status_kor}"},
+                {"type": "mrkdwn", "text": f"*Signal 수*\n{signal_count}개"},
+            ],
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*URL*\n{url_line}"},
+        },
+        {
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": f"correlation_id=`{correlation_id}`"},
+            ],
+        },
+    ]
+    try:
+        send_slack_route(
+            "exec_president_decisions",
+            {"text": f"{emoji} {issue_label} {status_kor}", "blocks": blocks},
+        )
+    except Exception as e:
+        print(f"   ⚠️  Slack 알림 실패 (비치명적): {e}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Substack Weekly Issue 발행")
     parser.add_argument("--issue", type=int, required=True, help="이슈 번호 (예: 1)")
@@ -194,10 +241,21 @@ def main():
     if result:
         status = "published" if args.publish else "draft"
         upsert_issue_to_db(args.issue, args.date, signal_ids, status, result.get("url", ""))
+        url = result.get("url", "")
+        issue_label = f"Physical AI Weekly #{args.issue:03d}"
         print(f"\n✅ 완료!")
         print(f"   Status : {result.get('status')}")
-        print(f"   URL    : {result.get('url', '(draft - Substack 대시보드에서 확인)')}")
-        print(f"   Issue  : Physical AI Weekly #{args.issue:03d}")
+        print(f"   URL    : {url or '(draft - Substack 대시보드에서 확인)'}")
+        print(f"   Issue  : {issue_label}")
+
+        _notify_slack_publish(
+            issue_label=issue_label,
+            issue_date=args.date,
+            status=status,
+            url=url,
+            signal_count=len(signals),
+            correlation_id=f"substack-{args.issue:03d}",
+        )
     else:
         print("\n❌ 발행 실패. 로그를 확인하세요.")
         sys.exit(1)
