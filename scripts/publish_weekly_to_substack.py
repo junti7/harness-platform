@@ -27,6 +27,7 @@ from core.logger import HarnessLogger
 from adapters.content.qa_agent import qa_check_newsletter_issue, has_qa_clear
 from adapters.content.substack_publisher import publish_weekly_issue
 from adapters.content.slack_router import send_slack_route
+from adapters.content.vp_review_card import check_vp_review_approved, request_vp_review
 
 load_dotenv()
 
@@ -189,6 +190,7 @@ def main():
     parser.add_argument("--top", type=int, default=TOP_SIGNALS_LIMIT, help="상위 N개 자동 선택")
     parser.add_argument("--publish", action="store_true", help="Draft 생성 후 즉시 발행")
     parser.add_argument("--send-email", action="store_true", help="구독자 이메일 발송 (--publish 필요)")
+    parser.add_argument("--skip-vp-review", action="store_true", help="VP 검토 게이트 건너뜀 (긴급 발행용)")
     args = parser.parse_args()
 
     logger = HarnessLogger(tier=4, correlation_id=f"substack-{args.issue:03d}")
@@ -216,6 +218,16 @@ def main():
 
     issue_id = upsert_issue_to_db(args.issue, args.date, signal_ids, "pending_qa")
     logger.info(f"newsletter_issue DB 기록: id={issue_id}")
+
+    # VP 검토 게이트 — CLAUDE.md §2: 부대표 Content Quality Gate
+    if not args.skip_vp_review and args.publish:
+        if not check_vp_review_approved(issue_id):
+            logger.warning("VP 검토 미완료 — Slack 검토 요청 발송 후 대기")
+            request_vp_review(issue_id, logger)
+            logger.error("❌ VP 검토 대기 중 — 부대표 승인 후 재실행하거나 --skip-vp-review 사용")
+            sys.exit(1)
+        else:
+            logger.info(f"VP 검토 게이트: 승인됨 (issue_id={issue_id})")
 
     # QA gate — CLAUDE.md Must: qa_clear 없이 발행 불가
     if not has_qa_clear(issue_id):

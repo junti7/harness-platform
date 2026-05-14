@@ -26,6 +26,7 @@ from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from adapters.content.openclaw_agent import run as agent_run, OLLAMA_CHAT_MODEL, OLLAMA_REMOTE_HOST, OLLAMA_HOST
 from core.reader_feedback import classify_feedback, upsert_reader_profile, record_feedback
+from adapters.content.vp_review_card import parse_vp_response
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "")
 SLACK_APP_TOKEN = os.environ.get("SLACK_APP_TOKEN", "")
 CEO_SLACK_USER_ID = os.environ.get("SLACK_CEO_USER_ID", "")
+VP_SLACK_USER_ID = os.environ.get("SLACK_VP_USER_ID", "")
 
 if not SLACK_BOT_TOKEN:
     raise RuntimeError("SLACK_BOT_TOKEN is not set in .env")
@@ -78,9 +80,33 @@ def handle_dm(event, say, logger):
         say(text=":thinking_face: 처리 중...")
         response = agent_run(text, dm_channel_id=channel)
         say(text=response)
+    elif VP_SLACK_USER_ID and user == VP_SLACK_USER_ID:
+        _handle_vp_dm(user, text, say=say, logger=logger)
     else:
         _handle_reader_feedback(user, text, source_channel=f"slack_dm:{channel}", say=say,
                                 thread_ts=None, logger=logger)
+
+
+def _handle_vp_dm(user: str, text: str, say, logger):
+    """VP DM 처리: 검토 응답이면 content_reviews에 기록, 아니면 reader_feedback."""
+    import re
+    issue_match = re.search(r"이슈\s*ID\s*:\s*(\d+)", text)
+    if issue_match:
+        issue_id = int(issue_match.group(1))
+        review_text = re.sub(r"이슈\s*ID\s*:\s*\d+", "", text).strip()
+        result = parse_vp_response(review_text, issue_id, user)
+        if result:
+            rec = result["recommendation"]
+            replies = {
+                "ready": "✅ 검토 완료! 발행 승인 기록됨.",
+                "revise": f"🔁 수정 요청 기록됨. 메모: {result['jargon_notes'] or '(없음)'}",
+                "hold": "⏸ 보류 기록됨.",
+            }
+            say(text=replies.get(rec, "기록 완료"))
+            logger.info(f"[vp_review] 응답 처리: issue={issue_id} rec={rec}")
+            return
+    _handle_reader_feedback(user, text, source_channel="slack_dm:vp", say=say,
+                            thread_ts=None, logger=logger)
 
 
 def _handle_reader_feedback(user: str, text: str, source_channel: str, say, thread_ts, logger):

@@ -42,11 +42,11 @@ def get_today_cost(logger=None) -> float:
     return 0.0
 
 
-def log_api_cost(model: str, input_tokens: int, output_tokens: int):
+def log_api_cost(model: str, input_tokens: int, output_tokens: int, provider: str = "anthropic"):
     execute_query("""
-        INSERT INTO api_cost_log (model, input_tokens, output_tokens)
-        VALUES (%s, %s, %s)
-    """, (model, input_tokens, output_tokens))
+        INSERT INTO api_cost_log (model, input_tokens, output_tokens, provider)
+        VALUES (%s, %s, %s, %s)
+    """, (model, input_tokens, output_tokens, provider))
 
 
 def save_to_dlq(row: dict, error: str, logger):
