@@ -31,7 +31,8 @@ import httpx
 from dotenv import load_dotenv
 from core.logger import HarnessLogger
 from adapters.content.substack_publisher import fetch_draft_as_text
-from adapters.content.refiner import log_api_cost
+from adapters.content.refiner import log_api_cost, get_today_cost, DAILY_COST_LIMIT
+from core.cost_alerts import check_and_alert
 
 logger = logging.getLogger(__name__)
 
@@ -562,6 +563,7 @@ def _run_haiku_chat(user_message: str) -> str:
         messages=[{"role": "user", "content": user_message}],
     )
     log_api_cost("claude-haiku-4-5", resp.usage.input_tokens, resp.usage.output_tokens)
+    check_and_alert(get_today_cost(), DAILY_COST_LIMIT, logger)
     logger.info(
         f"[router] Tier1/Haiku 응답 tokens=in:{resp.usage.input_tokens}/out:{resp.usage.output_tokens}"
     )
@@ -622,6 +624,7 @@ def _run_tool_agent(user_message: str, dm_channel_id: str | None = None) -> str:
 
         if response.stop_reason == "end_turn":
             log_api_cost("claude-sonnet-4-5", total_input_tokens, total_output_tokens)
+            check_and_alert(get_today_cost(), DAILY_COST_LIMIT, logger)
             logger.info(
                 f"[agent] session_total tokens=input:{total_input_tokens} output:{total_output_tokens} "
                 f"tools_called={tool_calls_log}"

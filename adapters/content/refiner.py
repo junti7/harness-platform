@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from core.domain_config import load_prompt_text
 from core.database import execute_query
 from core.logger import HarnessLogger
+from core.cost_alerts import check_and_alert
 
 load_dotenv()
 
@@ -165,6 +166,7 @@ def refine(correlation_id: str = None):
 
         try:
             result = refine_signal(client, dict(row))
+            check_and_alert(get_today_cost(logger), DAILY_COST_LIMIT, logger)
         except json.JSONDecodeError as e:
             logger.error(f"  JSON 파싱 실패: {e}")
             save_to_dlq(dict(row), f"json_decode:{e}", logger)
