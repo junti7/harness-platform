@@ -24,6 +24,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
 
 from core.database import execute_query
 from core.logger import HarnessLogger
+from core.conversion import detect_and_record_upgrades
 from adapters.content.substack_publisher import fetch_subscriber_metrics
 
 
@@ -114,6 +115,17 @@ def main():
     )
 
     logger.info(f"subscriber_snapshots 저장: id={snapshot_id}")
+
+    if metrics.get("paid_subscribers") is not None:
+        upgrades = detect_and_record_upgrades(
+            snapshot_date=args.date,
+            new_paid=metrics["paid_subscribers"],
+            platform="substack",
+            logger=logger,
+        )
+        if upgrades:
+            print(f"   🎉 전환 이벤트: +{upgrades}명 유료 전환 감지")
+
     print(f"\n✅ 완료 ({args.date})")
     print(f"   free={metrics['free_subscribers']}  paid={metrics['paid_subscribers']}")
     print(f"   posts={metrics['post_count']}  drafts={metrics['draft_count']}")
