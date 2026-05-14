@@ -111,7 +111,7 @@ def get_daily_kpis(today: str | None = None) -> dict:
 
     # 파이프라인
     runs = _q(
-        "SELECT status, COUNT(*) as cnt FROM pipeline_runs WHERE DATE(created_at) = %s GROUP BY status",
+        "SELECT status, COUNT(*) as cnt FROM pipeline_runs WHERE DATE(started_at) = %s GROUP BY status",
         yesterday,
     )
     run_map = {r.get("status"): r.get("cnt") for r in runs}
