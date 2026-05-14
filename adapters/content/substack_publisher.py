@@ -388,6 +388,58 @@ def publish_draft(draft_id: int, logger: HarnessLogger, send_email: bool = False
                 raise
 
 
+def fetch_subscriber_metrics(logger: HarnessLogger | None = None) -> dict:
+    """Substack 구독자/게시물 지표 수집. 403 엔드포인트는 graceful fallback."""
+    result = {
+        "free_subscribers": None,
+        "paid_subscribers": None,
+        "post_count": None,
+        "draft_count": None,
+        "notes": "",
+    }
+    try:
+        # Published posts count
+        r_posts = httpx.get(
+            f"{_base_url()}/api/v1/posts?all=1",
+            headers=_headers(), timeout=10.0,
+        )
+        if r_posts.status_code == 200:
+            result["post_count"] = len(r_posts.json())
+        # Draft count
+        r_drafts = httpx.get(
+            f"{_base_url()}/api/v1/drafts?all=1",
+            headers=_headers(), timeout=10.0,
+        )
+        if r_drafts.status_code == 200:
+            drafts_data = r_drafts.json()
+            posts_list = drafts_data.get("posts") if isinstance(drafts_data, dict) else drafts_data
+            result["draft_count"] = len(posts_list) if posts_list else 0
+    except Exception as exc:
+        if logger:
+            logger.warning(f"Substack post 지표 수집 실패: {exc}")
+
+    # Subscriber count — Substack internal API, may return 403
+    try:
+        r_sub = httpx.get(
+            f"{_base_url()}/api/v1/publication/subscriber_counts",
+            headers=_headers(), timeout=10.0,
+        )
+        if r_sub.status_code == 200:
+            data = r_sub.json()
+            result["free_subscribers"] = data.get("free_subscribers") or data.get("free") or 0
+            result["paid_subscribers"] = data.get("paid_subscribers") or data.get("paid") or 0
+        else:
+            result["notes"] = f"subscriber_counts HTTP {r_sub.status_code}"
+            if logger:
+                logger.warning(f"구독자 수 조회 불가 (HTTP {r_sub.status_code}) — 수동 입력 필요")
+    except Exception as exc:
+        result["notes"] = f"subscriber_counts error: {exc}"
+        if logger:
+            logger.warning(f"Substack 구독자 수 조회 실패: {exc}")
+
+    return result
+
+
 def publish_weekly_issue(
     signals: list[dict],
     issue_number: int,
