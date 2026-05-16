@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>Physical AI Weekly #001</title>
+  <style>
+    @page { size: A4; margin: 18mm 16mm; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+      color: #111827;
+      line-height: 1.62;
+      font-size: 11.5pt;
+    }
+    h1 { font-size: 24pt; margin: 0 0 18px; border-bottom: 2px solid #111827; padding-bottom: 10px; }
+    h2 { font-size: 16pt; margin: 28px 0 10px; }
+    h3 { font-size: 13pt; margin: 22px 0 8px; }
+    h4, h5, h6 { font-size: 11.5pt; margin: 14px 0 6px; }
+    p { margin: 7px 0; }
+    .bullet { padding-left: 14px; }
+    a { color: #1d4ed8; text-decoration: none; }
+    pre {
+      white-space: pre-wrap;
+      background: #f3f4f6;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 9.5pt;
+    }
+    hr { border: 0; border-top: 1px solid #d1d5db; margin: 22px 0; }
+  </style>
+</head>
+<body>
+<h1>Physical AI Weekly #001 - 2026-05-10</h1>
+
+<p>Status: draft - internal review</p>
+<p>Audience: free weekly issue</p>
+<p>Language: Korean primary</p>
+<p>Product: Physical AI Weekly</p>
+<p>Required before external publish: Vice President review, Legal review, Red Team review, QA clear, President approval</p>
+
+<p>---</p>
+
+<h2>이번 주 한 줄</h2>
+
+<p>Physical AI의 경쟁축이 &quot;멋진 로봇 데모&quot;에서 &quot;대량 생산, 현장 데이터, 로봇용 추론 모델, 손 조작 데이터&quot;로 이동하고 있다. 즉, 로봇 산업의 핵심 질문은 이제 &quot;움직이나?&quot;가 아니라 &quot;많이 만들고, 오래 굴리고, 현장에서 계속 학습시킬 수 있나?&quot;에 가까워지고 있다.</p>
+
+<p>---</p>
+
+<h2>Signal 1 - Figure 03: 휴머노이드의 병목이 연구실에서 공장으로 이동</h2>
+
+<p><strong>What happened</strong></p>
+
+<p>Figure는 2026-04-29 공식 글에서 BotQ 생산 시설을 통해 Figure 03 생산 속도를 하루 1대에서 시간당 1대로 끌어올렸고, 3세대 휴머노이드 350대 이상을 생산했다고 밝혔다. 같은 글에서 500개 이상 배터리팩 출하, 9,000개 이상 actuator(로봇 관절을 움직이는 구동 부품) 생산, 80개 이상의 end-of-line(출하 전 최종 검사) 기능 검증, OTA(원격 소프트웨어 업데이트)와 fleet management system(여러 대의 로봇을 관리하는 운영 시스템)까지 언급했다.</p>
+
+<p>Source: <a href="https://www.figure.ai/news/ramping-figure-03-production">Figure - Ramping Figure 03 Production</a></p>
+
+<p><strong>Why it matters</strong></p>
+
+<p>휴머노이드 경쟁의 초점이 &quot;시연 영상&quot;에서 &quot;fleet scale&quot;로 넘어가고 있다. 로봇은 소프트웨어와 달리 실제 하드웨어가 많아질수록 고장, 회수, 서비스, 데이터 수집, 품질관리 문제가 폭발한다. Figure가 강조한 내용도 모델 성능보다 제조 수율, 검사 포인트, field service, fleet-wide upgrade였다.</p>
+
+<p>이건 중요한 신호다. Physical AI에서 데이터 flywheel은 단순히 인터넷 데이터를 긁어서 만들 수 없다. 실제 로봇이 현장에 나가고, 실패하고, 수리되고, 다시 업데이트되는 루프가 있어야 한다.</p>
+
+<p><strong>Korean reader implication</strong></p>
+
+<p>한국 독자에게 이 신호는 &quot;휴머노이드 회사만 봐야 한다&quot;는 뜻이 아니다. 오히려 부품, 배터리, actuator, 센서, MES, EOL 검사, 현장 서비스 소프트웨어, 로봇 유지보수 인력 같은 주변 가치사슬을 봐야 한다는 뜻에 가깝다.</p>
+
+<p>한국 제조업은 로봇을 직접 만들지 않아도, 로봇을 대량으로 굴리기 위해 필요한 품질관리와 생산 자동화 노하우를 이미 많이 갖고 있다. Physical AI 시대의 조용한 기회는 로봇 본체보다 &quot;로봇을 공장 제품처럼 안정적으로 만드는 운영 시스템&quot;에 있을 수 있다.</p>
+
+<p><strong>Risk / counterargument</strong></p>
+
+<p>Figure의 발표는 회사 자체 자료다. 생산 속도와 fleet(운영 중인 로봇 집단) 규모가 늘었다고 해서 곧바로 상업적 수익성이나 안전성이 검증된 것은 아니다. 또한 휴머노이드가 실제 고객 현장에서 어떤 경제성을 내는지는 아직 별도 검증이 필요하다.</p>
+
+<p>---</p>
+
+<h2>Signal 2 - Gemini Robotics-ER 1.6: 로봇의 &quot;눈으로 판단하는 능력&quot;이 제품화되고 있다</h2>
+
+<p><strong>What happened</strong></p>
+
+<p>Google DeepMind는 2026-04-14 Gemini Robotics-ER 1.6을 공개했다. 이 모델은 로봇이 물리 세계를 이해하고 계획하는 고수준 reasoning 모델(상황을 해석하고 다음 행동을 판단하는 모델)이며, spatial reasoning(공간 판단), multi-view understanding(여러 카메라 시점 통합 이해), task planning(작업 계획), success detection(작업 성공 여부 판단), instrument reading(계기판 읽기)을 강조한다. Google은 이 모델을 Gemini API와 Google AI Studio를 통해 개발자에게 제공한다고 밝혔다.</p>
+
+<p>Source: <a href="https://deepmind.google/blog/gemini-robotics-er-1-6/">Google DeepMind - Gemini Robotics-ER 1.6</a></p>
+
+<p><strong>Why it matters</strong></p>
+
+<p>로봇에게 중요한 것은 &quot;팔을 움직이는 제어&quot;만이 아니다. 실제 현장에서는 작업이 끝났는지, 실패했는지, 어느 물체를 집어야 하는지, 게이지가 정상 범위인지 판단해야 한다. DeepMind가 강조한 success detection과 instrument reading은 이 점에서 의미가 있다.</p>
+
+<p>특히 instrument reading은 휴머노이드보다 더 현실적인 초기 시장을 보여준다. 공장, 발전소, 물류센터, 실험실 같은 곳에는 이미 사람이 주기적으로 확인하는 게이지와 장비가 많다. 로봇이 사람처럼 모든 일을 하는 것보다, 먼저 &quot;돌아다니며 보고 판단하는 일&quot;을 잘하는 쪽이 상업화에 가까울 수 있다.</p>
+
+<p><strong>Korean reader implication</strong></p>
+
+<p>한국의 제조, 플랜트, 반도체, 배터리 공장에는 이런 시각 점검 업무가 많다. 따라서 Physical AI의 초기 상용화는 집안일 로봇보다 산업 현장 inspection, 설비 모니터링, 위험 구역 순찰, 반복 점검에서 먼저 나타날 가능성이 있다.</p>
+
+<p><strong>Risk / counterargument</strong></p>
+
+<p>모델이 API로 제공된다고 해서 곧바로 현장 로봇에 넣을 수 있는 것은 아니다. 실제 배포에는 네트워크 지연, 카메라 품질, 안전 제어기, 책임 소재, 현장 시스템 연동 문제가 붙는다. 또한 Google의 benchmark 개선이 곧바로 모든 공장 조건에서의 신뢰성을 의미하지는 않는다.</p>
+
+<p>---</p>
+
+<h2>Signal 3 - Genesis AI: &quot;손 조작 데이터&quot;가 Physical AI의 핵심 자산으로 부상</h2>
+
+<p><strong>What happened</strong></p>
+
+<p>Genesis AI는 2026-05-07 GENE-26.5를 공개했다. 회사 자체 발표 기준으로, 회사는 이를 로봇 조작을 위한 foundation model system(여러 작업에 재사용되는 기반 모델 시스템)으로 설명하면서 자체 dexterous robotic hand(정교한 손 조작용 로봇 손), data collection glove(사람 손동작을 기록하는 장갑), human-centric data engine(사람 작업 데이터를 학습에 쓰는 데이터 엔진)을 함께 제시했다. 공개 자료에는 요리, 실험실 pipetting(액체를 정밀하게 옮기는 실험 작업), wire harnessing(전선 묶음 조립), Rubik&#x27;s Cube, multi-object grasping(여러 물체 동시 집기) 같은 조작 과제가 포함됐다.</p>
+
+<p>Sources:</p>
+<p class='bullet'>- <a href="https://www.genesis.ai/press/press-release-gene-265">Genesis AI - Press Release: GENE 26.5</a></p>
+<p class='bullet'>- <a href="https://www.genesis.ai/blog/gene-26-5-advancing-robotic-manipulation-to-human-level">Genesis AI - GENE-26.5: Advancing Robotic Manipulation to Human Level</a></p>
+
+<p><strong>Why it matters</strong></p>
+
+<p>LLM은 인터넷 텍스트로 성장했지만, 로봇은 &quot;물리 행동 데이터&quot;가 필요하다. 특히 손 조작은 난이도가 높다. 물체의 무게, 마찰, 변형, 접촉 위치, 힘 조절이 모두 영향을 준다.</p>
+
+<p>Genesis AI의 신호는 모델보다 데이터 수집 방식에 있다. 사람이 장갑을 끼고 실제 작업을 하면서 로봇 손과 1:1에 가까운 방식으로 데이터를 만들 수 있다면, 로봇 학습의 병목이 완화될 수 있다.</p>
+
+<p><strong>Korean reader implication</strong></p>
+
+<p>한국 제조업에서 wire harnessing, 조립, 검사, 실험실 자동화, 식품 제조, 전자부품 취급 같은 영역은 아직 사람 손에 많이 의존한다. 이런 업무는 &quot;로봇 팔이 있다&quot;만으로 자동화되지 않는다. 손 조작 데이터와 현장 작업 데이터를 누가 많이 확보하느냐가 중요해진다.</p>
+
+<p><strong>Risk / counterargument</strong></p>
+
+<p>Genesis AI의 자료는 매우 공격적인 claim을 포함한다. 공개 데모가 실제 고객 현장에서 반복 가능한 성능인지, 비용이 맞는지, 안전 인증과 유지보수가 가능한지는 아직 별도 확인이 필요하다. 데모가 뛰어나도 상업화는 훨씬 느릴 수 있다.</p>
+
+<p>---</p>
+
+<h2>Signal 4 - NVIDIA: Physical AI의 &quot;운영체제&quot; 자리를 노리는 플랫폼 전쟁</h2>
+
+<p><strong>What happened</strong></p>
+
+<p>NVIDIA는 2026-03-16 GTC에서 Cosmos world models, Isaac simulation frameworks, Isaac GR00T models를 중심으로 Physical AI 생태계를 확장한다고 발표했다. 발표에는 ABB Robotics, FANUC, Figure, KUKA, Skild AI, Universal Robots, YASKAWA 등 산업용 로봇과 휴머노이드 관련 기업들이 포함됐다.</p>
+
+<p>Source: <a href="https://investor.nvidia.com/news/press-release-details/2026/NVIDIA-and-Global-Robotics-Leaders-Take-Physical-AI-to-the-Real-World/">NVIDIA - NVIDIA and Global Robotics Leaders Take Physical AI to the Real World</a></p>
+
+<p><strong>Why it matters</strong></p>
+
+<p>Physical AI는 모델 하나로 끝나지 않는다. 시뮬레이션, 합성 데이터, robot learning(로봇 학습), edge inference(로봇 또는 현장 장비에서 직접 AI를 실행하는 방식), digital twin(현실 공장이나 장비를 가상으로 복제한 모델), fleet validation(여러 대의 로봇을 대상으로 한 검증)이 함께 필요하다. NVIDIA는 이 전체 stack을 묶어 로봇 개발의 기본 인프라가 되려는 위치에 있다.</p>
+
+<p>AI 서버에서 GPU가 &quot;삽과 곡괭이&quot;였다면, Physical AI에서는 simulation + robotics model + edge compute + deployment framework가 새로운 삽과 곡괭이가 될 수 있다.</p>
+
+<p><strong>Korean reader implication</strong></p>
+
+<p>한국 기업이 로봇 완제품 경쟁에서 뒤처져도, simulation workflow, industrial digital twin, edge AI module, 로봇 검증 서비스, 공장 자동화 integration에서는 기회가 있다. 특히 대기업 제조 현장과 중견 제조업의 자동화 니즈를 연결하는 회사가 나올 수 있다.</p>
+
+<p><strong>Risk / counterargument</strong></p>
+
+<p>NVIDIA 생태계가 강해질수록 참여 기업은 빠르게 개발할 수 있지만 vendor dependency도 커진다. 또한 발표 자료에는 앞으로 제공될 기능과 파트너십이 섞여 있으므로, 실제 가용성과 비용은 개별적으로 확인해야 한다.</p>
+
+<p>---</p>
+
+<h2>Signal 5 - Meta의 ARI 인수: Big Tech가 &quot;로봇 몸체&quot;보다 &quot;로봇 지능층&quot;을 사고 있다</h2>
+
+<p><strong>What happened</strong></p>
+
+<p>TechCrunch는 2026-05-01 Meta가 humanoid robotics startup Assured Robot Intelligence(ARI)를 인수했다고 보도했다. 보도에 따르면 ARI 팀은 Meta의 Superintelligence Labs에 합류하며, ARI는 humanoid robots가 household chores 같은 physical labor를 수행하기 위한 foundation model을 개발하고 있었다.</p>
+
+<p>Source: <a href="https://techcrunch.com/2026/05/01/meta-buys-robotics-startup-to-bolster-its-humanoid-ai-ambitions/">TechCrunch - Meta buys robotics startup to bolster its humanoid AI ambitions</a></p>
+
+<p><strong>Why it matters</strong></p>
+
+<p>Meta가 당장 휴머노이드 하드웨어 회사를 사는 것이 아니라 robot intelligence 팀을 흡수했다는 점이 중요하다. Physical AI 경쟁은 로봇 본체의 디자인 경쟁이면서 동시에 &quot;어떤 몸체에도 들어갈 수 있는 지능층&quot; 경쟁이다.</p>
+
+<p>스마트폰에서 OS와 앱 생태계가 하드웨어보다 큰 권력을 만들었듯, 로봇에서도 perception(시각/센서 인식), planning(작업 계획), whole-body control(몸 전체 움직임 제어), self-learning(실패와 경험을 통한 개선)을 누가 잡느냐가 핵심이 될 수 있다.</p>
+
+<p><strong>Korean reader implication</strong></p>
+
+<p>한국 기업은 로봇 하드웨어 제조와 부품에는 강점이 있지만, 범용 robot brain과 데이터 플랫폼에서는 글로벌 빅테크와 직접 경쟁해야 한다. 따라서 한국 시장에서는 &quot;완전한 범용 지능&quot;보다 특정 현장에 특화된 vertical intelligence가 현실적일 수 있다. 예를 들면 반도체 fab 점검, 배터리 공정 물류, 조선소 안전 순찰, 병원 물류처럼 현장 데이터와 운영 지식이 깊은 영역이다.</p>
+
+<p><strong>Risk / counterargument</strong></p>
+
+<p>인수 자체가 제품 출시를 보장하지 않는다. Meta가 소비자용 휴머노이드를 실제로 출시할지, 플랫폼 전략으로 갈지, 연구 인력 확보에 그칠지는 아직 불확실하다.</p>
+
+<p>---</p>
+
+<h2>이번 주 패턴</h2>
+
+<p>이번 주 신호들을 하나로 묶으면 방향은 꽤 분명하다.</p>
+
+<p>1. <strong>생산 규모</strong>: Figure는 더 많은 로봇을 만들고 굴리는 쪽으로 간다.</p>
+<p>2. <strong>현장 추론</strong>: DeepMind는 로봇이 보고 판단하는 reasoning layer를 API화하고 있다.</p>
+<p>3. <strong>조작 데이터</strong>: Genesis AI는 손과 데이터 수집 장치를 함께 설계한다.</p>
+<p>4. <strong>플랫폼 인프라</strong>: NVIDIA는 simulation, model, edge compute를 묶는다.</p>
+<p>5. <strong>빅테크 진입</strong>: Meta는 로봇 지능 인력을 흡수한다.</p>
+
+<p>결론적으로 Physical AI의 초반 승자는 &quot;가장 멋진 로봇 영상&quot;을 만든 회사가 아닐 수 있다. 더 중요한 것은 다음 네 가지다.</p>
+
+<p class='bullet'>- 실제 로봇을 많이 굴릴 수 있는 운영 능력</p>
+<p class='bullet'>- 실패 데이터를 빠르게 모으고 업데이트하는 loop</p>
+<p class='bullet'>- 물리 세계를 읽고 판단하는 reasoning layer</p>
+<p class='bullet'>- 특정 현장에서 경제성이 나오는 좁은 사용 사례</p>
+
+<p>---</p>
+
+<h2>한국 독자가 이번 주 기억할 것</h2>
+
+<p>Physical AI를 볼 때 &quot;휴머노이드가 집안일을 해줄까?&quot;만 보면 너무 좁다. 더 현실적인 질문은 다음이다.</p>
+
+<p class='bullet'>- 공장과 물류센터에서 사람이 반복적으로 보고 판단하는 업무는 무엇인가?</p>
+<p class='bullet'>- 사람 손에 의존하는 조립, 검사, 실험, 포장 작업 중 데이터화 가능한 일은 무엇인가?</p>
+<p class='bullet'>- 로봇 본체보다 먼저 돈이 되는 주변 인프라는 무엇인가?</p>
+<p class='bullet'>- 한국 제조업이 이미 가진 강점은 로봇 시대에 어떤 식으로 재포장될 수 있는가?</p>
+
+<p>---</p>
+
+<h2>향후 심화 노트 후보</h2>
+
+<p>아래 항목은 향후 심화 콘텐츠 후보이며, 현재 이 초안은 결제 요청이나 유료 상품 판매 안내가 아니다.</p>
+
+<p><strong>&quot;로봇 데이터 flywheel: 왜 Physical AI 회사는 모델 회사이면서 동시에 제조/운영 회사가 되어야 하는가&quot;</strong></p>
+
+<p>향후 심화 노트에서는 Figure, Genesis AI, NVIDIA 사례를 묶어 다음 질문을 다룰 수 있다.</p>
+
+<p class='bullet'>- 로봇 데이터는 왜 인터넷 데이터와 다른가?</p>
+<p class='bullet'>- fleet scale이 커질수록 어떤 데이터가 쌓이는가?</p>
+<p class='bullet'>- 한국 제조업에서 데이터 flywheel을 만들 수 있는 niche는 어디인가?</p>
+<p class='bullet'>- 휴머노이드 완제품이 아니라도 돈이 될 수 있는 주변 시장은 무엇인가?</p>
+
+<p>---</p>
+
+<h2>이번 주 모니터링 항목</h2>
+
+<p class='bullet'>- Figure 03의 실제 고객 배치와 반복 작업 성능</p>
+<p class='bullet'>- Gemini Robotics-ER 1.6의 developer adoption과 산업 점검 로봇 적용 가능성</p>
+<p class='bullet'>- Genesis AI가 공개할 첫 general-purpose robot의 form factor</p>
+<p class='bullet'>- NVIDIA Isaac / Cosmos 기반의 산업용 robot validation 사례</p>
+<p class='bullet'>- Meta가 ARI 인수 후 공개할 robot intelligence roadmap</p>
+
+<p>---</p>
+
+<h2>Disclaimer</h2>
+
+<p>본 콘텐츠는 공개 자료와 회사 자체 발표, 언론 보도를 기반으로 한 정보 제공 목적의 분석입니다. 출처의 정확성, 완전성, 최신성은 독립적으로 보증되지 않습니다. 본 콘텐츠는 투자, 세무, 법률, 의료 자문이 아니며, 특정 종목, 토큰, 회사 지분의 매수 또는 매도를 권유하지 않습니다. 발행자는 유사투자자문업 등록을 하지 않았으며 투자 자문을 제공하지 않습니다. 모든 판단과 의사결정의 책임은 독자에게 있습니다.</p>
+
+<p>---</p>
+
+<h1>Internal Review Appendix - Not for Publication</h1>
+
+<h2>Vice President Review Request</h2>
+
+<p>검토 초점:</p>
+
+<p class='bullet'>- 일반 한국어 독자가 끝까지 읽을 수 있는지</p>
+<p class='bullet'>- &quot;Physical AI&quot;를 모르는 독자도 핵심을 이해하는지</p>
+<p class='bullet'>- 너무 기술자 중심으로 들리는 문장이 있는지</p>
+<p class='bullet'>- 공유하고 싶은 제목/문장 후보가 있는지</p>
+<p class='bullet'>- paid deep note teaser가 결제 욕구를 만들 가능성이 있는지</p>
+
+<h2>Legal Pre-Check</h2>
+
+<p>Current status: not approved</p>
+
+<p>Low-risk points:</p>
+
+<p class='bullet'>- 특정 주식/토큰 매수/매도 권유 없음</p>
+<p class='bullet'>- 투자 수익률, 가격 전망, 보장 표현 없음</p>
+<p class='bullet'>- 공개 출처 링크 포함</p>
+<p class='bullet'>- disclaimer 포함</p>
+
+<p>Items requiring Legal Counsel review:</p>
+
+<p class='bullet'>- NVIDIA, Meta, Figure 등 상장/비상장 회사 언급이 투자 판단으로 오인되지 않는지</p>
+<p class='bullet'>- Genesis AI claim을 회사 발표로 명확히 귀속했는지</p>
+<p class='bullet'>- paid teaser가 과장 광고로 보이지 않는지</p>
+
+<h2>Red Team Review Prompt</h2>
+
+<p>서로 다른 LLM 최소 2개에 아래 질문으로 독립 검토:</p>
+
+<p>1. 이 이슈에서 source가 약한 factual claim은 무엇인가?</p>
+<p>2. 과장된 표현, 투자 자문으로 오인될 문장, 법률 리스크가 있는 문장은 무엇인가?</p>
+<p>3. 한국 일반 독자가 이해하기 어려운 부분은 어디인가?</p>
+<p>4. 이번 주 핵심 thesis가 틀렸다면 가장 그럴듯한 반례는 무엇인가?</p>
+<p>5. 삭제하거나 더 보수적으로 바꿔야 할 문장은 무엇인가?</p>
+
+<h2>QA Checklist</h2>
+
+<p class='bullet'>- [x] issue title exists</p>
+<p class='bullet'>- [x] 5 signals included</p>
+<p class='bullet'>- [x] source links included</p>
+<p class='bullet'>- [x] Korean reader implication included</p>
+<p class='bullet'>- [x] risk / counterargument included</p>
+<p class='bullet'>- [x] paid teaser included</p>
+<p class='bullet'>- [x] disclaimer included</p>
+<p class='bullet'>- [ ] external links checked at publish time</p>
+<p class='bullet'>- [ ] Legal review complete</p>
+<p class='bullet'>- [ ] Red Team review complete</p>
+<p class='bullet'>- [ ] QA clear</p>
+<p class='bullet'>- [ ] President publish approval</p>
+</body>
+</html>

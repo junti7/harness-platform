@@ -1,0 +1,20 @@
+{
+  "generated_at": "2026-05-11T05:24:28",
+  "owner": "Codex Chief of Staff",
+  "task_kind": "benchmark",
+  "title": "Competitor report benchmark",
+  "objective": "Compare world-class paid AI and tech intelligence report products, extract differentiators, and identify monetizable gaps for Harness.",
+  "input_artifacts": [
+    "docs/COMPETITIVE_LANDSCAPE.md",
+    "docs/MONETIZATION_STRATEGY.md"
+  ],
+  "output_artifacts": [
+    "docs/reports/COMPETITOR_BENCHMARK_ROUND1.md"
+  ],
+  "checks": [
+    "Cite only information from provided materials or explicitly marked assumptions.",
+    "Flag risks if the proposed product is below premium benchmark quality."
+  ],
+  "notes": [],
+  "callback_route": "agent_openclaw_routing"
+}

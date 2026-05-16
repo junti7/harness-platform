@@ -1,0 +1,36 @@
+<!doctype html><html><head><meta charset='utf-8'><style>
+    @page { size: 1920px 1080px; margin: 0; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact; }
+    body { margin: 0; padding: 0; background: #111; font-family: "Apple SD Gothic Neo", sans-serif; }
+    .slide { 
+        width: 1920px; height: 1080px; background: #fff; margin: 0 auto; 
+        page-break-after: always; position: relative; padding: 80px 120px 120px; 
+        display: flex; flex-direction: column; overflow: hidden; 
+    }
+    
+    h1.slide-title { font-size: 50pt; font-weight: 900; color: #111827; margin: 0 0 50px; letter-spacing: -0.05em; border-left: 18px solid #2563eb; padding-left: 35px; }
+    .layout-cover { background: #111827; color: white; display: flex; align-items: center; justify-content: center; }
+    .layout-cover h1 { font-size: 85pt; border: none; margin: 0; font-weight: 900; line-height: 1.0; }
+    .layout-cover .subtitle { font-size: 25pt; color: #3b82f6; margin-top: 40px; font-weight: 700; letter-spacing: 0.1em; }
+
+    /* GRID CONSTRAINTS TO PREVENT OVERLAP */
+    .split-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; height: 580px; margin-bottom: 20px; }
+    .full-pane { flex: 1; min-height: 0; overflow: hidden; margin-bottom: 0; }
+
+    .text-pane li, .full-pane li { font-size: 24pt; line-height: 1.45; margin-bottom: 28px; color: #374151; padding-left: 50px; position: relative; list-style: none; }
+    .text-pane li::before, .full-pane li::before { content: ""; position: absolute; left: 0; top: 10pt; width: 20pt; height: 20pt; background: #2563eb; border-radius: 4px; }
+
+    .visual-pane { background: #f9fafb; border: 3px solid #e5e7eb; border-radius: 35px; display: flex; align-items: center; justify-content: center; padding: 40px; height: 100%; }
+    .visual-pane img { max-width: 100%; max-height: 100%; object-fit: contain; filter: drop-shadow(0 20px 40px rgba(0,0,0,0.12)); }
+
+    /* FOOTER SAFE ZONE - RIGID SEPARATION */
+    .footer-safe-zone { margin-top: auto; padding-top: 20px; min-height: 120px; }
+    .footnotes { border-top: 2px solid #f3f4f6; padding-top: 20px; display: flex; gap: 35px; flex-wrap: wrap; }
+    .footnotes span { font-size: 14pt; color: #6b7280; line-height: 1.3; }
+    .fn-num { color: #2563eb; font-weight: 800; margin-right: 5px; }
+    .fn-ref { vertical-align: super; font-size: 16pt; color: #2563eb; font-weight: 900; }
+    
+    .meta { position: absolute; bottom: 40px; left: 120px; font-size: 16pt; color: #9ca3af; font-weight: 900; }
+    .section-h3 { font-size: 28pt; color: #2563eb; font-weight: 800; margin: 30px 0 20px; border-bottom: 4px solid #f3f4f6; padding-bottom: 12px; }
+    .section-h2 { font-size: 32pt; color: #111827; font-weight: 800; margin: 25px 0 20px; }
+    </style></head><body><div class="slide layout-default"><h1 class="slide-title">Inventory Decision Brief #001</h1><div class="full-pane"><ul><div class="section-h2">3-Line Summary</div><li>1. 현재 최우선 과제는 `부진 재고 5억을 30일 안에 현금화하려면 어떤 채널 조합과 가격 가드레일이 필요한가?`에 대한 실행 가능한 다음 단계 정리다.</li><li>2. 이 고객은 `operator` persona이며 현재 관심 축은 `inventory_clearance` 중심으로 읽힌다.</li><li>3. 이번 브리프는 기본 profile보다 최신 override와 open question을 우선 반영해 조립됐다.</li><div class="section-h2">Customer Fit</div><li>External ref: `demo-operator-inventory-001`</li><li>Persona: `operator`</li><li>Tier: `paid`</li><li>Preferred language: `ko`</li><li>Knowledge level: `intermediate`</li><li>Preferred depth: `structured`</li><div class="section-h2">Active Overrides</div><li>`focus_shift`: current_focus=inventory_liquidation_over_long_term_brand_story (scope=brief, priority=high)</li><li>`opening_format`: type=comparison_table_first (scope=brief, priority=high)</li><li>`tone`: style=operator_plain (scope=campaign, priority=high)</li><div class="section-h2">Priority Questions</div><li>| Priority | Status | Question | Due |</li><li>| --- | --- | --- | --- |</li><li>| urgent | in_progress | 부진 재고 5억을 30일 안에 현금화하려면 어떤 채널 조합과 가격 가드레일이 필요한가? | 2026-05-16 |</li><li>| high | in_progress | 브랜드 훼손을 최소화하면서도 회수율을 높일 수 있는 비공개 판매 옵션은 무엇인가? | 2026-05-18 |</li><li>[urgent/in_progress] 부진 재고 5억을 30일 안에 현금화하려면 어떤 채널 조합과 가격 가드레일이 필요한가? (due: 2026-05-16)</li><li>[high/in_progress] 브랜드 훼손을 최소화하면서도 회수율을 높일 수 있는 비공개 판매 옵션은 무엇인가? (due: 2026-05-18)</li><div class="section-h2">Watchlist</div><li>| Entity Type | Entity Key | Priority | Why it matters |</li><li>| --- | --- | --- | --- |</li><li>| channel | closed_b2b_dump | high | 브랜드 노출 최소화 현금화 채널 |</li><li>| channel | live_commerce | high | 30일 내 소진용 빠른 판매 채널 |</li><li>| metric | gross_margin_floor | high | 손실 허용 한계선 |</li><li>| sku_group | slow_moving_top_20 | high | 회수율이 낮은 부진 SKU 묶음 |</li><li>`channel` / `closed_b2b_dump`: 브랜드 노출 최소화 현금화 채널</li><li>`channel` / `live_commerce`: 30일 내 소진용 빠른 판매 채널</li><li>`metric` / `gross_margin_floor`: 손실 허용 한계선</li><li>`sku_group` / `slow_moving_top_20`: 회수율이 낮은 부진 SKU 묶음</li><div class="section-h2">Customer Scorecard</div><li>| Dimension | Current signal | Read |</li><li>| --- | --- | --- |</li><li>| Channel readiness | 2 high-priority channels tracked | Strong |</li><li>| Cash recovery urgency | explicit 30-day recovery goal | Strong |</li><li>| Brand-risk sensitivity | brand damage concern captured | High caution |</li><li>| Decision speed | 1 urgent question(s) open | Fast-cycle needed |</li><li>| Delivery format fit | comparison-table-first override active | Matched |</li><div class="section-h2">Interest Tags</div><li>`inventory_clearance` (weight=1.0)</li><li>`pricing_strategy` (weight=0.9)</li><li>`channel_mix` (weight=0.85)</li><li>`cash_recovery` (weight=0.8)</li><div class="section-h2">Memory Signals</div><li>`hesitation` / `brand_damage_risk`: 노골적인 할인 노출은 브랜드 가치 훼손 우려가 커서 비공개 채널 선호가 높다.</li><li>`consulting_note` / `primary_goal`: 최우선 목표는 30일 내 현금 회수이며, 단기 손익보다 재고 부담 제거를 더 중시한다.</li><li>`feedback` / `table_first`: 긴 설명보다 채널별 회수율/브랜드리스크/실행속도 비교표를 먼저 원한다.</li><div class="section-h2">Reusable Product Upgrades</div><li>`inventory_operator_brief` / `format_change`: 운영자 고객용 브리프는 채널 비교표, 브랜드 리스크, 현금 회수 우선순위를 먼저 보여준다.</li><div class="section-h2">Next Actions</div><li>고객의 최우선 질문 기준으로 다음 리서치 태스크를 분해</li><li>watchlist 상위 3개 대상의 최신 자료를 확보</li><li>다음 브리프에서 열린 질문 중 최소 1개를 answered 상태로 전환</li><div class="section-h2">Draft Note</div><li>이 문서는 외부 자료 리서치 이전에 customer memory와 override를 기반으로 자동 조립된 초안이다.</li></ul></div><div class="meta">ISSUE #002 | PAGE 1</div></div></body></html>

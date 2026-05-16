@@ -8,6 +8,9 @@ REPO_DIR="$HOME/projects/harness-platform"
 DB_NAME="harness_prod"
 PLIST_NAME="com.harness.pipeline"
 PLIST_PATH="$HOME/Library/LaunchAgents/$PLIST_NAME.plist"
+OPENCLAW_PLIST_NAME="com.harness.openclaw-bridge"
+OPENCLAW_PLIST_PATH="$HOME/Library/LaunchAgents/$OPENCLAW_PLIST_NAME.plist"
+SKIP_GIT_SYNC="${HARNESS_SKIP_GIT_SYNC:-0}"
 
 echo "======================================"
 echo " Harness Platform 셋업 시작"
@@ -88,8 +91,12 @@ fi
 echo ""
 echo "[5/7] 레포 확인..."
 if [ -d "$REPO_DIR" ]; then
-    echo "  → 이미 존재함. git pull 실행..."
-    git -C "$REPO_DIR" pull
+    if [ "$SKIP_GIT_SYNC" = "1" ]; then
+        echo "  → 이미 존재함. HARNESS_SKIP_GIT_SYNC=1 이므로 git sync 건너뜀"
+    else
+        echo "  → 이미 존재함. git pull 실행..."
+        git -C "$REPO_DIR" pull
+    fi
 else
     echo "  → 클론 중..."
     mkdir -p "$HOME/projects"
@@ -152,6 +159,7 @@ echo ""
 echo "[+] launchd 스케줄 등록 (매일 08:00 KST)..."
 
 mkdir -p "$REPO_DIR/logs"
+mkdir -p "$REPO_DIR/runtime"
 
 cat > "$PLIST_PATH" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -198,6 +206,14 @@ launchctl unload "$PLIST_PATH" 2>/dev/null || true
 launchctl load "$PLIST_PATH"
 echo "  → 등록 완료"
 
+echo ""
+echo "[+] OpenClaw bridge heartbeat 등록 (5분 주기)..."
+sed "s|__REPO_DIR__|$REPO_DIR|g" \
+    "$REPO_DIR/infra/com.harness.openclaw-bridge.plist.template" > "$OPENCLAW_PLIST_PATH"
+launchctl unload "$OPENCLAW_PLIST_PATH" 2>/dev/null || true
+launchctl load "$OPENCLAW_PLIST_PATH"
+echo "  → OpenClaw bridge heartbeat 등록 완료"
+
 # ── 완료 ──────────────────────────────────
 echo ""
 echo "======================================"
@@ -208,4 +224,5 @@ echo "다음 단계:"
 echo "  1. .env에 API 키 입력: nano $REPO_DIR/.env"
 echo "  2. 즉시 실행 테스트:   launchctl start $PLIST_NAME"
 echo "  3. 로그 확인:          tail -f $REPO_DIR/logs/pipeline.log"
+echo "  4. OpenClaw 상태 확인: cat $REPO_DIR/runtime/openclaw_status.json"
 echo ""

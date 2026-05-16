@@ -1,5 +1,5 @@
 # PLATFORM.md - Harness Autonomous Automation Platform
-# Version: 2.0 | 도메인: 불가지론적(Agnostic)
+# Version: 2.1 | 도메인: 불가지론적(Agnostic)
 # 이 문서는 도메인이 바뀌어도 변하지 않는 플랫폼 헌법이다.
 
 ---
@@ -31,7 +31,7 @@
 
 ### Tier 2: On-device AI 필터링 (Local LLM Gate)
 - 역할: Raw 데이터의 대량 1차 처리 (분류, 중복 제거, 가치 점수화)
-- 도구: Ollama + Gemma 4 (로컬 구동)
+- 도구: Ollama + `gemma2:27b` 기본. 하드웨어/성능 제약에 따라 동급 local model로 교체 가능하되 `.env`의 `OLLAMA_MODEL`과 실행 로그에 실제 모델명을 남긴다.
 - AI 사용: 로컬 LLM (무료, 무제한)
 - 비용: 없음 (전기세 제외)
 - 입력: raw_signals
@@ -51,7 +51,7 @@
 - 비용 통제 규약:
   * Prompt Caching 강제 적용 (고정 시스템 프롬프트)
   * 배치 처리 가능한 작업은 실시간 API 호출 금지
-  * 입력 토큰 한도: 요청당 최대 4,000 토큰
+  * 입력 토큰 한도: 요청당 최대 4,000 토큰을 목표로 한다. 코드가 강제하지 않는 경로에서는 호출 전 추정치와 실제 입력 크기를 로그에 남긴다.
   * 일일 API 비용 한도 초과 시 자동 중단 (킬스위치)
 
 ### Tier 4: 클라우드 배포 (Cloud Publisher)
@@ -101,11 +101,13 @@ Task execute         → 실제 파이프라인 실행
 ## 5. 안정성 가드 (모든 도메인 공통 적용)
 
 ### 5.1 Liveness Probe
-- 모든 외부 API 10초마다 상태 확인
-- 3회 연속 실패 시 해당 소스 Pause
+- 수집 실행 시점마다 대상 소스의 liveness를 확인한다.
+- 장기 실행 daemon이 있는 경우 10초 주기 probe를 사용할 수 있으나, batch collector에서는 source별 실행 시점 probe로 대체한다.
+- 3회 연속 실패 시 해당 소스 Pause 또는 cooldown 처리한다.
 
 ### 5.2 Stale Data Guard
-- ingested_at 기준 30분 초과 데이터 처리 스킵
+- `source_catalog.rate_limit_policy.stale_minutes` 또는 source별 기본 stale window를 따른다.
+- 논문/RSS/기업 블로그처럼 발행 주기가 다른 소스를 단일 30분 기준으로 처리하지 않는다.
 
 ### 5.3 Semantic Sanity Check
 - Tier 3 출력물에 원문에 없는 내용 포함 시 즉시 기각
@@ -119,6 +121,11 @@ Task execute         → 실제 파이프라인 실행
 
 ### 5.6 비용 킬스위치 (Cost Kill-Switch)
 - Tier 3 일일 API 비용 한도 초과 시 Tier 3 전면 중단
+
+### 5.7 Integrity Preflight
+- pipeline 시작 전 DB 핵심 테이블/컬럼, 필수 env, 실제 모델 식별값을 점검한다.
+- 무결성 preflight 실패는 경고가 아니라 실행 중단 사유다.
+- "나중에 migration으로 고칠 것"은 production batch 실행의 허용 근거가 아니다.
 
 ---
 
@@ -148,7 +155,15 @@ Task execute         → 실제 파이프라인 실행
 
 ---
 
-## 9. 도메인 어댑터 현황
+## 9. 환경 및 의존성 규약 (Environment & Dependencies)
+
+- **가상환경 강제:** 모든 Python 프로그램은 프로젝트 루트의 `.venv` 가상환경 내에서 구동되어야 한다.
+- **의존성 관리:** 새로운 패키지 설치 시 반드시 가상환경 활성화 후 설치하며, `requirements.txt`를 최신화한다.
+- **실행 원칙:** 모든 쉘 명령은 `source .venv/bin/activate && ...` 형식을 취하거나 가상환경의 파이썬 인터프리터를 직접 사용하여 환경 격리를 보장한다.
+
+---
+
+## 10. 도메인 어댑터 현황
 
 | 도메인 | 상태 | 경로 |
 |--------|------|------|

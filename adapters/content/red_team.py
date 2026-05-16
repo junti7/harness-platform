@@ -12,6 +12,7 @@ from core.database import execute_query
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RED_TEAM_DIR = PROJECT_ROOT / "docs" / "reviews" / "red_team"
+WEEKLY_RED_TEAM_DIR = PROJECT_ROOT / "docs" / "reviews" / "weekly_red_team"
 
 PROVIDERS = {
     "claude": lambda prompt: [_find_cli("claude"), "-p", prompt],
@@ -91,6 +92,69 @@ def run_red_team(target_type: str, target_id: int) -> dict[str, Any]:
     }
 
 
+def run_weekly_red_team(
+    target_type: str,
+    target_id: int,
+    providers: list[str] | None = None,
+    president_confirm_reason: str | None = None,
+    reject_issue_patterns: list[str] | None = None,
+) -> dict[str, Any]:
+    artifact = _load_target(target_type, target_id)
+    selected = providers or _weekly_selected_providers()
+    outputs = {}
+    for provider in selected:
+        outputs[provider] = _run_provider(provider, artifact)
+
+    unresolved: list[dict[str, Any]] = []
+    rejected_by_president: list[dict[str, Any]] = []
+    patterns = [item.strip().lower() for item in (reject_issue_patterns or []) if item.strip()]
+
+    for provider in selected:
+        for item in outputs[provider].get("issues", []):
+            entry = {
+                "provider": provider,
+                "issue": item.get("issue", ""),
+                "severity": item.get("severity", "medium"),
+                "category": item.get("category", "unknown"),
+            }
+            if entry["severity"] == "low":
+                continue
+            if patterns and any(pattern in entry["issue"].lower() for pattern in patterns):
+                rejected_by_president.append(entry)
+            else:
+                unresolved.append(entry)
+
+    if not unresolved:
+        verdict = "clear"
+    elif president_confirm_reason:
+        verdict = "conditional_proceed"
+    else:
+        verdict = "block"
+
+    memo_path = _write_weekly_memo(
+        target_type=target_type,
+        target_id=target_id,
+        artifact=artifact,
+        outputs=outputs,
+        unresolved=unresolved,
+        rejected_by_president=rejected_by_president,
+        verdict=verdict,
+        president_confirm_reason=president_confirm_reason,
+    )
+
+    return {
+        "target_type": target_type,
+        "target_id": target_id,
+        "providers": selected,
+        "verdict": verdict,
+        "unresolved_issues": unresolved,
+        "rejected_by_president": rejected_by_president,
+        "president_confirm_reason": president_confirm_reason,
+        "gate_open": verdict in {"clear", "conditional_proceed"},
+        "memo_path": str(memo_path),
+    }
+
+
 def _find_cli(name: str) -> str:
     for candidate in (name, f"/opt/homebrew/bin/{name}", f"/usr/local/bin/{name}"):
         if Path(candidate).exists() or candidate == name:
@@ -114,6 +178,21 @@ def _selected_providers() -> tuple[str, str]:
         if provider not in PROVIDERS:
             raise ValueError(f"Unsupported red team provider: {provider}")
     return providers[0], providers[1]
+
+
+def _weekly_selected_providers() -> list[str]:
+    configured = [item.strip() for item in os.getenv("HARNESS_WEEKLY_RED_TEAM_PROVIDERS", "").split(",") if item.strip()]
+    providers = configured or ["claude", "gemini", "codex"]
+    unique = []
+    for provider in providers:
+        if provider not in unique:
+            unique.append(provider)
+    for provider in unique:
+        if provider not in PROVIDERS:
+            raise ValueError(f"Unsupported weekly red team provider: {provider}")
+    if len(unique) < 3:
+        raise ValueError("Weekly red team requires three distinct providers")
+    return unique[:3]
 
 
 def _load_target(target_type: str, target_id: int) -> dict[str, Any]:
@@ -161,6 +240,29 @@ def _load_target(target_type: str, target_id: int) -> dict[str, Any]:
         row["title"] = row.get("final_title") or f"refined_output {target_id}"
         return row
 
+    if target_type == "research_report":
+        rows = execute_query(
+            """
+            SELECT id, title, report_type, audience, body, summary, status
+            FROM research_reports
+            WHERE id = %s
+            LIMIT 1
+            """,
+            (target_id,),
+            fetch=True,
+        )
+        if not rows:
+            raise ValueError(f"research_report {target_id} not found")
+        row = dict(rows[0])
+        row["artifact_path"] = f"db://research_reports/{target_id}"
+        path = _resolve_report_path(row)
+        if path and path.exists():
+            row["artifact_path"] = str(path.relative_to(PROJECT_ROOT))
+            row["content"] = _compact_research_report(path.read_text(encoding="utf-8"))
+        else:
+            row["content"] = _compact_text(f"{row.get('summary') or ''}\n\n{row.get('body') or ''}", limit=4000)
+        return row
+
     raise ValueError(f"Unsupported red team target_type: {target_type}")
 
 
@@ -205,6 +307,14 @@ def _resolve_issue_path(issue: dict[str, Any]) -> Path:
     if matches:
         return matches[0]
     raise FileNotFoundError(f"issue markdown not found for #{issue_number:03d}")
+
+
+def _resolve_report_path(report: dict[str, Any]) -> Path | None:
+    body = report.get("body") or ""
+    match = re.search(r"See\s+([^\n]+\.md)", body)
+    if not match:
+        return None
+    return PROJECT_ROOT / match.group(1).strip()
 
 
 def _run_provider(provider: str, artifact: dict[str, Any]) -> dict[str, Any]:
@@ -281,14 +391,28 @@ def _compact_newsletter_issue(content: str) -> str:
         summary["signals"].append(
             {
                 "title": _truncate_on_boundary(title, 90),
+                "claim_posture": _signal_claim_posture(body),
                 "what": _signal_subsection_excerpt(body, "What happened", 180),
                 "why": _signal_subsection_excerpt(body, "Why it matters", 140),
+                "source_verification": _signal_subsection_excerpt(body, "Source verification", 140),
                 "kr": _signal_subsection_excerpt(body, "Korean reader implication", 180),
                 "risk": _signal_subsection_excerpt(body, "Risk / counterargument", 180),
                 "src": _signal_sources_list(body)[:1],
             }
         )
 
+    return _compact_text(json.dumps(summary, ensure_ascii=False, separators=(",", ":")), limit=4000)
+
+
+def _compact_research_report(content: str) -> str:
+    summary = {
+        "headline": _section_excerpt(content, "0. 이번 결론", 220),
+        "decision_summary": _section_excerpt(content, "2. Decision Summary", 260),
+        "claim_posture_present": "## 4. Claim Posture Summary" in content,
+        "korea_context_present": "## 5. 한국 기준으로 왜 중요한가" in content,
+        "watch_vs_defer_present": "## 7. What To Watch / What To Defer" in content,
+        "disclaimer_present": "## Disclaimer" in content,
+    }
     return _compact_text(json.dumps(summary, ensure_ascii=False, separators=(",", ":")), limit=4000)
 
 
@@ -302,6 +426,14 @@ def _signal_subsection_excerpt(body: str, subsection: str, limit: int = 220) -> 
         return ""
     text = re.sub(r"\n{2,}", "\n", match.group(1).strip())
     return _sentence_excerpt(text, limit)
+
+
+def _signal_claim_posture(body: str) -> str:
+    match = re.search(r"\*\*Claim posture\*\*\n(.*?)(?=\n\*\*[^\n]+\*\*|\Z)", body, re.DOTALL)
+    if not match:
+        return ""
+    text = re.sub(r"\s+", " ", match.group(1).replace("\n", " ").strip())
+    return _truncate_on_boundary(text, 140)
 
 
 def _signal_sources_list(body: str) -> list[str]:
@@ -442,3 +574,77 @@ def _record_red_team_decision(target_type: str, target_id: int, decision: str, r
         """,
         (target_type, target_id, decision, "red_team_clear", reason),
     )
+
+
+def _write_weekly_memo(
+    target_type: str,
+    target_id: int,
+    artifact: dict[str, Any],
+    outputs: dict[str, dict[str, Any]],
+    unresolved: list[dict[str, Any]],
+    rejected_by_president: list[dict[str, Any]],
+    verdict: str,
+    president_confirm_reason: str | None,
+) -> Path:
+    WEEKLY_RED_TEAM_DIR.mkdir(parents=True, exist_ok=True)
+    path = WEEKLY_RED_TEAM_DIR / f"WEEKLY_RED_TEAM_{date.today().isoformat()}_{target_type}-{target_id}.md"
+    lines = [
+        "# Weekly Red Team Memo",
+        "",
+        f"- Week: {date.today().isoformat()}",
+        f"- Artifact reviewed: {target_type}#{target_id}",
+        f"- Artifact title: {artifact.get('title')}",
+        f"- Artifact path: {artifact.get('artifact_path')}",
+        f"- Model set: {', '.join(outputs.keys())}",
+        f"- Overall verdict: {verdict}",
+        "",
+        "## Findings by Model",
+        "",
+    ]
+    for provider, payload in outputs.items():
+        lines.append(f"### {provider}")
+        issues = payload.get("issues", [])
+        if issues:
+            lines.extend(
+                [
+                    f"- {item.get('issue')} ({item.get('severity', 'medium')}, {item.get('category', 'unknown')})"
+                    for item in issues
+                ]
+            )
+        else:
+            lines.append("- None")
+        lines.append("")
+
+    lines.extend(["## Consolidated Issues", ""])
+    if unresolved:
+        lines.extend(
+            [
+                f"- [{item['provider']}] {item['issue']} ({item['severity']}, {item['category']})"
+                for item in unresolved
+            ]
+        )
+    else:
+        lines.append("- None")
+
+    lines.extend(["", "## President Mediation", ""])
+    if rejected_by_president or president_confirm_reason:
+        lines.append(f"- required: {'yes' if verdict == 'conditional_proceed' else 'no'}")
+        if rejected_by_president:
+            lines.append("- rejected issue(s):")
+            lines.extend([f"  - [{item['provider']}] {item['issue']}" for item in rejected_by_president])
+        if president_confirm_reason:
+            lines.append(f"- rationale: {president_confirm_reason}")
+        lines.append(f"- confirm status: {'confirmed' if verdict == 'conditional_proceed' else 'not_confirmed'}")
+    else:
+        lines.append("- required: no")
+
+    lines.extend(["", "## Next Step", ""])
+    if verdict == "clear":
+        lines.append("- proceed")
+    elif verdict == "conditional_proceed":
+        lines.append("- conditional_proceed")
+    else:
+        lines.append("- revise")
+
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path

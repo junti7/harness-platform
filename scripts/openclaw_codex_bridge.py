@@ -1,0 +1,383 @@
+import argparse
+import json
+import os
+import shutil
+import socket
+import sys
+from contextlib import closing
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+sys.path.insert(0, ".")
+
+from adapters.content.decision_card import build_decision_card, card_to_json, render_mobile_text
+from adapters.content.mobile_dispatcher import build_slack_payload
+from adapters.content.slack_router import route_label, send_slack_route
+from core.approval import APPROVAL_TARGET_TYPES, VALID_APPROVAL_TYPES, VALID_DECISIONS
+from scripts.ceo_decision import record_decision
+from scripts.dispatch_llm_task_packet import build_packet, dispatch_packet
+from scripts.openclaw_ops_sync import publish_ops_brief
+from scripts.system_integrity_check import run_check as run_system_integrity_check
+
+
+def _now() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def _detect_cli(command: str) -> dict[str, Any]:
+    path = shutil.which(command)
+    if not path:
+        candidate = Path("/opt/homebrew/bin") / command
+        if candidate.exists():
+            path = str(candidate)
+    return {"available": bool(path), "path": path}
+
+
+def _detect_copilot() -> dict[str, Any]:
+    candidate = "/opt/homebrew/bin/copilot"
+    if Path(candidate).exists():
+        return {"available": True, "path": candidate}
+    return _detect_cli("copilot")
+
+
+def _can_connect_db() -> tuple[bool, str | None]:
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        return False, "DATABASE_URL missing"
+    try:
+        from core.database import get_connection
+
+        conn = get_connection()
+        conn.close()
+        return True, None
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _port_open(host: str, port: int, timeout: float = 0.5) -> bool:
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+        sock.settimeout(timeout)
+        return sock.connect_ex((host, port)) == 0
+
+
+def status_snapshot() -> dict[str, Any]:
+    db_ok, db_error = _can_connect_db()
+    integrity = run_system_integrity_check()
+    return {
+        "generated_at": _now(),
+        "openclaw_bridge": "ready",
+        "runtime": {
+            "python": sys.executable,
+            "cwd": os.getcwd(),
+            "slack_phase": os.getenv("SLACK_PHASE", "phase1"),
+            "slack_delivery_mode": os.getenv("SLACK_DELIVERY_MODE", "webhook"),
+            "capital_actions_enabled": os.getenv("CAPITAL_ACTIONS_ENABLED", "false"),
+        },
+        "integrations": {
+            "codex": {"available": True, "path": "current_session"},
+            "openclaw": _detect_cli("openclaw"),
+            "claude": _detect_cli("claude"),
+            "gemini": _detect_cli("gemini"),
+            "copilot": _detect_copilot(),
+            "ollama": _detect_cli("ollama"),
+            "postgres": {"available": db_ok, "error": db_error},
+            "slack_bot": {"available": bool(os.getenv("SLACK_BOT_TOKEN"))},
+            "slack_webhook": {"available": bool(os.getenv("SLACK_WEBHOOK_URL"))},
+            "notion": {"available": bool(os.getenv("NOTION_API_KEY"))},
+        },
+        "services": {
+            "ollama_11434": _port_open("127.0.0.1", 11434),
+        },
+        "integrity": integrity,
+        "routes": {
+            "openclaw_ops": route_label("agent_openclaw_routing"),
+            "executive": route_label("exec_president_decisions"),
+            "incidents": route_label("ops_incidents"),
+        },
+        "supported_commands": [
+            "status",
+            "decision-card",
+            "record-decision",
+            "route-note",
+            "task-packet",
+            "publish-ops-brief",
+            "push-approval-card",
+            "dispatch-task-packet",
+            "run-pipeline",
+        ],
+    }
+
+
+def _write_output(output: str, output_path: str | None) -> None:
+    if not output_path:
+        print(output)
+        return
+
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(output, encoding="utf-8")
+    print(str(path))
+
+
+def _json_dump(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+
+
+def command_status(args: argparse.Namespace) -> None:
+    payload = status_snapshot()
+    rendered = _json_dump(payload) if args.format == "json" else _render_status_text(payload)
+    _write_output(rendered, args.output)
+
+
+def _render_status_text(payload: dict[str, Any]) -> str:
+    integrations = payload["integrations"]
+    lines = [
+        f"OpenClaw bridge: {payload['openclaw_bridge']}",
+        f"Generated at: {payload['generated_at']}",
+        f"Slack phase: {payload['runtime']['slack_phase']}",
+        f"OpenClaw CLI: {integrations['openclaw']['available']}",
+        f"Claude CLI: {integrations['claude']['available']}",
+        f"Gemini CLI: {integrations['gemini']['available']}",
+        f"Copilot CLI: {integrations['copilot']['available']}",
+        f"Ollama CLI: {integrations['ollama']['available']}",
+        f"Postgres: {integrations['postgres']['available']}",
+        f"Slack bot token: {integrations['slack_bot']['available']}",
+        f"Notion API: {integrations['notion']['available']}",
+        f"OpenClaw route: {payload['routes']['openclaw_ops']}",
+    ]
+    if integrations["postgres"]["error"]:
+        lines.append(f"Postgres error: {integrations['postgres']['error']}")
+    integrity = payload.get("integrity") or {}
+    lines.append(f"Integrity preflight: {integrity.get('ok', False)}")
+    if integrity.get("findings"):
+        lines.append(f"Integrity findings: {', '.join(integrity['findings'][:3])}")
+    return "\n".join(lines)
+
+
+def command_decision_card(args: argparse.Namespace) -> None:
+    card = build_decision_card(args.target_type, args.target_id)
+    if args.format == "json":
+        rendered = card_to_json(card)
+    elif args.format == "text":
+        rendered = render_mobile_text(card)
+    elif args.format == "slack-json":
+        rendered = _json_dump(build_slack_payload(card))
+    else:
+        raise ValueError(f"Unsupported format: {args.format}")
+    _write_output(rendered, args.output)
+
+
+def command_record_decision(args: argparse.Namespace) -> None:
+    record_decision(
+        target_type=args.target_type,
+        target_id=args.target_id,
+        decision=args.decision,
+        approval_type=args.approval_type,
+        reason=args.reason,
+    )
+    payload = {
+        "generated_at": _now(),
+        "target_type": args.target_type,
+        "target_id": args.target_id,
+        "decision": args.decision,
+        "approval_type": args.approval_type,
+        "reason": args.reason,
+    }
+    _write_output(_json_dump(payload), args.output)
+
+
+def command_route_note(args: argparse.Namespace) -> None:
+    send_slack_route(
+        args.route,
+        {
+            "text": args.text,
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": args.text},
+                },
+                {
+                    "type": "context",
+                    "elements": [
+                        {"type": "mrkdwn", "text": f"source=OpenClaw bridge | generated_at={_now()}"}
+                    ],
+                },
+            ],
+        },
+    )
+    _write_output(
+        _json_dump({"sent": True, "route": args.route, "channel": route_label(args.route), "text": args.text}),
+        args.output,
+    )
+
+
+def command_task_packet(args: argparse.Namespace) -> None:
+    packet = {
+        "generated_at": _now(),
+        "owner": "Codex Chief of Staff",
+        "executor": args.executor,
+        "task_kind": args.task_kind,
+        "title": args.title,
+        "objective": args.objective,
+        "input_artifacts": args.input_artifact or [],
+        "output_artifacts": args.output_artifact or [],
+        "checks": args.check or [],
+        "notes": args.note or [],
+        "handoff": {
+            "slack_route": args.route,
+            "route_channel": route_label(args.route) if args.route else None,
+            "callback_command": args.callback_command,
+        },
+    }
+    _write_output(_json_dump(packet), args.output)
+
+
+def command_publish_ops_brief(args: argparse.Namespace) -> None:
+    result = publish_ops_brief(
+        route=args.route,
+        to_slack=args.to_slack,
+        to_notion=args.to_notion,
+        summary_text=args.summary_text,
+        review_type=args.review_type,
+    )
+    _write_output(_json_dump(result), args.output)
+
+
+def command_push_approval_card(args: argparse.Namespace) -> None:
+    card = build_decision_card(args.target_type, args.target_id)
+    payload = build_slack_payload(card)
+    send_slack_route(args.route, payload)
+    _write_output(
+        _json_dump(
+            {
+                "sent": True,
+                "route": args.route,
+                "channel": route_label(args.route),
+                "target_type": args.target_type,
+                "target_id": args.target_id,
+            }
+        ),
+        args.output,
+    )
+
+
+def command_dispatch_task_packet(args: argparse.Namespace) -> None:
+    packet = build_packet(args)
+    result = dispatch_packet(
+        packet=packet,
+        providers=args.provider or ["claude", "gemini", "copilot"],
+        output_dir=Path(args.output_dir),
+        notify_route=args.notify_route,
+    )
+    _write_output(_json_dump(result), args.output)
+
+
+def command_run_pipeline(args: argparse.Namespace) -> None:
+    from run_pipeline import run
+
+    if args.notify_slack:
+        send_slack_route(
+            "agent_openclaw_routing",
+            {"text": f"OpenClaw bridge requested pipeline run at {_now()}"},
+        )
+    run()
+    result = {"generated_at": _now(), "executed": "run_pipeline.py", "notified_slack": args.notify_slack}
+    _write_output(_json_dump(result), args.output)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Bridge layer for OpenClaw <-> Codex operations in Harness."
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    status_parser = subparsers.add_parser("status", help="Show bridge and dependency status.")
+    status_parser.add_argument("--format", choices=["text", "json"], default="text")
+    status_parser.add_argument("--output")
+    status_parser.set_defaults(func=command_status)
+
+    card_parser = subparsers.add_parser("decision-card", help="Render a decision card for OpenClaw or mobile.")
+    card_parser.add_argument("target_type", choices=["signal", "refined_output", "research_report"])
+    card_parser.add_argument("target_id", type=int)
+    card_parser.add_argument("--format", choices=["text", "json", "slack-json"], default="json")
+    card_parser.add_argument("--output")
+    card_parser.set_defaults(func=command_decision_card)
+
+    decision_parser = subparsers.add_parser("record-decision", help="Persist a President decision.")
+    decision_parser.add_argument("target_type", choices=sorted(APPROVAL_TARGET_TYPES))
+    decision_parser.add_argument("target_id", type=int)
+    decision_parser.add_argument("decision", choices=sorted(VALID_DECISIONS))
+    decision_parser.add_argument("approval_type", choices=sorted(VALID_APPROVAL_TYPES))
+    decision_parser.add_argument("--reason")
+    decision_parser.add_argument("--output")
+    decision_parser.set_defaults(func=command_record_decision)
+
+    route_parser = subparsers.add_parser("route-note", help="Send a note to a Slack route for OpenClaw-visible ops.")
+    route_parser.add_argument("route")
+    route_parser.add_argument("text")
+    route_parser.add_argument("--output")
+    route_parser.set_defaults(func=command_route_note)
+
+    packet_parser = subparsers.add_parser("task-packet", help="Build a structured task packet for OpenClaw routing.")
+    packet_parser.add_argument("task_kind")
+    packet_parser.add_argument("title")
+    packet_parser.add_argument("--executor", default="openclaw")
+    packet_parser.add_argument("--objective", required=True)
+    packet_parser.add_argument("--input-artifact", action="append")
+    packet_parser.add_argument("--output-artifact", action="append")
+    packet_parser.add_argument("--check", action="append")
+    packet_parser.add_argument("--note", action="append")
+    packet_parser.add_argument("--route")
+    packet_parser.add_argument("--callback-command")
+    packet_parser.add_argument("--output")
+    packet_parser.set_defaults(func=command_task_packet)
+
+    ops_parser = subparsers.add_parser("publish-ops-brief", help="Publish OpenClaw ops brief to Slack/Notion and log review.")
+    ops_parser.add_argument("--route", default="exec_daily_brief")
+    ops_parser.add_argument("--to-slack", action="store_true")
+    ops_parser.add_argument("--to-notion", action="store_true")
+    ops_parser.add_argument("--summary-text")
+    ops_parser.add_argument("--review-type", default="openclaw_daily_ops")
+    ops_parser.add_argument("--output")
+    ops_parser.set_defaults(func=command_publish_ops_brief)
+
+    push_card_parser = subparsers.add_parser("push-approval-card", help="Send a decision card to the executive Slack route.")
+    push_card_parser.add_argument("target_type", choices=["signal", "refined_output", "research_report"])
+    push_card_parser.add_argument("target_id", type=int)
+    push_card_parser.add_argument("--route", default="exec_president_decisions")
+    push_card_parser.add_argument("--output")
+    push_card_parser.set_defaults(func=command_push_approval_card)
+
+    dispatch_parser = subparsers.add_parser("dispatch-task-packet", help="Build and dispatch a task packet to Claude/Gemini/Copilot CLIs.")
+    dispatch_parser.add_argument("task_kind")
+    dispatch_parser.add_argument("title")
+    dispatch_parser.add_argument("--objective", required=True)
+    dispatch_parser.add_argument("--provider", action="append", choices=["claude", "gemini", "copilot"])
+    dispatch_parser.add_argument("--input-artifact", action="append")
+    dispatch_parser.add_argument("--output-artifact", action="append")
+    dispatch_parser.add_argument("--check", action="append")
+    dispatch_parser.add_argument("--note", action="append")
+    dispatch_parser.add_argument("--callback-route", default="agent_openclaw_routing")
+    dispatch_parser.add_argument("--notify-route", default="agent_openclaw_routing")
+    dispatch_parser.add_argument("--output-dir", default="docs/reports/llm_outputs")
+    dispatch_parser.add_argument("--output")
+    dispatch_parser.set_defaults(func=command_dispatch_task_packet)
+
+    pipeline_parser = subparsers.add_parser("run-pipeline", help="Run the Harness pipeline from the bridge.")
+    pipeline_parser.add_argument("--notify-slack", action="store_true")
+    pipeline_parser.add_argument("--output")
+    pipeline_parser.set_defaults(func=command_run_pipeline)
+
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+    args.func(args)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

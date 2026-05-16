@@ -14,6 +14,7 @@ if _env_path.exists():
 from adapters.content.slack_router import send_slack_route
 from core.logger import HarnessLogger
 from core.database import execute_query
+from scripts.system_integrity_check import run_check as run_system_integrity_check
 
 
 def _save_run_start(cid: str) -> int:
@@ -113,6 +114,15 @@ def run():
         logger.warning(f"pipeline_runs 기록 실패 (비치명적): {e}")
 
     results = {"correlation_id": pipeline_cid}
+
+    logger.info("[Preflight] 시스템 무결성 점검 시작")
+    preflight = run_system_integrity_check()
+    if not preflight["ok"]:
+        error = f"preflight:{'; '.join(preflight['findings'])}"
+        logger.error(f"[Preflight] 실패: {error}")
+        _save_run_end(run_id, results, "failed", error)
+        sys.exit(1)
+    logger.info("[Preflight] 통과")
 
     # Tier 1
     logger.info("[Tier 1] 수집 시작")

@@ -1,0 +1,26 @@
+{
+  "generated_at": null,
+  "owner": "Codex Chief of Staff",
+  "task_kind": "customer_research_packet",
+  "title": "Inventory 30-Day Clearance Research Packet",
+  "objective": "For a paid operator customer, gather evidence-backed tactics to liquidate 500M KRW of slow-moving inventory within 30 days while minimizing brand damage. Resolve the two open questions in the brief and recommend a next research plan.",
+  "input_artifacts": [
+    "docs/issues/inventory_customer_decision_brief_001_2026-05-13.md",
+    "docs/CUSTOMER_MEMORY_SCHEMA_V1.md"
+  ],
+  "output_artifacts": [
+    "docs/reports/llm_outputs"
+  ],
+  "checks": [
+    "Return customer-specific findings, not generic domain commentary.",
+    "Separate validated evidence from assumptions.",
+    "Recommend a next research plan that resolves the open questions in the brief.",
+    "Preserve the customer's preferred delivery style when proposing the next artifact."
+  ],
+  "notes": [
+    "customer_external_ref=demo-operator-inventory-001",
+    "This packet starts after customer-memory draft generation.",
+    "Use the brief as the customer-specific framing anchor, not as final evidence."
+  ],
+  "callback_route": "agent_openclaw_routing"
+}

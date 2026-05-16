@@ -9,7 +9,7 @@ from core.database import execute_query
 
 PROMPT = "다음 영문 기술 기사 제목과 요약을 한국어로 2문장 이내로 요약하세요.\n다른 말 없이 요약문만 출력하세요."
 
-MODELS = ["gemma4:latest", "gemma2:27b"]
+MODELS = ["gemma2:27b"]
 
 
 def summarize(model: str, title: str, summary: str) -> tuple[str, float]:

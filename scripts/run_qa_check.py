@@ -27,6 +27,7 @@ from core.database import execute_query
 from adapters.content.qa_agent import (
     qa_check_newsletter_issue,
     qa_check_refined_output,
+    qa_check_research_report,
     has_qa_clear,
 )
 
@@ -38,6 +39,7 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--issue-id", type=int, help="newsletter_issues.id")
     group.add_argument("--refined-output-id", type=int, help="refined_outputs.id")
+    group.add_argument("--research-report-id", type=int, help="research_reports.id")
     parser.add_argument(
         "--batch-signals", action="store_true",
         help="issue의 각 signal에 대해 refined_output QA도 개별 실행",
@@ -50,15 +52,23 @@ def main():
 
     if args.refined_output_id:
         ro_id = args.refined_output_id
-        if not args.force and has_qa_clear(ro_id):
+        if not args.force and has_qa_clear(ro_id, "refined_output"):
             print(f"[QA] refined_output#{ro_id}: 이미 approved — 스킵 (--force로 재실행)")
             sys.exit(0)
         approved = qa_check_refined_output(ro_id)
         sys.exit(0 if approved else 1)
 
+    if args.research_report_id:
+        report_id = args.research_report_id
+        if not args.force and has_qa_clear(report_id, "research_report"):
+            print(f"[QA] research_report#{report_id}: 이미 approved — 스킵 (--force로 재실행)")
+            sys.exit(0)
+        approved = qa_check_research_report(report_id)
+        sys.exit(0 if approved else 1)
+
     # newsletter_issue
     issue_id = args.issue_id
-    if not args.force and has_qa_clear(issue_id):
+    if not args.force and has_qa_clear(issue_id, "newsletter_issue"):
         print(f"[QA] newsletter_issue#{issue_id}: 이미 approved — 스킵 (--force로 재실행)")
         sys.exit(0)
 

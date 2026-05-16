@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.harness.daily-ops-brief</string>
+
+  <!-- 직접 Python 스크립트 실행 — LLM 에이전트 우회, ~1초 완료 -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/juntaepark/projects/harness-platform/.venv/bin/python3</string>
+    <string>/Users/juntaepark/projects/harness-platform/scripts/openclaw_ops_sync.py</string>
+    <string>--to-slack</string>
+    <string>--to-notion</string>
+    <string>--route</string>
+    <string>exec_daily_brief</string>
+    <string>--summary-text</string>
+    <string>Daily automated ops brief (launchd direct — no LLM overhead)</string>
+    <string>--review-type</string>
+    <string>openclaw_daily_ops</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/juntaepark/projects/harness-platform</string>
+
+  <!-- 매일 오전 09:05 Asia/Seoul = UTC 00:05 -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>0</integer>
+    <key>Minute</key>
+    <integer>5</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/juntaepark/projects/harness-platform/logs/daily-ops-brief.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/juntaepark/projects/harness-platform/logs/daily-ops-brief.error.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+  </dict>
+</dict>
+</plist>

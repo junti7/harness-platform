@@ -1,0 +1,8 @@
+{
+  "name": "harness-bridge",
+  "version": "1.0.0",
+  "description": "Harness OpenClaw command bundle for the Codex bridge",
+  "interface": {
+    "displayName": "Harness Bridge"
+  }
+}

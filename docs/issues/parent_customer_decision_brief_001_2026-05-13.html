@@ -1,0 +1,36 @@
+<!doctype html><html><head><meta charset='utf-8'><style>
+    @page { size: 1920px 1080px; margin: 0; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact; }
+    body { margin: 0; padding: 0; background: #111; font-family: "Apple SD Gothic Neo", sans-serif; }
+    .slide { 
+        width: 1920px; height: 1080px; background: #fff; margin: 0 auto; 
+        page-break-after: always; position: relative; padding: 80px 120px 120px; 
+        display: flex; flex-direction: column; overflow: hidden; 
+    }
+    
+    h1.slide-title { font-size: 50pt; font-weight: 900; color: #111827; margin: 0 0 50px; letter-spacing: -0.05em; border-left: 18px solid #2563eb; padding-left: 35px; }
+    .layout-cover { background: #111827; color: white; display: flex; align-items: center; justify-content: center; }
+    .layout-cover h1 { font-size: 85pt; border: none; margin: 0; font-weight: 900; line-height: 1.0; }
+    .layout-cover .subtitle { font-size: 25pt; color: #3b82f6; margin-top: 40px; font-weight: 700; letter-spacing: 0.1em; }
+
+    /* GRID CONSTRAINTS TO PREVENT OVERLAP */
+    .split-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; height: 580px; margin-bottom: 20px; }
+    .full-pane { flex: 1; min-height: 0; overflow: hidden; margin-bottom: 0; }
+
+    .text-pane li, .full-pane li { font-size: 24pt; line-height: 1.45; margin-bottom: 28px; color: #374151; padding-left: 50px; position: relative; list-style: none; }
+    .text-pane li::before, .full-pane li::before { content: ""; position: absolute; left: 0; top: 10pt; width: 20pt; height: 20pt; background: #2563eb; border-radius: 4px; }
+
+    .visual-pane { background: #f9fafb; border: 3px solid #e5e7eb; border-radius: 35px; display: flex; align-items: center; justify-content: center; padding: 40px; height: 100%; }
+    .visual-pane img { max-width: 100%; max-height: 100%; object-fit: contain; filter: drop-shadow(0 20px 40px rgba(0,0,0,0.12)); }
+
+    /* FOOTER SAFE ZONE - RIGID SEPARATION */
+    .footer-safe-zone { margin-top: auto; padding-top: 20px; min-height: 120px; }
+    .footnotes { border-top: 2px solid #f3f4f6; padding-top: 20px; display: flex; gap: 35px; flex-wrap: wrap; }
+    .footnotes span { font-size: 14pt; color: #6b7280; line-height: 1.3; }
+    .fn-num { color: #2563eb; font-weight: 800; margin-right: 5px; }
+    .fn-ref { vertical-align: super; font-size: 16pt; color: #2563eb; font-weight: 900; }
+    
+    .meta { position: absolute; bottom: 40px; left: 120px; font-size: 16pt; color: #9ca3af; font-weight: 900; }
+    .section-h3 { font-size: 28pt; color: #2563eb; font-weight: 800; margin: 30px 0 20px; border-bottom: 4px solid #f3f4f6; padding-bottom: 12px; }
+    .section-h2 { font-size: 32pt; color: #111827; font-weight: 800; margin: 25px 0 20px; }
+    </style></head><body><div class="slide layout-default"><h1 class="slide-title">Parent Decision Brief #001</h1><div class="full-pane"><ul><div class="section-h2">3-Line Summary</div><li>1. 지금 단계의 핵심은 대학 정보보다 `중3~고1 포트폴리오 경쟁력`과 `한국애니메이션고등학교 전형 적합도`를 먼저 끌어올리는 것이다.</li><li>2. 홍익대학교는 최종 목표로 유지하되, 이번 12개월은 `애니고 진학 성공 -&gt; 작업 습관/포트폴리오 체계화`에 초점을 맞추는 편이 더 현실적이다.</li><li>3. 다음 30일 안에 해야 할 일은 `현재 실력 진단`, `포트폴리오 학원/멘토 옵션 비교`, `애니고 전형 요구사항 수집`, `주간 작업 루틴 설계`다.</li><div class="section-h2">Customer Fit</div><li>Persona: 부모 고객</li><li>Knowledge level: beginner</li><li>Preferred depth: plain</li><li>Temporary overrides reflected:</li><li>모바일에서 3줄 결론 먼저</li><li>기술적 설명보다 단계별 실행 일정 우선</li><li>이번 브리프는 대학 일반론보다 애니고 진학 전략에 집중</li><div class="section-h2">Decision Summary</div><li>이 고객에게 지금 필요한 것은 미대 전반 정보가 아니라 `중3 학생의 현재 위치를 기준으로 한 입시 역산표`다.</li><li>따라서 브리프의 기본 질문은 다음 두 개로 좁힌다.</li><li>지금 실력과 준비 상태로 애니고 진학 가능성을 높이려면 무엇을 먼저 해야 하는가?</li><li>홍대 목표를 훼손하지 않으면서도 당장 12개월 안에 실천 가능한 루틴은 무엇인가?</li><div class="section-h2">Evidence Scorecard</div><li>| Topic | Why it matters | Confidence | What is still unknown |</li><li>| --- | --- | --- | --- |</li><li>| 애니고 전형 구조 | 단기 목표의 기준점 | Medium | 최신 실기/포트폴리오 반영 방식 세부 |</li><li>| 포트폴리오 준비 루틴 | 합격 가능성의 실질 변수 | High | 학생의 현재 작업량/지속력 |</li><li>| 홍대 장기 연계 | 장기 목표와의 정합성 확인 | Medium | 향후 전공 방향, 학교별 포트폴리오 편차 |</li><li>| 학원/멘토 옵션 | 실행 가속 장치 | Medium | 지역, 예산, 주당 이동 가능 시간 |</li><div class="section-h2">12-Month Roadmap</div><div class="section-h3">Next 30 Days</div><li>현재 그림 실력과 포트폴리오 상태를 외부 기준으로 1회 진단</li><li>애니고 입시 정보 정리</li><li>최근 모집 요강</li><li>실기 반영 방식</li><li>포트폴리오 요구 수준</li><li>포트폴리오 훈련 옵션 3개 비교</li><li>학원</li><li>개인 멘토</li><li>자율 루틴 + 피드백 조합</li><li>주 4회 작업 루틴 초안 만들기</li><div class="section-h3">Next 90 Days</div><li>기본 포트폴리오 축 2~3개 선정</li><li>실기/드로잉 루틴 고정</li><li>외부 피드백 2회 이상 확보</li><li>학생의 지속력과 스트레스 반응 확인</li><div class="section-h3">Next 12 Months</div><li>애니고 지원 가능성 판단</li><li>애니고 경로가 맞는지, 일반고 + 미술 포트폴리오 경로가 더 나은지 비교</li><li>홍대 목표와 연결되는 장기 작업 아카이브 시작</li><div class="section-h2">Option Table</div><li>| Option | Description | Pros | Risks | Current view |</li><li>| --- | --- | --- | --- | --- |</li><li>| A. 애니고 집중 | 12개월을 애니고 맞춤 준비로 운영 | 단기 목표 명확, 동기부여 쉬움 | 학생 적합도 안 맞으면 소모 큼 | 기본안 |</li><li>| B. 일반고 + 포트폴리오 | 애니고 집착보다 장기 미대 포트폴리오 중심 | 유연성 높음 | 단기 목표 약해질 수 있음 | 비교안 |</li><li>| C. 탐색 60일 후 결정 | 2개월 실력/루틴 점검 후 애니고 여부 확정 | 성급한 결정 방지 | 의사결정이 늦어질 수 있음 | 현실적 보조안 |</li><div class="section-h2">Watchlist</div><li>`korea_animation_high_school`</li><li>모집요강, 실기 경향, 포트폴리오 요구 수준</li><li>`hongik_university_fine_arts`</li><li>장기 전공 적합성, 포트폴리오 방향성</li><li>`drawing_portfolio`</li><li>학생의 실제 작업물 축적 속도</li><li>`portfolio_academy_options`</li><li>비용, 거리, 피드백 품질, 학생과의 궁합</li><div class="section-h2">Questions To Answer Next</div><li>1. 학생의 현재 실력은 애니고 목표 대비 어느 수준인가?</li><li>2. 부모가 감당 가능한 예산과 주간 이동 시간은 어느 정도인가?</li><li>3. 학생이 장기적으로 좋아하는 그림 스타일과 전공 방향은 무엇인가?</li><div class="section-h2">Risk And Bottlenecks</div><li>학생 본인의 의지보다 부모 목표가 앞서면 지속력이 약해질 수 있다.</li><li>학원 선택을 너무 빨리 하면 비용만 쓰고 맞지 않는 루틴이 고착될 수 있다.</li><li>홍대라는 장기 목표가 현재 실기 전략과 연결되지 않으면 중간에 방향 혼선이 생길 수 있다.</li><div class="section-h2">Next Operator Actions</div><li>1. 애니고/홍대 관련 자료 수집 태스크 생성</li><li>2. 포트폴리오 진단용 체크리스트 초안 작성</li><li>3. 학원/멘토 비교표 템플릿 작성</li><li>4. 다음 브리프에서 학생 현재 수준 진단 프레임 제시</li></ul></div><div class="meta">ISSUE #002 | PAGE 1</div></div></body></html>
