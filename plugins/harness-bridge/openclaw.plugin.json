@@ -1,0 +1,10 @@
+{
+  "id": "harness-bridge",
+  "enabledByDefault": true,
+  "activation": {
+    "onStartup": true
+  },
+  "skills": [
+    "./skills"
+  ]
+}
