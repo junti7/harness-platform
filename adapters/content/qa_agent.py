@@ -156,11 +156,13 @@ def _check_llm(body: dict, logger: HarnessLogger) -> list[str]:
         client = anthropic.Anthropic(api_key=api_key)
         resp = client.messages.create(
             model="claude-haiku-4-5",
-            max_tokens=256,
+            max_tokens=512,
             messages=[{"role": "user", "content": LLM_QA_PROMPT + excerpt}],
         )
         log_api_cost("claude-haiku-4-5", resp.usage.input_tokens, resp.usage.output_tokens)
         raw = resp.content[0].text.strip().replace("```json", "").replace("```", "").strip()
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        raw = m.group(0) if m else raw
         result = json.loads(raw)
     except Exception as e:
         logger.warning(f"LLM QA 호출 실패 (비치명적): {e}")
@@ -384,11 +386,13 @@ def _check_llm_text(title: str, content: str, logger: HarnessLogger) -> list[str
         client = anthropic.Anthropic(api_key=api_key)
         resp = client.messages.create(
             model="claude-haiku-4-5",
-            max_tokens=256,
+            max_tokens=512,
             messages=[{"role": "user", "content": LLM_QA_PROMPT + excerpt}],
         )
         log_api_cost("claude-haiku-4-5", resp.usage.input_tokens, resp.usage.output_tokens)
         raw = resp.content[0].text.strip().replace("```json", "").replace("```", "").strip()
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        raw = m.group(0) if m else raw
         result = json.loads(raw)
     except Exception as e:
         logger.warning(f"LLM QA 호출 실패 (비치명적): {e}")
