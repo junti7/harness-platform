@@ -4,3 +4,25 @@ __pycache__/
 *.pyc
 .DS_Store
 *.log
+
+# SSH keys — never commit
+ssh *
+*.pub
+
+# Runtime state
+runtime/
+core/harness.db
+summary
+
+# Generated binary/HTML outputs
+docs/*.pdf
+docs/*.html
+docs/reports/*.pdf
+docs/reports/*.html
+
+# Screenshots and media
+*.png
+*.jpg
+
+# Claude internal
+.claude/
