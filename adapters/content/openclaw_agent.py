@@ -1090,6 +1090,37 @@ def _intent_to_bridge_args(intent: dict) -> list[str] | None:
     return None
 
 
+def _format_with_haiku(user_message: str, raw_output: str) -> str:
+    """Bridge raw output → natural Korean via Haiku. Falls back to raw on error."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return raw_output
+    client = anthropic.Anthropic(api_key=api_key)
+    try:
+        resp = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=512,
+            system=(
+                "당신은 Harness의 AI 비서 OpenClaw입니다. "
+                "아래 데이터를 CEO가 바로 이해할 수 있는 자연스러운 한국어로 설명하세요. "
+                "수치와 상태는 의미 있는 해석과 함께 전달하고, "
+                "key=value 형식이나 영문 필드명을 그대로 나열하지 마세요. "
+                "간결하고 친근하게, 핵심만 짚어 주세요."
+            ),
+            messages=[
+                {"role": "user", "content": f"질문: {user_message}\n\n데이터:\n{raw_output}"},
+            ],
+        )
+        log_api_cost("claude-haiku-4-5", resp.usage.input_tokens, resp.usage.output_tokens)
+        logger.info(
+            f"[formatter] Haiku tokens=in:{resp.usage.input_tokens}/out:{resp.usage.output_tokens}"
+        )
+        return resp.content[0].text if resp.content else raw_output
+    except Exception as exc:
+        logger.warning(f"[formatter] Haiku formatting failed: {exc}")
+        return raw_output
+
+
 # ── 메인 라우터 ──────────────────────────────────────────────────────────────
 
 def run(
@@ -1112,7 +1143,8 @@ def run(
         bridge_args = _intent_to_bridge_args(intent)
         if bridge_args:
             logger.info(f"[router] intent-classifier → bridge {intent['tool']}")
-            return _run_bridge_command(bridge_args)
+            raw = _run_bridge_command(bridge_args)
+            return _format_with_haiku(user_message, raw)
 
     # Explicit CLI-style commands and mutations (snapshot, record-decision, run-pipeline)
     parsed_command = _parse_structured_command(user_message)
