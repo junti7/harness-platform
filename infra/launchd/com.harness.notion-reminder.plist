@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.harness.notion-reminder</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/juntae.park/projects/harness-platform/.venv/bin/python3</string>
+    <string>/Users/juntae.park/projects/harness-platform/scripts/notion_reminder_check.py</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/juntae.park/projects/harness-platform</string>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>9</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/juntae.park/projects/harness-platform/logs/notion-reminder.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/juntae.park/projects/harness-platform/logs/notion-reminder.error.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+  </dict>
+</dict>
+</plist>
