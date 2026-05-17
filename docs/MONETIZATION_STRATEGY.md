@@ -74,10 +74,12 @@ Pricing rule:
 
 Primary distribution:
 
-- Substack, Maily, Brunch, Stibee 등 한국어 newsletter platform 중 1개 선택
+- Substack primary. Welcome page, Notes, Recommendations, subscriber dashboard, welcome email, Chat, Sections를 growth system으로 사용
 - X/Twitter, LinkedIn, 한국 tech community (geeknews, disquiet, 클리앙 IT 등)에 organic 발행
 - SEO 기반 brand keyword (Physical AI 한국어, 임바디드 AI, 휴머노이드 분석 등)
 - referral / share via reader
+
+Substack 운영 세부 규칙은 `docs/operations/SUBSTACK_SYSTEM_PLAYBOOK.md`를 따른다.
 
 Not primary (Phase 1):
 

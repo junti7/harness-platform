@@ -257,7 +257,9 @@ Cross-LLM verification 의무:
 - 두 모델이 충돌하면 third opinion (별도 reasoning model) 또는 인간(대표/부대표)에게 escalates 한다.
 - 검증 결과는 `red_team_clear` 또는 `red_team_block`으로 기록하고, 사용된 두 모델 이름과 prompt/output artifact path를 audit trail에 남긴다.
 - **정례 주간 red-team**은 예외 없이 Claude, Gemini, Codex 3개 모델을 사용한다.
-- 정례 주간 red-team에서는 세 모델의 material finding이 모두 clear되어야 기본적으로 다음 단계 진행 가능하다.
+- 정례 주간 red-team의 기본 통과 기준은 **세 모델 중 최소 2개가 approve/clear** 하는 것이다.
+- 한 모델이 block이어도 나머지 두 모델이 approve/clear이면 기본 verdict는 `red_team_clear`로 진행 가능하다.
+- 단, factual error, fabricated source, legal/regulatory risk, missing disclaimer 같은 non-negotiable finding은 2-of-3 다수결로 가볍게 무시하지 않는다. 이런 경우에는 대표 confirm 또는 추가 수정/재검토가 필요하다.
 - 일부 finding을 수용하지 않기로 할 경우, 대표의 `confirm`이 필요하며 rejected issue, rationale, residual risk를 memo에 남긴다.
 
 Scope by artifact:
@@ -466,6 +468,47 @@ Decision boundary:
 - subscriber 개인정보를 Slack에 평문 노출
 - 잠재 고객 명단을 외부 도구로 export하면서 PIPA 검토를 건너뜀
 
+### 3.14B Business Operations Agent
+
+역할:
+
+- `/goal` closed loop의 운영 예측 owner
+- 최종목표 달성 가능성 forecast
+- KPI decomposition 기반 root-cause diagnosis
+- anomaly detection
+- local strategy revision recommendation
+- executive escalation threshold 판단
+- `goal_model_spec` 변수/식/파라미터 유지
+
+입력:
+
+- subscriber / conversion / engagement metrics
+- Marketing Strategy channel data
+- Sales funnel data
+- VP review signal
+- Red Team / QA / Legal findings
+
+출력:
+
+- goal_health_brief
+- goal_forecast_memo
+- goal_diagnostic_memo
+- local_revision_proposal
+- escalation_note
+
+규칙:
+
+- 감이 아니라 명시적 변수와 수학 모형으로 판단한다.
+- 작은 흔들림은 local revision으로 해결한다.
+- 최종목표 달성 가능성이 구조적으로 낮아질 때만 CEO/VP에 escalate 한다.
+- root-cause diagnosis 없이 strategy revision을 시작하지 않는다.
+
+금지:
+
+- 경미한 KPI 흔들림을 고위층에 과잉 보고
+- 변수 분해 없이 "이 전략은 안 된다" 식 판단
+- 모델 갱신 없이 revision 반복
+
 ### 3.14A QA Agent
 
 역할:
@@ -556,6 +599,7 @@ Decision boundary:
 | Product definition / pricing ladder | Product Planning Agent → 대표 approval |
 | Marketing channel / persona / copy direction | Marketing Strategy Agent → 대표 approval for paid spend |
 | Funnel conversion / paid retention experiments | Sales Agent → 대표 approval for price changes |
+| Goal health / forecast / anomaly triage | Business Operations Agent |
 | Publish approval | 대표 (with `legal_review_approve` + `red_team_clear` + `qa_clear` precondition) |
 | Paid tier approval | 대표 (with `legal_review_approve` + `pre_mortem_approve` + `qa_clear`) |
 | Investment thesis approval | 대표 |
@@ -639,7 +683,7 @@ Pre-conditions for high-impact approvals:
 
 정례 주간 red-team의 경우:
 
-- `red_team_clear`는 Claude, Gemini, Codex의 지적사항이 모두 clear된 경우에만 기본적으로 인정한다.
+- `red_team_clear`는 Claude, Gemini, Codex 3개 중 **최소 2개 모델이 approve/clear** 하면 기본적으로 인정한다.
 - 세 모델 중 일부 이슈를 대표가 기각하고 진행하는 경우, status는 내부 memo상 `conditional_proceed`로 표기하고 대표 confirm 근거를 남긴다.
 
 ---

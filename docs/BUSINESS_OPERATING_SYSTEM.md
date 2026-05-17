@@ -24,7 +24,7 @@ Phase 1 primary model:
 - Free tier: weekly public issue
 - Paid tier: 월 ₩9,900~₩19,900
 - 30-day target: free subscribers 50명 + paid subscriber 1명
-- Delivery: Substack/Maily/Brunch 후보 중 하나 + Notion archive + Slack operating workflow
+- Delivery: Substack primary + Notion archive (per `docs/operations/NOTION_OPERATING_SYSTEM.md`) + Slack operating workflow
 
 Phase 2:
 
@@ -110,9 +110,39 @@ Red Team은 코드, MD 문서, high-impact 의사결정의 약점을 *서로 다
 
 익명 고객 acquisition 전략을 수립한다. 관계 기반 outreach가 아니라 organic content + paid channel mix를 운영한다. persona 정의, 브랜드 메시지, content calendar, 채널 KPI를 결정한다.
 
+Substack를 primary publication/growth system으로 사용할 때의 세부 운영은 `docs/operations/SUBSTACK_SYSTEM_PLAYBOOK.md`를 따른다.
+
 ### Sales Team
 
 paid funnel(free → trial → paid → retained)을 운영한다. conversion 실험, 가격 테스트, onboarding 시퀀스, churn 분석을 담당한다. custom memo 문의가 들어오면 lead qualification을 한다.
+
+### Business Operations Team
+
+Business Operations Team은 `/goal` closed loop의 운영 예측 및 이상징후 감지 전담 조직이다.
+
+책임:
+
+- 최종목표에 대한 deadline hit probability 추정
+- daily / 3-day / weekly cadence로 KPI 추적
+- 노출 / CTR / CVR / retention 등 핵심 변수를 분해해 병목 진단
+- anomaly detection
+- local strategy revision 제안
+- executive escalation 필요 여부 판단
+- 수학 모형(`goal_model_spec`)의 변수, 식, 파라미터, threshold 유지
+
+원칙:
+
+- 작은 운영 흔들림은 local revision으로 해결한다.
+- 구조적 실패 징후가 있을 때만 대표/부대표에 escalate 한다.
+- 감이 아니라 변수와 식으로 판단한다.
+
+출력:
+
+- goal health brief
+- forecast memo
+- diagnostic memo
+- local revision proposal
+- escalation note
 
 ### QA Team
 
@@ -149,8 +179,9 @@ Harness의 표준 creator subscription flow:
 15. Track subscriber feedback
 16. Store customer memory and product upgrade events
 17. Product Planning iteration (next issue / pricing / packaging / cross-product reuse)
-18. Weekly business review
-19. Optional capital action (with full Pre-Mortem + Legal + Red Team + `CAPITAL_ACTIONS_ENABLED=true`)
+18. Business Operations forecast / anomaly review
+19. Weekly business review
+20. Optional capital action (with full Pre-Mortem + Legal + Red Team + `CAPITAL_ACTIONS_ENABLED=true`)
 
 수익 창출 대상은 부대표 또는 대표의 주변 인맥이 아니라, Marketing Strategy → Subscriber Growth → Sales 파이프라인을 통해 유입되는 익명 독자다. 주변 인맥에게 직접 결제 요청을 하지 않는다.
 
@@ -313,7 +344,7 @@ Customer memory rule:
 4. free subscriber capture path 구성
 5. paid tier 가격 문구 작성
 6. Vice President content review workflow 구성
-7. Notion issue archive 구성
+7. Notion Operating System (NOS) 구축 및 archive 구성 (per `docs/operations/NOTION_OPERATING_SYSTEM.md`)
 8. weekly business review 실행
 9. optional memo request form은 2차로 검토
 

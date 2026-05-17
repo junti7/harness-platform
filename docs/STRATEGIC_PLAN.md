@@ -141,7 +141,7 @@ Phase 3:
 
 Primary:
 
-- Substack/Maily/Brunch 중 하나
+- Substack primary
 - X/Twitter
 - LinkedIn
 - 한국 tech community

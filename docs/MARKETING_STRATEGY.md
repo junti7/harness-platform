@@ -72,8 +72,9 @@ priority 순.
 ### Tier 1 (Phase 1 active)
 
 **1. Organic Newsletter Platform**
-- Substack-Korea / Maily / Stibee 중 1개 선택 (Korean 결제 + 한글 환경 우선)
+- Substack primary
 - 매주 1회 정기 발행
+- Welcome page, free welcome email, Notes, Recommendations, subscriber dashboard를 함께 운영
 - Free issue + Paid tier
 - KPI: 무료 구독자 수, open rate, paid conversion
 
@@ -182,6 +183,8 @@ priority 순.
 | Email referral | invite → sign-up | viral coefficient | 측정만 |
 
 각 KPI는 `docs/WEEKLY_BUSINESS_REVIEW.md`에서 매주 reviewed.
+
+Substack-specific 운영 규칙은 `docs/operations/SUBSTACK_SYSTEM_PLAYBOOK.md`를 따른다.
 
 trigger:
 - 무료 구독자 < 20명 (4주차) → channel mix 재검토
