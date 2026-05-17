@@ -17,6 +17,16 @@ from adapters.content.slack_router import route_label, send_slack_route
 from core.approval import APPROVAL_TARGET_TYPES, VALID_APPROVAL_TYPES, VALID_DECISIONS
 from scripts.ceo_decision import record_decision
 from scripts.dispatch_llm_task_packet import build_packet, dispatch_packet
+from scripts.goal_loop import (
+    create_goal,
+    diagnose_goal,
+    get_goal_model,
+    get_goal_status,
+    record_goal_snapshot,
+    record_substack_goal_snapshot,
+    set_goal_model,
+)
+from scripts.goal_providers import registry as _provider_registry
 from scripts.openclaw_ops_sync import publish_ops_brief
 from scripts.system_integrity_check import run_check as run_system_integrity_check
 
@@ -99,6 +109,13 @@ def status_snapshot() -> dict[str, Any]:
             "status",
             "decision-card",
             "record-decision",
+            "goal-create",
+            "goal-model",
+            "goal-snapshot",
+            "goal-substack-snapshot",
+            "goal-provider-snapshot",
+            "goal-diagnose",
+            "goal-status",
             "route-note",
             "task-packet",
             "publish-ops-brief",
@@ -286,6 +303,205 @@ def command_run_pipeline(args: argparse.Namespace) -> None:
     _write_output(_json_dump(result), args.output)
 
 
+def command_goal_create(args: argparse.Namespace) -> None:
+    goal = create_goal(
+        title=args.title,
+        objective=args.objective,
+        target_metric=args.target_metric,
+        target_value=args.target_value,
+        deadline=args.deadline,
+        goal_type=args.goal_type,
+        channel=args.channel,
+        unit=args.unit,
+        urgency=args.urgency,
+        baseline_value=args.baseline_value,
+        current_value=args.current_value,
+        success_definition=args.success_definition,
+        failure_definition=args.failure_definition,
+        constraints_json=args.constraints_json,
+        metadata_json=args.metadata_json,
+    )
+    _write_output(
+        _json_dump(
+            {
+                "generated_at": _now(),
+                "goal_id": goal["id"],
+                "status": goal["status"],
+                "title": goal["title"],
+                "target_metric": goal["target_metric"],
+                "target_value": goal["target_value"],
+                "deadline": goal["deadline"],
+            }
+        ),
+        args.output,
+    )
+
+
+def command_goal_model(args: argparse.Namespace) -> None:
+    if args.equation:
+        if not args.objective_metric:
+            raise ValueError("--objective-metric is required when registering a goal model")
+        model = set_goal_model(
+            goal_id=args.goal_id,
+            model_type=args.model_type,
+            objective_metric=args.objective_metric,
+            model_equation=args.equation,
+            variable_definitions_json=args.variables_json,
+            parameter_estimates_json=args.parameters_json,
+            sensitivity_rank_json=args.sensitivity_json,
+            trigger_thresholds_json=args.thresholds_json,
+            scenario_assumptions_json=args.assumptions_json,
+            created_by=args.created_by,
+            activate=not args.inactive,
+        )
+    else:
+        model = get_goal_model(args.goal_id)
+
+    rendered = _json_dump(model) if args.format == "json" else _render_goal_model_text(model)
+    _write_output(rendered, args.output)
+
+
+def command_goal_snapshot(args: argparse.Namespace) -> None:
+    snapshot = record_goal_snapshot(
+        goal_id=args.goal_id,
+        actual_value=args.actual_value,
+        expected_value=args.expected_value,
+        forecast_probability=args.forecast_probability,
+        health_status=args.health_status,
+        notes=args.notes,
+        source_metrics_json=args.source_metrics_json,
+        snapshot_date=args.snapshot_date,
+        components_json=args.components_json,
+    )
+    _write_output(_json_dump(snapshot), args.output)
+
+
+def command_goal_substack_snapshot(args: argparse.Namespace) -> None:
+    metrics = fetch_subscriber_metrics()
+    if args.free_subscribers is not None:
+        metrics["free_subscribers"] = args.free_subscribers
+    if args.paid_subscribers is not None:
+        metrics["paid_subscribers"] = args.paid_subscribers
+    if args.post_count is not None:
+        metrics["post_count"] = args.post_count
+    if args.draft_count is not None:
+        metrics["draft_count"] = args.draft_count
+
+    snapshot = record_substack_goal_snapshot(
+        goal_id=args.goal_id,
+        actual_value=args.actual_value,
+        expected_value=args.expected_value,
+        forecast_probability=args.forecast_probability,
+        health_status=args.health_status,
+        notes=args.notes or metrics.get("notes"),
+        snapshot_date=args.snapshot_date,
+        metrics=metrics,
+        follower_count=args.followers,
+        recommendation_subscribers=args.recommendation_subscribers,
+        direct_subscribers=args.direct_subscribers,
+        welcome_page_visitors=args.welcome_page_visitors,
+        welcome_page_conversion_rate=args.welcome_page_conversion_rate,
+        note_publish_count=args.note_publish_count,
+    )
+    _write_output(_json_dump(snapshot), args.output)
+
+
+def command_goal_provider_snapshot(args: argparse.Namespace) -> None:
+    import json as _json
+    provider_name = args.provider.lower()
+    adapter = _provider_registry.get(provider_name)  # raises ValueError for unknown providers
+
+    metrics = adapter.fetch_metrics()
+
+    # CLI overrides take precedence over fetched metrics
+    override_keys = [
+        "free_subscribers", "paid_subscribers", "post_count", "draft_count",
+        "followers", "recommendation_subscribers", "direct_subscribers",
+        "welcome_page_visitors", "welcome_page_conversion_rate", "note_publish_count",
+    ]
+    for key in override_keys:
+        val = getattr(args, key, None)
+        if val is not None:
+            metrics[key] = val
+
+    actual = args.actual_value if args.actual_value is not None else adapter.primary_value(metrics)
+    components = adapter.build_components(metrics)
+
+    snapshot = record_goal_snapshot(
+        goal_id=args.goal_id,
+        actual_value=float(actual),
+        expected_value=args.expected_value,
+        forecast_probability=args.forecast_probability,
+        health_status=args.health_status,
+        notes=args.notes or metrics.get("notes"),
+        source_metrics_json=_json.dumps(metrics, ensure_ascii=False),
+        snapshot_date=args.snapshot_date,
+        components_json=_json.dumps(components, ensure_ascii=False),
+    )
+    _write_output(_json_dump(snapshot), args.output)
+
+
+def command_goal_diagnose(args: argparse.Namespace) -> None:
+    diagnosis = diagnose_goal(args.goal_id)
+    rendered = _json_dump(diagnosis) if args.format == "json" else _render_goal_diagnosis_text(diagnosis)
+    _write_output(rendered, args.output)
+
+
+def command_goal_status(args: argparse.Namespace) -> None:
+    payload = get_goal_status(args.goal_id)
+    rendered = _json_dump(payload) if args.format == "json" else _render_goal_status_text(payload)
+    _write_output(rendered, args.output)
+
+
+def _render_goal_model_text(model: dict[str, Any]) -> str:
+    return "\n".join(
+        [
+            f"Goal model #{model['id']} (goal={model['goal_id']}, version={model['version']}, active={model['active']})",
+            f"Objective metric: {model['objective_metric']}",
+            f"Model type: {model['model_type']}",
+            f"Equation: {model['model_equation']}",
+            f"Variables: {json.dumps(model.get('variable_definitions') or {}, ensure_ascii=False)}",
+            f"Parameters: {json.dumps(model.get('parameter_estimates') or {}, ensure_ascii=False)}",
+            f"Thresholds: {json.dumps(model.get('trigger_thresholds') or {}, ensure_ascii=False)}",
+        ]
+    )
+
+
+def _render_goal_diagnosis_text(diagnosis: dict[str, Any]) -> str:
+    primary = diagnosis.get("primary_component") or {}
+    return "\n".join(
+        [
+            f"Goal diagnosis #{diagnosis['id']} for goal {diagnosis['goal_id']}",
+            f"Type: {diagnosis['diagnosis_type']}",
+            f"Escalation required: {diagnosis['executive_escalation_required']}",
+            f"Primary component: {primary.get('component_name', 'n/a')}",
+            f"Hypothesis: {diagnosis['root_cause_hypothesis']}",
+        ]
+    )
+
+
+def _render_goal_status_text(payload: dict[str, Any]) -> str:
+    goal = payload["goal"]
+    model = payload.get("active_model")
+    snapshot = payload.get("latest_snapshot") or {}
+    forecast = payload.get("latest_forecast") or {}
+    diagnostic = payload.get("latest_diagnostic") or {}
+    lines = [
+        f"Goal #{goal['id']}: {goal['title']}",
+        f"Status: {goal['status']}",
+        f"Target: {goal['target_metric']} {goal['target_value']} by {goal['deadline']}",
+        f"Current value: {goal['current_value']}",
+        f"Active model: {model['model_type']} v{model['version']}" if model else "Active model: none",
+        f"Latest snapshot health: {snapshot.get('health_status', 'n/a')}",
+        f"Latest snapshot variance: {snapshot.get('variance', 'n/a')}",
+        f"Probability to hit: {forecast.get('probability_to_hit', 'n/a')}",
+        f"Unresolved anomalies: {payload['unresolved_anomalies']}",
+        f"Latest diagnosis: {diagnostic.get('root_cause_hypothesis', 'n/a')}",
+        f"Next action: {forecast.get('recommended_mode', 'n/a')}",
+    ]
+    return "\n".join(lines)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Bridge layer for OpenClaw <-> Codex operations in Harness."
@@ -368,6 +584,115 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline_parser.add_argument("--notify-slack", action="store_true")
     pipeline_parser.add_argument("--output")
     pipeline_parser.set_defaults(func=command_run_pipeline)
+
+    goal_create_parser = subparsers.add_parser("goal-create", help="Create a strategic goal artifact.")
+    goal_create_parser.add_argument("--title", required=True)
+    goal_create_parser.add_argument("--objective", required=True)
+    goal_create_parser.add_argument("--target-metric", required=True)
+    goal_create_parser.add_argument("--target-value", required=True, type=float)
+    goal_create_parser.add_argument("--deadline", required=True)
+    goal_create_parser.add_argument("--goal-type", default="growth")
+    goal_create_parser.add_argument("--channel")
+    goal_create_parser.add_argument("--unit", default="count")
+    goal_create_parser.add_argument("--urgency", default="medium")
+    goal_create_parser.add_argument("--baseline-value", default=0.0, type=float)
+    goal_create_parser.add_argument("--current-value", default=0.0, type=float)
+    goal_create_parser.add_argument("--success-definition")
+    goal_create_parser.add_argument("--failure-definition")
+    goal_create_parser.add_argument("--constraints-json")
+    goal_create_parser.add_argument("--metadata-json")
+    goal_create_parser.add_argument("--output")
+    goal_create_parser.set_defaults(func=command_goal_create)
+
+    goal_model_parser = subparsers.add_parser("goal-model", help="Create or inspect a goal model specification.")
+    goal_model_parser.add_argument("goal_id", type=int)
+    goal_model_parser.add_argument("--format", choices=["text", "json"], default="text")
+    goal_model_parser.add_argument("--model-type", default="deterministic_funnel")
+    goal_model_parser.add_argument("--objective-metric")
+    goal_model_parser.add_argument("--equation")
+    goal_model_parser.add_argument("--variables-json")
+    goal_model_parser.add_argument("--parameters-json")
+    goal_model_parser.add_argument("--sensitivity-json")
+    goal_model_parser.add_argument("--thresholds-json")
+    goal_model_parser.add_argument("--assumptions-json")
+    goal_model_parser.add_argument("--created-by", default="Business Operations Team")
+    goal_model_parser.add_argument("--inactive", action="store_true")
+    goal_model_parser.add_argument("--output")
+    goal_model_parser.set_defaults(func=command_goal_model)
+
+    goal_snapshot_parser = subparsers.add_parser("goal-snapshot", help="Record a KPI snapshot for a goal.")
+    goal_snapshot_parser.add_argument("goal_id", type=int)
+    goal_snapshot_parser.add_argument("--actual-value", required=True, type=float)
+    goal_snapshot_parser.add_argument("--expected-value", type=float)
+    goal_snapshot_parser.add_argument("--forecast-probability", type=float)
+    goal_snapshot_parser.add_argument("--health-status", choices=["green", "yellow", "red"], default="green")
+    goal_snapshot_parser.add_argument("--notes")
+    goal_snapshot_parser.add_argument("--source-metrics-json")
+    goal_snapshot_parser.add_argument("--components-json")
+    goal_snapshot_parser.add_argument("--snapshot-date")
+    goal_snapshot_parser.add_argument("--output")
+    goal_snapshot_parser.set_defaults(func=command_goal_snapshot)
+
+    goal_substack_snapshot_parser = subparsers.add_parser(
+        "goal-substack-snapshot",
+        help="Record a goal snapshot using Substack metrics plus optional growth overrides.",
+    )
+    goal_substack_snapshot_parser.add_argument("goal_id", type=int)
+    goal_substack_snapshot_parser.add_argument("--actual-value", type=float)
+    goal_substack_snapshot_parser.add_argument("--expected-value", type=float)
+    goal_substack_snapshot_parser.add_argument("--forecast-probability", type=float)
+    goal_substack_snapshot_parser.add_argument("--health-status", choices=["green", "yellow", "red"], default="green")
+    goal_substack_snapshot_parser.add_argument("--notes")
+    goal_substack_snapshot_parser.add_argument("--snapshot-date")
+    goal_substack_snapshot_parser.add_argument("--free-subscribers", type=int)
+    goal_substack_snapshot_parser.add_argument("--paid-subscribers", type=int)
+    goal_substack_snapshot_parser.add_argument("--post-count", type=int)
+    goal_substack_snapshot_parser.add_argument("--draft-count", type=int)
+    goal_substack_snapshot_parser.add_argument("--followers", type=int)
+    goal_substack_snapshot_parser.add_argument("--recommendation-subscribers", type=int)
+    goal_substack_snapshot_parser.add_argument("--direct-subscribers", type=int)
+    goal_substack_snapshot_parser.add_argument("--welcome-page-visitors", type=int)
+    goal_substack_snapshot_parser.add_argument("--welcome-page-conversion-rate", type=float)
+    goal_substack_snapshot_parser.add_argument("--note-publish-count", type=int)
+    goal_substack_snapshot_parser.add_argument("--output")
+    goal_substack_snapshot_parser.set_defaults(func=command_goal_substack_snapshot)
+
+    goal_provider_snapshot_parser = subparsers.add_parser(
+        "goal-provider-snapshot",
+        help="Record a goal snapshot through a provider adapter. Current pilot adapter: substack.",
+    )
+    goal_provider_snapshot_parser.add_argument("goal_id", type=int)
+    goal_provider_snapshot_parser.add_argument("--provider", required=True)
+    goal_provider_snapshot_parser.add_argument("--actual-value", type=float)
+    goal_provider_snapshot_parser.add_argument("--expected-value", type=float)
+    goal_provider_snapshot_parser.add_argument("--forecast-probability", type=float)
+    goal_provider_snapshot_parser.add_argument("--health-status", choices=["green", "yellow", "red"], default="green")
+    goal_provider_snapshot_parser.add_argument("--notes")
+    goal_provider_snapshot_parser.add_argument("--snapshot-date")
+    goal_provider_snapshot_parser.add_argument("--free-subscribers", type=int)
+    goal_provider_snapshot_parser.add_argument("--paid-subscribers", type=int)
+    goal_provider_snapshot_parser.add_argument("--post-count", type=int)
+    goal_provider_snapshot_parser.add_argument("--draft-count", type=int)
+    goal_provider_snapshot_parser.add_argument("--followers", type=int)
+    goal_provider_snapshot_parser.add_argument("--recommendation-subscribers", type=int)
+    goal_provider_snapshot_parser.add_argument("--direct-subscribers", type=int)
+    goal_provider_snapshot_parser.add_argument("--welcome-page-visitors", type=int)
+    goal_provider_snapshot_parser.add_argument("--welcome-page-conversion-rate", type=float)
+    goal_provider_snapshot_parser.add_argument("--note-publish-count", type=int)
+    goal_provider_snapshot_parser.add_argument("--output")
+    goal_provider_snapshot_parser.set_defaults(func=command_goal_provider_snapshot)
+
+    goal_diagnose_parser = subparsers.add_parser("goal-diagnose", help="Diagnose the primary bottleneck for a goal.")
+    goal_diagnose_parser.add_argument("goal_id", type=int)
+    goal_diagnose_parser.add_argument("--format", choices=["text", "json"], default="text")
+    goal_diagnose_parser.add_argument("--output")
+    goal_diagnose_parser.set_defaults(func=command_goal_diagnose)
+
+    goal_status_parser = subparsers.add_parser("goal-status", help="Show current health for a goal.")
+    goal_status_parser.add_argument("goal_id", type=int)
+    goal_status_parser.add_argument("--format", choices=["text", "json"], default="text")
+    goal_status_parser.add_argument("--output")
+    goal_status_parser.set_defaults(func=command_goal_status)
 
     return parser
 
