@@ -452,8 +452,9 @@ def command_goal_status(args: argparse.Namespace) -> None:
         # ID 없이 호출 → 전체 goal 목록 조회
         try:
             from core.database import get_connection
+            from psycopg2.extras import RealDictCursor
             with get_connection() as conn:
-                with conn.cursor() as cur:
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
                     cur.execute(
                         "SELECT id, title, target_metric, target_value, deadline, status "
                         "FROM strategic_goals ORDER BY id"
