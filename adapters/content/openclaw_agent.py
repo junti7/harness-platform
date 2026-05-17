@@ -100,18 +100,37 @@ Guidelines:
 """
 
 # Ollama용 경량 시스템 프롬프트 (도구 없는 대화 전용)
-CHAT_SYSTEM_PROMPT = """당신은 OpenClaw입니다. Harness의 AI 비서실장으로, Physical AI/AGI 크리에이터 구독 회사의 운영을 보조합니다.
+CHAT_SYSTEM_PROMPT = """당신은 OpenClaw입니다. Harness의 AI 비서실장이며, CEO(대표)와 부대표의 지시를 실행합니다.
 
-역할:
-- CEO(대표)와 부대표의 질문에 친절하고 명확하게 답변
+== Harness 핵심 정보 ==
+- 회사명: Harness
+- 주력 제품: Physical AI Weekly — 한국어 Physical AI / AGI / 로봇공학 뉴스레터 구독 서비스
+- 사업 모델: 크리에이터 구독 (Substack 기반, 무료 독자 → 유료 전환)
+- 현재 단계: Phase 1 — 무료 독자 확보 및 첫 paid subscriber 달성 (30일 목표: 무료 50명, paid 1명)
+- 파이프라인: 4-Tier 자동화 (수집 → Ollama 필터 → Claude 정제 → Notion/Slack 발행)
+- 주요 인물: 대표(CEO/President), 부대표(VP — 콘텐츠 품질 검토 및 독자 공감 담당)
+- 운영 환경: Mac Mini (프로덕션 서버) + MBP (개발)
+
+== 역할 ==
+- CEO(대표)와 부대표의 질문에 친절하고 정확하게 답변
 - 회사 운영, Physical AI, AGI, 로봇공학, 뉴스레터 사업에 대한 지식 제공
 - 복잡한 작업(파일 조작, 보고서 생성, 스크립트 실행 등)은 "해당 작업은 도구가 필요합니다" 라고 안내
 
-규칙:
-- 항상 한국어로 답변 (영어 질문에도 한국어 우선)
+== 규칙 ==
+- 반드시 한국어로만 답변한다 — 영어 질문에도 한국어로 답한다. 중국어·일본어 절대 사용 금지.
 - API 키, 비밀번호 등 민감 정보 노출 금지
 - 간결하고 실용적인 답변 제공
 """
+
+# Ollama 응답 언어 품질 감지 — 비한국어 CJK(중국어·일본어) 혼입 여부 확인
+_NON_KOREAN_CJK_RE = re.compile(
+    r"[\u4E00-\u9FFF"   # CJK Unified Ideographs (Chinese)
+    r"\u3400-\u4DBF"    # CJK Extension A
+    r"\u3040-\u309F"    # Hiragana
+    r"\u30A0-\u30FF"    # Katakana
+    r"\uF900-\uFAFF]"   # CJK Compatibility Ideographs
+)
+_KOREAN_RE = re.compile(r"[\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F]")
 
 COMMAND_HINTS = {
     "status": "상태/health 요청은 bridge status 명령으로 처리한다.",
@@ -1000,12 +1019,17 @@ def _run_ollama_chat(user_message: str) -> str:
             logger.info(f"[router] {label} 오프라인 → 다음 후보로")
             continue
         result = _ollama_chat(host, label, user_message)
-        if result is not None:
-            return result
-        logger.info(f"[router] {label} 응답 실패 → 다음 후보로")
+        if result is None:
+            logger.info(f"[router] {label} 응답 실패 → 다음 후보로")
+            continue
+        # 한국어 질문에 중국어·일본어가 섞인 응답 감지 → Haiku로 강등
+        if _KOREAN_RE.search(user_message) and _NON_KOREAN_CJK_RE.search(result):
+            logger.warning(f"[router] {label} 응답에 비한국어 CJK 문자 감지 → Tier1/Haiku fallback")
+            break
+        return result
 
-    # 모든 Ollama 실패 → Haiku
-    logger.info("[router] 모든 Ollama 비활성 → Tier1/Haiku fallback")
+    # 모든 Ollama 실패 또는 언어 품질 불량 → Haiku
+    logger.info("[router] Ollama 불가 또는 언어 품질 불량 → Tier1/Haiku fallback")
     return _run_haiku_chat(user_message)
 
 
