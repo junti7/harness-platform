@@ -122,10 +122,18 @@ def refine_signal(client: anthropic.Anthropic, row: dict) -> dict:
 
     parsed = json.loads(raw)
 
-    required = ["final_title", "is_relevant"]
+    required = ["final_title", "is_relevant", "evidence_posture"]
     for field in required:
         if field not in parsed:
             raise ValueError(f"필수 필드 누락: {field}")
+
+    evidence = parsed.get("evidence_posture") or {}
+    if not isinstance(evidence, dict):
+        raise ValueError("evidence_posture가 dict 형태가 아님")
+    if evidence.get("classification") not in {"verified", "company-self-report", "speculative"}:
+        raise ValueError(f"evidence_posture.classification 값 오류: {evidence.get('classification')}")
+    if not evidence.get("why"):
+        raise ValueError("evidence_posture.why 누락")
 
     return parsed
 
