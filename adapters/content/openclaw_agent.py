@@ -411,12 +411,12 @@ def _parse_structured_command(message: str) -> dict[str, Any] | None:
                     "예: `/goal substack-snapshot 3 --expected-value 6 --forecast-probability 0.42 --followers 120 --recommendation-subscribers 3`"
                 ),
             }
-        if re.search(r"status|상태|어때[요]?|어떻게\s*돼|현황", text_lower):
-            return {
-                "intent": "goal-status",
-                "bridge_args": ["goal-status", goal_id, "--format", "text"],
-                "hint": COMMAND_HINTS["goal-status"],
-            }
+        # default: any goal N query → goal-status (includes "자세히", "알려줘", "보여줘", etc.)
+        return {
+            "intent": "goal-status",
+            "bridge_args": ["goal-status", goal_id, "--format", "text"],
+            "hint": COMMAND_HINTS["goal-status"],
+        }
 
     target = _extract_target(text)
     if target and re.search(r"decision\s*card|결정\s*카드|decision-card|카드\s*보여", text_lower):
