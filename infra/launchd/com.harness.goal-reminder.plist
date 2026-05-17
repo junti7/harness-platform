@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.harness.goal-reminder</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/juntaepark/projects/harness-platform/.venv/bin/python</string>
+    <string>/Users/juntaepark/projects/harness-platform/scripts/goal_weekly_reminder.py</string>
+    <string>--goal-id</string>
+    <string>1</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/juntaepark/projects/harness-platform</string>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <!-- Every Sunday 09:00 KST = Sunday 00:00 UTC -->
+    <key>Weekday</key>
+    <integer>0</integer>
+    <key>Hour</key>
+    <integer>0</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/harness_goal_reminder.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/harness_goal_reminder.err</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
