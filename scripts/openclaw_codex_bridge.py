@@ -448,6 +448,35 @@ def command_goal_diagnose(args: argparse.Namespace) -> None:
 
 
 def command_goal_status(args: argparse.Namespace) -> None:
+    if args.goal_id is None:
+        # ID 없이 호출 → 전체 goal 목록 조회
+        try:
+            from core.database import get_connection
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id, title, target_metric, target_value, deadline, status "
+                        "FROM strategic_goals ORDER BY id"
+                    )
+                    rows = cur.fetchall()
+            if not rows:
+                _write_output("등록된 goal이 없습니다.", args.output)
+                return
+            if args.format == "json":
+                _write_output(_json_dump(rows), args.output)
+            else:
+                lines = [f"전체 Goal 목록 ({len(rows)}개):"]
+                for r in rows:
+                    deadline = str(r.get("deadline", ""))[:10] if r.get("deadline") else "기한 없음"
+                    lines.append(
+                        f"  #{r['id']} [{r.get('status', '?')}] {r['title']} "
+                        f"| 지표: {r.get('target_metric', '?')} → {r.get('target_value', '?')} "
+                        f"| 기한: {deadline}"
+                    )
+                _write_output("\n".join(lines), args.output)
+        except Exception as exc:
+            _write_output(f"❌ goal 목록 조회 실패: {exc}", args.output)
+        return
     payload = get_goal_status(args.goal_id)
     rendered = _json_dump(payload) if args.format == "json" else _render_goal_status_text(payload)
     _write_output(rendered, args.output)
@@ -688,8 +717,8 @@ def build_parser() -> argparse.ArgumentParser:
     goal_diagnose_parser.add_argument("--output")
     goal_diagnose_parser.set_defaults(func=command_goal_diagnose)
 
-    goal_status_parser = subparsers.add_parser("goal-status", help="Show current health for a goal.")
-    goal_status_parser.add_argument("goal_id", type=int)
+    goal_status_parser = subparsers.add_parser("goal-status", help="Show current health for a goal, or list all goals if no ID given.")
+    goal_status_parser.add_argument("goal_id", type=int, nargs="?", default=None)
     goal_status_parser.add_argument("--format", choices=["text", "json"], default="text")
     goal_status_parser.add_argument("--output")
     goal_status_parser.set_defaults(func=command_goal_status)
