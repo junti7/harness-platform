@@ -77,32 +77,70 @@ def _notion_headers() -> dict:
     }
 
 
+def _extract_summary(body_raw) -> str:
+    try:
+        body = json.loads(body_raw) if isinstance(body_raw, str) else body_raw
+        hook = body.get("hook") or ""
+        if hook:
+            return hook[:500]
+        deep = body.get("deep_analysis") or {}
+        if isinstance(deep, dict):
+            return (deep.get("technical_breakdown") or "")[:500]
+    except Exception:
+        pass
+    return str(body_raw)[:500]
+
+
+def _historical_value(score) -> str:
+    try:
+        s = float(score)
+        if s >= 0.9:
+            return "high"
+        if s >= 0.7:
+            return "medium"
+    except (TypeError, ValueError):
+        pass
+    return "low"
+
+
 def _build_notion_payload(row: dict, artifact_type: str = "refined_output") -> dict:
     tags = _parse_tags(row.get("tags") or [])
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     title = row.get("final_title") or row.get("title") or "Untitled Harness Artifact"
-    body = row.get("final_body") or row.get("summary") or row.get("body") or ""
+    body_raw = row.get("final_body") or row.get("summary") or row.get("body") or ""
     source = row.get("source") or artifact_type
+    row_id = row.get("id")
+    score = row.get("score")
+
+    properties = {
+        "제목": {"title": [{"text": {"content": title[:2000]}}]},
+        "본문": {"rich_text": [{"text": {"content": str(body_raw)[:2000]}}]},
+        "태그": {"multi_select": [{"name": t[:100]} for t in tags[:5]]},
+        "소스": {"rich_text": [{"text": {"content": source[:500]}}]},
+        "발행일": {"date": {"start": today}},
+        "Artifact Type": {"select": {"name": "issue_archive" if artifact_type == "refined_output" else "research_report"}},
+        "Team": {"multi_select": [{"name": "Engineering"}, {"name": "QA"}]},
+        "Source Channel": {"select": {"name": "db"}},
+        "Event Date": {"date": {"start": today}},
+        "LLM Ready": {"checkbox": True},
+        "Historical Value": {"select": {"name": _historical_value(score)}},
+        "Confidentiality": {"select": {"name": "internal"}},
+        "Project": {"rich_text": [{"text": {"content": "Physical AI Weekly"}}]},
+        "Project Status": {"select": {"name": "done"}},
+        "Outcome": {"select": {"name": "success"}},
+    }
+
+    if row_id:
+        properties["Canonical Key"] = {"rich_text": [{"text": {"content": f"{artifact_type}-{row_id}"}}]}
+        properties["DB Record Ref"] = {"rich_text": [{"text": {"content": f"{artifact_type}s.id={row_id}"}}]}
+
+    summary = _extract_summary(body_raw)
+    if summary:
+        properties["Summary"] = {"rich_text": [{"text": {"content": summary}}]}
 
     return {
         "parent": {"database_id": NOTION_DATABASE_ID},
-        "properties": {
-            "제목": {
-                "title": [{"text": {"content": title[:2000]}}]
-            },
-            "본문": {
-                "rich_text": [{"text": {"content": body[:2000]}}]
-            },
-            "태그": {
-                "multi_select": [{"name": t[:100]} for t in tags[:5]]
-            },
-            "소스": {
-                "rich_text": [{"text": {"content": source[:500]}}]
-            },
-            "발행일": {
-                "date": {"start": today}
-            },
-        }
+        "properties": properties,
     }
 
 
