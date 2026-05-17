@@ -146,6 +146,67 @@ COMMAND_HINTS = {
     "goal-status": "goal status 요청은 bridge goal-status 명령으로 처리한다.",
 }
 
+# ── Haiku intent classifier tool definitions ────────────────────────────────
+# Read-only bridge commands exposed to Haiku as tools.
+# Haiku picks the right one from natural language; no regex maintenance needed.
+BRIDGE_INTENT_TOOLS: list[dict] = [
+    {
+        "name": "harness_status",
+        "description": (
+            "Harness 파이프라인 및 시스템 전체 상태 조회. "
+            "사용: '어때', '파이프라인 어때', 'harness 현황', '상태 보여줘', 'status', "
+            "'잘 돌아가?', '시스템 어때', 'health check'."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "goal_status",
+        "description": (
+            "특정 goal의 진행 상태 조회, 또는 전체 goal 목록 조회. "
+            "사용: 'goal 1 자세히', 'goal 어때', 'goal 현황', '목표 상태', "
+            "'구독자 목표 어떻게 돼', 'goal 보여줘', '목표 알려줘', 'goal 1 상세'. "
+            "goal_id를 명시하면 해당 goal만, 생략하면 전체 목록."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "goal_id": {
+                    "type": "integer",
+                    "description": "조회할 goal ID. 생략 시 전체 목록 반환.",
+                }
+            },
+        },
+    },
+    {
+        "name": "goal_diagnose",
+        "description": (
+            "특정 goal의 병목/문제점 진단. "
+            "사용: 'goal 1 진단', '어디서 막혀', '문제 뭐야', '병목 찾아줘', 'goal 1 왜 안 돼'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "goal_id": {"type": "integer", "description": "진단할 goal ID"}
+            },
+            "required": ["goal_id"],
+        },
+    },
+    {
+        "name": "goal_model",
+        "description": (
+            "특정 goal의 예측 모델/공식 조회. "
+            "사용: 'goal 1 모델', 'funnel 공식 보여줘', '예측 모델 어떻게 돼', 'goal 1 파라미터'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "goal_id": {"type": "integer", "description": "조회할 goal ID"}
+            },
+            "required": ["goal_id"],
+        },
+    },
+]
+
 FAILURE_MEMORY_CACHE_TTL_SECONDS = 30.0
 _FAILURE_MEMORY_CACHE: dict[str, Any] = {"loaded_at": 0.0, "mtime": None, "entries": []}
 
@@ -372,94 +433,11 @@ def _parse_structured_command(message: str) -> dict[str, Any] | None:
             "error": "지원되는 goal 명령은 create/status/model/snapshot/substack-snapshot/provider-snapshot/diagnose 입니다.",
         }
 
-    # Goal queries without a specific ID — list all goals
-    if re.search(r"\bgoal\b", text_lower) and re.search(r"어때[요]?|현황|목록|list|리스트|전체|모두", text_lower):
-        return {
-            "intent": "goal-status",
-            "bridge_args": ["goal-status", "--format", "text"],
-            "hint": COMMAND_HINTS["goal-status"],
-        }
-
-    goal_id_match = re.search(r"\bgoal\s+(\d+)\b", text_lower)
-    if goal_id_match:
-        goal_id = goal_id_match.group(1)
-        if re.search(r"diagnose|진단", text_lower):
-            return {
-                "intent": "goal-diagnose",
-                "bridge_args": ["goal-diagnose", goal_id, "--format", "text"],
-                "hint": COMMAND_HINTS["goal-diagnose"],
-            }
-        if re.search(r"model|모델", text_lower):
-            return {
-                "intent": "goal-model",
-                "bridge_args": ["goal-model", goal_id, "--format", "text"],
-                "hint": COMMAND_HINTS["goal-model"],
-            }
-        if re.search(r"snapshot|스냅샷", text_lower):
-            return {
-                "intent": "goal-snapshot",
-                "error": (
-                    "goal snapshot 기록에는 actual_value가 필요합니다.\n"
-                    "예: `/goal snapshot 3 --actual-value 4 --expected-value 6 --forecast-probability 0.42 --health-status yellow`"
-                ),
-            }
-        if re.search(r"substack", text_lower):
-            return {
-                "intent": "goal-substack-snapshot",
-                "error": (
-                    "Substack goal snapshot에는 CLI 인자가 필요합니다.\n"
-                    "예: `/goal substack-snapshot 3 --expected-value 6 --forecast-probability 0.42 --followers 120 --recommendation-subscribers 3`"
-                ),
-            }
-        # default: any goal N query → goal-status (includes "자세히", "알려줘", "보여줘", etc.)
-        return {
-            "intent": "goal-status",
-            "bridge_args": ["goal-status", goal_id, "--format", "text"],
-            "hint": COMMAND_HINTS["goal-status"],
-        }
+    # Natural language queries (goal status, harness status, etc.) are handled
+    # upstream by _classify_intent_with_haiku before this function is called.
+    # This function handles only explicit CLI-style commands and mutations.
 
     target = _extract_target(text)
-    if target and re.search(r"decision\s*card|결정\s*카드|decision-card|카드\s*보여", text_lower):
-        target_type, target_id = target
-        return {
-            "intent": "decision-card",
-            "bridge_args": ["decision-card", target_type, str(target_id), "--format", "text"],
-            "hint": COMMAND_HINTS["decision-card"],
-        }
-
-    if re.search(r"run\s*pipeline|pipeline|파이프라인", text_lower) and re.search(r"실행|돌려|run", text_lower):
-        return {
-            "intent": "run-pipeline",
-            "bridge_args": ["run-pipeline", "--notify-slack"],
-            "hint": COMMAND_HINTS["run-pipeline"],
-        }
-
-    status_patterns = [
-        r"^status(?:\s|$)",
-        r"^health(?:\s|$)",
-        r"^상태(?:\s|$)",
-        r"^헬스(?:\s|$)",
-        r"harness\s+상태",
-        r"control\s*plane\s+상태",
-        r"health\s*check",
-        # Natural Korean variations
-        r"^어때\??$",
-        r"harness\s+어때",
-        r"지금\s+어때",
-        r"잘\s+돌아가",
-        r"파이프라인\s+어때",
-        r"시스템\s+어때",
-        r"현황\s*알려",
-        r"상황\s*알려",
-        r"어떻게\s+돌아가",
-    ]
-    if any(re.search(pattern, text_lower) for pattern in status_patterns):
-        return {
-            "intent": "status",
-            "bridge_args": ["status", "--format", "text"],
-            "hint": COMMAND_HINTS["status"],
-        }
-
     if target and (
         re.search(r"approve|승인|hold|보류|reject|거절|반려|기록", text_lower)
         or _extract_approval_type(text_lower)
@@ -1053,7 +1031,66 @@ def _run_haiku_chat(user_message: str) -> str:
     return resp.content[0].text if resp.content else "응답 없음"
 
 
-# ── 에이전트 루프 (Tier 2: Claude Sonnet + Tools) ──────────────────────────────
+# ── Haiku intent classifier ──────────────────────────────────────────────────
+
+def _classify_intent_with_haiku(user_message: str) -> dict[str, Any] | None:
+    """Classify user intent into a read-only bridge command via Haiku tool_use.
+
+    Returns {"tool": str, "params": dict} when a known command is detected,
+    or None for conversational messages. Errors are swallowed — caller falls
+    through to explicit-command / chat routing.
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return None
+    client = anthropic.Anthropic(api_key=api_key)
+    try:
+        resp = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=128,
+            system=(
+                "You are an intent router for the Harness AI platform. "
+                "If the user's message clearly requests information that maps to one of the "
+                "provided tools, call that tool with the correct parameters. "
+                "If the message is general conversation or does not clearly request that "
+                "specific data, do NOT call any tool."
+            ),
+            messages=[{"role": "user", "content": user_message}],
+            tools=BRIDGE_INTENT_TOOLS,
+            tool_choice={"type": "auto"},
+        )
+    except Exception as exc:
+        logger.warning(f"[intent-classifier] Haiku call failed: {exc}")
+        return None
+    log_api_cost("claude-haiku-4-5", resp.usage.input_tokens, resp.usage.output_tokens)
+    for block in resp.content:
+        if block.type == "tool_use":
+            logger.info(f"[intent-classifier] tool={block.name} params={block.input}")
+            return {"tool": block.name, "params": block.input}
+    return None
+
+
+def _intent_to_bridge_args(intent: dict) -> list[str] | None:
+    """Map an intent dict from the classifier to bridge CLI args."""
+    tool = intent["tool"]
+    params = intent.get("params", {})
+    goal_id = params.get("goal_id")
+
+    if tool == "harness_status":
+        return ["status", "--format", "text"]
+    if tool == "goal_status":
+        base = ["goal-status"]
+        if goal_id is not None:
+            base.append(str(goal_id))
+        return base + ["--format", "text"]
+    if tool == "goal_diagnose" and goal_id is not None:
+        return ["goal-diagnose", str(goal_id), "--format", "text"]
+    if tool == "goal_model" and goal_id is not None:
+        return ["goal-model", str(goal_id), "--format", "text"]
+    return None
+
+
+# ── 메인 라우터 ──────────────────────────────────────────────────────────────
 
 def run(
     user_message: str,
@@ -1063,11 +1100,21 @@ def run(
     """
     CEO 메시지를 라우팅하여 최적 LLM으로 처리.
 
-    Tier 0a (무료)  : MBP Ollama   — MBP 켜져 있으면 우선
-    Tier 0b (무료)  : Local Ollama — MBP 꺼져 있을 때
-    Tier 1  (저비용): Claude Haiku — 모든 Ollama 불가 시
+    Tier I  (intent): Haiku classifier — 자연어 → bridge command (read-only)
+    Tier 0a (무료)  : MBP Ollama   — MBP 켜져 있으면 우선 (대화)
+    Tier 0b (무료)  : Local Ollama — MBP 꺼져 있을 때 (대화)
+    Tier 1  (저비용): Claude Haiku — Ollama 불가 시 (대화)
     Tier 2  (프리미엄): Claude Sonnet — 도구 사용 필요 시
     """
+    # Tier I: Haiku intent classifier — natural language → bridge command
+    intent = _classify_intent_with_haiku(user_message)
+    if intent:
+        bridge_args = _intent_to_bridge_args(intent)
+        if bridge_args:
+            logger.info(f"[router] intent-classifier → bridge {intent['tool']}")
+            return _run_bridge_command(bridge_args)
+
+    # Explicit CLI-style commands and mutations (snapshot, record-decision, run-pipeline)
     parsed_command = _parse_structured_command(user_message)
     if parsed_command:
         if parsed_command.get("error"):
