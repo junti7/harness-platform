@@ -21,10 +21,13 @@ import json
 import logging
 import os
 import re
+import shlex
 import subprocess
+import time
 from datetime import datetime
 from html import unescape
 from pathlib import Path
+from typing import Any
 
 import anthropic
 import httpx
@@ -36,9 +39,12 @@ from core.cost_alerts import check_and_alert
 
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path("/Users/juntaepark/projects/harness-platform")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 VENV_PYTHON = PROJECT_ROOT / ".venv/bin/python"
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+BRIDGE_SCRIPT = PROJECT_ROOT / "scripts/openclaw_codex_bridge.py"
+GROUND_RULES_PATH = PROJECT_ROOT / "docs/openclaw/OPENCLAW_GROUND_RULES.md"
+FAILURE_MEMORY_PATH = PROJECT_ROOT / "docs/openclaw/OPENCLAW_FAILURE_MEMORY.md"
 
 # .env 값을 항상 현재 프로젝트 기준으로 다시 로드한다.
 # launchd / Slack listener / ad-hoc python 실행에서 환경 해석이 엇갈리지 않도록 override=True를 사용한다.
@@ -58,7 +64,8 @@ TOOL_KEYWORDS = [
     "채널", "슬랙", "slack", "생성", "업로드", "분석", "코드", "수집",
     "브리핑", "신호", "스케줄", "edit", "write", "read", "send", "create",
     "뉴스레터", "이슈", "배포", "구독자", "링크", "url", "http://", "https://",
-    "웹", "페이지", "substack.com", "봐줘", "검토",
+    "웹", "페이지", "substack.com", "봐줘", "검토", "status", "상태", "헬스",
+    "health", "decision card", "승인", "approve", "hold", "reject", "pipeline",
 ]
 
 CHANNEL_MAP = {
@@ -104,6 +111,422 @@ CHAT_SYSTEM_PROMPT = """당신은 OpenClaw입니다. Harness의 AI 비서실장�
 - API 키, 비밀번호 등 민감 정보 노출 금지
 - 간결하고 실용적인 답변 제공
 """
+
+COMMAND_HINTS = {
+    "status": "상태/health 요청은 bridge status 명령으로 처리한다.",
+    "decision-card": "decision card 요청은 bridge decision-card 명령으로 처리한다.",
+    "record-decision": "승인/보류/거절 기록은 bridge record-decision 명령으로 처리한다.",
+    "run-pipeline": "파이프라인 실행 요청은 bridge run-pipeline 명령으로 처리한다.",
+    "goal-create": "goal 생성은 bridge goal-create 명령으로 처리한다.",
+    "goal-model": "goal model 조회/등록은 bridge goal-model 명령으로 처리한다.",
+    "goal-snapshot": "goal snapshot 기록은 bridge goal-snapshot 명령으로 처리한다.",
+    "goal-substack-snapshot": "Substack 기반 goal snapshot 기록은 bridge goal-substack-snapshot 명령으로 처리한다.",
+    "goal-provider-snapshot": "provider adapter 기반 goal snapshot 기록은 bridge goal-provider-snapshot 명령으로 처리한다.",
+    "goal-diagnose": "goal diagnose 요청은 bridge goal-diagnose 명령으로 처리한다.",
+    "goal-status": "goal status 요청은 bridge goal-status 명령으로 처리한다.",
+}
+
+FAILURE_MEMORY_CACHE_TTL_SECONDS = 30.0
+_FAILURE_MEMORY_CACHE: dict[str, Any] = {"loaded_at": 0.0, "mtime": None, "entries": []}
+
+_STATUS_SNAPSHOT_CACHE: dict[str, Any] = {"ts": 0.0, "text": ""}
+_STATUS_SNAPSHOT_TTL = 60.0  # seconds — bridge status is cached to avoid repeated subprocess calls
+
+# Broad intent signal: when matched, inject real-time status into LLM system prompt
+_STATUS_HINT_RE = re.compile(
+    r"어때|어떻게\s*돼|잘\s*됐|현황|파이프라인|pipeline|goal|목표|구독자|substack|상황",
+    re.IGNORECASE,
+)
+
+
+def _load_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return ""
+
+
+def _load_ground_rules() -> str:
+    return _load_text(GROUND_RULES_PATH)
+
+
+def _parse_failure_memory() -> list[dict[str, Any]]:
+    try:
+        mtime = FAILURE_MEMORY_PATH.stat().st_mtime
+    except FileNotFoundError:
+        return []
+
+    now = time.time()
+    cached_entries = _FAILURE_MEMORY_CACHE.get("entries", [])
+    cached_mtime = _FAILURE_MEMORY_CACHE.get("mtime")
+    loaded_at = float(_FAILURE_MEMORY_CACHE.get("loaded_at", 0.0) or 0.0)
+    if cached_entries and cached_mtime == mtime and (now - loaded_at) < FAILURE_MEMORY_CACHE_TTL_SECONDS:
+        return cached_entries
+
+    raw = _load_text(FAILURE_MEMORY_PATH)
+    if not raw:
+        return []
+
+    entries = []
+    chunks = re.split(r"^##\s+", raw, flags=re.MULTILINE)
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        lines = chunk.splitlines()
+        title = lines[0].strip()
+        body = "\n".join(lines[1:])
+
+        def _field(name: str) -> str:
+            match = re.search(rf"- {name}:\s*(.+)", body)
+            return match.group(1).strip() if match else ""
+
+        input_text = _field("input_text")
+        patterns = re.findall(r'"([^"]+)"', _field("trigger_patterns"))
+        entries.append(
+            {
+                "id": title,
+                "input_text": input_text,
+                "wrong_behavior": _field("wrong_behavior"),
+                "expected_behavior": _field("expected_behavior"),
+                "root_cause": _field("root_cause"),
+                "fix_rule": _field("fix_rule"),
+                "trigger_patterns": [p.lower() for p in patterns],
+            }
+        )
+    _FAILURE_MEMORY_CACHE["loaded_at"] = now
+    _FAILURE_MEMORY_CACHE["mtime"] = mtime
+    _FAILURE_MEMORY_CACHE["entries"] = entries
+    return entries
+
+
+def _retrieve_failure_memories(message: str, limit: int = 3) -> list[dict[str, Any]]:
+    msg = message.lower()
+    scored = []
+    for entry in _parse_failure_memory():
+        score = 0
+        for pattern in entry.get("trigger_patterns", []):
+            if pattern and pattern in msg:
+                score += 1
+        input_text = (entry.get("input_text") or "").strip().lower()
+        if input_text and input_text in msg:
+            score += 2
+        if score:
+            scored.append((score, entry))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [entry for _, entry in scored[:limit]]
+
+
+def _build_failure_memory_context(message: str) -> str:
+    entries = _retrieve_failure_memories(message)
+    if not entries:
+        return ""
+
+    lines = ["Relevant failure memory:"]
+    for entry in entries:
+        lines.append(
+            f"- {entry['id']}: input=`{entry['input_text']}` | expected={entry['expected_behavior']} | fix_rule={entry['fix_rule']}"
+        )
+    return "\n".join(lines)
+
+
+def _build_chat_system_prompt(user_message: str) -> str:
+    parts = [CHAT_SYSTEM_PROMPT]
+    ground_rules = _load_ground_rules()
+    if ground_rules:
+        parts.append("\nHarness Ground Rules:\n" + ground_rules)
+    memory_context = _build_failure_memory_context(user_message)
+    if memory_context:
+        parts.append("\n" + memory_context)
+    status_context = _maybe_inject_status_context(user_message)
+    if status_context:
+        parts.append(status_context)
+    return "\n".join(parts)
+
+
+def _build_tool_system_prompt(user_message: str, dm_channel_id: str | None = None) -> str:
+    today_str = datetime.now().strftime("%Y년 %m월 %d일")
+    parts = [SYSTEM_PROMPT.format(today=today_str)]
+    ground_rules = _load_ground_rules()
+    if ground_rules:
+        parts.append("\nHarness Ground Rules:\n" + ground_rules)
+    memory_context = _build_failure_memory_context(user_message)
+    if memory_context:
+        parts.append("\n" + memory_context)
+    status_context = _maybe_inject_status_context(user_message)
+    if status_context:
+        parts.append(status_context)
+    if dm_channel_id:
+        parts.append(
+            f"\nCurrent requester's DM channel ID: {dm_channel_id} — use this as default channel_id for render_pdf and file deliveries unless the user specifies otherwise."
+        )
+    return "\n".join(parts)
+
+
+def _extract_target(text: str) -> tuple[str, int] | None:
+    match = re.search(r"\b(signal|refined_output|research_report)\s+(\d+)\b", text, re.IGNORECASE)
+    if not match:
+        return None
+    return match.group(1).lower(), int(match.group(2))
+
+
+def _extract_decision(text: str) -> str | None:
+    if re.search(r"\bapproved\b|승인", text, re.IGNORECASE):
+        return "approved"
+    if re.search(r"\brejected\b|거절|반려|reject", text, re.IGNORECASE):
+        return "rejected"
+    if re.search(r"\bhold\b|보류", text, re.IGNORECASE):
+        return "hold"
+    if re.search(r"request[_ -]?more[_ -]?research|재검토|추가\s*조사", text, re.IGNORECASE):
+        return "request_more_research"
+    return None
+
+
+def _extract_approval_type(text: str) -> str | None:
+    match = re.search(
+        r"\b(signal_approve|opportunity_approve|vice_president_review_request|customer_test_approve|"
+        r"monetization_experiment_approve|report_publish_approve|investment_thesis_approve|"
+        r"capital_action_approve|legal_review_approve|red_team_clear|pre_mortem_approve|qa_clear)\b",
+        text,
+        re.IGNORECASE,
+    )
+    return match.group(1).lower() if match else None
+
+
+def _parse_structured_command(message: str) -> dict[str, Any] | None:
+    text = " ".join(message.strip().split())
+    text_lower = text.lower()
+
+    stripped = message.strip()
+    goal_cli_match = re.match(r"^/goal\s+(.+)$", stripped, re.IGNORECASE)
+    if not goal_cli_match:
+        plain_goal_cli_match = re.match(
+            r"^goal\s+(create|status|model|snapshot|diagnose)\b(.*)$",
+            stripped,
+            re.IGNORECASE,
+        )
+        if plain_goal_cli_match:
+            goal_cli_match = re.match(r"^goal\s+(.+)$", stripped, re.IGNORECASE)
+    if goal_cli_match:
+        try:
+            tokens = shlex.split(goal_cli_match.group(1))
+        except ValueError as exc:
+            return {
+                "intent": "goal-command-parse-error",
+                "error": f"goal 명령을 파싱하지 못했습니다: {exc}",
+            }
+        if not tokens:
+            return {
+            "intent": "goal-command-missing-subcommand",
+                "error": "goal 명령에는 create/status/model/snapshot/substack-snapshot/provider-snapshot/diagnose 중 하나가 필요합니다.",
+            }
+        subcommand = tokens[0].lower()
+        mapping = {
+            "create": "goal-create",
+            "status": "goal-status",
+            "model": "goal-model",
+            "snapshot": "goal-snapshot",
+            "substack-snapshot": "goal-substack-snapshot",
+            "provider-snapshot": "goal-provider-snapshot",
+            "diagnose": "goal-diagnose",
+        }
+        bridge_command = mapping.get(subcommand)
+        if bridge_command:
+            return {
+                "intent": bridge_command,
+                "bridge_args": [bridge_command] + tokens[1:],
+                "hint": COMMAND_HINTS[bridge_command],
+            }
+        return {
+            "intent": "goal-command-unsupported",
+            "error": "지원되는 goal 명령은 create/status/model/snapshot/substack-snapshot/provider-snapshot/diagnose 입니다.",
+        }
+
+    # Goal queries without a specific ID — list all goals
+    if re.search(r"\bgoal\b", text_lower) and re.search(r"어때|현황|목록|list|리스트|전체|모두|다\b", text_lower):
+        return {
+            "intent": "goal-status",
+            "bridge_args": ["goal-status", "--format", "text"],
+            "hint": COMMAND_HINTS["goal-status"],
+        }
+
+    goal_id_match = re.search(r"\bgoal\s+(\d+)\b", text_lower)
+    if goal_id_match:
+        goal_id = goal_id_match.group(1)
+        if re.search(r"diagnose|진단", text_lower):
+            return {
+                "intent": "goal-diagnose",
+                "bridge_args": ["goal-diagnose", goal_id, "--format", "text"],
+                "hint": COMMAND_HINTS["goal-diagnose"],
+            }
+        if re.search(r"model|모델", text_lower):
+            return {
+                "intent": "goal-model",
+                "bridge_args": ["goal-model", goal_id, "--format", "text"],
+                "hint": COMMAND_HINTS["goal-model"],
+            }
+        if re.search(r"snapshot|스냅샷", text_lower):
+            return {
+                "intent": "goal-snapshot",
+                "error": (
+                    "goal snapshot 기록에는 actual_value가 필요합니다.\n"
+                    "예: `/goal snapshot 3 --actual-value 4 --expected-value 6 --forecast-probability 0.42 --health-status yellow`"
+                ),
+            }
+        if re.search(r"substack", text_lower):
+            return {
+                "intent": "goal-substack-snapshot",
+                "error": (
+                    "Substack goal snapshot에는 CLI 인자가 필요합니다.\n"
+                    "예: `/goal substack-snapshot 3 --expected-value 6 --forecast-probability 0.42 --followers 120 --recommendation-subscribers 3`"
+                ),
+            }
+        if re.search(r"status|상태", text_lower):
+            return {
+                "intent": "goal-status",
+                "bridge_args": ["goal-status", goal_id, "--format", "text"],
+                "hint": COMMAND_HINTS["goal-status"],
+            }
+
+    target = _extract_target(text)
+    if target and re.search(r"decision\s*card|결정\s*카드|decision-card|카드\s*보여", text_lower):
+        target_type, target_id = target
+        return {
+            "intent": "decision-card",
+            "bridge_args": ["decision-card", target_type, str(target_id), "--format", "text"],
+            "hint": COMMAND_HINTS["decision-card"],
+        }
+
+    if re.search(r"run\s*pipeline|pipeline|파이프라인", text_lower) and re.search(r"실행|돌려|run", text_lower):
+        return {
+            "intent": "run-pipeline",
+            "bridge_args": ["run-pipeline", "--notify-slack"],
+            "hint": COMMAND_HINTS["run-pipeline"],
+        }
+
+    status_patterns = [
+        r"^status(?:\s|$)",
+        r"^health(?:\s|$)",
+        r"^상태(?:\s|$)",
+        r"^헬스(?:\s|$)",
+        r"harness\s+상태",
+        r"control\s*plane\s+상태",
+        r"health\s*check",
+        # Natural Korean variations
+        r"^어때\??$",
+        r"harness\s+어때",
+        r"지금\s+어때",
+        r"잘\s+돌아가",
+        r"파이프라인\s+어때",
+        r"시스템\s+어때",
+        r"현황\s*알려",
+        r"상황\s*알려",
+        r"어떻게\s+돌아가",
+    ]
+    if any(re.search(pattern, text_lower) for pattern in status_patterns):
+        return {
+            "intent": "status",
+            "bridge_args": ["status", "--format", "text"],
+            "hint": COMMAND_HINTS["status"],
+        }
+
+    if target and (
+        re.search(r"approve|승인|hold|보류|reject|거절|반려|기록", text_lower)
+        or _extract_approval_type(text_lower)
+    ):
+        decision = _extract_decision(text_lower)
+        approval_type = _extract_approval_type(text_lower)
+        if not decision or not approval_type:
+            return {
+                "intent": "record-decision-missing-fields",
+                "error": (
+                    "승인 기록에는 `target_type id`, `decision`, `approval_type`가 모두 필요합니다.\n"
+                    "예: `refined_output 3 승인 기록해줘 approval_type: report_publish_approve decision: approved reason: mobile approve`"
+                ),
+            }
+        reason_match = re.search(r"reason\s*[:=]\s*(.+)", message, re.IGNORECASE)
+        reason = reason_match.group(1).strip() if reason_match else "requested from Slack"
+        target_type, target_id = target
+        return {
+            "intent": "record-decision",
+            "bridge_args": [
+                "record-decision",
+                target_type,
+                str(target_id),
+                decision,
+                approval_type,
+                "--reason",
+                reason,
+            ],
+            "hint": COMMAND_HINTS["record-decision"],
+        }
+
+    return None
+
+
+def _run_bridge_command(args: list[str]) -> str:
+    try:
+        cmd = [str(VENV_PYTHON), str(BRIDGE_SCRIPT)] + args
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=90,
+            cwd=str(PROJECT_ROOT),
+        )
+        output = ((result.stdout or "") + (result.stderr or "")).strip()
+        if result.returncode != 0:
+            return f"❌ bridge 실행 실패 (code={result.returncode})\n{output[:1500]}"
+        return output[:2000] or "✅ bridge 명령 완료"
+    except subprocess.TimeoutExpired:
+        return "❌ bridge 실행 시간 초과 (90초)"
+    except Exception as exc:
+        return f"❌ bridge 실행 오류: {exc}"
+
+
+def _fetch_status_snapshot() -> str:
+    """Bridge status를 캐시해서 반환 (60s TTL). LLM context 주입용."""
+    now = time.time()
+    if _STATUS_SNAPSHOT_CACHE["text"] and (now - _STATUS_SNAPSHOT_CACHE["ts"]) < _STATUS_SNAPSHOT_TTL:
+        return _STATUS_SNAPSHOT_CACHE["text"]
+    result = _run_bridge_command(["status", "--format", "text"])
+    _STATUS_SNAPSHOT_CACHE["ts"] = now
+    _STATUS_SNAPSHOT_CACHE["text"] = result
+    return result
+
+
+def _maybe_inject_status_context(user_message: str) -> str:
+    """상태 관련 질문에 실시간 Harness 상태를 시스템 프롬프트에 주입."""
+    if not _STATUS_HINT_RE.search(user_message):
+        return ""
+    snapshot = _fetch_status_snapshot()
+    if snapshot.startswith("❌"):
+        return ""
+    return f"\nCurrent Harness status snapshot (realtime):\n{snapshot[:800]}"
+
+
+def _is_mutating_intent(intent: str) -> bool:
+    return intent in {
+        "record-decision",
+        "run-pipeline",
+        "goal-create",
+        "goal-model",
+        "goal-snapshot",
+        "goal-substack-snapshot",
+        "goal-provider-snapshot",
+    }
+
+
+def _authorize_structured_command(intent: str, requester_user_id: str | None) -> str | None:
+    if not _is_mutating_intent(intent):
+        return None
+
+    expected_user_id = os.environ.get("SLACK_CEO_USER_ID", "").strip()
+    if not requester_user_id:
+        return "❌ 이 명령은 호출자 식별값 없이 실행할 수 없습니다. CEO Slack 사용자로 다시 시도하세요."
+    if expected_user_id and requester_user_id != expected_user_id:
+        return "❌ 이 명령은 CEO 승인 surface에서만 실행할 수 있습니다."
+    return None
 
 TOOLS = [
     {
@@ -502,7 +925,7 @@ def _ollama_chat(host: str, label: str, user_message: str) -> str | None:
             json={
                 "model": OLLAMA_CHAT_MODEL,
                 "messages": [
-                    {"role": "system", "content": CHAT_SYSTEM_PROMPT},
+                    {"role": "system", "content": _build_chat_system_prompt(user_message)},
                     {"role": "user", "content": user_message},
                 ],
                 "stream": False,
@@ -555,11 +978,10 @@ def _run_haiku_chat(user_message: str) -> str:
     if not api_key:
         return "❌ ANTHROPIC_API_KEY가 설정되지 않았습니다."
     client = anthropic.Anthropic(api_key=api_key)
-    today_str = datetime.now().strftime("%Y년 %m월 %d일")
     resp = client.messages.create(
         model="claude-haiku-4-5",
         max_tokens=1024,
-        system=CHAT_SYSTEM_PROMPT + f"\n오늘 날짜: {today_str}",
+        system=_build_chat_system_prompt(user_message),
         messages=[{"role": "user", "content": user_message}],
     )
     log_api_cost("claude-haiku-4-5", resp.usage.input_tokens, resp.usage.output_tokens)
@@ -572,7 +994,11 @@ def _run_haiku_chat(user_message: str) -> str:
 
 # ── 에이전트 루프 (Tier 2: Claude Sonnet + Tools) ──────────────────────────────
 
-def run(user_message: str, dm_channel_id: str | None = None) -> str:
+def run(
+    user_message: str,
+    dm_channel_id: str | None = None,
+    requester_user_id: str | None = None,
+) -> str:
     """
     CEO 메시지를 라우팅하여 최적 LLM으로 처리.
 
@@ -581,6 +1007,18 @@ def run(user_message: str, dm_channel_id: str | None = None) -> str:
     Tier 1  (저비용): Claude Haiku — 모든 Ollama 불가 시
     Tier 2  (프리미엄): Claude Sonnet — 도구 사용 필요 시
     """
+    parsed_command = _parse_structured_command(user_message)
+    if parsed_command:
+        if parsed_command.get("error"):
+            logger.info(f"[router] 명령 인식했지만 필수 필드 부족: {parsed_command['intent']}")
+            return parsed_command["error"]
+        auth_error = _authorize_structured_command(parsed_command["intent"], requester_user_id)
+        if auth_error:
+            logger.warning(f"[router] structured command blocked: intent={parsed_command['intent']}")
+            return auth_error
+        logger.info(f"[router] 구조화 명령 감지 → bridge {parsed_command['intent']}")
+        return _run_bridge_command(parsed_command["bridge_args"])
+
     if not _needs_tools(user_message):
         logger.info(f"[router] 일반 대화 → Tier0/Ollama")
         return _run_ollama_chat(user_message)
@@ -597,10 +1035,7 @@ def _run_tool_agent(user_message: str, dm_channel_id: str | None = None) -> str:
 
     client = anthropic.Anthropic(api_key=api_key)
 
-    today_str = datetime.now().strftime("%Y년 %m월 %d일")
-    system = SYSTEM_PROMPT.format(today=today_str)
-    if dm_channel_id:
-        system += f"\n\nCurrent requester's DM channel ID: {dm_channel_id} — use this as default channel_id for render_pdf and file deliveries unless the user specifies otherwise."
+    system = _build_tool_system_prompt(user_message, dm_channel_id=dm_channel_id)
 
     messages = [{"role": "user", "content": user_message}]
 
