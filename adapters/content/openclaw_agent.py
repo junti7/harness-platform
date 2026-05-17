@@ -23,6 +23,7 @@ import os
 import re
 import shlex
 import subprocess
+import threading
 import time
 from datetime import datetime
 from html import unescape
@@ -130,11 +131,21 @@ FAILURE_MEMORY_CACHE_TTL_SECONDS = 30.0
 _FAILURE_MEMORY_CACHE: dict[str, Any] = {"loaded_at": 0.0, "mtime": None, "entries": []}
 
 _STATUS_SNAPSHOT_CACHE: dict[str, Any] = {"ts": 0.0, "text": ""}
-_STATUS_SNAPSHOT_TTL = 60.0  # seconds — bridge status is cached to avoid repeated subprocess calls
+_STATUS_SNAPSHOT_TTL = 60.0  # seconds — only populated on successful bridge calls
+_STATUS_SNAPSHOT_LOCK = threading.Lock()
+_STATUS_INJECT_TIMEOUT = 5.0  # seconds — context injection must not block longer than this
 
-# Broad intent signal: when matched, inject real-time status into LLM system prompt
+# Explicit status-query intent signals only — intentionally narrow to avoid
+# triggering a bridge subprocess on every message that happens to mention "goal" or "substack".
 _STATUS_HINT_RE = re.compile(
-    r"어때|어떻게\s*돼|잘\s*됐|현황|파이프라인|pipeline|goal|목표|구독자|substack|상황",
+    r"어때[요]?\??$"                         # "어때?", "어때요?" at end of message
+    r"|어떻게\s*돼|잘\s*됐"                  # "어떻게 돼?", "잘 됐어?"
+    r"|현황\s*(알려|보여|줘|확인)"            # "현황 알려줘", "현황 확인"
+    r"|상황\s*(알려|보여|줘|확인)"            # "상황 알려줘"
+    r"|harness\s+(어때|상태|현황)"            # "harness 어때", "harness 현황"
+    r"|파이프라인\s+어때"                     # "파이프라인 어때?"
+    r"|goal\s+(어때|현황|목록|상태)"          # "goal 어때", "goal 현황" — scoped to Harness goal
+    r"|pipeline\s+status",                    # English status query
     re.IGNORECASE,
 )
 
@@ -343,7 +354,7 @@ def _parse_structured_command(message: str) -> dict[str, Any] | None:
         }
 
     # Goal queries without a specific ID — list all goals
-    if re.search(r"\bgoal\b", text_lower) and re.search(r"어때|현황|목록|list|리스트|전체|모두|다\b", text_lower):
+    if re.search(r"\bgoal\b", text_lower) and re.search(r"어때[요]?|현황|목록|list|리스트|전체|모두", text_lower):
         return {
             "intent": "goal-status",
             "bridge_args": ["goal-status", "--format", "text"],
@@ -381,7 +392,7 @@ def _parse_structured_command(message: str) -> dict[str, Any] | None:
                     "예: `/goal substack-snapshot 3 --expected-value 6 --forecast-probability 0.42 --followers 120 --recommendation-subscribers 3`"
                 ),
             }
-        if re.search(r"status|상태", text_lower):
+        if re.search(r"status|상태|어때[요]?|어떻게\s*돼|현황", text_lower):
             return {
                 "intent": "goal-status",
                 "bridge_args": ["goal-status", goal_id, "--format", "text"],
@@ -471,6 +482,8 @@ def _run_bridge_command(args: list[str]) -> str:
             cmd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=90,
             cwd=str(PROJECT_ROOT),
         )
@@ -485,14 +498,38 @@ def _run_bridge_command(args: list[str]) -> str:
 
 
 def _fetch_status_snapshot() -> str:
-    """Bridge status를 캐시해서 반환 (60s TTL). LLM context 주입용."""
+    """Bridge status를 캐시해서 반환 (60s TTL, 성공 응답만 캐시). LLM context 주입용."""
     now = time.time()
-    if _STATUS_SNAPSHOT_CACHE["text"] and (now - _STATUS_SNAPSHOT_CACHE["ts"]) < _STATUS_SNAPSHOT_TTL:
-        return _STATUS_SNAPSHOT_CACHE["text"]
-    result = _run_bridge_command(["status", "--format", "text"])
-    _STATUS_SNAPSHOT_CACHE["ts"] = now
-    _STATUS_SNAPSHOT_CACHE["text"] = result
-    return result
+    # Fast-path: read under lock to get consistent (ts, text) pair
+    with _STATUS_SNAPSHOT_LOCK:
+        cached_text = _STATUS_SNAPSHOT_CACHE["text"]
+        cached_ts = _STATUS_SNAPSHOT_CACHE["ts"]
+        if cached_text and (now - cached_ts) < _STATUS_SNAPSHOT_TTL:
+            return cached_text
+
+    # Slow-path: run bridge with a short timeout dedicated to context injection
+    try:
+        cmd = [str(VENV_PYTHON), str(BRIDGE_SCRIPT), "status", "--format", "text"]
+        result_proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=_STATUS_INJECT_TIMEOUT,
+            cwd=str(PROJECT_ROOT),
+        )
+        output = ((result_proc.stdout or "") + (result_proc.stderr or "")).strip()
+        if result_proc.returncode != 0 or not output:
+            return ""
+    except (subprocess.TimeoutExpired, Exception):
+        return ""
+
+    # Only cache successful results — errors do not poison the cache
+    with _STATUS_SNAPSHOT_LOCK:
+        _STATUS_SNAPSHOT_CACHE["ts"] = time.time()
+        _STATUS_SNAPSHOT_CACHE["text"] = output
+    return output
 
 
 def _maybe_inject_status_context(user_message: str) -> str:
@@ -500,7 +537,7 @@ def _maybe_inject_status_context(user_message: str) -> str:
     if not _STATUS_HINT_RE.search(user_message):
         return ""
     snapshot = _fetch_status_snapshot()
-    if snapshot.startswith("❌"):
+    if not snapshot:
         return ""
     return f"\nCurrent Harness status snapshot (realtime):\n{snapshot[:800]}"
 
