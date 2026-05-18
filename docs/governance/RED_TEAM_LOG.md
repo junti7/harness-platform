@@ -43,24 +43,28 @@
 - Prompt Injection + 연쇄 API 호출 시 비용 급증 위험
 - 수정 방향: 인메모리 또는 Redis 기반 rate limiter 추가
 
+### 수정 완료 항목 (2026-05-18 commit `2e522a2`)
+
+| ID | 수정 내용 | 검증 |
+|----|-----------|------|
+| H-1 | `_authorized_for_high_risk` fail-closed + `_authorize_structured_command` env 미설정 차단 + Mac Mini `.env` `SLACK_CEO_USER_ID=U0B2P25NR6Y` 추가 | Mac Mini 4개 케이스 PASS |
+| H-2 | `_resolve_path` `_ALLOWED_READ_ROOTS`/`_ALLOWED_WRITE_ROOTS` boundary 강제, `tool_write_file` `write=True` | SSH key / /etc/hosts 차단 PASS |
+| H-3 | `_format_with_haiku` `datetime.now()` system prompt 주입 | 코드 확인 |
+| H-4 | 모든 LLM 호출 user_message XML 캡슐화, SYSTEM_PROMPT/CHAT_SYSTEM_PROMPT injection 방어 지침 추가 | 코드 확인 |
+| M-2 | `command_record_decision` `capital_action_approve` gate 추가 | 코드 확인 |
+
 ### 미해결 항목 (`red_team_clear` 조건)
 
-1. H-1: `_authorize_structured_command` fail-closed 수정 + `.env` SLACK_CEO_USER_ID 설정
-2. H-2: `_resolve_path` PROJECT_ROOT boundary 강제
-3. H-3: `_format_with_haiku` 날짜 주입
-4. H-4: Prompt Injection 방어 (XML 태그 캡슐화)
-5. M-1: budget gate Haiku 경로 적용
-6. M-2: CAPITAL_ACTIONS_ENABLED bridge 차단
-7. M-3: correlation_id goal_loop.py 전파 (DB migration 포함)
-8. M-4: log rotation 구현
-9. M-5: 파일 잠금 추가
-10. M-6: Rate Limiting 구현
-11. CLAUDE.md 컴플라이언스: qa_clear / pre_mortem / legal_review_approve 구현
+1. M-1: budget gate Haiku 경로 적용
+2. M-3: correlation_id goal_loop.py 전파 (DB migration 포함)
+3. M-4: log rotation 구현
+4. M-5: 파일 잠금 추가
+5. M-6: Rate Limiting 구현
+6. CLAUDE.md 컴플라이언스: qa_clear / pre_mortem / legal_review_approve 구현
 
 ### 다음 단계
 
-즉시 처리 (H-1, H-3): 오늘 내 수정 가능  
-이번 주 (H-2, H-4, M-1, M-2): 코드 수정 필요  
-다음 스프린트 (M-3~M-6, compliance): 설계 + migration 필요  
+이번 주: M-1 (budget gate)  
+다음 스프린트: M-3~M-6, compliance  
 
 재검토 시 참여 LLM: Claude + Gemini + Codex (3개 full pass 후 `red_team_clear` 가능)
