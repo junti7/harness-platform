@@ -11,6 +11,7 @@ import os
 import sys
 import logging
 import threading
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 # launchd 실행 시에도 프로젝트 루트 import가 가능하도록 sys.path 주입
@@ -28,10 +29,23 @@ from adapters.content.openclaw_agent import run as agent_run, OLLAMA_CHAT_MODEL,
 from core.reader_feedback import classify_feedback, upsert_reader_profile, record_feedback
 from adapters.content.vp_review_card import parse_vp_response
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [slack_listener] %(levelname)s %(message)s",
+_LOG_FILE = _PROJECT_ROOT / "logs" / "slack_listener.log"
+_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+_root_logger = logging.getLogger()
+_root_logger.setLevel(logging.INFO)
+_fmt = logging.Formatter("%(asctime)s [slack_listener] %(levelname)s %(message)s")
+
+_rotating_handler = RotatingFileHandler(
+    _LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
 )
+_rotating_handler.setFormatter(_fmt)
+_root_logger.addHandler(_rotating_handler)
+
+_stream_handler = logging.StreamHandler()
+_stream_handler.setFormatter(_fmt)
+_root_logger.addHandler(_stream_handler)
+
 logger = logging.getLogger(__name__)
 
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "")

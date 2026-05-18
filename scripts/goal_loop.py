@@ -1,7 +1,12 @@
 import json
+import uuid
 from typing import Any
 
 from core.database import execute_query
+
+
+def _new_cid() -> str:
+    return str(uuid.uuid4())
 
 
 def _first_row(rows: list[dict[str, Any]] | None) -> dict[str, Any]:
@@ -38,6 +43,7 @@ def create_goal(
     failure_definition: str | None = None,
     constraints_json: str | None = None,
     metadata_json: str | None = None,
+    correlation_id: str | None = None,
 ) -> dict[str, Any]:
     row = _first_row(
         execute_query(
@@ -59,11 +65,12 @@ def create_goal(
                 success_definition,
                 failure_definition,
                 constraints_json,
-                metadata
+                metadata,
+                correlation_id
             )
             VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                'draft', %s, 'Business Operations Team', %s, %s, %s::jsonb, %s::jsonb
+                'draft', %s, 'Business Operations Team', %s, %s, %s::jsonb, %s::jsonb, %s::uuid
             )
             RETURNING *
             """,
@@ -83,6 +90,7 @@ def create_goal(
                 failure_definition,
                 json.dumps(_parse_json_arg(constraints_json, {}), ensure_ascii=False),
                 json.dumps(_parse_json_arg(metadata_json, {}), ensure_ascii=False),
+                correlation_id or _new_cid(),
             ),
             fetch=True,
         )
@@ -103,6 +111,7 @@ def set_goal_model(
     scenario_assumptions_json: str | None = None,
     created_by: str = "Business Operations Team",
     activate: bool = True,
+    correlation_id: str | None = None,
 ) -> dict[str, Any]:
     current = execute_query(
         "SELECT COALESCE(MAX(version), 0) AS version FROM goal_model_specs WHERE goal_id = %s",
@@ -132,9 +141,10 @@ def set_goal_model(
                 trigger_thresholds,
                 scenario_assumptions,
                 active,
-                created_by
+                created_by,
+                correlation_id
             )
-            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s, %s::uuid)
             RETURNING *
             """,
             (
@@ -150,6 +160,7 @@ def set_goal_model(
                 json.dumps(_parse_json_arg(scenario_assumptions_json, {}), ensure_ascii=False),
                 activate,
                 created_by,
+                correlation_id or _new_cid(),
             ),
             fetch=True,
         )
@@ -183,6 +194,7 @@ def record_goal_snapshot(
     source_metrics_json: str | None = None,
     snapshot_date: str | None = None,
     components_json: str | None = None,
+    correlation_id: str | None = None,
 ) -> dict[str, Any]:
     model = _active_model(goal_id)
     model_spec_id = model["id"] if model else None
@@ -203,7 +215,8 @@ def record_goal_snapshot(
                 variance,
                 health_status,
                 notes,
-                source_metrics_json
+                source_metrics_json,
+                correlation_id
             )
             VALUES (
                 %s,
@@ -215,7 +228,8 @@ def record_goal_snapshot(
                 %s,
                 %s,
                 %s,
-                %s::jsonb
+                %s::jsonb,
+                %s::uuid
             )
             RETURNING *
             """,
@@ -230,6 +244,7 @@ def record_goal_snapshot(
                 health_status,
                 notes,
                 json.dumps(_parse_json_arg(source_metrics_json, {}), ensure_ascii=False),
+                correlation_id or _new_cid(),
             ),
             fetch=True,
         )

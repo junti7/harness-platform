@@ -396,6 +396,36 @@ def _budget_block_message() -> str:
     )
 
 
+# ── 인메모리 Rate Limiter (M-6) ──────────────────────────────────────────────
+# 슬라이딩 윈도우 방식: user_id별 60초 내 최대 20회 API 호출 허용
+_RATE_LIMIT_WINDOW = int(os.environ.get("OPENCLAW_RATE_LIMIT_WINDOW", "60"))
+_RATE_LIMIT_MAX = int(os.environ.get("OPENCLAW_RATE_LIMIT_MAX", "20"))
+_rate_buckets: dict[str, deque] = defaultdict(deque)
+_rate_lock = threading.Lock()
+
+
+def _rate_limit_check(user_id: str | None) -> bool:
+    """Returns True if the caller is rate-limited (should be blocked)."""
+    key = user_id or "__anon__"
+    now = time.monotonic()
+    with _rate_lock:
+        bucket = _rate_buckets[key]
+        cutoff = now - _RATE_LIMIT_WINDOW
+        while bucket and bucket[0] < cutoff:
+            bucket.popleft()
+        if len(bucket) >= _RATE_LIMIT_MAX:
+            return True
+        bucket.append(now)
+        return False
+
+
+def _rate_limit_block_message() -> str:
+    return (
+        f"⏱️ 요청이 너무 많습니다. {_RATE_LIMIT_WINDOW}초 내 {_RATE_LIMIT_MAX}회 한도를 초과했습니다.\n"
+        "잠시 후 다시 시도해 주세요."
+    )
+
+
 def _rolling_context_text(user_message: str, history: list[dict[str, str]], turns: int = 5) -> str:
     recent = history[-turns * 2 :] if turns > 0 else []
     parts = [item.get("content", "") for item in recent]
@@ -1673,6 +1703,9 @@ def run(
     Tier 0  (local) : Ollama only when OPENCLAW_CHAT_BACKEND=ollama
     Tier 2  (tools) : Claude Sonnet — 도구 사용 필요 시
     """
+    if _rate_limit_check(requester_user_id):
+        return _rate_limit_block_message()
+
     effective_session_id = session_id or (
         f"{requester_user_id}:{dm_channel_id}" if requester_user_id and dm_channel_id else requester_user_id
     )

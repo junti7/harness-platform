@@ -1,4 +1,5 @@
 import argparse
+import fcntl
 import json
 import os
 import shutil
@@ -133,7 +134,12 @@ def _write_output(output: str, output_path: str | None) -> None:
 
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(output, encoding="utf-8")
+    with path.open("w", encoding="utf-8") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            f.write(output)
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
     print(str(path))
 
 
