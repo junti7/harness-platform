@@ -186,6 +186,13 @@ def command_decision_card(args: argparse.Namespace) -> None:
 
 
 def command_record_decision(args: argparse.Namespace) -> None:
+    if args.approval_type == "capital_action_approve":
+        if os.getenv("CAPITAL_ACTIONS_ENABLED", "false").lower() != "true":
+            _write_output(
+                "❌ CAPITAL_ACTIONS_ENABLED=false — 자본 집행 명령 차단. 서버 .env를 확인하세요.",
+                args.output,
+            )
+            return
     record_decision(
         target_type=args.target_type,
         target_id=args.target_id,
