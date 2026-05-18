@@ -36,15 +36,19 @@ _root_logger = logging.getLogger()
 _root_logger.setLevel(logging.INFO)
 _fmt = logging.Formatter("%(asctime)s [slack_listener] %(levelname)s %(message)s")
 
-_rotating_handler = RotatingFileHandler(
-    _LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
-)
-_rotating_handler.setFormatter(_fmt)
-_root_logger.addHandler(_rotating_handler)
+# 중복 핸들러 방지: RotatingFileHandler가 아직 없을 때만 추가
+if not any(isinstance(h, RotatingFileHandler) for h in _root_logger.handlers):
+    _rotating_handler = RotatingFileHandler(
+        _LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+    )
+    _rotating_handler.setFormatter(_fmt)
+    _root_logger.addHandler(_rotating_handler)
 
-_stream_handler = logging.StreamHandler()
-_stream_handler.setFormatter(_fmt)
-_root_logger.addHandler(_stream_handler)
+# StreamHandler: 기존 basicConfig StreamHandler가 없을 때만 추가
+if not any(isinstance(h, logging.StreamHandler) and not isinstance(h, RotatingFileHandler) for h in _root_logger.handlers):
+    _stream_handler = logging.StreamHandler()
+    _stream_handler.setFormatter(_fmt)
+    _root_logger.addHandler(_stream_handler)
 
 logger = logging.getLogger(__name__)
 
