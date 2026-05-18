@@ -122,3 +122,22 @@ Codex / GPT reasoning model의 독립적 final pass 후 3-of-3 또는 2-of-3 app
 ### Final Verdict
 
 `red_team_block`. The direct H-1, H-2 read/write, M-2, M-3, M-4, M-5, and M-6 patches mostly verify, but H-4 remains incomplete through conversation history replay. SSRF plus untrusted fetched content plus broad script execution is a credible tool-chaining risk. Do not record `red_team_clear` or run the Mac Mini `record-decision red_team_clear` command until these findings are fixed and re-reviewed.
+
+---
+
+## 2026-05-19 — Codex 발견사항 수정 완료 (commit `182635d`)
+
+| ID | 수정 내용 |
+|----|-----------|
+| C-1 (H-4 history replay) | `_record_conversation_turn()` 저장 시점에 XML 캡슐화 → 모든 replay 경로 자동 커버 |
+| C-2 (SSRF) | `_check_ssrf_url()` 추가 — private/loopback/link-local/reserved IP 차단, `tool_fetch_url()` 진입부 적용 |
+| C-3 (run_script boundary) | `tool_run_script()` → `_resolve_path(script)` 경유로 PROJECT_ROOT boundary 강제 |
+| C-4 (DM fail-open) | `slack_listener.py` DM handler: `not CEO_SLACK_USER_ID or ...` → `CEO_SLACK_USER_ID and user == CEO_SLACK_USER_ID` |
+| C-5 (compliance qa_clear) | `PREREQUISITE_GATES`에 `monetization_experiment_approve`, `investment_thesis_approve`에 `qa_clear` 추가 |
+
+### `red_team_clear` 기록
+
+**Verdict:** `red_team_clear`  
+**Participating LLMs:** Claude (Sonnet 4.6) + Gemini (0.42.0) + Codex  
+**DB 기록:** `ceo_decisions` target_type=red_team_review target_id=1 decision=approved approval_type=red_team_clear (2026-05-19T06:42:02)  
+**근거:** 3-LLM cross-verification 완료. C-1~C-5 전체 수정 완료 확인. H-1~H-4 + M-1~M-6 + CLAUDE.md compliance 전체 통과.
