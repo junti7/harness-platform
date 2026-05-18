@@ -57,7 +57,8 @@ def handle_mention(event, say, logger):
 
     if CEO_SLACK_USER_ID and user == CEO_SLACK_USER_ID:
         say(text=":thinking_face: 처리 중...", thread_ts=event.get("ts"))
-        response = agent_run(text, dm_channel_id=channel, requester_user_id=user)
+        session_id = f"slack:{channel}:{user}"
+        response = agent_run(text, dm_channel_id=channel, requester_user_id=user, session_id=session_id)
         say(text=response, thread_ts=event.get("ts"))
     else:
         _handle_reader_feedback(user, text, source_channel=f"slack_mention:{channel}", say=say,
@@ -78,7 +79,8 @@ def handle_dm(event, say, logger):
 
     if not CEO_SLACK_USER_ID or user == CEO_SLACK_USER_ID:
         say(text=":thinking_face: 처리 중...")
-        response = agent_run(text, dm_channel_id=channel, requester_user_id=user)
+        session_id = f"slack:{channel}:{user}"
+        response = agent_run(text, dm_channel_id=channel, requester_user_id=user, session_id=session_id)
         say(text=response)
     elif VP_SLACK_USER_ID and user == VP_SLACK_USER_ID:
         _handle_vp_dm(user, text, say=say, logger=logger)

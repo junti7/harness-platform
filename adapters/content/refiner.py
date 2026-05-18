@@ -12,24 +12,43 @@ load_dotenv()
 DAILY_COST_LIMIT = float(os.getenv("DAILY_COST_LIMIT_USD", "2.00"))
 TIER3_BATCH_LIMIT = int(os.getenv("TIER3_BATCH_LIMIT", "10"))
 
-# Claude Sonnet 4.6 가격
-INPUT_COST_PER_1K = 0.003
-OUTPUT_COST_PER_1K = 0.015
+MODEL_PRICES_PER_1K = {
+    "haiku": (0.0008, 0.004),
+    "sonnet": (0.003, 0.015),
+    "opus": (0.015, 0.075),
+}
+INPUT_COST_PER_1K = MODEL_PRICES_PER_1K["sonnet"][0]
+OUTPUT_COST_PER_1K = MODEL_PRICES_PER_1K["sonnet"][1]
 
 SYSTEM_PROMPT = load_prompt_text("physical_ai_analyst")
 
 
-def estimate_cost(input_tokens: int, output_tokens: int) -> float:
-    return (input_tokens / 1000 * INPUT_COST_PER_1K +
-            output_tokens / 1000 * OUTPUT_COST_PER_1K)
+def _price_for_model(model: str) -> tuple[float, float]:
+    model_lower = (model or "").lower()
+    for key, price in MODEL_PRICES_PER_1K.items():
+        if key in model_lower:
+            return price
+    return MODEL_PRICES_PER_1K["sonnet"]
+
+
+def estimate_cost(input_tokens: int, output_tokens: int, model: str = "claude-sonnet") -> float:
+    input_price, output_price = _price_for_model(model)
+    return (input_tokens / 1000 * input_price +
+            output_tokens / 1000 * output_price)
 
 
 def get_today_cost(logger=None) -> float:
     try:
         result = execute_query("""
             SELECT SUM(
-                (input_tokens::float / 1000 * 0.003) +
-                (output_tokens::float / 1000 * 0.015)
+                CASE
+                    WHEN LOWER(model) LIKE '%haiku%' THEN
+                        (input_tokens::float / 1000 * 0.0008) + (output_tokens::float / 1000 * 0.004)
+                    WHEN LOWER(model) LIKE '%opus%' THEN
+                        (input_tokens::float / 1000 * 0.015) + (output_tokens::float / 1000 * 0.075)
+                    ELSE
+                        (input_tokens::float / 1000 * 0.003) + (output_tokens::float / 1000 * 0.015)
+                END
             ) as total_cost
             FROM api_cost_log
             WHERE DATE(created_at) = CURRENT_DATE
