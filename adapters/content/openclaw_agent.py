@@ -17,12 +17,14 @@ LLM 티어:
 - fetch_url     : 공개 웹페이지 또는 인증된 Substack 페이지 내용을 가져와 요약 가능한 텍스트로 변환
 """
 
+import ipaddress
 import json
 import logging
 import ast
 import os
 import re
 import shlex
+import socket
 import subprocess
 import threading
 import time
@@ -31,6 +33,7 @@ from datetime import datetime
 from html import unescape
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import anthropic
 import httpx
@@ -333,7 +336,7 @@ def _record_conversation_turn(session_id: str | None, user_message: str, assista
         return
     with _CONVERSATION_HISTORY_LOCK:
         history = _CONVERSATION_HISTORY[session_id]
-        history.append({"role": "user", "content": user_message})
+        history.append({"role": "user", "content": f"<user_message>{user_message}</user_message>"})
         history.append({"role": "assistant", "content": assistant_response[:4000]})
 
 
@@ -1174,6 +1177,28 @@ _ALLOWED_WRITE_ROOTS: list[Path] = [
 ]
 
 
+def _check_ssrf_url(url: str) -> None:
+    """Raise ValueError if URL resolves to a private/reserved IP (SSRF guard)."""
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError(f"허용되지 않는 URL 스킴: {parsed.scheme!r}")
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("URL에 hostname이 없습니다.")
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror as exc:
+        raise ValueError(f"hostname 해석 실패: {hostname} — {exc}") from exc
+    for info in infos:
+        ip_str = info[4][0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            raise ValueError(f"SSRF 차단: {hostname} → {ip_str} (사설/예약 IP)")
+
+
 def _resolve_path(path: str, write: bool = False) -> Path:
     p = Path(path)
     resolved = (p if p.is_absolute() else PROJECT_ROOT / p).resolve()
@@ -1236,7 +1261,8 @@ def tool_list_files(path: str) -> str:
 
 def tool_run_script(script: str, args: list | None = None) -> str:
     try:
-        cmd = [str(VENV_PYTHON), str(PROJECT_ROOT / script)] + (args or [])
+        script_path = _resolve_path(script)  # PROJECT_ROOT boundary enforced
+        cmd = [str(VENV_PYTHON), str(script_path)] + (args or [])
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=60, cwd=str(PROJECT_ROOT)
         )
@@ -1268,6 +1294,7 @@ def tool_send_slack(channel: str, message: str) -> str:
 
 def tool_fetch_url(url: str) -> str:
     try:
+        _check_ssrf_url(url)
         publication_url = os.environ.get("SUBSTACK_PUBLICATION_URL", "").rstrip("/")
         substack_session_token = os.environ.get("SUBSTACK_SESSION_TOKEN", "")
         is_substack_private = (

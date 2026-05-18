@@ -95,7 +95,7 @@ def handle_dm(event, say, logger):
     channel = event.get("channel", "")
     logger.info(f"[DM] user={user} text={text!r}")
 
-    if not CEO_SLACK_USER_ID or user == CEO_SLACK_USER_ID:
+    if CEO_SLACK_USER_ID and user == CEO_SLACK_USER_ID:
         say(text=":thinking_face: 처리 중...")
         session_id = f"slack:{channel}:{user}"
         response = agent_run(text, dm_channel_id=channel, requester_user_id=user, session_id=session_id)

@@ -8,8 +8,8 @@ VALID_DECISIONS = {"approved", "hold", "rejected", "request_more_research"}
 # CLAUDE.md: "다음 high-impact 결정은 legal_review_approve, red_team_clear, pre_mortem_approve를 사전 조건으로 요구한다"
 PREREQUISITE_GATES: dict[str, frozenset[str]] = {
     "report_publish_approve": frozenset({"legal_review_approve", "red_team_clear", "pre_mortem_approve", "qa_clear"}),
-    "monetization_experiment_approve": frozenset({"legal_review_approve", "red_team_clear", "pre_mortem_approve"}),
-    "investment_thesis_approve": frozenset({"legal_review_approve", "red_team_clear", "pre_mortem_approve"}),
+    "monetization_experiment_approve": frozenset({"legal_review_approve", "red_team_clear", "pre_mortem_approve", "qa_clear"}),
+    "investment_thesis_approve": frozenset({"legal_review_approve", "red_team_clear", "pre_mortem_approve", "qa_clear"}),
     "capital_action_approve": frozenset({"legal_review_approve", "red_team_clear", "pre_mortem_approve"}),
 }
 
