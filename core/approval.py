@@ -1,7 +1,17 @@
 import os
+from typing import Optional
 
 
 VALID_DECISIONS = {"approved", "hold", "rejected", "request_more_research"}
+
+# high-impact approval_type → 먼저 기록되어야 할 prerequisite approval_types
+# CLAUDE.md: "다음 high-impact 결정은 legal_review_approve, red_team_clear, pre_mortem_approve를 사전 조건으로 요구한다"
+PREREQUISITE_GATES: dict[str, frozenset[str]] = {
+    "report_publish_approve": frozenset({"legal_review_approve", "red_team_clear", "pre_mortem_approve", "qa_clear"}),
+    "monetization_experiment_approve": frozenset({"legal_review_approve", "red_team_clear", "pre_mortem_approve"}),
+    "investment_thesis_approve": frozenset({"legal_review_approve", "red_team_clear", "pre_mortem_approve"}),
+    "capital_action_approve": frozenset({"legal_review_approve", "red_team_clear", "pre_mortem_approve"}),
+}
 
 VALID_APPROVAL_TYPES = {
     "signal_approve",

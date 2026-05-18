@@ -6,12 +6,32 @@ sys.path.insert(0, ".")
 
 from core.approval import (
     APPROVAL_TARGET_TYPES,
+    PREREQUISITE_GATES,
     VALID_APPROVAL_TYPES,
     VALID_DECISIONS,
     validate_approval,
     validate_decision,
 )
 from core.database import execute_query
+
+
+def _check_prerequisites(target_type: str, target_id: int, approval_type: str) -> list[str]:
+    """Returns sorted list of prerequisite approval_types not yet 'approved' for this target."""
+    required = PREREQUISITE_GATES.get(approval_type)
+    if not required:
+        return []
+    rows = execute_query(
+        """
+        SELECT approval_type FROM ceo_decisions
+        WHERE target_type = %s AND target_id = %s
+          AND decision = 'approved'
+          AND approval_type = ANY(%s)
+        """,
+        (target_type, target_id, list(required)),
+        fetch=True,
+    ) or []
+    recorded = {r["approval_type"] for r in rows}
+    return sorted(required - recorded)
 
 
 def record_decision(
@@ -23,6 +43,15 @@ def record_decision(
 ):
     validate_decision(decision)
     validate_approval(target_type, approval_type)
+
+    if decision == "approved":
+        missing = _check_prerequisites(target_type, target_id, approval_type)
+        if missing:
+            raise PermissionError(
+                f"❌ {approval_type} 기록 전 다음 prerequisite gate가 먼저 'approved'로 기록되어야 합니다:\n"
+                + "\n".join(f"  • {g}" for g in missing)
+                + f"\n\nrecord-decision {target_type} {target_id} approved <gate> --reason '...' 로 각 gate를 먼저 통과하세요."
+            )
 
     execute_query(
         """

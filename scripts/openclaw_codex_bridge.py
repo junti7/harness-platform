@@ -199,13 +199,17 @@ def command_record_decision(args: argparse.Namespace) -> None:
                 args.output,
             )
             return
-    record_decision(
-        target_type=args.target_type,
-        target_id=args.target_id,
-        decision=args.decision,
-        approval_type=args.approval_type,
-        reason=args.reason,
-    )
+    try:
+        record_decision(
+            target_type=args.target_type,
+            target_id=args.target_id,
+            decision=args.decision,
+            approval_type=args.approval_type,
+            reason=args.reason,
+        )
+    except PermissionError as exc:
+        _write_output(str(exc), args.output)
+        return
     payload = {
         "generated_at": _now(),
         "target_type": args.target_type,
