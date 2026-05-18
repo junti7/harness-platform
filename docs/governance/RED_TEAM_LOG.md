@@ -53,18 +53,22 @@
 | H-4 | 모든 LLM 호출 user_message XML 캡슐화, SYSTEM_PROMPT/CHAT_SYSTEM_PROMPT injection 방어 지침 추가 | 코드 확인 |
 | M-2 | `command_record_decision` `capital_action_approve` gate 추가 | 코드 확인 |
 
+### 추가 수정 완료 (2026-05-18 commit `c6bec74`, `28cde34`)
+
+| ID | 수정 내용 | 검증 |
+|----|-----------|------|
+| M-1 | Mac Mini 싱크 코드에 이미 내부 `_cost_limit_reached()` 체크 존재 (수정 완료 확인) | 코드 확인 |
+| M-3 | `correlation_id UUID` 컬럼 migration + `create_goal` / `set_goal_model` / `record_goal_snapshot`에 전파 | Mac Mini DB ALTER TABLE PASS |
+| M-4 | `slack_listener.py` RotatingFileHandler 10MB×5 + launchd plist stdout→`/dev/null` (중복 제거) | 단일 포맷 로그 확인 |
+| M-5 | `_write_output` `fcntl.LOCK_EX` 파일 잠금 | 코드 확인 |
+| M-6 | `run()` 진입부 슬라이딩 윈도우 rate limiter (60초/20회, 환경변수 조절 가능) | 코드 확인 |
+
 ### 미해결 항목 (`red_team_clear` 조건)
 
-1. M-1: budget gate Haiku 경로 적용
-2. M-3: correlation_id goal_loop.py 전파 (DB migration 포함)
-3. M-4: log rotation 구현
-4. M-5: 파일 잠금 추가
-5. M-6: Rate Limiting 구현
-6. CLAUDE.md 컴플라이언스: qa_clear / pre_mortem / legal_review_approve 구현
+1. CLAUDE.md 컴플라이언스: `qa_clear` / `pre_mortem` / `legal_review_approve` 구현
 
 ### 다음 단계
 
-이번 주: M-1 (budget gate)  
-다음 스프린트: M-3~M-6, compliance  
+다음 스프린트: compliance gate 구현 계획 수립  
 
 재검토 시 참여 LLM: Claude + Gemini + Codex (3개 full pass 후 `red_team_clear` 가능)
