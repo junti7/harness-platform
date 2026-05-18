@@ -63,12 +63,22 @@
 | M-5 | `_write_output` `fcntl.LOCK_EX` 파일 잠금 | 코드 확인 |
 | M-6 | `run()` 진입부 슬라이딩 윈도우 rate limiter (60초/20회, 환경변수 조절 가능) | 코드 확인 |
 
-### 미해결 항목 (`red_team_clear` 조건)
+### 추가 수정 완료 (2026-05-18 commit `b16792a`)
 
-1. CLAUDE.md 컴플라이언스: `qa_clear` / `pre_mortem` / `legal_review_approve` 구현
+| 항목 | 수정 내용 | 검증 |
+|------|-----------|------|
+| CLAUDE.md compliance | `PREREQUISITE_GATES` in `core/approval.py` — `report_publish_approve` / `monetization_experiment_approve` / `investment_thesis_approve` / `capital_action_approve` 기록 전 `legal_review_approve` + `red_team_clear` + `pre_mortem_approve` (+ `qa_clear`) 충족 여부 DB 검증 | Mac Mini 3케이스 PASS |
+| CLAUDE.md compliance | `_check_prerequisites()` in `ceo_decision.py` — 미충족 시 `PermissionError` + 필요 gate 목록 반환 | PASS |
+| CLAUDE.md compliance | `docs/governance/PRE_MORTEM_PROTOCOL.md` 신규 작성 | |
+| CLAUDE.md compliance | `docs/operations/QA_PLAYBOOK.md` 신규 작성 | |
+| CLAUDE.md compliance | `docs/operations/LEGAL_REVIEW_PLAYBOOK.md` 신규 작성 | |
 
-### 다음 단계
+### 미해결 항목
 
-다음 스프린트: compliance gate 구현 계획 수립  
+없음 — 모든 `red_team_block` 항목 수정 완료.
 
-재검토 시 참여 LLM: Claude + Gemini + Codex (3개 full pass 후 `red_team_clear` 가능)
+### `red_team_clear` 조건
+
+Codex / GPT reasoning model의 독립적 final pass 후 3-of-3 또는 2-of-3 approve 시 `red_team_clear` 기록 가능.
+
+재검토 참여 LLM: Claude + Gemini + Codex (기존 Claude + Gemini 완료 → Codex pass 1개 남음)
