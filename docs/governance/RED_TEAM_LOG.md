@@ -82,3 +82,43 @@
 Codex / GPT reasoning model의 독립적 final pass 후 3-of-3 또는 2-of-3 approve 시 `red_team_clear` 기록 가능.
 
 재검토 참여 LLM: Claude + Gemini + Codex (기존 Claude + Gemini 완료 → Codex pass 1개 남음)
+
+---
+
+## 2026-05-19 — Codex Final Pass
+**Participating LLMs:** Codex  
+**Verdict:** `red_team_block`
+
+### Checklist Findings
+
+| Item | Verdict | Finding |
+| --- | --- | --- |
+| H-1 Auth Bypass | PASS for patched functions; CONCERN on Slack DM ingress | `_authorized_for_high_risk()` now fails closed when `SLACK_CEO_USER_ID` is unset (`adapters/content/openclaw_agent.py:477`). `_authorize_structured_command()` blocks mutating structured commands when the env var is unset, missing caller identity, or wrong caller (`adapters/content/openclaw_agent.py:1041`). However, Slack DM ingress still routes any DM sender to `agent_run()` when `CEO_SLACK_USER_ID` is unset (`adapters/content/slack_listener.py:98`), leaving read-only tools and LLM spend exposed if production env is misconfigured. |
+| H-2 Path Traversal | PASS for read/write; NEW CONCERN for script execution | `_resolve_path()` resolves absolute and relative paths, then enforces `resolved.is_relative_to(root.resolve())` (`adapters/content/openclaw_agent.py:1177`). Because `.resolve()` follows symlinks before the boundary check, symlink escape outside `PROJECT_ROOT` is blocked for read/write. `tool_write_file()` passes `write=True` (`adapters/content/openclaw_agent.py:1208`). Separate issue: `tool_run_script()` does not use `_resolve_path()` and builds `PROJECT_ROOT / script`; an absolute `script` path bypasses the project-root intent (`adapters/content/openclaw_agent.py:1237`). |
+| H-4 Prompt Injection | FAIL | `SYSTEM_PROMPT` and `CHAT_SYSTEM_PROMPT` include injection-defense instructions (`adapters/content/openclaw_agent.py:95`, `adapters/content/openclaw_agent.py:119`). Current direct `user_message` calls are XML wrapped (`adapters/content/openclaw_agent.py:1489`, `adapters/content/openclaw_agent.py:1566`, `adapters/content/openclaw_agent.py:1619`, `adapters/content/openclaw_agent.py:1677`, `adapters/content/openclaw_agent.py:1945`). But prior user turns are stored raw (`adapters/content/openclaw_agent.py:331`) and replayed directly with `messages.extend(history or [])` into Ollama chat (`adapters/content/openclaw_agent.py:1488`), Anthropic chat (`adapters/content/openclaw_agent.py:1565`), and the tool agent (`adapters/content/openclaw_agent.py:1944`). This leaves a multi-turn prompt-injection path outside the XML wrapper. |
+| M-6 Rate Limiter Thread Safety | PASS | `_rate_limit_check()` holds `_rate_lock` across bucket lookup, expiry pruning, length check, and append (`adapters/content/openclaw_agent.py:407`). The check-and-append is atomic inside the process; no in-process TOCTOU found. Residual limitation: in-memory buckets do not coordinate across multiple processes. |
+| Compliance Gates | FAIL | `_check_prerequisites()` counts only `decision = 'approved'` records (`scripts/ceo_decision.py:18`). `record_decision()` calls it only for `decision == "approved"` before inserting (`scripts/ceo_decision.py:37`). However, `PREREQUISITE_GATES` omits `qa_clear` for `monetization_experiment_approve` and `investment_thesis_approve` (`core/approval.py:9`), conflicting with the current AGENTS.md approval table that requires `qa_clear` for both. |
+| M-2 / M-5 Bridge Safety | PASS | `command_record_decision()` blocks `capital_action_approve` unless `CAPITAL_ACTIONS_ENABLED=true` (`scripts/openclaw_codex_bridge.py:194`). `_write_output()` uses `fcntl.LOCK_EX` while writing output files (`scripts/openclaw_codex_bridge.py:130`). |
+| M-3 Goal Loop SQL / Correlation | PASS | Reviewed target `execute_query()` calls in `scripts/goal_loop.py`; user-controlled values are passed as parameters, including JSON via `%s::jsonb` and UUID via `%s::uuid` (`scripts/goal_loop.py:49`, `scripts/goal_loop.py:116`, `scripts/goal_loop.py:253`, `scripts/goal_loop.py:661`). No SQL injection found in this file. |
+| M-4 Slack Log Rotation | PASS with auth concern above | `RotatingFileHandler` is configured with 10MB files and 5 backups, and duplicate rotating/stream handlers are avoided (`adapters/content/slack_listener.py:39`). |
+
+### Independent Scan
+
+- SQL injection: no user-input SQL concatenation found in the requested target files. Most target queries use `%s` parameters. Out-of-scope note: `scripts/publish_weekly_to_substack.py:52` uses an f-string for generated placeholders, but values are still parameterized and `ids` is typed as `list[int]`; not treated as a blocker in this pass.
+- SSRF: `tool_fetch_url()` accepts arbitrary URLs and calls `httpx.get(..., follow_redirects=True)` without scheme, host, or private-network validation (`adapters/content/openclaw_agent.py:1269`, `adapters/content/openclaw_agent.py:1303`). Because `fetch_url` is classified as low-risk/no approval (`adapters/content/openclaw_agent.py:184`), an attacker with access to the agent surface can probe localhost, RFC1918, or metadata endpoints and can use redirects to reach them.
+- Prompt/tool-result injection: fetched web content is returned as a tool result and then appended back into the tool-agent conversation (`adapters/content/openclaw_agent.py:1328`, `adapters/content/openclaw_agent.py:2004`). There is no explicit untrusted-content wrapper or instruction preventing the model from following instructions embedded in fetched pages. If the requester is the CEO, a malicious fetched page could induce later high-risk tool calls that preflight would authorize based only on requester identity.
+- Script execution boundary: `tool_run_script()` lacks the same resolved-root boundary used by file read/write (`adapters/content/openclaw_agent.py:1237`). This is especially risky in combination with the tool-result prompt-injection path.
+
+### New Findings
+
+| ID | Severity | Finding |
+| --- | --- | --- |
+| C-1 | HIGH | Multi-turn user history bypasses XML prompt-injection wrapping. Raw prior user turns are replayed into future LLM calls. |
+| C-2 | HIGH | Unrestricted `fetch_url` creates SSRF exposure and can feed untrusted remote instructions back into the tool-agent loop. |
+| C-3 | HIGH | `tool_run_script()` does not enforce project-root containment for script paths. |
+| C-4 | MEDIUM | Slack DM route is fail-open to `agent_run()` when `SLACK_CEO_USER_ID` is unset. |
+| C-5 | MEDIUM | Compliance gates omit `qa_clear` for `monetization_experiment_approve` and `investment_thesis_approve` relative to current AGENTS.md. |
+
+### Final Verdict
+
+`red_team_block`. The direct H-1, H-2 read/write, M-2, M-3, M-4, M-5, and M-6 patches mostly verify, but H-4 remains incomplete through conversation history replay. SSRF plus untrusted fetched content plus broad script execution is a credible tool-chaining risk. Do not record `red_team_clear` or run the Mac Mini `record-decision red_team_clear` command until these findings are fixed and re-reviewed.
