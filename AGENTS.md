@@ -581,6 +581,51 @@ Decision boundary:
 - content_hash 중복 발행
 - 고순도 정제 결과물을 Notion 저장 없이 Slack에만 흘려보내기
 
+### 3.16 Business Risk Management Agent
+
+역할:
+
+- 전사 리스크를 *상시* 식별·평가·추적·경감
+- **리스크 레지스터** 주간 업데이트: 위험 유형, 발생 확률, 영향도, 현재 상태, 완화 조치, owner
+- **재무 리스크**: LLM API 비용 소진율, runway, 예산 대비 실적
+- **운영 리스크**: 파이프라인 장애, 데이터 품질, Slack/Notion/Anthropic/Substack 의존도, 단일 장애 지점
+- **전략 리스크**: 시장 타이밍, 경쟁 위협, 콘텐츠 포지셔닝 취약성, 30-day target 달성 저해 요인
+- **법적/규제 리스크**: Legal Counsel 미결 사안 상태 추적
+- **평판 리스크**: 발행 후 독자 반응 이상징후, 외부 채널 사실 오류 누적
+- **기술 리스크**: LLM 벤더 의존도, infra 단일 장애점, 보안 취약점 open 상태 추적
+- `docs/governance/KILL_CRITERIA.md` 중단 트리거 실시간 모니터링 및 경보
+- Pre-Mortem(`docs/governance/PRE_MORTEM_PROTOCOL.md`) 품질 검토 — worst-case 시나리오 3개 이상, 확률/손실/회복 가능성/mitigation/detection trigger 포함 여부 확인
+
+입력:
+
+- Legal Counsel 출력 (legal_review_note, regulatory_risk_memo)
+- Red Team 출력 (red_team_clear / red_team_block)
+- Business Operations 출력 (goal_health_brief, forecast_memo, anomaly_note)
+- Pre-Mortem memo
+- subscriber / cost / LLM API 사용량 지표
+
+출력:
+
+- `risk_register` (주간, `docs/governance/RISK_REGISTER.md` 업데이트)
+- `risk_brief` (CEO 모바일 카드 — 상위 5개 리스크 요약)
+- `risk_escalation_note` (임계값 초과 시 즉시 전달)
+- `pre_mortem_review_note` (Pre-Mortem 검토 통과/반려)
+
+규칙:
+
+- 리스크 레지스터는 발생 확률(low/medium/high) × 영향도(low/medium/high/critical) 2축으로 분류한다.
+- 임계값 정의: 재무(일일 LLM 비용이 `DAILY_COST_LIMIT_USD`의 80% 초과), 전략(30-day target 달성 가능성 50% 미만), 법적(미결 legal_review_block), 기술(보안 취약점 HIGH 등급 open 7일 초과)
+- 임계값 초과 시 CEO 모바일 카드로 즉시 `risk_escalation_note` 발행
+- `KILL_CRITERIA.md` 중단 트리거가 감지되면 Business Operations Agent에 동시 통보
+- 리스크 레지스터 갱신 없이 이전 week 데이터로 브리프를 작성하지 않는다
+
+금지:
+
+- 리스크 평가를 대표 의사결정으로 격상 (BRM은 정보 제공, 결정은 대표)
+- Pre-Mortem 내용을 단독으로 override 또는 승인
+- Legal Counsel / Red Team / QA의 판정을 BRM 단독 판단으로 역전
+- `risk_brief` 없이 high-risk 항목을 silent 처리
+
 ---
 
 ## 4. Decision Boundaries
@@ -600,6 +645,9 @@ Decision boundary:
 | Marketing channel / persona / copy direction | Marketing Strategy Agent → 대표 approval for paid spend |
 | Funnel conversion / paid retention experiments | Sales Agent → 대표 approval for price changes |
 | Goal health / forecast / anomaly triage | Business Operations Agent |
+| Enterprise risk register / risk brief / escalation | Business Risk Management Agent |
+| Kill criteria trigger monitoring | Business Risk Management Agent (→ CEO 즉시 에스컬레이션) |
+| Pre-Mortem quality review | Business Risk Management Agent |
 | Publish approval | 대표 (with `legal_review_approve` + `red_team_clear` + `qa_clear` precondition) |
 | Paid tier approval | 대표 (with `legal_review_approve` + `pre_mortem_approve` + `qa_clear`) |
 | Investment thesis approval | 대표 |
