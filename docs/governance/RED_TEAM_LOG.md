@@ -226,3 +226,59 @@ B-1~B-5 중 Gemini/Codex가 동의하는 항목은 수정 후 재검토.
 
 현재 상태: **Claude block + Gemini block = red_team_block**  
 Codex pass 또는 수정 후 재검토 필요.
+
+---
+
+## 2026-05-19 — BRM Playbook v1.1 수정 완료 및 재검토
+
+### 수정 내역 (commit 예정)
+
+| ID | 수정 내용 |
+|----|-----------|
+| B-1 | §2.2 확률 기준값 정의 (low < 20% / medium 20~60% / high > 60%) |
+| B-2 | §5.3 `accepted` Phase 1 MD 기록 방식 + Phase 2 bridge 구분. `core/approval.py` 미등록 타입(risk_review/risk_accept) Phase 2 예정임 명시 |
+| B-3/G-2 | §6 거버넌스 선언 추가: `pre_mortem_review_note`는 prerequisite gate이며 `pre_mortem_approve` 기록 주체는 결정 팀/CEO |
+| B-5 | §3.0, §3.1, §4 Phase 1 수동 점검 방식 명시, 자동화 Phase 2 예정 |
+| B-6 | ESC-STR-1 각주: Business Operations 미실행 시 status unknown + 2주 연속 미실행 시 에스컬레이션 |
+| B-7 | §7.1 Kill Criteria 중복 나열 제거, KILL_CRITERIA.md 단일 참조원으로 대체 |
+| G-1 | §3.0 Phase 1 운영 범위 선언: 임계값 9→4개 활성, 수동 점검, MD 기반 레지스터 |
+| G-3 | §2.2 하단 §4가 매트릭스 override임을 명시 |
+| G-4 | §9.1 risk_brief 이모지 목록 형식으로 경량화 (Slack 1화면 이내) |
+| G-5 | §11 BRM 2주 연속 미발행 시 비서실장 CEO 직보 규칙 추가 |
+| B-4 | 수정 불필요 (Gemini DISAGREE) — §3.0 Phase 1/2 구분 테이블로 자연 해소 |
+
+### Claude 재검토 판정
+
+**Verdict:** `red_team_clear`
+
+모든 블로킹 항목(G-1, B-2, G-2, B-3) 해소 확인. B-2의 bridge 명령 미등록 타입 문제는 Phase 1 수동 방식 + Phase 2 DB 구현 예정으로 문서에 명시됨. 잔존 non-negotiable 이슈 없음.
+
+Gemini 재검토 완료.
+
+### Gemini 재검토 판정
+
+**Verdict:** `red_team_clear`
+
+| ID | v1.1 상태 |
+|----|-----------|
+| G-1 (Premature complexity) | ✅ Resolved — §3.0 Phase 1 scope 적절 |
+| G-2 (Implicit governance change) | ✅ Resolved — §6 명시적 거버넌스 선언 충족 |
+| B-2 (accepted audit trail) | ✅ Resolved — Phase 1 MD+Git, Phase 2 DB 구분 충족 |
+| G-3 (matrix/threshold hierarchy) | ✅ Resolved |
+| G-4 (mobile brief) | ✅ Resolved |
+| G-5 (BRM failure monitoring) | ✅ Resolved |
+| B-1 (probability thresholds) | ✅ Resolved |
+| B-5 (manual vs automated) | ✅ Resolved |
+| B-6 (ESC-STR-1 fallback) | ✅ Resolved |
+| B-7 (Kill Criteria duplication) | ✅ Resolved |
+| 신규 이슈 | 없음 |
+
+Gemini 판정 근거: "The new phased approach (Phase 1) is practical and safe, reducing initial complexity while maintaining essential risk oversight."
+
+### `red_team_clear` 기록
+
+**Verdict:** `red_team_clear`  
+**Participating LLMs:** Claude (Sonnet 4.6) + Gemini (0.42.0)  
+**근거:** 2-LLM cross-verification 완료 (MD 문서 기준: Claude + Gemini 최소 요건 충족). B-1~B-7 + G-1~G-5 전체 수정 완료 확인. 잔존 non-negotiable 이슈 없음.  
+**대상:** `docs/governance/BRM_PLAYBOOK.md` v1.1  
+**비고:** Codex pass는 선택적 추가 검토 — 2-of-3 기준으로 현재 통과 조건 충족.
