@@ -1683,7 +1683,7 @@ def tool_gog_gmail_search(query: str, max_results: int = 10, account: str | None
     base = [_GOG_BIN]
     if account or OPENCLAW_GOOGLE_ACCOUNT:
         base += ["-a", account or OPENCLAW_GOOGLE_ACCOUNT]
-    cmd = base + ["gmail", "search", query, f"--max-results={max_results}", "--json"]
+    cmd = base + ["gmail", "search", query, "--json"]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, cwd=str(PROJECT_ROOT))
         return result.stdout.strip() or result.stderr.strip()
@@ -1780,7 +1780,7 @@ def tool_gog_calendar_list(max_results: int = 10, account: str | None = None) ->
     base = [_GOG_BIN]
     if account or OPENCLAW_GOOGLE_ACCOUNT:
         base += ["-a", account or OPENCLAW_GOOGLE_ACCOUNT]
-    cmd = base + ["calendar", "list", f"--max-results={max_results}", "--json"]
+    cmd = base + ["calendar", "list", "--json"]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, cwd=str(PROJECT_ROOT))
         return result.stdout.strip() or result.stderr.strip()
