@@ -150,6 +150,33 @@ Use for:
 - Claude / Gemini / Copilot parallel handoff
 - packetized cross-review with saved outputs under `docs/reports/llm_outputs`
 
+### 10. 프로젝트 문서 읽기 (read-doc)
+
+```bash
+# 읽을 수 있는 문서 목록 확인
+cd ~/projects/harness-platform
+.venv/bin/python scripts/openclaw_codex_bridge.py read-doc --list
+
+# 특정 문서 읽기
+.venv/bin/python scripts/openclaw_codex_bridge.py read-doc --file CLAUDE.md
+.venv/bin/python scripts/openclaw_codex_bridge.py read-doc --file AGENTS.md
+.venv/bin/python scripts/openclaw_codex_bridge.py read-doc --file RED_TEAM_PROTOCOL.md
+```
+
+사용 가능한 주요 문서 alias:
+
+- `CLAUDE.md` — AI agent 운영 지침 (Must/Never, approval semantics)
+- `AGENTS.md` — agent 조직도와 역할 경계
+- `SOUL.md` — 회사 핵심 가치
+- `BUSINESS_OPERATING_SYSTEM.md` — 사업 운영 모델
+- `MONETIZATION_STRATEGY.md` — Phase 1 수익화 전략
+- `RED_TEAM_PROTOCOL.md` — cross-LLM 검증 절차
+- `PRE_MORTEM_PROTOCOL.md` — worst-case 분석 템플릿
+- `LEGAL_REVIEW_PLAYBOOK.md` — 법률 사전검토 절차
+- `QA_PLAYBOOK.md` — 발행 직전 품질 검증
+
+전체 목록은 `--list` 로 확인. `[O]`는 파일 존재, `[X]`는 미생성 상태.
+
 ## Operator Rules
 
 1. Do not bypass the bridge and write approvals directly.

@@ -123,6 +123,7 @@ def status_snapshot() -> dict[str, Any]:
             "push-approval-card",
             "dispatch-task-packet",
             "run-pipeline",
+            "read-doc",
         ],
     }
 
@@ -318,6 +319,63 @@ def command_run_pipeline(args: argparse.Namespace) -> None:
     run()
     result = {"generated_at": _now(), "executed": "run_pipeline.py", "notified_slack": args.notify_slack}
     _write_output(_json_dump(result), args.output)
+
+
+_READABLE_DOCS: dict[str, str] = {
+    "CLAUDE.md": "CLAUDE.md",
+    "AGENTS.md": "AGENTS.md",
+    "SOUL.md": "SOUL.md",
+    "PLATFORM.md": "docs/product/PLATFORM.md",
+    "BUSINESS_OPERATING_SYSTEM.md": "docs/BUSINESS_OPERATING_SYSTEM.md",
+    "MONETIZATION_STRATEGY.md": "docs/MONETIZATION_STRATEGY.md",
+    "RED_TEAM_PROTOCOL.md": "docs/governance/RED_TEAM_PROTOCOL.md",
+    "KILL_CRITERIA.md": "docs/governance/KILL_CRITERIA.md",
+    "RISK_REGISTER.md": "docs/governance/RISK_REGISTER.md",
+    "BRM_PLAYBOOK.md": "docs/governance/BRM_PLAYBOOK.md",
+    "LANGUAGE_POLICY.md": "docs/governance/LANGUAGE_POLICY.md",
+    "CURRENT_STAFFING.md": "docs/governance/CURRENT_STAFFING.md",
+    "SLACK_OPERATING_SYSTEM.md": "docs/operations/SLACK_OPERATING_SYSTEM.md",
+    "LEGAL_REVIEW_PLAYBOOK.md": "docs/operations/LEGAL_REVIEW_PLAYBOOK.md",
+    "QA_PLAYBOOK.md": "docs/operations/QA_PLAYBOOK.md",
+    "WEEKLY_BUSINESS_REVIEW.md": "docs/operations/WEEKLY_BUSINESS_REVIEW.md",
+    "PRE_MORTEM_PROTOCOL.md": "docs/governance/PRE_MORTEM_PROTOCOL.md",
+    "MARKETING_STRATEGY.md": "docs/MARKETING_STRATEGY.md",
+    "SALES_PLAYBOOK.md": "docs/operations/SALES_PLAYBOOK.md",
+    "PRODUCT_PLANNING.md": "docs/product/PRODUCT_PLANNING.md",
+}
+
+
+def command_read_doc(args: argparse.Namespace) -> None:
+    if args.list:
+        lines = ["사용 가능한 문서 목록:"]
+        for alias, rel_path in sorted(_READABLE_DOCS.items()):
+            full = Path(rel_path)
+            exists = "O" if full.exists() else "X"
+            lines.append(f"  [{exists}] {alias}  →  {rel_path}")
+        _write_output("\n".join(lines), args.output)
+        return
+
+    if not args.file:
+        _write_output("❌ --file 또는 --list 를 지정하세요.", args.output)
+        return
+
+    key = args.file.strip()
+    rel_path = _READABLE_DOCS.get(key)
+    if rel_path is None:
+        available = ", ".join(sorted(_READABLE_DOCS))
+        _write_output(
+            f"❌ '{key}'는 허용된 문서 목록에 없습니다.\n사용 가능: {available}",
+            args.output,
+        )
+        return
+
+    doc_path = Path(rel_path)
+    if not doc_path.exists():
+        _write_output(f"❌ 파일이 존재하지 않습니다: {rel_path}", args.output)
+        return
+
+    content = doc_path.read_text(encoding="utf-8")
+    _write_output(content, args.output)
 
 
 def command_goal_create(args: argparse.Namespace) -> None:
@@ -740,6 +798,15 @@ def build_parser() -> argparse.ArgumentParser:
     goal_status_parser.add_argument("--format", choices=["text", "json"], default="text")
     goal_status_parser.add_argument("--output")
     goal_status_parser.set_defaults(func=command_goal_status)
+
+    read_doc_parser = subparsers.add_parser(
+        "read-doc",
+        help="Read a whitelisted project document (CLAUDE.md, AGENTS.md, governance docs, etc.).",
+    )
+    read_doc_parser.add_argument("--file", help="Document alias to read (e.g. CLAUDE.md)")
+    read_doc_parser.add_argument("--list", action="store_true", help="List all readable documents")
+    read_doc_parser.add_argument("--output")
+    read_doc_parser.set_defaults(func=command_read_doc)
 
     return parser
 
