@@ -171,3 +171,58 @@ B-1~B-5는 플레이북을 실제 운영 시 일관성 부재 또는 audit trail
 Gemini + Codex pass 후 3-LLM 중 2개 이상이 clear 또는 수정 후 clear이면 `red_team_clear` 기록 가능.  
 B-1~B-5 중 Gemini/Codex가 동의하는 항목은 수정 후 재검토.  
 요청 문서: `docs/governance/RED_TEAM_BRM_REQUEST_2026-05-19.md`
+
+---
+
+## 2026-05-19 — BRM Playbook Gemini pass
+
+**Participating LLMs:** Gemini (0.42.0)  
+**Verdict:** `red_team_block`
+
+### Claude 발견사항 검증 결과 (B-1 ~ B-7)
+
+| ID | Claude 등급 | Gemini 판정 |
+|----|------------|------------|
+| B-1 | MEDIUM | **AGREE** — 수치 기준 없이 주관적 분류는 Agent 간 불일치 유발 |
+| B-2 | MEDIUM | **AGREE** — risk_brief 언급만으로는 부족, `ceo_decisions` DB 기록 필요 |
+| B-3 | MEDIUM | **PARTIAL AGREE** — 직접 충돌은 아니나 BRM review를 prerequisite로 명시하고 기록 주체를 분명히 해야 함 |
+| B-4 | MEDIUM | **DISAGREE** — MD 파일 기반 MVP 운영은 유효한 접근, 운영 리스크 아님 |
+| B-5 | MEDIUM | **AGREE** — "즉시" escalation은 자동화를 전제해야 하며 미명시는 신뢰성 결함 |
+| B-6 | LOW | **AGREE** — Business Operations 예측 미실행 시 fallback 필요 |
+| B-7 | LOW | **AGREE** — KILL_CRITERIA.md를 정규 참조원으로 유지해야 함, 중복 나열은 sync 실패 위험 |
+
+### Gemini 신규 발견사항
+
+| ID | 등급 | 항목 |
+|----|------|------|
+| G-1 | **HIGH** | **과도한 복잡성** — 6개 차원·9개 임계값 체계는 Phase 1(paid subscriber 1명) 목표 대비 과도. CLAUDE.md §1 Product-over-Pipeline 원칙 위반 |
+| G-2 | MEDIUM | **미선언 거버넌스 변경** — `pre_mortem_review_note`가 BRM 검토를 암묵적 필수 게이트로 추가. CLAUDE.md 승인 체계 수정은 명시적 선언 필요 |
+| G-3 | MEDIUM | §2.2 매트릭스와 §4 임계값 간 우선순위 관계 미정의 — 어느 기준이 override인지 불명확 |
+| G-4 | MEDIUM | §9.1 risk_brief 템플릿이 넓은 마크다운 표 형식 — CEO 모바일 30~60초 판단에 부적합 |
+| G-5 | LOW | BRM Agent 자체 장애 시 감지·경보 메커니즘 없음 ("모니터의 모니터" 부재) |
+
+### Gemini 판정 근거
+
+1. **G-1 (HIGH)**: 현재 Phase 1 목표(무료 50명, paid 1명)에서 6차원 리스크 레지스터+9개 자동 임계값 체계는 실질적 가치보다 운영 부담이 크다. 플레이북을 Phase 1 최소 버전으로 축소해야 한다.
+2. **G-2+B-3**: 기존 승인 체계(CLAUDE.md §4)를 암묵적으로 수정하는 것은 내부 규약 위반.
+3. **B-2**: `accepted` 리스크에 대한 불변 감사 기록 누락은 거버넌스 실패.
+
+### 중간 집계 (Claude + Gemini)
+
+| 항목 | Claude | Gemini | 합의 |
+|------|--------|--------|------|
+| B-1 | block | block | **수정 필요** |
+| B-2 | block | block | **수정 필요** |
+| B-3 | block | partial | **수정 권고** |
+| B-4 | block | clear | 불일치 — Codex 판정 필요 |
+| B-5 | block | block | **수정 필요** |
+| B-6 | low | low | 낮은 우선순위 |
+| B-7 | low | block | **수정 권고** |
+| G-1 | 미발견 | HIGH | **수정 필요** (non-negotiable) |
+| G-2 | 미발견 | MEDIUM | **수정 필요** |
+| G-3 | 미발견 | MEDIUM | 수정 권고 |
+| G-4 | 미발견 | MEDIUM | 수정 권고 |
+| G-5 | 미발견 | LOW | 낮은 우선순위 |
+
+현재 상태: **Claude block + Gemini block = red_team_block**  
+Codex pass 또는 수정 후 재검토 필요.
