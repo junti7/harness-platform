@@ -1,4 +1,5 @@
 import argparse
+import fcntl
 import json
 import os
 import shutil
@@ -133,7 +134,12 @@ def _write_output(output: str, output_path: str | None) -> None:
 
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(output, encoding="utf-8")
+    with path.open("w", encoding="utf-8") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            f.write(output)
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
     print(str(path))
 
 
@@ -186,13 +192,24 @@ def command_decision_card(args: argparse.Namespace) -> None:
 
 
 def command_record_decision(args: argparse.Namespace) -> None:
-    record_decision(
-        target_type=args.target_type,
-        target_id=args.target_id,
-        decision=args.decision,
-        approval_type=args.approval_type,
-        reason=args.reason,
-    )
+    if args.approval_type == "capital_action_approve":
+        if os.getenv("CAPITAL_ACTIONS_ENABLED", "false").lower() != "true":
+            _write_output(
+                "❌ CAPITAL_ACTIONS_ENABLED=false — 자본 집행 명령 차단. 서버 .env를 확인하세요.",
+                args.output,
+            )
+            return
+    try:
+        record_decision(
+            target_type=args.target_type,
+            target_id=args.target_id,
+            decision=args.decision,
+            approval_type=args.approval_type,
+            reason=args.reason,
+        )
+    except PermissionError as exc:
+        _write_output(str(exc), args.output)
+        return
     payload = {
         "generated_at": _now(),
         "target_type": args.target_type,
