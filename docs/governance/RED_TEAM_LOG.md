@@ -282,3 +282,42 @@ Gemini 판정 근거: "The new phased approach (Phase 1) is practical and safe, 
 **근거:** 2-LLM cross-verification 완료 (MD 문서 기준: Claude + Gemini 최소 요건 충족). B-1~B-7 + G-1~G-5 전체 수정 완료 확인. 잔존 non-negotiable 이슈 없음.  
 **대상:** `docs/governance/BRM_PLAYBOOK.md` v1.1  
 **비고:** Codex pass는 선택적 추가 검토 — 2-of-3 기준으로 현재 통과 조건 충족.
+
+---
+
+## 2026-05-19 — BRM Playbook Codex pass
+
+**Participating LLMs:** Codex  
+**Verdict:** `red_team_block` (C-1 경로 오류 발견) → v1.2 수정 후 `red_team_clear`
+
+### Codex 발견사항
+
+| ID | 등급 | 항목 | Codex 판정 |
+|----|------|------|-----------|
+| C-1 | BLOCK | §7 §7.1 서두 `docs/governance/KILL_CRITERIA.md` 경로 오류 — 실제 파일 위치는 `docs/KILL_CRITERIA.md` | block |
+| C-2 | LOW | `risk_review`/`risk_accept` approval type이 `core/approval.py`에 미등록 | Phase 2 로드맵으로 수용, non-blocking |
+| C-3 | LOW | 보안 취약점 모니터링 자동화 스크립트 미구현 (주간 수동 운영) | Phase 1 수동 명시로 수용 |
+| C-4 | LOW | AGENTS.md §3.16 output 명칭과 BRM_PLAYBOOK.md §8 용어 미세 불일치 | 운영상 혼란 낮음, non-blocking |
+
+**이전 항목 재확인:** Claude + Gemini에서 수정된 B-1~B-7, G-1~G-5 전체 v1.1 반영 확인. 신규 non-negotiable 이슈 없음 (C-1 제외).
+
+### v1.2 수정 내용
+
+| C-1 수정 | `docs/governance/BRM_PLAYBOOK.md` §7 서두 경로 `docs/governance/KILL_CRITERIA.md` → `docs/KILL_CRITERIA.md` |
+| --- | --- |
+| 버전 | v1.1 → v1.2 |
+
+### Codex 재판정
+
+C-1 수정 후 잔존 blocking 이슈 없음. C-2~C-4는 Phase 2 로드맵 또는 운영상 낮은 위험으로 수용.  
+**Verdict:** `red_team_clear`
+
+---
+
+## 2026-05-19 — BRM Playbook 최종 판정 (3-of-3)
+
+**Verdict:** `red_team_clear`  
+**Participating LLMs:** Claude (Sonnet 4.6) + Gemini (0.42.0) + Codex  
+**대상:** `docs/governance/BRM_PLAYBOOK.md` v1.2  
+**근거:** 3-LLM cross-verification 완료. B-1~B-7 + G-1~G-5 + C-1 전체 수정 확인. 잔존 non-negotiable 이슈 없음.  
+**잔존 로드맵 항목:** C-2 (`risk_accept` approval type Phase 2 DB 등록), C-3 (취약점 자동 모니터링 스크립트) — 운영 차단 없음.
