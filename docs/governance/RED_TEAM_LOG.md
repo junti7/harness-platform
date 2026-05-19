@@ -141,3 +141,33 @@ Codex / GPT reasoning model의 독립적 final pass 후 3-of-3 또는 2-of-3 app
 **Participating LLMs:** Claude (Sonnet 4.6) + Gemini (0.42.0) + Codex  
 **DB 기록:** `ceo_decisions` target_type=red_team_review target_id=1 decision=approved approval_type=red_team_clear (2026-05-19T06:42:02)  
 **근거:** 3-LLM cross-verification 완료. C-1~C-5 전체 수정 완료 확인. H-1~H-4 + M-1~M-6 + CLAUDE.md compliance 전체 통과.
+
+---
+
+## 2026-05-19 — BRM Playbook Red Team (Claude 1차 pass)
+
+**Participating LLMs:** Claude (Sonnet 4.6) — 1차 pass 완료. Gemini + Codex pass 대기 중.  
+**Verdict:** `red_team_block` (Claude 단독 — 최종 판정 미결)  
+**Scope:** `docs/governance/BRM_PLAYBOOK.md`
+
+### Claude 발견사항
+
+| ID | 등급 | 항목 |
+|----|------|------|
+| B-1 | MEDIUM | §2.2 발생 확률(low/medium/high) 수치 기준 미정의 — Agent마다 다른 등급 부여 가능 |
+| B-2 | MEDIUM | §5.3 `accepted` 상태 전환 시 CEO 확인 `ceo_decisions` DB 기록 지침 없음 — audit trail 부재 |
+| B-3 | MEDIUM | §6.2 `pre_mortem_approve` DB 기록 주체 미명시 — PRE_MORTEM_PROTOCOL.md 기존 절차(CEO bridge 직접 기록)와 충돌 가능 |
+| B-4 | MEDIUM | `risk_register` DB 테이블은 roadmap 상태(AGENTS.md §5)임에도 플레이북이 현재 운영 가능한 것처럼 기술 — Phase 1 MD 파일 기반 운영 선언 누락 |
+| B-5 | MEDIUM | §4 실시간 임계값 모니터링이 자동화인지 수동인지 미명시 — "즉시" escalation이 사실상 수동 점검에 의존할 가능성 |
+| B-6 | LOW | §4 ESC-STR-1 "30-day target 달성 가능성 50%" — Business Operations 예측 미실행 주에 대한 fallback 없음 |
+| B-7 | LOW | §7.1 Kill Criteria 트리거 5개 항목이 실제 `docs/governance/KILL_CRITERIA.md` 내용과 정합성 미검증 |
+
+### Claude 판정 근거
+
+B-1~B-5는 플레이북을 실제 운영 시 일관성 부재 또는 audit trail 누락으로 이어지는 항목이다. 특히 B-4는 DB가 존재한다는 잘못된 전제를 심을 수 있어 수정이 필요하다. B-6~B-7은 낮은 우선순위이나 Gemini/Codex가 독립 검토해야 한다.
+
+### 최종 판정 조건
+
+Gemini + Codex pass 후 3-LLM 중 2개 이상이 clear 또는 수정 후 clear이면 `red_team_clear` 기록 가능.  
+B-1~B-5 중 Gemini/Codex가 동의하는 항목은 수정 후 재검토.  
+요청 문서: `docs/governance/RED_TEAM_BRM_REQUEST_2026-05-19.md`
