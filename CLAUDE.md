@@ -524,6 +524,7 @@ PLATFORM.md는 플랫폼 헌법이다.
 | `docs/operations/QA_PLAYBOOK.md` | 고객-facing 산출물의 발행 직전 fact + format + schema + link + terminology + 다국어 fluency 검증 절차 |
 | `docs/operations/CHART_AUTHORING_PLAYBOOK.md` | 차트/다이어그램/생성형 이미지 작성 기준, build pipeline 함정 체크리스트, 다른 LLM 위임 prompt template |
 | `docs/governance/RISK_REGISTER.md` | 전사 리스크 레지스터. BRM Team이 주간 업데이트하며 재무·운영·전략·법적·평판·기술 리스크를 추적 |
+| `docs/governance/BRM_PLAYBOOK.md` | Business Risk Management 운영 절차. 리스크 분류 체계, 주간 cadence, escalation 임계값, Pre-Mortem 품질 검토, Kill Criteria 모니터링 |
 
 충돌 시:
 
