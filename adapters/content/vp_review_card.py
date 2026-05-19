@@ -76,7 +76,7 @@ def request_vp_review(
         execute_query(
             """INSERT INTO ceo_decisions
                    (target_type, target_id, decision, approval_type, reason, decided_by)
-               VALUES ('newsletter_issue', %s, 'pending', 'vice_president_review_request',
+               VALUES ('newsletter_issue', %s, 'hold', 'vice_president_review_request',
                        'VP 검토 요청 발송', 'vp_review_agent')""",
             (issue_id,),
         )
