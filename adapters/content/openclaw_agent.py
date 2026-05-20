@@ -435,7 +435,8 @@ _COST_HELP_TEXT = """\
 📋 *OpenClaw 비용 관련 명령어*
 
 *조회*
-• `비용 한도 확인` — 파이프라인·OpenClaw 오늘 누적/한도/잔여 실시간 조회
+• `실시간 비용` — 파이프라인·OpenClaw 오늘 누적/한도/잔여 실시간 조회
+• `비용 한도 확인` — 동일 (별칭)
 
 *한도 확장 승인* (90% 알림 수신 후)
 • `파이프라인 한도 확장 승인` — 파이프라인 한도 +$1, 이번 달 말까지 적용
@@ -450,7 +451,7 @@ _CEO_COST_APPROVE_PATTERNS = {
     "openclaw": "openclaw",
     "오픈클로": "openclaw",
 }
-_CEO_COST_CHECK_KEYWORDS = {"비용 한도 확인", "cost limit", "비용한도확인", "한도 현황"}
+_CEO_COST_CHECK_KEYWORDS = {"비용 한도 확인", "cost limit", "비용한도확인", "한도 현황", "실시간 비용", "실시간비용"}
 
 
 def _handle_ceo_cost_command(user_message: str) -> str | None:
