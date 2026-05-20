@@ -42,6 +42,8 @@ from dotenv import load_dotenv
 from core.logger import HarnessLogger
 from adapters.content.substack_publisher import fetch_draft_as_text
 from adapters.content.refiner import log_api_cost, get_today_cost, DAILY_COST_LIMIT
+
+OPENCLAW_DAILY_COST_LIMIT: float = float(os.environ.get("OPENCLAW_DAILY_COST_LIMIT_USD", "1.00"))
 from core.cost_alerts import check_and_alert
 
 logger = logging.getLogger(__name__)
@@ -419,7 +421,7 @@ def _log_route_audit(
 
 def _cost_limit_reached() -> bool:
     try:
-        return get_today_cost() >= DAILY_COST_LIMIT
+        return get_today_cost(source="openclaw") >= OPENCLAW_DAILY_COST_LIMIT
     except Exception as exc:
         logger.warning(f"[cost-guard] 비용 조회 실패: {exc}")
         return False
@@ -2008,8 +2010,8 @@ def _run_anthropic_chat(
         system=_build_chat_system_prompt(user_message),
         messages=messages,
     )
-    log_api_cost(model, resp.usage.input_tokens, resp.usage.output_tokens)
-    check_and_alert(get_today_cost(), DAILY_COST_LIMIT, logger)
+    log_api_cost(model, resp.usage.input_tokens, resp.usage.output_tokens, source="openclaw")
+    check_and_alert(get_today_cost(source="openclaw"), OPENCLAW_DAILY_COST_LIMIT, logger)
     logger.info(
         f"[router] Anthropic({model}) 응답 tokens=in:{resp.usage.input_tokens}/out:{resp.usage.output_tokens}"
     )
@@ -2061,7 +2063,7 @@ def _classify_intent_with_haiku(user_message: str) -> dict[str, Any] | None:
     except Exception as exc:
         logger.warning(f"[intent-classifier] Haiku call failed: {exc}")
         return None
-    log_api_cost(OPENCLAW_INTENT_MODEL, resp.usage.input_tokens, resp.usage.output_tokens)
+    log_api_cost(OPENCLAW_INTENT_MODEL, resp.usage.input_tokens, resp.usage.output_tokens, source="openclaw")
     for block in resp.content:
         if block.type == "tool_use":
             logger.info(f"[intent-classifier] tool={block.name} params={block.input}")
@@ -2115,7 +2117,7 @@ def _format_with_haiku(user_message: str, raw_output: str) -> str:
                 {"role": "user", "content": f"<user_message>{user_message}</user_message>\n\n데이터:\n{raw_output}"},
             ],
         )
-        log_api_cost(OPENCLAW_FORMATTER_MODEL, resp.usage.input_tokens, resp.usage.output_tokens)
+        log_api_cost(OPENCLAW_FORMATTER_MODEL, resp.usage.input_tokens, resp.usage.output_tokens, source="openclaw")
         logger.info(
             f"[formatter] {OPENCLAW_FORMATTER_MODEL} tokens=in:{resp.usage.input_tokens}/out:{resp.usage.output_tokens}"
         )
@@ -2401,8 +2403,8 @@ def _run_tool_agent(
         logger.info(f"[agent] stop_reason={response.stop_reason} tokens=in:{response.usage.input_tokens}/out:{response.usage.output_tokens}")
 
         if response.stop_reason == "end_turn":
-            log_api_cost(OPENCLAW_TOOL_MODEL, total_input_tokens, total_output_tokens)
-            check_and_alert(get_today_cost(), DAILY_COST_LIMIT, logger)
+            log_api_cost(OPENCLAW_TOOL_MODEL, total_input_tokens, total_output_tokens, source="openclaw")
+            check_and_alert(get_today_cost(source="openclaw"), OPENCLAW_DAILY_COST_LIMIT, logger)
             logger.info(
                 f"[agent] session_total tokens=input:{total_input_tokens} output:{total_output_tokens} "
                 f"tools_called={tool_calls_log}"

@@ -37,9 +37,14 @@ def estimate_cost(input_tokens: int, output_tokens: int, model: str = "claude-so
             output_tokens / 1000 * output_price)
 
 
-def get_today_cost(logger=None) -> float:
+def get_today_cost(logger=None, source: str | None = None) -> float:
     try:
-        result = execute_query("""
+        where = "WHERE DATE(created_at) = CURRENT_DATE"
+        params: tuple = ()
+        if source:
+            where += " AND source = %s"
+            params = (source,)
+        result = execute_query(f"""
             SELECT SUM(
                 CASE
                     WHEN LOWER(model) LIKE '%haiku%' THEN
@@ -51,8 +56,8 @@ def get_today_cost(logger=None) -> float:
                 END
             ) as total_cost
             FROM api_cost_log
-            WHERE DATE(created_at) = CURRENT_DATE
-        """, fetch=True)
+            {where}
+        """, params if params else None, fetch=True)
         if result and result[0]["total_cost"]:
             return float(result[0]["total_cost"])
     except Exception as e:
@@ -61,11 +66,11 @@ def get_today_cost(logger=None) -> float:
     return 0.0
 
 
-def log_api_cost(model: str, input_tokens: int, output_tokens: int, provider: str = "anthropic"):
+def log_api_cost(model: str, input_tokens: int, output_tokens: int, provider: str = "anthropic", source: str = "pipeline"):
     execute_query("""
-        INSERT INTO api_cost_log (model, input_tokens, output_tokens, provider)
-        VALUES (%s, %s, %s, %s)
-    """, (model, input_tokens, output_tokens, provider))
+        INSERT INTO api_cost_log (model, input_tokens, output_tokens, provider, source)
+        VALUES (%s, %s, %s, %s, %s)
+    """, (model, input_tokens, output_tokens, provider, source))
 
 
 def save_to_dlq(row: dict, error: str, logger):
