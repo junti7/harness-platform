@@ -58,9 +58,10 @@ class CostGuard:
         self.calls = 0
         self.stopped = False
 
-    def charge(self, provider: str) -> None:
+    def charge(self, provider: str, force: bool = False) -> None:
+        """force=True면 cap을 넘어도 청구 (최종 정리·CEO 카드는 항상 보장)."""
         est = _PROVIDER_COST.get(provider, 0.12)
-        if self.spent + est > self.cap:
+        if not force and self.spent + est > self.cap:
             self.stopped = True
             raise CostStop(f"per-order cost cap ${self.cap:.2f} 도달 (지출 추정 ${self.spent:.2f})")
         self.spent += est
@@ -152,7 +153,7 @@ def _synthesize(order: str, transcript: list[dict], correlation_id: str, guard: 
         "4) 권고 액션\n5) 막힌 게이트(있으면). Persona 의견은 게이트 충족이 아님을 명심.\n\n"
         f"[CEO ORDER]\n{order}\n\n[회의실 토론]\n{convo}\n"
     )
-    guard.charge(JARVIS_REASONING_PROVIDER)
+    guard.charge(JARVIS_REASONING_PROVIDER, force=True)  # 최종 정리는 cap 넘어도 보장
     out, ok = call_llm(JARVIS_REASONING_PROVIDER, prompt)
     return out if ok else "(synthesis 실패 — 회의실 transcript 참조)"
 
