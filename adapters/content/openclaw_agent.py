@@ -42,6 +42,7 @@ from dotenv import load_dotenv
 from core.logger import HarnessLogger
 from adapters.content.substack_publisher import fetch_draft_as_text
 from adapters.content.refiner import log_api_cost, get_today_cost, DAILY_COST_LIMIT
+from core.cost_alerts import get_effective_limit, apply_ceo_override
 
 OPENCLAW_DAILY_COST_LIMIT: float = float(os.environ.get("OPENCLAW_DAILY_COST_LIMIT_USD", "1.00"))
 from core.cost_alerts import check_and_alert
@@ -421,10 +422,81 @@ def _log_route_audit(
 
 def _cost_limit_reached() -> bool:
     try:
-        return get_today_cost(source="openclaw") >= OPENCLAW_DAILY_COST_LIMIT
+        effective = get_effective_limit("openclaw", OPENCLAW_DAILY_COST_LIMIT)
+        return get_today_cost(source="openclaw") >= effective
     except Exception as exc:
         logger.warning(f"[cost-guard] 비용 조회 실패: {exc}")
         return False
+
+
+_CEO_COST_APPROVE_PATTERNS = {
+    "파이프라인": "pipeline",
+    "pipeline": "pipeline",
+    "openclaw": "openclaw",
+    "오픈클로": "openclaw",
+}
+_CEO_COST_CHECK_KEYWORDS = {"비용 한도 확인", "cost limit", "비용한도확인", "한도 현황"}
+
+
+def _handle_ceo_cost_command(user_message: str) -> str | None:
+    """CEO 비용 한도 조회 또는 확장 승인 명령 감지. 해당 없으면 None 반환."""
+    msg = user_message.strip()
+    msg_lower = msg.lower()
+
+    # 한도 조회
+    if any(k in msg_lower for k in _CEO_COST_CHECK_KEYWORDS):
+        pipeline_base = DAILY_COST_LIMIT
+        openclaw_base = OPENCLAW_DAILY_COST_LIMIT
+        pipeline_eff = get_effective_limit("pipeline", pipeline_base)
+        openclaw_eff = get_effective_limit("openclaw", openclaw_base)
+        pipeline_today = get_today_cost(source="pipeline")
+        openclaw_today = get_today_cost(source="openclaw")
+
+        lines = [
+            "📊 *오늘 API 비용 한도 현황*",
+            f"",
+            f"*파이프라인*",
+            f"  • 오늘 누적: ${pipeline_today:.4f}",
+            f"  • 유효 한도: ${pipeline_eff:.2f}" + (f" (기본 ${pipeline_base:.2f} + CEO 확장)" if pipeline_eff != pipeline_base else f" (기본값)"),
+            f"  • 잔여: ${max(0.0, pipeline_eff - pipeline_today):.4f}",
+            f"",
+            f"*OpenClaw*",
+            f"  • 오늘 누적: ${openclaw_today:.4f}",
+            f"  • 유효 한도: ${openclaw_eff:.2f}" + (f" (기본 ${openclaw_base:.2f} + CEO 확장)" if openclaw_eff != openclaw_base else f" (기본값)"),
+            f"  • 잔여: ${max(0.0, openclaw_eff - openclaw_today):.4f}",
+        ]
+        return "\n".join(lines)
+
+    # 한도 확장 승인
+    if "한도 확장 승인" not in msg_lower:
+        return None
+
+    source = None
+    for keyword, src in _CEO_COST_APPROVE_PATTERNS.items():
+        if keyword in msg_lower:
+            source = src
+            break
+
+    if not source:
+        return "⚠️ 승인 대상을 명시해주세요. 예: `파이프라인 한도 확장 승인` 또는 `OpenClaw 한도 확장 승인`"
+
+    base = DAILY_COST_LIMIT if source == "pipeline" else OPENCLAW_DAILY_COST_LIMIT
+    label = "파이프라인" if source == "pipeline" else "OpenClaw"
+
+    try:
+        override = apply_ceo_override(source, base)
+        from calendar import monthrange
+        from datetime import date as _date
+        today = _date.today()
+        last_day = _date(today.year, today.month, monthrange(today.year, today.month)[1])
+        return (
+            f"✅ *{label} 한도 확장 승인 완료*\n"
+            f"• ${base:.2f} → ${override:.2f} (+$1)\n"
+            f"• 적용 기간: {today.strftime('%m/%d')} ~ {last_day.strftime('%m/%d')} (월말 자동 복원)"
+        )
+    except Exception as exc:
+        logger.error(f"[ceo-cost-override] DB 저장 실패: {exc}")
+        return f"❌ 한도 확장 처리 중 오류가 발생했습니다: {exc}"
 
 
 def _budget_block_message() -> str:
@@ -2145,6 +2217,11 @@ def run(
     """
     if _rate_limit_check(requester_user_id):
         return _rate_limit_block_message()
+
+    # CEO 비용 명령: 한도 조회 / 한도 확장 승인 — cost guard 이전에 처리
+    ceo_cost_response = _handle_ceo_cost_command(user_message)
+    if ceo_cost_response is not None:
+        return ceo_cost_response
 
     effective_session_id = session_id or (
         f"{requester_user_id}:{dm_channel_id}" if requester_user_id and dm_channel_id else requester_user_id

@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from core.domain_config import load_prompt_text
 from core.database import execute_query
 from core.logger import HarnessLogger
-from core.cost_alerts import check_and_alert
+from core.cost_alerts import check_and_alert, get_effective_limit
 
 load_dotenv()
 
@@ -189,9 +189,10 @@ def refine(correlation_id: str = None):
     total_cost = 0.0
 
     for i, row in enumerate(rows):
-        today_cost = get_today_cost(logger)
-        if today_cost >= DAILY_COST_LIMIT:
-            logger.warning(f"일일 비용 한도 도달: ${today_cost:.4f} / ${DAILY_COST_LIMIT}")
+        today_cost = get_today_cost(logger, source="pipeline")
+        effective_limit = get_effective_limit("pipeline", DAILY_COST_LIMIT)
+        if today_cost >= effective_limit:
+            logger.warning(f"일일 비용 한도 도달: ${today_cost:.4f} / ${effective_limit}")
             break
 
         logger.info(f"[{i+1}/{len(rows)}] 처리 중: {row['title'][:50]}... (score={row['score']:.2f})")
