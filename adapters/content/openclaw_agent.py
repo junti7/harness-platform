@@ -429,6 +429,21 @@ def _cost_limit_reached() -> bool:
         return False
 
 
+_CEO_COST_HELP_KEYWORDS = {"도움말", "help", "명령어", "commands", "뭐할수있어", "뭐 할 수 있어", "기능"}
+
+_COST_HELP_TEXT = """\
+📋 *OpenClaw 비용 관련 명령어*
+
+*조회*
+• `비용 한도 확인` — 파이프라인·OpenClaw 오늘 누적/한도/잔여 실시간 조회
+
+*한도 확장 승인* (90% 알림 수신 후)
+• `파이프라인 한도 확장 승인` — 파이프라인 한도 +$1, 이번 달 말까지 적용
+• `OpenClaw 한도 확장 승인` — OpenClaw 한도 +$1, 이번 달 말까지 적용
+
+승인한 한도는 다음 달 1일 자동 복원됩니다.
+"""
+
 _CEO_COST_APPROVE_PATTERNS = {
     "파이프라인": "pipeline",
     "pipeline": "pipeline",
@@ -442,6 +457,10 @@ def _handle_ceo_cost_command(user_message: str) -> str | None:
     """CEO 비용 한도 조회 또는 확장 승인 명령 감지. 해당 없으면 None 반환."""
     msg = user_message.strip()
     msg_lower = msg.lower()
+
+    # 도움말
+    if any(k in msg_lower for k in _CEO_COST_HELP_KEYWORDS) and "비용" in msg_lower:
+        return _COST_HELP_TEXT
 
     # 한도 조회
     if any(k in msg_lower for k in _CEO_COST_CHECK_KEYWORDS):
