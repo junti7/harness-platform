@@ -28,6 +28,9 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 from adapters.content.openclaw_agent import run as agent_run, OLLAMA_CHAT_MODEL, OLLAMA_REMOTE_HOST, OLLAMA_HOST
 from core.reader_feedback import classify_feedback, upsert_reader_profile, record_feedback
 from adapters.content.vp_review_card import parse_vp_response
+from agents.registry import find_mentioned_personas, get_active_personas
+
+import re
 
 _LOG_FILE = _PROJECT_ROOT / "logs" / "slack_listener.log"
 _LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -87,12 +90,17 @@ def handle_mention(event, say, logger):
 def handle_dm(event, say, logger):
     if event.get("bot_id") or event.get("subtype"):
         return
-    if not event.get("channel", "").startswith("D"):
-        return
 
     user = event.get("user", "unknown")
     text = event.get("text", "")
     channel = event.get("channel", "")
+
+    # 회의실/팀 채널 메시지 → orchestration 라우터
+    if not channel.startswith("D"):
+        if channel in _orchestration_channels():
+            _handle_meeting_message(user, text, channel, say, logger)
+        return
+
     logger.info(f"[DM] user={user} text={text!r}")
 
     if CEO_SLACK_USER_ID and user == CEO_SLACK_USER_ID:
@@ -105,6 +113,84 @@ def handle_dm(event, say, logger):
     else:
         _handle_reader_feedback(user, text, source_channel=f"slack_dm:{channel}", say=say,
                                 thread_ts=None, logger=logger)
+
+
+# ── 회의실 / 팀 채널 orchestration 라우터 ──────────────────────────────────────
+
+_CONVENE_RE = re.compile(r"회의\s*소집|소집해|회의\s*시작|전체\s*회의|다\s*같이|orchestrate", re.IGNORECASE)
+
+
+def _orchestration_channels() -> set[str]:
+    """회의실 + 활성 팀 채널 ID 집합 (env에서 동적 수집)."""
+    ids = set()
+    room = os.environ.get("SLACK_CHANNEL_CONFERENCE_ROOM", "")
+    if room:
+        ids.add(room)
+    for p in get_active_personas():
+        if p.channel_env:
+            cid = os.environ.get(p.channel_env, "")
+            if cid:
+                ids.add(cid)
+    return ids
+
+
+def _is_principal(user: str) -> bool:
+    return bool(user) and user in (CEO_SLACK_USER_ID, VP_SLACK_USER_ID)
+
+
+def _strip_convene(text: str) -> str:
+    """소집 트리거 뒤의 실제 주문(order)만 추출."""
+    if ":" in text:
+        return text.split(":", 1)[1].strip()
+    return _CONVENE_RE.sub("", text).strip(" .!~") or text.strip()
+
+
+def _orchestrate_bg(order: str, logger):
+    try:
+        from adapters.content.orchestrator import orchestrate
+        orchestrate(order)
+    except Exception as exc:
+        logger.error(f"[meeting] orchestrate 실패: {exc}")
+
+
+def _mentions_bg(handles: list[str], question: str, channel: str, logger):
+    try:
+        from adapters.content.orchestrator import respond_as_persona
+        for handle in handles:
+            respond_as_persona(handle, question, channel_id=channel)
+    except Exception as exc:
+        logger.error(f"[meeting] mention 응답 실패: {exc}")
+
+
+def _handle_meeting_message(user: str, text: str, channel: str, say, logger):
+    # CEO/VP만 트리거. persona 발언(bot)·독자는 위에서 이미 걸러짐.
+    if not _is_principal(user):
+        return
+    if not text.strip():
+        return
+
+    if _CONVENE_RE.search(text):
+        from core.meeting_scheduler import add_meeting, parse_meeting_time
+
+        order = _strip_convene(text)
+        when = parse_meeting_time(text)
+        if when:
+            rec = add_meeting(when, order, channel, user)
+            logger.info(f"[meeting] 예약 by {user}: {rec['id']} {rec['when']} {order!r}")
+            say(text=f":calendar: {when.strftime('%m월 %d일 %H:%M')} 회의 예약했습니다.\n> {order}")
+            return
+        logger.info(f"[meeting] 회의 소집 by {user}: {order!r}")
+        say(text=":speech_balloon: 회의 소집하겠습니다. 잠시만 기다려 주세요.")
+        threading.Thread(target=_orchestrate_bg, args=(order, logger), daemon=True).start()
+        return
+
+    personas = find_mentioned_personas(text)
+    if personas:
+        handles = [p.handle for p in personas]
+        names = ", ".join(f"{p.name}님" for p in personas)
+        logger.info(f"[meeting] 멘션 by {user}: {handles}")
+        say(text=f":speech_balloon: {names} 호출하셨습니다. 답변 준비하겠습니다.")
+        threading.Thread(target=_mentions_bg, args=(handles, text, channel, logger), daemon=True).start()
 
 
 def _handle_vp_dm(user: str, text: str, say, logger):

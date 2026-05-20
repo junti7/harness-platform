@@ -320,6 +320,19 @@ def command_run_pipeline(args: argparse.Namespace) -> None:
     _write_output(_json_dump(result), args.output)
 
 
+def command_orchestrate(args: argparse.Namespace) -> None:
+    from adapters.content.orchestrator import orchestrate
+
+    result = orchestrate(
+        args.order,
+        args.correlation_id,
+        rounds=args.rounds,
+        dry_run=args.dry_run,
+        post=not args.no_post,
+    )
+    _write_output(_json_dump(result), args.output)
+
+
 def command_goal_create(args: argparse.Namespace) -> None:
     goal = create_goal(
         title=args.title,
@@ -631,6 +644,15 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline_parser.add_argument("--notify-slack", action="store_true")
     pipeline_parser.add_argument("--output")
     pipeline_parser.set_defaults(func=command_run_pipeline)
+
+    orch_parser = subparsers.add_parser("orchestrate", help="Run Jarvis orchestration on a CEO order.")
+    orch_parser.add_argument("--order", required=True)
+    orch_parser.add_argument("--correlation-id")
+    orch_parser.add_argument("--rounds", type=int, default=2)
+    orch_parser.add_argument("--dry-run", action="store_true")
+    orch_parser.add_argument("--no-post", action="store_true")
+    orch_parser.add_argument("--output")
+    orch_parser.set_defaults(func=command_orchestrate)
 
     goal_create_parser = subparsers.add_parser("goal-create", help="Create a strategic goal artifact.")
     goal_create_parser.add_argument("--title", required=True)
