@@ -44,25 +44,60 @@ def _split_row(line: str) -> list[str]:
     return [c.strip() for c in line.strip().strip("|").split("|")]
 
 
+def _strip_markup(s: str) -> str:
+    s = _BOLD.sub(lambda m: m.group(1) or m.group(2), s)
+    s = _LINK.sub(lambda m: m.group(1), s)
+    return s
+
+
+def _inline_fmt(s: str) -> str:
+    s = _BOLD.sub(lambda m: f"*{m.group(1) or m.group(2)}*", s)
+    s = _LINK.sub(lambda m: f"<{m.group(2)}|{m.group(1)}>", s)
+    return s
+
+
+# 코드블록 정렬을 쓸 최대 표 폭(이보다 넓으면 세로 카드형으로 전환).
+_TABLE_WIDTH_LIMIT = 64
+
+
 def _render_table(rows: list[list[str]]) -> str:
     ncols = max(len(r) for r in rows)
     rows = [r + [""] * (ncols - len(r)) for r in rows]
-    widths = [max(_wlen(r[c]) for r in rows) for c in range(ncols)]
-    lines = []
-    for ri, row in enumerate(rows):
-        lines.append("| " + " | ".join(_pad(row[c], widths[c]) for c in range(ncols)) + " |")
-        if ri == 0:
-            lines.append("|-" + "-|-".join("-" * widths[c] for c in range(ncols)) + "-|")
-    return "```\n" + "\n".join(lines) + "\n```"
+    # 폭은 서식 제거(plain) 기준으로 계산 (코드블록 안은 서식이 적용 안 됨).
+    plain = [[_strip_markup(c).strip() for c in row] for row in rows]
+    widths = [max(_wlen(plain[r][c]) for r in range(len(plain))) for c in range(ncols)]
+    total = sum(widths) + 3 * ncols + 1
+
+    # 좁은 표 → monospace 코드블록(정렬된 진짜 표 느낌). 서식 미적용이라 plain 사용.
+    if total <= _TABLE_WIDTH_LIMIT:
+        lines = []
+        for ri in range(len(plain)):
+            lines.append("| " + " | ".join(_pad(plain[ri][c], widths[c]) for c in range(ncols)) + " |")
+            if ri == 0:
+                lines.append("|-" + "-|-".join("-" * widths[c] for c in range(ncols)) + "-|")
+        return "```\n" + "\n".join(lines) + "\n```"
+
+    # 넓은 표 → 세로 카드형(모바일에서 안 깨지고 *굵게*도 적용됨).
+    header = rows[0]
+    out: list[str] = []
+    for row in rows[1:]:
+        title = _inline_fmt(row[0]).strip()
+        if title:
+            out.append(f"*{title}*")
+        for i in range(1, ncols):
+            label = _strip_markup(header[i]).strip()
+            val = _inline_fmt(row[i]).strip()
+            if val:
+                out.append(f"   • {label}: {val}")
+        out.append("")
+    return "\n".join(out).rstrip()
 
 
 def _convert_inline(line: str) -> str:
     header = _HEADER.match(line)
     if header:
         return f"*{header.group(1)}*"
-    line = _BOLD.sub(lambda m: f"*{m.group(1) or m.group(2)}*", line)
-    line = _LINK.sub(lambda m: f"<{m.group(2)}|{m.group(1)}>", line)
-    return line
+    return _inline_fmt(line)
 
 
 def to_slack_mrkdwn(text: str) -> str:
