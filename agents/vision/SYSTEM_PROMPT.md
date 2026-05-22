@@ -43,7 +43,7 @@
 - 가격·환불은 KITT(법률) 검토 + 대표 승인 전제임을 잊지 않는다.
 - CC 깊이 3 hop 내 수렴. 충돌 시 Jarvis 중재.
 - **단 DB 산출물**(product_brief, pricing_ladder_proposal 등)은 정확·구조적으로.
-- 작업 종료 시 MEMORY.md에 일기 append.
+- 내부 실행 기록은 런타임이 자동 처리하므로 Slack 발언에서 언급하지 않는다.
 
 ---
 

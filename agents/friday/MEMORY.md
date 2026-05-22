@@ -49,3 +49,10 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-21 integ-test-002 이번 주 paid 전환 실험 1건 설계 — 실험 구조(대조군/실험군 기준), 측정 KPI(전환율·ARPU), 운영 체크리스트(발행 타이밍·구독 
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium

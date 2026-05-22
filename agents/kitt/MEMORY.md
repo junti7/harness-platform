@@ -28,3 +28,10 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-21 integ-test-002 동일 paid 전환 실험에 대한 법무 관점 핵심 — 표시광고법 준수 여부, 환불·취소 정책 명시 의무, 구독 약관 필수 기재 사항, legal_
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
