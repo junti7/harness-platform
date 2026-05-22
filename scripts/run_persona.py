@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import uuid
@@ -37,6 +38,20 @@ from agents.registry import Persona, get_persona  # noqa: E402
 load_dotenv(override=True)
 
 PROVIDER_TIMEOUT = 240
+
+# Patterns emitted by Claude Code's internal context-compaction machinery.
+# These must never propagate into persona responses or conversation history.
+_INTERNAL_CLI_RE = re.compile(
+    r"CRITICAL:\s*Respond with TEXT ONLY[^\n]*(\n.*?)?(?=\n\n|\Z)"
+    r"|<system-reminder>.*?</system-reminder>"
+    r"|\[context_compaction[^\]]*\]",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _strip_internal_messages(text: str) -> str:
+    cleaned = _INTERNAL_CLI_RE.sub("", text).strip()
+    return cleaned or text  # return original if everything was stripped
 
 
 # ── LLM invocation ──────────────────────────────────────────────────────────
@@ -83,6 +98,7 @@ def call_llm(provider: str, prompt: str) -> tuple[str, bool]:
     stderr = (completed.stderr or "").strip()
     if completed.returncode != 0 or not stdout:
         return f"({provider} 응답 없음: {stdout or stderr or completed.returncode})", False
+    stdout = _strip_internal_messages(stdout)
     return stdout, True
 
 

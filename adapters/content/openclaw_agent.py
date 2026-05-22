@@ -1714,6 +1714,67 @@ def _format_with_haiku(user_message: str, raw_output: str) -> str:
         return raw_output
 
 
+# ── 오케스트레이션 라우터 ────────────────────────────────────────────────────
+# CEO DM에서 전사 multi-persona 협의 요청을 감지해 orchestrate()로 위임.
+# 일반 도구-에이전트 경로는 claude -p CLI를 subprocess로 호출하는데, 긴 프롬프트에서
+# Claude Code 내부 context-compaction 메시지("CRITICAL: Respond with TEXT ONLY…")가
+# stdout에 흘러나와 Slack에 노출되는 버그가 있었다. orchestrate()는 Anthropic SDK를
+# 직접 사용하므로 그 버그가 발생하지 않는다.
+
+_ORCHESTRATION_RE = re.compile(
+    r"전사\s*(팀장|팀(?!원))|모든\s*팀(?:장|원|들)?|각\s*팀|"
+    r"전\s*팀장|팀장님들|팀장들|팀원들에게\s*전달|"
+    r"회의\s*소집|소집해|다\s*같이.*보고|전체\s*회의|orchestrate",
+    re.IGNORECASE,
+)
+
+
+def _is_orchestration_request(message: str) -> bool:
+    return bool(_ORCHESTRATION_RE.search(message))
+
+
+def _orchestrate_and_dm(order: str, dm_channel_id: str | None) -> None:
+    """Background thread: run full orchestration and post synthesis to DM."""
+    try:
+        from adapters.content.orchestrator import orchestrate
+        result = orchestrate(order)
+        if not dm_channel_id:
+            return
+        decision = result.get("decision", "(결과 없음)")
+        corr_id = result.get("correlation_id", "")
+        cost = result.get("estimated_cost_usd", 0.0)
+        token = os.getenv("SLACK_BOT_TOKEN", "")
+        if not token:
+            return
+        summary = (
+            f"*Jarvis(비서실장)* — 전사 회의 완료 [{corr_id}]\n"
+            f"(LLM 비용 추정 ${cost:.3f})\n\n"
+            f"{decision}"
+        )
+        import httpx as _httpx
+        _httpx.post(
+            "https://slack.com/api/chat.postMessage",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"channel": dm_channel_id, "text": summary[:3900]},
+            timeout=15.0,
+        )
+    except Exception as exc:
+        logger.error(f"[orchestrate_dm] 오류: {exc}")
+
+
+# Claude Code CLI(-p)가 긴 프롬프트를 처리할 때 stdout에 흘러나오는
+# 내부 context-compaction 지시문을 final response에서도 제거.
+_RESPONSE_INTERNAL_RE = re.compile(
+    r"CRITICAL:\s*Respond with TEXT ONLY.*?(?=\n\n|\Z)",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _sanitize_response(text: str) -> str:
+    cleaned = _RESPONSE_INTERNAL_RE.sub("", text).strip()
+    return cleaned or text
+
+
 # ── 메인 라우터 ──────────────────────────────────────────────────────────────
 
 def run(
@@ -1763,6 +1824,30 @@ def run(
         )
         _record_conversation_turn(effective_session_id, user_message, newsletter_status_response)
         return newsletter_status_response
+
+    # Orchestration shortcut — multi-persona 전사 협의 요청을 orchestrate()로 위임.
+    # 이 경로는 claude -p subprocess를 우회하므로 context-compaction 누출 문제가 없다.
+    if _is_orchestration_request(user_message) and _authorized_for_high_risk(requester_user_id):
+        logger.info("[router] 전사 오케스트레이션 감지 → orchestrate() 위임")
+        _log_route_audit(
+            session_id=effective_session_id,
+            requester_user_id=requester_user_id,
+            user_message=user_message,
+            route="orchestration_delegate",
+            risk_scan=risk_scan,
+        )
+        import threading
+        threading.Thread(
+            target=_orchestrate_and_dm,
+            args=(user_message, dm_channel_id),
+            daemon=True,
+        ).start()
+        ack = (
+            "🗣️ 전사 회의를 소집합니다. 팀장님들 의견을 취합한 뒤 Jarvis(비서실장)가 "
+            "결과를 정리해 이 채널로 보고드리겠습니다. (소요 시간: 수 분)"
+        )
+        _record_conversation_turn(effective_session_id, user_message, ack)
+        return ack
 
     # Explicit CLI-style commands and mutations (snapshot, record-decision, run-pipeline)
     parsed_command = _parse_structured_command(user_message)
@@ -1998,7 +2083,7 @@ def _run_tool_agent(
             )
             for block in response.content:
                 if hasattr(block, "text"):
-                    return block.text
+                    return _sanitize_response(block.text)
             return "✅ 완료 (응답 없음)"
 
         if response.stop_reason == "tool_use":

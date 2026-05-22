@@ -55,6 +55,31 @@ if not any(isinstance(h, logging.StreamHandler) and not isinstance(h, RotatingFi
 
 logger = logging.getLogger(__name__)
 
+# ── Slack event dedup (retry guard) ──────────────────────────────────────────
+# Slack retries event delivery when the handler takes > 3 s.  Without dedup,
+# a long agent_run() call causes multiple identical DMs to be processed.
+import time as _time
+import threading as _threading
+
+_SEEN_EVENTS: dict[str, float] = {}
+_SEEN_LOCK = _threading.Lock()
+_EVENT_TTL = 120.0  # seconds
+
+
+def _is_duplicate_event(event: dict) -> bool:
+    key = f"{event.get('user', '')}:{event.get('ts', '')}:{event.get('client_msg_id', '')}"
+    now = _time.monotonic()
+    with _SEEN_LOCK:
+        # purge stale entries
+        stale = [k for k, v in _SEEN_EVENTS.items() if now - v > _EVENT_TTL]
+        for k in stale:
+            del _SEEN_EVENTS[k]
+        if key in _SEEN_EVENTS:
+            return True
+        _SEEN_EVENTS[key] = now
+        return False
+
+
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "")
 SLACK_APP_TOKEN = os.environ.get("SLACK_APP_TOKEN", "")
 CEO_SLACK_USER_ID = os.environ.get("SLACK_CEO_USER_ID", "")
@@ -70,6 +95,10 @@ app = App(token=SLACK_BOT_TOKEN)
 
 @app.event("app_mention")
 def handle_mention(event, say, logger):
+    if _is_duplicate_event(event):
+        logger.info("[app_mention] 중복 이벤트 무시 (Slack retry)")
+        return
+
     user = event.get("user", "unknown")
     raw_text = event.get("text", "")
     text = " ".join(w for w in raw_text.split() if not w.startswith("<@")).strip()
@@ -90,6 +119,9 @@ def handle_mention(event, say, logger):
 def handle_dm(event, say, logger):
     if event.get("bot_id") or event.get("subtype"):
         return
+    if _is_duplicate_event(event):
+        logger.info("[DM] 중복 이벤트 무시 (Slack retry)")
+        return
 
     user = event.get("user", "unknown")
     text = event.get("text", "")
@@ -106,7 +138,15 @@ def handle_dm(event, say, logger):
     if CEO_SLACK_USER_ID and user == CEO_SLACK_USER_ID:
         say(text=":thinking_face: 처리 중...")
         session_id = f"slack:{channel}:{user}"
-        response = agent_run(text, dm_channel_id=channel, requester_user_id=user, session_id=session_id)
+        try:
+            response = agent_run(text, dm_channel_id=channel, requester_user_id=user, session_id=session_id)
+        except Exception as exc:
+            logger.exception("[DM] OpenClaw agent 처리 실패")
+            response = (
+                ":warning: OpenClaw 처리 중 내부 오류가 발생했습니다.\n"
+                f"- 오류: {type(exc).__name__}\n"
+                "- 조치: 로그에 기록했습니다. 같은 지시를 반복 실행하지 말고 원인 확인 후 재시도하겠습니다."
+            )
         say(text=response)
     elif VP_SLACK_USER_ID and user == VP_SLACK_USER_ID:
         _handle_vp_dm(user, text, say=say, logger=logger)
