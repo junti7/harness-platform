@@ -237,7 +237,7 @@ class OpenClawAgentTests(unittest.TestCase):
         self.assertEqual(first, "2")
         self.assertEqual(second, "8")
         second_call = mock_chat.call_args_list[1]
-        self.assertEqual(second_call.kwargs["history"][0]["content"], "내 이름은 준태야")
+        self.assertEqual(second_call.kwargs["history"][0]["content"], "<user_message>내 이름은 준태야</user_message>")
         self.assertEqual(second_call.kwargs["history"][1]["content"], "2")
 
     @patch("adapters.content.openclaw_agent._run_ollama_chat", return_value="8")
