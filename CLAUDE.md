@@ -1,5 +1,5 @@
 # CLAUDE.md - Harness Business Operating Directive
-# Version: 3.4 | Domain: Physical AI / AGI Creator Subscription
+# Version: 3.5 | Domain: Physical AI / AGI Creator Subscription
 # 상위 규약: docs/product/PLATFORM.md (충돌 시 PLATFORM.md 우선)
 
 ---
@@ -486,6 +486,14 @@ Success metric은 `docs/operations/WEEKLY_BUSINESS_REVIEW.md`의 cadence와 trig
 ---
 
 ## 10. Governing Rule
+
+[매우 중요] **AR (Action Required) 이행 규칙:**
+- 오케스트레이션 회의의 **권고 액션**, 대표님/부대표님의 직접 지시, 게이트 이행 약속은 모두 AR로 등록된다.
+- AR은 `docs/reports/ar_tracker.jsonl`에 기록되며, 비서실장이 **매일 08:00** 미이행 AR을 점검하고 담당 페르소나에게 이행을 촉구한다.
+- 기한 초과 AR은 즉시 `#exec-president-decisions`에 보고된다. 기한 +3일 초과 시 CEO 긴급 보고.
+- "말로만 보고"는 완료로 인정하지 않는다. 결과물(파일 경로, URL, 요약)이 첨부돼야 완료 처리.
+- 에스컬레이션: 1차(당일 경고) → 2차(+1일 CEO 채널 보고) → 3차(+3일 긴급 보고) → 강제 종결(+7일 CEO 확인).
+- 상세 규약: `docs/governance/AR_PROTOCOL.md`
 
 [중요] **비서실장(Chief of Staff) 승인 및 Multi-LLM QA 원칙:**
 - 모든 외부 발행용 보고서(Executive Summary 포함)는 CEO 또는 부대표에게 보고되기 전, 반드시 **비서실장의 최종 리뷰 및 Approve**를 통과해야 한다.

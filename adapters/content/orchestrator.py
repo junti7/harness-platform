@@ -35,6 +35,7 @@ from agents.registry import Persona, get_active_personas, get_persona
 from scripts.run_persona import append_diary, call_llm, call_persona, post_opinion
 from scripts.notion_minutes import save_minutes as _save_notion_minutes
 from scripts.gate_tracker import extract_gates as _extract_gates
+from scripts.ar_tracker import extract_ars_from_decision as _extract_ars
 
 load_dotenv(override=True)
 
@@ -305,7 +306,20 @@ def orchestrate(
         except Exception as exc:
             print(f"[orchestrate] 게이트 추출 실패: {exc}")
 
-    # 7. Notion 회의록 저장
+    # 7. 권고 액션 → AR 자동 등록
+    if transcript:
+        try:
+            new_ars = _extract_ars(decision, correlation_id)
+            if new_ars and post and _exec_channel():
+                _post_raw(
+                    _exec_channel(),
+                    f"*Jarvis(비서실장)*: 📋 {len(new_ars)}개 AR(Action Required)이 등록됐습니다.\n"
+                    + "\n".join(f"• [{a['id']}] {a['title']} (담당: {a['owner']}님, 기한: {a['due_by']})" for a in new_ars),
+                )
+        except Exception as exc:
+            print(f"[orchestrate] AR 추출 실패: {exc}")
+
+    # 8. Notion 회의록 저장
     if post and transcript:
         try:
             guard.charge(JARVIS_REASONING_PROVIDER, force=True)
