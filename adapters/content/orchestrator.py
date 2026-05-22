@@ -33,6 +33,7 @@ from dotenv import load_dotenv
 from adapters.content.slack_format import to_slack_mrkdwn
 from agents.registry import Persona, get_active_personas, get_persona
 from scripts.run_persona import append_diary, call_llm, call_persona, post_opinion
+from scripts.notion_minutes import save_minutes as _save_notion_minutes
 
 load_dotenv(override=True)
 
@@ -158,6 +159,20 @@ def _synthesize(order: str, transcript: list[dict], correlation_id: str, guard: 
     return out if ok else "(synthesis 실패 — 회의실 transcript 참조)"
 
 
+def _simplify_minutes(order: str, decision: str) -> str:
+    """Rewrite Decision Card as simple meeting minutes (초등학생 수준, 인사이트 중심)."""
+    prompt = (
+        "당신은 Harness 비서실장 Jarvis입니다. 아래 회의 결과를 Notion 회의록으로 정리해 주세요.\n"
+        "규칙: (1) 초등학생도 이해할 수 있는 쉬운 말, (2) 최대한 짧고 간결하게, "
+        "(3) 가장 중요한 인사이트(핵심 결론 1~2개)를 ## 핵심 인사이트 섹션으로 맨 앞에, "
+        "(4) ## 오늘 결정한 것, ## 아직 못 정한 것, ## 다음에 할 일 섹션 포함. "
+        "존댓말 구어체. 전문 용어는 괄호 안에 쉬운 말 병기.\n\n"
+        f"[회의 주제]\n{order}\n\n[회의 결과]\n{decision}\n"
+    )
+    out, ok = call_llm(JARVIS_REASONING_PROVIDER, prompt)
+    return out if ok else decision
+
+
 def _record_run(record: dict) -> None:
     RUN_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with RUN_LOG_PATH.open("a", encoding="utf-8") as fh:
@@ -260,11 +275,12 @@ def orchestrate(
             _post_raw(_exec_channel(), f"*Jarvis(비서실장)* — CEO Decision Card [{correlation_id}]:\n{decision}")
 
     # 5. record
+    persona_names = [p.display for p, _ in assignments] if transcript else []
     record = {
         "correlation_id": correlation_id,
         "ts": datetime.now().isoformat(timespec="seconds"),
         "order": order,
-        "personas": [p.display for p, _ in assignments] if transcript else [],
+        "personas": persona_names,
         "rounds": rounds,
         "turns": len(transcript),
         "estimated_cost_usd": round(guard.spent, 3),
@@ -273,4 +289,22 @@ def orchestrate(
         "decision": decision,
     }
     _record_run(record)
+
+    # 6. Notion 회의록 저장
+    if post and transcript:
+        try:
+            guard.charge(JARVIS_REASONING_PROVIDER, force=True)
+            minutes = _simplify_minutes(order, decision)
+            notion_url = _save_notion_minutes(
+                correlation_id=correlation_id,
+                order=order,
+                personas=persona_names,
+                minutes_text=minutes,
+                cost_usd=guard.spent,
+            )
+            if notion_url and _exec_channel():
+                _post_raw(_exec_channel(), f"*Jarvis(비서실장)*: 📒 회의록이 Notion에 저장됐습니다.\n{notion_url}")
+        except Exception as exc:
+            print(f"[orchestrate] Notion 회의록 저장 실패: {exc}")
+
     return record
