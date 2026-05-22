@@ -68,7 +68,7 @@ def _build_command(provider: str, prompt: str) -> list[str]:
     if provider == "claude":
         return [cli, "-p", prompt]
     if provider == "gemini":
-        return [cli, "--skip-trust", "-p", prompt, "--approval-mode", "plan", "-o", "text"]
+        return [cli, "--skip-trust", "-p", prompt, "-o", "text"]
     if provider == "codex":
         return [cli, "exec", "--sandbox", "read-only", prompt]
     if provider == "copilot":
