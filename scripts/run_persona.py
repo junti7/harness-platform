@@ -44,7 +44,8 @@ PROVIDER_TIMEOUT = 240
 _INTERNAL_CLI_RE = re.compile(
     r"CRITICAL:\s*Respond with TEXT ONLY[^\n]*(\n.*?)?(?=\n\n|\Z)"
     r"|<system-reminder>.*?</system-reminder>"
-    r"|\[context_compaction[^\]]*\]",
+    r"|\[context_compaction[^\]]*\]"
+    r"|update_topic\(.*?\)\n?",
     re.DOTALL | re.IGNORECASE,
 )
 
