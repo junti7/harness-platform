@@ -24,13 +24,13 @@
   <key>WorkingDirectory</key>
   <string>/Users/juntaepark/projects/harness-platform</string>
 
-  <!-- 매일 오전 09:05 Asia/Seoul = UTC 00:05 -->
+  <!-- 매일 오전 04:30 Asia/Seoul -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
-    <integer>0</integer>
+    <integer>4</integer>
     <key>Minute</key>
-    <integer>5</integer>
+    <integer>30</integer>
   </dict>
 
   <key>StandardOutPath</key>

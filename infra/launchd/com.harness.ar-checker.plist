@@ -1,32 +1,40 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key>
-    <string>com.harness.ar-checker</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/Users/juntaepark/projects/harness-platform/.venv/bin/python</string>
-        <string>/Users/juntaepark/projects/harness-platform/scripts/ar_tracker.py</string>
-        <string>check</string>
-    </array>
-    <key>WorkingDirectory</key>
-    <string>/Users/juntaepark/projects/harness-platform</string>
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key>
-        <integer>8</integer>
-        <key>Minute</key>
-        <integer>0</integer>
-    </dict>
-    <key>StandardOutPath</key>
-    <string>/Users/juntaepark/projects/harness-platform/logs/ar_checker.log</string>
-    <key>StandardErrorPath</key>
-    <string>/Users/juntaepark/projects/harness-platform/logs/ar_checker.log</string>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-    </dict>
+  <key>Label</key>
+  <string>com.harness.ar-checker</string>
+
+  <!-- AR(Action Required) 일일 이행 점검 (append-only tracker 기반) -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/juntaepark/projects/harness-platform/.venv/bin/python</string>
+    <string>/Users/juntaepark/projects/harness-platform/scripts/ar_tracker.py</string>
+    <string>check</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/juntaepark/projects/harness-platform</string>
+
+  <!-- 매일 오전 08:00 Asia/Seoul -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>8</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/juntaepark/projects/harness-platform/logs/ar_checker.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/juntaepark/projects/harness-platform/logs/ar_checker.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
 </dict>
 </plist>

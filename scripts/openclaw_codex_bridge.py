@@ -31,6 +31,9 @@ from scripts.goal_providers import registry as _provider_registry
 from scripts.openclaw_ops_sync import publish_ops_brief
 from scripts.system_integrity_check import run_check as run_system_integrity_check
 
+AR_TRACKER_JSONL_PATH = Path("docs/reports/ar_tracker.jsonl")
+AR_REGISTRY_PATH = Path("docs/operations/ACTION_REQUIRED_REGISTRY.json")
+
 
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
@@ -513,6 +516,174 @@ def command_goal_status(args: argparse.Namespace) -> None:
     _write_output(rendered, args.output)
 
 
+def _normalize_ar_item(raw: dict[str, Any]) -> dict[str, Any]:
+    owner = raw.get("owner") or raw.get("assignee") or raw.get("담당") or ""
+    owner_map = {
+        "tars": "TARS",
+        "friday": "Friday",
+        "kitt": "KITT",
+        "jarvis": "Jarvis",
+        "vision": "Vision",
+        "c3po": "C3PO",
+        "scribe": "Scribe",
+        "watchman": "Watchman",
+    }
+    owner_text = owner_map.get(str(owner).strip().lower(), str(owner))
+    return {
+        "id": raw.get("id") or raw.get("ar_id") or "",
+        "owner": owner_text,
+        "due_date": raw.get("due_date") or raw.get("due_by") or raw.get("due") or raw.get("deadline") or "",
+        "summary": raw.get("summary") or raw.get("content") or raw.get("description") or raw.get("title") or raw.get("내용") or "",
+        "status": raw.get("status") or "open",
+        "completed_at": raw.get("completed_at"),
+        "note": raw.get("note") or raw.get("memo") or raw.get("completion_note") or "",
+    }
+
+
+def _load_ar_tracker_jsonl() -> dict[str, Any]:
+    path = AR_TRACKER_JSONL_PATH
+    if not path.exists():
+        raise FileNotFoundError(f"AR tracker file not found: {path}")
+
+    latest_by_id: dict[str, dict[str, Any]] = {}
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            raw = line.strip()
+            if not raw:
+                continue
+            item = _normalize_ar_item(json.loads(raw))
+            ar_id = str(item.get("id") or "").strip()
+            if not ar_id:
+                continue
+            latest_by_id[ar_id] = item
+
+    items = list(latest_by_id.values())
+    return {
+        "generated_at": _now(),
+        "source": str(path),
+        "format": "jsonl",
+        "items": items,
+    }
+
+
+def _load_ar_registry_json() -> dict[str, Any]:
+    path = AR_REGISTRY_PATH
+    if not path.exists():
+        raise FileNotFoundError(f"AR registry file not found: {path}")
+    with path.open("r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict):
+        raise ValueError("AR registry must be a JSON object")
+    items = data.get("items")
+    if not isinstance(items, list):
+        raise ValueError("AR registry must contain an 'items' list")
+    data["items"] = [_normalize_ar_item(item) for item in items]
+    return data
+
+
+def _load_ar_registry() -> dict[str, Any]:
+    try:
+        return _load_ar_tracker_jsonl()
+    except FileNotFoundError:
+        return _load_ar_registry_json()
+
+
+def _render_ar_list_text(payload: dict[str, Any]) -> str:
+    # Backward-compatible wrapper: default to unresolved only.
+    return _render_ar_lists_text(payload, include_all=False)
+
+
+def _status_label(status: str) -> str:
+    s = (status or "").strip().lower()
+    if s in {"done", "closed", "complete", "completed", "resolved", "ok"}:
+        return "완료"
+    return "미결"
+
+
+def _render_ar_table_text(title: str, items: list[dict[str, Any]]) -> str:
+    if not items:
+        return f"{title}: 0건"
+
+    headers = ("ID", "담당", "기한", "상태", "내용")
+    rows = []
+    for item in items:
+        due = str(item.get("due_date", "") or "")
+        due_short = due[5:] if due.startswith("2026-") else due
+        rows.append(
+            (
+                str(item.get("id", "")),
+                str(item.get("owner", "")),
+                due_short,
+                _status_label(str(item.get("status", "open"))),
+                str(item.get("summary", "")),
+            )
+        )
+
+    widths = [
+        max(len(headers[idx]), max(len(row[idx]) for row in rows))
+        for idx in range(len(headers))
+    ]
+
+    def border(left: str, fill: str, join: str, right: str) -> str:
+        return left + join.join(fill * (width + 2) for width in widths) + right
+
+    def render_row(values: tuple[str, ...]) -> str:
+        return "│ " + " │ ".join(value.ljust(widths[idx]) for idx, value in enumerate(values)) + " │"
+
+    lines = [f"{title} ({len(rows)}건):", ""]
+    lines.extend(
+        [
+            border("┌", "─", "┬", "┐"),
+            render_row(headers),
+            border("├", "─", "┼", "┤"),
+        ]
+    )
+    for idx, row in enumerate(rows):
+        lines.append(render_row(row))
+        if idx != len(rows) - 1:
+            lines.append(border("├", "─", "┼", "┤"))
+    lines.append(border("└", "─", "┴", "┘"))
+    return "\n".join(lines)
+
+
+def _render_ar_lists_text(payload: dict[str, Any], *, include_all: bool) -> str:
+    items = list(payload.get("items") or [])
+    if not items:
+        return "현재 등록된 AR이 없습니다."
+
+    open_items: list[dict[str, Any]] = []
+    done_items: list[dict[str, Any]] = []
+    for item in items:
+        label = _status_label(str(item.get("status", "open")))
+        (done_items if label == "완료" else open_items).append(item)
+
+    if not include_all:
+        # Default: unresolved only
+        if not open_items:
+            return "현재 미결 AR이 없습니다."
+        return _render_ar_table_text("미결 AR", open_items)
+
+    parts = [
+        f"전체 AR (미결 {len(open_items)}건 / 완료 {len(done_items)}건):",
+        "",
+        _render_ar_table_text("미결 AR", open_items),
+    ]
+    if done_items:
+        parts.extend(["", _render_ar_table_text("완료 AR", done_items)])
+    return "\n".join(parts)
+
+
+def command_ar_list(args: argparse.Namespace) -> None:
+    try:
+        payload = _load_ar_registry()
+    except Exception as exc:
+        _write_output(f"❌ AR 목록 조회 실패: {exc}", args.output)
+        return
+
+    rendered = _json_dump(payload) if args.format == "json" else _render_ar_lists_text(payload, include_all=args.all)
+    _write_output(rendered, args.output)
+
+
 def _render_goal_model_text(model: dict[str, Any]) -> str:
     return "\n".join(
         [
@@ -572,6 +743,12 @@ def build_parser() -> argparse.ArgumentParser:
     status_parser.add_argument("--format", choices=["text", "json"], default="text")
     status_parser.add_argument("--output")
     status_parser.set_defaults(func=command_status)
+
+    ar_parser = subparsers.add_parser("ar-list", help="Show the current Action Required registry.")
+    ar_parser.add_argument("--format", choices=["text", "json"], default="text")
+    ar_parser.add_argument("--all", action="store_true", help="include completed AR items")
+    ar_parser.add_argument("--output")
+    ar_parser.set_defaults(func=command_ar_list)
 
     card_parser = subparsers.add_parser("decision-card", help="Render a decision card for OpenClaw or mobile.")
     card_parser.add_argument("target_type", choices=["signal", "refined_output", "research_report"])

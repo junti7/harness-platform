@@ -26,6 +26,7 @@ load_dotenv(_PROJECT_ROOT / ".env", override=True)
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from adapters.content.openclaw_agent import run as agent_run, OLLAMA_CHAT_MODEL, OLLAMA_REMOTE_HOST, OLLAMA_HOST
+from adapters.content.slack_format import to_slack_mrkdwn
 from core.reader_feedback import classify_feedback, upsert_reader_profile, record_feedback
 from adapters.content.vp_review_card import parse_vp_response
 from agents.registry import find_mentioned_personas, get_active_personas
@@ -109,7 +110,7 @@ def handle_mention(event, say, logger):
         say(text=":thinking_face: 처리 중...", thread_ts=event.get("ts"))
         session_id = f"slack:{channel}:{user}"
         response = agent_run(text, dm_channel_id=channel, requester_user_id=user, session_id=session_id)
-        say(text=response, thread_ts=event.get("ts"))
+        say(text=to_slack_mrkdwn(response), thread_ts=event.get("ts"))
     else:
         _handle_reader_feedback(user, text, source_channel=f"slack_mention:{channel}", say=say,
                                 thread_ts=event.get("ts"), logger=logger)
@@ -147,7 +148,7 @@ def handle_dm(event, say, logger):
                 f"- 오류: {type(exc).__name__}\n"
                 "- 조치: 로그에 기록했습니다. 같은 지시를 반복 실행하지 말고 원인 확인 후 재시도하겠습니다."
             )
-        say(text=response)
+        say(text=to_slack_mrkdwn(response))
     elif VP_SLACK_USER_ID and user == VP_SLACK_USER_ID:
         _handle_vp_dm(user, text, say=say, logger=logger)
     else:

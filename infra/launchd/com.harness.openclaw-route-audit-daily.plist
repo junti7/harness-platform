@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.harness.openclaw-route-audit-daily</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/juntaepark/projects/harness-platform/.venv/bin/python</string>
+    <string>/Users/juntaepark/projects/harness-platform/scripts/summarize_openclaw_route_audit.py</string>
+    <string>--limit</string>
+    <string>500</string>
+    <string>--output-name</string>
+    <string>openclaw_route_audit_daily.md</string>
+    <string>--archive-label</string>
+    <string>daily</string>
+    <string>--to-notion</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/juntaepark/projects/harness-platform</string>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>0</integer>
+    <key>Minute</key>
+    <integer>10</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/juntaepark/projects/harness-platform/logs/openclaw-route-audit-daily.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/juntaepark/projects/harness-platform/logs/openclaw-route-audit-daily.error.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>
+  </dict>
+</dict>
+</plist>

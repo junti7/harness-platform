@@ -5,7 +5,7 @@ all show as raw text. This converts:
   - `**bold**` / `__bold__`      -> `*bold*`
   - `# / ## / ### headers`        -> `*bold*`
   - `[text](url)`                 -> `<url|text>`
-  - markdown tables               -> monospace code block, column-aligned
+  - markdown tables               -> wrapped monospace code block, column-aligned
                                      (East-Asian width aware, so Korean aligns)
 
 Lists (`- `, `1. `) are left as-is; Slack renders them acceptably. Conversion
@@ -56,8 +56,77 @@ def _inline_fmt(s: str) -> str:
     return s
 
 
-# 코드블록 정렬을 쓸 최대 표 폭(이보다 넓으면 세로 카드형으로 전환).
-_TABLE_WIDTH_LIMIT = 64
+_TABLE_WIDTH_LIMIT = 108
+_MIN_COL_WIDTH = 4
+
+
+def _take_width(s: str, width: int) -> tuple[str, str]:
+    taken: list[str] = []
+    used = 0
+    for idx, char in enumerate(s):
+        char_width = _wlen(char)
+        if used and used + char_width > width:
+            return "".join(taken).rstrip(), s[idx:].lstrip()
+        if not used and char_width > width:
+            return char, s[idx + 1:].lstrip()
+        taken.append(char)
+        used += char_width
+    return "".join(taken).rstrip(), ""
+
+
+def _wrap_cell(text: str, width: int) -> list[str]:
+    text = " ".join(text.split())
+    if not text:
+        return [""]
+    lines: list[str] = []
+    current = ""
+    for word in text.split(" "):
+        candidate = word if not current else f"{current} {word}"
+        if _wlen(candidate) <= width:
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+            current = ""
+        remainder = word
+        while _wlen(remainder) > width:
+            chunk, remainder = _take_width(remainder, width)
+            lines.append(chunk)
+        current = remainder
+    if current:
+        lines.append(current)
+    return lines or [""]
+
+
+def _fit_widths(natural: list[int]) -> list[int]:
+    ncols = len(natural)
+    overhead = 3 * ncols + 1
+    available = max(ncols * _MIN_COL_WIDTH, _TABLE_WIDTH_LIMIT - overhead)
+    widths = [max(_MIN_COL_WIDTH, min(width, max(_MIN_COL_WIDTH, available // ncols))) for width in natural]
+    while sum(widths) > available:
+        idx = max(range(ncols), key=lambda i: widths[i])
+        if widths[idx] <= _MIN_COL_WIDTH:
+            break
+        widths[idx] -= 1
+    idx = 0
+    while sum(widths) < available and any(widths[i] < natural[i] for i in range(ncols)):
+        if widths[idx] < natural[idx]:
+            widths[idx] += 1
+        idx = (idx + 1) % ncols
+    return widths
+
+
+def _format_row(cells: list[str], widths: list[int]) -> list[str]:
+    wrapped = [_wrap_cell(cells[i], widths[i]) for i in range(len(widths))]
+    height = max(len(cell_lines) for cell_lines in wrapped)
+    lines = []
+    for line_idx in range(height):
+        parts = []
+        for col_idx, cell_lines in enumerate(wrapped):
+            cell = cell_lines[line_idx] if line_idx < len(cell_lines) else ""
+            parts.append(_pad(cell, widths[col_idx]))
+        lines.append("| " + " | ".join(parts) + " |")
+    return lines
 
 
 def _render_table(rows: list[list[str]]) -> str:
@@ -65,32 +134,14 @@ def _render_table(rows: list[list[str]]) -> str:
     rows = [r + [""] * (ncols - len(r)) for r in rows]
     # 폭은 서식 제거(plain) 기준으로 계산 (코드블록 안은 서식이 적용 안 됨).
     plain = [[_strip_markup(c).strip() for c in row] for row in rows]
-    widths = [max(_wlen(plain[r][c]) for r in range(len(plain))) for c in range(ncols)]
-    total = sum(widths) + 3 * ncols + 1
-
-    # 좁은 표 → monospace 코드블록(정렬된 진짜 표 느낌). 서식 미적용이라 plain 사용.
-    if total <= _TABLE_WIDTH_LIMIT:
-        lines = []
-        for ri in range(len(plain)):
-            lines.append("| " + " | ".join(_pad(plain[ri][c], widths[c]) for c in range(ncols)) + " |")
-            if ri == 0:
-                lines.append("|-" + "-|-".join("-" * widths[c] for c in range(ncols)) + "-|")
-        return "```\n" + "\n".join(lines) + "\n```"
-
-    # 넓은 표 → 세로 카드형(모바일에서 안 깨지고 *굵게*도 적용됨).
-    header = rows[0]
-    out: list[str] = []
-    for row in rows[1:]:
-        title = _inline_fmt(row[0]).strip()
-        if title:
-            out.append(f"*{title}*")
-        for i in range(1, ncols):
-            label = _strip_markup(header[i]).strip()
-            val = _inline_fmt(row[i]).strip()
-            if val:
-                out.append(f"   • {label}: {val}")
-        out.append("")
-    return "\n".join(out).rstrip()
+    natural = [max(_wlen(plain[r][c]) for r in range(len(plain))) for c in range(ncols)]
+    widths = _fit_widths(natural)
+    lines: list[str] = []
+    for ri, row in enumerate(plain):
+        lines.extend(_format_row(row, widths))
+        if ri == 0:
+            lines.append("|-" + "-|-".join("-" * width for width in widths) + "-|")
+    return "```\n" + "\n".join(lines) + "\n```"
 
 
 def _convert_inline(line: str) -> str:

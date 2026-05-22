@@ -2,6 +2,8 @@ import unittest
 from unittest.mock import patch
 from tempfile import TemporaryDirectory
 from pathlib import Path
+import hmac
+import hashlib
 
 from adapters.content import openclaw_agent
 
@@ -15,6 +17,30 @@ class OpenClawAgentTests(unittest.TestCase):
         self.assertIsNotNone(parsed)
         self.assertEqual(parsed["intent"], "status")
         self.assertEqual(parsed["bridge_args"], ["status", "--format", "text"])
+
+    def test_parse_ar_list_command(self):
+        parsed = openclaw_agent._parse_structured_command("AR list 알려주세요.")
+
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed["intent"], "ar-list")
+        self.assertEqual(parsed["bridge_args"], ["ar-list", "--format", "text"])
+
+    def test_parse_ar_list_all_command(self):
+        parsed = openclaw_agent._parse_structured_command("AR 전체 리스트를 보여줘.")
+
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed["intent"], "ar-list")
+        self.assertEqual(parsed["bridge_args"], ["ar-list", "--format", "text", "--all"])
+
+    def test_expand_workplace_shorthand_for_ar(self):
+        expanded = openclaw_agent._expand_workplace_shorthand("AR list 알려주세요.")
+
+        self.assertIn("AR(Action Required)", expanded)
+
+    def test_chat_prompt_includes_workplace_shorthand_context(self):
+        prompt = openclaw_agent._build_chat_system_prompt("AR list 알려주세요.")
+
+        self.assertIn("AR=Action Required", prompt)
 
     def test_arithmetic_followup_is_deterministic(self):
         first = openclaw_agent.run("1+1=?", session_id="math-session")
@@ -71,6 +97,27 @@ class OpenClawAgentTests(unittest.TestCase):
         self.assertEqual(result, "premium-route")
         mock_ollama.assert_not_called()
         mock_chat.assert_called_once()
+
+    @patch("adapters.content.openclaw_agent.httpx.post")
+    def test_ollama_chat_sends_expanded_workplace_shorthand(self, mock_post):
+        class Resp:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"message": {"content": "ok"}}
+
+        mock_post.return_value = Resp()
+
+        result = openclaw_agent._ollama_chat(
+            "http://localhost:11434",
+            "test",
+            "AR list 알려주세요.",
+        )
+
+        self.assertEqual(result, "ok")
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertIn("AR(Action Required)", payload["messages"][-1]["content"])
 
     def test_route_audit_records_blocked_contextual_risk(self):
         with TemporaryDirectory() as tmpdir:
@@ -249,6 +296,174 @@ class OpenClawAgentTests(unittest.TestCase):
         self.assertEqual(result, "8")
         mock_intent.assert_not_called()
         mock_ollama.assert_called_once()
+
+    @patch.dict("os.environ", {"OPENCLAW_WEB_SEARCH_PROVIDER": "brave", "BRAVE_SEARCH_API_KEY": "test-key"}, clear=False)
+    @patch("adapters.content.openclaw_agent.httpx.get")
+    def test_web_search_brave_formats_results(self, mock_get):
+        class Resp:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "web": {
+                        "results": [
+                            {
+                                "title": "Result A",
+                                "url": "https://example.com/a",
+                                "description": "Snippet A",
+                                "page_age": "May 22, 2026",
+                            }
+                        ]
+                    }
+                }
+
+        mock_get.return_value = Resp()
+
+        result = openclaw_agent.tool_web_search("physical ai", count=3)
+
+        self.assertIn("provider: brave", result)
+        self.assertIn("Result A", result)
+        self.assertIn("https://example.com/a", result)
+        self.assertIn("게시일: May 22, 2026", result)
+        mock_get.assert_called_once()
+
+    @patch.dict("os.environ", {"OPENCLAW_WEB_SEARCH_PROVIDER": "duckduckgo", "BRAVE_SEARCH_API_KEY": ""}, clear=False)
+    @patch("adapters.content.openclaw_agent.httpx.get")
+    def test_web_search_duckduckgo_formats_results(self, mock_get):
+        class Resp:
+            text = """
+            <div class="result">
+              <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fb">Result B</a>
+              <a class="result__snippet">Snippet B</a>
+            </div>
+            """
+
+            def raise_for_status(self):
+                return None
+
+        mock_get.return_value = Resp()
+
+        result = openclaw_agent.tool_web_search("physical ai", count=3)
+
+        self.assertIn("provider: duckduckgo_html", result)
+        self.assertIn("Result B", result)
+        self.assertIn("https://example.com/b", result)
+        self.assertIn("게시일: 미확인", result)
+
+    def test_recency_sensitive_tool_prompt_requires_dates(self):
+        prompt = openclaw_agent._build_tool_system_prompt("Physical AI robotics 최신 뉴스 검색해주세요")
+
+        self.assertIn("Recency-sensitive query rule", prompt)
+        self.assertIn("게시일: 미확인", prompt)
+
+    def test_browser_research_blocks_purchase_actions(self):
+        result = openclaw_agent.tool_browser_research(
+            task="쿠팡에서 제일 싼 제품 구매해줘",
+            query="USB C 케이블",
+            site="coupang",
+        )
+
+        self.assertIn("browser_research 차단", result)
+        self.assertIn("구매", result)
+
+    @patch("adapters.content.openclaw_agent.subprocess.run")
+    def test_browser_research_runs_read_only_script(self, mock_run):
+        class Result:
+            returncode = 0
+            stdout = "✅ 브라우저 read-only 검색 완료"
+            stderr = ""
+
+        mock_run.return_value = Result()
+
+        result = openclaw_agent.tool_browser_research(
+            task="쿠팡에서 공개 검색 결과 가격 비교",
+            query="USB C 케이블",
+            site="coupang",
+            max_items=3,
+        )
+
+        self.assertIn("read-only", result)
+        cmd = mock_run.call_args.args[0]
+        self.assertIn("scripts/browser_research.py", cmd[1])
+        self.assertIn("--site", cmd)
+        self.assertIn("coupang", cmd)
+
+    @patch.dict(
+        "os.environ",
+        {
+            "COUPANG_PARTNERS_ACCESS_KEY": "access-key",
+            "COUPANG_PARTNERS_SECRET_KEY": "secret-key",
+        },
+        clear=False,
+    )
+    @patch("adapters.content.openclaw_agent.datetime")
+    def test_coupang_hmac_headers_format(self, mock_datetime):
+        mock_datetime.utcnow.return_value.strftime.return_value = "260522T101112Z"
+
+        headers = openclaw_agent._coupang_hmac_headers(
+            "GET",
+            "/v2/providers/affiliate_open_api/apis/openapi/v1/products/search?keyword=usb&limit=3",
+        )
+
+        expected = hmac.new(
+            b"secret-key",
+            b"260522T101112ZGET/v2/providers/affiliate_open_api/apis/openapi/v1/products/searchkeyword=usb&limit=3",
+            hashlib.sha256,
+        ).hexdigest()
+        self.assertIn(expected, headers["Authorization"])
+        self.assertIn("access-key=access-key", headers["Authorization"])
+
+    @patch.dict(
+        "os.environ",
+        {
+            "COUPANG_PARTNERS_ACCESS_KEY": "",
+            "COUPANG_PARTNERS_SECRET_KEY": "",
+        },
+        clear=False,
+    )
+    def test_coupang_product_search_requires_credentials(self):
+        result = openclaw_agent.tool_coupang_product_search("USB C 케이블", 3)
+
+        self.assertIn("COUPANG_PARTNERS_ACCESS_KEY", result)
+
+    @patch.dict(
+        "os.environ",
+        {
+            "COUPANG_PARTNERS_ACCESS_KEY": "access-key",
+            "COUPANG_PARTNERS_SECRET_KEY": "secret-key",
+        },
+        clear=False,
+    )
+    @patch("adapters.content.openclaw_agent.httpx.get")
+    @patch("adapters.content.openclaw_agent.datetime")
+    def test_coupang_product_search_formats_response(self, mock_datetime, mock_get):
+        mock_datetime.utcnow.return_value.strftime.return_value = "260522T101112Z"
+
+        class Resp:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "data": {
+                        "productData": [
+                            {
+                                "productName": "USB C 케이블 1m",
+                                "productPrice": 4900,
+                                "productUrl": "https://link.coupang.com/a/test",
+                            }
+                        ]
+                    }
+                }
+
+        mock_get.return_value = Resp()
+
+        result = openclaw_agent.tool_coupang_product_search("USB C 케이블", 3)
+
+        self.assertIn("쿠팡 파트너스 API 상품 검색 완료", result)
+        self.assertIn("4,900원", result)
+        self.assertIn("https://link.coupang.com/a/test", result)
 
 
 if __name__ == "__main__":

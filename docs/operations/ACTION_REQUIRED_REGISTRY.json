@@ -1,0 +1,42 @@
+{
+  "generated_at": "2026-05-22T22:20:00+09:00",
+  "source": "ceo-confirmed baseline registry",
+  "items": [
+    {
+      "id": "AR-20260522-001",
+      "owner": "TARS",
+      "due_date": "2026-05-27",
+      "status": "open"
+    },
+    {
+      "id": "AR-20260522-002",
+      "owner": "Friday",
+      "due_date": "2026-05-27",
+      "status": "open"
+    },
+    {
+      "id": "AR-20260522-003",
+      "owner": "TARS",
+      "due_date": "2026-05-24",
+      "status": "open"
+    },
+    {
+      "id": "AR-20260522-004",
+      "owner": "KITT",
+      "due_date": "2026-05-27",
+      "status": "open"
+    },
+    {
+      "id": "AR-20260522-005",
+      "owner": "Jarvis",
+      "due_date": "2026-05-24",
+      "status": "open"
+    },
+    {
+      "id": "AR-20260522-006",
+      "owner": "KITT",
+      "due_date": "2026-05-27",
+      "status": "open"
+    }
+  ]
+}

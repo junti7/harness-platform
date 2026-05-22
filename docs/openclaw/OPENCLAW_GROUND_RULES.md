@@ -29,3 +29,14 @@
 - Respond in Korean by default.
 - Be concise, operational, and explicit about what command was executed.
 - For command results, prefer: what ran, what it returned, and what remains blocked.
+
+## Workplace Shorthand
+
+- In Slack/operations context, interpret common workplace shorthand before asking for clarification.
+- Default glossary:
+  - `AR` = `Action Required`
+  - `FYI` = `For Your Information`
+  - `ETA` = `Estimated Time of Arrival`
+  - `EOD` = `End of Day`
+  - `OOO` = `Out of Office`
+- Example: `AR list 알려주세요` should be interpreted as asking for an `Action Required list` first, not as an unknown acronym by default.

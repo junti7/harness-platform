@@ -1,5 +1,6 @@
 import anthropic
 import json
+import logging
 import os
 from dotenv import load_dotenv
 from core.domain_config import load_prompt_text
@@ -21,6 +22,7 @@ INPUT_COST_PER_1K = MODEL_PRICES_PER_1K["sonnet"][0]
 OUTPUT_COST_PER_1K = MODEL_PRICES_PER_1K["sonnet"][1]
 
 SYSTEM_PROMPT = load_prompt_text("physical_ai_analyst")
+_logger = logging.getLogger(__name__)
 
 
 def _price_for_model(model: str) -> tuple[float, float]:
@@ -62,10 +64,13 @@ def get_today_cost(logger=None) -> float:
 
 
 def log_api_cost(model: str, input_tokens: int, output_tokens: int, provider: str = "anthropic"):
-    execute_query("""
-        INSERT INTO api_cost_log (model, input_tokens, output_tokens, provider)
-        VALUES (%s, %s, %s, %s)
-    """, (model, input_tokens, output_tokens, provider))
+    try:
+        execute_query("""
+            INSERT INTO api_cost_log (model, input_tokens, output_tokens, provider)
+            VALUES (%s, %s, %s, %s)
+        """, (model, input_tokens, output_tokens, provider))
+    except Exception as exc:
+        _logger.warning(f"API 비용 로그 저장 실패 — 응답은 계속 진행: {exc}")
 
 
 def save_to_dlq(row: dict, error: str, logger):

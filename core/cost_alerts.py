@@ -26,10 +26,15 @@ def check_and_alert(today_cost: float, limit: float, logger: HarnessLogger | Non
     for threshold in THRESHOLDS:
         if ratio < threshold:
             continue
-        already = execute_query(
-            "SELECT id FROM daily_cost_alerts WHERE alert_date = %s AND threshold = %s",
-            (today, threshold), fetch=True,
-        )
+        try:
+            already = execute_query(
+                "SELECT id FROM daily_cost_alerts WHERE alert_date = %s AND threshold = %s",
+                (today, threshold), fetch=True,
+            )
+        except Exception as exc:
+            if logger:
+                logger.warning(f"비용 알림 상태 조회 실패 — 알림 스킵: {exc}")
+            continue
         if already:
             continue
 
