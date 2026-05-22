@@ -34,6 +34,7 @@ from adapters.content.slack_format import to_slack_mrkdwn
 from agents.registry import Persona, get_active_personas, get_persona
 from scripts.run_persona import append_diary, call_llm, call_persona, post_opinion
 from scripts.notion_minutes import save_minutes as _save_notion_minutes
+from scripts.gate_tracker import extract_gates as _extract_gates
 
 load_dotenv(override=True)
 
@@ -290,7 +291,21 @@ def orchestrate(
     }
     _record_run(record)
 
-    # 6. Notion 회의록 저장
+    # 6. 미이행 게이트 추출 및 tracker 등록
+    if transcript:
+        try:
+            new_gates = _extract_gates(decision, correlation_id, order)
+            if new_gates and post and _exec_channel():
+                gate_names = ", ".join(f"`{g['gate_type']}`" for g in new_gates)
+                _post_raw(
+                    _exec_channel(),
+                    f"*Jarvis(비서실장)*: 📌 {len(new_gates)}개 게이트가 이행 추적 목록에 등록됐습니다.\n"
+                    f"{gate_names}\n매일 오전 9시에 담당 팀에게 현황을 확인하고 보고드리겠습니다.",
+                )
+        except Exception as exc:
+            print(f"[orchestrate] 게이트 추출 실패: {exc}")
+
+    # 7. Notion 회의록 저장
     if post and transcript:
         try:
             guard.charge(JARVIS_REASONING_PROVIDER, force=True)
