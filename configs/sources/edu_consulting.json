@@ -11,35 +11,38 @@
     {
       "name": "arXiv_computers_society",
       "url": "https://rss.arxiv.org/rss/cs.CY",
-      "type": "rss",
+      "type": "rss_daily",
       "signal_class": "academic",
       "rq_tags": ["RQ2", "RQ5"],
-      "stale_minutes": 10080,
+      "stale_minutes": 1440,
       "reliability_score": 0.95,
       "expected_signal_type": "AI literacy, digital society, tech ethics",
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "note": "당일 제출 논문만 포함 — 주말/공휴일은 entries 없음. 과거 논문은 arXiv API(collect_arxiv)로 수집."
     },
     {
       "name": "arXiv_HCI",
       "url": "https://rss.arxiv.org/rss/cs.HC",
-      "type": "rss",
+      "type": "rss_daily",
       "signal_class": "academic",
       "rq_tags": ["RQ2", "RQ5"],
-      "stale_minutes": 10080,
+      "stale_minutes": 1440,
       "reliability_score": 0.95,
       "expected_signal_type": "HCI, cognitive offloading, AI interaction",
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "note": "당일 제출 논문만 포함 — 과거 논문은 arXiv API로 수집."
     },
     {
       "name": "arXiv_AI",
       "url": "https://rss.arxiv.org/rss/cs.AI",
-      "type": "rss",
+      "type": "rss_daily",
       "signal_class": "academic",
       "rq_tags": ["RQ2", "RQ5"],
-      "stale_minutes": 10080,
+      "stale_minutes": 1440,
       "reliability_score": 0.95,
       "expected_signal_type": "AI research, education applications",
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "note": "당일 제출 논문만 포함 — 과거 논문은 arXiv API로 수집."
     },
     {
       "name": "EdSurge",
