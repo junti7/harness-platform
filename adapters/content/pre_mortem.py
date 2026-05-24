@@ -161,16 +161,17 @@ def _record_decision(
     approved = rec in ("go", "conditional_go") and risk != "critical"
     approval_type = "pre_mortem_approve" if approved else "pre_mortem_block"
 
-    execute_query(
-        """INSERT INTO ceo_decisions
-               (target_type, target_id, decision, approval_type, reason, decided_by)
-           VALUES (%s, %s, %s, %s, %s, 'pre_mortem_agent')""",
-        (
-            decision_type,
-            target_id,
-            rec,
-            approval_type,
-            f"risk={risk} memo={memo_path}",
-        ),
-    )
+    if target_id is not None:
+        execute_query(
+            """INSERT INTO ceo_decisions
+                   (target_type, target_id, decision, approval_type, reason, decided_by)
+               VALUES (%s, %s, %s, %s, %s, 'pre_mortem_agent')""",
+            (
+                decision_type,
+                target_id,
+                rec,
+                approval_type,
+                f"risk={risk} memo={memo_path}",
+            ),
+        )
     return approved
