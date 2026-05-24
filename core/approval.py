@@ -23,6 +23,7 @@ VALID_APPROVAL_TYPES = {
     "investment_thesis_approve",
     "capital_action_approve",
     "legal_review_approve",
+    "legal_review_escalation_approve",
     "red_team_clear",
     "pre_mortem_approve",
     "qa_clear",

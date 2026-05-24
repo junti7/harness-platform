@@ -20,6 +20,7 @@ Official documents use role titles rather than personal nicknames.
 | **Legal Counsel Agent** | Cross-LLM (Claude + Gemini or GPT) | 광고/규제/저작권/약관/개인정보 사전검토 |
 | **Red Team Agent (Cross-LLM)** | Always pair of distinct reasoning LLMs | 코드/MD/의사결정 cross-verify |
 | **Product Planning Agent** | Claude or GPT reasoning + Codex (data analysis) | 상품 정의, 패키징, 가격 ladder |
+| **CFO Agent** | Claude (finance reasoning) + Gemini (second view) + Codex (calculation) | burn/runway, budget guard, unit economics, capital readiness |
 | **Marketing Strategy Agent** | Claude (전략) + GPT reasoning (persona/channel) | 익명 고객 acquisition 전략 |
 | Subscriber Growth Agent | Claude (copy) + Codex (분포 도구) | Marketing Strategy 실행 arm |
 | **Sales Agent** | GPT reasoning (funnel) + Claude (소통) + Codex (data) | paid funnel 운영, conversion 실험 |

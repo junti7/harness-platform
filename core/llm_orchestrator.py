@@ -1,24 +1,17 @@
 """
 T-12: Multi-LLM Orchestrator
 
-Claude API (primary) + Gemini CLI (independent critique) + GPT (arbitration).
-All Claude costs tracked in api_cost_log with provider column.
-Gemini/GPT tracked as 0-token entries (external billing).
+Claude API (primary) + Gemini API (independent critique) + GPT (arbitration).
+All costs tracked in api_cost_log with provider column.
 """
 import os
-import subprocess
 from typing import Optional
 
 import anthropic
 
 from core.database import execute_query
 from core.logger import HarnessLogger
-
-_GEMINI_CLI = "/opt/homebrew/bin/gemini"
-_SUBPROCESS_ENV = {
-    **os.environ,
-    "PATH": f"/opt/homebrew/bin:/usr/local/bin:{os.environ.get('PATH', '')}",
-}
+from adapters.content.refiner import _price_for_model
 
 
 def _log_cost(provider: str, model: str, input_tokens: int, output_tokens: int) -> None:
@@ -48,6 +41,13 @@ class LLMOrchestrator:
         max_tokens: int = 4096,
     ) -> dict:
         """Claude API primary analysis. Logs cost + fires threshold alerts."""
+        from core.cost_alerts import check_and_alert
+        from adapters.content.refiner import get_today_cost, DAILY_COST_LIMIT
+        today = get_today_cost(self.logger)
+        if today >= DAILY_COST_LIMIT:
+            raise RuntimeError(
+                f"[LLMOrchestrator] 일일 비용 한도 도달 (${today:.4f} / ${DAILY_COST_LIMIT}) — Claude API 호출 차단"
+            )
         resp = self.client.messages.create(
             model=model,
             max_tokens=max_tokens,
@@ -56,8 +56,6 @@ class LLMOrchestrator:
         )
         _log_cost("anthropic", model, resp.usage.input_tokens, resp.usage.output_tokens)
 
-        from core.cost_alerts import check_and_alert
-        from adapters.content.refiner import get_today_cost, DAILY_COST_LIMIT
         check_and_alert(get_today_cost(self.logger), DAILY_COST_LIMIT, self.logger)
 
         return {
@@ -68,40 +66,71 @@ class LLMOrchestrator:
             "output_tokens": resp.usage.output_tokens,
         }
 
+    def estimate_claude_cost(self, text_length: int, model: str = "claude-sonnet-4-6") -> float:
+        """단순 토큰 추정치로 예상 비용 계산 (실제 호출 없음)."""
+        # 아주 대략적인 추정: 1 char ~= 2 tokens
+        # 실제로는 토크나이저를 써야 정확함
+        input_tokens = text_length * 2 
+        output_tokens = 2048 # 일반적인 최대 출력값으로 가정
+        
+        input_price, output_price = _price_for_model(model)
+        return (input_tokens / 1000 * input_price +
+                output_tokens / 1000 * output_price)
+
     def gemini_critique(
         self,
         prompt: str,
         primary_output: str = "",
         timeout: int = 120,
     ) -> dict:
-        """Gemini CLI independent review. Falls back gracefully if CLI absent."""
+        """Gemini API를 사용한 독립적 Critique 검토. API 키 미설정 시 Claude Fallback."""
+        import google.generativeai as genai
+        google_key = os.getenv("GOOGLE_API_KEY")
+        if not google_key:
+            if self.logger:
+                self.logger.warning("GOOGLE_API_KEY 없음 — claude fallback으로 대체")
+            return self._claude_fallback_critique(prompt, primary_output)
+
         full_prompt = prompt
         if primary_output:
             full_prompt += f"\n\n[1차 분석 참고 (비판적으로 검토하세요)]\n{primary_output[:2000]}"
 
         try:
-            result = subprocess.run(
-                [_GEMINI_CLI, "-p", full_prompt],
-                capture_output=True, text=True,
-                timeout=timeout, env=_SUBPROCESS_ENV,
+            genai.configure(api_key=google_key)
+            model_name = "gemini-1.5-pro"
+            model = genai.GenerativeModel(model_name)
+            
+            # API 호출
+            response = model.generate_content(
+                full_prompt,
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=2048,
+                )
             )
-            if result.returncode != 0 and self.logger:
-                self.logger.warning(f"Gemini CLI returncode={result.returncode}: {result.stderr[:200]}")
-            _log_cost("google", "gemini", 0, 0)
+            
+            # 토큰 메트릭 추출
+            input_tokens = 0
+            output_tokens = 0
+            try:
+                if hasattr(response, "usage_metadata") and response.usage_metadata:
+                    input_tokens = response.usage_metadata.prompt_token_count
+                    output_tokens = response.usage_metadata.candidates_token_count
+            except Exception:
+                pass
+
+            _log_cost("google", model_name, input_tokens, output_tokens)
+            
             return {
-                "output": result.stdout.strip(),
-                "model": "gemini",
+                "output": response.text.strip(),
+                "model": model_name,
                 "provider": "google",
-                "returncode": result.returncode,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
             }
-        except FileNotFoundError:
+        except Exception as e:
             if self.logger:
-                self.logger.warning("Gemini CLI 없음 — claude fallback으로 대체")
+                self.logger.error(f"Gemini API 에러: {str(e)} — claude fallback으로 대체")
             return self._claude_fallback_critique(prompt, primary_output)
-        except subprocess.TimeoutExpired:
-            if self.logger:
-                self.logger.warning(f"Gemini CLI timeout ({timeout}s)")
-            return {"output": "", "model": "gemini-timeout", "provider": "google", "error": "timeout"}
 
     def _claude_fallback_critique(self, prompt: str, primary_output: str) -> dict:
         """Gemini 불가 시 동일 모델 재호출로 fallback. 로그에 명시."""
@@ -116,11 +145,51 @@ class LLMOrchestrator:
         return result
 
     def gpt_arbitrate(self, prompt: str, primary: str, critique: str) -> dict:
-        """GPT reasoning 중재 — API 키 미설정 시 경고 반환."""
-        if self.logger:
-            self.logger.warning("GPT 중재 미설정 (OPENAI_API_KEY) — 수동 검토 필요")
-        return {
-            "output": "GPT_ARBITRATION_NOT_CONFIGURED",
-            "provider": "openai",
-            "note": "Split decision requires manual review",
-        }
+        """GPT-4o를 사용한 상위 중재 — API 키 미설정 시 Fallback."""
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if not openai_key:
+            if self.logger:
+                self.logger.warning("GPT 중재 미설정 (OPENAI_API_KEY) — 수동 검토 필요")
+            return {
+                "output": "GPT_ARBITRATION_NOT_CONFIGURED",
+                "provider": "openai",
+                "note": "Split decision requires manual review",
+            }
+        
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=openai_key)
+            model_name = "gpt-4o-mini"
+            
+            system_prompt = "당신은 고도로 지능적인 수석 중재자입니다. 1차 분석과 2차 비판 분석을 검토하여 최선의 중재 결론을 내리세요."
+            user_prompt = f"질문/프롬프트:\n{prompt}\n\n1차 분석:\n{primary}\n\n2차 비판:\n{critique}\n\n두 의견을 종합적으로 판단하여 최선의 결론 및 실행 계획을 수립하세요."
+            
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                max_tokens=2048,
+            )
+            
+            input_tokens = response.usage.prompt_tokens
+            output_tokens = response.usage.completion_tokens
+            _log_cost("openai", model_name, input_tokens, output_tokens)
+            
+            return {
+                "output": response.choices[0].message.content.strip(),
+                "model": model_name,
+                "provider": "openai",
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"GPT 중재 API 에러: {str(e)} — 수동 검토 필요")
+            return {
+                "output": f"GPT_ARBITRATION_ERROR: {str(e)}",
+                "provider": "openai",
+                "note": "API error. Split decision requires manual review",
+            }
+

@@ -1,4 +1,4 @@
-import anthropic
+import google.generativeai as genai
 import json
 import logging
 import os
@@ -10,16 +10,17 @@ from core.cost_alerts import check_and_alert
 
 load_dotenv()
 
+# --- Gemini Configuration ---
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+
 DAILY_COST_LIMIT = float(os.getenv("DAILY_COST_LIMIT_USD", "2.00"))
 TIER3_BATCH_LIMIT = int(os.getenv("TIER3_BATCH_LIMIT", "10"))
 
+# Gemini 1.5 Pro pricing (per 1k tokens) - Placeholder, verify before production
 MODEL_PRICES_PER_1K = {
-    "haiku": (0.0008, 0.004),
-    "sonnet": (0.003, 0.015),
-    "opus": (0.015, 0.075),
+    "gemini-1.5-pro": (0.0035, 0.0105), 
 }
-INPUT_COST_PER_1K = MODEL_PRICES_PER_1K["sonnet"][0]
-OUTPUT_COST_PER_1K = MODEL_PRICES_PER_1K["sonnet"][1]
+INPUT_COST_PER_1K, OUTPUT_COST_PER_1K = MODEL_PRICES_PER_1K["gemini-1.5-pro"]
 
 SYSTEM_PROMPT = load_prompt_text("physical_ai_analyst")
 _logger = logging.getLogger(__name__)
@@ -30,28 +31,27 @@ def _price_for_model(model: str) -> tuple[float, float]:
     for key, price in MODEL_PRICES_PER_1K.items():
         if key in model_lower:
             return price
-    return MODEL_PRICES_PER_1K["sonnet"]
+    return MODEL_PRICES_PER_1K["gemini-1.5-pro"]
 
 
-def estimate_cost(input_tokens: int, output_tokens: int, model: str = "claude-sonnet") -> float:
+def estimate_cost(input_tokens: int, output_tokens: int, model: str = "gemini-1.5-pro-latest") -> float:
     input_price, output_price = _price_for_model(model)
     return (input_tokens / 1000 * input_price +
             output_tokens / 1000 * output_price)
 
 
 def get_today_cost(logger=None) -> float:
+    """오늘 사용한 모든 LLM API 비용 합산 (Anthropic + Google + OpenAI)."""
     try:
         result = execute_query("""
-            SELECT SUM(
-                CASE
-                    WHEN LOWER(model) LIKE '%haiku%' THEN
-                        (input_tokens::float / 1000 * 0.0008) + (output_tokens::float / 1000 * 0.004)
-                    WHEN LOWER(model) LIKE '%opus%' THEN
-                        (input_tokens::float / 1000 * 0.015) + (output_tokens::float / 1000 * 0.075)
-                    ELSE
-                        (input_tokens::float / 1000 * 0.003) + (output_tokens::float / 1000 * 0.015)
+            SELECT COALESCE(SUM(
+                CASE provider
+                    WHEN 'anthropic' THEN (input_tokens::float/1000000*3.0) + (output_tokens::float/1000000*15.0)
+                    WHEN 'google'    THEN (input_tokens::float/1000000*3.5) + (output_tokens::float/1000000*10.5)
+                    WHEN 'openai'    THEN (input_tokens::float/1000000*5.0) + (output_tokens::float/1000000*15.0)
+                    ELSE 0
                 END
-            ) as total_cost
+            ), 0) as total_cost
             FROM api_cost_log
             WHERE DATE(created_at) = CURRENT_DATE
         """, fetch=True)
@@ -63,7 +63,7 @@ def get_today_cost(logger=None) -> float:
     return 0.0
 
 
-def log_api_cost(model: str, input_tokens: int, output_tokens: int, provider: str = "anthropic"):
+def log_api_cost(model: str, input_tokens: int, output_tokens: int, provider: str = "google"):
     try:
         execute_query("""
             INSERT INTO api_cost_log (model, input_tokens, output_tokens, provider)
@@ -125,23 +125,26 @@ def build_user_content(row: dict) -> str:
 {facts_str}"""
 
 
-def refine_signal(client: anthropic.Anthropic, row: dict) -> dict:
+def refine_signal(model: genai.GenerativeModel, row: dict) -> dict:
     user_content = build_user_content(row)
 
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=8192,
-        system=SYSTEM_PROMPT + "\n반드시 유효한 JSON 형식으로 응답을 마무리하세요. 중간에 끊기지 않도록 분량을 조절하되 깊이는 유지하세요.",
-        messages=[{"role": "user", "content": user_content}],
-    )
+    # Gemini's system prompt is handled via GenerationConfig or passed differently
+    # For simplicity, we prepend it to the user message as per some tutorials.
+    full_prompt = SYSTEM_PROMPT + "\n반드시 유효한 JSON 형식으로 응답을 마무리하세요. 중간에 끊기지 않도록 분량을 조절하되 깊이는 유지하세요.\n\n---\n\n" + user_content
+    
+    response = model.generate_content(full_prompt)
 
+    # Log API cost using response metadata if available, otherwise estimate
+    input_tokens = response.usage_metadata.prompt_token_count
+    output_tokens = response.usage_metadata.candidates_token_count
+    
     log_api_cost(
-        "claude-sonnet-4-6",
-        response.usage.input_tokens,
-        response.usage.output_tokens,
+        "gemini-1.5-pro-latest", # Or get from model object if possible
+        input_tokens,
+        output_tokens,
     )
 
-    raw = response.content[0].text.strip()
+    raw = response.text.strip()
     raw = raw.replace("```json", "").replace("```", "").strip()
 
     parsed = json.loads(raw)
@@ -183,7 +186,8 @@ def refine(correlation_id: str = None):
 
     logger.info(f"처리 대상: {len(rows)}개 (score >= 0.3 기준)")
 
-    client = anthropic.Anthropic()
+    _gemini_model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    model = genai.GenerativeModel(_gemini_model_name)
     refined = 0
     skipped = 0
     total_cost = 0.0
@@ -197,7 +201,7 @@ def refine(correlation_id: str = None):
         logger.info(f"[{i+1}/{len(rows)}] 처리 중: {row['title'][:50]}... (score={row['score']:.2f})")
 
         try:
-            result = refine_signal(client, dict(row))
+            result = refine_signal(model, dict(row))
             check_and_alert(get_today_cost(logger), DAILY_COST_LIMIT, logger)
         except json.JSONDecodeError as e:
             logger.error(f"  JSON 파싱 실패: {e}")
@@ -211,13 +215,15 @@ def refine(correlation_id: str = None):
             continue
 
         if not result.get("is_relevant", True):
-            logger.info("  → Claude 판단: 관련 없음, 탈락")
+            logger.info("  → Gemini 판단: 관련 없음, 탈락")
             skipped += 1
             continue
 
-        save_refined_output(row["id"], result, "claude-sonnet-4-6")
-
-        cost = estimate_cost(600, 800)
+        save_refined_output(row["id"], result, _gemini_model_name)
+        
+        # Cost is now logged inside refine_signal, this is an estimate for the final log
+        # In a real scenario, we'd pull the exact cost from the log or response
+        cost = estimate_cost(1000, 1000) 
         total_cost += cost
         logger.info(f"  → 완료: {result['final_title'][:50]}")
         refined += 1

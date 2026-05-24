@@ -16,6 +16,7 @@ To add a new provider:
 from __future__ import annotations
 
 from scripts.goal_providers.base import GoalProviderAdapter
+from scripts.goal_providers.maily import MailyAdapter
 from scripts.goal_providers.substack import SubstackAdapter
 
 
@@ -42,4 +43,5 @@ class _ProviderRegistry:
 
 
 registry = _ProviderRegistry()
+registry.register(MailyAdapter())
 registry.register(SubstackAdapter())

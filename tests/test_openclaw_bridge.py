@@ -81,6 +81,20 @@ class OpenClawBridgeTests(unittest.TestCase):
         self.assertIn("완료 AR", rendered)
         self.assertIn("AR-2", rendered)
 
+    def test_render_minutes_status_text(self):
+        rows = [
+            {"ts": "2026-05-23T06:00:00", "correlation_id": "orch-aaa", "ok": True, "notion_url": "https://notion.so/x"},
+            {"ts": "2026-05-23T06:10:00", "correlation_id": "orch-bbb", "ok": False, "error": "boom"},
+        ]
+
+        rendered = openclaw_codex_bridge._render_minutes_status_text(rows, tail=20)
+
+        self.assertIn("Notion 회의록 업로드 상태", rendered)
+        self.assertIn("성공(ok): 1", rendered)
+        self.assertIn("실패(error): 1", rendered)
+        self.assertIn("orch-aaa", rendered)
+        self.assertIn("orch-bbb", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()

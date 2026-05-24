@@ -2,6 +2,7 @@ import argparse
 import fcntl
 import json
 import os
+import re
 import shutil
 import socket
 import sys
@@ -33,6 +34,44 @@ from scripts.system_integrity_check import run_check as run_system_integrity_che
 
 AR_TRACKER_JSONL_PATH = Path("docs/reports/ar_tracker.jsonl")
 AR_REGISTRY_PATH = Path("docs/operations/ACTION_REQUIRED_REGISTRY.json")
+NOTION_MINUTES_RUN_LOG_PATH = Path("docs/reports/notion_minutes_runs.jsonl")
+ORCHESTRATION_RUN_LOG_PATH = Path("docs/reports/orchestration_runs.jsonl")
+ETF_WHITELIST_PATH = Path("docs/trading/etf_whitelist_v0.json")
+INSTRUMENT_REGISTRY_JSONL_PATH = Path("docs/reports/instrument_registry.jsonl")
+INSTRUMENT_REGISTRY_PENDING_JSONL_PATH = Path("docs/reports/instrument_registry_pending.jsonl")
+
+
+def _candidate_ar_tracker_paths() -> list[Path]:
+    candidates: list[Path] = []
+
+    # Primary runtime location.
+    candidates.append(AR_TRACKER_JSONL_PATH)
+
+    # Some local workflows write AR logs in Claude worktree mirrors.
+    # Prefer the most recently updated file among those mirrors.
+    worktree_glob = Path(".claude/worktrees")
+    if worktree_glob.exists():
+        candidates.extend(sorted(worktree_glob.glob("*/docs/reports/ar_tracker.jsonl")))
+
+    # Deduplicate while preserving order.
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for path in candidates:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(path)
+    return unique
+
+
+def _resolve_ar_tracker_path() -> Path:
+    existing = [path for path in _candidate_ar_tracker_paths() if path.exists()]
+    if not existing:
+        raise FileNotFoundError(
+            f"AR tracker file not found. Checked: {[str(p) for p in _candidate_ar_tracker_paths()]}"
+        )
+    return max(existing, key=lambda p: p.stat().st_mtime)
 
 
 def _now() -> str:
@@ -113,6 +152,11 @@ def status_snapshot() -> dict[str, Any]:
             "status",
             "decision-card",
             "record-decision",
+            "minutes-latest",
+            "minutes-upload",
+            "minutes-reupload",
+            "ibkr-etf-check",
+            "ibkr-etf-approve",
             "goal-create",
             "goal-model",
             "goal-snapshot",
@@ -148,6 +192,902 @@ def _write_output(output: str, output_path: str | None) -> None:
 
 def _json_dump(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+
+
+def _load_jsonl(path: Path, *, tail: int = 50) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    # small file expected; keep logic simple and robust
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            raw = line.strip()
+            if not raw:
+                continue
+            try:
+                rows.append(json.loads(raw))
+            except Exception:
+                continue
+    if tail > 0:
+        return rows[-tail:]
+    return rows
+
+
+def _load_orchestration_runs(*, tail: int = 50) -> list[dict[str, Any]]:
+    return _load_jsonl(ORCHESTRATION_RUN_LOG_PATH, tail=tail)
+
+
+def _find_orchestration(correlation_id: str | None) -> dict[str, Any] | None:
+    runs = _load_orchestration_runs(tail=500)
+    if not runs:
+        return None
+    if not correlation_id:
+        return runs[-1]
+    for rec in reversed(runs):
+        if str(rec.get("correlation_id", "")) == correlation_id:
+            return rec
+    return None
+
+
+def _render_minutes_candidate_text(rec: dict[str, Any] | None) -> str:
+    if not rec:
+        return "최근 회의(orchestration) 기록이 없습니다."
+    corr = rec.get("correlation_id", "?")
+    ts = rec.get("ts", "?")
+    order = str(rec.get("order", "")).strip().replace("\n", " ")
+    if len(order) > 140:
+        order = order[:140] + "…"
+    personas = rec.get("personas") or []
+    lines = [
+        "Notion 회의록 업로드 후보(가장 최근 회의):",
+        f"- correlation_id: {corr}",
+        f"- ts: {ts}",
+        f"- 참여: {len(personas)}개 팀",
+        f"- 주제: {order}",
+        "",
+        "업로드 실행(신규 페이지 생성): `회의록 업로드 confirm` 또는 `회의록 업로드 confirm correlation_id=orch-...`",
+        "재업로드 실행(기존 회의록 아카이브 후 새 페이지 생성): `회의록 재업로드 confirm` 또는 `회의록 재업로드 confirm correlation_id=orch-...`",
+    ]
+    return "\n".join(lines)
+
+
+def _minutes_markdown_from_record(rec: dict[str, Any]) -> str:
+    # Legacy: kept for compatibility; v2 minutes builder uses Notion blocks directly.
+    order = str(rec.get("order", "")).strip()
+    decision = str(rec.get("decision", "")).strip()
+    personas = rec.get("personas") or []
+    ts = rec.get("ts", "")
+    corr = rec.get("correlation_id", "")
+    return "\n".join(
+        [
+            "# 회의록",
+            "",
+            "## 회의 정보",
+            f"- correlation_id: {corr}",
+            f"- ts: {ts}",
+            f"- 참여 팀: {', '.join(personas)}",
+            "",
+            "## 회의 주제",
+            order,
+            "",
+            "## 회의 결과(Decision Card 원문)",
+            decision,
+        ]
+    )
+
+
+def _parse_decision_sections(decision_md: str) -> dict[str, str]:
+    """Parse decision card markdown into sections keyed by normalized heading."""
+    text = (decision_md or "").strip()
+    if not text:
+        return {}
+    sections: dict[str, list[str]] = {}
+    current = "body"
+    sections[current] = []
+    for line in text.splitlines():
+        m = re.match(r"^\s*##\s+(.+?)\s*$", line)
+        if m:
+            current = m.group(1).strip()
+            sections.setdefault(current, [])
+            continue
+        sections[current].append(line.rstrip())
+    return {k: "\n".join(v).strip() for k, v in sections.items()}
+
+
+def _extract_numbered_items(section_text: str, *, limit: int = 10) -> list[str]:
+    """Extract '1. ...' items; keeps wrapped lines."""
+    lines = (section_text or "").splitlines()
+    items: list[str] = []
+    buf: list[str] = []
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+        m = re.match(r"^\d+\.\s+(.*)$", line)
+        if m:
+            if buf:
+                items.append(" ".join(buf).strip())
+                buf = []
+            buf = [m.group(1).strip()]
+            continue
+        # wrapped continuation
+        if buf and not re.match(r"^[-*]\s+", line):
+            buf.append(line)
+    if buf:
+        items.append(" ".join(buf).strip())
+    # Clean markdown artifacts lightly.
+    cleaned = []
+    for it in items[:limit]:
+        s = re.sub(r"\s+", " ", it).strip()
+        s = s.replace("**", "").replace("*", "")
+        cleaned.append(s[:300])
+    return cleaned
+
+
+def _extract_bullets(section_text: str, *, limit: int = 12) -> list[str]:
+    bullets: list[str] = []
+    for raw in (section_text or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith(("-", "*")) and len(line) > 2:
+            s = line[2:].strip()
+            s = s.replace("**", "").replace("*", "")
+            bullets.append(re.sub(r"\s+", " ", s)[:320])
+    return bullets[:limit]
+
+
+def _extract_gate_rows(section_text: str, *, limit: int = 12) -> list[str]:
+    """Extract markdown table rows like | gate | status | note |."""
+    rows: list[str] = []
+    for raw in (section_text or "").splitlines():
+        line = raw.strip()
+        if not (line.startswith("|") and line.endswith("|")):
+            continue
+        # skip header separators
+        if re.search(r"\|\s*-+\s*\|", line):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) < 2:
+            continue
+        gate = cells[0]
+        status = cells[1] if len(cells) > 1 else ""
+        note = cells[2] if len(cells) > 2 else ""
+        if gate.lower() in {"게이트", "gate"}:
+            continue
+        s = f"{gate} — {status}"
+        if note:
+            s += f": {note}"
+        s = s.replace("**", "").replace("*", "")
+        s = re.sub(r"\s+", " ", s).strip()
+        rows.append(s[:360])
+    return rows[:limit]
+
+
+def _minutes_blocks_from_record(rec: dict[str, Any]) -> list[dict]:
+    """Build an executive-friendly Notion blocks list (no raw markdown dump)."""
+    from scripts.notion_minutes import build_minutes_blocks_from_decision_card
+
+    decision = str(rec.get("decision", "") or "").strip()
+    ts = str(rec.get("ts", "") or "").strip()
+    corr = str(rec.get("correlation_id", "") or "").strip()
+    return build_minutes_blocks_from_decision_card(decision, ts=ts, correlation_id=corr, limit=90)
+
+
+def _append_minutes_audit(correlation_id: str, notion_url: str | None, ok: bool, error: str | None = None) -> None:
+    NOTION_MINUTES_RUN_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload: dict[str, Any] = {
+        "ts": _now(),
+        "correlation_id": correlation_id,
+        "notion_url": notion_url,
+        "ok": ok,
+    }
+    if error:
+        payload["error"] = error
+    with NOTION_MINUTES_RUN_LOG_PATH.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def _render_minutes_status_text(rows: list[dict[str, Any]], *, tail: int) -> str:
+    if not rows:
+        return "Notion 회의록 업로드 로그가 없습니다."
+    ok_rows = [r for r in rows if r.get("ok") is True]
+    bad_rows = [r for r in rows if r.get("ok") is False]
+    last_ok = ok_rows[-1] if ok_rows else None
+    last_bad = bad_rows[-1] if bad_rows else None
+    lines = [
+        f"Notion 회의록 업로드 상태 (최근 {min(tail, len(rows))}건):",
+        f"- 성공(ok): {len(ok_rows)}",
+        f"- 실패(error): {len(bad_rows)}",
+    ]
+    if last_ok:
+        lines.append(f"- 최근 성공: {last_ok.get('ts', '?')} | {last_ok.get('correlation_id', '?')}")
+        if last_ok.get("notion_url"):
+            lines.append(f"  url: {last_ok['notion_url']}")
+    if last_bad:
+        lines.append(f"- 최근 실패: {last_bad.get('ts', '?')} | {last_bad.get('correlation_id', '?')}")
+        if last_bad.get("error"):
+            lines.append(f"  error: {str(last_bad.get('error'))[:200]}")
+    return "\n".join(lines)
+
+
+def command_minutes_status(args: argparse.Namespace) -> None:
+    rows = _load_jsonl(NOTION_MINUTES_RUN_LOG_PATH, tail=args.tail)
+    if args.correlation_id:
+        rows = [r for r in rows if str(r.get("correlation_id", "")) == args.correlation_id]
+    if rows:
+        rendered = _json_dump({"rows": rows}) if args.format == "json" else _render_minutes_status_text(rows, tail=args.tail)
+        _write_output(rendered, args.output)
+        return
+
+    # Fallback: query Notion DB for recent minutes pages (useful before audit log exists).
+    notion_key = os.getenv("NOTION_API_KEY", "").strip()
+    notion_db = (os.getenv("NOTION_MINUTES_DATABASE_ID") or os.getenv("NOTION_DATABASE_ID") or "").split("?")[0].strip()
+    if not notion_key or not notion_db:
+        _write_output("Notion 회의록 업로드 로그가 없습니다. (추가 확인: NOTION_API_KEY/DB 미설정)", args.output)
+        return
+    try:
+        import httpx
+
+        headers = {
+            "Authorization": f"Bearer {notion_key}",
+            "Notion-Version": "2022-06-28",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "page_size": 10,
+            "filter": {"property": "제목", "title": {"contains": "[회의록]"}},
+            "sorts": [{"timestamp": "created_time", "direction": "descending"}],
+        }
+        r = httpx.post(
+            f"https://api.notion.com/v1/databases/{notion_db}/query",
+            headers=headers,
+            json=payload,
+            timeout=20.0,
+        )
+        r.raise_for_status()
+        results = r.json().get("results", [])
+        if not results:
+            _write_output("Notion 회의록 업로드 로그가 없습니다. (Notion DB에서 '[회의록]' 페이지도 발견되지 않았습니다)", args.output)
+            return
+        lines = [
+            "Notion 회의록 업로드 로그가 없습니다. (fallback: Notion DB 최근 '[회의록]' 페이지)",
+        ]
+        for p in results[:5]:
+            props = p.get("properties", {})
+            title = props.get("제목", {}).get("title", [])
+            t = "".join([x.get("plain_text", "") for x in title]).strip()
+            lines.append(f"- {t} | {p.get('url')}")
+        _write_output("\n".join(lines), args.output)
+    except Exception as exc:
+        _write_output(f"Notion 회의록 업로드 로그가 없습니다. (Notion 조회 실패: {exc})", args.output)
+
+
+def command_minutes_latest(args: argparse.Namespace) -> None:
+    rec = _find_orchestration(args.correlation_id)
+    rendered = _json_dump({"record": rec}) if args.format == "json" else _render_minutes_candidate_text(rec)
+    _write_output(rendered, args.output)
+
+
+def command_minutes_upload(args: argparse.Namespace) -> None:
+    rec = _find_orchestration(args.correlation_id)
+    if not rec:
+        _write_output("❌ 업로드할 회의 기록을 찾지 못했습니다.", args.output)
+        return
+    corr = str(rec.get("correlation_id", "") or "").strip() or "(unknown)"
+    try:
+        from scripts.notion_minutes import save_minutes
+
+        blocks = _minutes_blocks_from_record(rec)
+        url = save_minutes(
+            correlation_id=corr,
+            order=str(rec.get("order", "")),
+            personas=list(rec.get("personas") or []),
+            minutes_text="",
+            cost_usd=float(rec.get("estimated_cost_usd") or 0.0),
+            minutes_blocks=blocks,
+        )
+        ok = bool(url)
+        _append_minutes_audit(corr, url, ok)
+        if not ok:
+            _write_output("❌ Notion 회의록 업로드 실패 (Notion env/DB 확인 필요)", args.output)
+            return
+        _write_output(f"✅ Notion 회의록 업로드 완료\n{url}", args.output)
+    except Exception as exc:
+        _append_minutes_audit(corr, None, False, error=str(exc))
+        _write_output(f"❌ Notion 회의록 업로드 실패: {exc}", args.output)
+
+
+def command_minutes_reupload(args: argparse.Namespace) -> None:
+    """Archive existing minutes pages for the correlation_id, then upload a fresh v2 page."""
+    rec = _find_orchestration(args.correlation_id)
+    if not rec:
+        _write_output("❌ 재업로드할 회의 기록을 찾지 못했습니다.", args.output)
+        return
+    corr = str(rec.get("correlation_id", "") or "").strip() or "(unknown)"
+    try:
+        from scripts.notion_minutes import archive_page, query_minutes_pages_by_correlation_id, save_minutes
+
+        pages = query_minutes_pages_by_correlation_id(corr, page_size=10)
+        # Be conservative: only archive pages that look like minutes.
+        to_archive: list[dict[str, Any]] = []
+        for p in pages:
+            props = p.get("properties", {}) or {}
+            title = props.get("제목", {}).get("title", []) or []
+            t = "".join([x.get("plain_text", "") for x in title]).strip()
+            if "[회의록]" in t:
+                to_archive.append(p)
+
+        archived: list[str] = []
+        for p in to_archive[:10]:
+            pid = p.get("id")
+            if not pid:
+                continue
+            if archive_page(pid):
+                archived.append(pid)
+
+        blocks = _minutes_blocks_from_record(rec)
+        url = save_minutes(
+            correlation_id=corr,
+            order=str(rec.get("order", "")),
+            personas=list(rec.get("personas") or []),
+            minutes_text="",
+            cost_usd=float(rec.get("estimated_cost_usd") or 0.0),
+            minutes_blocks=blocks,
+        )
+        ok = bool(url)
+        _append_minutes_audit(corr, url, ok)
+        if not ok:
+            _write_output("❌ Notion 회의록 재업로드 실패 (Notion env/DB 확인 필요)", args.output)
+            return
+        msg_lines = ["✅ Notion 회의록 재업로드 완료", f"- archived: {len(archived)} page(s)", url]
+        _write_output("\n".join(msg_lines), args.output)
+    except Exception as exc:
+        _append_minutes_audit(corr, None, False, error=str(exc))
+        _write_output(f"❌ Notion 회의록 재업로드 실패: {exc}", args.output)
+
+
+def _load_etf_whitelist(path: Path | None = None) -> dict[str, Any]:
+    p = path or ETF_WHITELIST_PATH
+    if not p.exists():
+        return {"version": None, "items": [], "error": f"whitelist not found: {p}"}
+    with p.open("r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict):
+        return {"version": None, "items": [], "error": f"invalid whitelist format: {p}"}
+    items = data.get("items") or []
+    if not isinstance(items, list):
+        items = []
+    return {"version": data.get("version"), "items": items, "path": str(p)}
+
+
+def _normalize_secdef_candidates(raw: Any) -> list[dict[str, Any]]:
+    """
+    CP API response shapes vary. Convert to a list of candidate dicts with
+    best-effort keys used in rendering/selection.
+    """
+    candidates: list[dict[str, Any]] = []
+    if isinstance(raw, dict) and "data" in raw and isinstance(raw["data"], list):
+        raw = raw["data"]
+    if isinstance(raw, dict) and "securities" in raw and isinstance(raw["securities"], list):
+        raw = raw["securities"]
+    if isinstance(raw, list):
+        for it in raw:
+            if isinstance(it, dict):
+                candidates.append(it)
+    elif isinstance(raw, dict):
+        candidates.append(raw)
+
+    normed: list[dict[str, Any]] = []
+    for c in candidates:
+        conid = c.get("conid") or c.get("conidex") or c.get("conidEx") or c.get("contractId") or c.get("id")
+        sym = c.get("symbol") or c.get("ticker") or c.get("localSymbol") or c.get("name")
+        exch = c.get("exchange") or c.get("listingExchange") or c.get("primaryExchange")
+        ccy = c.get("currency") or c.get("ccy")
+        sectype = c.get("sectype") or c.get("secType") or c.get("type")
+        desc = c.get("description") or c.get("name") or c.get("companyName")
+        normed.append(
+            {
+                "conid": str(conid) if conid is not None else None,
+                "symbol": str(sym) if sym is not None else None,
+                "exchange": str(exch) if exch is not None else None,
+                "currency": str(ccy) if ccy is not None else None,
+                "sectype": str(sectype) if sectype is not None else None,
+                "description": str(desc) if desc is not None else None,
+                "raw": c,
+            }
+        )
+    return normed
+
+
+def _pick_best_candidate(item: dict[str, Any], candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """
+    Conservative heuristic:
+    - Prefer exact symbol match (case-insensitive).
+    - Use exchange_hint when available (but do NOT over-trust it for non-US markets).
+    - Enforce whitelist item type: ETF auto-approve requires candidate sectype=ETF.
+    - Use name_hint as a strong disambiguator (required for many non-US cases).
+    - Return best + runner-up gap to detect ambiguity.
+    """
+    q = str(item.get("query") or "").strip()
+    exch_hint = str(item.get("exchange_hint") or "").strip().upper()
+    item_type = str(item.get("type") or "").strip().lower()
+    name_hint = str(item.get("name_hint") or "").strip()
+    if not q or not candidates:
+        return None
+
+    def _norm(s: str) -> str:
+        return re.sub(r"[\s\W_]+", "", (s or "").lower())
+
+    def _name_match(desc: str, hint: str) -> bool:
+        if not desc or not hint:
+            return False
+        return _norm(hint) in _norm(desc)
+
+    def score(c: dict[str, Any]) -> float:
+        s = 0.0
+        sym = (c.get("symbol") or "").strip()
+        exch = (c.get("exchange") or "").strip().upper()
+        sectype = (c.get("sectype") or "").strip().upper()
+        desc = (c.get("description") or "").strip().lower()
+
+        sym_exact = bool(sym and sym.lower() == q.lower())
+        if sym_exact:
+            s += 1.0
+        elif q and sym and q.lower() in sym.lower():
+            s += 0.2
+
+        if exch_hint and exch == exch_hint:
+            s += 0.4
+
+        # Whitelist type enforcement: for auto-approval, ETF must look like ETF.
+        # We still score non-ETF candidates, but with a strong penalty, so they
+        # won't cross the default threshold.
+        if item_type in {"etf", "ucits_etf"}:
+            if sectype == "ETF":
+                s += 0.5
+            else:
+                s -= 0.6
+
+        if name_hint and _name_match(desc, name_hint):
+            s += 0.6
+
+        if "ucits" in desc:
+            s += 0.1
+        return s
+
+    scored = [(score(c), c) for c in candidates if c.get("conid")]
+    if not scored:
+        return None
+    scored.sort(key=lambda x: x[0], reverse=True)
+    best_score, best = scored[0]
+    second_score = scored[1][0] if len(scored) > 1 else None
+    score_gap = (best_score - second_score) if second_score is not None else None
+
+    # Confidence scaling: keep conservative and bounded.
+    # This is used only as a *gate*; downstream must not interpret it as correctness proof.
+    confidence = min(0.99, max(0.0, best_score / 2.0))
+    out = dict(best)
+    out["confidence"] = round(confidence, 2)
+    out["best_score"] = round(float(best_score), 3)
+    if second_score is not None:
+        out["second_score"] = round(float(second_score), 3)
+        out["score_gap"] = round(float(score_gap or 0.0), 3)
+    return out
+
+
+def _render_ibkr_etf_check_text(payload: dict[str, Any]) -> str:
+    preflight = payload.get("preflight") or {}
+    items = payload.get("results") or []
+    if not preflight.get("ok"):
+        err = preflight.get("error") or "unknown error"
+        base = preflight.get("base_url") or "(unknown)"
+        verify = preflight.get("tls_verify")
+        return "\n".join(
+            [
+                "❌ IBKR Client Portal API 연결 실패",
+                f"- base_url: {base}",
+                f"- tls_verify: {verify}",
+                f"- error: {err}",
+                "",
+                "조치:",
+                "- IBKR Client Portal Gateway가 실행 중인지 확인",
+                "- 로그인/2FA 세션이 유효한지 확인",
+                "- 필요 시 환경변수 `IBKR_CP_API_BASE_URL`, `IBKR_CP_TLS_VERIFY` 확인",
+            ]
+        )
+
+    auth = preflight.get("auth") or {}
+    auth_flag = auth.get("authenticated")
+    if auth_flag is not True:
+        return "\n".join(
+            [
+                "⚠️ IBKR Client Portal API 연결은 되었지만 authenticated 상태가 아닙니다.",
+                f"- authenticated: {auth_flag}",
+                "",
+                "이 상태의 검색 결과는 신뢰할 수 없으므로 점검을 중단합니다.",
+                "조치: Client Portal Gateway에서 로그인/2FA 세션을 먼저 완료한 뒤 다시 시도하세요.",
+            ]
+        )
+    lines: list[str] = [
+        "IBKR ETF whitelist 점검 결과 (read-only):",
+        f"- CP API: ok (authenticated={auth_flag})",
+        f"- whitelist: {payload.get('whitelist_path')}",
+        "",
+    ]
+    if not items:
+        lines.append("결과가 없습니다. (whitelist items=0)")
+        return "\n".join(lines)
+
+    for r in items:
+        item = r.get("item") or {}
+        q = item.get("query")
+        rid = item.get("id")
+        best = r.get("best") or {}
+        best_conid = best.get("conid")
+        conf = best.get("confidence")
+        cand_n = int(r.get("candidate_count") or 0)
+        lines.append(f"- {rid} / query={q}: candidates={cand_n}, best_conid={best_conid or 'n/a'} (conf={conf})")
+        if best_conid and conf is not None and float(conf) < 0.85:
+            lines.append("  - note: confidence 낮음 → 자동 확정(accept-best) 대상 아님")
+    lines.append("")
+    lines.append("다음 단계(CEO confirm 필요, registry 기록): `ibkr etf approve confirm`")
+    lines.append("자동 확정은 conf>=0.85인 best 후보만 반영됩니다. (낮은 conf는 별도 지정 필요)")
+    return "\n".join(lines)
+
+
+def _append_instrument_registry(rows: list[dict[str, Any]]) -> int:
+    INSTRUMENT_REGISTRY_JSONL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    written = 0
+    with INSTRUMENT_REGISTRY_JSONL_PATH.open("a", encoding="utf-8") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            for r in rows:
+                fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+                written += 1
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+    return written
+
+
+def _append_instrument_registry_pending(rows: list[dict[str, Any]]) -> int:
+    INSTRUMENT_REGISTRY_PENDING_JSONL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    written = 0
+    with INSTRUMENT_REGISTRY_PENDING_JSONL_PATH.open("a", encoding="utf-8") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            for r in rows:
+                fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+                written += 1
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+    return written
+
+
+def command_ibkr_etf_check(args: argparse.Namespace) -> None:
+    from scripts.ibkr_cp_client import IbkrCpClient, safe_check_connectivity
+
+    wl = _load_etf_whitelist(Path(args.whitelist) if args.whitelist else None)
+    preflight = safe_check_connectivity()
+    payload: dict[str, Any] = {
+        "generated_at": _now(),
+        "whitelist_path": wl.get("path"),
+        "preflight": preflight,
+        "results": [],
+    }
+
+    if not preflight.get("ok"):
+        rendered = _json_dump(payload) if args.format == "json" else _render_ibkr_etf_check_text(payload)
+        _write_output(rendered, args.output)
+        return
+    auth = preflight.get("auth") or {}
+    if auth.get("authenticated") is not True:
+        rendered = _json_dump(payload) if args.format == "json" else _render_ibkr_etf_check_text(payload)
+        _write_output(rendered, args.output)
+        return
+
+    client = IbkrCpClient()
+    try:
+        for item in wl.get("items") or []:
+            q = str(item.get("query") or "").strip()
+            if not q:
+                continue
+            raw = client.secdef_search(q)
+            candidates = _normalize_secdef_candidates(raw)
+            best = _pick_best_candidate(item, candidates)
+            payload["results"].append(
+                {
+                    "item": item,
+                    "candidate_count": len(candidates),
+                    "best": best,
+                    "candidates": candidates[: (args.candidates or 6)],
+                }
+            )
+    except Exception as exc:
+        payload["error"] = str(exc)
+    finally:
+        client.close()
+
+    # Optional: persist a snapshot to reduce TOCTOU between check and approve.
+    snapshot_path = str(args.snapshot_path or "").strip()
+    if snapshot_path:
+        _write_output(_json_dump(payload), snapshot_path)
+
+    rendered = _json_dump(payload) if args.format == "json" else _render_ibkr_etf_check_text(payload)
+    _write_output(rendered, args.output)
+
+
+def command_ibkr_etf_approve(args: argparse.Namespace) -> None:
+    """
+    Append-only: write confirmed instrument mappings into instrument_registry.jsonl
+    from the current whitelist by resolving again and accepting only high-confidence best picks.
+    """
+    from scripts.ibkr_cp_client import IbkrCpClient, safe_check_connectivity
+
+    wl = _load_etf_whitelist(Path(args.whitelist) if args.whitelist else None)
+    preflight = safe_check_connectivity()
+    if not preflight.get("ok"):
+        _write_output("❌ IBKR CP API 연결 실패로 approve 불가. 먼저 `ibkr-etf-check`로 상태를 확인하세요.", args.output)
+        return
+    auth = preflight.get("auth") or {}
+    if auth.get("authenticated") is not True:
+        _write_output("❌ IBKR CP API는 연결되지만 authenticated=false 입니다. Gateway 로그인/2FA 세션을 먼저 완료하세요.", args.output)
+        return
+
+    correlation_id = str(args.correlation_id or "").strip()
+    if not correlation_id:
+        _write_output("❌ correlation_id 누락 — approve는 `--correlation-id orch-xxxxxxxx` 필수입니다.", args.output)
+        return
+
+    approved_by = str(args.approved_by or "").strip()
+    if not approved_by:
+        _write_output("❌ approved_by 누락 — approve는 `--approved-by <slack_user_id>` 필수입니다.", args.output)
+        return
+
+    client = IbkrCpClient()
+    rows: list[dict[str, Any]] = []
+    threshold = float(args.min_confidence or 0.85)
+    # Server-side floor to prevent fat-finger lowering the safety bar.
+    threshold = max(0.85, threshold)
+    pending: list[dict[str, Any]] = []
+
+    # Optional snapshot path created by `ibkr-etf-check` to eliminate TOCTOU.
+    snapshot_path = str(args.snapshot_path or "").strip()
+    snapshot_results: dict[str, Any] | None = None
+    if snapshot_path:
+        try:
+            with Path(snapshot_path).open("r", encoding="utf-8") as fh:
+                snapshot_results = json.load(fh)
+        except Exception:
+            snapshot_results = None
+
+    try:
+        for item in wl.get("items") or []:
+            q = str(item.get("query") or "").strip()
+            if not q:
+                continue
+            item_type = str(item.get("type") or "").strip().lower()
+            # Prefer snapshot candidates if provided.
+            if snapshot_results:
+                snap = None
+                for r in snapshot_results.get("results") or []:
+                    it = r.get("item") or {}
+                    if str(it.get("id") or "") == str(item.get("id") or ""):
+                        snap = r
+                        break
+                candidates = list(snap.get("candidates") or []) if snap else []
+            else:
+                raw = client.secdef_search(q)
+                candidates = _normalize_secdef_candidates(raw)
+            best = _pick_best_candidate(item, candidates) or {}
+            conf = float(best.get("confidence") or 0.0)
+            gap = best.get("score_gap")
+            ambiguous = (gap is not None and float(gap) < 0.15)
+            # Defense-in-depth: explicit sectype branch for ETF items.
+            if item_type in {"etf", "ucits_etf"} and str(best.get("sectype") or "").strip().upper() != "ETF":
+                pending.append(
+                    {
+                        "ts": _now(),
+                        "source": "ibkr_cp_api",
+                        "kind": "instrument_mapping_pending",
+                        "correlation_id": correlation_id,
+                        "approved_by": approved_by,
+                        "item_id": item.get("id"),
+                        "query": q,
+                        "exchange_hint": item.get("exchange_hint"),
+                        "name_hint": item.get("name_hint"),
+                        "best": best,
+                        "candidate_count": len(candidates),
+                        "candidates": candidates[:6],
+                        "reason": "sectype_mismatch",
+                        "min_confidence": threshold,
+                    }
+                )
+                continue
+            if not best.get("conid") or conf < threshold or ambiguous:
+                pending.append(
+                    {
+                        "ts": _now(),
+                        "source": "ibkr_cp_api",
+                        "kind": "instrument_mapping_pending",
+                        "correlation_id": correlation_id,
+                        "approved_by": approved_by,
+                        "item_id": item.get("id"),
+                        "query": q,
+                        "exchange_hint": item.get("exchange_hint"),
+                        "name_hint": item.get("name_hint"),
+                        "best": best,
+                        "candidate_count": len(candidates),
+                        "candidates": candidates[:6],
+                        "reason": (
+                            "no_conid" if not best.get("conid") else
+                            "low_confidence" if conf < threshold else
+                            "ambiguous_top2"
+                        ),
+                        "min_confidence": threshold,
+                    }
+                )
+                continue
+
+            # Secondary verification: secdef_info lookup. If it fails, do not write registry.
+            secdef_info: dict[str, Any] | None = None
+            try:
+                secdef_info = client.secdef_info(conid=str(best.get("conid")), sectype="ETF")
+            except Exception as exc:
+                pending.append(
+                    {
+                        "ts": _now(),
+                        "source": "ibkr_cp_api",
+                        "kind": "instrument_mapping_pending",
+                        "correlation_id": correlation_id,
+                        "approved_by": approved_by,
+                        "item_id": item.get("id"),
+                        "query": q,
+                        "exchange_hint": item.get("exchange_hint"),
+                        "name_hint": item.get("name_hint"),
+                        "best": best,
+                        "candidate_count": len(candidates),
+                        "candidates": candidates[:6],
+                        "reason": f"secdef_info_failed: {exc}",
+                        "min_confidence": threshold,
+                    }
+                )
+                continue
+            rows.append(
+                {
+                    "ts": _now(),
+                    "source": "ibkr_cp_api",
+                    "kind": "instrument_mapping",
+                    "correlation_id": correlation_id,
+                    "approved_by": approved_by,
+                    "item_id": item.get("id"),
+                    "query": q,
+                    "exchange_hint": item.get("exchange_hint"),
+                    "name_hint": item.get("name_hint"),
+                    "conid": best.get("conid"),
+                    "symbol": best.get("symbol"),
+                    "exchange": best.get("exchange"),
+                    "currency": best.get("currency"),
+                    "sectype": best.get("sectype"),
+                    "confidence": conf,
+                    "permission_verified": False,
+                    "tradable": "unverified",
+                    "secdef_info": secdef_info,
+                }
+            )
+    finally:
+        client.close()
+
+    written = 0
+    pending_written = 0
+    if rows:
+        written = _append_instrument_registry(rows)
+    if pending:
+        pending_written = _append_instrument_registry_pending(pending)
+
+    if written == 0 and pending_written == 0:
+        _write_output("⚠️ approve할 항목이 없습니다. (후보 없음)", args.output)
+        return
+    _write_output(
+        "\n".join(
+            [
+                "✅ IBKR ETF instrument registry 업데이트 완료 (append-only)",
+                f"- written: {written}",
+                f"- pending_written: {pending_written}",
+                f"- registry: {INSTRUMENT_REGISTRY_JSONL_PATH}",
+                f"- pending: {INSTRUMENT_REGISTRY_PENDING_JSONL_PATH}",
+                f"- min_confidence: {threshold}",
+                f"- correlation_id: {correlation_id}",
+            ]
+        ),
+        args.output,
+    )
+
+
+def command_trading_watchlist_list(args: argparse.Namespace) -> None:
+    from scripts.trading_watchlist import _load_watchlist
+
+    payload = _load_watchlist()
+    rendered = _json_dump(payload) if args.format == "json" else _json_dump(payload)
+    _write_output(rendered, args.output)
+
+
+def command_trading_watchlist_add(args: argparse.Namespace) -> None:
+    from scripts.trading_watchlist import _load_watchlist, _find_item, _save_watchlist
+
+    payload = _load_watchlist()
+    items = payload.setdefault("items", [])
+    existing = _find_item(items, args.id)
+    row = {
+        "id": args.id,
+        "active": True if existing is None else existing.get("active", True),
+        "priority": args.priority,
+        "watch_reason": args.watch_reason,
+        "query": args.query,
+        "exchange_hint": args.exchange_hint,
+        "name_hint": args.name_hint,
+        "region": args.region,
+    }
+    if existing:
+        existing.update({k: v for k, v in row.items() if v is not None})
+    else:
+        items.append(row)
+    items.sort(key=lambda item: (item.get("priority") is None, item.get("priority", 9999), str(item.get("id"))))
+    _save_watchlist(payload)
+    _write_output(
+        _json_dump({"ok": True, "action": "add", "id": args.id, "items": len(items)}),
+        args.output,
+    )
+
+
+def command_trading_watchlist_activate(args: argparse.Namespace) -> None:
+    from scripts.trading_watchlist import _load_watchlist, _find_item, _save_watchlist
+
+    payload = _load_watchlist()
+    items = payload.setdefault("items", [])
+    existing = _find_item(items, args.id)
+    if not existing:
+        raise ValueError(f"watchlist item not found: {args.id}")
+    existing["active"] = True
+    _save_watchlist(payload)
+    _write_output(_json_dump({"ok": True, "action": "activate", "id": args.id}), args.output)
+
+
+def command_trading_watchlist_deactivate(args: argparse.Namespace) -> None:
+    from scripts.trading_watchlist import _load_watchlist, _find_item, _save_watchlist
+
+    payload = _load_watchlist()
+    items = payload.setdefault("items", [])
+    existing = _find_item(items, args.id)
+    if not existing:
+        raise ValueError(f"watchlist item not found: {args.id}")
+    existing["active"] = False
+    _save_watchlist(payload)
+    _write_output(_json_dump({"ok": True, "action": "deactivate", "id": args.id}), args.output)
+
+
+def command_ibkr_setup_status(args: argparse.Namespace) -> None:
+    from scripts.ibkr_onboarding import command_status as ibkr_command_status
+
+    ibkr_command_status(args)
+
+
+def command_ibkr_setup_complete(args: argparse.Namespace) -> None:
+    from scripts.ibkr_onboarding import command_complete as ibkr_command_complete
+
+    ibkr_command_complete(args)
+
+
+def command_ibkr_setup_reset(args: argparse.Namespace) -> None:
+    from scripts.ibkr_onboarding import command_reset as ibkr_command_reset
+
+    ibkr_command_reset(args)
+
+
+def command_ibkr_setup_note(args: argparse.Namespace) -> None:
+    from scripts.ibkr_onboarding import command_note as ibkr_command_note
+
+    ibkr_command_note(args)
 
 
 def command_status(args: argparse.Namespace) -> None:
@@ -213,6 +1153,27 @@ def command_record_decision(args: argparse.Namespace) -> None:
     except PermissionError as exc:
         _write_output(str(exc), args.output)
         return
+    except Exception as exc:
+        _write_output(f"❌ 결정 기록 실패: {exc}", args.output)
+        return
+        
+    # --- NEW: Post-approval trigger ---
+    if args.approval_type == "legal_review_escalation_approve" and args.decision == "approved":
+        print(f"INFO: Triggering post-approval execution for {args.target_type} #{args.target_id}")
+        try:
+            # TODO: target_type에 따라 동적으로 인자 변경 (--issue-id, --text 등)
+            command = [
+                sys.executable,
+                "scripts/run_legal_review.py",
+                "--issue-id", 
+                str(args.target_id),
+                "--is-approved"
+            ]
+            # fire-and-forget으로 백그라운드 실행
+            subprocess.Popen(command)
+        except Exception as e:
+            print(f"ERROR: Failed to trigger post-approval execution: {e}")
+
     payload = {
         "generated_at": _now(),
         "target_type": args.target_type,
@@ -293,6 +1254,108 @@ def command_push_approval_card(args: argparse.Namespace) -> None:
                 "channel": route_label(args.route),
                 "target_type": args.target_type,
                 "target_id": args.target_id,
+            }
+        ),
+        args.output,
+    )
+
+
+def command_request_cost_approval(args: argparse.Namespace) -> None:
+    """DB에 비용 승인 요청을 기록하고 CEO에게 슬랙 알림을 보냅니다."""
+    from core.database import execute_query
+    
+    reason = f"예상 비용: ${args.estimated_cost:.4f}. 사유: {args.reason}"
+    
+    # 데이터베이스에 'hold' 상태로 승인 요청 기록
+    new_request = execute_query(
+        """INSERT INTO ceo_decisions
+           (target_type, target_id, decision, approval_type, reason, decided_by, created_at)
+           VALUES (%s, %s, %s, %s, %s, 'KITT_agent', NOW())
+           RETURNING id, created_at""",
+        (
+            args.target_type,
+            args.target_id,
+            'hold',
+            'legal_review_escalation_approve',
+            reason,
+        ),
+        fetch=True
+    )
+    
+    # CEO에게 슬랙 알림 발송
+    req_id = new_request[0]['id'] if new_request else 'N/A'
+    text = (
+        f"🚨 비용 발생 승인 요청 (ID: {req_id})\n"
+        f"KITT 에이전트가 법률 검토의 품질을 높이기 위해 고성능 AI 모델 호출이 필요합니다.\n"
+        f"∙ **대상:** `{args.target_type} #{args.target_id}`\n"
+        f"∙ **예상 비용:** `${args.estimated_cost:.4f}`\n"
+        f"∙ **사유:** {args.reason}"
+    )
+    
+    send_slack_route(
+        "exec_president_decisions",
+        {"text": text}
+    )
+    
+    _write_output(
+        _json_dump(
+            {
+                "requested": True,
+                "request_id": req_id,
+                "target_type": args.target_type,
+                "target_id": args.target_id,
+                "estimated_cost": args.estimated_cost,
+            }
+        ),
+        args.output,
+    )
+
+
+def command_request_cost_approval(args: argparse.Namespace) -> None:
+    """DB에 비용 승인 요청을 기록하고 CEO에게 슬랙 알림을 보냅니다."""
+    from core.database import execute_query
+    
+    reason = f"예상 비용: ${args.estimated_cost:.4f}. 사유: {args.reason}"
+    
+    # 데이터베이스에 'hold' 상태로 승인 요청 기록
+    new_request = execute_query(
+        """INSERT INTO ceo_decisions
+           (target_type, target_id, decision, approval_type, reason, decided_by, created_at)
+           VALUES (%s, %s, %s, %s, %s, 'KITT_agent', NOW())
+           RETURNING id, created_at""",
+        (
+            args.target_type,
+            args.target_id,
+            'hold',
+            'legal_review_escalation_approve',
+            reason,
+        ),
+        fetch=True
+    )
+    
+    # CEO에게 슬랙 알림 발송
+    req_id = new_request[0]['id'] if new_request else 'N/A'
+    text = (
+        f"🚨 비용 발생 승인 요청 (ID: {req_id})\n"
+        f"KITT 에이전트가 법률 검토의 품질을 높이기 위해 고성능 AI 모델 호출이 필요합니다.\n"
+        f"∙ **대상:** `{args.target_type} #{args.target_id}`\n"
+        f"∙ **예상 비용:** `${args.estimated_cost:.4f}`\n"
+        f"∙ **사유:** {args.reason}"
+    )
+    
+    send_slack_route(
+        "exec_president_decisions",
+        {"text": text}
+    )
+    
+    _write_output(
+        _json_dump(
+            {
+                "requested": True,
+                "request_id": req_id,
+                "target_type": args.target_type,
+                "target_id": args.target_id,
+                "estimated_cost": args.estimated_cost,
             }
         ),
         args.output,
@@ -541,9 +1604,7 @@ def _normalize_ar_item(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def _load_ar_tracker_jsonl() -> dict[str, Any]:
-    path = AR_TRACKER_JSONL_PATH
-    if not path.exists():
-        raise FileNotFoundError(f"AR tracker file not found: {path}")
+    path = _resolve_ar_tracker_path()
 
     latest_by_id: dict[str, dict[str, Any]] = {}
     with path.open("r", encoding="utf-8") as fh:
@@ -750,6 +1811,96 @@ def build_parser() -> argparse.ArgumentParser:
     ar_parser.add_argument("--output")
     ar_parser.set_defaults(func=command_ar_list)
 
+    minutes_parser = subparsers.add_parser("minutes-status", help="Show Notion meeting-minutes upload status.")
+    minutes_parser.add_argument("--format", choices=["text", "json"], default="text")
+    minutes_parser.add_argument("--tail", type=int, default=20, help="how many recent runs to inspect")
+    minutes_parser.add_argument("--correlation-id", default=None, help="filter by correlation_id")
+    minutes_parser.add_argument("--output")
+    minutes_parser.set_defaults(func=command_minutes_status)
+
+    minutes_latest = subparsers.add_parser("minutes-latest", help="Show latest orchestration run as minutes upload candidate.")
+    minutes_latest.add_argument("--format", choices=["text", "json"], default="text")
+    minutes_latest.add_argument("--correlation-id", default=None)
+    minutes_latest.add_argument("--output")
+    minutes_latest.set_defaults(func=command_minutes_latest)
+
+    minutes_upload = subparsers.add_parser("minutes-upload", help="Upload meeting minutes to Notion from orchestration log.")
+    minutes_upload.add_argument("--correlation-id", default=None)
+    minutes_upload.add_argument("--output")
+    minutes_upload.set_defaults(func=command_minutes_upload)
+
+    minutes_reupload = subparsers.add_parser(
+        "minutes-reupload",
+        help="Archive existing Notion minutes page(s) for the correlation_id, then upload a fresh v2 page.",
+    )
+    minutes_reupload.add_argument("--correlation-id", default=None)
+    minutes_reupload.add_argument("--output")
+    minutes_reupload.set_defaults(func=command_minutes_reupload)
+
+    ibkr_check = subparsers.add_parser("ibkr-etf-check", help="Resolve ETF whitelist items into IBKR contracts (read-only).")
+    ibkr_check.add_argument("--format", choices=["text", "json"], default="text")
+    ibkr_check.add_argument("--whitelist", default=None, help="path to whitelist json (default: docs/trading/etf_whitelist_v0.json)")
+    ibkr_check.add_argument("--candidates", type=int, default=6, help="how many candidates to include per item (json only)")
+    ibkr_check.add_argument("--snapshot-path", default=None, help="optional path to write a JSON snapshot for later approve")
+    ibkr_check.add_argument("--output")
+    ibkr_check.set_defaults(func=command_ibkr_etf_check)
+
+    ibkr_approve = subparsers.add_parser("ibkr-etf-approve", help="Append high-confidence conid mappings into instrument registry (mutates internal state).")
+    ibkr_approve.add_argument("--whitelist", default=None)
+    ibkr_approve.add_argument("--min-confidence", type=float, default=0.85)
+    ibkr_approve.add_argument("--correlation-id", required=False, default=None)
+    ibkr_approve.add_argument("--approved-by", required=False, default=None)
+    ibkr_approve.add_argument("--snapshot-path", required=False, default=None)
+    ibkr_approve.add_argument("--output")
+    ibkr_approve.set_defaults(func=command_ibkr_etf_approve)
+
+    ibkr_setup_status = subparsers.add_parser("ibkr-setup-status", help="Show merged IBKR onboarding + gateway status.")
+    ibkr_setup_status.add_argument("--output")
+    ibkr_setup_status.set_defaults(func=command_ibkr_setup_status)
+
+    ibkr_setup_complete = subparsers.add_parser("ibkr-setup-complete", help="Mark a manual IBKR onboarding step complete.")
+    ibkr_setup_complete.add_argument("--step-id", required=True)
+    ibkr_setup_complete.add_argument("--note", default=None)
+    ibkr_setup_complete.add_argument("--output")
+    ibkr_setup_complete.set_defaults(func=command_ibkr_setup_complete)
+
+    ibkr_setup_reset = subparsers.add_parser("ibkr-setup-reset", help="Mark a manual IBKR onboarding step incomplete.")
+    ibkr_setup_reset.add_argument("--step-id", required=True)
+    ibkr_setup_reset.add_argument("--note", default=None)
+    ibkr_setup_reset.add_argument("--output")
+    ibkr_setup_reset.set_defaults(func=command_ibkr_setup_reset)
+
+    ibkr_setup_note = subparsers.add_parser("ibkr-setup-note", help="Update the IBKR onboarding owner note.")
+    ibkr_setup_note.add_argument("--note", required=True)
+    ibkr_setup_note.add_argument("--output")
+    ibkr_setup_note.set_defaults(func=command_ibkr_setup_note)
+
+    trading_watchlist_list = subparsers.add_parser("trading-watchlist-list", help="Show the operator trading watchlist JSON.")
+    trading_watchlist_list.add_argument("--format", choices=["json", "text"], default="json")
+    trading_watchlist_list.add_argument("--output")
+    trading_watchlist_list.set_defaults(func=command_trading_watchlist_list)
+
+    trading_watchlist_add = subparsers.add_parser("trading-watchlist-add", help="Add or update a trading watchlist item.")
+    trading_watchlist_add.add_argument("--id", required=True)
+    trading_watchlist_add.add_argument("--query", required=True)
+    trading_watchlist_add.add_argument("--name-hint", required=True)
+    trading_watchlist_add.add_argument("--exchange-hint", default=None)
+    trading_watchlist_add.add_argument("--region", default=None)
+    trading_watchlist_add.add_argument("--priority", type=int, default=999)
+    trading_watchlist_add.add_argument("--watch-reason", default=None)
+    trading_watchlist_add.add_argument("--output")
+    trading_watchlist_add.set_defaults(func=command_trading_watchlist_add)
+
+    trading_watchlist_activate = subparsers.add_parser("trading-watchlist-activate", help="Mark a trading watchlist item active.")
+    trading_watchlist_activate.add_argument("--id", required=True)
+    trading_watchlist_activate.add_argument("--output")
+    trading_watchlist_activate.set_defaults(func=command_trading_watchlist_activate)
+
+    trading_watchlist_deactivate = subparsers.add_parser("trading-watchlist-deactivate", help="Mark a trading watchlist item inactive.")
+    trading_watchlist_deactivate.add_argument("--id", required=True)
+    trading_watchlist_deactivate.add_argument("--output")
+    trading_watchlist_deactivate.set_defaults(func=command_trading_watchlist_deactivate)
+
     card_parser = subparsers.add_parser("decision-card", help="Render a decision card for OpenClaw or mobile.")
     card_parser.add_argument("target_type", choices=["signal", "refined_output", "research_report"])
     card_parser.add_argument("target_id", type=int)
@@ -801,6 +1952,14 @@ def build_parser() -> argparse.ArgumentParser:
     push_card_parser.add_argument("--route", default="exec_president_decisions")
     push_card_parser.add_argument("--output")
     push_card_parser.set_defaults(func=command_push_approval_card)
+
+    req_parser = subparsers.add_parser("request-cost-approval", help="Request CEO approval for a costly operation.")
+    req_parser.add_argument("--target-type", required=True)
+    req_parser.add_argument("--target-id", type=int, required=True)
+    req_parser.add_argument("--reason", required=True)
+    req_parser.add_argument("--estimated-cost", type=float, required=True)
+    req_parser.add_argument("--output")
+    req_parser.set_defaults(func=command_request_cost_approval)
 
     dispatch_parser = subparsers.add_parser("dispatch-task-packet", help="Build and dispatch a task packet to Claude/Gemini/Copilot CLIs.")
     dispatch_parser.add_argument("task_kind")

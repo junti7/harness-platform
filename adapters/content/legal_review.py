@@ -73,18 +73,53 @@ JSON으로만 응답:
 _OUTPUT_DIR = Path("docs/reviews/legal")
 
 
+import sys
+import subprocess
+# ... (other imports)
+
 def run_legal_review(
     content: str,
     target_type: str,
     target_id: Optional[int] = None,
     logger: Optional[HarnessLogger] = None,
+    is_approved: bool = False, # 승인 상태를 받는 플래그 추가
 ) -> dict:
     """
     콘텐츠 법률 검토 수행.
+    is_approved=False이면 승인 요청을 생성하고, True이면 실제 검토를 수행.
     Returns: {result, findings, disclaimer_text, memo_path, approved}
     """
     orchestrator = LLMOrchestrator(logger)
+    logger = logger or HarnessLogger(tier=4)
 
+    if not is_approved:
+        estimated_cost = orchestrator.estimate_claude_cost(len(content))
+        logger.info(f"[legal_review] CEO 승인 필요. 예상 비용: ${estimated_cost:.4f}")
+        
+        # '승인 요청' 브릿지 명령어 호출
+        try:
+            command = [
+                sys.executable,
+                "scripts/openclaw_codex_bridge.py",
+                "request-cost-approval",
+                "--target-type", str(target_type),
+                "--target-id", str(target_id),
+                "--reason", "KITT agent escalation for high-quality legal review.",
+                "--estimated-cost", str(round(estimated_cost, 4)),
+            ]
+            subprocess.run(command, check=True, capture_output=True, text=True)
+            logger.info("CEO 승인 요청 성공")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"CEO 승인 요청 실패: {e.stderr}")
+            return {"result": "error", "summary": "CEO 승인 요청 생성 실패", "approved": False}
+
+        return {
+            "result": "pending_approval",
+            "summary": f"CEO 승인 대기. 예상 비용: ${estimated_cost:.4f}",
+            "approved": False
+        }
+
+    # --- 이하 로직은 is_approved=True일 때만 실행 ---
     if logger:
         logger.info(f"[legal_review] 시작: target_type={target_type} id={target_id}")
 

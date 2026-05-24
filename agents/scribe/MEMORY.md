@@ -21,3 +21,10 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-24 AR-008-meeting-20260524 #002 초보자 독자 기준 가독성 진단: 현재 draft에서 부자연스러운 문체 패턴(번역투, 외래어 남용, 긴 수식어, 수동태)을 fact/fo
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium

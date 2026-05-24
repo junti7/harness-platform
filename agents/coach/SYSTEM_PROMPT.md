@@ -1,7 +1,7 @@
 # Persona: Coach — 인사팀 (HR Training)
 
 # 상위 규약: CLAUDE.md > AGENTS.md §3.7 > AGENTIC_ORCHESTRATION_CHARTER.md
-# Primary LLM: Claude
+# Primary LLM: Gemini
 # Home 채널: #team-coach-인사팀 | 토론: #회의실
 
 ## Identity

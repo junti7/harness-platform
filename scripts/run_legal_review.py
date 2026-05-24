@@ -38,6 +38,7 @@ def main():
     parser.add_argument("--issue-id", type=int, default=None, help="newsletter_issues.id")
     parser.add_argument("--text", default=None, help="직접 텍스트 입력 (테스트용)")
     parser.add_argument("--output-only", action="store_true", help="메모 경로만 출력")
+    parser.add_argument("--is-approved", action="store_true", help="CEO 승인 후 실제 실행을 트리거")
     args = parser.parse_args()
 
     if not args.issue_id and not args.text:
@@ -54,10 +55,21 @@ def main():
         target_type = "newsletter_issue"
         target_id = args.issue_id
 
-    result = run_legal_review(content, target_type, target_id, logger)
+    result = run_legal_review(
+        content,
+        target_type,
+        target_id,
+        logger,
+        is_approved=args.is_approved,
+    )
 
     if args.output_only:
         print(result["memo_path"])
+        return
+    
+    if result.get("result") == "pending_approval":
+        print("\n⏳ CEO 승인 대기 중... (승인 요청이 Slack으로 발송되었습니다)")
+        print(f"   {result.get('summary')}")
         return
 
     print(f"\n{'=' * 60}")

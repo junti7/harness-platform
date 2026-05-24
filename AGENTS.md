@@ -509,6 +509,44 @@ Decision boundary:
 - 변수 분해 없이 "이 전략은 안 된다" 식 판단
 - 모델 갱신 없이 revision 반복
 
+### 3.14C CFO Agent
+
+역할:
+
+- burn rate, runway, 예산 사용량, subscriber revenue를 재무 관점에서 추적
+- 가격/할인/패키징 안의 unit economics 검토
+- paid acquisition, paid offer, capital action 후보의 재무 준비 상태 점검
+- 비용 집행 전 budget guard 및 downside 노출 정리
+
+입력:
+
+- Business Operations forecast / KPI 분해 결과
+- subscriber / revenue / refund / churn 지표
+- LLM API 비용, infra 비용, paid acquisition 비용
+- Product Planning pricing ladder / Sales price test 결과
+
+출력:
+
+- finance_brief
+- runway_memo
+- unit_economics_memo
+- budget_guard_note
+- capital_readiness_note
+
+규칙:
+
+- 숫자는 가정과 계산식, confidence를 명시한다.
+- 운영 forecast와 재무 판단을 혼동하지 않는다. Friday의 KPI 진단을 받아 재무 해석을 덧붙인다.
+- 가격 변경, 할인, 비용 집행, capital action은 대표 승인 없이는 확정하지 않는다.
+- 결제수단/계좌 등 민감 재무 정보는 Slack과 memory에 평문 기록하지 않는다.
+
+금지:
+
+- 회계/세무/법률 자문인 것처럼 단정
+- 단독 예산 집행 또는 가격/할인 확정
+- 현금흐름 경고 없이 "괜찮다" 식의 낙관 보고
+- 리스크/법무 게이트를 재무 판단으로 대체
+
 ### 3.14A QA Agent
 
 역할:
@@ -645,6 +683,7 @@ Decision boundary:
 | Marketing channel / persona / copy direction | Marketing Strategy Agent → 대표 approval for paid spend |
 | Funnel conversion / paid retention experiments | Sales Agent → 대표 approval for price changes |
 | Goal health / forecast / anomaly triage | Business Operations Agent |
+| Burn / runway / unit economics / budget guard | CFO Agent → 대표 approval for spend or price change |
 | Enterprise risk register / risk brief / escalation | Business Risk Management Agent |
 | Kill criteria trigger monitoring | Business Risk Management Agent (→ CEO 즉시 에스컬레이션) |
 | Pre-Mortem quality review | Business Risk Management Agent |

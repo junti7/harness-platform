@@ -383,7 +383,7 @@ def _record_conversation_turn(session_id: str | None, user_message: str, assista
     with _CONVERSATION_HISTORY_LOCK:
         history = _CONVERSATION_HISTORY[session_id]
         history.append({"role": "user", "content": f"<user_message>{user_message}</user_message>"})
-        history.append({"role": "assistant", "content": assistant_response[:4000]})
+        history.append({"role": "assistant", "content": assistant_response[:12000]})
 
 
 def _redact_for_audit(text: str, max_len: int = 500) -> str:
@@ -1149,7 +1149,7 @@ def _run_bridge_command(args: list[str]) -> str:
         output = ((result.stdout or "") + (result.stderr or "")).strip()
         if result.returncode != 0:
             return f"❌ bridge 실행 실패 (code={result.returncode})\n{output[:1500]}"
-        return output[:2000] or "✅ bridge 명령 완료"
+        return output[:8000] or "✅ bridge 명령 완료"
     except subprocess.TimeoutExpired:
         return "❌ bridge 실행 시간 초과 (15초)"
     except Exception as exc:
@@ -1209,7 +1209,7 @@ def _maybe_inject_status_context(user_message: str) -> str:
     snapshot = _fetch_status_snapshot()
     if not snapshot:
         return ""
-    return f"\nCurrent Harness status snapshot (realtime):\n{snapshot[:800]}"
+    return f"\nCurrent Harness status snapshot (realtime):\n{snapshot[:3000]}"
 
 
 def _is_mutating_intent(intent: str) -> bool:
@@ -1637,7 +1637,7 @@ def _run_anthropic_chat(
         system=_build_chat_system_prompt(user_message),
         messages=messages,
     )
-    log_api_cost(model, resp.usage.input_tokens, resp.usage.output_tokens)
+    log_api_cost(model, resp.usage.input_tokens, resp.usage.output_tokens, provider="anthropic")
     check_and_alert(get_today_cost(), DAILY_COST_LIMIT, logger)
     logger.info(
         f"[router] Anthropic({model}) 응답 tokens=in:{resp.usage.input_tokens}/out:{resp.usage.output_tokens}"
@@ -1690,7 +1690,7 @@ def _classify_intent_with_haiku(user_message: str) -> dict[str, Any] | None:
     except Exception as exc:
         logger.warning(f"[intent-classifier] Haiku call failed: {exc}")
         return None
-    log_api_cost(OPENCLAW_INTENT_MODEL, resp.usage.input_tokens, resp.usage.output_tokens)
+    log_api_cost(OPENCLAW_INTENT_MODEL, resp.usage.input_tokens, resp.usage.output_tokens, provider="anthropic")
     for block in resp.content:
         if block.type == "tool_use":
             logger.info(f"[intent-classifier] tool={block.name} params={block.input}")
@@ -1749,7 +1749,7 @@ def _format_with_haiku(user_message: str, raw_output: str) -> str:
                 {"role": "user", "content": f"<user_message>{user_message}</user_message>\n\n데이터:\n{raw_output}"},
             ],
         )
-        log_api_cost(OPENCLAW_FORMATTER_MODEL, resp.usage.input_tokens, resp.usage.output_tokens)
+        log_api_cost(OPENCLAW_FORMATTER_MODEL, resp.usage.input_tokens, resp.usage.output_tokens, provider="anthropic")
         logger.info(
             f"[formatter] {OPENCLAW_FORMATTER_MODEL} tokens=in:{resp.usage.input_tokens}/out:{resp.usage.output_tokens}"
         )
@@ -1828,14 +1828,13 @@ def _sanitize_response(text: str) -> str:
         r"모니터링할\s*수\s*없는\s*영역"
     ]
     if any(re.search(pat, cleaned, re.IGNORECASE) for pat in ooc_patterns):
-        # 멍청한 OOC 변명이 튀어나왔을 때, 비서실장의 본분에 맞는 지능형 대화로 실시간 강제 검열/교정!
         logger.warning("[ooc-guard] 에이전트의 책임 회피성 헛소리 감지 -> 비서실장 지능형 정화 가드 작동")
         return (
-            "대표님, 죄송합니다. 비서실장으로서 본분을 잊고 잠시 융통성 없는 기계적 답변을 드렸습니다.\n\n"
-            "AR-008(Substack #002 간행물 문체 개선 회의)은 현재 슬랙 `#회의실` 채널에 정상 소집 완료되었으며, "
-            "관련 페르소나 팀의 의견 개진과 합의 수렴 절차가 백그라운드 오케스트레이션 루프를 통해 정상 작동하고 있습니다.\n"
-            "회의실의 실시간 대화 상태와 구체적인 진척 상황을 즉시 조회하여 `#exec-president-decisions` 채널에 "
-            "종합 보고 올리도록 하겠습니다!"
+            "대표님, 죄송합니다. 비서실장으로서 본분을 잠시 잊은 기계적 답변이었습니다.\n\n"
+            "Harness의 '회의'는 슬랙 `#회의실` 채널에서 에이전트 페르소나들이 텍스트로 토론하는 "
+            "가상 오케스트레이션 루프입니다. 저는 이 가상 토론을 소집·중재·수렴하는 비서실장으로서 "
+            "진행 상황을 끝까지 추적하고 보고드려야 합니다. "
+            "오케스트레이션 로그를 확인하여 현재 상태를 즉시 파악하겠습니다."
         )
         
     return cleaned or text
@@ -2200,7 +2199,7 @@ def _run_tool_agent(
         logger.info(f"[agent] stop_reason={response.stop_reason} tokens=in:{response.usage.input_tokens}/out:{response.usage.output_tokens}")
 
         if response.stop_reason == "end_turn":
-            log_api_cost(OPENCLAW_TOOL_MODEL, total_input_tokens, total_output_tokens)
+            log_api_cost(OPENCLAW_TOOL_MODEL, total_input_tokens, total_output_tokens, provider="anthropic")
             check_and_alert(get_today_cost(), DAILY_COST_LIMIT, logger)
             logger.info(
                 f"[agent] session_total tokens=input:{total_input_tokens} output:{total_output_tokens} "

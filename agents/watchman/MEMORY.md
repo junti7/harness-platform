@@ -21,3 +21,10 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-24 content-model-change-20260524 본 콘텐츠 모델 변경 의사결정에 대한 Pre-Mortem 코디네이션. (1) Vision/KITT/C3PO/Ledger/Friday 산출물 충돌
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium

@@ -21,3 +21,10 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-24 AR-008-meeting-20260524 #002 부대표 readability review 강화안: 부대표가 발행 전 1차 검토 시 사용할 '초보자 독자 체크리스트'(이해도, 공유 가능
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium

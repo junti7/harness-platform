@@ -66,6 +66,7 @@ persona/팀 채널은 `team-<handle>-<팀명한글>` 형식을 쓴다 (예: `tea
 | 2026-05-21 | Jarvis | `#team-watchman-리스크팀` | `C0B5065J5EJ` (public) | Watchman(리스크팀) persona home | AGENTS.md §3.8+§3.16 | Watchman, Jarvis, CEO/VP(관찰) | public-internal | Watchman | 90일 무활동 시 archive |
 | 2026-05-21 | Jarvis | `#team-scribe-qa팀` | `C0B4YSB7B0V` (public) | Scribe(QA팀) persona home | AGENTS.md §3.14A | Scribe, Jarvis, CEO/VP(관찰) | public-internal | Scribe | 90일 무활동 시 archive |
 | 2026-05-21 | Jarvis | `#team-tars-엔지니어링팀` | `C0B506653M4` (public) | TARS(엔지니어링팀) persona home | AGENTS.md Codex eng | TARS, Jarvis, CEO/VP(관찰) | public-internal | TARS | 90일 무활동 시 archive |
+| 2026-05-23 | Jarvis | `#team-ledger-cfo` | `C0B6JN0PL2C` (private) | Ledger(CFO) persona home — burn/runway, budget guard, unit economics, capital readiness 개별 의견 | User request 2026-05-23 + AGENTS.md §3.14C | Ledger, Jarvis, CEO/VP(관찰, 초대 필요) | confidential | Ledger | 90일 무활동 시 archive |
 
 ---
 

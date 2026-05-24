@@ -129,17 +129,25 @@ def dispatch_packet(packet: dict[str, Any], providers: list[str], output_dir: Pa
         )
 
         if notify_route:
-            send_slack_route(
-                notify_route,
-                {"text": f"LLM task packet dispatched: {provider} -> {status} | {output_path}"},
-            )
+            try:
+                send_slack_route(
+                    notify_route,
+                    {"text": f"LLM task packet dispatched: {provider} -> {status} | {output_path}"},
+                )
+            except Exception:
+                # Local/offline execution environments may not reach Slack.
+                pass
 
-        send_slack_route(
-            spec["route"],
-            {
-                "text": f"Harness packet `{packet['title']}` -> {status}\npacket={packet_path}\noutput={output_path}",
-            },
-        )
+        try:
+            send_slack_route(
+                spec["route"],
+                {
+                    "text": f"Harness packet `{packet['title']}` -> {status}\npacket={packet_path}\noutput={output_path}",
+                },
+            )
+        except Exception:
+            # Local/offline execution environments may not reach Slack.
+            pass
 
     return {"packet_path": str(packet_path), "results": results}
 

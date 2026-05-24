@@ -33,18 +33,25 @@ from dotenv import load_dotenv
 from adapters.content.slack_format import to_slack_mrkdwn
 from agents.registry import Persona, get_active_personas, get_persona
 from scripts.run_persona import append_diary, call_llm, call_persona, post_opinion
-from scripts.notion_minutes import save_minutes as _save_notion_minutes
+from scripts.notion_minutes import (
+    build_minutes_blocks_from_decision_card as _build_minutes_blocks,
+    save_minutes as _save_notion_minutes,
+)
 from scripts.gate_tracker import extract_gates as _extract_gates
 from scripts.ar_tracker import extract_ars_from_decision as _extract_ars
 
-load_dotenv(override=True)
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RUN_LOG_PATH = PROJECT_ROOT / "docs/reports/orchestration_runs.jsonl"
+NOTION_MINUTES_RUN_LOG_PATH = PROJECT_ROOT / "docs/reports/notion_minutes_runs.jsonl"
+
+# Deterministic .env loading: Slack/launchd/CLI entrypoints may have varying CWD/call stacks.
+load_dotenv(dotenv_path=str(PROJECT_ROOT / ".env"), override=True)
 
 JARVIS_REASONING_PROVIDER = "claude"  # Jarvis escalation LLM for decompose/synthesis
-MAX_CC_HOPS = int(os.getenv("ORCHESTRATION_MAX_CC_HOPS", "3"))
-DEFAULT_ROUNDS = 2  # 대표 결정: 다라운드 (capped at MAX_CC_HOPS)
+MAX_CC_HOPS = int(os.getenv("ORCHESTRATION_MAX_CC_HOPS", "2"))
+MAX_CC_HOPS = max(1, min(MAX_CC_HOPS, 2))  # Strict ceiling of 2 hops
+DEFAULT_ROUNDS = min(int(os.getenv("ORCHESTRATION_DEFAULT_ROUNDS", "2")), MAX_CC_HOPS)
+
 
 # Rough per-call cost estimates (CLIs don't report tokens). USD.
 _PROVIDER_COST = {"claude": 0.12, "gemini": 0.05, "codex": 0.10, "copilot": 0.02}
@@ -181,6 +188,13 @@ def _record_run(record: dict) -> None:
         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def _record_notion_minutes_run(payload: dict) -> None:
+    """Append-only audit trail for Notion minutes saves (success or failure)."""
+    NOTION_MINUTES_RUN_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with NOTION_MINUTES_RUN_LOG_PATH.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
 def respond_as_persona(
     handle: str,
     question: str,
@@ -232,6 +246,15 @@ def orchestrate(
     try:
         # 1. decompose
         assignments = _decompose(order, correlation_id, guard)
+        # Policy: CFO(ledger) attends every meeting (if active).
+        try:
+            from agents.registry import get_persona
+
+            ledger = get_persona("ledger")
+            if ledger.active and all(p.handle != "ledger" for p, _ in assignments):
+                assignments.append((ledger, "CFO 관점: 비용/리스크/재무 영향 중심으로 점검해 주세요."))
+        except Exception:
+            pass
         if post and room:
             who = ", ".join(f"{p.name}님" for p, _ in assignments)
             _post_raw(room, f"*Jarvis(비서실장)*: CEO 지시 받았습니다. 이번 건은 {who} 모시고 함께 보겠습니다.\n> {order}")
@@ -319,21 +342,38 @@ def orchestrate(
         except Exception as exc:
             print(f"[orchestrate] AR 추출 실패: {exc}")
 
-    # 8. Notion 회의록 저장
-    if post and transcript:
+    # 8. Notion 회의록 저장 (Slack 포스트 여부와 무관하게 내부 기록은 남긴다)
+    if transcript:
         try:
-            guard.charge(JARVIS_REASONING_PROVIDER, force=True)
-            minutes = _simplify_minutes(order, decision)
+            blocks = _build_minutes_blocks(decision, ts=record.get("ts"), correlation_id=correlation_id, limit=90)
             notion_url = _save_notion_minutes(
                 correlation_id=correlation_id,
                 order=order,
                 personas=persona_names,
-                minutes_text=minutes,
+                minutes_text="",
                 cost_usd=guard.spent,
+                minutes_blocks=blocks,
             )
-            if notion_url and _exec_channel():
+            _record_notion_minutes_run(
+                {
+                    "ts": datetime.now().isoformat(timespec="seconds"),
+                    "correlation_id": correlation_id,
+                    "notion_url": notion_url,
+                    "ok": bool(notion_url),
+                }
+            )
+            if post and notion_url and _exec_channel():
                 _post_raw(_exec_channel(), f"*Jarvis(비서실장)*: 📒 회의록이 Notion에 저장됐습니다.\n{notion_url}")
         except Exception as exc:
+            _record_notion_minutes_run(
+                {
+                    "ts": datetime.now().isoformat(timespec="seconds"),
+                    "correlation_id": correlation_id,
+                    "notion_url": None,
+                    "ok": False,
+                    "error": str(exc),
+                }
+            )
             print(f"[orchestrate] Notion 회의록 저장 실패: {exc}")
 
     return record

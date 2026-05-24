@@ -2,6 +2,30 @@
 
 ---
 
+## 2026-05-23 IBKR ETF Whitelist Resolver (Pre-Execution)
+
+**Participating LLMs:** Claude + Gemini + Codex (planned)  
+**Verdict:** `red_team_block` (Claude block + Codex block; Gemini output produced but did not provide an explicit clear verdict)  
+**Scope:** `scripts/ibkr_cp_client.py`, `scripts/openclaw_codex_bridge.py`, `adapters/content/openclaw_agent.py`, `docs/trading/etf_whitelist_v0.json`, `docs/reports/instrument_registry.jsonl`
+
+- Request doc: `docs/governance/RED_TEAM_REQUEST_IBKR_ETF_2026-05-23.md`
+- Notes: IBKR CP API는 session/2FA 제약이 있으므로 “연결 OK”와 “authenticated OK”를 구분해 차단/가이드해야 한다.
+- Evidence:
+  - Claude: `docs/reports/llm_outputs/claude_ibkr_etf_whitelist_resolver_registry_gating_2026-05-23_103608.md`
+  - Gemini: `docs/reports/llm_outputs/gemini_ibkr_etf_whitelist_resolver_registry_gating_2026-05-23_103857.md`
+  - Codex: `docs/reports/llm_outputs/codex_ibkr_etf_whitelist_resolver_registry_gating_2026-05-23.md`
+
+## 2026-05-23 IBKR ETF Whitelist Resolver (Hardening v2 Re-Review)
+
+**Participating LLMs:** Claude + Codex (+ Gemini)  
+**Verdict:** `red_team_clear` (2-of-3: Claude clear + Codex clear; Gemini output was low-signal but non-blocking)  
+**Scope:** same as above + pending queue + snapshot-based approve
+
+- Evidence:
+  - Claude: `docs/reports/llm_outputs/claude_ibkr_etf_whitelist_resolver_registry_gating_hardening_v2_2026-05-23_105007.md`
+  - Gemini: `docs/reports/llm_outputs/gemini_ibkr_etf_whitelist_resolver_registry_gating_hardening_v2_2026-05-23_105007.md`
+  - Codex: `docs/reports/llm_outputs/codex_ibkr_etf_whitelist_resolver_registry_gating_hardening_v2_2026-05-23.md`
+
 ## 2026-05-20 Agentic Orchestration Phase 0 Plan
 
 **Participating LLMs:** Claude (Opus 4.7), Gemini (2.5-pro), Codex (gpt-5.5)

@@ -56,3 +56,17 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-24 AR-009-meeting-20260524 Maily 첫 발행(https://maily.so/physicalaiweeklykr/posts/32z8ddx8rn4) 독자 반응 지표(open/
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-24 content-model-change-20260524 현재 Maily 발행본(https://maily.so/physicalaiweeklykr/posts/32z8ddx8rn4) 및 Substack #
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium

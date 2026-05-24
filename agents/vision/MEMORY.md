@@ -28,3 +28,24 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-24 AR-008-meeting-20260524 #002 상품 관점 문체 정의: 초보자 독자가 paid 전환까지 도달하려면 어떤 문체 톤(예: 친근체 vs 분석체)이 필요한지 product p
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-24 AR-009-meeting-20260524 dossier 포맷 v1 초안 작성. 섹션 구성(공시 raw / capex raw / 공급계약 raw / 출처 3종 표기), 출처 표기 표준 형
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-24 content-model-change-20260524 투자조언 성격을 제거하면서도 독자가 ₩9,900을 낼 이유가 있는 콘텐츠 모델 재설계안 3개 옵션 제시. 예: (1) 기술 동향 교육 (Phys
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium

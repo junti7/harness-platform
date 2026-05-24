@@ -68,8 +68,8 @@ class Persona:
 
 
 # ── Harness org chart ──────────────────────────────────────────────────────────
-# Active now: Jarvis (Phase 0), Friday + KITT (Phase 1).
-# Defined-but-inactive: the rest of the AGENTS.md org — flip `active` to enroll.
+# Active now: Jarvis + all active team leads listed below.
+# Defined-but-inactive: any future AGENTS.md org entries — flip `active` to enroll.
 # Frozen: Eve / Data / Tron / Joi — no mapping, held until first paid subscriber.
 
 _PERSONAS: list[Persona] = [
@@ -105,6 +105,17 @@ _PERSONAS: list[Persona] = [
         channel_env="SLACK_CHANNEL_TEAM_VISION",
         active=True,
         phase="1",
+    ),
+    Persona(
+        handle="ledger",
+        team_ko="재무팀 (CFO)",
+        role="burn/runway, unit economics, budget guard, capital-action prep",
+        agents_md_ref="§3.14C",
+        provider="claude",
+        escalation="gemini",
+        channel_env="SLACK_CHANNEL_TEAM_LEDGER",
+        active=True,
+        phase="2",
     ),
     Persona(
         handle="kitt",

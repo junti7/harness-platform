@@ -32,6 +32,34 @@ class OpenClawAgentTests(unittest.TestCase):
         self.assertEqual(parsed["intent"], "ar-list")
         self.assertEqual(parsed["bridge_args"], ["ar-list", "--format", "text", "--all"])
 
+    def test_parse_minutes_status_command(self):
+        parsed = openclaw_agent._parse_structured_command("노션 회의록 업로드 상태 확인해줘")
+
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed["intent"], "minutes-status")
+        self.assertEqual(parsed["bridge_args"], ["minutes-status", "--format", "text"])
+
+    def test_parse_minutes_upload_proposes_latest_by_default(self):
+        parsed = openclaw_agent._parse_structured_command("기존에 있었던 회의 내용을 기반으로 회의록 업로드 해주세요.")
+
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed["intent"], "minutes-latest")
+        self.assertEqual(parsed["bridge_args"], ["minutes-latest", "--format", "text"])
+
+    def test_parse_minutes_upload_confirm_executes_upload(self):
+        parsed = openclaw_agent._parse_structured_command("회의록 업로드 confirm")
+
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed["intent"], "minutes-upload")
+        self.assertEqual(parsed["bridge_args"], ["minutes-upload"])
+
+    def test_parse_minutes_reupload_confirm_executes_reupload(self):
+        parsed = openclaw_agent._parse_structured_command("회의록 재업로드 confirm")
+
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed["intent"], "minutes-reupload")
+        self.assertEqual(parsed["bridge_args"], ["minutes-reupload"])
+
     def test_expand_workplace_shorthand_for_ar(self):
         expanded = openclaw_agent._expand_workplace_shorthand("AR list 알려주세요.")
 

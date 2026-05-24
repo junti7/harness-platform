@@ -93,6 +93,7 @@ def upsert_issue_to_db(
         SELECT id
         FROM newsletter_issues
         WHERE title = %s
+          AND LOWER(COALESCE(publishing_platform, '')) = 'substack'
         ORDER BY created_at DESC
         LIMIT 1
     """, (title,), fetch=True)

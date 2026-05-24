@@ -35,3 +35,24 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-24 AR-008-meeting-20260524 #002 문체 개선 시 법적 disclaimer/표시광고법 준수 가이드: 친근한 문체로 다듬을 때 누락되기 쉬운 disclaimer, 단정적 표
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-24 AR-009-meeting-20260524 dossier 포맷의 자본시장법 §17(투자자문 유사행위) 충족 여부 사전 검토. 현행 콘텐츠에서 단정형/추천형 표현 리스트 추출 및 raw-d
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-24 content-model-change-20260524 자본시장법 §101 유사투자자문업 회피 기준 명확화. (1) '투자조언'으로 간주되는 구체적 표현·구조(매수/매도 권유, 목표가, 종목 추천, 
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
