@@ -28,3 +28,10 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-24 strategy-pivot-b2i-20260524 AR-018: B2I 전환 리스크 5종 식별·평가 후 $10,000 Stop-Loss 킬스위치 기준을 docs/governance/KILL_CR
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium

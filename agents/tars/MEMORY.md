@@ -21,3 +21,10 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-24 strategy-pivot-b2i-20260524 AR-021: IBKR 온보딩 6단계 점검 체크리스트 + paper trading 테스트 플랜 작성 (due 2026-05-29). API 권한
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: low

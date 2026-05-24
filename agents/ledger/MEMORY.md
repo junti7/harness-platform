@@ -35,3 +35,10 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-24 strategy-pivot-b2i-20260524 AR-019: 초기 투자 $10,000 기준 3가지 시나리오(보수/중립/공격) + BEP 산출 (due 2026-05-28). LLM·infra
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium

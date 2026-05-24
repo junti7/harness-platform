@@ -56,3 +56,10 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-24 strategy-pivot-b2i-20260524 AR-017: IBKR 자기계정 ETF 매매에 대한 자본시장법·외국환거래법 적법성 진단 메모 작성 (due 2026-05-27). 외국환 신고 
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium

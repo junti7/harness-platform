@@ -2,6 +2,50 @@
 
 ---
 
+## 2026-05-24 AR-018 B2I 전환 Red Team 검증
+
+**Participating LLMs:** Claude (claude-opus-4-7) + Gemini (gemini-2.0-flash)  
+**Verdict:** `red_team_block` (2-of-2 block — unanimously blocked)  
+**Scope:** B2C→B2I 전환 결정 전반 (자본시장법/외국환거래법, LLM 환각→실주문, Physical AI 섹터 집중, $7k 대비 법률 제재 비대칭, 놓친 가정)  
+**correlation_id:** strategy-pivot-b2i-20260524
+
+### 판정 요약
+
+| 항목 | Claude | Gemini | 합의 |
+|---|---|---|---|
+| ① 자본시장법/외국환거래법 | CONCERN | CONCERN | CONCERN |
+| ② LLM 환각 신호→실주문 | **BLOCK** | CONCERN | BLOCK |
+| ③ Physical AI 단일섹터 집중 | CONCERN | CONCERN | CONCERN |
+| ④ $7,000 vs 1.5억 비대칭 | **BLOCK** | **BLOCK** | **BLOCK** |
+| ⑤ 놓친 가정·약한 근거 | CONCERN | CONCERN | CONCERN |
+
+**Overall: `red_team_block`** — 두 모델 만장일치
+
+### Claude 주요 BLOCK 근거
+
+- **② LLM 환각→실주문**: 투자 신호→주문 변환 레이어에 콘텐츠 산출물 수준의 cross-LLM 게이트 부재. Paper↔Live 환경 전환 사고(18%, 800만원) 포함. 시나리오 3 확률 42%로 최고.
+- **④ EV 음수 구조**: $7,000 업사이드 대비 1.5억 다운사이드(법률 제재) = EV 음수. Gemini 단독 "자기계정 자본시장법 LOW" 판단을 유권해석 없이 확정으로 신뢰 불가.
+
+### 해제 조건 7개 (Claude 제시, 이행 시 재발주)
+
+1. **자본 금액 ground truth 통일** — $7,000 vs $5,000 불일치 해소 (Pre-Mortem $5k vs 패킷 $7k)
+2. **AR-017 강화** — 외부 변호사 의견서 1회 mandatory. AR-017 완료 기준 = "한국은행 신고 수리 완료"로 재정의
+3. **B2I 전환 자체 Pre-Mortem 추가** — 발행 보류 4주+ 시 brand-equity·subscriber 손실 포함
+4. **신호→주문 레이어 cross-LLM 게이트 명문화** — 2-of-3 합의 + non-negotiable factual finding 차단
+5. **EV 비대칭 구조적 해법** — Live capital $500 hard-cap. $7,000은 paper trading+8주+KPI 충족 전 IBKR 입금 금지 protocol을 SOUL.md에 추가
+6. **거시 트리거 기반 자동 청산** — 반도체 수출규제 신규 발표, SOXX -25% 같은 macro trigger를 KILL_CRITERIA에 명문화
+7. **Multi-LLM 법률 검토 보강** — Claude+Gemini+Codex 3모델 독립 검토 + 외부 변호사 사인오프. Gemini 단독 결론은 사전분석으로만 활용
+
+**재발주 트리거**: 조건 1·2·3·4·7 충족 시. 조건 5·6은 capital_action_approve 사전 조건으로 별도 추적.
+
+### Evidence
+
+- Claude: `docs/reports/llm_outputs/claude_ar_018_b2i_red_team_2026-05-24_172003.md`
+- Gemini: `docs/reports/llm_outputs/gemini_ar_018_b2i_red_team_2026-05-24_172003.md`
+- Packet: `docs/reports/llm_outputs/packet_ar_018_b2i_red_team_2026-05-24_172003.json`
+
+---
+
 ## 2026-05-23 IBKR ETF Whitelist Resolver (Pre-Execution)
 
 **Participating LLMs:** Claude + Gemini + Codex (planned)  

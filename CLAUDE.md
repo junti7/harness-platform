@@ -495,6 +495,15 @@ Success metric은 `docs/operations/WEEKLY_BUSINESS_REVIEW.md`의 cadence와 trig
 - 에스컬레이션: 1차(당일 경고) → 2차(+1일 CEO 채널 보고) → 3차(+3일 긴급 보고) → 강제 종결(+7일 CEO 확인).
 - 상세 규약: `docs/governance/AR_PROTOCOL.md`
 
+[매우매우매우매우매우 중요] **LLM_EXECUTABLE AR 즉시 실행 원칙:**
+- LLM이 실행 가능한 AR(`category: LLM_EXECUTABLE`)은 **등록 즉시 실행**하며 기한은 **당일(same day)**로 설정한다. 며칠씩 기한을 두는 것은 LLM의 핵심 강점을 낭비하는 것이며 절대 허용하지 않는다.
+- AR 등록 시 다음 기준으로 기한을 결정한다:
+  - `LLM_EXECUTABLE`: 기한 = 당일. 등록과 동시에 실행 시작.
+  - `HUMAN_REQUIRED` (인간 판단, 외부 기관 접촉, 물리적 행동 필요): 기한 = 현실적 소요 시간 반영.
+  - `CAPITAL_ACTION`: 기한 = CEO 결재 후 익일.
+- legal_review, red_team, pre_mortem, qa_clear 등 모든 LLM 기반 게이트는 LLM_EXECUTABLE이므로 요청 즉시 실행한다.
+- 비서실장은 LLM_EXECUTABLE AR에 다음날 이후 기한을 부여해서는 안 된다. 이는 운영 실패로 간주한다.
+
 [중요] **비서실장(Chief of Staff) 승인 및 Multi-LLM QA 원칙:**
 - 모든 외부 발행용 보고서(Executive Summary 포함)는 CEO 또는 부대표에게 보고되기 전, 반드시 **비서실장의 최종 리뷰 및 Approve**를 통과해야 한다.
 - 비서실장은 QA Team의 검토 결과가 완벽하지 않을 경우 결코 승인하지 않으며, 보고서는 비서실장 승인 없이 상신될 수 없다.

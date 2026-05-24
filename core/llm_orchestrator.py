@@ -97,7 +97,7 @@ class LLMOrchestrator:
 
         try:
             genai.configure(api_key=google_key)
-            model_name = "gemini-1.5-pro"
+            model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
             model = genai.GenerativeModel(model_name)
             
             # API 호출

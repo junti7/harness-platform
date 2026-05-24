@@ -95,29 +95,30 @@ def run_legal_review(
     if not is_approved:
         estimated_cost = orchestrator.estimate_claude_cost(len(content))
         logger.info(f"[legal_review] CEO 승인 필요. 예상 비용: ${estimated_cost:.4f}")
-        
-        # '승인 요청' 브릿지 명령어 호출
-        try:
-            command = [
-                sys.executable,
-                "scripts/openclaw_codex_bridge.py",
-                "request-cost-approval",
-                "--target-type", str(target_type),
-                "--target-id", str(target_id),
-                "--reason", "KITT agent escalation for high-quality legal review.",
-                "--estimated-cost", str(round(estimated_cost, 4)),
-            ]
-            subprocess.run(command, check=True, capture_output=True, text=True)
-            logger.info("CEO 승인 요청 성공")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"CEO 승인 요청 실패: {e.stderr}")
-            return {"result": "error", "summary": "CEO 승인 요청 생성 실패", "approved": False}
 
-        return {
-            "result": "pending_approval",
-            "summary": f"CEO 승인 대기. 예상 비용: ${estimated_cost:.4f}",
-            "approved": False
-        }
+        if target_id is not None:
+            try:
+                command = [
+                    sys.executable,
+                    "scripts/openclaw_codex_bridge.py",
+                    "request-cost-approval",
+                    "--target-type", str(target_type),
+                    "--target-id", str(target_id),
+                    "--reason", "KITT agent escalation for high-quality legal review.",
+                    "--estimated-cost", str(round(estimated_cost, 4)),
+                ]
+                subprocess.run(command, check=True, capture_output=True, text=True)
+                logger.info("CEO 승인 요청 성공")
+            except subprocess.CalledProcessError as e:
+                logger.error(f"CEO 승인 요청 실패: {e.stderr}")
+                return {"result": "error", "summary": "CEO 승인 요청 생성 실패", "approved": False}
+
+            return {
+                "result": "pending_approval",
+                "summary": f"CEO 승인 대기. 예상 비용: ${estimated_cost:.4f}",
+                "approved": False
+            }
+        # target_id 없는 직접 호출은 is_approved=True로 간주하고 진행
 
     # --- 이하 로직은 is_approved=True일 때만 실행 ---
     if logger:
@@ -227,16 +228,17 @@ def _record_decision(
 ) -> bool:
     approved = final_result in ("pass", "warn")
     approval_type = "legal_review_approve" if approved else "legal_review_block"
-    execute_query(
-        """INSERT INTO ceo_decisions
-               (target_type, target_id, decision, approval_type, reason, decided_by)
-           VALUES (%s, %s, %s, %s, %s, 'legal_review_agent')""",
-        (
-            target_type,
-            target_id,
-            final_result,
-            approval_type,
-            f"memo: {memo_path}",
-        ),
-    )
+    if target_id is not None:
+        execute_query(
+            """INSERT INTO ceo_decisions
+                   (target_type, target_id, decision, approval_type, reason, decided_by)
+               VALUES (%s, %s, %s, %s, %s, 'legal_review_agent')""",
+            (
+                target_type,
+                target_id,
+                final_result,
+                approval_type,
+                f"memo: {memo_path}",
+            ),
+        )
     return approved

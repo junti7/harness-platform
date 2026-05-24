@@ -49,3 +49,10 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-24 strategy-pivot-b2i-20260524 AR-020: Physical AI 투자 Thesis 표준 템플릿 설계 (due 2026-05-28). Entry/Exit/Invalidatio
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
