@@ -1,0 +1,162 @@
+{
+  "_meta": {
+    "domain": "edu_consulting",
+    "description": "AI 교육 컨설팅 DEEP RESEARCH 소스 레지스트리 v0.1",
+    "created_at": "2026-05-24",
+    "correlation_id": "edu-consulting-20260524",
+    "legal_status": "low_risk_channels_approved",
+    "note": "⚠️ 고위험 채널(맘카페 로그인영역·설문·광고)은 legal_review_approve 별도 충족 후 추가"
+  },
+  "sources": [
+    {
+      "name": "arXiv_computers_society",
+      "url": "https://rss.arxiv.org/rss/cs.CY",
+      "type": "rss",
+      "signal_class": "academic",
+      "rq_tags": ["RQ2", "RQ5"],
+      "stale_minutes": 10080,
+      "reliability_score": 0.95,
+      "expected_signal_type": "AI literacy, digital society, tech ethics",
+      "legal_risk": "low"
+    },
+    {
+      "name": "arXiv_HCI",
+      "url": "https://rss.arxiv.org/rss/cs.HC",
+      "type": "rss",
+      "signal_class": "academic",
+      "rq_tags": ["RQ2", "RQ5"],
+      "stale_minutes": 10080,
+      "reliability_score": 0.95,
+      "expected_signal_type": "HCI, cognitive offloading, AI interaction",
+      "legal_risk": "low"
+    },
+    {
+      "name": "arXiv_AI",
+      "url": "https://rss.arxiv.org/rss/cs.AI",
+      "type": "rss",
+      "signal_class": "academic",
+      "rq_tags": ["RQ2", "RQ5"],
+      "stale_minutes": 10080,
+      "reliability_score": 0.95,
+      "expected_signal_type": "AI research, education applications",
+      "legal_risk": "low"
+    },
+    {
+      "name": "EdSurge",
+      "url": "https://www.edsurge.com/rss.xml",
+      "type": "rss",
+      "signal_class": "media",
+      "rq_tags": ["RQ3", "RQ1"],
+      "stale_minutes": 1440,
+      "reliability_score": 0.85,
+      "expected_signal_type": "EdTech news, AI in education, business models",
+      "legal_risk": "low"
+    },
+    {
+      "name": "EdWeek",
+      "url": "https://www.edweek.org/feeds/rss/ew/all",
+      "type": "rss",
+      "signal_class": "media",
+      "rq_tags": ["RQ1", "RQ3", "RQ6"],
+      "stale_minutes": 1440,
+      "reliability_score": 0.85,
+      "expected_signal_type": "K-12 education, AI policy, parents, teachers",
+      "legal_risk": "low"
+    },
+    {
+      "name": "MIT_Tech_Review",
+      "url": "https://www.technologyreview.com/feed/",
+      "type": "rss",
+      "signal_class": "media",
+      "rq_tags": ["RQ2", "RQ3"],
+      "stale_minutes": 2880,
+      "reliability_score": 0.90,
+      "expected_signal_type": "AI in education, cognitive science, tech society",
+      "legal_risk": "low"
+    },
+    {
+      "name": "플래텀_에듀테크",
+      "url": "https://platum.kr/archives/category/edtech/feed",
+      "type": "rss",
+      "signal_class": "media_kr",
+      "rq_tags": ["RQ3", "RQ4"],
+      "stale_minutes": 2880,
+      "reliability_score": 0.80,
+      "expected_signal_type": "한국 에듀테크 기업 동향, 투자, 비즈니스 모델",
+      "legal_risk": "low"
+    },
+    {
+      "name": "교육부_보도자료",
+      "url": "https://www.moe.go.kr/boardCnts/listRenew.do?boardID=294&s=moe&m=020402&boardSeq=&mode=list&type=&boardSeq=&id=&rss=Y",
+      "type": "rss_candidate",
+      "signal_class": "government_kr",
+      "rq_tags": ["RQ6"],
+      "stale_minutes": 10080,
+      "reliability_score": 0.98,
+      "expected_signal_type": "AI 디지털교과서, 교육과정, 정책 변화",
+      "legal_risk": "low",
+      "note": "RSS URL 검증 필요 — 교육부 공식 RSS 엔드포인트 확인 후 업데이트"
+    },
+    {
+      "name": "OECD_Education",
+      "url": "https://www.oecd.org/education/rss",
+      "type": "rss_candidate",
+      "signal_class": "policy_global",
+      "rq_tags": ["RQ6", "RQ2"],
+      "stale_minutes": 43200,
+      "reliability_score": 0.95,
+      "expected_signal_type": "글로벌 AI 교육 정책, 역량 프레임워크",
+      "legal_risk": "low",
+      "note": "RSS 엔드포인트 검증 필요"
+    },
+    {
+      "name": "AI_Literacy_Institute",
+      "url": "https://ailiteracy.institute/feed/",
+      "type": "rss",
+      "signal_class": "competitor_global",
+      "rq_tags": ["RQ3", "RQ5"],
+      "stale_minutes": 10080,
+      "reliability_score": 0.80,
+      "expected_signal_type": "AI 리터러시 교육 사례, 커리큘럼, 비즈니스 모델",
+      "legal_risk": "low"
+    },
+    {
+      "name": "TechCrunch_Education",
+      "url": "https://techcrunch.com/tag/education/feed/",
+      "type": "rss",
+      "signal_class": "media",
+      "rq_tags": ["RQ3"],
+      "stale_minutes": 2880,
+      "reliability_score": 0.80,
+      "expected_signal_type": "EdTech 투자, AI 교육 스타트업",
+      "legal_risk": "low"
+    }
+  ],
+  "youtube_targets": {
+    "_note": "yt-dlp로 자막+메타+댓글 추출. 채널 URL 목록 — 검증 후 실행",
+    "channels": [
+      {"name": "Khan Academy", "url": "https://www.youtube.com/@khanacademy/videos", "rq_tags": ["RQ3", "RQ5"], "priority": "high"},
+      {"name": "SXSW EDU 강연", "url": "https://www.youtube.com/@SXSWedu/videos", "rq_tags": ["RQ3", "RQ1"], "priority": "high"},
+      {"name": "Common Sense Media", "url": "https://www.youtube.com/@commonsensemedia/videos", "rq_tags": ["RQ1", "RQ5"], "priority": "medium"},
+      {"name": "엘리스공식채널", "url": "https://www.youtube.com/@eliceio/videos", "rq_tags": ["RQ3"], "priority": "medium"},
+      {"name": "패스트캠퍼스", "url": "https://www.youtube.com/@fastcampus_official/videos", "rq_tags": ["RQ3"], "priority": "medium"}
+    ],
+    "search_queries_for_discovery": [
+      "학부모 AI 교육 우리 아이",
+      "ChatGPT 자녀 교육 부모",
+      "AI 의존 학습 능력 저하",
+      "AI literacy for parents children",
+      "generative AI K-12 education"
+    ],
+    "extract_options": "--skip-download --write-auto-sub --write-sub --sub-lang ko,en --write-comments --write-info-json"
+  },
+  "api_targets": [
+    {"name": "Semantic Scholar", "type": "api", "endpoint": "https://api.semanticscholar.org/graph/v1/paper/search", "key_required": false, "rq_tags": ["RQ2", "RQ5"], "keywords": ["AI literacy cognitive offloading", "generative AI student learning", "metacognition AI dependence"], "legal_risk": "low"},
+    {"name": "arXiv API", "type": "api", "endpoint": "http://export.arxiv.org/api/query", "key_required": false, "rq_tags": ["RQ2", "RQ5"], "legal_risk": "low"}
+  ],
+  "pending_legal_approval": [
+    {"name": "네이버_맘카페_공개영역", "type": "web_scrape", "legal_risk": "medium", "gate": "legal_review_approve(고위험) 완료 후"},
+    {"name": "학부모_설문_패널", "type": "primary_research", "legal_risk": "medium", "gate": "PIPA 동의 메커니즘 + legal_review_approve"},
+    {"name": "Pretotyping_광고_랜딩", "type": "ad_landing", "legal_risk": "medium", "gate": "표시광고법 검토 + legal_review_approve + QA qa_clear"}
+  ]
+}
