@@ -2,6 +2,96 @@
 
 ---
 
+## 2026-05-24 AR-029 교육 컨설팅 메인 격상 Red Team — Claude Pass
+
+**Participating LLM:** Claude (claude-sonnet-4-6) — 1-of-3 완료
+**Verdict (Claude):** `APPROVE with conditions`
+**Scope:** 교육 컨설팅 메인 격상 결정 전반 (MASTER_PLAN·MARKET_RESEARCH·RESEARCH_UNIVERSE·Pre-Mortem)
+**correlation_id:** edu-consulting-20260524
+**상태:** Gemini + Codex 검토 대기 — `red_team_clear` 미기록
+
+### Claude 판정 매트릭스
+
+| 검토 항목 | 판정 | 세부 |
+|---|---|---|
+| ① 사실 정확성 (소스·수치) | CONCERN | 아래 주석 참조 |
+| ② 전략 논리 (타겟·차별화·수익 모델) | APPROVE | 전반적으로 타당, 조건부 |
+| ③ Pre-Mortem 완전성 | APPROVE | 5개 시나리오 적절 |
+| ④ 법률·규제 리스크 | APPROVE | 학원법 조건 올바르게 식별 |
+| ⑤ 누락된 중대 리스크 | CONCERN | 3개 추가 지적 |
+
+**전체 판정: APPROVE (조건 3개)**
+
+---
+
+### 사실 정확성 CONCERN 내역
+
+1. **AI 의존성 연구 상관계수(-0.68):** MARKET_RESEARCH에 `media`(뉴시스 보도) 근거로 표기했으나, 영국 연구의 1차 학술지 출처를 직접 확인하지 않음. 수치는 타당해 보이나 "학술지 인용" 레벨로 격상 전 1차 논문 확인 필요. ⚠️ 고객-facing 콘텐츠에 이 수치 단독 인용 금지 (1차 확인 후 사용).
+2. **통계청 사교육비조사 hard$ 인용:** RESEARCH_UNIVERSE Class 3에서 언급했으나 구체적 수치(가구당 연평균)를 인용하지 않음. 실제 가격 설정 근거로 쓰려면 실제 숫자 확보 필요.
+3. **글로벌 AI 교육 시장 $5~8B(2025):** `vendor-estimate`으로 올바르게 표기됨. 절대 금액 신뢰 말 것 — 방향성만 사용 원칙 유지 확인.
+
+→ 심각한 허위 정보 없음. 근거 자세 표기 원칙은 지켜짐.
+
+---
+
+### 전략 논리 — APPROVE 근거
+
+- **"조사≡제품" 논리:** 타당. Multi-LLM 인텔리전스 파이프라인을 교육 도메인에 재지향하는 것은 구조적으로 합리적이며, 기존 자산(collector, Tier 1~4) 재활용 효율이 높음.
+- **반의존 포지셔닝:** "AI를 더 빨리 쓰는 법"이 포화된 시장에서 실재하는 빈틈. AI의존성 연구가 정당화.
+- **초·중등 학부모 타겟:** 결제 주체·통증·VP 적합성 3개 동시 충족. 타겟 스코어링 논리 수용.
+
+---
+
+### 누락된 리스크 (CONCERN) — Pre-Mortem 보완 권고
+
+**리스크 A — 구독 단가 대비 LLM 비용 역마진:**
+예산 $100/월, 예상 LLM 실소비 $35~60/월. 만약 구독자 10명이 월 ₩20,000(=$15)씩 내면 총 매출 $150이나 LLM 비용 $60 + 운영비를 감안하면 이익률이 매우 낮음. **구독자 N명 × 가격 P원이 LLM 비용을 넘으려면** 최소 구독자 수·가격 조합을 미리 모델링해야 함. 현재 문서에 이 계산 없음.
+
+**리스크 B — CAC(고객 획득 비용) 불명확:**
+첫 50명 익명 학부모를 어떻게 찾을지 구체적 채널·비용이 없음. 맘카페 유기적 유입(법률 제약), 인스타/유튜브 유료 광고(표시광고법 검토 필요), 유튜브 콘텐츠 SEO(시간 필요). Pre-Mortem에 "분산 리스크"는 있지만 CAC 리스크(고객을 못 찾는 것)는 별도 시나리오로 없음.
+
+**리스크 C — 뉴스레터 Backend vs 교육 파이프라인 도메인 충돌:**
+Physical AI ETF 투자 신호를 수집하는 파이프라인과 "부모를 위한 AI 교육 best practices" 콘텐츠를 수집하는 파이프라인은 **소스 도메인이 다름**. 현재 `edu_consulting.json`은 교육 도메인 RSS를 등록했지만, `physical_ai.json`은 arXiv 로보틱스·ETF 신호를 수집. 두 목적이 하나의 파이프라인에서 충돌 없이 공존할 수 있는지 아키텍처 설계 명시 필요.
+
+---
+
+### Claude 권고 (APPROVE 조건)
+
+1. **구독 경제 계산:** 구독자 수 × 가격 × LLM 비용 손익분기 시뮬레이션 작성 후 MASTER_PLAN 추가
+2. **CAC 채널 구체화:** Pretotyping 설계 시 "어디에 가짜문을 내건다"를 명시 (채널 + 예상 획득 비용)
+3. **파이프라인 이중 도메인 분리 설계:** 교육용 수집기(edu domain)와 Physical AI 수집기(B2I domain)를 명시적으로 분리 관리
+
+---
+
+*Claude 검토 완료: 2026-05-24 | 다음: Gemini 검토 → Codex 검토 → 2-of-3 판정*
+
+---
+
+### Claude 조건 3개 — 보완 문서 작성 완료 (2026-05-24)
+
+> CEO 지시: "RED team의 진단이 모두 clear되지 않으면 시작하면 안된다."
+> 원칙 등록: red_team_clear 전 모든 실행 BLOCK.
+
+| 조건 | 보완 문서 | 상태 |
+|---|---|---|
+| A — 구독 단가 BEP 시뮬레이션 | `docs/education/EDU_UNIT_ECONOMICS.md` | ✅ 완료 |
+| B — CAC 채널·비용 구체화 | `docs/education/EDU_CAC_PLAN.md` | ✅ 완료 |
+| C — 파이프라인 도메인 분리 설계 | `docs/education/EDU_PIPELINE_ARCHITECTURE.md` | ✅ 완료 |
+
+**BEP 요약 (조건 A):** ₩19,900/월 × 7명 = LLM 비용 BEP. 최악 손실 $130 (₩180,000). 역마진 리스크 낮음.
+
+**CAC 요약 (조건 B):** 인스타 광고 $20~30 (Pretotyping) + 맘카페 유기적 무비용 조합. LTV/CAC > 10x 목표.
+
+**파이프라인 요약 (조건 C):** `configs/sources/edu_consulting.json` vs `physical_ai.json` 분리 확정. DB `domain` 컬럼 + 별도 스크립트로 완전 격리.
+
+**Gemini 리뷰 프롬프트:** `docs/governance/RED_TEAM_GEMINI_PROMPT_AR029.md` — 대표님이 Gemini CLI에서 실행 필요.
+
+---
+
+**현재 상태: 1-of-3 (Claude APPROVE with conditions 해소 완료) | Gemini 대기 | Codex 대기**
+
+---
+
 ## 2026-05-24 AR-018 B2I 전환 Red Team 검증
 
 **Participating LLMs:** Claude (claude-opus-4-7) + Gemini (gemini-2.0-flash)  
