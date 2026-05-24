@@ -1,6 +1,7 @@
 # CLAUDE.md - Harness Business Operating Directive
-# Version: 3.5 | Domain: Physical AI / AGI Creator Subscription
+# Version: 4.0 | Domain: AI 교육 컨설팅 (메인) + Physical AI B2I Backend
 # 상위 규약: docs/product/PLATFORM.md (충돌 시 PLATFORM.md 우선)
+# 최종 업데이트: 2026-05-24 | AR-030 | red_team_clear(AR-029) 완료 후 갱신
 
 ---
 
@@ -8,31 +9,36 @@
 
 Harness는 단순 컨텐츠 큐레이션 시스템이 아니다.
 
-Harness의 목적은 대표(President/CEO)와 부대표(Vice President)가 다수 LLM, 로컬 하드웨어, 자동화 파이프라인을 활용해 `한국어 Physical AI weekly subscription`을 운영하고, 구독자 반응과 결제를 통해 실제 매출이 발생하는 자동화 회사를 실험하는 것이다.
+Harness는 **AI 교육 컨설팅**을 메인 외부 수익 라인으로 운영하며, 내부 AI 인프라로 **자기계정 투자(B2I)** 및 **Physical AI 리서치 파이프라인**을 지원하는 3-Layer 자동화 회사다.
+
+### 3-Layer 사업 구조 (2026-05-24 CEO 확정)
+
+| Layer | 역할 | 상태 |
+|---|---|---|
+| **교육 컨설팅** | 메인 외부 수익. 초·중등 학부모 대상 AI 반의존 학습 설계 상시 자문 구독 | ✅ 메인 |
+| **뉴스레터 파이프라인** | 외부 발행 중단. IBKR B2I 투자 신호 수집·분석 내부 Backend | Backend 전환 |
+| **B2I IBKR 투자 엔진** | 내부 자기계정 투자 (AR-018 red_team_block 해제 7조건 충족 후) | ⏳ 대기 |
 
 핵심 목표:
 
-- 남들이 AI로 어렵다고 여기는 고난도 정보/판단 영역을 공략한다.
-- 단순 요약이 아니라 한국어 독자가 이해하고 공유할 수 있는 고순도 Physical AI/AGI 콘텐츠로 변환한다.
-- 초기 수익 모델은 B2B enterprise sales가 아니라 creator subscription이다.
+- **교육 컨설팅**: 전 세계 AI 교육 연구(DEEP RESEARCH)를 내부 인텔리전스로 전환해 학부모 맞춤 자문을 제공한다.
+- 고난도 정보·판단 영역을 AI 인프라로 공략하되, 학부모가 이해하고 행동할 수 있는 형태로 가공한다.
+- 초기 수익 모델은 **초·중등 학부모 대상 구독 자문**이다 (B2C creator subscription).
 - 대표와 부대표의 인간 판단을 AI agent workflow의 핵심 입력으로 삼는다.
-- Codex 단독 운영이 아니라 Claude, Gemini, GPT reasoning models, GitHub Copilot CLI, local models, OpenClaw 등 가용한 LLM/service를 역할별로 총동원한다.
+- Claude, Gemini, GPT reasoning models, GitHub Copilot CLI, local models, OpenClaw 등 가용한 LLM/service를 역할별로 총동원한다.
 - 실제 돈이 나가는 결정은 `capital_action` 단계로 분리한다.
 
 ### Business Reality Constraint
 
 문서, agent 조직도, Slack 채널, automation은 사업을 대체하지 않는다.
 
-Harness의 초기 사업 검증에서 가장 중요한 행동은 콘텐츠를 정기 발행하고, 독자 반응을 기록하고, 첫 paid subscriber를 만드는 것이다.
+Harness 교육 컨설팅 사업 검증에서 가장 중요한 행동은:
+1. **Pretotyping**: 학부모 WTP(지불의향) 클릭률 실측 (외부 발행·광고 집행 전 red_team_clear + qa_clear 필수)
+2. **DEEP RESEARCH 1차 스윕**: 교육 도메인 RSS·YouTube·논문 데이터 수집
+3. **부대표 VP 리뷰**: 카피·콘텐츠의 학부모 언어 자연스러움 검토
+4. **첫 유료 구독자 획득**: Pilot 5~10명 (₩29,900/월 목표)
 
-초기 30일 동안 agent는 infrastructure polish보다 다음 행동을 우선한다.
-
-- weekly issue 발행
-- 무료 독자 모집
-- 부대표의 발행 전 content review
-- 독자 반응 기록
-- paid tier 전환 실험
-- 구독/결제/해지 feedback 기록
+초기 30일 동안 agent는 infrastructure polish보다 위 4가지 행동을 우선한다.
 
 첫 paid subscriber가 발생하기 전까지 B2B sales infra, dashboard, channel 확장, 미통합 LLM 자동화는 revenue-critical blocker가 아닌 한 보류한다.
 
@@ -418,26 +424,31 @@ Harness가 만들어야 할 핵심 산출물:
 
 기술적 성공보다 사업적 성공을 우선한다.
 
-측정 지표:
+### 교육 컨설팅 KPI (메인 사업 — 2026-05-24 갱신)
 
-- 발행된 weekly issue 수
-- 무료 구독자 수
-- paid subscriber 수
-- free-to-paid conversion rate
-- open/click/share/reply rate
-- 부대표가 readable/shareable로 평가한 비율
-- 대표가 publish 또는 paid tier 실험을 승인한 비율
-- 부대표 OJT completion rate
-- 부대표 assessment pass rate
-- 독자 응답률
-- paid tier 노출 수
-- 외부 매출
-- subscriber revenue
-- optional memo revenue
-- cost per useful signal
-- capital action까지 간 thesis 수
+| 지표 | 정의 | 30일 목표 | 90일 목표 |
+|---|---|---|---|
+| Pretotyping CTR | 랜딩 방문자 대비 결제 버튼 클릭률 | ≥ 2% | — |
+| WTP 인터뷰 평균 금액 | "얼마면 내겠냐" 응답 평균 | ≥ ₩9,900 | — |
+| Pilot 유료 구독자 | 실제 결제 완료 인원 | ≥ 1명 | ≥ 10명 |
+| free-to-paid conversion rate | 무료 체험 → 유료 전환 비율 | — | ≥ 30% |
+| 부대표 VP 가독성 통과율 | "readable/shareable" 평가 비율 | ≥ 70% | ≥ 80% |
+| CAC (고객 획득 비용) | 광고비 ÷ 신규 유료 구독자 | < $15 | < $10 |
+| LLM 비용 대비 매출 | 월 구독 수익 ÷ 월 LLM API 비용 | BEP 달성 | > 2× |
 
-Success metric은 `docs/operations/WEEKLY_BUSINESS_REVIEW.md`의 cadence와 trigger에 따라 매주 검토한다. 30일 내 목표는 무료 독자 50명과 첫 paid subscriber 1명이다. paid subscriber가 0명이어도 무료 독자와 독자 반응이 쌓이면 학습 가치는 인정하지만, 90일 이상 매출 0이면 모델을 재검토한다.
+### B2I 투자 엔진 KPI (내부 Backend — AR-018 red_team_block 해제 후)
+
+- IBKR 개설 완료율
+- Thesis 생성 성공률
+- Thesis 검증 성공률 (red_team_clear + legal_review_approve 통과)
+- 포트폴리오 MDD 준수율
+
+### 공통
+
+- cost per useful signal (DEEP RESEARCH 효율)
+- 부대표 OJT completion rate / assessment pass rate
+
+Success metric은 `docs/operations/WEEKLY_BUSINESS_REVIEW.md`의 cadence와 trigger에 따라 매주 검토한다. **30일 내 목표는 Pretotyping CTR ≥ 2% + 첫 유료 구독자 1명**이다. 90일 이상 매출 0이면 가치 제안 및 타겟 재검토한다.
 
 운영 안정성의 최소 기준:
 
