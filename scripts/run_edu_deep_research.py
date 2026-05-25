@@ -16,6 +16,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -473,15 +474,17 @@ def collect_youtube(yt_targets: list[dict], logger: HarnessLogger,
 
         cmd = [
             YT_DLP_BIN,
+            "--cookies-from-browser", "chrome",  # 브라우저 인증 쿠키로 429 우회
             "--skip-download",           # 영상 다운로드 금지 (legal_review_approve 조건)
             "--write-auto-sub",
             "--write-sub",
-            "--sub-lang", "ko,en",
+            "--sub-lang", "en",          # ko 제거 — 자막 요청 수 절반으로 감소
             "--write-info-json",
-            "--playlist-end", "10",      # 최근 10개만 (초기 스윕)
-            "--sleep-requests", "2.0",    # API/페이지 요청 간 2초 대기
-            "--sleep-interval", "5.0",    # 개별 비디오 다운로드 동작 간 5초 대기
-            "--max-sleep-interval", "10.0", # 지연 행동을 랜덤화하여 봇 감지 우회
+            "--playlist-end", "5",       # 최근 5개만
+            "--sleep-requests", "3.0",
+            "--sleep-interval", "5.0",
+            "--max-sleep-interval", "15.0",
+            "--ignore-errors",
             "--quiet",
             "--no-warnings",
             "-o", str(out_dir / "%(id)s.%(ext)s"),
@@ -556,6 +559,108 @@ def collect_youtube(yt_targets: list[dict], logger: HarnessLogger,
 
 
 # ---------------------------------------------------------------------------
+# YouTube Data API v3 수집 (공식 API — 429 없음, 1만 유닛/일 무료)
+# ---------------------------------------------------------------------------
+
+_YT_API_BASE = "https://www.googleapis.com/youtube/v3"
+
+
+def _yt_api_get(path: str, params: dict, logger: HarnessLogger) -> dict | None:
+    api_key = os.getenv("YOUTUBE_API_KEY", "")
+    try:
+        resp = httpx.get(
+            f"{_YT_API_BASE}/{path}",
+            params={**params, "key": api_key},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            logger.warning(f"  YouTube API {path} HTTP {resp.status_code}: {resp.text[:200]}")
+            return None
+        return resp.json()
+    except Exception as e:
+        logger.warning(f"  YouTube API {path} 오류: {e}")
+        return None
+
+
+def collect_youtube_via_api(yt_targets: list[dict], logger: HarnessLogger,
+                            tracker: SaturationTracker, dry_run: bool) -> dict | None:
+    """YouTube Data API v3로 채널 영상 메타데이터 수집.
+    YOUTUBE_API_KEY 미설정 시 None 반환 → yt-dlp fallback."""
+    api_key = os.getenv("YOUTUBE_API_KEY", "")
+    if not api_key:
+        return None
+
+    stats = {"attempted": len(yt_targets), "new": 0, "error": 0}
+
+    for ch in yt_targets:
+        name = ch["name"]
+        url = ch["url"]
+
+        handle_match = re.search(r'@([^/]+)', url)
+        if not handle_match:
+            logger.warning(f"  채널 핸들 추출 실패: {url}")
+            stats["error"] += 1
+            continue
+        handle = handle_match.group(1)
+        logger.info(f"YouTube API: {name} (@{handle})")
+
+        if dry_run:
+            logger.info(f"  [dry-run] channels?forHandle=@{handle} + search")
+            stats["new"] += 3
+            continue
+
+        # 채널 ID 조회 (100 유닛)
+        data = _yt_api_get("channels", {"part": "id", "forHandle": f"@{handle}"}, logger)
+        if not data or not data.get("items"):
+            logger.warning(f"  채널 없음: @{handle} (삭제/URL 변경 확인 필요)")
+            stats["error"] += 1
+            continue
+        channel_id = data["items"][0]["id"]
+        time.sleep(1)
+
+        # 최근 영상 목록 (100 유닛/검색)
+        data = _yt_api_get("search", {
+            "part": "snippet",
+            "channelId": channel_id,
+            "maxResults": 5,
+            "order": "date",
+            "type": "video",
+        }, logger)
+        if not data:
+            stats["error"] += 1
+            continue
+
+        videos = data.get("items", [])
+        ch_new = 0
+        for video in videos:
+            snippet = video.get("snippet", {})
+            video_id = (video.get("id") or {}).get("videoId", "")
+            if not video_id:
+                continue
+            raw = {
+                "title": snippet.get("title", ""),
+                "url": f"https://www.youtube.com/watch?v={video_id}",
+                "description": (snippet.get("description") or "")[:2000],
+                "channel": snippet.get("channelTitle", name),
+                "published_at": snippet.get("publishedAt", ""),
+                "source_name": f"youtube_{name.replace(' ', '_')}",
+                "signal_class": "youtube",
+                "rq_tags": ch.get("rq_tags", []),
+                "evidence_posture": "media",
+            }
+            saved = save_signal(f"youtube_{name.replace(' ', '_')}", raw, DOMAIN, logger)
+            if saved:
+                ch_new += 1
+                stats["new"] += 1
+
+        tracker.record(f"youtube_{name[:30]}", ch_new, len(videos))
+        logger.info(f"  완료: {ch_new}개 신규 / {len(videos)}개 영상")
+        time.sleep(1)
+
+    return stats
+
+
+# ---------------------------------------------------------------------------
 # 메인
 # ---------------------------------------------------------------------------
 
@@ -618,10 +723,16 @@ def main():
         total_new += r["new"]
 
     if "youtube" in enabled:
-        logger.info("--- [YouTube yt-dlp] ---")
-        r = collect_youtube(yt_targets, logger, tracker, dry_run)
-        results["youtube"] = r
-        total_new += r["new"]
+        api_result = collect_youtube_via_api(yt_targets, logger, tracker, dry_run)
+        if api_result is not None:
+            logger.info("--- [YouTube Data API v3] ---")
+            results["youtube"] = api_result
+            total_new += api_result["new"]
+        else:
+            logger.info("--- [YouTube yt-dlp (YOUTUBE_API_KEY 미설정 → browser-cookies fallback)] ---")
+            r = collect_youtube(yt_targets, logger, tracker, dry_run)
+            results["youtube"] = r
+            total_new += r["new"]
 
     # 포화도 리포트
     saturation = tracker.summary()

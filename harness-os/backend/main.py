@@ -129,13 +129,14 @@ def _tail_process(job_id: str, proc: subprocess.Popen) -> None:
         proc.wait()
         rc = proc.returncode
         with _JOB_LOCK:
-            if job_id in _PIPELINE_JOBS:
+            # stopped 상태는 stop API가 이미 설정했으므로 덮어쓰지 않음
+            if job_id in _PIPELINE_JOBS and _PIPELINE_JOBS[job_id]["status"] == "running":
                 _PIPELINE_JOBS[job_id]["status"] = "completed" if rc == 0 else "failed"
                 _PIPELINE_JOBS[job_id]["exit_code"] = rc
                 _PIPELINE_JOBS[job_id]["finished_at"] = datetime.utcnow().isoformat() + "Z"
     except Exception as exc:
         with _JOB_LOCK:
-            if job_id in _PIPELINE_JOBS:
+            if job_id in _PIPELINE_JOBS and _PIPELINE_JOBS[job_id]["status"] == "running":
                 _PIPELINE_JOBS[job_id]["status"] = "error"
                 _PIPELINE_JOBS[job_id]["finished_at"] = datetime.utcnow().isoformat() + "Z"
                 _PIPELINE_LOGS.setdefault(job_id, []).append(f"[ERROR] {exc}")
@@ -2944,6 +2945,7 @@ def run_pipeline_job(body: PipelineRunRequest, _: None = Depends(_require_secret
             text=True,
             cwd=str(_PROJECT_ROOT),
             env=os.environ.copy(),
+            start_new_session=True,  # 자식 프로세스(yt-dlp 등)까지 같은 process group으로 묶어 killpg로 일괄 종료
         )
     except Exception as exc:
         raise HTTPException(500, f"프로세스 시작 실패: {exc}")
@@ -2984,13 +2986,22 @@ def stop_pipeline_job(job_id: str, _: None = Depends(_require_secret)) -> dict[s
         raise HTTPException(404, "Job not found")
     if job["status"] != "running":
         raise HTTPException(400, "Job is not running")
+    pid = job["pid"]
     try:
-        os.kill(job["pid"], _signal.SIGTERM)
+        pgid = os.getpgid(pid)
+        os.killpg(pgid, _signal.SIGTERM)  # 스크립트 + yt-dlp 등 자식 프로세스 전체 종료
     except ProcessLookupError:
-        pass
+        pass  # 이미 종료됨
+    except PermissionError:
+        # fallback: process group 접근 불가 시 단일 pid만 종료
+        try:
+            os.kill(pid, _signal.SIGTERM)
+        except ProcessLookupError:
+            pass
     with _JOB_LOCK:
         _PIPELINE_JOBS[job_id]["status"] = "stopped"
         _PIPELINE_JOBS[job_id]["finished_at"] = datetime.utcnow().isoformat() + "Z"
+        _PIPELINE_LOGS.setdefault(job_id, []).append("[중지] 사용자가 작업을 중단했습니다.")
     return {"ok": True}
 
 
