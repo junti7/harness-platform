@@ -8,7 +8,7 @@
     "note": "⚠️ 고위험 채널(맘카페 로그인영역·설문·광고)은 legal_review_approve 별도 충족 후 추가",
     "updated_at": "2026-05-25",
     "version": "v0.3",
-    "total_sources": 73
+    "total_sources": 84
   },
   "sources": [
     {
@@ -1007,6 +1007,147 @@
       "reliability_score": 0.75,
       "legal_risk": "low",
       "note": "Product Hunt API — 무료 tier 존재."
+    },
+    {
+      "name": "경향신문_교육",
+      "url": "https://www.khan.co.kr/rss/rssdata/edu_news.xml",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ1",
+        "RQ3"
+      ],
+      "stale_minutes": 720,
+      "reliability_score": 0.8,
+      "legal_risk": "low"
+    },
+    {
+      "name": "뉴시스_교육",
+      "url": "https://newsis.com/RSS/education.xml",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ1",
+        "RQ3"
+      ],
+      "stale_minutes": 720,
+      "reliability_score": 0.78,
+      "legal_risk": "low"
+    },
+    {
+      "name": "Inside_Higher_Ed",
+      "url": "https://www.insidehighered.com/rss.xml",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ3"
+      ],
+      "stale_minutes": 1440,
+      "reliability_score": 0.85,
+      "legal_risk": "low"
+    },
+    {
+      "name": "The_Verge_AI",
+      "url": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "stale_minutes": 720,
+      "reliability_score": 0.82,
+      "legal_risk": "low"
+    },
+    {
+      "name": "EdTech_Digest",
+      "url": "https://edtechdigest.com/feed/",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "stale_minutes": 1440,
+      "reliability_score": 0.78,
+      "legal_risk": "low"
+    },
+    {
+      "name": "Microsoft_AI_Education",
+      "url": "https://educationblog.microsoft.com/feed",
+      "type": "rss",
+      "signal_class": "competitor",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "stale_minutes": 2880,
+      "reliability_score": 0.85,
+      "legal_risk": "low"
+    },
+    {
+      "name": "Google_Education_Blog",
+      "url": "https://blog.google/outreach-initiatives/education/rss/",
+      "type": "rss",
+      "signal_class": "competitor",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "stale_minutes": 2880,
+      "reliability_score": 0.85,
+      "legal_risk": "low"
+    },
+    {
+      "name": "Meta_AI_Blog",
+      "url": "https://ai.meta.com/blog/rss/",
+      "type": "rss",
+      "signal_class": "competitor",
+      "rq_tags": [
+        "RQ2"
+      ],
+      "stale_minutes": 2880,
+      "reliability_score": 0.85,
+      "legal_risk": "low"
+    },
+    {
+      "name": "ISTE_Blog",
+      "url": "https://www.iste.org/explore/learning-and-leading/rss.xml",
+      "type": "rss",
+      "signal_class": "government",
+      "rq_tags": [
+        "RQ3",
+        "RQ6"
+      ],
+      "stale_minutes": 10080,
+      "reliability_score": 0.85,
+      "legal_risk": "low"
+    },
+    {
+      "name": "Substack_TheRundown",
+      "url": "https://therundown.ai/feed",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "stale_minutes": 1440,
+      "reliability_score": 0.82,
+      "legal_risk": "low"
+    },
+    {
+      "name": "ITWorld_Korea",
+      "url": "https://www.itworld.co.kr/rss/news",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "stale_minutes": 720,
+      "reliability_score": 0.78,
+      "legal_risk": "low"
     }
   ],
   "youtube_targets": {
@@ -1038,6 +1179,52 @@
           "RQ5"
         ],
         "priority": "medium"
+      },
+      {
+        "name": "코딩애플",
+        "url": "https://www.youtube.com/@codingapple/videos",
+        "rq_tags": [
+          "RQ3",
+          "RQ5"
+        ],
+        "priority": "high"
+      },
+      {
+        "name": "EBS 공식",
+        "url": "https://www.youtube.com/@ebs_korea/videos",
+        "rq_tags": [
+          "RQ1",
+          "RQ3",
+          "RQ6"
+        ],
+        "priority": "high"
+      },
+      {
+        "name": "Edutopia",
+        "url": "https://www.youtube.com/@Edutopia/videos",
+        "rq_tags": [
+          "RQ1",
+          "RQ3"
+        ],
+        "priority": "high"
+      },
+      {
+        "name": "TED Education",
+        "url": "https://www.youtube.com/@TEDEd/videos",
+        "rq_tags": [
+          "RQ3",
+          "RQ5"
+        ],
+        "priority": "medium"
+      },
+      {
+        "name": "World Economic Forum",
+        "url": "https://www.youtube.com/@wef/videos",
+        "rq_tags": [
+          "RQ3",
+          "RQ6"
+        ],
+        "priority": "medium"
       }
     ],
     "search_queries_for_discovery": [
@@ -1046,6 +1233,27 @@
       "AI 의존 학습 능력 저하",
       "AI literacy for parents children",
       "generative AI K-12 education"
+    ],
+    "multilingual_search_queries": [
+      "AI 교육 학부모 불안",
+      "AI 의존 자녀 학습",
+      "인공지능 교육 부모 고민",
+      "AI education parenting anxiety children",
+      "generative AI K-12 learning dependence",
+      "AI literacy children parents school",
+      "AI 教育 保護者 不安",
+      "生成AI 子供 学習 依存",
+      "人工智能 教育 家长 焦虑",
+      "AI 依赖 学习 孩子",
+      "inteligencia artificial educacion padres ansiedad",
+      "intelligence artificielle education parents anxiete",
+      "Künstliche Intelligenz Bildung Eltern Angst",
+      "inteligencia artificial educacao pais ansiedade",
+      "kecemasan orang tua pendidikan AI",
+      "yapay zeka egitim ebeveyn kaygisi",
+      "lo lang cha me giao duc tri tue nhan tao",
+      "الذكاء الاصطناعي التعليم القلق الوالدين",
+      "AI shiksha mata-pita chinta"
     ],
     "extract_options": "--skip-download --write-auto-sub --write-sub --sub-lang en --write-comments --write-info-json --ignore-errors"
   },

@@ -389,6 +389,84 @@ ARXIV_QUERIES = [
     "abs:parental+perception+AI+education",
 ]
 
+
+MULTILINGUAL_QUERIES: list[str] = [
+    # 한국어
+    "AI 교육 학부모 불안",
+    "AI 의존 자녀 학습 능력",
+    "인공지능 교육 부모 고민",
+    # English
+    "AI education parenting anxiety children",
+    "generative AI K-12 learning dependence",
+    "AI literacy children parents school",
+    # 日本語
+    "AI 教育 保護者 不安",
+    "生成AI 子供 学習 依存",
+    # 中文
+    "人工智能 教育 家长 焦虑",
+    "AI 依赖 学习 孩子",
+    # Español
+    "inteligencia artificial educacion padres ansiedad",
+    # Français
+    "intelligence artificielle education parents anxiete",
+    # Deutsch
+    "Künstliche Intelligenz Bildung Eltern Angst",
+    # Português
+    "inteligencia artificial educacao pais ansiedade",
+    # Bahasa Indonesia
+    "kecemasan orang tua pendidikan AI",
+    # Türkçe
+    "yapay zeka egitim ebeveyn kaygisi",
+    # Tiếng Việt
+    "lo lang cha me giao duc tri tue nhan tao",
+    # Русский
+    "iskusstvennyy intellekt obrazovanie roditel trevoga",
+    # العربية
+    "الذكاء الاصطناعي التعليم القلق الوالدين",
+    # हिन्दी
+    "AI shiksha mata-pita chinta",
+]
+
+ACADEMIC_EN_QUERIES: list[str] = [
+    "AI literacy cognitive offloading K-12 education",
+    "generative AI student learning outcomes critical thinking",
+    "parental anxiety AI children education",
+    "AI homework automation academic achievement",
+    "metacognition artificial intelligence education",
+    "job displacement AI anxiety workplace",
+    "digital divide AI education equity",
+    "teacher perception generative AI classroom",
+]
+
+HN_QUERIES: list[str] = [
+    "AI education children",
+    "generative AI K-12 schools",
+    "AI parenting homework",
+    "ChatGPT students learning",
+    "AI job replacement anxiety",
+]
+
+REDDIT_SUBREDDITS: list[tuple[str, str]] = [
+    ("Parenting", "AI ChatGPT children homework"),
+    ("teachers", "AI ChatGPT classroom"),
+    ("ChatGPT", "education children learning"),
+    ("Korea", "AI 교육"),
+    ("EdTech", "AI learning students"),
+    ("asianparents", "AI education"),
+    ("jobs", "AI replacement anxiety"),
+    ("labor", "AI automation workers"),
+]
+
+NAVER_QUERIES: list[str] = [
+    "AI 교육 학부모",
+    "인공지능 자녀 교육",
+    "챗GPT 아이 숙제",
+    "AI 의존 학습 능력 저하",
+    "AI 시대 자녀 교육법",
+    "인공지능 직장인 불안",
+]
+
+
 def collect_arxiv(logger: HarnessLogger, tracker: SaturationTracker,
                   dry_run: bool) -> dict:
     endpoint = "https://export.arxiv.org/api/query"
@@ -458,7 +536,7 @@ def collect_youtube(yt_targets: list[dict], logger: HarnessLogger,
         logger.warning(f"yt-dlp 없음: {YT_DLP_BIN}. YouTube 수집 건너뜀.")
         return {"attempted": 0, "new": 0, "error": 1}
 
-    stats = {"attempted": len(yt_targets), "new": 0, "error": 0}
+    stats = {"attempted": len(yt_targets), "new": 0, "duplicate": 0, "error": 0}
 
     for ch in yt_targets:
         name = ch["name"]
@@ -582,7 +660,8 @@ def _yt_api_get(path: str, params: dict, logger: HarnessLogger) -> dict | None:
         return None
 
 
-def collect_youtube_via_api(yt_targets: list[dict], logger: HarnessLogger,
+def collect_youtube_via_api(yt_targets: list[dict], search_queries: list[str],
+                            extra_query: str, logger: HarnessLogger,
                             tracker: SaturationTracker, dry_run: bool) -> dict | None:
     """YouTube Data API v3로 채널 영상 메타데이터 수집.
     YOUTUBE_API_KEY 미설정 시 None 반환 → yt-dlp fallback."""
@@ -590,7 +669,7 @@ def collect_youtube_via_api(yt_targets: list[dict], logger: HarnessLogger,
     if not api_key:
         return None
 
-    stats = {"attempted": len(yt_targets), "new": 0, "error": 0}
+    stats = {"attempted": len(yt_targets), "new": 0, "duplicate": 0, "error": 0}
 
     for ch in yt_targets:
         name = ch["name"]
@@ -657,6 +736,477 @@ def collect_youtube_via_api(yt_targets: list[dict], logger: HarnessLogger,
         logger.info(f"  완료: {ch_new}개 신규 / {len(videos)}개 영상")
         time.sleep(1)
 
+    # Part 2: keyword discovery across multilingual parent/education queries.
+    ordered_queries = []
+    if extra_query:
+        ordered_queries.append(extra_query)
+    ordered_queries.extend(search_queries)
+
+    for query in ordered_queries:
+        logger.info(f"YouTube API 검색: {query}")
+        if dry_run:
+            logger.info(f"  [dry-run] search?q={query}")
+            stats["new"] += 5
+            time.sleep(1)
+            continue
+
+        data = _yt_api_get("search", {
+            "part": "snippet",
+            "q": query,
+            "maxResults": 5,
+            "type": "video",
+            "order": "relevance",
+        }, logger)
+        if not data:
+            stats["error"] += 1
+            time.sleep(1)
+            continue
+
+        items = data.get("items", [])
+        query_new = 0
+        for item in items:
+            snippet = item.get("snippet", {})
+            video_id = (item.get("id") or {}).get("videoId", "")
+            if not video_id:
+                continue
+            raw = {
+                "title": snippet.get("title", ""),
+                "url": f"https://www.youtube.com/watch?v={video_id}",
+                "description": (snippet.get("description") or "")[:2000],
+                "channel": snippet.get("channelTitle", ""),
+                "published_at": snippet.get("publishedAt", ""),
+                "source_name": "youtube_search",
+                "signal_class": "youtube",
+                "rq_tags": ["RQ1", "RQ3", "RQ4"],
+                "query": query,
+                "evidence_posture": "media",
+            }
+            saved = save_signal("youtube_search", raw, DOMAIN, logger)
+            if saved:
+                query_new += 1
+                stats["new"] += 1
+            else:
+                stats["duplicate"] = stats.get("duplicate", 0) + 1
+
+        tracker.record(f"youtube_search_{query[:30]}", query_new, len(items))
+        logger.info(f"  검색 완료: {query_new}개 신규 / {len(items)}개 영상")
+        time.sleep(1)
+
+    return stats
+
+
+# ---------------------------------------------------------------------------
+# Additional academic/community APIs
+# ---------------------------------------------------------------------------
+
+def _openalex_abstract(abstract_index: dict | None) -> str:
+    if not abstract_index:
+        return ""
+    positions: dict[int, str] = {}
+    for word, indexes in abstract_index.items():
+        for index in indexes:
+            positions[index] = word
+    return " ".join(positions[index] for index in sorted(positions))
+
+
+def collect_openalex(queries: list[str], logger: HarnessLogger,
+                     tracker: SaturationTracker, dry_run: bool) -> dict:
+    endpoint = "https://api.openalex.org/works"
+    stats = {"new": 0, "duplicate": 0, "error": 0}
+
+    for query in queries:
+        logger.info(f"OpenAlex: {query}")
+        try:
+            resp = httpx.get(
+                endpoint,
+                params={
+                    "search": query,
+                    "filter": "open_access.is_oa:true",
+                    "per-page": 15,
+                    "mailto": "junti7@gmail.com",
+                },
+                timeout=25,
+            )
+            if resp.status_code != 200:
+                logger.warning(f"  OpenAlex HTTP {resp.status_code}: {resp.text[:200]}")
+                stats["error"] += 1
+                time.sleep(1)
+                continue
+
+            works = resp.json().get("results", [])
+            query_new = 0
+            for work in works:
+                raw = {
+                    "title": work.get("title", ""),
+                    "url": work.get("doi") or work.get("id", ""),
+                    "abstract": _openalex_abstract(work.get("abstract_inverted_index"))[:3000],
+                    "published_year": work.get("publication_year"),
+                    "source_name": "openalex",
+                    "signal_class": "academic",
+                    "rq_tags": ["RQ2", "RQ5"],
+                    "query": query,
+                    "evidence_posture": "academic",
+                }
+                if dry_run:
+                    logger.info(f"  [dry-run] {raw['title'][:80]}")
+                    query_new += 1
+                    stats["new"] += 1
+                else:
+                    saved = save_signal("openalex", raw, DOMAIN, logger)
+                    if saved:
+                        query_new += 1
+                        stats["new"] += 1
+                    else:
+                        stats["duplicate"] += 1
+
+            tracker.record(f"openalex_{query[:30]}", query_new, len(works))
+            logger.info(f"  완료: {query_new}개 신규 / {len(works)}개 전체")
+        except Exception as e:
+            logger.warning(f"  OpenAlex 실패 ({query}): {e}")
+            stats["error"] += 1
+        time.sleep(1)
+
+    return stats
+
+
+def collect_eric(queries: list[str], logger: HarnessLogger,
+                 tracker: SaturationTracker, dry_run: bool) -> dict:
+    endpoint = "https://api.ies.ed.gov/eric/"
+    stats = {"new": 0, "duplicate": 0, "error": 0}
+
+    for query in queries:
+        logger.info(f"ERIC: {query}")
+        try:
+            resp = httpx.get(
+                endpoint,
+                params={"search": query, "format": "json", "rows": 15},
+                timeout=25,
+            )
+            if resp.status_code != 200:
+                logger.warning(f"  ERIC HTTP {resp.status_code}: {resp.text[:200]}")
+                stats["error"] += 1
+                time.sleep(1)
+                continue
+
+            data = resp.json()
+            records = data.get("response", {}).get("docs") or data.get("records") or data.get("docs") or []
+            query_new = 0
+            for record in records:
+                title = record.get("title") or record.get("title_s") or ""
+                url = record.get("url") or record.get("eric_url") or record.get("id") or ""
+                raw = {
+                    "title": title,
+                    "url": url,
+                    "abstract": (record.get("description") or record.get("abstract") or "")[:3000],
+                    "year": record.get("publicationdateyear") or record.get("year"),
+                    "source_name": "eric",
+                    "signal_class": "academic",
+                    "rq_tags": ["RQ2", "RQ5"],
+                    "query": query,
+                    "evidence_posture": "academic",
+                }
+                if dry_run:
+                    logger.info(f"  [dry-run] {raw['title'][:80]}")
+                    query_new += 1
+                    stats["new"] += 1
+                else:
+                    saved = save_signal("eric", raw, DOMAIN, logger)
+                    if saved:
+                        query_new += 1
+                        stats["new"] += 1
+                    else:
+                        stats["duplicate"] += 1
+
+            tracker.record(f"eric_{query[:30]}", query_new, len(records))
+            logger.info(f"  완료: {query_new}개 신규 / {len(records)}개 전체")
+        except Exception as e:
+            logger.warning(f"  ERIC 실패 ({query}): {e}")
+            stats["error"] += 1
+        time.sleep(1)
+
+    return stats
+
+
+def collect_pubmed(queries: list[str], logger: HarnessLogger,
+                   tracker: SaturationTracker, dry_run: bool) -> dict:
+    search_endpoint = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+    summary_endpoint = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+    stats = {"new": 0, "duplicate": 0, "error": 0}
+
+    for query in queries:
+        logger.info(f"PubMed: {query}")
+        try:
+            search_resp = httpx.get(
+                search_endpoint,
+                params={"db": "pubmed", "term": query, "retmax": 15, "retmode": "json"},
+                timeout=25,
+            )
+            if search_resp.status_code != 200:
+                logger.warning(f"  PubMed esearch HTTP {search_resp.status_code}: {search_resp.text[:200]}")
+                stats["error"] += 1
+                time.sleep(1)
+                continue
+
+            ids = search_resp.json().get("esearchresult", {}).get("idlist", [])
+            if not ids:
+                tracker.record(f"pubmed_{query[:30]}", 0, 0)
+                logger.info("  완료: 0개 신규 / 0개 전체")
+                time.sleep(1)
+                continue
+
+            summary_resp = httpx.get(
+                summary_endpoint,
+                params={"db": "pubmed", "id": ",".join(ids), "retmode": "json"},
+                timeout=25,
+            )
+            if summary_resp.status_code != 200:
+                logger.warning(f"  PubMed esummary HTTP {summary_resp.status_code}: {summary_resp.text[:200]}")
+                stats["error"] += 1
+                time.sleep(1)
+                continue
+
+            result = summary_resp.json().get("result", {})
+            query_new = 0
+            for pmid in result.get("uids", []):
+                item = result.get(pmid, {})
+                raw = {
+                    "title": item.get("title", ""),
+                    "url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+                    "summary": item.get("source", ""),
+                    "published": item.get("pubdate", ""),
+                    "source_name": "pubmed",
+                    "signal_class": "academic",
+                    "rq_tags": ["RQ2", "RQ5"],
+                    "query": query,
+                    "evidence_posture": "academic",
+                }
+                if dry_run:
+                    logger.info(f"  [dry-run] {raw['title'][:80]}")
+                    query_new += 1
+                    stats["new"] += 1
+                else:
+                    saved = save_signal("pubmed", raw, DOMAIN, logger)
+                    if saved:
+                        query_new += 1
+                        stats["new"] += 1
+                    else:
+                        stats["duplicate"] += 1
+
+            tracker.record(f"pubmed_{query[:30]}", query_new, len(ids))
+            logger.info(f"  완료: {query_new}개 신규 / {len(ids)}개 전체")
+        except Exception as e:
+            logger.warning(f"  PubMed 실패 ({query}): {e}")
+            stats["error"] += 1
+        time.sleep(1)
+
+    return stats
+
+
+def collect_hackernews(queries: list[str], logger: HarnessLogger,
+                       tracker: SaturationTracker, dry_run: bool) -> dict:
+    endpoint = "https://hn.algolia.com/api/v1/search"
+    stats = {"new": 0, "duplicate": 0, "error": 0}
+
+    for query in queries:
+        logger.info(f"Hacker News: {query}")
+        try:
+            resp = httpx.get(
+                endpoint,
+                params={"query": query, "tags": "story", "hitsPerPage": 10},
+                timeout=20,
+            )
+            if resp.status_code != 200:
+                logger.warning(f"  Hacker News HTTP {resp.status_code}: {resp.text[:200]}")
+                stats["error"] += 1
+                time.sleep(1)
+                continue
+
+            hits = resp.json().get("hits", [])
+            query_new = 0
+            for hit in hits:
+                object_id = hit.get("objectID", "")
+                raw = {
+                    "title": hit.get("title") or hit.get("story_title") or "",
+                    "url": hit.get("url") or f"https://news.ycombinator.com/item?id={object_id}",
+                    "summary": (hit.get("story_text") or hit.get("comment_text") or "")[:2000],
+                    "points": hit.get("points"),
+                    "num_comments": hit.get("num_comments"),
+                    "source_name": "hackernews",
+                    "signal_class": "community",
+                    "rq_tags": ["RQ2", "RQ3"],
+                    "query": query,
+                    "evidence_posture": "community",
+                }
+                if dry_run:
+                    logger.info(f"  [dry-run] {raw['title'][:80]}")
+                    query_new += 1
+                    stats["new"] += 1
+                else:
+                    saved = save_signal("hackernews", raw, DOMAIN, logger)
+                    if saved:
+                        query_new += 1
+                        stats["new"] += 1
+                    else:
+                        stats["duplicate"] += 1
+
+            tracker.record(f"hackernews_{query[:30]}", query_new, len(hits))
+            logger.info(f"  완료: {query_new}개 신규 / {len(hits)}개 전체")
+        except Exception as e:
+            logger.warning(f"  Hacker News 실패 ({query}): {e}")
+            stats["error"] += 1
+        time.sleep(1)
+
+    return stats
+
+
+def collect_reddit(subreddits: list[tuple[str, str]], logger: HarnessLogger,
+                   tracker: SaturationTracker, dry_run: bool) -> dict:
+    stats = {"new": 0, "duplicate": 0, "error": 0}
+    client_id = os.getenv("REDDIT_CLIENT_ID", "")
+    client_secret = os.getenv("REDDIT_CLIENT_SECRET", "")
+    if not client_id or not client_secret:
+        logger.info("Reddit API credentials missing; skipping reddit collector.")
+        return {**stats, "skipped": True}
+
+    headers = {"User-Agent": "Harness-EduResearch/1.0 by junti7"}
+    try:
+        token_resp = httpx.post(
+            "https://www.reddit.com/api/v1/access_token",
+            data={"grant_type": "client_credentials"},
+            auth=(client_id, client_secret),
+            headers=headers,
+            timeout=20,
+        )
+        if token_resp.status_code != 200:
+            logger.warning(f"  Reddit token HTTP {token_resp.status_code}: {token_resp.text[:200]}")
+            stats["error"] += 1
+            return stats
+        token = token_resp.json().get("access_token", "")
+    except Exception as e:
+        logger.warning(f"  Reddit token 실패: {e}")
+        stats["error"] += 1
+        return stats
+
+    auth_headers = {**headers, "Authorization": f"Bearer {token}"}
+    for subreddit, query in subreddits:
+        logger.info(f"Reddit: r/{subreddit} {query}")
+        try:
+            resp = httpx.get(
+                f"https://oauth.reddit.com/r/{subreddit}/search.json",
+                params={"q": query, "restrict_sr": 1, "sort": "relevance", "limit": 10},
+                headers=auth_headers,
+                timeout=20,
+            )
+            if resp.status_code != 200:
+                logger.warning(f"  Reddit HTTP {resp.status_code}: {resp.text[:200]}")
+                stats["error"] += 1
+                time.sleep(1)
+                continue
+
+            children = resp.json().get("data", {}).get("children", [])
+            query_new = 0
+            for child in children:
+                item = child.get("data", {})
+                raw = {
+                    "title": item.get("title", ""),
+                    "url": f"https://www.reddit.com{item.get('permalink', '')}",
+                    "summary": (item.get("selftext") or "")[:2000],
+                    "score": item.get("score"),
+                    "num_comments": item.get("num_comments"),
+                    "subreddit": subreddit,
+                    "source_name": "reddit",
+                    "signal_class": "community",
+                    "rq_tags": ["RQ1", "RQ4"],
+                    "query": query,
+                    "evidence_posture": "community",
+                }
+                if dry_run:
+                    logger.info(f"  [dry-run] {raw['title'][:80]}")
+                    query_new += 1
+                    stats["new"] += 1
+                else:
+                    saved = save_signal("reddit", raw, DOMAIN, logger)
+                    if saved:
+                        query_new += 1
+                        stats["new"] += 1
+                    else:
+                        stats["duplicate"] += 1
+
+            tracker.record(f"reddit_{subreddit}_{query[:20]}", query_new, len(children))
+            logger.info(f"  완료: {query_new}개 신규 / {len(children)}개 전체")
+        except Exception as e:
+            logger.warning(f"  Reddit 실패 (r/{subreddit} {query}): {e}")
+            stats["error"] += 1
+        time.sleep(1)
+
+    return stats
+
+
+def collect_naver(queries: list[str], logger: HarnessLogger,
+                  tracker: SaturationTracker, dry_run: bool) -> dict:
+    stats = {"new": 0, "duplicate": 0, "error": 0}
+    client_id = os.getenv("NAVER_CLIENT_ID", "")
+    client_secret = os.getenv("NAVER_CLIENT_SECRET", "")
+    if not client_id or not client_secret:
+        logger.info("Naver Search API credentials missing; skipping naver collector.")
+        return {**stats, "skipped": True}
+
+    headers = {
+        "X-Naver-Client-Id": client_id,
+        "X-Naver-Client-Secret": client_secret,
+    }
+
+    for query in queries:
+        for search_type in ("blog", "news"):
+            logger.info(f"Naver {search_type}: {query}")
+            try:
+                resp = httpx.get(
+                    f"https://openapi.naver.com/v1/search/{search_type}.json",
+                    params={"query": query, "display": 10, "sort": "date"},
+                    headers=headers,
+                    timeout=20,
+                )
+                if resp.status_code != 200:
+                    logger.warning(f"  Naver {search_type} HTTP {resp.status_code}: {resp.text[:200]}")
+                    stats["error"] += 1
+                    time.sleep(1)
+                    continue
+
+                items = resp.json().get("items", [])
+                query_new = 0
+                for item in items:
+                    title = re.sub(r"<[^>]+>", "", item.get("title", ""))
+                    description = re.sub(r"<[^>]+>", "", item.get("description", ""))
+                    raw = {
+                        "title": title,
+                        "url": item.get("link") or item.get("originallink") or "",
+                        "summary": description[:2000],
+                        "published": item.get("postdate") or item.get("pubDate") or "",
+                        "source_name": f"naver_{search_type}",
+                        "signal_class": "community" if search_type == "blog" else "news",
+                        "rq_tags": ["RQ1", "RQ4"],
+                        "query": query,
+                        "evidence_posture": "community" if search_type == "blog" else "media",
+                    }
+                    if dry_run:
+                        logger.info(f"  [dry-run] {raw['title'][:80]}")
+                        query_new += 1
+                        stats["new"] += 1
+                    else:
+                        saved = save_signal(f"naver_{search_type}", raw, DOMAIN, logger)
+                        if saved:
+                            query_new += 1
+                            stats["new"] += 1
+                        else:
+                            stats["duplicate"] += 1
+
+                tracker.record(f"naver_{search_type}_{query[:30]}", query_new, len(items))
+                logger.info(f"  완료: {query_new}개 신규 / {len(items)}개 전체")
+            except Exception as e:
+                logger.warning(f"  Naver {search_type} 실패 ({query}): {e}")
+                stats["error"] += 1
+            time.sleep(1)
+
     return stats
 
 
@@ -669,7 +1219,9 @@ def main():
     parser.add_argument(
         "--sources",
         default="rss,scholar,arxiv",
-        help="수집 소스 (쉼표 구분): rss,scholar,arxiv,youtube (기본: rss,scholar,arxiv)",
+        help=("수집 소스 (쉼표 구분): "
+              "rss,scholar,arxiv,youtube,openalex,eric,pubmed,hackernews,reddit,naver,all "
+              "(기본: rss,scholar,arxiv)"),
     )
     parser.add_argument("--dry-run", action="store_true", help="DB 저장 없이 수집 예상 항목만 출력")
     parser.add_argument("--domain", default=DOMAIN, help="도메인 태그 (기본: edu_consulting)")
@@ -685,6 +1237,9 @@ def main():
         SCHOLAR_QUERIES.insert(0, args.extra_query)
         arxiv_q = "abs:" + args.extra_query.replace(" ", "+")
         ARXIV_QUERIES.insert(0, arxiv_q)
+        ACADEMIC_EN_QUERIES.insert(0, args.extra_query)
+        HN_QUERIES.insert(0, args.extra_query)
+        NAVER_QUERIES.insert(0, args.extra_query)
 
     logger = HarnessLogger(tier=1, correlation_id=CORRELATION_ID)
     logger.info(f"=== 교육 DEEP RESEARCH 수집 시작 | domain={domain} | sources={args.sources} | dry_run={dry_run} | extra_query={args.extra_query!r} ===")
@@ -699,31 +1254,70 @@ def main():
         .read_text(encoding="utf-8")
     ).get("youtube_targets", {})
     yt_targets = yt_config.get("channels", [])
+    yt_search_queries = yt_config.get("multilingual_search_queries", [])
 
     tracker = SaturationTracker()
     total_new = 0
     results = {}
 
-    if "rss" in enabled:
+    if "rss" in enabled or "all" in enabled:
         logger.info("--- [RSS 수집] ---")
         r = collect_rss(sources, logger, tracker, dry_run)
         results["rss"] = r
         total_new += r["new"]
 
-    if "scholar" in enabled:
+    if "scholar" in enabled or "all" in enabled:
         logger.info("--- [Semantic Scholar API] ---")
         r = collect_semantic_scholar(logger, tracker, dry_run)
         results["scholar"] = r
         total_new += r["new"]
 
-    if "arxiv" in enabled:
+    if "arxiv" in enabled or "all" in enabled:
         logger.info("--- [arXiv API] ---")
         r = collect_arxiv(logger, tracker, dry_run)
         results["arxiv"] = r
         total_new += r["new"]
 
-    if "youtube" in enabled:
-        api_result = collect_youtube_via_api(yt_targets, logger, tracker, dry_run)
+    if "openalex" in enabled or "all" in enabled:
+        logger.info("--- [OpenAlex API] ---")
+        r = collect_openalex(ACADEMIC_EN_QUERIES, logger, tracker, dry_run)
+        results["openalex"] = r
+        total_new += r["new"]
+
+    if "eric" in enabled or "all" in enabled:
+        logger.info("--- [ERIC API] ---")
+        r = collect_eric(ACADEMIC_EN_QUERIES, logger, tracker, dry_run)
+        results["eric"] = r
+        total_new += r["new"]
+
+    if "pubmed" in enabled or "all" in enabled:
+        logger.info("--- [PubMed API] ---")
+        r = collect_pubmed(ACADEMIC_EN_QUERIES, logger, tracker, dry_run)
+        results["pubmed"] = r
+        total_new += r["new"]
+
+    if "hackernews" in enabled or "all" in enabled:
+        logger.info("--- [Hacker News Algolia API] ---")
+        r = collect_hackernews(HN_QUERIES, logger, tracker, dry_run)
+        results["hackernews"] = r
+        total_new += r["new"]
+
+    if "reddit" in enabled or "all" in enabled:
+        logger.info("--- [Reddit API] ---")
+        r = collect_reddit(REDDIT_SUBREDDITS, logger, tracker, dry_run)
+        results["reddit"] = r
+        total_new += r["new"]
+
+    if "naver" in enabled or "all" in enabled:
+        logger.info("--- [Naver Search API] ---")
+        r = collect_naver(NAVER_QUERIES, logger, tracker, dry_run)
+        results["naver"] = r
+        total_new += r["new"]
+
+    if "youtube" in enabled or "all" in enabled:
+        api_result = collect_youtube_via_api(
+            yt_targets, yt_search_queries, args.extra_query, logger, tracker, dry_run
+        )
         if api_result is not None:
             logger.info("--- [YouTube Data API v3] ---")
             results["youtube"] = api_result
