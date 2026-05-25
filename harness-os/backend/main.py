@@ -3046,8 +3046,10 @@ def run_pipeline_job(body: PipelineRunRequest, _: None = Depends(_require_secret
     python = _PROJECT_ROOT / ".venv" / "bin" / "python"
 
     if body.source == "filter":
-        script = _PROJECT_ROOT / "scripts" / "run_edu_filter.py"
-        cmd = [str(python), str(script), "--model", "qwen2.5:1.5b", "--limit", "500"]
+        script = _PROJECT_ROOT / "scripts" / "run_investment_signal_refiner.py"
+        cmd = [str(python), str(script)]
+        if body.dry_run:
+            cmd += ["--dry-run"]
     else:
         script = _PROJECT_ROOT / "scripts" / "run_edu_deep_research.py"
         src_str = _SOURCE_MAP[body.source] or "scholar"
@@ -3079,7 +3081,7 @@ def run_pipeline_job(body: PipelineRunRequest, _: None = Depends(_require_secret
             "id": job_id,
             "source": body.source,
             "label": {"scholar": "Semantic Scholar", "arxiv": "arXiv", "youtube": "YouTube",
-                      "rss": "RSS", "all": "전체 수집", "filter": "AI 필터링"}.get(body.source, body.source),
+                      "rss": "RSS", "all": "전체 수집", "filter": "투자 신호 정제"}.get(body.source, body.source),
             "started_at": datetime.utcnow().isoformat() + "Z",
             "status": "running",
             "pid": proc.pid,

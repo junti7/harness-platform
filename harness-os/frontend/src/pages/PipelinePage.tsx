@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { DataCollectionMonitor } from '../components/DataCollectionMonitor'
+import type { DashboardPayload } from '../components/types'
 
 type Props = {
   apiBase: string
   authHeaders: () => Record<string, string>
+  monitor?: DashboardPayload['data_collection_monitor']
 }
 
 type JobStatus = 'running' | 'completed' | 'failed' | 'stopped' | 'error'
@@ -96,10 +99,10 @@ const SOURCE_DEFS = [
   },
   {
     id: 'filter',
-    label: 'AI 필터링',
-    icon: '🔍',
-    type: 'PROCESS',
-    desc: '수집된 데이터 품질 분류',
+    label: '투자 신호 정제',
+    icon: '📈',
+    type: '일봉 분석',
+    desc: '종목 후보와 매수·매도 점검 시점을 정리',
     match: () => false,
   },
 ]
@@ -145,7 +148,7 @@ function colorLine(line: string): string {
   return 'var(--color-text-muted)'
 }
 
-export function PipelinePage({ apiBase, authHeaders }: Props) {
+export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
   type Tab = 'status' | 'topics' | 'raw'
   const [tab, setTab] = useState<Tab>('status')
   const [jobs, setJobs] = useState<Job[]>([])
@@ -318,12 +321,12 @@ export function PipelinePage({ apiBase, authHeaders }: Props) {
         <div>
           <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>자료수집 제어 센터</h2>
           <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-            연구 주제 선택 → 소스 실행 → 실시간 수집 현황 관찰
+            원천 자료 수집과 일봉 기준 투자 후보 정제를 실행합니다.
           </p>
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--color-text-muted)', cursor: 'pointer', userSelect: 'none' }}>
           <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} />
-          Dry-run 모드 (실제 저장 안 함)
+          테스트 실행 모드 (실제 저장 안 함)
         </label>
       </div>
 
@@ -351,6 +354,7 @@ export function PipelinePage({ apiBase, authHeaders }: Props) {
       {/* ── 수집 현황 탭 ── */}
       {tab === 'status' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          {monitor && <DataCollectionMonitor monitor={monitor} />}
 
           {/* 1단계: 연구 주제 선택 */}
           <div className="panel" style={{ padding: '1.25rem' }}>
@@ -507,7 +511,7 @@ export function PipelinePage({ apiBase, authHeaders }: Props) {
                 background: 'var(--color-accent)', color: '#fff',
                 fontSize: '0.75rem', fontWeight: 800,
               }}>2</span>
-              <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 700 }}>소스 선택 및 실행</h3>
+              <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 700 }}>자료 출처 및 정제 작업 실행</h3>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
@@ -584,10 +588,10 @@ export function PipelinePage({ apiBase, authHeaders }: Props) {
               }}>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: '0.88rem', marginBottom: '0.15rem' }}>🚀 전체 수집</div>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>All Sources</span>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>전체 자료 출처</span>
                 </div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                  RSS + Scholar + arXiv + YouTube 동시 실행
+                  뉴스 피드 + 논문 검색 + 동영상 자료를 함께 수집합니다. 투자 신호 정제는 별도 버튼으로 하루 1회 실행합니다.
                 </div>
                 <button
                   disabled={launching !== null || runningJobs.length > 0}
@@ -659,7 +663,7 @@ export function PipelinePage({ apiBase, authHeaders }: Props) {
                       }}>
                       <div>
                         <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{job.label ?? job.source}</span>
-                        {job.dry_run && <span style={{ marginLeft: '0.4rem', fontSize: '0.7rem', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 4, padding: '0.05rem 0.3rem' }}>dry-run</span>}
+                        {job.dry_run && <span style={{ marginLeft: '0.4rem', fontSize: '0.7rem', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 4, padding: '0.05rem 0.3rem' }}>테스트 실행</span>}
                       </div>
                       <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{job.log_total}줄</span>
                       <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{job.finished_at ? relTime(job.finished_at) : relTime(job.started_at)}</span>
@@ -808,9 +812,9 @@ export function PipelinePage({ apiBase, authHeaders }: Props) {
               style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-lighter)', color: 'var(--color-text)', fontSize: '0.85rem' }}
             >
               <option value="">전체 상태</option>
-              <option value="filtered_pass">통과 (Pass)</option>
-              <option value="filtered_fail">탈락 (Fail)</option>
-              <option value="pending">대기 (Pending)</option>
+              <option value="filtered_pass">채택</option>
+              <option value="filtered_fail">제외</option>
+              <option value="pending">분류 대기</option>
             </select>
             <input
               type="text"
@@ -840,7 +844,7 @@ export function PipelinePage({ apiBase, authHeaders }: Props) {
                 {signals.items.map((item, idx) => {
                   const isLast = idx === signals.items.length - 1
                   const statusColor = item.status === 'filtered_pass' ? 'var(--color-ok)' : item.status === 'filtered_fail' ? 'var(--color-text-muted)' : 'var(--color-warn)'
-                  const statusLabel = item.status === 'filtered_pass' ? 'Pass' : item.status === 'filtered_fail' ? 'Fail' : 'Pending'
+                  const statusLabel = item.status === 'filtered_pass' ? '채택' : item.status === 'filtered_fail' ? '제외' : '분류 대기'
                   return [
                     <div key={`src-${item.id}`} style={{ padding: '0.55rem 1rem', fontSize: '0.78rem', color: 'var(--color-text-muted)', borderBottom: isLast ? 'none' : '1px solid var(--color-border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.source}</div>,
                     <div key={`ttl-${item.id}`} style={{ padding: '0.55rem 1rem', fontSize: '0.82rem', borderBottom: isLast ? 'none' : '1px solid var(--color-border)', overflow: 'hidden' }}>
@@ -907,10 +911,10 @@ function JobPanel({ job, expanded, onToggle, onStop }: {
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--color-accent)', flexShrink: 0, animation: 'pulse 1.2s infinite' }} />
         <div style={{ flex: 1 }}>
           <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>{job.label ?? job.source}</span>
-          {job.dry_run && <span style={{ marginLeft: '0.4rem', fontSize: '0.7rem', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 4, padding: '0.05rem 0.3rem' }}>dry-run</span>}
+          {job.dry_run && <span style={{ marginLeft: '0.4rem', fontSize: '0.7rem', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 4, padding: '0.05rem 0.3rem' }}>테스트 실행</span>}
         </div>
         <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-          경과 {elapsed(job.started_at)} · PID {job.pid} · 로그 {job.log_total}줄
+          경과 {elapsed(job.started_at)} · 작업번호 {job.pid} · 기록 {job.log_total}줄
         </span>
         <button onClick={onToggle} style={{ padding: '0.25rem 0.65rem', borderRadius: '5px', border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-muted)', fontSize: '0.75rem', cursor: 'pointer' }}>
           {expanded ? '로그 닫기' : '로그 보기'}
