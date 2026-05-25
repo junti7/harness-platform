@@ -1,28 +1,80 @@
-# Harness AI 교육 컨설팅 — 사업 라인 문서 인덱스
+# Harness AI 교육 컨설팅 — 문서 인덱스
 
-> 신규 사업 라인. correlation_id: `edu-consulting-20260524` | 발의: 대표(CEO) 2026-05-24
-> 상태: **DRAFT / 게이트 통과 전.** 어떤 결제·외부 발행도 미승인.
+> 신규 사업 라인 | correlation_id: `edu-consulting-20260524` | 발의: CEO 2026-05-24
+> 최종 갱신: 2026-05-25 ✅ **red_team_clear 달성** (Claude 4차 + Gemini 4차 2-of-2 conditional_approve)
+> 상태: **Pretotyping 랜딩 제작 착수 가능** — legal_review_approve (광고 카피) + qa_clear (랜딩) 남음
 
-## 문서 스택 (읽는 순서)
+---
 
-| # | 문서 | 역할 | 상태 |
-|---|---|---|---|
-| 1 | [EDU_RESEARCH_UNIVERSE.md](EDU_RESEARCH_UNIVERSE.md) | **최상위 시각** — 신호 우주 좌표계(6축×10클래스) + 확장 방법론 + **도출 결론 6** | v0.1 |
-| 2 | [DEEP_RESEARCH_PLAN.md](DEEP_RESEARCH_PLAN.md) | 전수 조사 실행 방안 — 도구 스택·파이프라인·커버리지·비용/법률 게이트 | v0.1 |
-| 3 | [EDU_MARKET_RESEARCH.md](EDU_MARKET_RESEARCH.md) | 데스크 1차 시장조사·벤치마킹(출처 자세 표기) | v0.1 |
-| 4 | [EDU_CONSULTING_MASTER_PLAN.md](EDU_CONSULTING_MASTER_PLAN.md) | 사업 계획서 초안 — 타겟 스코어링·수익모델·Pilot·로드맵·게이트 | v0.1 |
+## 문서 맵 (6개 핵심 문서)
 
-## 한 줄 결론 (EDU_RESEARCH_UNIVERSE §5)
+| 문서 | 내용 | 줄 수 |
+|---|---|---|
+| [EDU_CONSULTING_MASTER_PLAN.md](EDU_CONSULTING_MASTER_PLAN.md) | 마스터 플랜 · 타겟 · 수익 모델 · 7원칙 전략 종합 | ~270줄 |
+| [EDU_MARKET_INTELLIGENCE.md](EDU_MARKET_INTELLIGENCE.md) | 시장 조사 · 세그먼트 실증 데이터 (⚠️ BFI 허위 인용 삭제) | ~695줄 |
+| [EDU_COMPETITIVE_INTEL.md](EDU_COMPETITIVE_INTEL.md) | 심리 프레임워크 · 역사적 기술 전환 · 경쟁사 분석 | ~928줄 |
+| [EDU_PRODUCT_MODEL.md](EDU_PRODUCT_MODEL.md) | 개인화 모델 · 포춘텔러 온보딩 · 음성 온보딩 · 메시징 | ~1397줄 |
+| [EDU_ECONOMICS.md](EDU_ECONOMICS.md) | 가격 설계(Step당 천원) · 단가 경제 · CAC 계획 | ~200줄 |
+| [EDU_DATA_OPERATIONS.md](EDU_DATA_OPERATIONS.md) | 데이터 수집 채널 · DEEP RESEARCH 계획 · 파이프라인 | ~1093줄 |
 
-> 조사 인프라가 곧 제품이다. 기회의 본질은 "강의"가 아니라 **"세대적 AI 불안에 대한, 학습과학 기반·한국 학부모 맥락·멀티LLM 상시 인텔리전스"**다. 1차 추천 타겟은 **초·중등 학부모**, 진짜 해자는 **반(反)의존 학습 설계**.
+---
 
-## 미결 게이트 (자원 투입·외부 발행 전 필수)
+## 한 줄 사업 정의
 
-- [ ] CEO go/no-go + DEEP RESEARCH 예산 한도 + 교육사업 메인격상 여부
-- [ ] 수집 정책 Legal `legal_review_approve` (스크래핑·1차데이터·표시광고·PIPA)
-- [ ] Multi-LLM Red Team `red_team_clear` (Claude+Gemini+Codex)
-- [ ] Pre-Mortem `pre_mortem_approve`
-- [ ] 고객-facing 산출물 QA `qa_clear`
+> AI 시대, 자녀 교육 불안을 가진 부모(주로 엄마)에게 — 증거 기반 AI 반의존 학습 설계를 — **부모 본인 AX 이해 먼저, 자녀 교육 설계는 두 번째**로 제공하는 상시 자문 서비스.
 
-## 다음 갱신
-DEEP RESEARCH 착수(D2~D4) 결과 → MASTER_PLAN/MARKET_RESEARCH v0.2 근거 반영.
+**가격:** Step당 ₩990 (심리적 저항선 0). 풀코스(8스텝) ₩5,900. 월구독 ₩2,900.
+
+---
+
+## 현재 게이트 상태 ✅ red_team_clear 달성
+
+| 게이트 | 상태 | 비고 |
+|---|---|---|
+| `red_team_clear` | ✅ **달성** | Claude 4차 + Gemini 4차 2-of-2 conditional_approve (2026-05-25) |
+| `legal_review_approve` | ✅ (부분) / ⏳ 광고 카피 대기 | 저위험 채널(RSS·arXiv) OK. 광고 카피 별도 필요 |
+| `pre_mortem_approve` | ✅ (AR-029) | 완료 |
+| `qa_clear` | ⏳ 대기 | 랜딩 페이지 제작 후 발행 직전 |
+| `capital_action_approve` | ❌ | CAPITAL_ACTIONS_ENABLED=false |
+
+### 다음 액션 (Pretotyping 착수)
+1. **Pretotyping 랜딩 페이지 제작** — Framer/Carrd (노코드), WTP 클릭 측정용
+   - 상품명: "AI 시대, 우리 아이 학습 패턴 자가점검 + 4주 부모 가이드"
+   - Step 1 무료 → Step 2 ₩990 업셀 CTA
+   - PIPA 동의 폼 포함 (이메일 수집 시)
+2. **광고 카피 legal_review_approve** — 표시광고법 준수 문구 검토
+3. **qa_clear** — 랜딩 발행 직전 fact + format + link 검증
+
+---
+
+## Red Team 판정 이력 (완료)
+
+| 차수 | 주체 | 판정 |
+|---|---|---|
+| 1차 | Claude | CONDITIONAL_BLOCK |
+| 2차 | Gemini | BLOCK |
+| 3차 | CEO/Codex | BLOCK → AR-037 수정 5개 |
+| **4차** | **Claude + Gemini** | **2-of-2 conditional_approve → red_team_clear ✅** |
+
+---
+
+## 통합 이력 (2026-05-25)
+
+| 삭제된 원본 | 통합된 위치 |
+|---|---|
+| PSYCHOLOGY_FRAMEWORK.md | EDU_COMPETITIVE_INTEL.md |
+| HISTORICAL_TECH_PARALLELS.md | EDU_COMPETITIVE_INTEL.md |
+| INCUMBENT_REVERSAL_MEGASTUDY.md | EDU_COMPETITIVE_INTEL.md |
+| DATA_GATHERING_UNIVERSE.md | EDU_DATA_OPERATIONS.md |
+| DEEP_RESEARCH_PLAN.md | EDU_DATA_OPERATIONS.md |
+| EDU_RESEARCH_UNIVERSE.md | EDU_DATA_OPERATIONS.md |
+| EDU_PIPELINE_ARCHITECTURE.md | EDU_DATA_OPERATIONS.md |
+| EDU_MARKET_RESEARCH.md | EDU_MARKET_INTELLIGENCE.md |
+| SEGMENT_UNIVERSE.md | EDU_MARKET_INTELLIGENCE.md |
+| EDU_PERSONALIZATION_MODEL.md | EDU_PRODUCT_MODEL.md |
+| FORTUNE_TELLER_ONBOARDING_BENCHMARK.md | EDU_PRODUCT_MODEL.md |
+| EDU_VOICE_ONBOARDING.md | EDU_PRODUCT_MODEL.md |
+| EDU_MESSAGING_DRAFT.md | EDU_PRODUCT_MODEL.md |
+| STRATEGIC_SYNTHESIS.md | EDU_CONSULTING_MASTER_PLAN.md (부록) |
+| EDU_UNIT_ECONOMICS.md | EDU_ECONOMICS.md |
+| EDU_CAC_PLAN.md | EDU_ECONOMICS.md |
