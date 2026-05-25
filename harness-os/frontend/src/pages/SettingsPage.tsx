@@ -1,0 +1,509 @@
+import { useState, useEffect } from 'react'
+
+type Settings = {
+  theme: 'light' | 'dark'
+  exchangeRate: number
+  refreshInterval: number // seconds
+  nickname: string
+  welcomeMessage: string
+  password?: string
+  exchangeRateMode: 'realtime' | 'manual' // 환율 모드 추가
+}
+
+const defaultSettings = {
+  ceo: {
+    theme: 'dark' as const,
+    exchangeRate: 1400,
+    refreshInterval: 60,
+    nickname: '대표님',
+    welcomeMessage: 'Harness OS의 최종 의사결정 및 자산 지배 통제 센터에 오신 것을 환영합니다.',
+    password: 'ceo123',
+    exchangeRateMode: 'realtime' as const,
+  },
+  vp: {
+    theme: 'light' as const,
+    exchangeRate: 1400,
+    refreshInterval: 60,
+    nickname: '부대표님',
+    welcomeMessage: 'Physical AI 리서치 분석 및 콘텐츠 품질 1차 관제 데스크입니다.',
+    password: 'vp123',
+    exchangeRateMode: 'realtime' as const,
+  },
+}
+
+type Props = {
+  onSettingsChange: (role: 'ceo' | 'vp', settings: Settings) => void
+  currentRole: 'ceo' | 'vp'
+  onLogout: () => void
+}
+
+export function SettingsPage({ onSettingsChange, currentRole, onLogout }: Props) {
+  // 역할별 설정
+  const [settings, setSettings] = useState<Settings>(() => {
+    const saved = localStorage.getItem(`harness-settings-${currentRole}`)
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as Settings
+        if (!parsed.password) {
+          parsed.password = defaultSettings[currentRole].password
+        }
+        if (!parsed.exchangeRateMode) {
+          parsed.exchangeRateMode = defaultSettings[currentRole].exchangeRateMode
+        }
+        return parsed
+      } catch (e) {
+        console.error(e)
+      }
+    }
+    return defaultSettings[currentRole]
+  })
+
+  // 비밀번호 변경 관련 로컬 상태
+  const [currentPasswordInput, setCurrentPasswordInput] = useState('')
+  const [newPasswordInput, setNewPasswordInput] = useState('')
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('')
+  const [pwError, setPwError] = useState<string | null>(null)
+  const [pwSuccess, setPwSuccess] = useState<string | null>(null)
+
+  // 역할이 바뀌면 설정을 다시 로드
+  useEffect(() => {
+    const saved = localStorage.getItem(`harness-settings-${currentRole}`)
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as Settings
+        if (!parsed.password) {
+          parsed.password = defaultSettings[currentRole].password
+        }
+        if (!parsed.exchangeRateMode) {
+          parsed.exchangeRateMode = defaultSettings[currentRole].exchangeRateMode
+        }
+        setSettings(parsed)
+      } catch (e) {
+        setSettings(defaultSettings[currentRole])
+      }
+    } else {
+      setSettings(defaultSettings[currentRole])
+    }
+    setCurrentPasswordInput('')
+    setNewPasswordInput('')
+    setConfirmPasswordInput('')
+    setPwError(null)
+    setPwSuccess(null)
+  }, [currentRole])
+
+  const updateSetting = <K extends keyof Settings>(key: K, value: Settings[K]) => {
+    const newSettings = { ...settings, [key]: value }
+    setSettings(newSettings)
+    localStorage.setItem(`harness-settings-${currentRole}`, JSON.stringify(newSettings))
+    onSettingsChange(currentRole, newSettings)
+  }
+
+  // 비밀번호 변경 액션 핸들러
+  const handlePasswordUpdate = (e: React.FormEvent) => {
+    e.preventDefault()
+    setPwError(null)
+    setPwSuccess(null)
+
+    const actualCurrentPassword = settings.password || defaultSettings[currentRole].password
+
+    if (currentPasswordInput !== actualCurrentPassword) {
+      setPwError('이전 비밀번호가 올바르지 않습니다.')
+      return
+    }
+
+    if (!newPasswordInput) {
+      setPwError('새 비밀번호를 입력해 주십시오.')
+      return
+    }
+
+    if (newPasswordInput !== confirmPasswordInput) {
+      setPwError('새 비밀번호와 확인 입력이 일치하지 않습니다.')
+      return
+    }
+
+    updateSetting('password', newPasswordInput)
+    setPwSuccess('비밀번호가 안전하게 업데이트되었습니다.')
+    
+    setCurrentPasswordInput('')
+    setNewPasswordInput('')
+    setConfirmPasswordInput('')
+  }
+
+  const handleReset = () => {
+    const defaults = defaultSettings[currentRole]
+    setSettings(defaults)
+    localStorage.setItem(`harness-settings-${currentRole}`, JSON.stringify(defaults))
+    onSettingsChange(currentRole, defaults)
+    setPwError(null)
+    setPwSuccess(null)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <section className="panel">
+        <div className="panel-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+          <div>
+            <h2 style={{ fontSize: '1.4rem', margin: 0, fontWeight: 800, letterSpacing: '-0.5px' }}>
+              Console Preferences
+            </h2>
+            <p className="subtitle" style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', marginTop: '0.3rem', fontWeight: 500 }}>
+              {currentRole === 'ceo' ? '대표님' : '부대표님'} 계정의 시스템 테마, 기준 환율 공식, 비밀번호 및 작동 환경을 관리합니다.
+            </p>
+          </div>
+          <button
+            onClick={onLogout}
+            style={{
+              padding: '0.4rem 0.8rem',
+              borderRadius: '6px',
+              border: '1px solid var(--color-danger)',
+              background: 'transparent',
+              color: 'var(--color-danger)',
+              fontWeight: 600,
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            로그아웃
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          {/* 1. Theme Configuration */}
+          <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '1.5rem', alignItems: 'center', paddingBottom: '1.2rem', borderBottom: '1px solid var(--color-border)' }}>
+            <div>
+              <strong style={{ display: 'block', fontSize: '0.95rem' }}>대시보드 전용 테마</strong>
+              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>기본 브라우저 설정을 우회하고 고정합니다.</span>
+            </div>
+            <div style={{ display: 'flex', gap: '0.8rem' }}>
+              <button
+                type="button"
+                onClick={() => updateSetting('theme', 'dark')}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--color-border)',
+                  background: settings.theme === 'dark' ? 'var(--color-surface-lighter)' : 'transparent',
+                  color: settings.theme === 'dark' ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                다크 모드 (Dark Mode)
+              </button>
+              <button
+                type="button"
+                onClick={() => updateSetting('theme', 'light')}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--color-border)',
+                  background: settings.theme === 'light' ? 'var(--color-surface-lighter)' : 'transparent',
+                  color: settings.theme === 'light' ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                라이트 모드 (Light Mode)
+              </button>
+            </div>
+          </div>
+
+          {/* 2. Exchange Rate Selector (실시간 환율 적용 vs 기준환율 수동설정) */}
+          <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '1.5rem', alignItems: 'start', paddingBottom: '1.2rem', borderBottom: '1px solid var(--color-border)' }}>
+            <div>
+              <strong style={{ display: 'block', fontSize: '0.95rem' }}>기준 환율 공식 설정</strong>
+              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>통계 수치 연산에 적용할 환율 연동 방식입니다.</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', width: '100%' }}>
+              <div style={{ display: 'flex', gap: '0.8rem' }}>
+                <button
+                  type="button"
+                  onClick={() => updateSetting('exchangeRateMode', 'realtime')}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    borderRadius: '6px',
+                    border: settings.exchangeRateMode === 'realtime' ? '1px solid var(--color-accent)' : '1px solid var(--color-border)',
+                    background: settings.exchangeRateMode === 'realtime' ? 'var(--color-accent)' : 'var(--color-surface-lighter)',
+                    color: settings.exchangeRateMode === 'realtime' ? '#fff' : 'var(--color-text-muted)',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    boxShadow: settings.exchangeRateMode === 'realtime' ? '0 2px 6px rgba(9, 132, 227, 0.2)' : 'none',
+                  }}
+                >
+                  실시간 환율 적용 (Real-time)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateSetting('exchangeRateMode', 'manual')}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    borderRadius: '6px',
+                    border: settings.exchangeRateMode === 'manual' ? '1px solid var(--color-accent)' : '1px solid var(--color-border)',
+                    background: settings.exchangeRateMode === 'manual' ? 'var(--color-accent)' : 'var(--color-surface-lighter)',
+                    color: settings.exchangeRateMode === 'manual' ? '#fff' : 'var(--color-text-muted)',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    boxShadow: settings.exchangeRateMode === 'manual' ? '0 2px 6px rgba(9, 132, 227, 0.2)' : 'none',
+                  }}
+                >
+                  기준환율 수동 설정 (Manual)
+                </button>
+              </div>
+
+              {/* 수동 설정 옵션 선택 시에만 우아하게 노출되는 초콤팩트 슬라이더 */}
+              {settings.exchangeRateMode === 'manual' && (
+                <div 
+                  className="compact-slider-panel"
+                  style={{ 
+                    marginTop: '0.5rem', 
+                    padding: '0.5rem 0.8rem', 
+                    background: 'var(--color-surface-lighter)', 
+                    borderRadius: '6px', 
+                    border: '1px solid var(--color-border)',
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '0.6rem',
+                    maxWidth: '300px', // 극도로 콤팩트화
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    animation: 'fadeIn 0.2s ease'
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => updateSetting('exchangeRate', Math.max(1300, settings.exchangeRate - 5))}
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--color-border)',
+                      background: 'var(--color-surface)',
+                      color: 'var(--color-text)',
+                      fontWeight: 'bold',
+                      fontSize: '0.85rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      userSelect: 'none',
+                      transition: 'all 0.1s ease'
+                    }}
+                  >
+                    -
+                  </button>
+                  <input
+                    type="range"
+                    min="1300"
+                    max="1500"
+                    step="5"
+                    value={settings.exchangeRate}
+                    onChange={e => updateSetting('exchangeRate', Number(e.target.value))}
+                    className="compact-slider"
+                    style={{ 
+                      flex: 1, 
+                      cursor: 'pointer', 
+                      height: '4px',
+                      borderRadius: '2px',
+                      minWidth: '80px',
+                      maxWidth: '120px'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => updateSetting('exchangeRate', Math.min(1500, settings.exchangeRate + 5))}
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--color-border)',
+                      background: 'var(--color-surface)',
+                      color: 'var(--color-text)',
+                      fontWeight: 'bold',
+                      fontSize: '0.85rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      userSelect: 'none',
+                      transition: 'all 0.1s ease'
+                    }}
+                  >
+                    +
+                  </button>
+                  <strong style={{ fontSize: '0.85rem', color: 'var(--color-accent)', fontFamily: 'monospace', minWidth: '55px', textAlign: 'right' }}>
+                    {settings.exchangeRate}원
+                  </strong>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 3. Refresh Interval */}
+          <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '1.5rem', alignItems: 'center', paddingBottom: '1.2rem', borderBottom: '1px solid var(--color-border)' }}>
+            <div>
+              <strong style={{ display: 'block', fontSize: '0.95rem' }}>자동 동기화 주기</strong>
+              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>백엔드 통계 데이터의 자동 갱신 빈도를 정합니다.</span>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              {[30, 60, 300, 600, 1800].map(sec => {
+                const isSelected = settings.refreshInterval === sec
+                return (
+                  <button
+                    key={sec}
+                    type="button"
+                    onClick={() => updateSetting('refreshInterval', sec)}
+                    style={{
+                      padding: '0.4rem 0.8rem',
+                      borderRadius: '6px',
+                      border: isSelected ? '1px solid var(--color-accent)' : '1px solid var(--color-border)',
+                      background: isSelected ? 'var(--color-accent)' : 'var(--color-surface-lighter)',
+                      color: isSelected ? '#fff' : 'var(--color-text-muted)',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      boxShadow: isSelected ? '0 2px 6px rgba(9, 132, 227, 0.2)' : 'none',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    {sec >= 60 ? `${sec / 60}분` : `${sec}초`}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 4. Password Update Form (비밀번호 변경 및 보안 2차 검증) */}
+          <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '1.5rem', alignItems: 'start', paddingBottom: '1.2rem', borderBottom: '1px solid var(--color-border)' }}>
+            <div>
+              <strong style={{ display: 'block', fontSize: '0.95rem' }}>비밀번호 변경</strong>
+              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>이전 비밀번호와 새 비밀번호 교차 검증을 수행합니다.</span>
+            </div>
+            <form onSubmit={handlePasswordUpdate} style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', maxWidth: '300px', width: '100%' }}>
+              <input
+                type="password"
+                placeholder="이전 비밀번호"
+                value={currentPasswordInput}
+                onChange={e => setCurrentPasswordInput(e.target.value)}
+                className="settings-password-input"
+              />
+              <input
+                type="password"
+                placeholder="새 비밀번호"
+                value={newPasswordInput}
+                onChange={e => setNewPasswordInput(e.target.value)}
+                className="settings-password-input"
+              />
+              <input
+                type="password"
+                placeholder="새 비밀번호 확인"
+                value={confirmPasswordInput}
+                onChange={e => setConfirmPasswordInput(e.target.value)}
+                className="settings-password-input"
+              />
+              {pwError && (
+                <span style={{ color: 'var(--color-danger)', fontSize: '0.75rem', fontWeight: 600 }}>
+                  {pwError}
+                </span>
+              )}
+              {pwSuccess && (
+                <span style={{ color: 'var(--color-ok)', fontSize: '0.75rem', fontWeight: 600 }}>
+                  {pwSuccess}
+                </span>
+              )}
+              <button
+                type="submit"
+                style={{
+                  padding: '0.5rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: 'var(--color-accent)',
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(9, 132, 227, 0.2)',
+                  transition: 'all 0.15s ease',
+                  marginTop: '0.2rem'
+                }}
+              >
+                비밀번호 업데이트
+              </button>
+            </form>
+          </div>
+
+          {/* 5. Nickname */}
+          <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '1.5rem', alignItems: 'center', paddingBottom: '1.2rem', borderBottom: '1px solid var(--color-border)' }}>
+            <div>
+              <strong style={{ display: 'block', fontSize: '0.95rem' }}>호칭 및 닉네임 설정</strong>
+              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>탑바 및 메시지 패널에 반영될 개인 호칭입니다.</span>
+            </div>
+            <input
+              type="text"
+              value={settings.nickname}
+              onChange={e => updateSetting('nickname', e.target.value)}
+              style={{
+                maxWidth: '300px',
+                width: '100%',
+                padding: '0.6rem',
+                borderRadius: '6px',
+                border: '1px solid var(--color-border)',
+                background: 'var(--color-surface-lighter)',
+                color: 'var(--color-text)',
+                fontSize: '0.9rem',
+                outline: 'none',
+              }}
+            />
+          </div>
+
+          {/* 6. Welcome Message */}
+          <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '1.5rem', alignItems: 'start', paddingBottom: '1.2rem' }}>
+            <div>
+              <strong style={{ display: 'block', fontSize: '0.95rem' }}>상단 퍼스널 웰컴 문구</strong>
+              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>로그인 완료 시 대시보드 첫머리에 표기되는 지시선 문장입니다.</span>
+            </div>
+            <textarea
+              value={settings.welcomeMessage}
+              onChange={e => updateSetting('welcomeMessage', e.target.value)}
+              rows={3}
+              style={{
+                width: '100%',
+                padding: '0.6rem',
+                borderRadius: '6px',
+                border: '1px solid var(--color-border)',
+                background: 'var(--color-surface-lighter)',
+                color: 'var(--color-text)',
+                fontSize: '0.9rem',
+                outline: 'none',
+                resize: 'vertical',
+              }}
+            />
+          </div>
+        </div>
+
+        <div style={{ marginTop: '2rem', display: 'flex', gap: '1rem', justifyContent: 'flex-end', borderTop: '1px solid var(--color-border)', paddingTop: '1.5rem' }}>
+          <button
+            onClick={handleReset}
+            style={{
+              padding: '0.5rem 1rem',
+              borderRadius: '6px',
+              border: '1px solid var(--color-border)',
+              background: 'transparent',
+              color: 'var(--color-text-muted)',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+            }}
+          >
+            기본값 초기화
+          </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+export type { Settings }
