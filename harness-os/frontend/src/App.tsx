@@ -7,6 +7,7 @@ import { KpiCard, RiskBanner } from './components/KpiCard'
 import { SparkChart } from './components/SparkChart'
 import { JarvisConsole } from './components/JarvisConsole'
 import { TradingApiMonitor } from './components/TradingApiMonitor'
+import { DataCollectionMonitor } from './components/DataCollectionMonitor'
 import { formatUsd, formatKrw, formatPercent, platformLabel } from './components/utils'
 
 // Import newly structured pages
@@ -110,6 +111,7 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [arFilter, setArFilter] = useState<ArFilter>('open')
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0)
 
   // 로그인 시 역할 동기화
   useEffect(() => {
@@ -140,11 +142,24 @@ function App() {
     }
   }
 
+  const loadPendingApprovals = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/approvals?role=${viewRole}&box=pending`, { headers: authHeaders() })
+      if (!res.ok) return
+      const data = await res.json()
+      setPendingApprovalsCount(data?.counts?.pending ?? 0)
+    } catch {}
+  }, [viewRole])
+
   useEffect(() => {
     void loadDashboard()
-    const timer = setInterval(() => void loadDashboard({ silent: true }), 60_000)
+    void loadPendingApprovals()
+    const timer = setInterval(() => {
+      void loadDashboard({ silent: true })
+      void loadPendingApprovals()
+    }, 60_000)
     return () => clearInterval(timer)
-  }, [])
+  }, [loadPendingApprovals])
 
   const availablePlatforms = dashboard?.available_platforms ?? ['all']
   const activePlatformView = dashboard?.platform_views?.[selectedPlatform]
@@ -201,7 +216,7 @@ function App() {
         viewRole={viewRole}
         loading={loading}
         generatedAt={dashboard?.generated_at}
-        pendingApprovals={openAr}
+        pendingApprovals={pendingApprovalsCount}
         activeView={activeView}
         onChangeView={setActiveView}
         onLogout={handleLogout}
@@ -290,61 +305,10 @@ function App() {
             </div>
           </section>
 
-          {/* ── REAL-TIME DATA COLLECTION MONITOR ── */}
-          <section className="ops-section" style={{ marginTop: '1.5rem' }}>
-            <div className="section-head">
-              <h2>글로벌 18대 다국어 데이터 수집 및 연관성 필터링 현황</h2>
-              <p>전 세계에서 긁어모은 학부모/직장인 AI 불안 원천 데이터 실시간 모니터링</p>
-            </div>
-            <div className="panel" style={{ padding: '1.5rem' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
-                <div style={{ background: 'var(--color-surface-lighter)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-text-muted)', fontWeight: 700 }}>대기 중인 원천 신호 (Pending)</p>
-                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '1.8rem', fontWeight: 800, color: 'var(--color-warn)' }}>
-                    {dashboard?.data_collection_monitor?.pending_count ?? 0} <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>건</span>
-                  </p>
-                </div>
-                <div style={{ background: 'var(--color-surface-lighter)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-text-muted)', fontWeight: 700 }}>검증 통과 고가치 신호 (Passed)</p>
-                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '1.8rem', fontWeight: 800, color: 'var(--color-ok)' }}>
-                    {dashboard?.data_collection_monitor?.pass_count ?? 0} <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>건</span>
-                  </p>
-                </div>
-                <div style={{ background: 'var(--color-surface-lighter)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-text-muted)', fontWeight: 700 }}>연관성 탈락 신호 (Failed)</p>
-                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '1.8rem', fontWeight: 800, color: 'var(--color-text-muted)' }}>
-                    {dashboard?.data_collection_monitor?.fail_count ?? 0} <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>건</span>
-                  </p>
-                </div>
-                <div style={{ background: 'var(--color-surface-lighter)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-text-muted)', fontWeight: 700 }}>실시간 시스템 작동 상태</p>
-                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-accent)', display: 'flex', alignItems: 'center', gap: '0.4rem', height: '100%' }}>
-                    <span className="spinner" style={{ width: '14px', height: '14px', margin: 0 }} /> 
-                    {(dashboard?.data_collection_monitor?.pending_count ?? 0) > 0 ? "로컬 AI 필터링 중..." : "글로벌 다국어 수집 중..."}
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <h4 style={{ margin: '0 0 0.8rem 0', fontSize: '0.95rem', fontWeight: 700 }}>최근 유입된 전 세계 AI 불안 신호 토픽 (최신 5건)</h4>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                  {(dashboard?.data_collection_monitor?.recent_topics ?? []).map((topic: any, idx: number) => (
-                    <li key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 0.8rem', background: 'var(--color-surface-lighter)', borderRadius: '6px', border: '1px solid var(--color-border)', fontSize: '0.82rem' }}>
-                      <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '75%' }}>
-                        {topic.title}
-                      </span>
-                      <span className={topic.status === 'filtered_pass' ? 'badge-ok' : topic.status === 'filtered_fail' ? 'badge-dim' : 'badge-warn'}>
-                        {topic.status === 'filtered_pass' ? 'Passed' : topic.status === 'filtered_fail' ? 'Failed' : 'Pending'}
-                      </span>
-                    </li>
-                  ))}
-                  {(dashboard?.data_collection_monitor?.recent_topics ?? []).length === 0 && (
-                    <li style={{ textAlign: 'center', padding: '1rem', color: 'var(--color-text-muted)' }}>현재 수집된 신호 토픽이 없습니다.</li>
-                  )}
-                </ul>
-              </div>
-            </div>
-          </section>
+          {/* ── DATA COLLECTION MONITOR ── */}
+          {dashboard.data_collection_monitor && (
+            <DataCollectionMonitor monitor={dashboard.data_collection_monitor} />
+          )}
 
           {/* ── LAYER 2: OPERATIONS ── */}
           <section className="ops-section" aria-label="Trading operations">

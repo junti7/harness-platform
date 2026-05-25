@@ -777,20 +777,98 @@ def _execute_query(query: str, params: tuple[Any, ...] = ()) -> list[dict[str, A
     return execute_query(query, params=params, fetch=True) or []
 
 
+_CONFIGURED_LANGUAGES = [
+    {"code": "en", "label": "English", "flag": "🇺🇸"},
+    {"code": "es", "label": "Spanish", "flag": "🇪🇸"},
+    {"code": "fr", "label": "French", "flag": "🇫🇷"},
+    {"code": "de", "label": "German", "flag": "🇩🇪"},
+    {"code": "ja", "label": "Japanese", "flag": "🇯🇵"},
+    {"code": "zh", "label": "Chinese", "flag": "🇨🇳"},
+    {"code": "pt", "label": "Portuguese", "flag": "🇵🇹"},
+    {"code": "it", "label": "Italian", "flag": "🇮🇹"},
+    {"code": "ru", "label": "Russian", "flag": "🇷🇺"},
+    {"code": "ar", "label": "Arabic", "flag": "🇸🇦"},
+    {"code": "he", "label": "Hebrew", "flag": "🇮🇱"},
+    {"code": "hi", "label": "Hindi", "flag": "🇮🇳"},
+    {"code": "id", "label": "Indonesian", "flag": "🇮🇩"},
+    {"code": "tr", "label": "Turkish", "flag": "🇹🇷"},
+    {"code": "vi", "label": "Vietnamese", "flag": "🇻🇳"},
+    {"code": "nl", "label": "Dutch", "flag": "🇳🇱"},
+    {"code": "pl", "label": "Polish", "flag": "🇵🇱"},
+    {"code": "sv", "label": "Swedish", "flag": "🇸🇪"},
+    {"code": "ko", "label": "Korean", "flag": "🇰🇷"},
+]
+
+_CONFIGURED_SOURCES = [
+    {"id": "semantic_scholar", "label": "Semantic Scholar", "type": "academic"},
+    {"id": "arxiv_api", "label": "arXiv", "type": "academic"},
+    {"id": "youtube", "label": "YouTube", "type": "video"},
+    {"id": "rss", "label": "RSS", "type": "news"},
+]
+
+
 def _data_collection_monitor() -> dict[str, Any]:
     try:
-        pending = _execute_query("SELECT count(*) FROM raw_signals WHERE status = 'pending' AND domain = 'edu_consulting'")
-        passed = _execute_query("SELECT count(*) FROM raw_signals WHERE status = 'filtered_pass' AND domain = 'edu_consulting'")
-        failed = _execute_query("SELECT count(*) FROM raw_signals WHERE status = 'filtered_fail' AND domain = 'edu_consulting'")
-        topics = _execute_query("SELECT raw_data->>'title' as title, status, ingested_at FROM raw_signals WHERE domain = 'edu_consulting' ORDER BY ingested_at DESC LIMIT 5")
+        # 전체 카운트
+        totals = _execute_query(
+            "SELECT status, count(*) as cnt FROM raw_signals WHERE domain = 'edu_consulting' GROUP BY status"
+        )
+        counts: dict[str, int] = {r["status"]: int(r["cnt"]) for r in totals}
+        total = sum(counts.values())
+
+        # 소스별 집계
+        by_source = _execute_query(
+            "SELECT source, count(*) as cnt, max(ingested_at) as last_at "
+            "FROM raw_signals WHERE domain = 'edu_consulting' GROUP BY source"
+        )
+        source_map = {r["source"]: {"count": int(r["cnt"]), "last_at": str(r["last_at"] or "")} for r in by_source}
+
+        sources_out = []
+        for src in _CONFIGURED_SOURCES:
+            sid = src["id"]
+            # youtube는 source prefix 매칭
+            matched = {k: v for k, v in source_map.items() if k.startswith(sid) or k == sid}
+            s_count = sum(v["count"] for v in matched.values())
+            s_last = max((v["last_at"] for v in matched.values()), default="") if matched else ""
+            sources_out.append({
+                "id": sid,
+                "label": src["label"],
+                "type": src["type"],
+                "count": s_count,
+                "last_ingested_at": s_last,
+                "active": s_count > 0,
+            })
+
+        # 최근 활동 10건
+        recent = _execute_query(
+            "SELECT source, status, ingested_at, raw_data->>'title' as title "
+            "FROM raw_signals WHERE domain = 'edu_consulting' ORDER BY ingested_at DESC LIMIT 10"
+        )
+
         return {
-            "pending_count": int(pending[0]["count"]) if pending else 0,
-            "pass_count": int(passed[0]["count"]) if passed else 0,
-            "fail_count": int(failed[0]["count"]) if failed else 0,
-            "recent_topics": topics,
+            "total": total,
+            "pending_count": counts.get("pending", 0),
+            "pass_count": counts.get("filtered_pass", 0),
+            "fail_count": counts.get("filtered_fail", 0),
+            "sources": sources_out,
+            "configured_languages": _CONFIGURED_LANGUAGES,
+            "recent_activity": [
+                {
+                    "source": r["source"],
+                    "status": r["status"],
+                    "ingested_at": str(r["ingested_at"] or ""),
+                    "title": r["title"] or "(제목 없음)",
+                }
+                for r in recent
+            ],
         }
     except Exception:
-        return {"pending_count": 0, "pass_count": 0, "fail_count": 0, "recent_topics": []}
+        return {
+            "total": 0, "pending_count": 0, "pass_count": 0, "fail_count": 0,
+            "sources": _CONFIGURED_SOURCES,
+            "configured_languages": _CONFIGURED_LANGUAGES,
+            "recent_activity": [],
+        }
 
 
 def _empty_snapshot(platform: str | None = None) -> dict[str, Any]:
