@@ -7,7 +7,7 @@
     "legal_status": "low_risk_channels_approved (AR-039 legal_review_approve)",
     "note": "⚠️ 고위험 채널(맘카페 로그인영역·설문·광고)은 legal_review_approve 별도 충족 후 추가",
     "updated_at": "2026-05-25",
-    "version": "v0.3",
+    "version": "v0.4",
     "total_sources": 84
   },
   "sources": [
@@ -83,7 +83,8 @@
       "stale_minutes": 1440,
       "reliability_score": 0.85,
       "expected_signal_type": "K-12 education, AI policy, parents, teachers",
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "MIT_Tech_Review",
@@ -111,7 +112,8 @@
       "stale_minutes": 2880,
       "reliability_score": 0.8,
       "expected_signal_type": "한국 에듀테크 기업 동향, 투자, 비즈니스 모델",
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "교육부_보도자료",
@@ -154,7 +156,8 @@
       "stale_minutes": 10080,
       "reliability_score": 0.8,
       "expected_signal_type": "AI 리터러시 교육 사례, 커리큘럼, 비즈니스 모델",
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "TechCrunch_Education",
@@ -334,7 +337,8 @@
       ],
       "stale_minutes": 720,
       "reliability_score": 0.8,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "동아일보_교육",
@@ -347,7 +351,8 @@
       ],
       "stale_minutes": 720,
       "reliability_score": 0.8,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "중앙일보_교육",
@@ -360,7 +365,8 @@
       ],
       "stale_minutes": 720,
       "reliability_score": 0.8,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "한겨레_교육",
@@ -373,7 +379,8 @@
       ],
       "stale_minutes": 720,
       "reliability_score": 0.78,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "연합뉴스_교육",
@@ -386,7 +393,8 @@
       ],
       "stale_minutes": 720,
       "reliability_score": 0.85,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "에듀동아",
@@ -399,7 +407,8 @@
       ],
       "stale_minutes": 720,
       "reliability_score": 0.82,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "에듀프레스",
@@ -424,7 +433,8 @@
       ],
       "stale_minutes": 1440,
       "reliability_score": 0.72,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "AI타임스",
@@ -450,7 +460,8 @@
       ],
       "stale_minutes": 720,
       "reliability_score": 0.78,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "매일경제",
@@ -474,7 +485,8 @@
       ],
       "stale_minutes": 720,
       "reliability_score": 0.78,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "The74Million",
@@ -512,7 +524,8 @@
       ],
       "stale_minutes": 1440,
       "reliability_score": 0.85,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "eLearning_Industry",
@@ -538,7 +551,8 @@
       ],
       "stale_minutes": 1440,
       "reliability_score": 0.85,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "VentureBeat_AI",
@@ -576,7 +590,8 @@
       ],
       "stale_minutes": 1440,
       "reliability_score": 0.92,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "KEDI_한국교육개발원",
@@ -629,7 +644,8 @@
       ],
       "stale_minutes": 10080,
       "reliability_score": 0.9,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "Brookings_Education",
@@ -642,7 +658,8 @@
       ],
       "stale_minutes": 10080,
       "reliability_score": 0.9,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "RAND_Education",
@@ -655,7 +672,8 @@
       ],
       "stale_minutes": 10080,
       "reliability_score": 0.9,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "WEF_Education",
@@ -668,7 +686,8 @@
       ],
       "stale_minutes": 10080,
       "reliability_score": 0.88,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "McKinsey_AI",
@@ -680,7 +699,8 @@
       ],
       "stale_minutes": 10080,
       "reliability_score": 0.85,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "OpenAlex_edu",
@@ -806,7 +826,8 @@
       ],
       "stale_minutes": 1440,
       "reliability_score": 0.9,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "OpenAI_Blog",
@@ -819,7 +840,8 @@
       ],
       "stale_minutes": 1440,
       "reliability_score": 0.9,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "max_items": 50
     },
     {
       "name": "Google_DeepMind_Blog",
@@ -832,7 +854,8 @@
       ],
       "stale_minutes": 1440,
       "reliability_score": 0.9,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "max_items": 50
     },
     {
       "name": "Khan_Academy_Blog",
@@ -870,7 +893,8 @@
       ],
       "stale_minutes": 1440,
       "reliability_score": 0.85,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "Substack_Mollick_OneUsefulThing",
@@ -897,7 +921,8 @@
       ],
       "stale_minutes": 1440,
       "reliability_score": 0.82,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "ImportAI_JackClark",
@@ -1019,7 +1044,8 @@
       ],
       "stale_minutes": 720,
       "reliability_score": 0.8,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "뉴시스_교육",
@@ -1032,7 +1058,8 @@
       ],
       "stale_minutes": 720,
       "reliability_score": 0.78,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "Inside_Higher_Ed",
@@ -1108,7 +1135,8 @@
       ],
       "stale_minutes": 2880,
       "reliability_score": 0.85,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "ISTE_Blog",
@@ -1121,7 +1149,8 @@
       ],
       "stale_minutes": 10080,
       "reliability_score": 0.85,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "Substack_TheRundown",
@@ -1134,7 +1163,8 @@
       ],
       "stale_minutes": 1440,
       "reliability_score": 0.82,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     },
     {
       "name": "ITWorld_Korea",
@@ -1147,7 +1177,8 @@
       ],
       "stale_minutes": 720,
       "reliability_score": 0.78,
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": false
     }
   ],
   "youtube_targets": {

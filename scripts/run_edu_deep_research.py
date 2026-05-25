@@ -140,15 +140,19 @@ class SaturationTracker:
 # ---------------------------------------------------------------------------
 
 def collect_rss(sources: list[dict], logger: HarnessLogger,
-                tracker: SaturationTracker, dry_run: bool) -> dict:
+                tracker: SaturationTracker, dry_run: bool,
+                max_rss_items: int = 50) -> dict:
     rss_sources = [s for s in sources
-                   if s.get("type") in ("rss",) and s.get("legal_risk", "low") != "high"]
+                   if s.get("type") in ("rss",)
+                   and s.get("legal_risk", "low") != "high"
+                   and s.get("active", True)]
     stats = {"attempted": len(rss_sources), "new": 0, "duplicate": 0, "error": 0}
 
     for src in rss_sources:
         name = src["name"]
         url = src["url"]
-        logger.info(f"RSS 수집: {name} ({url})")
+        cap = src.get("max_items", max_rss_items)
+        logger.info(f"RSS 수집: {name} ({url}) [최대 {cap}개]")
         try:
             feed = feedparser.parse(url)
             if not feed.entries:
@@ -156,8 +160,9 @@ def collect_rss(sources: list[dict], logger: HarnessLogger,
                 stats["error"] += 1
                 continue
 
+            entries = feed.entries[:cap]
             src_new = 0
-            for entry in feed.entries:
+            for entry in entries:
                 raw = {
                     "title": entry.get("title", ""),
                     "url": entry.get("link", ""),
@@ -178,8 +183,9 @@ def collect_rss(sources: list[dict], logger: HarnessLogger,
                     else:
                         stats["duplicate"] += 1
 
-            tracker.record(name, src_new, len(feed.entries))
-            logger.info(f"  완료: {src_new}개 신규 / {len(feed.entries)}개 전체")
+            total = len(feed.entries)
+            tracker.record(name, src_new, len(entries))
+            logger.info(f"  완료: {src_new}개 신규 / {len(entries)}개 처리 (전체 {total}개)")
 
         except Exception as e:
             logger.warning(f"  RSS 실패 ({name}): {e}")
@@ -292,8 +298,33 @@ SCHOLAR_QUERIES = [
     "AI 일자리 대체 직장인 불안",
 ]
 
+# en_only 모드: 영어 핵심 쿼리만 (~20개, 빠름)
+SCHOLAR_QUERIES_EN_ONLY = [
+    "AI literacy cognitive offloading students",
+    "generative AI student learning critical thinking",
+    "metacognition AI dependence children education",
+    "AI homework help academic achievement",
+    "digital literacy parents children",
+    "AI replacement anxiety jobs labor",
+    "automation anxiety workplace psychological distress",
+    "generative AI parental anxiety children",
+    "AI educational technology home learning impact",
+    "algorithmic replacement white collar jobs anxiety",
+    "coping strategies AI workplace disruption",
+    "teacher perception generative AI classrooms",
+    "critical thinking skills AI age education",
+    "AI skill bubble workforce exaggerating skills",
+    "student dependence on ChatGPT learning loss",
+    "k-12 AI safety guidelines parental concern",
+    "job displacement fears artificial intelligence",
+    "psychological impact of AI on workers",
+    "educational inequality AI access digital divide",
+    "AI tutoring systems parent engagement",
+]
+
+
 def collect_semantic_scholar(logger: HarnessLogger, tracker: SaturationTracker,
-                             dry_run: bool) -> dict:
+                             dry_run: bool, scholar_mode: str = "en_only") -> dict:
     endpoint = "https://api.semanticscholar.org/graph/v1/paper/search"
     fields = "paperId,title,abstract,year,authors,externalIds,url"
     stats = {"new": 0, "duplicate": 0, "error": 0}
@@ -304,7 +335,9 @@ def collect_semantic_scholar(logger: HarnessLogger, tracker: SaturationTracker,
     if api_key:
         headers["x-api-key"] = api_key
 
-    for query in SCHOLAR_QUERIES:
+    queries = SCHOLAR_QUERIES_EN_ONLY if scholar_mode == "en_only" else SCHOLAR_QUERIES
+    logger.info(f"Scholar 모드: {scholar_mode} ({len(queries)}개 쿼리)")
+    for query in queries:
         logger.info(f"Semantic Scholar: {query}")
         # 지수 백오프 재시도 (429 대응)
         resp = None
@@ -1226,6 +1259,11 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="DB 저장 없이 수집 예상 항목만 출력")
     parser.add_argument("--domain", default=DOMAIN, help="도메인 태그 (기본: edu_consulting)")
     parser.add_argument("--extra-query", default="", help="추가 연구 주제 쿼리 (scholar + arXiv 앞에 삽입)")
+    parser.add_argument("--max-rss-items", type=int, default=50,
+                        help="RSS 소스당 최대 수집 항목 수 (기본: 50)")
+    parser.add_argument("--scholar-mode", default="en_only",
+                        choices=["en_only", "multilingual"],
+                        help="Scholar 쿼리 모드: en_only(영어 20개, 빠름) / multilingual(60개+, 느림)")
     args = parser.parse_args()
 
     enabled = {s.strip() for s in args.sources.split(",")}
@@ -1262,13 +1300,13 @@ def main():
 
     if "rss" in enabled or "all" in enabled:
         logger.info("--- [RSS 수집] ---")
-        r = collect_rss(sources, logger, tracker, dry_run)
+        r = collect_rss(sources, logger, tracker, dry_run, max_rss_items=args.max_rss_items)
         results["rss"] = r
         total_new += r["new"]
 
     if "scholar" in enabled or "all" in enabled:
         logger.info("--- [Semantic Scholar API] ---")
-        r = collect_semantic_scholar(logger, tracker, dry_run)
+        r = collect_semantic_scholar(logger, tracker, dry_run, scholar_mode=args.scholar_mode)
         results["scholar"] = r
         total_new += r["new"]
 

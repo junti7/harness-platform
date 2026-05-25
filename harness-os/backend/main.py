@@ -5,9 +5,11 @@ import json
 import os
 import re
 import sys
+import shlex
 import threading
 import time
 import html
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -34,6 +36,15 @@ except ImportError:
 TARGET_FREE_SUBSCRIBERS = 50
 TARGET_PAID_SUBSCRIBERS = 1
 CACHE_TTL_SECONDS = int(os.getenv("HARNESS_OS_CACHE_SECONDS", "60"))
+GMAIL_RUNTIME_ENABLED = os.getenv("HARNESS_GMAIL_RUNTIME_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+GMAIL_RUNTIME_HOST = os.getenv("HARNESS_GMAIL_RUNTIME_HOST", "").strip()
+GMAIL_RUNTIME_USER = os.getenv("HARNESS_GMAIL_RUNTIME_USER", "").strip()
+GMAIL_RUNTIME_ACCOUNT = os.getenv("HARNESS_GMAIL_ACCOUNT", "").strip()
+GMAIL_RUNTIME_GOG_BIN = os.getenv("HARNESS_GMAIL_GOG_BIN", "/opt/homebrew/bin/gog").strip()
+GMAIL_RUNTIME_SSH_BIN = os.getenv("HARNESS_GMAIL_SSH_BIN", "ssh").strip()
+GMAIL_RUNTIME_TIMEOUT_S = int(os.getenv("HARNESS_GMAIL_TIMEOUT_S", "20"))
+GMAIL_RUNTIME_KEYRING_BACKEND = os.getenv("HARNESS_GMAIL_KEYRING_BACKEND", "").strip()
+GMAIL_RUNTIME_KEYRING_PASSWORD = os.getenv("HARNESS_GMAIL_KEYRING_PASSWORD", "").strip()
 
 AR_TRACKER_PATH = PROJECT_ROOT / "docs" / "reports" / "ar_tracker.jsonl"
 AR_REGISTRY_PATH = PROJECT_ROOT / "docs" / "operations" / "ACTION_REQUIRED_REGISTRY.json"
@@ -162,6 +173,8 @@ class PipelineRunRequest(BaseModel):
     source: str
     dry_run: bool = False
     topic: str = ""  # 연구 주제 (비어있으면 기본 쿼리 사용)
+    max_rss_items: int = 50  # RSS 소스당 최대 수집 항목 수
+    scholar_mode: str = "en_only"  # "en_only" | "multilingual"
 
 
 class TradingWatchlistToggleRequest(BaseModel):
@@ -912,6 +925,101 @@ def _execute_query(query: str, params: tuple[Any, ...] = ()) -> list[dict[str, A
     from core.database import execute_query
 
     return execute_query(query, params=params, fetch=True) or []
+
+
+def _gmail_runtime_target() -> str | None:
+    if not GMAIL_RUNTIME_HOST or not GMAIL_RUNTIME_USER:
+        return None
+    return f"{GMAIL_RUNTIME_USER}@{GMAIL_RUNTIME_HOST}"
+
+
+def _gmail_runtime_ready() -> tuple[bool, str | None]:
+    if not GMAIL_RUNTIME_ENABLED:
+        return False, "HARNESS_GMAIL_RUNTIME_ENABLED=false"
+    if not GMAIL_RUNTIME_ACCOUNT:
+        return False, "HARNESS_GMAIL_ACCOUNT missing"
+    if _gmail_runtime_target() is None:
+        return False, "HARNESS_GMAIL_RUNTIME_HOST or HARNESS_GMAIL_RUNTIME_USER missing"
+    return True, None
+
+
+def _gmail_remote_command(query: str, limit: int) -> str:
+    quoted_query = shlex.quote(query)
+    quoted_account = shlex.quote(GMAIL_RUNTIME_ACCOUNT)
+    quoted_gog = shlex.quote(GMAIL_RUNTIME_GOG_BIN)
+    exports = ["export PATH=/opt/homebrew/bin:/usr/bin:/bin"]
+    if GMAIL_RUNTIME_KEYRING_BACKEND:
+        exports.append(f"export GOG_KEYRING_BACKEND={shlex.quote(GMAIL_RUNTIME_KEYRING_BACKEND)}")
+    if GMAIL_RUNTIME_KEYRING_PASSWORD:
+        exports.append(f"export GOG_KEYRING_PASSWORD={shlex.quote(GMAIL_RUNTIME_KEYRING_PASSWORD)}")
+    exports.append(
+        f"{quoted_gog} gmail search {quoted_query} "
+        f"-a {quoted_account} -j --results-only --gmail-no-send --max {limit}"
+    )
+    return "; ".join(exports)
+
+
+def _gmail_search_runtime(query: str, limit: int = 10) -> dict[str, Any]:
+    ready, reason = _gmail_runtime_ready()
+    if not ready:
+        raise HTTPException(status_code=503, detail=f"Gmail runtime not ready: {reason}")
+
+    safe_limit = max(1, min(limit, 25))
+    cache_key = f"gmail_search:{query}:{safe_limit}"
+
+    def producer() -> dict[str, Any]:
+        target = _gmail_runtime_target()
+        assert target is not None
+        proc = subprocess.run(
+            [GMAIL_RUNTIME_SSH_BIN, target, _gmail_remote_command(query, safe_limit)],
+            cwd=str(PROJECT_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=GMAIL_RUNTIME_TIMEOUT_S,
+            check=False,
+        )
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or "").strip()[:800]
+            raise HTTPException(status_code=502, detail=f"Gmail search failed: {detail or 'unknown error'}")
+
+        raw = (proc.stdout or "").strip()
+        try:
+            items = json.loads(raw) if raw else []
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=502, detail=f"Gmail search returned invalid JSON: {exc}") from exc
+
+        if not isinstance(items, list):
+            items = [items]
+
+        normalized: list[dict[str, Any]] = []
+        for item in items[:safe_limit]:
+            if not isinstance(item, dict):
+                continue
+            normalized.append(
+                {
+                    "id": str(item.get("id") or ""),
+                    "subject": str(item.get("subject") or ""),
+                    "from": str(item.get("from") or ""),
+                    "date": str(item.get("date") or ""),
+                    "labels": item.get("labels") if isinstance(item.get("labels"), list) else [],
+                    "messageCount": int(item.get("messageCount") or 0),
+                }
+            )
+
+        return {
+            "runtime": {
+                "enabled": True,
+                "target": target,
+                "account": GMAIL_RUNTIME_ACCOUNT,
+                "mode": "ssh_gog_read_only",
+            },
+            "query": query,
+            "limit": safe_limit,
+            "count": len(normalized),
+            "items": normalized,
+        }
+
+    return _cached(cache_key, producer)
 
 
 _CONFIGURED_LANGUAGES = [
@@ -2388,6 +2496,20 @@ def get_meeting_note_detail(correlation_id: str, _: None = Depends(_require_secr
     return _meeting_note_detail(correlation_id)
 
 
+@app.get("/api/gmail/search")
+def get_gmail_search(
+    q: str,
+    limit: int = 10,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    query = q.strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Query is required")
+    if len(query) > 500:
+        raise HTTPException(status_code=400, detail="Query too long")
+    return _gmail_search_runtime(query, limit)
+
+
 @app.get("/api/conference-room")
 def get_conference_room(_: None = Depends(_require_secret)) -> dict[str, Any]:
     return _conference_room_payload()
@@ -2934,6 +3056,8 @@ def run_pipeline_job(body: PipelineRunRequest, _: None = Depends(_require_secret
             cmd += ["--dry-run"]
         if body.topic:
             cmd += ["--extra-query", body.topic]
+        cmd += ["--max-rss-items", str(body.max_rss_items)]
+        cmd += ["--scholar-mode", body.scholar_mode]
 
     job_id = str(uuid4())[:8]
 

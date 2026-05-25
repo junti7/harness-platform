@@ -157,6 +157,8 @@ export function PipelinePage({ apiBase, authHeaders }: Props) {
   const [selectedTopic, setSelectedTopic] = useState('')
   const [customTopicInput, setCustomTopicInput] = useState('')
   const [topicMode, setTopicMode] = useState<'preset' | 'custom'>('preset')
+  const [maxRssItems, setMaxRssItems] = useState(50)
+  const [scholarMode, setScholarMode] = useState<'en_only' | 'multilingual'>('en_only')
 
   // 연구 주제 관리 탭 상태
   const [newQuery, setNewQuery] = useState('')
@@ -250,7 +252,7 @@ export function PipelinePage({ apiBase, authHeaders }: Props) {
       const res = await fetch(`${apiBase}/api/pipeline/run`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source, dry_run: dryRun, topic }),
+        body: JSON.stringify({ source, dry_run: dryRun, topic, max_rss_items: maxRssItems, scholar_mode: scholarMode }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -432,6 +434,68 @@ export function PipelinePage({ apiBase, authHeaders }: Props) {
                 💡 주제 없이 실행하면 기본 쿼리(AI literacy, cognitive offloading 등)로 수집합니다.
               </p>
             )}
+          </div>
+
+          {/* 1.5단계: 수집 설정 */}
+          <div className="panel" style={{ padding: '1.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 22, height: 22, borderRadius: '50%',
+                background: 'var(--color-accent)', color: '#fff',
+                fontSize: '0.75rem', fontWeight: 800,
+              }}>⚙</span>
+              <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 700 }}>수집 설정</h3>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
+              {/* RSS 최대 항목 */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--color-text)' }}>
+                  RSS 소스당 최대 항목: <span style={{ color: 'var(--color-accent)', fontWeight: 800 }}>{maxRssItems}개</span>
+                </label>
+                <input
+                  type="range"
+                  min={10} max={200} step={10}
+                  value={maxRssItems}
+                  onChange={e => setMaxRssItems(Number(e.target.value))}
+                  style={{ width: '100%', accentColor: 'var(--color-accent)' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '0.2rem' }}>
+                  <span>10개 (빠름)</span>
+                  <span>200개 (느림)</span>
+                </div>
+                <p style={{ margin: '0.4rem 0 0', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                  OpenAI Blog처럼 항목이 많은 소스를 제한합니다. 기본값 50 권장.
+                </p>
+              </div>
+              {/* Scholar 모드 */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--color-text)' }}>
+                  Semantic Scholar 쿼리 모드
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {([
+                    { value: 'en_only', label: '영어 핵심만 (빠름)', desc: '20개 쿼리 · 약 5~10분' },
+                    { value: 'multilingual', label: '전체 다국어 (느림)', desc: '60개+ 쿼리 · 약 30분 · 429 위험' },
+                  ] as const).map(opt => (
+                    <label key={opt.value} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name="scholarMode"
+                        value={opt.value}
+                        checked={scholarMode === opt.value}
+                        onChange={() => setScholarMode(opt.value)}
+                        style={{ marginTop: '0.15rem', accentColor: 'var(--color-accent)' }}
+                      />
+                      <div>
+                        <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>{opt.label}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>{opt.desc}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* 2단계: 소스별 실행 */}
@@ -824,7 +888,7 @@ function JobPanel({ job, expanded, onToggle, onStop }: {
   onToggle: () => void
   onStop: () => void
 }) {
-  const [tick, setTick] = useState(0)
+  const [, setTick] = useState(0)
   const logEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
