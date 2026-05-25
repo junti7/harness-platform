@@ -479,62 +479,78 @@ def collect_youtube(yt_targets: list[dict], logger: HarnessLogger,
             "--sub-lang", "ko,en",
             "--write-info-json",
             "--playlist-end", "10",      # 최근 10개만 (초기 스윕)
+            "--sleep-requests", "2.0",    # API/페이지 요청 간 2초 대기
+            "--sleep-interval", "5.0",    # 개별 비디오 다운로드 동작 간 5초 대기
+            "--max-sleep-interval", "10.0", # 지연 행동을 랜덤화하여 봇 감지 우회
             "--quiet",
             "--no-warnings",
             "-o", str(out_dir / "%(id)s.%(ext)s"),
             url,
         ]
 
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-            if result.returncode != 0:
-                logger.warning(f"  yt-dlp 오류 ({name}): {result.stderr[:200]}")
+        success = False
+        for attempt in range(1, 3):
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                if result.returncode != 0:
+                    err_msg = result.stderr or ""
+                    if "429" in err_msg or "Too Many Requests" in err_msg:
+                        backoff = 60 * attempt
+                        logger.warning(f"  [Attempt {attempt}/2] HTTP 429 감지 — {backoff}초 대기...")
+                        time.sleep(backoff)
+                        continue
+                    else:
+                        logger.warning(f"  yt-dlp 오류 ({name}): {err_msg[:200]}")
+                        stats["error"] += 1
+                        break
+                else:
+                    success = True
+                    break
+            except subprocess.TimeoutExpired:
+                logger.warning(f"  yt-dlp 타임아웃 ({name})")
                 stats["error"] += 1
-                continue
+                break
 
-            # 생성된 .info.json 파일들을 raw_signals에 저장
-            info_files = list(out_dir.glob("*.info.json"))
-            ch_new = 0
-            for info_path in info_files:
-                try:
-                    info = json.loads(info_path.read_text(encoding="utf-8"))
-                    raw = {
-                        "title": info.get("title", ""),
-                        "url": f"https://www.youtube.com/watch?v={info.get('id', '')}",
-                        "description": (info.get("description") or "")[:2000],
-                        "channel": info.get("channel", name),
-                        "upload_date": info.get("upload_date", ""),
-                        "view_count": info.get("view_count"),
-                        "source_name": f"youtube_{name.replace(' ', '_')}",
-                        "signal_class": "youtube",
-                        "rq_tags": ch.get("rq_tags", []),
-                        "evidence_posture": "media",
-                    }
-                    # 자막 파일이 있으면 첨부
-                    vid_id = info.get("id", "")
-                    for sub_ext in ("ko.vtt", "en.vtt", "ko.srv3", "en.srv3"):
-                        sub_path = out_dir / f"{vid_id}.{sub_ext}"
-                        if sub_path.exists():
-                            raw["subtitle_path"] = str(sub_path)
-                            raw["full_content"] = sub_path.read_text(encoding="utf-8", errors="ignore")[:10000]
-                            break
+        if not success:
+            time.sleep(5)
+            continue
 
-                    saved = save_signal(f"youtube_{name.replace(' ', '_')}", raw, DOMAIN, logger)
-                    if saved:
-                        ch_new += 1
-                        stats["new"] += 1
+        # 생성된 .info.json 파일들을 raw_signals에 저장 (success=True일 때만 도달)
+        info_files = list(out_dir.glob("*.info.json"))
+        ch_new = 0
+        for info_path in info_files:
+            try:
+                info = json.loads(info_path.read_text(encoding="utf-8"))
+                raw = {
+                    "title": info.get("title", ""),
+                    "url": f"https://www.youtube.com/watch?v={info.get('id', '')}",
+                    "description": (info.get("description") or "")[:2000],
+                    "channel": info.get("channel", name),
+                    "upload_date": info.get("upload_date", ""),
+                    "view_count": info.get("view_count"),
+                    "source_name": f"youtube_{name.replace(' ', '_')}",
+                    "signal_class": "youtube",
+                    "rq_tags": ch.get("rq_tags", []),
+                    "evidence_posture": "media",
+                }
+                vid_id = info.get("id", "")
+                for sub_ext in ("en.vtt", "ko.vtt", "en.srv3"):
+                    sub_path = out_dir / f"{vid_id}.{sub_ext}"
+                    if sub_path.exists():
+                        raw["full_content"] = sub_path.read_text(encoding="utf-8", errors="ignore")[:10000]
+                        break
 
-                except Exception as e:
-                    logger.warning(f"  info.json 파싱 실패 ({info_path.name}): {e}")
+                saved = save_signal(f"youtube_{name.replace(' ', '_')}", raw, DOMAIN, logger)
+                if saved:
+                    ch_new += 1
+                    stats["new"] += 1
 
-            tracker.record(f"youtube_{name[:30]}", ch_new, len(info_files))
-            logger.info(f"  완료: {ch_new}개 신규 / {len(info_files)}개 info.json")
+            except Exception as e:
+                logger.warning(f"  info.json 파싱 실패 ({info_path.name}): {e}")
 
-        except subprocess.TimeoutExpired:
-            logger.warning(f"  yt-dlp 타임아웃 ({name})")
-            stats["error"] += 1
-
-        time.sleep(5)  # YouTube rate limit
+        tracker.record(f"youtube_{name[:30]}", ch_new, len(info_files))
+        logger.info(f"  완료: {ch_new}개 신규 / {len(info_files)}개 info.json")
+        time.sleep(10)  # YouTube rate limit 방지
 
     return stats
 

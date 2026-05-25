@@ -4,8 +4,11 @@
     "description": "AI 교육 컨설팅 DEEP RESEARCH 소스 레지스트리 v0.1",
     "created_at": "2026-05-24",
     "correlation_id": "edu-consulting-20260524",
-    "legal_status": "low_risk_channels_approved",
-    "note": "⚠️ 고위험 채널(맘카페 로그인영역·설문·광고)은 legal_review_approve 별도 충족 후 추가"
+    "legal_status": "low_risk_channels_approved (AR-039 legal_review_approve)",
+    "note": "⚠️ 고위험 채널(맘카페 로그인영역·설문·광고)은 legal_review_approve 별도 충족 후 추가",
+    "updated_at": "2026-05-25",
+    "version": "v0.3",
+    "total_sources": 73
   },
   "sources": [
     {
@@ -13,7 +16,10 @@
       "url": "https://rss.arxiv.org/rss/cs.CY",
       "type": "rss_daily",
       "signal_class": "academic",
-      "rq_tags": ["RQ2", "RQ5"],
+      "rq_tags": [
+        "RQ2",
+        "RQ5"
+      ],
       "stale_minutes": 1440,
       "reliability_score": 0.95,
       "expected_signal_type": "AI literacy, digital society, tech ethics",
@@ -25,7 +31,10 @@
       "url": "https://rss.arxiv.org/rss/cs.HC",
       "type": "rss_daily",
       "signal_class": "academic",
-      "rq_tags": ["RQ2", "RQ5"],
+      "rq_tags": [
+        "RQ2",
+        "RQ5"
+      ],
       "stale_minutes": 1440,
       "reliability_score": 0.95,
       "expected_signal_type": "HCI, cognitive offloading, AI interaction",
@@ -37,7 +46,10 @@
       "url": "https://rss.arxiv.org/rss/cs.AI",
       "type": "rss_daily",
       "signal_class": "academic",
-      "rq_tags": ["RQ2", "RQ5"],
+      "rq_tags": [
+        "RQ2",
+        "RQ5"
+      ],
       "stale_minutes": 1440,
       "reliability_score": 0.95,
       "expected_signal_type": "AI research, education applications",
@@ -49,7 +61,10 @@
       "url": "https://www.edsurge.com/rss.xml",
       "type": "rss",
       "signal_class": "media",
-      "rq_tags": ["RQ3", "RQ1"],
+      "rq_tags": [
+        "RQ3",
+        "RQ1"
+      ],
       "stale_minutes": 1440,
       "reliability_score": 0.85,
       "expected_signal_type": "EdTech news, AI in education, business models",
@@ -60,7 +75,11 @@
       "url": "https://www.edweek.org/feeds/rss/ew/all",
       "type": "rss",
       "signal_class": "media",
-      "rq_tags": ["RQ1", "RQ3", "RQ6"],
+      "rq_tags": [
+        "RQ1",
+        "RQ3",
+        "RQ6"
+      ],
       "stale_minutes": 1440,
       "reliability_score": 0.85,
       "expected_signal_type": "K-12 education, AI policy, parents, teachers",
@@ -71,9 +90,12 @@
       "url": "https://www.technologyreview.com/feed/",
       "type": "rss",
       "signal_class": "media",
-      "rq_tags": ["RQ2", "RQ3"],
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
       "stale_minutes": 2880,
-      "reliability_score": 0.90,
+      "reliability_score": 0.9,
       "expected_signal_type": "AI in education, cognitive science, tech society",
       "legal_risk": "low"
     },
@@ -82,9 +104,12 @@
       "url": "https://platum.kr/archives/category/edtech/feed",
       "type": "rss",
       "signal_class": "media_kr",
-      "rq_tags": ["RQ3", "RQ4"],
+      "rq_tags": [
+        "RQ3",
+        "RQ4"
+      ],
       "stale_minutes": 2880,
-      "reliability_score": 0.80,
+      "reliability_score": 0.8,
       "expected_signal_type": "한국 에듀테크 기업 동향, 투자, 비즈니스 모델",
       "legal_risk": "low"
     },
@@ -93,7 +118,9 @@
       "url": "https://www.moe.go.kr/boardCnts/listRenew.do?boardID=294&s=moe&m=020402&boardSeq=&mode=list&type=&boardSeq=&id=&rss=Y",
       "type": "rss_candidate",
       "signal_class": "government_kr",
-      "rq_tags": ["RQ6"],
+      "rq_tags": [
+        "RQ6"
+      ],
       "stale_minutes": 10080,
       "reliability_score": 0.98,
       "expected_signal_type": "AI 디지털교과서, 교육과정, 정책 변화",
@@ -105,7 +132,10 @@
       "url": "https://www.oecd.org/education/rss",
       "type": "rss_candidate",
       "signal_class": "policy_global",
-      "rq_tags": ["RQ6", "RQ2"],
+      "rq_tags": [
+        "RQ6",
+        "RQ2"
+      ],
       "stale_minutes": 43200,
       "reliability_score": 0.95,
       "expected_signal_type": "글로벌 AI 교육 정책, 역량 프레임워크",
@@ -117,9 +147,12 @@
       "url": "https://ailiteracy.institute/feed/",
       "type": "rss",
       "signal_class": "competitor_global",
-      "rq_tags": ["RQ3", "RQ5"],
+      "rq_tags": [
+        "RQ3",
+        "RQ5"
+      ],
       "stale_minutes": 10080,
-      "reliability_score": 0.80,
+      "reliability_score": 0.8,
       "expected_signal_type": "AI 리터러시 교육 사례, 커리큘럼, 비즈니스 모델",
       "legal_risk": "low"
     },
@@ -128,21 +161,884 @@
       "url": "https://techcrunch.com/tag/education/feed/",
       "type": "rss",
       "signal_class": "media",
-      "rq_tags": ["RQ3"],
+      "rq_tags": [
+        "RQ3"
+      ],
       "stale_minutes": 2880,
-      "reliability_score": 0.80,
+      "reliability_score": 0.8,
       "expected_signal_type": "EdTech 투자, AI 교육 스타트업",
       "legal_risk": "low"
+    },
+    {
+      "name": "Semantic_Scholar_edu",
+      "type": "api_semantic_scholar",
+      "signal_class": "academic",
+      "rq_tags": [
+        "RQ2",
+        "RQ5"
+      ],
+      "query": "AI literacy cognitive offloading K-12 generative AI learning",
+      "stale_minutes": 10080,
+      "reliability_score": 0.92,
+      "legal_risk": "low",
+      "note": "Semantic Scholar Public API (무료). API key 있으면 SEMANTIC_SCHOLAR_API_KEY env에."
+    },
+    {
+      "name": "PubMed_cognitive",
+      "type": "api_pubmed",
+      "signal_class": "academic",
+      "rq_tags": [
+        "RQ2",
+        "RQ5"
+      ],
+      "query": "cognitive offloading metacognition AI digital learning",
+      "stale_minutes": 10080,
+      "reliability_score": 0.9,
+      "legal_risk": "low",
+      "note": "NCBI E-utilities API (무료). 인지과학·뇌과학 논문."
+    },
+    {
+      "name": "ERIC_K12_AI",
+      "url": "https://eric.ed.gov/rss/?q=artificial+intelligence+K-12&rows=20&fl=title,description,url",
+      "type": "rss",
+      "signal_class": "academic",
+      "rq_tags": [
+        "RQ2",
+        "RQ5"
+      ],
+      "stale_minutes": 10080,
+      "reliability_score": 0.88,
+      "legal_risk": "low",
+      "note": "US 교육자료 DB. AI in K-12 논문·리포트."
+    },
+    {
+      "name": "Reddit_teachers",
+      "type": "api_reddit",
+      "signal_class": "community",
+      "rq_tags": [
+        "RQ1",
+        "RQ4"
+      ],
+      "subreddit": "teachers",
+      "query": "AI ChatGPT homework cheating",
+      "stale_minutes": 1440,
+      "reliability_score": 0.7,
+      "legal_risk": "low",
+      "note": "Reddit 공개 API (JSON). 교사 관점 AI 여론."
+    },
+    {
+      "name": "Reddit_Parenting",
+      "type": "api_reddit",
+      "signal_class": "community",
+      "rq_tags": [
+        "RQ1",
+        "RQ4"
+      ],
+      "subreddit": "Parenting",
+      "query": "AI screen time kids education",
+      "stale_minutes": 1440,
+      "reliability_score": 0.68,
+      "legal_risk": "low",
+      "note": "Reddit 공개 API. 부모 관점 AI 불안 여론."
+    },
+    {
+      "name": "KERIS_교육정보원",
+      "url": "https://www.keris.or.kr/main/na/ntt/selectNttList.do?mi=1185&bbsId=BBSMSTR_000000000059",
+      "type": "web_fetch",
+      "signal_class": "government",
+      "rq_tags": [
+        "RQ3",
+        "RQ6"
+      ],
+      "stale_minutes": 10080,
+      "reliability_score": 0.85,
+      "legal_risk": "low",
+      "note": "한국교육학술정보원 AI교육 보도자료. 공공저작물."
+    },
+    {
+      "name": "UNESCO_AI_Education",
+      "url": "https://www.unesco.org/en/digital-education/artificial-intelligence",
+      "type": "web_fetch",
+      "signal_class": "government",
+      "rq_tags": [
+        "RQ3",
+        "RQ6"
+      ],
+      "stale_minutes": 43200,
+      "reliability_score": 0.9,
+      "legal_risk": "low",
+      "note": "UNESCO AI교육 정책 페이지. 분기별 1회 수집."
+    },
+    {
+      "name": "AppStore_경쟁사리뷰_Khan",
+      "type": "app_store_review",
+      "signal_class": "competitor",
+      "rq_tags": [
+        "RQ3",
+        "RQ4"
+      ],
+      "app_id": "id493145747",
+      "platform": "ios",
+      "stale_minutes": 10080,
+      "reliability_score": 0.75,
+      "legal_risk": "low",
+      "note": "Khan Academy 앱 공개 리뷰. 사용자 불만·니즈 마이닝."
+    },
+    {
+      "name": "YouTube_교육_맘튜버",
+      "type": "youtube_search",
+      "signal_class": "community",
+      "rq_tags": [
+        "RQ1",
+        "RQ3",
+        "RQ4"
+      ],
+      "queries": [
+        "AI 교육 학부모",
+        "자녀 AI 사용 부모 고민",
+        "챗GPT 숙제 아이 대처"
+      ],
+      "max_results": 10,
+      "stale_minutes": 10080,
+      "reliability_score": 0.65,
+      "legal_risk": "low",
+      "note": "yt-dlp 자막+댓글. 학부모 실제 불안 언어 수집."
+    },
+    {
+      "name": "YouTube_경쟁사채널",
+      "type": "youtube_search",
+      "signal_class": "competitor",
+      "rq_tags": [
+        "RQ3"
+      ],
+      "queries": [
+        "엘리스 AI 교육",
+        "코드잇 강의",
+        "패스트캠퍼스 AI",
+        "Khanmigo 사용법"
+      ],
+      "max_results": 5,
+      "stale_minutes": 43200,
+      "reliability_score": 0.7,
+      "legal_risk": "low",
+      "note": "경쟁사 마케팅 메시지·커리큘럼 단서 수집."
+    },
+    {
+      "name": "조선일보_교육",
+      "url": "https://www.chosun.com/arc/outboundfeeds/rss/category/national/education/",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ1",
+        "RQ3"
+      ],
+      "stale_minutes": 720,
+      "reliability_score": 0.8,
+      "legal_risk": "low"
+    },
+    {
+      "name": "동아일보_교육",
+      "url": "https://rss.donga.com/education.xml",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ1",
+        "RQ3"
+      ],
+      "stale_minutes": 720,
+      "reliability_score": 0.8,
+      "legal_risk": "low"
+    },
+    {
+      "name": "중앙일보_교육",
+      "url": "https://rss.joins.com/joins_education_list.xml",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ1",
+        "RQ3"
+      ],
+      "stale_minutes": 720,
+      "reliability_score": 0.8,
+      "legal_risk": "low"
+    },
+    {
+      "name": "한겨레_교육",
+      "url": "https://www.hani.co.kr/rss/",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ1",
+        "RQ3"
+      ],
+      "stale_minutes": 720,
+      "reliability_score": 0.78,
+      "legal_risk": "low"
+    },
+    {
+      "name": "연합뉴스_교육",
+      "url": "https://www.yna.co.kr/rss/education.xml",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ1",
+        "RQ3"
+      ],
+      "stale_minutes": 720,
+      "reliability_score": 0.85,
+      "legal_risk": "low"
+    },
+    {
+      "name": "에듀동아",
+      "url": "https://edu.donga.com/rss/",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ1",
+        "RQ3"
+      ],
+      "stale_minutes": 720,
+      "reliability_score": 0.82,
+      "legal_risk": "low"
+    },
+    {
+      "name": "에듀프레스",
+      "url": "https://www.edupress.kr/rss/allArticle.xml",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ1",
+        "RQ3"
+      ],
+      "stale_minutes": 720,
+      "reliability_score": 0.78,
+      "legal_risk": "low"
+    },
+    {
+      "name": "베이비뉴스",
+      "url": "https://www.ibabynews.com/rss/rss.html",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ1"
+      ],
+      "stale_minutes": 1440,
+      "reliability_score": 0.72,
+      "legal_risk": "low"
+    },
+    {
+      "name": "AI타임스",
+      "url": "https://www.aitimes.com/rss/allArticle.xml",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "stale_minutes": 720,
+      "reliability_score": 0.8,
+      "legal_risk": "low"
+    },
+    {
+      "name": "ZDNet_Korea",
+      "url": "https://zdnet.co.kr/rss/",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "stale_minutes": 720,
+      "reliability_score": 0.78,
+      "legal_risk": "low"
+    },
+    {
+      "name": "매일경제",
+      "url": "https://www.mk.co.kr/rss/30000001/",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ3"
+      ],
+      "stale_minutes": 720,
+      "reliability_score": 0.78,
+      "legal_risk": "low"
+    },
+    {
+      "name": "한국경제",
+      "url": "https://www.hankyung.com/feed/education",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ3"
+      ],
+      "stale_minutes": 720,
+      "reliability_score": 0.78,
+      "legal_risk": "low"
+    },
+    {
+      "name": "The74Million",
+      "url": "https://www.the74million.org/feed/",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "stale_minutes": 1440,
+      "reliability_score": 0.82,
+      "legal_risk": "low"
+    },
+    {
+      "name": "Chalkbeat",
+      "url": "https://www.chalkbeat.org/arc/outboundfeeds/rss/",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "stale_minutes": 1440,
+      "reliability_score": 0.82,
+      "legal_risk": "low"
+    },
+    {
+      "name": "Times_Higher_Education",
+      "url": "https://www.timeshighereducation.com/rss.xml",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ3"
+      ],
+      "stale_minutes": 1440,
+      "reliability_score": 0.85,
+      "legal_risk": "low"
+    },
+    {
+      "name": "eLearning_Industry",
+      "url": "https://elearningindustry.com/feed",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "stale_minutes": 1440,
+      "reliability_score": 0.78,
+      "legal_risk": "low"
+    },
+    {
+      "name": "Wired_Education",
+      "url": "https://www.wired.com/feed/tag/education/rss",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "stale_minutes": 1440,
+      "reliability_score": 0.85,
+      "legal_risk": "low"
+    },
+    {
+      "name": "VentureBeat_AI",
+      "url": "https://venturebeat.com/category/ai/feed/",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "stale_minutes": 720,
+      "reliability_score": 0.8,
+      "legal_risk": "low"
+    },
+    {
+      "name": "Rest_of_World",
+      "url": "https://restofworld.org/feed/",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ3"
+      ],
+      "stale_minutes": 1440,
+      "reliability_score": 0.82,
+      "legal_risk": "low"
+    },
+    {
+      "name": "교육부_보도자료_v2",
+      "url": "https://www.moe.go.kr/rssFeed/selectRssFeedList.do?mi=589",
+      "type": "rss",
+      "signal_class": "government",
+      "rq_tags": [
+        "RQ3",
+        "RQ6"
+      ],
+      "stale_minutes": 1440,
+      "reliability_score": 0.92,
+      "legal_risk": "low"
+    },
+    {
+      "name": "KEDI_한국교육개발원",
+      "url": "https://www.kedi.re.kr/khome/main/research/selectRssList.do",
+      "type": "rss_candidate",
+      "signal_class": "government",
+      "rq_tags": [
+        "RQ3",
+        "RQ6"
+      ],
+      "stale_minutes": 10080,
+      "reliability_score": 0.9,
+      "legal_risk": "low",
+      "note": "RSS 없으면 web_fetch로 전환"
+    },
+    {
+      "name": "KRIVET_직업능력연구원",
+      "url": "https://www.krivet.re.kr/ku/da/kuACTn.jsp",
+      "type": "web_fetch",
+      "signal_class": "government",
+      "rq_tags": [
+        "RQ3",
+        "RQ6"
+      ],
+      "stale_minutes": 10080,
+      "reliability_score": 0.88,
+      "legal_risk": "low"
+    },
+    {
+      "name": "NIA_지능정보사회진흥원",
+      "url": "https://www.nia.or.kr/site/nia_kor/ex/bbs/List.do?cbIdx=81623",
+      "type": "web_fetch",
+      "signal_class": "government",
+      "rq_tags": [
+        "RQ3",
+        "RQ6"
+      ],
+      "stale_minutes": 10080,
+      "reliability_score": 0.87,
+      "legal_risk": "low"
+    },
+    {
+      "name": "KDI_한국개발연구원",
+      "url": "https://www.kdi.re.kr/research/rss.jsp",
+      "type": "rss",
+      "signal_class": "government",
+      "rq_tags": [
+        "RQ3",
+        "RQ6"
+      ],
+      "stale_minutes": 10080,
+      "reliability_score": 0.9,
+      "legal_risk": "low"
+    },
+    {
+      "name": "Brookings_Education",
+      "url": "https://www.brookings.edu/topic/education/feed/",
+      "type": "rss",
+      "signal_class": "government",
+      "rq_tags": [
+        "RQ3",
+        "RQ6"
+      ],
+      "stale_minutes": 10080,
+      "reliability_score": 0.9,
+      "legal_risk": "low"
+    },
+    {
+      "name": "RAND_Education",
+      "url": "https://www.rand.org/topics/education.rss",
+      "type": "rss",
+      "signal_class": "government",
+      "rq_tags": [
+        "RQ3",
+        "RQ6"
+      ],
+      "stale_minutes": 10080,
+      "reliability_score": 0.9,
+      "legal_risk": "low"
+    },
+    {
+      "name": "WEF_Education",
+      "url": "https://www.weforum.org/agenda/education/rss.xml",
+      "type": "rss",
+      "signal_class": "government",
+      "rq_tags": [
+        "RQ3",
+        "RQ6"
+      ],
+      "stale_minutes": 10080,
+      "reliability_score": 0.88,
+      "legal_risk": "low"
+    },
+    {
+      "name": "McKinsey_AI",
+      "url": "https://www.mckinsey.com/featured-insights/artificial-intelligence/rss",
+      "type": "rss",
+      "signal_class": "government",
+      "rq_tags": [
+        "RQ3"
+      ],
+      "stale_minutes": 10080,
+      "reliability_score": 0.85,
+      "legal_risk": "low"
+    },
+    {
+      "name": "OpenAlex_edu",
+      "type": "api_openalex",
+      "signal_class": "academic",
+      "rq_tags": [
+        "RQ2",
+        "RQ5"
+      ],
+      "query": "AI education cognitive offloading K-12",
+      "stale_minutes": 10080,
+      "reliability_score": 0.9,
+      "legal_risk": "low",
+      "note": "무료 API. mailto 파라미터로 rate limit 완화 가능."
+    },
+    {
+      "name": "NDSL_국가과학기술정보",
+      "type": "api_ndsl",
+      "signal_class": "academic",
+      "rq_tags": [
+        "RQ2",
+        "RQ5"
+      ],
+      "query": "인공지능 교육 자기주도학습",
+      "stale_minutes": 10080,
+      "reliability_score": 0.88,
+      "legal_risk": "low",
+      "note": "무료 API. API 키 발급: https://www.ndsl.kr/opensearch/api.do"
+    },
+    {
+      "name": "RISS_한국교육학술정보원",
+      "type": "api_riss",
+      "signal_class": "academic",
+      "rq_tags": [
+        "RQ2",
+        "RQ5"
+      ],
+      "query": "인공지능 교육 학부모",
+      "stale_minutes": 10080,
+      "reliability_score": 0.88,
+      "legal_risk": "low",
+      "note": "Open API 제공. 키 발급: riss.kr/developer"
+    },
+    {
+      "name": "Reddit_ChatGPT",
+      "type": "api_reddit",
+      "signal_class": "community",
+      "rq_tags": [
+        "RQ1",
+        "RQ4"
+      ],
+      "subreddit": "ChatGPT",
+      "query": "education children homework",
+      "stale_minutes": 1440,
+      "reliability_score": 0.7,
+      "legal_risk": "low",
+      "note": "REDDIT_CLIENT_ID+SECRET 필요."
+    },
+    {
+      "name": "Reddit_Korea",
+      "type": "api_reddit",
+      "signal_class": "community",
+      "rq_tags": [
+        "RQ1",
+        "RQ4"
+      ],
+      "subreddit": "korea",
+      "query": "AI education children",
+      "stale_minutes": 1440,
+      "reliability_score": 0.68,
+      "legal_risk": "low"
+    },
+    {
+      "name": "Reddit_EdTech",
+      "type": "api_reddit",
+      "signal_class": "community",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "subreddit": "EdTech",
+      "query": "AI learning",
+      "stale_minutes": 1440,
+      "reliability_score": 0.72,
+      "legal_risk": "low"
+    },
+    {
+      "name": "Reddit_asianparents",
+      "type": "api_reddit",
+      "signal_class": "community",
+      "rq_tags": [
+        "RQ1",
+        "RQ4"
+      ],
+      "subreddit": "AsianParents",
+      "query": "AI education",
+      "stale_minutes": 1440,
+      "reliability_score": 0.7,
+      "legal_risk": "low"
+    },
+    {
+      "name": "HackerNews_edu",
+      "type": "api_hackernews",
+      "signal_class": "community",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "query": "AI education children learning",
+      "stale_minutes": 1440,
+      "reliability_score": 0.78,
+      "legal_risk": "low",
+      "note": "Algolia API — 무료, 키 불필요."
+    },
+    {
+      "name": "Anthropic_Blog",
+      "url": "https://www.anthropic.com/news/rss.xml",
+      "type": "rss",
+      "signal_class": "competitor",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "stale_minutes": 1440,
+      "reliability_score": 0.9,
+      "legal_risk": "low"
+    },
+    {
+      "name": "OpenAI_Blog",
+      "url": "https://openai.com/blog/rss.xml",
+      "type": "rss",
+      "signal_class": "competitor",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "stale_minutes": 1440,
+      "reliability_score": 0.9,
+      "legal_risk": "low"
+    },
+    {
+      "name": "Google_DeepMind_Blog",
+      "url": "https://deepmind.google/blog/rss.xml",
+      "type": "rss",
+      "signal_class": "competitor",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "stale_minutes": 1440,
+      "reliability_score": 0.9,
+      "legal_risk": "low"
+    },
+    {
+      "name": "Khan_Academy_Blog",
+      "url": "https://blog.khanacademy.org/feed/",
+      "type": "rss",
+      "signal_class": "competitor",
+      "rq_tags": [
+        "RQ3",
+        "RQ4"
+      ],
+      "stale_minutes": 10080,
+      "reliability_score": 0.88,
+      "legal_risk": "low"
+    },
+    {
+      "name": "Coursera_Blog",
+      "url": "https://blog.coursera.org/feed/",
+      "type": "rss",
+      "signal_class": "competitor",
+      "rq_tags": [
+        "RQ3"
+      ],
+      "stale_minutes": 10080,
+      "reliability_score": 0.85,
+      "legal_risk": "low"
+    },
+    {
+      "name": "Edutopia_RSS",
+      "url": "https://www.edutopia.org/rss.xml",
+      "type": "rss",
+      "signal_class": "competitor",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "stale_minutes": 1440,
+      "reliability_score": 0.85,
+      "legal_risk": "low"
+    },
+    {
+      "name": "Substack_Mollick_OneUsefulThing",
+      "url": "https://www.oneusefulthing.org/feed",
+      "type": "rss",
+      "signal_class": "academic",
+      "rq_tags": [
+        "RQ2",
+        "RQ5"
+      ],
+      "stale_minutes": 10080,
+      "reliability_score": 0.9,
+      "legal_risk": "low",
+      "note": "Ethan Mollick(Wharton) AI교육 실험."
+    },
+    {
+      "name": "Substack_TheNeuron",
+      "url": "https://www.theneurondaily.com/feed",
+      "type": "rss",
+      "signal_class": "news",
+      "rq_tags": [
+        "RQ2",
+        "RQ3"
+      ],
+      "stale_minutes": 1440,
+      "reliability_score": 0.82,
+      "legal_risk": "low"
+    },
+    {
+      "name": "ImportAI_JackClark",
+      "url": "https://jack-clark.net/feed/",
+      "type": "rss",
+      "signal_class": "academic",
+      "rq_tags": [
+        "RQ2"
+      ],
+      "stale_minutes": 10080,
+      "reliability_score": 0.88,
+      "legal_risk": "low"
+    },
+    {
+      "name": "YouTube_EBS_공식",
+      "type": "youtube_channel",
+      "signal_class": "government",
+      "rq_tags": [
+        "RQ1",
+        "RQ3"
+      ],
+      "channel_query": "EBS 공식 AI 교육",
+      "max_results": 5,
+      "stale_minutes": 10080,
+      "reliability_score": 0.88,
+      "legal_risk": "low"
+    },
+    {
+      "name": "YouTube_맘스쿨",
+      "type": "youtube_channel",
+      "signal_class": "community",
+      "rq_tags": [
+        "RQ1",
+        "RQ4"
+      ],
+      "channel_query": "맘스쿨 자녀 AI 교육",
+      "max_results": 5,
+      "stale_minutes": 10080,
+      "reliability_score": 0.75,
+      "legal_risk": "low"
+    },
+    {
+      "name": "YouTube_교육부TV",
+      "type": "youtube_channel",
+      "signal_class": "government",
+      "rq_tags": [
+        "RQ3",
+        "RQ6"
+      ],
+      "channel_query": "교육부TV AI",
+      "max_results": 5,
+      "stale_minutes": 10080,
+      "reliability_score": 0.9,
+      "legal_risk": "low"
+    },
+    {
+      "name": "AppStore_콴다",
+      "type": "app_store_review",
+      "signal_class": "competitor",
+      "rq_tags": [
+        "RQ3",
+        "RQ4"
+      ],
+      "app_id": "1099591375",
+      "platform": "ios",
+      "stale_minutes": 10080,
+      "reliability_score": 0.75,
+      "legal_risk": "low",
+      "note": "콴다 iOS 리뷰. 학부모·학생 불만 수집."
+    },
+    {
+      "name": "GooglePlay_콴다",
+      "type": "google_play_review",
+      "signal_class": "competitor",
+      "rq_tags": [
+        "RQ3",
+        "RQ4"
+      ],
+      "app_id": "com.mathpresso.qanda",
+      "stale_minutes": 10080,
+      "reliability_score": 0.75,
+      "legal_risk": "low"
+    },
+    {
+      "name": "AppStore_EBS",
+      "type": "app_store_review",
+      "signal_class": "competitor",
+      "rq_tags": [
+        "RQ3",
+        "RQ4"
+      ],
+      "app_id": "id372720264",
+      "platform": "ios",
+      "stale_minutes": 10080,
+      "reliability_score": 0.8,
+      "legal_risk": "low"
+    },
+    {
+      "name": "ProductHunt_AI_Education",
+      "type": "api_producthunt",
+      "signal_class": "competitor",
+      "rq_tags": [
+        "RQ3"
+      ],
+      "query": "AI education",
+      "stale_minutes": 10080,
+      "reliability_score": 0.75,
+      "legal_risk": "low",
+      "note": "Product Hunt API — 무료 tier 존재."
     }
   ],
   "youtube_targets": {
     "_note": "yt-dlp로 자막+메타+댓글 추출. 채널 URL 목록 — 검증 후 실행",
     "channels": [
-      {"name": "Khan Academy", "url": "https://www.youtube.com/@khanacademy/videos", "rq_tags": ["RQ3", "RQ5"], "priority": "high"},
-      {"name": "SXSW EDU 강연", "url": "https://www.youtube.com/@SXSWedu/videos", "rq_tags": ["RQ3", "RQ1"], "priority": "high"},
-      {"name": "Common Sense Media", "url": "https://www.youtube.com/@commonsensemedia/videos", "rq_tags": ["RQ1", "RQ5"], "priority": "medium"},
-      {"name": "엘리스공식채널", "url": "https://www.youtube.com/@eliceio/videos", "rq_tags": ["RQ3"], "priority": "medium"},
-      {"name": "패스트캠퍼스", "url": "https://www.youtube.com/@fastcampus_official/videos", "rq_tags": ["RQ3"], "priority": "medium"}
+      {
+        "name": "Khan Academy",
+        "url": "https://www.youtube.com/@khanacademy/videos",
+        "rq_tags": [
+          "RQ3",
+          "RQ5"
+        ],
+        "priority": "high"
+      },
+      {
+        "name": "SXSW EDU 강연",
+        "url": "https://www.youtube.com/@SXSWedu/videos",
+        "rq_tags": [
+          "RQ3",
+          "RQ1"
+        ],
+        "priority": "high"
+      },
+      {
+        "name": "Common Sense Media",
+        "url": "https://www.youtube.com/@commonsensemedia/videos",
+        "rq_tags": [
+          "RQ1",
+          "RQ5"
+        ],
+        "priority": "medium"
+      }
     ],
     "search_queries_for_discovery": [
       "학부모 AI 교육 우리 아이",
@@ -151,15 +1047,55 @@
       "AI literacy for parents children",
       "generative AI K-12 education"
     ],
-    "extract_options": "--skip-download --write-auto-sub --write-sub --sub-lang ko,en --write-comments --write-info-json"
+    "extract_options": "--skip-download --write-auto-sub --write-sub --sub-lang en --write-comments --write-info-json --ignore-errors"
   },
   "api_targets": [
-    {"name": "Semantic Scholar", "type": "api", "endpoint": "https://api.semanticscholar.org/graph/v1/paper/search", "key_required": false, "rq_tags": ["RQ2", "RQ5"], "keywords": ["AI literacy cognitive offloading", "generative AI student learning", "metacognition AI dependence"], "legal_risk": "low"},
-    {"name": "arXiv API", "type": "api", "endpoint": "http://export.arxiv.org/api/query", "key_required": false, "rq_tags": ["RQ2", "RQ5"], "legal_risk": "low"}
+    {
+      "name": "Semantic Scholar",
+      "type": "api",
+      "endpoint": "https://api.semanticscholar.org/graph/v1/paper/search",
+      "key_required": false,
+      "rq_tags": [
+        "RQ2",
+        "RQ5"
+      ],
+      "keywords": [
+        "AI literacy cognitive offloading",
+        "generative AI student learning",
+        "metacognition AI dependence"
+      ],
+      "legal_risk": "low"
+    },
+    {
+      "name": "arXiv API",
+      "type": "api",
+      "endpoint": "http://export.arxiv.org/api/query",
+      "key_required": false,
+      "rq_tags": [
+        "RQ2",
+        "RQ5"
+      ],
+      "legal_risk": "low"
+    }
   ],
   "pending_legal_approval": [
-    {"name": "네이버_맘카페_공개영역", "type": "web_scrape", "legal_risk": "medium", "gate": "legal_review_approve(고위험) 완료 후"},
-    {"name": "학부모_설문_패널", "type": "primary_research", "legal_risk": "medium", "gate": "PIPA 동의 메커니즘 + legal_review_approve"},
-    {"name": "Pretotyping_광고_랜딩", "type": "ad_landing", "legal_risk": "medium", "gate": "표시광고법 검토 + legal_review_approve + QA qa_clear"}
+    {
+      "name": "네이버_맘카페_공개영역",
+      "type": "web_scrape",
+      "legal_risk": "medium",
+      "gate": "legal_review_approve(고위험) 완료 후"
+    },
+    {
+      "name": "학부모_설문_패널",
+      "type": "primary_research",
+      "legal_risk": "medium",
+      "gate": "PIPA 동의 메커니즘 + legal_review_approve"
+    },
+    {
+      "name": "Pretotyping_광고_랜딩",
+      "type": "ad_landing",
+      "legal_risk": "medium",
+      "gate": "표시광고법 검토 + legal_review_approve + QA qa_clear"
+    }
   ]
 }
