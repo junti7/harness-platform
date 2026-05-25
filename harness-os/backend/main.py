@@ -141,9 +141,26 @@ def _tail_process(job_id: str, proc: subprocess.Popen) -> None:
                 _PIPELINE_LOGS.setdefault(job_id, []).append(f"[ERROR] {exc}")
 
 
+_CUSTOM_QUERIES_FILE = _PROJECT_ROOT / "data" / "edu_custom_queries.json"
+
+def _load_custom_queries() -> list[dict]:
+    try:
+        if _CUSTOM_QUERIES_FILE.exists():
+            data = json.loads(_CUSTOM_QUERIES_FILE.read_text())
+            return data.get("queries", [])
+    except Exception:
+        pass
+    return []
+
+def _save_custom_queries(queries: list[dict]) -> None:
+    _CUSTOM_QUERIES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _CUSTOM_QUERIES_FILE.write_text(json.dumps({"queries": queries}, indent=2, ensure_ascii=False))
+
+
 class PipelineRunRequest(BaseModel):
     source: str
     dry_run: bool = False
+    topic: str = ""  # 연구 주제 (비어있으면 기본 쿼리 사용)
 
 
 class TradingWatchlistToggleRequest(BaseModel):
@@ -2914,6 +2931,8 @@ def run_pipeline_job(body: PipelineRunRequest, _: None = Depends(_require_secret
         cmd = [str(python), str(script), "--sources", src_str]
         if body.dry_run:
             cmd += ["--dry-run"]
+        if body.topic:
+            cmd += ["--extra-query", body.topic]
 
     job_id = str(uuid4())[:8]
 
@@ -3022,3 +3041,49 @@ def get_pipeline_signals(
         tuple(params) + (limit, offset),
     )
     return {"total": total, "limit": limit, "offset": offset, "items": [dict(r) for r in rows]}
+
+
+@app.get("/api/pipeline/source-stats")
+def pipeline_source_stats(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    rows = _execute_query(
+        "SELECT source, count(*) as cnt, max(ingested_at) as last_at "
+        "FROM raw_signals WHERE domain = 'edu_consulting' "
+        "GROUP BY source"
+    )
+    stats: dict[str, Any] = {}
+    for r in (rows or []):
+        stats[r["source"]] = {
+            "count": int(r["cnt"]),
+            "last_at": str(r["last_at"]) if r["last_at"] else None,
+        }
+    return {"stats": stats}
+
+
+@app.get("/api/pipeline/queries")
+def get_pipeline_queries(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    return {"queries": _load_custom_queries()}
+
+
+class QueryAddRequest(BaseModel):
+    text: str
+    targets: list[str] = ["scholar", "arxiv"]
+
+
+@app.post("/api/pipeline/queries")
+def add_pipeline_query(req: QueryAddRequest, _: None = Depends(_require_secret)) -> dict[str, Any]:
+    if not req.text.strip():
+        raise HTTPException(400, "Query text cannot be empty")
+    queries = _load_custom_queries()
+    queries.append({"text": req.text.strip(), "targets": req.targets, "added_at": datetime.utcnow().isoformat() + "Z"})
+    _save_custom_queries(queries)
+    return {"ok": True, "total": len(queries)}
+
+
+@app.delete("/api/pipeline/queries/{idx}")
+def delete_pipeline_query(idx: int, _: None = Depends(_require_secret)) -> dict[str, Any]:
+    queries = _load_custom_queries()
+    if idx < 0 or idx >= len(queries):
+        raise HTTPException(404, "Query index out of range")
+    queries.pop(idx)
+    _save_custom_queries(queries)
+    return {"ok": True, "total": len(queries)}

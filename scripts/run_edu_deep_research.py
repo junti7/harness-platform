@@ -44,7 +44,10 @@ YT_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "data" / "edu_research"
 YT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # yt-dlp 실행 경로
-YT_DLP_BIN = "/opt/homebrew/bin/yt-dlp"
+# yt-dlp 실행 경로 (Mac Mini: .venv/bin, MBP: /opt/homebrew/bin)
+_VENV_YT_DLP = str(Path(__file__).resolve().parent.parent / ".venv" / "bin" / "yt-dlp")
+_BREW_YT_DLP = "/opt/homebrew/bin/yt-dlp"
+YT_DLP_BIN = _VENV_YT_DLP if Path(_VENV_YT_DLP).exists() else _BREW_YT_DLP
 
 
 # ---------------------------------------------------------------------------
@@ -191,11 +194,101 @@ def collect_rss(sources: list[dict], logger: HarnessLogger,
 # ---------------------------------------------------------------------------
 
 SCHOLAR_QUERIES = [
+    # English
     "AI literacy cognitive offloading students",
     "generative AI student learning critical thinking",
     "metacognition AI dependence children education",
     "AI homework help academic achievement",
     "digital literacy parents children",
+    "AI replacement anxiety jobs labor",
+    "automation anxiety workplace psychological distress",
+    "generative AI parental anxiety children",
+    "AI educational technology home learning impact",
+    "algorithmic replacement white collar jobs anxiety",
+    "coping strategies AI workplace disruption",
+    "teacher perception generative AI classrooms",
+    "critical thinking skills AI age education",
+    "AI skill bubble workforce exaggerating skills",
+    "student dependence on ChatGPT learning loss",
+    "k-12 AI safety guidelines parental concern",
+    "job displacement fears artificial intelligence",
+    "psychological impact of AI on workers",
+    "educational inequality AI access digital divide",
+    "AI tutoring systems parent engagement",
+    # Spanish
+    "ansiedad padres educacion IA",
+    "IA reemplazo trabajo ansiedad trabajadores",
+    "dependencia cognitiva inteligencia artificial educacion",
+    "ansiedad automatizacion laboral psicologia",
+    # French
+    "anxiete parents education IA",
+    "IA remplacement travail anxiete salaries",
+    "decharge cognitive dependance intelligence artificielle",
+    "anxiete automatisation travail psychologique",
+    # German
+    "Eltern Angst KI Bildung",
+    "KI ersetzt Arbeitsplaetze Angst Mitarbeiter",
+    "kognitive Entlastung KI Abhaengigkeit",
+    "Angst vor Automatisierung Arbeitsplatz",
+    # Japanese
+    "AI教育 親の不安",
+    "AI仕事代替 労働者の不安",
+    "認知的外注 AI依存 教育",
+    "雇用代替 不安 人工知能",
+    # Chinese
+    "AI教育 家长焦虑",
+    "人工智能替代工作 员工焦虑",
+    "认知外包 AI依赖 教育",
+    "自动化焦虑 职场心理",
+    # Portuguese
+    "ansiedade pais educacao IA",
+    "IA substituindo empregos ansiedade trabalhadores",
+    "dependencia cognitiva inteligencia artificial",
+    "ansiedade automacao trabalho psicologia",
+    # Italian
+    "ansia genitori educazione IA",
+    "IA sostituzione lavoro ansia dipendenti",
+    "dipendenza cognitiva intelligenza artificiale",
+    # Russian
+    "trevoga roditeley II obrazovanie",
+    "II zamena raboty trevoga sotrudnikov",
+    "kognitivnaya zavisimost iskusstvennyy intellekt",
+    # Arabic (UAE & Global)
+    "قلق أولياء الأمور التعليم الذكاء الاصطناعي",
+    "الذكاء الاصطناعي استبدال الوظائف قلق الموظفين",
+    "الذكاء الاصطناعي في التعليم دبي أبوظبي",
+    "تأثير الأتمتة على الوظائف في الإمارات",
+    "qalaq al-abaa al-talim al-dhakaa al-istinai",
+    "al-dhakaa al-istinai istibdal al-wazaif qalaq",
+    # Hebrew (Israel)
+    "חרדת הורים חינוך בינה מלאכותית",
+    "בינה מלאכותית החלפת משרות חרדת עובדים",
+    "אוטומציה במקום העבודה חרדה",
+    "בינה מלאכותית במערכת החינוך ישראל",
+    # Hindi
+    "AI shiksha mata-pita ki chinta",
+    "AI naukri pratisthapan karmachariyon ki chinta",
+    # Indonesian
+    "kecemasan orang tua pendidikan AI",
+    "AI menggantikan pekerjaan kecemasan karyawan",
+    # Turkish
+    "yapay zeka egitim veli kaygisi",
+    "yapay zeka is kaybi calisan kaygisi",
+    # Vietnamese
+    "lo lang cha me giao duc AI",
+    "AI thay the cong viec lo lang nhan vien",
+    # Dutch
+    "angst ouders AI onderwijs",
+    "AI vervanging banen angst werknemers",
+    # Polish
+    "lek rodzicow edukacja AI",
+    "AI zastepowanie pracy lek pracownikow",
+    # Swedish
+    "oro foraldrar AI utbildning",
+    "AI ersatter jobb oro anstallda",
+    # Korean
+    "AI 교육 학부모 불안",
+    "AI 일자리 대체 직장인 불안",
 ]
 
 def collect_semantic_scholar(logger: HarnessLogger, tracker: SaturationTracker,
@@ -287,6 +380,12 @@ ARXIV_QUERIES = [
     "ti:generative+AI+learning",
     "abs:cognitive+offloading+artificial+intelligence",
     "abs:AI+dependence+critical+thinking",
+    "ti:AI+replacement+anxiety",
+    "abs:job+displacement+artificial+intelligence",
+    "abs:generative+AI+student+anxiety",
+    "ti:workplace+automation+psychological",
+    "abs:teacher+perception+generative+AI",
+    "abs:parental+perception+AI+education",
 ]
 
 def collect_arxiv(logger: HarnessLogger, tracker: SaturationTracker,
@@ -453,14 +552,21 @@ def main():
     )
     parser.add_argument("--dry-run", action="store_true", help="DB 저장 없이 수집 예상 항목만 출력")
     parser.add_argument("--domain", default=DOMAIN, help="도메인 태그 (기본: edu_consulting)")
+    parser.add_argument("--extra-query", default="", help="추가 연구 주제 쿼리 (scholar + arXiv 앞에 삽입)")
     args = parser.parse_args()
 
     enabled = {s.strip() for s in args.sources.split(",")}
     domain = args.domain
     dry_run = args.dry_run
 
+    # 추가 쿼리를 각 소스 쿼리 목록 앞에 삽입
+    if args.extra_query:
+        SCHOLAR_QUERIES.insert(0, args.extra_query)
+        arxiv_q = "abs:" + args.extra_query.replace(" ", "+")
+        ARXIV_QUERIES.insert(0, arxiv_q)
+
     logger = HarnessLogger(tier=1, correlation_id=CORRELATION_ID)
-    logger.info(f"=== 교육 DEEP RESEARCH 수집 시작 | domain={domain} | sources={args.sources} | dry_run={dry_run} ===")
+    logger.info(f"=== 교육 DEEP RESEARCH 수집 시작 | domain={domain} | sources={args.sources} | dry_run={dry_run} | extra_query={args.extra_query!r} ===")
 
     if not dry_run:
         ensure_domain_column(logger)
