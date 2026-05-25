@@ -212,7 +212,8 @@
       "stale_minutes": 10080,
       "reliability_score": 0.88,
       "legal_risk": "low",
-      "note": "US 교육자료 DB. AI in K-12 논문·리포트."
+      "note": "US 교육자료 DB. AI in K-12 논문·리포트.",
+      "active": false
     },
     {
       "name": "Reddit_teachers",
