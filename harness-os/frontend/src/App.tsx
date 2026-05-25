@@ -18,6 +18,7 @@ import { TokenUsagePage } from './pages/TokenUsagePage'
 import { MeetingNotesPage } from './pages/MeetingNotesPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { LoginPage } from './pages/LoginPage'
+import { PipelinePage } from './pages/PipelinePage'
 
 const SESSION_KEY = 'harness-session'
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000 // 30분
@@ -105,7 +106,7 @@ function App() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   })
   const [viewRole, setViewRole] = useState<'ceo' | 'vp'>(() => session?.role ?? 'ceo')
-  const [activeView, setActiveView] = useState<'dashboard' | 'approvals' | 'conference' | 'ars' | 'meetings' | 'costs' | 'tokens' | 'settings'>('dashboard')
+  const [activeView, setActiveView] = useState<'dashboard' | 'approvals' | 'conference' | 'ars' | 'meetings' | 'costs' | 'tokens' | 'settings' | 'pipeline'>('dashboard')
   const [selectedPlatform, setSelectedPlatform] = useState('all')
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null)
   const [loading, setLoading] = useState(true)
@@ -205,7 +206,7 @@ function App() {
 
   // 미인증 시 로그인 화면
   if (!session) {
-    return <LoginPage onLogin={handleLogin} />
+    return <LoginPage onLogin={handleLogin} apiBase={API_BASE} authHeaders={authHeaders} />
   }
 
   return (
@@ -512,9 +513,15 @@ function App() {
         <MeetingNotesPage apiBase={API_BASE} authHeaders={authHeaders} />
       )}
 
+      {activeView === 'pipeline' && (
+        <PipelinePage apiBase={API_BASE} authHeaders={authHeaders} />
+      )}
+
       {activeView === 'settings' && (
         <SettingsPage
           currentRole={viewRole}
+          apiBase={API_BASE}
+          authHeaders={authHeaders}
           onSettingsChange={(role, settings) => {
             localStorage.setItem(`harness-settings-${role}`, JSON.stringify(settings))
             if (settings.theme) setTheme(settings.theme)

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
-type AppView = 'dashboard' | 'approvals' | 'conference' | 'ars' | 'meetings' | 'costs' | 'tokens' | 'settings'
+type AppView = 'dashboard' | 'approvals' | 'conference' | 'ars' | 'meetings' | 'costs' | 'tokens' | 'settings' | 'pipeline'
 
 type Props = {
   theme: 'light' | 'dark'
@@ -134,6 +134,14 @@ export function TopBar({
           <span>회의실</span>
         </button>
 
+        <button
+          type="button"
+          className={`nav-trigger nav-trigger-standalone ${activeView === 'pipeline' ? 'active' : ''}`}
+          onClick={() => onChangeView('pipeline')}
+        >
+          <span>자료수집</span>
+        </button>
+
         {NAV_GROUPS.map(group => {
           const isOpen = openGroup === group.id
           const isActive = activeGroupId === group.id
@@ -251,6 +259,9 @@ export function TopBar({
                 </button>
                 <button type="button" className={`mobile-nav-item ${activeView === 'conference' ? 'active' : ''}`} onClick={() => onChangeView('conference')}>
                   <span>회의실</span>
+                </button>
+                <button type="button" className={`mobile-nav-item ${activeView === 'pipeline' ? 'active' : ''}`} onClick={() => onChangeView('pipeline')}>
+                  <span>자료수집</span>
                 </button>
                 <button type="button" className={`mobile-nav-item ${activeView === 'settings' ? 'active' : ''}`} onClick={() => onChangeView('settings')}>
                   <span>설정</span>

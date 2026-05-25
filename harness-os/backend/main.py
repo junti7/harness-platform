@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -95,6 +96,56 @@ class JarvisInvokeRequest(BaseModel):
     relay_mentions: bool = True
 
 
+# ── Pipeline Job Runner ──────────────────────────────────────────
+import subprocess
+import signal as _signal
+
+_JOB_LOCK = threading.Lock()
+_PIPELINE_JOBS: dict[str, dict] = {}
+_PIPELINE_LOGS: dict[str, list] = {}
+_MAX_LOG_LINES = 300
+_MAX_JOB_HISTORY = 30
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+_SOURCE_MAP: dict[str, str | None] = {
+    "scholar": "scholar",
+    "arxiv": "arxiv",
+    "youtube": "youtube",
+    "rss": "rss",
+    "all": "rss,scholar,arxiv,youtube",
+    "filter": None,
+}
+
+
+def _tail_process(job_id: str, proc: subprocess.Popen) -> None:
+    try:
+        for raw_line in proc.stdout:  # type: ignore[union-attr]
+            line = raw_line.rstrip()
+            with _JOB_LOCK:
+                buf = _PIPELINE_LOGS.setdefault(job_id, [])
+                buf.append(line)
+                if len(buf) > _MAX_LOG_LINES:
+                    _PIPELINE_LOGS[job_id] = buf[-_MAX_LOG_LINES:]
+        proc.wait()
+        rc = proc.returncode
+        with _JOB_LOCK:
+            if job_id in _PIPELINE_JOBS:
+                _PIPELINE_JOBS[job_id]["status"] = "completed" if rc == 0 else "failed"
+                _PIPELINE_JOBS[job_id]["exit_code"] = rc
+                _PIPELINE_JOBS[job_id]["finished_at"] = datetime.utcnow().isoformat() + "Z"
+    except Exception as exc:
+        with _JOB_LOCK:
+            if job_id in _PIPELINE_JOBS:
+                _PIPELINE_JOBS[job_id]["status"] = "error"
+                _PIPELINE_JOBS[job_id]["finished_at"] = datetime.utcnow().isoformat() + "Z"
+                _PIPELINE_LOGS.setdefault(job_id, []).append(f"[ERROR] {exc}")
+
+
+class PipelineRunRequest(BaseModel):
+    source: str
+    dry_run: bool = False
+
+
 class TradingWatchlistToggleRequest(BaseModel):
     item_id: str = Field(min_length=1, max_length=200)
     action: str = Field(pattern="^(activate|deactivate)$")
@@ -138,6 +189,74 @@ def _require_secret(x_harness_secret: str | None = Header(default=None)) -> None
         return
     if x_harness_secret != expected:
         raise HTTPException(status_code=401, detail="Invalid dashboard secret")
+
+
+# ── 비밀번호 관리 (서버 파일 기반, 브라우저 독립) ──────────────────────────────
+_PASSWORDS_FILE = Path(__file__).parent / "passwords.json"
+_PW_LOCK = threading.Lock()
+
+
+def _hash_pw(pw: str) -> str:
+    return hashlib.sha256(pw.encode("utf-8")).hexdigest()
+
+
+def _load_passwords() -> dict[str, str]:
+    if _PASSWORDS_FILE.exists():
+        try:
+            data = json.loads(_PASSWORDS_FILE.read_text())
+            if "ceo" in data and "vp" in data:
+                return dict(data)
+        except Exception:
+            pass
+    ceo = os.environ.get("HARNESS_CEO_PASSWORD", "ceo123")
+    vp = os.environ.get("HARNESS_VP_PASSWORD", "vp123")
+    passwords = {"ceo": _hash_pw(ceo), "vp": _hash_pw(vp)}
+    try:
+        _PASSWORDS_FILE.write_text(json.dumps(passwords))
+    except Exception:
+        pass
+    return passwords
+
+
+_PASSWORDS: dict[str, str] = _load_passwords()
+
+
+class AuthLoginRequest(BaseModel):
+    role: str
+    password: str
+
+
+class AuthChangePasswordRequest(BaseModel):
+    role: str
+    current_password: str
+    new_password: str
+
+
+@app.post("/api/auth/login")
+def auth_login(req: AuthLoginRequest, _: None = Depends(_require_secret)):
+    if req.role not in ("ceo", "vp"):
+        raise HTTPException(status_code=400, detail="Invalid role")
+    if _PASSWORDS.get(req.role) != _hash_pw(req.password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    return {"ok": True, "role": req.role}
+
+
+@app.post("/api/auth/change-password")
+def auth_change_password(req: AuthChangePasswordRequest, _: None = Depends(_require_secret)):
+    global _PASSWORDS
+    if req.role not in ("ceo", "vp"):
+        raise HTTPException(status_code=400, detail="Invalid role")
+    with _PW_LOCK:
+        if _PASSWORDS.get(req.role) != _hash_pw(req.current_password):
+            raise HTTPException(status_code=401, detail="Current password incorrect")
+        if len(req.new_password) < 4:
+            raise HTTPException(status_code=400, detail="New password too short (min 4)")
+        _PASSWORDS[req.role] = _hash_pw(req.new_password)
+        try:
+            _PASSWORDS_FILE.write_text(json.dumps(_PASSWORDS))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to save password: {e}")
+    return {"ok": True}
 
 
 def _post_slack_message(channel_id: str, text: str) -> str | None:
@@ -2768,5 +2887,138 @@ def toggle_ar_status(
         path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update registry: {e}")
-        
+
     return {"status": "ok", "id": req.id, "new_status": new_status}
+
+
+# ── Pipeline Control API ─────────────────────────────────────────
+
+@app.post("/api/pipeline/run")
+def run_pipeline_job(body: PipelineRunRequest, _: None = Depends(_require_secret)) -> dict[str, Any]:
+    if body.source not in _SOURCE_MAP:
+        raise HTTPException(400, f"Unknown source: {body.source}. Valid: {list(_SOURCE_MAP)}")
+
+    with _JOB_LOCK:
+        running = [j for j in _PIPELINE_JOBS.values() if j["status"] == "running" and j["source"] == body.source]
+    if running:
+        raise HTTPException(409, f"'{body.source}' 작업이 이미 실행 중입니다 (job_id={running[0]['id']})")
+
+    python = _PROJECT_ROOT / ".venv" / "bin" / "python"
+
+    if body.source == "filter":
+        script = _PROJECT_ROOT / "scripts" / "run_edu_filter.py"
+        cmd = [str(python), str(script), "--model", "qwen2.5:1.5b", "--limit", "500"]
+    else:
+        script = _PROJECT_ROOT / "scripts" / "run_edu_deep_research.py"
+        src_str = _SOURCE_MAP[body.source] or "scholar"
+        cmd = [str(python), str(script), "--sources", src_str]
+        if body.dry_run:
+            cmd += ["--dry-run"]
+
+    job_id = str(uuid4())[:8]
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            cwd=str(_PROJECT_ROOT),
+            env=os.environ.copy(),
+        )
+    except Exception as exc:
+        raise HTTPException(500, f"프로세스 시작 실패: {exc}")
+
+    with _JOB_LOCK:
+        _PIPELINE_JOBS[job_id] = {
+            "id": job_id,
+            "source": body.source,
+            "label": {"scholar": "Semantic Scholar", "arxiv": "arXiv", "youtube": "YouTube",
+                      "rss": "RSS", "all": "전체 수집", "filter": "AI 필터링"}.get(body.source, body.source),
+            "started_at": datetime.utcnow().isoformat() + "Z",
+            "status": "running",
+            "pid": proc.pid,
+            "dry_run": body.dry_run,
+            "finished_at": None,
+            "exit_code": None,
+        }
+        _PIPELINE_LOGS[job_id] = [f"[시작] pid={proc.pid} cmd={' '.join(cmd[-3:])}"]
+        # 오래된 job 제거
+        if len(_PIPELINE_JOBS) > _MAX_JOB_HISTORY:
+            oldest = sorted(
+                (k for k, v in _PIPELINE_JOBS.items() if v["status"] != "running"),
+                key=lambda k: _PIPELINE_JOBS[k].get("started_at", "")
+            )
+            for k in oldest[:len(_PIPELINE_JOBS) - _MAX_JOB_HISTORY]:
+                _PIPELINE_JOBS.pop(k, None)
+                _PIPELINE_LOGS.pop(k, None)
+
+    threading.Thread(target=_tail_process, args=(job_id, proc), daemon=True).start()
+    return {"job_id": job_id, "pid": proc.pid, "source": body.source}
+
+
+@app.post("/api/pipeline/stop/{job_id}")
+def stop_pipeline_job(job_id: str, _: None = Depends(_require_secret)) -> dict[str, Any]:
+    with _JOB_LOCK:
+        job = _PIPELINE_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if job["status"] != "running":
+        raise HTTPException(400, "Job is not running")
+    try:
+        os.kill(job["pid"], _signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    with _JOB_LOCK:
+        _PIPELINE_JOBS[job_id]["status"] = "stopped"
+        _PIPELINE_JOBS[job_id]["finished_at"] = datetime.utcnow().isoformat() + "Z"
+    return {"ok": True}
+
+
+@app.get("/api/pipeline/status")
+def get_pipeline_status(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    with _JOB_LOCK:
+        jobs = []
+        for job in sorted(_PIPELINE_JOBS.values(), key=lambda j: j.get("started_at", ""), reverse=True)[:20]:
+            job_id = job["id"]
+            logs = _PIPELINE_LOGS.get(job_id, [])
+            jobs.append({**job, "log_tail": logs[-80:], "log_total": len(logs)})
+    return {"jobs": jobs}
+
+
+@app.get("/api/pipeline/signals")
+def get_pipeline_signals(
+    source: str | None = None,
+    status: str | None = None,
+    q: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    where = ["domain = 'edu_consulting'"]
+    params: list[Any] = []
+    if source:
+        where.append("source ILIKE %s")
+        params.append(f"%{source}%")
+    if status:
+        where.append("status = %s")
+        params.append(status)
+    if q:
+        where.append("(raw_data->>'title' ILIKE %s OR raw_data->>'abstract' ILIKE %s)")
+        params.append(f"%{q}%")
+        params.append(f"%{q}%")
+
+    wc = " AND ".join(where)
+    count_r = _execute_query(f"SELECT count(*) FROM raw_signals WHERE {wc}", tuple(params))
+    total = int(count_r[0]["count"]) if count_r else 0
+
+    rows = _execute_query(
+        f"SELECT id, source, status, ingested_at, "
+        f"raw_data->>'title' as title, "
+        f"raw_data->>'url' as url, "
+        f"raw_data->>'query' as query "
+        f"FROM raw_signals WHERE {wc} "
+        f"ORDER BY ingested_at DESC LIMIT %s OFFSET %s",
+        tuple(params) + (limit, offset),
+    )
+    return {"total": total, "limit": limit, "offset": offset, "items": [dict(r) for r in rows]}

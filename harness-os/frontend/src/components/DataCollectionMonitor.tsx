@@ -58,13 +58,18 @@ export function DataCollectionMonitor({ monitor }: Props) {
           <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
             Pipeline Funnel
           </p>
-          <FunnelRow label="수집됨" value={total} color="var(--color-text)" bold />
-          <FunnelArrow label={`→ ${pct(pass_count, total)}`} color="var(--color-ok)" />
-          <FunnelRow label="통과 (Pass)" value={pass_count} color="var(--color-ok)" />
-          <FunnelArrow label={`→ ${pct(fail_count, total)}`} color="var(--color-text-muted)" />
-          <FunnelRow label="탈락 (Fail)" value={fail_count} color="var(--color-text-muted)" />
-          <FunnelArrow label={`→ ${pct(pending_count, total)}`} color="var(--color-warn)" />
-          <FunnelRow label="대기 (Pending)" value={pending_count} color="var(--color-warn)" />
+          {[
+            { label: '수집됨', value: total, color: 'var(--color-text)', rate: null },
+            { label: '통과 (Pass)', value: pass_count, color: 'var(--color-ok)', rate: pct(pass_count, total) },
+            { label: '탈락 (Fail)', value: fail_count, color: 'var(--color-text-muted)', rate: pct(fail_count, total) },
+            { label: '대기 (Pending)', value: pending_count, color: 'var(--color-warn)', rate: pct(pending_count, total) },
+          ].map(({ label, value, color, rate }) => (
+            <div key={label} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', alignItems: 'center', gap: '0.5rem', padding: '0.45rem 0', borderBottom: '1px solid var(--color-border)' }}>
+              <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>{label}</span>
+              <span style={{ fontSize: '0.75rem', color, fontWeight: 600, textAlign: 'right', minWidth: '3rem' }}>{rate ?? ''}</span>
+              <span style={{ fontSize: '1.25rem', fontWeight: 800, color, textAlign: 'right', minWidth: '3rem', lineHeight: 1 }}>{value.toLocaleString('ko-KR')}</span>
+            </div>
+          ))}
         </div>
 
         {/* SOURCES */}
@@ -168,21 +173,3 @@ export function DataCollectionMonitor({ monitor }: Props) {
   )
 }
 
-function FunnelRow({ label, value, color, bold }: { label: string; value: number; color: string; bold?: boolean }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.15rem' }}>
-      <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{label}</span>
-      <span style={{ fontSize: bold ? '1.4rem' : '1.1rem', fontWeight: 800, color, lineHeight: 1 }}>
-        {value.toLocaleString('ko-KR')}
-      </span>
-    </div>
-  )
-}
-
-function FunnelArrow({ label, color }: { label: string; color: string }) {
-  return (
-    <div style={{ textAlign: 'center', fontSize: '0.72rem', color, margin: '0.1rem 0', opacity: 0.8 }}>
-      {label}
-    </div>
-  )
-}

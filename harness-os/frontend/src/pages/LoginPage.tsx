@@ -4,40 +4,47 @@ type Role = 'ceo' | 'vp'
 
 type Props = {
   onLogin: (role: Role) => void
+  apiBase: string
+  authHeaders: () => Record<string, string>
 }
 
-function getStoredPassword(role: Role): string {
-  try {
-    const raw = localStorage.getItem(`harness-settings-${role}`)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (parsed.password) return parsed.password
-    }
-  } catch {}
-  return role === 'ceo' ? 'ceo123' : 'vp123'
-}
-
-export function LoginPage({ onLogin }: Props) {
+export function LoginPage({ onLogin, apiBase, authHeaders }: Props) {
   const [role, setRole] = useState<Role>('ceo')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [shake, setShake] = useState(false)
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     setPassword('')
     setError('')
   }, [role])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const correct = getStoredPassword(role)
-    if (password === correct) {
-      onLogin(role)
-    } else {
-      setError('비밀번호가 올바르지 않습니다.')
+    if (loading) return
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch(`${apiBase}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ role, password }),
+      })
+      if (res.ok) {
+        onLogin(role)
+      } else {
+        setError('비밀번호가 올바르지 않습니다.')
+        setShake(true)
+        setTimeout(() => setShake(false), 500)
+        setPassword('')
+      }
+    } catch {
+      setError('서버에 연결할 수 없습니다.')
       setShake(true)
       setTimeout(() => setShake(false), 500)
-      setPassword('')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -127,6 +134,7 @@ export function LoginPage({ onLogin }: Props) {
                 onChange={(e) => { setPassword(e.target.value); setError('') }}
                 placeholder="비밀번호 입력"
                 autoFocus
+                disabled={loading}
                 style={{
                   width: '100%',
                   padding: '0.75rem 1rem',
@@ -138,6 +146,7 @@ export function LoginPage({ onLogin }: Props) {
                   outline: 'none',
                   boxSizing: 'border-box',
                   transition: 'border-color 0.15s',
+                  opacity: loading ? 0.6 : 1,
                 }}
               />
               {error && (
@@ -149,6 +158,7 @@ export function LoginPage({ onLogin }: Props) {
 
             <button
               type="submit"
+              disabled={loading}
               style={{
                 width: '100%',
                 padding: '0.85rem',
@@ -158,11 +168,13 @@ export function LoginPage({ onLogin }: Props) {
                 color: '#fff',
                 fontSize: '0.95rem',
                 fontWeight: 700,
-                cursor: 'pointer',
+                cursor: loading ? 'not-allowed' : 'pointer',
                 letterSpacing: '0.02em',
+                opacity: loading ? 0.7 : 1,
+                transition: 'opacity 0.15s',
               }}
             >
-              로그인
+              {loading ? '확인 중...' : '로그인'}
             </button>
           </form>
         </div>

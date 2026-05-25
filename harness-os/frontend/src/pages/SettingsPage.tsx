@@ -6,8 +6,7 @@ type Settings = {
   refreshInterval: number // seconds
   nickname: string
   welcomeMessage: string
-  password?: string
-  exchangeRateMode: 'realtime' | 'manual' // 환율 모드 추가
+  exchangeRateMode: 'realtime' | 'manual'
 }
 
 const defaultSettings = {
@@ -17,7 +16,6 @@ const defaultSettings = {
     refreshInterval: 60,
     nickname: '대표님',
     welcomeMessage: 'Harness OS의 최종 의사결정 및 자산 지배 통제 센터에 오신 것을 환영합니다.',
-    password: 'ceo123',
     exchangeRateMode: 'realtime' as const,
   },
   vp: {
@@ -26,7 +24,6 @@ const defaultSettings = {
     refreshInterval: 60,
     nickname: '부대표님',
     welcomeMessage: 'Physical AI 리서치 분석 및 콘텐츠 품질 1차 관제 데스크입니다.',
-    password: 'vp123',
     exchangeRateMode: 'realtime' as const,
   },
 }
@@ -35,18 +32,17 @@ type Props = {
   onSettingsChange: (role: 'ceo' | 'vp', settings: Settings) => void
   currentRole: 'ceo' | 'vp'
   onLogout: () => void
+  apiBase: string
+  authHeaders: () => Record<string, string>
 }
 
-export function SettingsPage({ onSettingsChange, currentRole, onLogout }: Props) {
+export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase, authHeaders }: Props) {
   // 역할별 설정
   const [settings, setSettings] = useState<Settings>(() => {
     const saved = localStorage.getItem(`harness-settings-${currentRole}`)
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as Settings
-        if (!parsed.password) {
-          parsed.password = defaultSettings[currentRole].password
-        }
         if (!parsed.exchangeRateMode) {
           parsed.exchangeRateMode = defaultSettings[currentRole].exchangeRateMode
         }
@@ -71,14 +67,11 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout }: Props)
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as Settings
-        if (!parsed.password) {
-          parsed.password = defaultSettings[currentRole].password
-        }
         if (!parsed.exchangeRateMode) {
           parsed.exchangeRateMode = defaultSettings[currentRole].exchangeRateMode
         }
         setSettings(parsed)
-      } catch (e) {
+      } catch {
         setSettings(defaultSettings[currentRole])
       }
     } else {
@@ -98,35 +91,47 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout }: Props)
     onSettingsChange(currentRole, newSettings)
   }
 
-  // 비밀번호 변경 액션 핸들러
-  const handlePasswordUpdate = (e: React.FormEvent) => {
+  // 비밀번호 변경 액션 핸들러 (서버 API 기반)
+  const handlePasswordUpdate = async (e: React.FormEvent) => {
     e.preventDefault()
     setPwError(null)
     setPwSuccess(null)
-
-    const actualCurrentPassword = settings.password || defaultSettings[currentRole].password
-
-    if (currentPasswordInput !== actualCurrentPassword) {
-      setPwError('이전 비밀번호가 올바르지 않습니다.')
-      return
-    }
 
     if (!newPasswordInput) {
       setPwError('새 비밀번호를 입력해 주십시오.')
       return
     }
-
     if (newPasswordInput !== confirmPasswordInput) {
       setPwError('새 비밀번호와 확인 입력이 일치하지 않습니다.')
       return
     }
 
-    updateSetting('password', newPasswordInput)
-    setPwSuccess('비밀번호가 안전하게 업데이트되었습니다.')
-    
-    setCurrentPasswordInput('')
-    setNewPasswordInput('')
-    setConfirmPasswordInput('')
+    try {
+      const res = await fetch(`${apiBase}/api/auth/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          role: currentRole,
+          current_password: currentPasswordInput,
+          new_password: newPasswordInput,
+        }),
+      })
+      if (res.ok) {
+        setPwSuccess('비밀번호가 서버에 안전하게 저장되었습니다.')
+        setCurrentPasswordInput('')
+        setNewPasswordInput('')
+        setConfirmPasswordInput('')
+      } else {
+        const data = await res.json().catch(() => ({}))
+        if (res.status === 401) {
+          setPwError('이전 비밀번호가 올바르지 않습니다.')
+        } else {
+          setPwError(data?.detail ?? '비밀번호 변경에 실패했습니다.')
+        }
+      }
+    } catch {
+      setPwError('서버에 연결할 수 없습니다.')
+    }
   }
 
   const handleReset = () => {
@@ -136,6 +141,9 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout }: Props)
     onSettingsChange(currentRole, defaults)
     setPwError(null)
     setPwSuccess(null)
+    setCurrentPasswordInput('')
+    setNewPasswordInput('')
+    setConfirmPasswordInput('')
   }
 
   return (
