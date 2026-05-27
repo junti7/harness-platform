@@ -2436,7 +2436,7 @@ def _advanced_dashboard_payload() -> dict[str, Any]:
 
 
 
-@app.get("/")
+@app.get("/api/")
 def root() -> dict[str, str]:
     return {"service": "harness-os-backend", "status": "ok"}
 
