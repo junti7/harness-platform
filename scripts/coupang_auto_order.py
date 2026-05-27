@@ -151,7 +151,7 @@ def check_status():
         try:
             # 1. Navigate to homepage first to establish trust cookies
             print("Navigating to Coupang homepage first...")
-            page.goto("https://www.coupang.com/")
+            page.goto("https://m.coupang.com/")
             time.sleep(2)
             
             # 2. Now navigate to deep purchase list link
@@ -192,7 +192,7 @@ def add_to_cart_and_checkout(product_url, quantity=1):
         try:
             # 1. Navigate to homepage first to establish WAF trust
             print("Loading Coupang homepage to establish trust...")
-            page.goto("https://www.coupang.com/")
+            page.goto("https://m.coupang.com/")
             time.sleep(3)
             
             # 2. Now navigate to the actual product page
