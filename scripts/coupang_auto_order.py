@@ -7,13 +7,14 @@ from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
 
 # Load env variables
-load_dotenv("/Users/juntae.park/projects/harness-platform/.env")
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 COUPANG_EMAIL = os.getenv("COUPANG_EMAIL")
 COUPANG_PASSWORD = os.getenv("COUPANG_PASSWORD")
 
-PROFILE_DIR = Path("/Users/juntae.park/projects/harness-platform/scratch/coupang_profile")
-SCREENSHOT_DIR = Path("/Users/juntae.park/projects/harness-platform/docs/browser_screenshots")
+PROFILE_DIR = BASE_DIR / "scratch" / "coupang_profile"
+SCREENSHOT_DIR = BASE_DIR / "docs" / "browser_screenshots"
 SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
 CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
