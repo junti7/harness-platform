@@ -180,6 +180,10 @@ def add_to_cart_and_checkout(product_url, quantity=1):
     """Add a product to the cart and prepare checkout page (without buying)."""
     print(f"Adding product to cart: {product_url} (Qty: {quantity})...")
     
+    if "www.coupang.com" in product_url:
+        print("Converting desktop URL to mobile URL to bypass Akamai WAF...")
+        product_url = product_url.replace("www.coupang.com", "m.coupang.com")
+        
     with sync_playwright() as p:
         context = get_context(p, headless=False)
         page = context.pages[0] if context.pages else context.new_page()
