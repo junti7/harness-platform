@@ -1660,12 +1660,13 @@ def command_coupang_cart(args: argparse.Namespace) -> None:
             [".venv/bin/python", "scripts/coupang_auto_order.py", "cart", "--url", args.url, "--qty", str(args.qty)],
             capture_output=True, text=True
         )
-        lines = res.stdout.strip().split("\n")
-        json_str = next((l for l in reversed(lines) if l.strip().startswith("{")), None)
-        if json_str:
-            result = _json.loads(json_str)
+        stdout = res.stdout.strip()
+        start = stdout.find("{")
+        end = stdout.rfind("}")
+        if start != -1 and end != -1:
+            result = _json.loads(stdout[start:end+1])
         else:
-            result = {"ok": False, "error": f"Invalid output: {res.stdout.strip()}"}
+            result = {"ok": False, "error": f"Invalid output: {stdout}"}
     except Exception as exc:
         result = {"ok": False, "error": str(exc)}
 
@@ -1718,12 +1719,13 @@ def command_coupang_pay(args: argparse.Namespace) -> None:
             [".venv/bin/python", "scripts/coupang_auto_order.py", "pay"],
             capture_output=True, text=True
         )
-        lines = res.stdout.strip().split("\n")
-        json_str = next((l for l in reversed(lines) if l.strip().startswith("{")), None)
-        if json_str:
-            result = _json.loads(json_str)
+        stdout = res.stdout.strip()
+        start = stdout.find("{")
+        end = stdout.rfind("}")
+        if start != -1 and end != -1:
+            result = _json.loads(stdout[start:end+1])
         else:
-            result = {"ok": False, "error": f"Invalid output: {res.stdout.strip()}"}
+            result = {"ok": False, "error": f"Invalid output: {stdout}"}
     except Exception as exc:
         result = {"ok": False, "error": str(exc)}
 
