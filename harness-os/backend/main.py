@@ -277,26 +277,38 @@ def auth_login(req: AuthLoginRequest, _: None = Depends(_require_secret)):
     return {"ok": True, "role": req.role}
 
 
+def _update_env_password(env_key: str, new_value: str) -> None:
+    """비밀번호를 .env 파일에 업데이트하고 현재 프로세스 환경변수도 갱신한다."""
+    env_path = PROJECT_ROOT / ".env"
+    if env_path.exists():
+        lines = env_path.read_text().splitlines(keepends=True)
+        updated = False
+        for i, line in enumerate(lines):
+            if line.startswith(f"{env_key}=") or line.startswith(f"{env_key} ="):
+                lines[i] = f"{env_key}={new_value}\n"
+                updated = True
+                break
+        if not updated:
+            lines.append(f"{env_key}={new_value}\n")
+        env_path.write_text("".join(lines))
+    os.environ[env_key] = new_value
+
+
 @app.post("/api/auth/change-password")
 def auth_change_password(req: AuthChangePasswordRequest, _: None = Depends(_require_secret)):
     global _PASSWORDS
     if req.role not in ("ceo", "vp"):
         raise HTTPException(status_code=400, detail="Invalid role")
-    # env 우선 모드에서는 파일 변경 불가 — .env 수정 필요
+    if len(req.new_password) < 4:
+        raise HTTPException(status_code=400, detail="새 비밀번호는 4자 이상이어야 합니다.")
     env_key = "HARNESS_CEO_PASSWORD" if req.role == "ceo" else "HARNESS_VP_PASSWORD"
-    if os.environ.get(env_key):
-        raise HTTPException(
-            status_code=400,
-            detail=f"비밀번호는 .env 파일의 {env_key} 값을 직접 변경하세요."
-        )
     with _PW_LOCK:
         if _PASSWORDS.get(req.role) != _hash_pw(req.current_password):
             raise HTTPException(status_code=401, detail="Current password incorrect")
-        if len(req.new_password) < 4:
-            raise HTTPException(status_code=400, detail="New password too short (min 4)")
         _PASSWORDS[req.role] = _hash_pw(req.new_password)
+        # .env 파일과 현재 환경변수 모두 업데이트 → 재시작 후에도 유지
         try:
-            _PASSWORDS_FILE.write_text(json.dumps(_PASSWORDS))
+            _update_env_password(env_key, req.new_password)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to save password: {e}")
     return {"ok": True}
