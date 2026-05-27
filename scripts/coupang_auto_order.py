@@ -21,15 +21,22 @@ CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 def get_context(p, headless=True):
     """Launch persistent context with dedicated profile."""
-    return p.chromium.launch_persistent_context(
+    context = p.chromium.launch_persistent_context(
         user_data_dir=str(PROFILE_DIR),
         executable_path=CHROME_PATH,
         headless=headless,
-        user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
         viewport={"width": 1280, "height": 900},
         locale="ko-KR",
-        timezone_id="Asia/Seoul"
+        timezone_id="Asia/Seoul",
+        ignore_default_args=["--enable-automation"],
+        args=[
+            "--disable-blink-features=AutomationControlled",
+        ]
     )
+    # Hide webdriver property to bypass advanced bot protection
+    context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    return context
 
 def setup_login():
     """Launch headful Chrome to perform Coupang login once."""
