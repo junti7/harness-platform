@@ -26,6 +26,14 @@ def is_port_open(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(('localhost', port)) == 0
 
+def find_free_port():
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        s.listen(1)
+        port = s.getsockname()[1]
+        return port
+
 def kill_chrome():
     try:
         subprocess.run(["pkill", "-f", "coupang_profile"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -35,12 +43,12 @@ def kill_chrome():
 
 def get_context(p, headless=False):
     """Launch clean Chrome instance via subprocess and connect via CDP to bypass Akamai WAF flags."""
-    port = 9222
+    port = find_free_port()
     
     # Always reset the state and kill previous instance using our profile to apply correct mode
     kill_chrome()
     
-    print(f"Launching clean Google Chrome (headless={headless}) on port {port}...")
+    print(f"Launching clean Google Chrome (headless={headless}) on random port {port}...")
     args = [
         CHROME_PATH,
         f"--remote-debugging-port={port}",
@@ -63,13 +71,13 @@ def get_context(p, headless=False):
         time.sleep(0.5)
         
     if not port_ready:
-        raise RuntimeError("Failed to start Google Chrome with remote debugging enabled.")
+        raise RuntimeError(f"Failed to start Google Chrome on port {port}")
         
-    print("Connecting Playwright to Chrome instance via CDP...")
+    print(f"Connecting Playwright to Chrome instance via CDP on port {port}...")
     browser = p.chromium.connect_over_cdp(f"http://localhost:{port}")
     context = browser.contexts[0] if browser.contexts else browser.new_context()
     
-    # Hide webdriver property to bypass advanced bot protection
+    # Hide webdriver property to bypass advanced bot protection BEFORE pages are loaded
     context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     return context
 
@@ -93,7 +101,13 @@ def setup_login():
     
     with sync_playwright() as p:
         context = get_context(p, headless=False)
-        page = context.pages[0] if context.pages else context.new_page()
+        # Create a fresh new page to guarantee that add_init_script is executed BEFORE any load
+        page = context.new_page()
+        # Close default browser tab to prevent leaks
+        for old in context.pages:
+            if old != page:
+                try: old.close()
+                except Exception: pass
         page.set_default_timeout(60000)
         
         print("Navigating to Coupang login page...")
@@ -146,7 +160,13 @@ def check_status():
     print("Checking Coupang login status...")
     with sync_playwright() as p:
         context = get_context(p, headless=False)
-        page = context.pages[0] if context.pages else context.new_page()
+        # Create a fresh new page to guarantee that add_init_script is executed BEFORE any load
+        page = context.new_page()
+        # Close default browser tab to prevent leaks
+        for old in context.pages:
+            if old != page:
+                try: old.close()
+                except Exception: pass
         
         try:
             # 1. Navigate to homepage first to establish trust cookies
@@ -186,7 +206,13 @@ def add_to_cart_and_checkout(product_url, quantity=1):
         
     with sync_playwright() as p:
         context = get_context(p, headless=False)
-        page = context.pages[0] if context.pages else context.new_page()
+        # Create a fresh new page to guarantee that add_init_script is executed BEFORE any load
+        page = context.new_page()
+        # Close default browser tab to prevent leaks
+        for old in context.pages:
+            if old != page:
+                try: old.close()
+                except Exception: pass
         page.set_default_timeout(30000)
         
         try:
@@ -283,7 +309,13 @@ def finalize_payment():
     
     with sync_playwright() as p:
         context = get_context(p, headless=False)
-        page = context.pages[0] if context.pages else context.new_page()
+        # Create a fresh new page to guarantee that add_init_script is executed BEFORE any load
+        page = context.new_page()
+        # Close default browser tab to prevent leaks
+        for old in context.pages:
+            if old != page:
+                try: old.close()
+                except Exception: pass
         page.set_default_timeout(30000)
         
         try:
