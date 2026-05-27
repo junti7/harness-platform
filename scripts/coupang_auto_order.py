@@ -33,7 +33,7 @@ def kill_chrome():
     except Exception:
         pass
 
-def get_context(p, headless=True):
+def get_context(p, headless=False):
     """Launch clean Chrome instance via subprocess and connect via CDP to bypass Akamai WAF flags."""
     port = 9222
     
@@ -145,7 +145,7 @@ def check_status():
     """Check if the session is currently logged in."""
     print("Checking Coupang login status...")
     with sync_playwright() as p:
-        context = get_context(p, headless=True)
+        context = get_context(p, headless=False)
         page = context.pages[0] if context.pages else context.new_page()
         
         try:
@@ -174,7 +174,7 @@ def add_to_cart_and_checkout(product_url, quantity=1):
     print(f"Adding product to cart: {product_url} (Qty: {quantity})...")
     
     with sync_playwright() as p:
-        context = get_context(p, headless=True)
+        context = get_context(p, headless=False)
         page = context.pages[0] if context.pages else context.new_page()
         page.set_default_timeout(30000)
         
@@ -266,7 +266,7 @@ def finalize_payment():
     print("FINALIZING PAYMENT (Executing final order)...")
     
     with sync_playwright() as p:
-        context = get_context(p, headless=True)
+        context = get_context(p, headless=False)
         page = context.pages[0] if context.pages else context.new_page()
         page.set_default_timeout(30000)
         
