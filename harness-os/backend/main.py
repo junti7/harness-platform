@@ -2032,8 +2032,11 @@ def _fetch_ibkr_quotes(watchlist: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _trading_api_overview() -> dict[str, Any]:
-    from scripts.ibkr_cp_client import IbkrCpClient, safe_check_connectivity
-    from scripts.ibkr_onboarding import compute_status
+    try:
+        from scripts.ibkr_cp_client import IbkrCpClient, safe_check_connectivity
+        from scripts.ibkr_onboarding import compute_status
+    except ImportError:
+        return {"preflight": {"ok": False, "error": "IBKR 모듈 미설치"}, "accounts": {"count": 0, "accounts": []}, "onboarding": {"path": "", "completed_count": 0, "total_count": 0, "steps": []}, "whitelist": {"path": "", "item_count": 0}, "watchlist_meta": {"path": "", "item_count": 0, "mode": "n/a"}, "registry": {"path": "", "approved_count": 0, "recent": []}, "pending": {"path": "", "pending_count": 0, "recent": []}, "watchlist": []}
 
     whitelist_path = PROJECT_ROOT / "docs/trading/etf_whitelist_v0.json"
     trading_watchlist_path = PROJECT_ROOT / "docs/trading/trading_watchlist_v0.json"
@@ -2412,7 +2415,10 @@ def _platform_dashboard_slice(platform: str) -> dict[str, Any]:
 
 
 def _advanced_dashboard_payload() -> dict[str, Any]:
-    from scripts.openclaw_codex_bridge import status_snapshot
+    try:
+        from scripts.openclaw_codex_bridge import status_snapshot
+    except ImportError:
+        status_snapshot = lambda: {}
 
     available_platforms = ["all", *_available_snapshot_platforms()]
     base = _dashboard_payload("all")
