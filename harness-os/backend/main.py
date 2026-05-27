@@ -3380,3 +3380,35 @@ def ack_drop_alert(req: DropAlertAckRequest, _: None = Depends(_require_secret))
         return {"ok": found}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# ── SPA Static File Serving (프로덕션 배포용) ────────────────────────────────
+# Vite 빌드 결과물을 FastAPI에서 직접 서빙.
+# /api/* 경로는 위의 라우트들이 우선 처리하므로 충돌 없음.
+
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse as _FileResponse
+
+_FRONTEND_DIST = PROJECT_ROOT / "harness-os" / "frontend" / "dist"
+
+if _FRONTEND_DIST.exists():
+    # /assets, /manifest.webmanifest 등 정적 파일 직접 서빙
+    app.mount("/assets", StaticFiles(directory=str(_FRONTEND_DIST / "assets")), name="static-assets")
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def _favicon():
+        f = _FRONTEND_DIST / "favicon.ico"
+        return _FileResponse(str(f)) if f.exists() else _FileResponse(str(_FRONTEND_DIST / "index.html"))
+
+    @app.get("/manifest.webmanifest", include_in_schema=False)
+    def _manifest():
+        f = _FRONTEND_DIST / "manifest.webmanifest"
+        return _FileResponse(str(f)) if f.exists() else _FileResponse(str(_FRONTEND_DIST / "index.html"))
+
+    # SPA catch-all: /api/* 제외한 모든 경로 → index.html
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def _spa_fallback(full_path: str):
+        candidate = _FRONTEND_DIST / full_path
+        if candidate.exists() and candidate.is_file():
+            return _FileResponse(str(candidate))
+        return _FileResponse(str(_FRONTEND_DIST / "index.html"))

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 type Role = 'ceo' | 'vp'
 
@@ -14,11 +14,13 @@ export function LoginPage({ onLogin, apiBase, authHeaders }: Props) {
   const [error, setError] = useState('')
   const [shake, setShake] = useState(false)
   const [loading, setLoading] = useState(false)
+  const pwRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setPassword('')
       setError('')
+      pwRef.current?.focus()
     }, 0)
     return () => window.clearTimeout(timer)
   }, [role])
@@ -41,11 +43,14 @@ export function LoginPage({ onLogin, apiBase, authHeaders }: Props) {
         setShake(true)
         setTimeout(() => setShake(false), 500)
         setPassword('')
+        setTimeout(() => pwRef.current?.focus(), 50)
       }
     } catch {
       setError('서버에 연결할 수 없습니다.')
       setShake(true)
       setTimeout(() => setShake(false), 500)
+      setPassword('')
+      setTimeout(() => pwRef.current?.focus(), 50)
     } finally {
       setLoading(false)
     }
@@ -136,6 +141,7 @@ export function LoginPage({ onLogin, apiBase, authHeaders }: Props) {
                 비밀번호
               </p>
               <input
+                ref={pwRef}
                 type="password"
                 value={password}
                 onChange={(e) => { setPassword(e.target.value); setError('') }}
