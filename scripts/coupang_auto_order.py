@@ -55,6 +55,7 @@ def get_context(p, headless=False):
         f"--user-data-dir={str(PROFILE_DIR)}",
         "--no-first-run",
         "--no-default-browser-check",
+        "--user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
     ]
     if headless:
         args.append("--headless=new")
@@ -237,7 +238,13 @@ def add_to_cart_and_checkout(product_url, quantity=1):
                 "button.prod-buy-btn",
                 "button:has-text('바로구매')",
                 ".prod-buy-btn",
-                "a:has-text('바로구매')"
+                "a:has-text('바로구매')",
+                "button:has-text('구매하기')",
+                "a:has-text('구매하기')",
+                ".buy-button",
+                ".buy-btn",
+                ".go-to-buy",
+                "button:has-text('바로구매하기')"
             ]
             
             buy_now_btn = None
