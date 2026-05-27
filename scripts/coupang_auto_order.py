@@ -19,24 +19,72 @@ SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
 CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
+import subprocess
+import socket
+
+def is_port_open(port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(('localhost', port)) == 0
+
+def kill_chrome():
+    try:
+        subprocess.run(["pkill", "-f", "coupang_profile"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(1)
+    except Exception:
+        pass
+
 def get_context(p, headless=True):
-    """Launch persistent context with dedicated profile."""
-    context = p.chromium.launch_persistent_context(
-        user_data_dir=str(PROFILE_DIR),
-        executable_path=CHROME_PATH,
-        headless=headless,
-        user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-        viewport={"width": 1280, "height": 900},
-        locale="ko-KR",
-        timezone_id="Asia/Seoul",
-        ignore_default_args=["--enable-automation"],
-        args=[
-            "--disable-blink-features=AutomationControlled",
-        ]
-    )
+    """Launch clean Chrome instance via subprocess and connect via CDP to bypass Akamai WAF flags."""
+    port = 9222
+    
+    # Always reset the state and kill previous instance using our profile to apply correct mode
+    kill_chrome()
+    
+    print(f"Launching clean Google Chrome (headless={headless}) on port {port}...")
+    args = [
+        CHROME_PATH,
+        f"--remote-debugging-port={port}",
+        f"--user-data-dir={str(PROFILE_DIR)}",
+        "--no-first-run",
+        "--no-default-browser-check",
+    ]
+    if headless:
+        args.append("--headless=new")
+        
+    # Start Chrome directly to bypass Playwright's default test-runner command arguments
+    subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    # Wait for the debugging port to become active
+    port_ready = False
+    for _ in range(30):
+        if is_port_open(port):
+            port_ready = True
+            break
+        time.sleep(0.5)
+        
+    if not port_ready:
+        raise RuntimeError("Failed to start Google Chrome with remote debugging enabled.")
+        
+    print("Connecting Playwright to Chrome instance via CDP...")
+    browser = p.chromium.connect_over_cdp(f"http://localhost:{port}")
+    context = browser.contexts[0] if browser.contexts else browser.new_context()
+    
     # Hide webdriver property to bypass advanced bot protection
     context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     return context
+
+def close_context(context):
+    """Safely close context and its associated browser gracefully to save sessions and release SingletonLock."""
+    try:
+        if context.browser:
+            context.browser.close()
+        else:
+            context.close()
+    except Exception:
+        try:
+            context.close()
+        except Exception:
+            pass
 
 def setup_login():
     """Launch headful Chrome to perform Coupang login once."""
@@ -55,7 +103,7 @@ def setup_login():
         time.sleep(3)
         if "login" not in page.url:
             print("Already logged in! Active session detected.")
-            context.close()
+            close_context(context)
             return True
             
         # Fill credentials
@@ -86,11 +134,11 @@ def setup_login():
         
         if "login" in page.url or "Access Denied" in page.title():
             print("Verification FAILED. Session not saved properly.")
-            context.close()
+            close_context(context)
             return False
             
         print("SUCCESS! Coupang login verified and session cookies saved in scratch/coupang_profile.")
-        context.close()
+        close_context(context)
         return True
 
 def check_status():
@@ -109,16 +157,16 @@ def check_status():
             if "login" in url or "Access Denied" in title:
                 print("Status: NOT_LOGGED_IN")
                 print(f"Details - URL: {url}, Title: {title}")
-                context.close()
+                close_context(context)
                 return False
             else:
                 print("Status: LOGGED_IN")
                 print("Recent purchase history loaded successfully.")
-                context.close()
+                close_context(context)
                 return True
         except Exception as e:
             print(f"Error checking status: {e}")
-            context.close()
+            close_context(context)
             return False
 
 def add_to_cart_and_checkout(product_url, quantity=1):
@@ -159,7 +207,7 @@ def add_to_cart_and_checkout(product_url, quantity=1):
             if not buy_now_btn:
                 print("Error: '바로구매' (Buy Now) button not found.")
                 page.screenshot(path=str(SCREENSHOT_DIR / "product_buy_now_error.png"))
-                context.close()
+                close_context(context)
                 return {"ok": False, "error": "Buy Now button not found"}
                 
             print(f"Clicking Buy Now using selector: {buy_now_btn}...")
@@ -174,7 +222,7 @@ def add_to_cart_and_checkout(product_url, quantity=1):
             
             if "checkout" not in current_url:
                 print("Error: Did not redirect to checkout page.")
-                context.close()
+                close_context(context)
                 return {"ok": False, "error": "Not on checkout page"}
                 
             # Extract checkout details
@@ -200,7 +248,7 @@ def add_to_cart_and_checkout(product_url, quantity=1):
                 f.write(page.content())
                 
             print("Checkout prepared successfully! Saving order state.")
-            context.close()
+            close_context(context)
             return {
                 "ok": True,
                 "product": product_title,
@@ -210,7 +258,7 @@ def add_to_cart_and_checkout(product_url, quantity=1):
             }
         except Exception as e:
             print(f"Error preparing checkout: {e}")
-            context.close()
+            close_context(context)
             return {"ok": False, "error": str(e)}
 
 def finalize_payment():
@@ -253,7 +301,7 @@ def finalize_payment():
                     
             if not pay_btn:
                 print("Error: Final payment button not found.")
-                context.close()
+                close_context(context)
                 return {"ok": False, "error": "Payment button not found"}
                 
             print(f"Clicking final payment button: {pay_btn}...")
@@ -262,11 +310,11 @@ def finalize_payment():
             
             page.screenshot(path=str(SCREENSHOT_DIR / "payment_completed.png"))
             print("Payment click complete. Verification screenshot saved.")
-            context.close()
+            close_context(context)
             return {"ok": True}
         except Exception as e:
             print(f"Error finalizing payment: {e}")
-            context.close()
+            close_context(context)
             return {"ok": False, "error": str(e)}
 
 def main():
