@@ -1022,6 +1022,66 @@ def _gmail_search_runtime(query: str, limit: int = 10) -> dict[str, Any]:
     return _cached(cache_key, producer)
 
 
+def _gmail_message_runtime(message_id: str) -> dict[str, Any]:
+    ready, reason = _gmail_runtime_ready()
+    if not ready:
+        raise HTTPException(status_code=503, detail=f"Gmail runtime not ready: {reason}")
+
+    safe_msg_id = shlex.quote(message_id.strip())
+    if not safe_msg_id or len(safe_msg_id) > 64:
+        raise HTTPException(status_code=400, detail="Invalid message ID")
+
+    cache_key = f"gmail_message:{message_id}"
+
+    def producer() -> dict[str, Any]:
+        target = _gmail_runtime_target()
+        assert target is not None
+
+        exports = ["export PATH=/opt/homebrew/bin:/usr/bin:/bin"]
+        if GMAIL_RUNTIME_KEYRING_BACKEND:
+            exports.append(f"export GOG_KEYRING_BACKEND={shlex.quote(GMAIL_RUNTIME_KEYRING_BACKEND)}")
+        if GMAIL_RUNTIME_KEYRING_PASSWORD:
+            exports.append(f"export GOG_KEYRING_PASSWORD={shlex.quote(GMAIL_RUNTIME_KEYRING_PASSWORD)}")
+
+        cmd = (
+            f"{shlex.quote(GMAIL_RUNTIME_GOG_BIN)} gmail get {safe_msg_id} "
+            f"-a {shlex.quote(GMAIL_RUNTIME_ACCOUNT)} -j --results-only --gmail-no-send"
+        )
+        exports.append(cmd)
+        full_cmd = "; ".join(exports)
+
+        proc = subprocess.run(
+            [GMAIL_RUNTIME_SSH_BIN, target, full_cmd],
+            cwd=str(PROJECT_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=GMAIL_RUNTIME_TIMEOUT_S,
+            check=False,
+        )
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or "").strip()[:800]
+            raise HTTPException(status_code=502, detail=f"Gmail message retrieve failed: {detail or 'unknown error'}")
+
+        raw = (proc.stdout or "").strip()
+        try:
+            data = json.loads(raw) if raw else {}
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=502, detail=f"Gmail message returned invalid JSON: {exc}") from exc
+
+        return {
+            "id": message_id,
+            "subject": data.get("headers", {}).get("subject") or "",
+            "from": data.get("headers", {}).get("from") or "",
+            "to": data.get("headers", {}).get("to") or "",
+            "date": data.get("headers", {}).get("date") or "",
+            "body": data.get("body") or "",
+            "snippet": data.get("message", {}).get("snippet") or "",
+        }
+
+    return _cached(cache_key, producer)
+
+
+
 _CONFIGURED_LANGUAGES = [
     {"code": "en", "label": "English", "flag": "🇺🇸"},
     {"code": "es", "label": "Spanish", "flag": "🇪🇸"},
@@ -1260,6 +1320,8 @@ def _ar_status_meta(raw_status: str | None) -> dict[str, Any]:
     status = str(raw_status or "").strip().lower()
     if status in {"completed", "done", "closed", "waived", "완료", "종결"}:
         return {"code": "completed", "label": "종결", "variant": "ok", "is_closed": True}
+    if status in {"pending", "대기", "미결"}:
+        return {"code": "pending", "label": "미결", "variant": "warn", "is_closed": False}
     if status in {"hold", "on_hold", "paused", "보류"}:
         return {"code": "hold", "label": "보류", "variant": "muted", "is_closed": False}
     if status in {"overdue", "지연"}:
@@ -1386,6 +1448,7 @@ def _read_ar_registry() -> dict[str, Any]:
         tracker_updated_at = payload.get("generated_at")
 
     summary = {
+        "pending": 0,
         "in_progress": 0,
         "hold": 0,
         "blocked": 0,
@@ -1402,17 +1465,17 @@ def _read_ar_registry() -> dict[str, Any]:
         else:
             summary["in_progress"] += 1
 
-    open_count = len(
+    pending_count = len(
         [
             item
             for item in tracker_items
-            if not item.get("is_closed") and str(item.get("status_code") or "") != "hold"
+            if not item.get("is_closed") and str(item.get("status_code") or "") == "pending"
         ]
     )
     return {
         "source": "docs/reports/ar_tracker.jsonl" if AR_TRACKER_PATH.exists() else "docs/operations/ACTION_REQUIRED_REGISTRY.json",
         "updated_at": tracker_updated_at,
-        "open": open_count,
+        "open": pending_count,
         "closed": summary["closed"],
         "total": len(tracker_items),
         "summary": summary,
@@ -2510,6 +2573,15 @@ def get_gmail_search(
     return _gmail_search_runtime(query, limit)
 
 
+@app.get("/api/gmail/message/{message_id}")
+def get_gmail_message(
+    message_id: str,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    return _gmail_message_runtime(message_id)
+
+
+
 @app.get("/api/conference-room")
 def get_conference_room(_: None = Depends(_require_secret)) -> dict[str, Any]:
     return _conference_room_payload()
@@ -2824,6 +2896,56 @@ def post_trading_watchlist_add(
     req: TradingWatchlistAddRequest, _: None = Depends(_require_secret)
 ) -> dict[str, Any]:
     return _add_trading_watchlist_item(req)
+
+
+@app.get("/api/paper-trading/dashboard")
+def get_paper_trading_dashboard(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    try:
+        from scripts.alpaca_paper_trading import get_full_dashboard
+        return get_full_dashboard()
+    except Exception as e:
+        return {"ok": False, "error": str(e), "account": {"ok": False, "error": str(e)}}
+
+
+@app.post("/api/paper-trading/run")
+def run_paper_trading(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    """Turtle Auto Trader를 dry-run으로 즉시 실행 (주문 없음)."""
+    import subprocess, sys
+    script = PROJECT_ROOT / "scripts" / "turtle_auto_trader.py"
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            capture_output=True, text=True, timeout=60,
+            cwd=str(PROJECT_ROOT),
+        )
+        return {
+            "ok": result.returncode == 0,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+    except Exception as e:
+        return {"ok": False, "stdout": "", "stderr": str(e)}
+
+
+@app.post("/api/paper-trading/execute")
+def execute_paper_trading(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    """Turtle Auto Trader를 --execute 모드로 즉시 실행 (실제 paper 주문)."""
+    import subprocess, sys
+    script = PROJECT_ROOT / "scripts" / "turtle_auto_trader.py"
+    env = {**os.environ, "PAPER_TRADING_AUTO_EXECUTE": "true"}
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script), "--execute"],
+            capture_output=True, text=True, timeout=60,
+            cwd=str(PROJECT_ROOT), env=env,
+        )
+        return {
+            "ok": result.returncode == 0,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+    except Exception as e:
+        return {"ok": False, "stdout": "", "stderr": str(e)}
 
 
 _JARVIS_TIMEOUT_SEC = int(os.getenv("HARNESS_OS_JARVIS_TIMEOUT_SEC", "120"))
@@ -3224,3 +3346,37 @@ def delete_pipeline_query(idx: int, _: None = Depends(_require_secret)) -> dict[
     queries.pop(idx)
     _save_custom_queries(queries)
     return {"ok": True, "total": len(queries)}
+
+
+# ── Price Drop Monitor ───────────────────────────────────────────────────────
+
+@app.on_event("startup")
+def _start_price_drop_monitor() -> None:
+    try:
+        from scripts.price_drop_monitor import start_monitor
+        start_monitor()
+    except Exception:
+        pass
+
+
+class DropAlertAckRequest(BaseModel):
+    alert_id: str = Field(min_length=1, max_length=200)
+
+
+@app.get("/api/paper-trading/drop-alerts")
+def get_drop_alerts(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    try:
+        from scripts.price_drop_monitor import get_recent_alerts
+        return {"ok": True, "alerts": get_recent_alerts(20)}
+    except Exception as e:
+        return {"ok": False, "alerts": [], "error": str(e)}
+
+
+@app.post("/api/paper-trading/drop-alerts/ack")
+def ack_drop_alert(req: DropAlertAckRequest, _: None = Depends(_require_secret)) -> dict[str, Any]:
+    try:
+        from scripts.price_drop_monitor import ack_alert
+        found = ack_alert(req.alert_id)
+        return {"ok": found}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}

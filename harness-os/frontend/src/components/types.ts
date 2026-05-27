@@ -153,6 +153,7 @@ export type DashboardPayload = {
     closed: number; 
     total: number; 
     summary?: {
+      pending: number
       in_progress: number
       hold: number
       blocked: number
@@ -358,6 +359,39 @@ export type JarvisResponse = {
   relay_notes?: string[]
 }
 
+export type GmailSearchItem = {
+  id: string
+  subject: string
+  from: string
+  date?: string | null
+  labels?: string[]
+  messageCount?: number
+}
+
+export type GmailSearchPayload = {
+  runtime: {
+    enabled: boolean
+    target?: string
+    account?: string
+    mode?: string
+  }
+  query: string
+  limit: number
+  count: number
+  items: GmailSearchItem[]
+}
+
+export type GmailMessageDetail = {
+  id: string
+  subject: string
+  from: string
+  to: string
+  date: string
+  body: string
+  snippet: string
+}
+
+
 export type IbkrCheckPayload = {
   generated_at: string
   whitelist_path?: string
@@ -386,6 +420,111 @@ export type IbkrCheckPayload = {
   }>
   error?: string
 }
+
+// ── Alpaca Paper Trading ──────────────────────────────────────────────────────
+
+export type AlpacaAccount = {
+  ok: boolean
+  error?: string
+  account_id?: string
+  status?: string
+  portfolio_value?: number
+  equity?: number
+  cash?: number
+  buying_power?: number
+  total_pnl?: number
+  total_pnl_pct?: number
+  day_trade_count?: number
+}
+
+export type AlpacaPosition = {
+  error?: string
+  symbol?: string
+  qty?: number
+  side?: string
+  entry_price?: number
+  current_price?: number
+  market_value?: number
+  unrealized_pnl?: number
+  unrealized_pnl_pct?: number
+  atr?: number
+  stop_loss?: number | null
+  near_stop?: boolean
+}
+
+export type TurtleSignal = {
+  symbol: string
+  signal: string
+  direction?: string | null
+  system?: string | null
+  current_price?: number
+  atr?: number
+  s1_high?: number
+  s1_low?: number
+  s2_high?: number
+  s2_low?: number
+  stop_long?: number | null
+  stop_short?: number | null
+  as_of?: string
+  bar_count?: number
+  error?: string
+}
+
+export type AlpacaOrder = {
+  error?: string
+  id?: string
+  symbol?: string
+  side?: string
+  type?: string
+  qty?: string
+  filled_qty?: string
+  fill_price?: string | null
+  status?: string
+  submitted_at?: string
+}
+
+export type AlpacaAR018Kpi = {
+  return_pct: number
+  max_position_loss_pct: number
+  max_loss_pass: boolean
+  deposit_cap_usd: number
+  week_target: number
+}
+
+export type AlpacaChartPoint = {
+  date: string
+  value: number
+  pnl_pct: number
+}
+
+export type AlpacaPaperDashboard = {
+  ok?: boolean
+  error?: string
+  account: AlpacaAccount
+  positions: AlpacaPosition[]
+  signals: TurtleSignal[]
+  active_signals: TurtleSignal[]
+  orders: AlpacaOrder[]
+  history: { ok: boolean; chart: AlpacaChartPoint[]; base?: number; error?: string }
+  ar018_kpi: AlpacaAR018Kpi
+  universe: string[]
+  generated_at: string
+}
+
+export type DropAlert = {
+  id: string
+  symbol: string
+  trigger: 'rapid' | 'day'
+  drop_pct: number
+  current_price: number
+  prev_price: number
+  news_titles: string[]
+  briefing: string
+  detected_at: string
+  acknowledged: boolean
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export type CostSubscription = {
   name: string
