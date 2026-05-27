@@ -55,6 +55,7 @@ Harness의 사업 모델을 **B2C 뉴스레터 구독 서비스**에서 **내부
 | 결정-2 | 외부 변호사 대신 Claude Legal Skill 활용으로 대응 |
 | 결정-3 | AR-022 SOUL.md 수정은 Jarvis 대행 |
 | 결정-4 | B2I 전환 Pre-Mortem 발주 승인 |
+| 결정-5 | Paper Trading 기간 8주→2주 단축 (2026-05-27 CEO 결정). 기완료 항목(Alpaca 연결·SOXX 주문·Cross-LLM 게이트) 인정. 완료 기준일: **2026-06-08**. 잔여 검증: MDD 모니터링·청산 로직. |
 
 ### 신규 KPI (B2I 모델 기준)
 
@@ -75,3 +76,63 @@ Harness의 사업 모델을 **B2C 뉴스레터 구독 서비스**에서 **내부
 ---
 
 *기록: 2026-05-24 | 비서실장 Jarvis 대행 | correlation_id: strategy-pivot-b2i-20260524*
+
+---
+
+## 결정 #002 — AI 교육 컨설팅 메인 격상 + 뉴스레터 Backend 전환
+
+**결정일**: 2026-05-24
+**correlation_id**: `edu-consulting-20260524`
+**결정권자**: 대표(President/CEO)
+**기록 대행**: 비서실장(Chief of Staff)
+
+### 결정 내용
+
+Harness의 **외부 수익 라인**을 AI 교육 컨설팅으로 확정하고, 기존 Physical AI 뉴스레터 파이프라인은 외부 발행 없이 **IBKR B2I 투자 정보 수집 Backend**로 운영한다.
+
+### 3-Layer 사업 구조 (확정)
+
+| Layer | 역할 | 상태 |
+|---|---|---|
+| **교육 컨설팅** | 메인 외부 수익. 초·중등 학부모 대상 AI 반의존 자문 구독 | ✅ 메인 격상 |
+| **뉴스레터 파이프라인** | 외부 발행 중단. IBKR 투자 신호 수집·분석 내부 Backend | Backend 전환 |
+| **B2I IBKR 투자 엔진** | 내부 자기계정 투자 (AR-018 red_team_block 해제 조건 충족 후) | ⏳ 대기 |
+
+### Pre-Mortem 승인 (2026-05-24)
+
+`pre_mortem_approve` 기록 완료 (AR-029). 5개 시나리오 CEO 검토·승인.
+통과 조건: pretotyping 선행 / 학원법 전문가 / VP 검토 / 집중력 명시 / 경쟁 레이더.
+
+### DEEP RESEARCH 예산 (2026-05-24)
+
+월 $100 한도. 초과 시 CEO 별도 승인. 예상 실소비 $35~60/월.
+
+### 불변 원칙 (추가)
+
+- 교육 컨설팅 고객-facing 산출물은 VP 검토 + QA `qa_clear` 필수
+- 뉴스레터 파이프라인은 외부 발행 불가 (Backend 전용)
+- 교육사업 외부 발행·유료 제안 전 Red Team `red_team_clear` 필수 (진행 중)
+
+---
+
+### Paper Trading 선행 의무 프로토콜 (상시 모니터링 및 OpenClaw 연동)
+
+**프로토콜 수립일**: 2026-05-27
+**실행 및 검증 주체**: OpenClaw (비서실장) & Codex (기술 지원)
+
+대표님 또는 관계자가 모의 투자 실적, 현황, 또는 KPI 달성 여부를 물을 경우, OpenClaw는 수동으로 요약을 요구하거나 추정 답변을 하지 말고 **반드시 아래 실시간 조회 명령을 수행**하여 현황을 브리핑해야 합니다.
+
+#### 1. 실시간 조회 및 KPI 자동 산출 명령
+```bash
+cd ~/projects/harness-platform
+.venv/bin/python scripts/openclaw_codex_bridge.py alpaca-status --format text
+```
+
+#### 2. 검증할 3대 핵심 KPI (SOUL.md 명시 기준)
+1. **① 누적 가상 수익률**: 8주(단축 2주) 누적 가상 수익률 ≥ SPY 벤치마크 수익률 - 5% (5/24이후 기준)
+2. **② 신호 정확도**: 신호 발생 후 2주 내 방향 일치율 ≥ 55% (데이터 부족 시 2주 대기 상태로 보고)
+3. **③ 최대 포지션 손실**: 최대 단일 포지션 unrealized loss ≤ -15%
+
+---
+
+*기록: 2026-05-24 | 비서실장(Chief of Staff) | correlation_id: edu-consulting-20260524*

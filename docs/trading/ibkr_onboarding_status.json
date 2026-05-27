@@ -1,0 +1,46 @@
+{
+  "updated_at": "2026-05-27",
+  "owner_note": "2026-05-27 한국은행 답변 수령: 연간 ,000 이하 해외 송금 신고 불필요. AR-018 조건2 완료. 조건7(cross-LLM legal) 완료 후 입금 진행 가능. 연간 입금 한도 ,000 엄수.",
+  "ibkr_account_login_confirmed": true,
+  "ibkr_account_login_confirmed_at": "2026-05-26",
+  "ibkr_pro_account_confirmed": true,
+  "ibkr_pro_account_confirmed_at": "2026-05-26",
+  "steps": [
+    {
+      "id": "account_opened",
+      "completed": true,
+      "source": "manual",
+      "note": "2026-05-26 CEO 확인: IBKR Pro 개인 계좌 개설 완료."
+    },
+    {
+      "id": "kyc_complete",
+      "completed": true,
+      "source": "manual",
+      "note": "2026-05-26 CEO 확인: KYC 및 신원 인증 완전 통과."
+    },
+    {
+      "id": "two_factor_enabled",
+      "completed": true,
+      "source": "manual",
+      "note": "Client Portal API 지원 2FA 방식(IBKR Mobile 앱 또는 물리적 보안키) 활성화 확인 필요."
+    },
+    {
+      "id": "funded",
+      "completed": false,
+      "source": "manual",
+      "note": "AR-018 조건2(한국은행 자문 + 외국환거래법 확인) 완료 후 입금. 그 전 입금 금지."
+    },
+    {
+      "id": "permissions_set",
+      "completed": false,
+      "source": "manual",
+      "note": "US Stocks/ETFs 거래 권한 활성화 확인 필요. Korea, Japan, Europe 필요 시 추가."
+    },
+    {
+      "id": "market_data_enabled",
+      "completed": false,
+      "source": "manual",
+      "note": "운영 워치리스트에 필요한 거래소 시장 데이터 구독 필요."
+    }
+  ]
+}

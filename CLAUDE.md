@@ -55,6 +55,19 @@ Harness는 파이프라인 자체를 상품처럼 취급하지 않는다.
 
 이 조건을 충족하지 않는 Tier 확장, 채널 증설, control-plane polish는 보류한다.
 
+### Mobile-First Interface Rule
+
+Harness의 모든 화면은 **모바일에서 먼저 이해되고 조작 가능해야 한다**.
+
+- 모바일 UX는 최우선 설계 기준이다. 데스크톱은 같은 정보 구조를 더 넓게 보여주는 확장판이어야 한다.
+- 어떤 화면이든 폰에서 읽기 어렵거나, 주요 행동을 한 손으로 완료할 수 없거나, 핵심 정보가 잘리면 아직 완성된 화면이 아니다.
+- 목록, 상세, 결재, 승인, 설정, 리포트, 대시보드, 모달, 드로어, 테이블은 모두 모바일 기준으로 재검증한다.
+- 새 기능을 추가할 때는 데스크톱에서 예쁘게 보이는지보다, 모바일에서 먼저 사용 가능한지 확인한다.
+- UI 변경 지시는 어떤 order로 내려오더라도 이 원칙보다 우선하지 않는다. 모바일 기준을 깨는 구현은 승인되지 않는다.
+- 데스크톱은 별도 제품이 아니다. 모바일에서 성립한 정보 구조와 행동 흐름을 더 넓은 화면에 자연스럽게 확장한 결과여야 한다.
+
+이 원칙에 맞지 않는 화면은 기능적으로 미완성으로 간주한다.
+
 ---
 
 ## 2. Human Roles
@@ -320,6 +333,9 @@ Canonical approval types:
 | `red_team_clear` | 서로 다른 LLM 2개 이상의 cross-LLM red team review 통과 | No |
 | `pre_mortem_approve` | 최악 시나리오 분석이 첨부된 high-impact 의사결정 승인 | Depends on decision |
 | `qa_clear` | 고객-facing 산출물의 factual + format + schema + link + terminology + (다국어 시) cross-LLM fluency 검증 통과 | No |
+| `turtle_gate_clear` | Turtle Trading 6개 파라미터(진입 신호·ATR·포지션 리스크·손절가·청산 시스템·pre_mortem) 전부 검증 통과. 트레이딩 capital_action_approve의 필수 선행 조건. | No |
+| `turtle_gate_block` | Turtle 파라미터 누락 또는 위반 감지. President Decision Agent 자동 발행. **CEO 포함 누구도 단독 해제 불가.** | — |
+| `trading_turtle_override` | 대표가 `turtle_gate_block` 상태에서 강제 진행을 결정할 때만 사용. ① 위반 항목 명시 ② 구체적 이유 ③ 잔여 리스크 인정 ④ 날짜+대표 명의 포함 필수. 미기재 시 무효. | Yes (고위험) |
 
 실제 돈이 나가는 결정은 `capital_action_approve`에서만 발생한다.
 
@@ -335,6 +351,10 @@ agent는 어떤 상황에서도 `signal_approve`, `opportunity_approve`, `report
 - `capital_action_approve`
 - 외부 광고/마케팅 카피 발행
 - 데이터 수집 정책 변경 (scraping 범위, source 추가)
+
+트레이딩 `capital_action_approve`는 위 조건에 더해 **`turtle_gate_clear`** 를 추가로 요구한다.
+`turtle_gate_block` 상태에서 진행하려면 반드시 `trading_turtle_override`를 별도 기록해야 하며,
+`trading_turtle_override` 없이 `turtle_gate_block` 상태의 트레이딩 capital_action이 실행되면 해당 action은 즉시 무효 처리된다.
 
 이 사전 조건이 누락된 high-impact 결정은 묵시적으로 차단된다.
 
@@ -364,6 +384,9 @@ agent는 어떤 상황에서도 `signal_approve`, `opportunity_approve`, `report
 - 발행 언어는 `docs/governance/LANGUAGE_POLICY.md`의 Phase 정책을 따른다. Phase 1은 한국어 + 영어 on-demand 만 허용. 추가 언어 launch는 Phase 2 진입 조건 충족 후 대표 승인 필수.
 - pipeline 실행 전 schema/env/model identity preflight를 통과해야 한다. DB 스키마 누락, 필수 env 누락, 모델 식별 불가 상태에서는 run을 중단한다.
 - 리포트의 핵심 claim은 `verified`, `company-self-report`, `speculative` 중 하나의 근거 자세를 드러내야 한다.
+- **[트레이딩 절대 원칙]** Harness의 모든 주식 트레이딩 활동은 `docs/trading/TURTLE_TRADING_PRINCIPLES.md`의 Turtle Trading 5대 원칙(시장 선택·포지션 사이징·진입 신호·손절·청산)을 반드시 준수한다. 이 원칙은 감정·직관·예측이 아닌 알고리즘과 규율에 기반한다.
+- **[트레이딩 capital_action 조건]** 트레이딩 관련 `capital_action_approve`는 Turtle 파라미터(ATR, 진입 시스템, 손절가, 포지션 리스크 ≤1%)가 모두 기재된 경우에만 유효하다.
+- **[외국환거래 한도 — 2026-05-27 한국은행 답변 반영]** IBKR 계좌로의 연간 총 송금액은 **$100,000(10만 달러) 이하**로 유지한다. 이 한도 내에서는 별도 외국환거래 신고가 불필요하다 (한국은행 외환심사팀 비공식 참고 답변 기준, `docs/reports/legal/bok_response_ibkr_2026-05.md` 참조). 연간 $100,000 초과 시 기획재정부 또는 외국환거래 신고기관에 사전 신고 후 진행한다. 이 답변은 법적 증빙으로 사용 불가하며 참고용이다.
 
 ---
 
@@ -386,6 +409,11 @@ agent는 어떤 상황에서도 `signal_approve`, `opportunity_approve`, `report
 - QA Agent의 `qa_clear` 없이 고객-facing 산출물을 발행하지 않는다.
 - LLM 자동번역만으로 paid 콘텐츠를 다국어로 발행하지 않는다.
 - `docs/governance/LANGUAGE_POLICY.md` Phase 1 정책 외 언어를 임의로 launch하지 않는다.
+- **[트레이딩]** Turtle Trading 진입 신호(20일/55일 브레이크아웃) 없이 포지션을 오픈하지 않는다.
+- **[트레이딩]** 손절선(진입가 ± 2 × ATR) 이탈 후 포지션을 계속 보유하지 않는다.
+- **[트레이딩]** 청산 신호(System 1: 10일, System 2: 20일) 발생 후 "조금만 더 기다리자"며 청산을 미루지 않는다.
+- **[트레이딩]** 단일 트레이드에 계좌 리스크 1%를 초과하는 포지션을 취하지 않는다.
+- **[트레이딩]** `docs/trading/TURTLE_TRADING_PRINCIPLES.md` 파라미터 미기재 상태의 트레이딩 capital_action을 승인하지 않는다.
 
 ---
 
@@ -430,10 +458,7 @@ Harness가 만들어야 할 핵심 산출물:
 |---|---|---|---|
 | Pretotyping CTR | 랜딩 방문자 대비 결제 버튼 클릭률 | ≥ 2% | — |
 | WTP 인터뷰 평균 금액 | "얼마면 내겠냐" 응답 평균 | ≥ ₩9,900 | — |
-| Pilot 유료 구독자 | 실제 결제 완료 인원 | ≥ 1명 | ≥ 10명 |
-| free-to-paid conversion rate | 무료 체험 → 유료 전환 비율 | — | ≥ 30% |
 | 부대표 VP 가독성 통과율 | "readable/shareable" 평가 비율 | ≥ 70% | ≥ 80% |
-| CAC (고객 획득 비용) | 광고비 ÷ 신규 유료 구독자 | < $15 | < $10 |
 | LLM 비용 대비 매출 | 월 구독 수익 ÷ 월 LLM API 비용 | BEP 달성 | > 2× |
 
 ### B2I 투자 엔진 KPI (내부 Backend — AR-018 red_team_block 해제 후)
@@ -448,7 +473,7 @@ Harness가 만들어야 할 핵심 산출물:
 - cost per useful signal (DEEP RESEARCH 효율)
 - 부대표 OJT completion rate / assessment pass rate
 
-Success metric은 `docs/operations/WEEKLY_BUSINESS_REVIEW.md`의 cadence와 trigger에 따라 매주 검토한다. **30일 내 목표는 Pretotyping CTR ≥ 2% + 첫 유료 구독자 1명**이다. 90일 이상 매출 0이면 가치 제안 및 타겟 재검토한다.
+Success metric은 `docs/operations/WEEKLY_BUSINESS_REVIEW.md`의 cadence와 trigger에 따라 매주 검토한다. **30일 내 목표는 Pretotyping CTR ≥ 2%**이다. 90일 이상 매출 0이면 가치 제안 및 타겟 재검토한다.
 
 운영 안정성의 최소 기준:
 
@@ -553,6 +578,9 @@ PLATFORM.md는 플랫폼 헌법이다.
 | `docs/operations/CHART_AUTHORING_PLAYBOOK.md` | 차트/다이어그램/생성형 이미지 작성 기준, build pipeline 함정 체크리스트, 다른 LLM 위임 prompt template |
 | `docs/governance/RISK_REGISTER.md` | 전사 리스크 레지스터. BRM Team이 주간 업데이트하며 재무·운영·전략·법적·평판·기술 리스크를 추적 |
 | `docs/governance/BRM_PLAYBOOK.md` | Business Risk Management 운영 절차. 리스크 분류 체계, 주간 cadence, escalation 임계값, Pre-Mortem 품질 검토, Kill Criteria 모니터링 |
+| **`docs/trading/TURTLE_TRADING_PRINCIPLES.md`** | **[필수] Harness 주식 트레이딩의 절대 원칙. Turtle Trading 5대 구성요소(시장 선택·포지션 사이징·진입·손절·청산). 모든 capital_action_approve의 선행 준수 조건.** |
+| `docs/trading/IBKR_A_TO_Z_SETUP.md` | IBKR 계좌 개설·설정 절차 |
+| `docs/trading/INVESTMENT_THESIS_TEMPLATE.md` | 투자 thesis 작성 템플릿 |
 
 충돌 시:
 
