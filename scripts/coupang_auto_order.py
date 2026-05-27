@@ -149,6 +149,13 @@ def check_status():
         page = context.pages[0] if context.pages else context.new_page()
         
         try:
+            # 1. Navigate to homepage first to establish trust cookies
+            print("Navigating to Coupang homepage first...")
+            page.goto("https://www.coupang.com/")
+            time.sleep(2)
+            
+            # 2. Now navigate to deep purchase list link
+            print("Navigating to purchase list...")
             page.goto("https://my.coupang.com/purchase/list", wait_until="domcontentloaded")
             time.sleep(2)
             title = page.title()
@@ -179,8 +186,13 @@ def add_to_cart_and_checkout(product_url, quantity=1):
         page.set_default_timeout(30000)
         
         try:
-            # 1. Load product page
-            print("Loading product page...")
+            # 1. Navigate to homepage first to establish WAF trust
+            print("Loading Coupang homepage to establish trust...")
+            page.goto("https://www.coupang.com/")
+            time.sleep(3)
+            
+            # 2. Now navigate to the actual product page
+            print(f"Loading product page: {product_url}...")
             page.goto(product_url)
             time.sleep(3)
             
