@@ -1051,12 +1051,14 @@ def _gmail_search_runtime(query: str, limit: int = 10) -> dict[str, Any]:
                 }
             )
 
+        mode = "local_gog" if _gmail_local_mode() else "ssh_gog_read_only"
+        runtime_target = "localhost" if _gmail_local_mode() else _gmail_runtime_target()
         return {
             "runtime": {
                 "enabled": True,
-                "target": target,
+                "target": runtime_target,
                 "account": GMAIL_RUNTIME_ACCOUNT,
-                "mode": "ssh_gog_read_only",
+                "mode": mode,
             },
             "query": query,
             "limit": safe_limit,
