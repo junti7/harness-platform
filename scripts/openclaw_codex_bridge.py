@@ -3,13 +3,19 @@ import fcntl
 import json
 import os
 import re
+import shlex
 import shutil
 import socket
+import subprocess
 import sys
 from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+# Ensure all Harness environment variables are loaded explicitly from the repo .env file
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
 
 sys.path.insert(0, ".")
 
@@ -39,6 +45,15 @@ ORCHESTRATION_RUN_LOG_PATH = Path("docs/reports/orchestration_runs.jsonl")
 ETF_WHITELIST_PATH = Path("docs/trading/etf_whitelist_v0.json")
 INSTRUMENT_REGISTRY_JSONL_PATH = Path("docs/reports/instrument_registry.jsonl")
 INSTRUMENT_REGISTRY_PENDING_JSONL_PATH = Path("docs/reports/instrument_registry_pending.jsonl")
+GMAIL_RUNTIME_ENABLED = os.getenv("HARNESS_GMAIL_RUNTIME_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+GMAIL_RUNTIME_HOST = os.getenv("HARNESS_GMAIL_RUNTIME_HOST", "").strip()
+GMAIL_RUNTIME_USER = os.getenv("HARNESS_GMAIL_RUNTIME_USER", "").strip()
+GMAIL_RUNTIME_ACCOUNT = os.getenv("HARNESS_GMAIL_ACCOUNT", "").strip()
+GMAIL_RUNTIME_GOG_BIN = os.getenv("HARNESS_GMAIL_GOG_BIN", "/opt/homebrew/bin/gog").strip()
+GMAIL_RUNTIME_SSH_BIN = os.getenv("HARNESS_GMAIL_SSH_BIN", "ssh").strip()
+GMAIL_RUNTIME_TIMEOUT_S = int(os.getenv("HARNESS_GMAIL_TIMEOUT_S", "20"))
+GMAIL_RUNTIME_KEYRING_BACKEND = os.getenv("HARNESS_GMAIL_KEYRING_BACKEND", "").strip()
+GMAIL_RUNTIME_KEYRING_PASSWORD = os.getenv("HARNESS_GMAIL_KEYRING_PASSWORD", "").strip()
 
 
 def _candidate_ar_tracker_paths() -> list[Path]:
@@ -154,8 +169,9 @@ def status_snapshot() -> dict[str, Any]:
             "record-decision",
             "minutes-latest",
             "minutes-upload",
-            "minutes-reupload",
-            "ibkr-etf-check",
+        "minutes-reupload",
+        "gmail-search",
+        "ibkr-etf-check",
             "ibkr-etf-approve",
             "goal-create",
             "goal-model",
@@ -192,6 +208,285 @@ def _write_output(output: str, output_path: str | None) -> None:
 
 def _json_dump(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+
+
+def _gmail_runtime_target() -> str | None:
+    if not GMAIL_RUNTIME_HOST or not GMAIL_RUNTIME_USER:
+        return None
+    return f"{GMAIL_RUNTIME_USER}@{GMAIL_RUNTIME_HOST}"
+
+
+def _gmail_runtime_ready() -> tuple[bool, str | None]:
+    if not GMAIL_RUNTIME_ENABLED:
+        return False, "HARNESS_GMAIL_RUNTIME_ENABLED=false"
+    if not GMAIL_RUNTIME_ACCOUNT:
+        return False, "HARNESS_GMAIL_ACCOUNT missing"
+    if _gmail_runtime_target() is None:
+        return False, "HARNESS_GMAIL_RUNTIME_HOST or HARNESS_GMAIL_RUNTIME_USER missing"
+    return True, None
+
+
+def _gmail_remote_command(query: str, limit: int) -> str:
+    quoted_query = shlex.quote(query)
+    quoted_account = shlex.quote(GMAIL_RUNTIME_ACCOUNT)
+    quoted_gog = shlex.quote(GMAIL_RUNTIME_GOG_BIN)
+    # file backend는 macOS Keychain 없이 SSH 환경에서도 동작 — 반드시 전달
+    backend = GMAIL_RUNTIME_KEYRING_BACKEND or "file"
+    quoted_backend = shlex.quote(backend)
+    quoted_password = shlex.quote(GMAIL_RUNTIME_KEYRING_PASSWORD) if GMAIL_RUNTIME_KEYRING_PASSWORD else None
+    exports = [
+        "export PATH=/opt/homebrew/bin:/usr/bin:/bin",
+        f"export GOG_KEYRING_BACKEND={quoted_backend}",
+    ]
+    if quoted_password:
+        exports.append(f"export GOG_KEYRING_PASSWORD={quoted_password}")
+    exports.append(
+        f"{quoted_gog} gmail search {quoted_query} -a {quoted_account} -j --results-only --gmail-no-send --max {limit}"
+    )
+    return "; ".join(exports)
+
+
+def _gmail_search_runtime(query: str, limit: int = 10) -> dict[str, Any]:
+    ready, reason = _gmail_runtime_ready()
+    if not ready:
+        raise RuntimeError(f"Gmail runtime not ready: {reason}")
+
+    safe_limit = max(1, min(limit, 25))
+    target = _gmail_runtime_target()
+    assert target is not None
+    completed = subprocess.run(
+        [GMAIL_RUNTIME_SSH_BIN, target, _gmail_remote_command(query, safe_limit)],
+        capture_output=True,
+        text=True,
+        timeout=GMAIL_RUNTIME_TIMEOUT_S,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip()
+        raise RuntimeError(f"Gmail search failed: {detail or 'unknown error'}")
+    raw = completed.stdout.strip()
+    try:
+        payload = json.loads(raw) if raw else []
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Gmail search returned invalid JSON: {exc}") from exc
+    if not isinstance(payload, list):
+        raise RuntimeError("Gmail search returned unexpected payload shape")
+    items: list[dict[str, Any]] = []
+    for row in payload[:safe_limit]:
+        if not isinstance(row, dict):
+            continue
+        items.append(
+            {
+                "id": str(row.get("id") or ""),
+                "subject": str(row.get("subject") or "(제목 없음)"),
+                "from": str(row.get("from") or ""),
+                "date": row.get("date"),
+                "labels": row.get("labels") if isinstance(row.get("labels"), list) else [],
+                "messageCount": int(row.get("messageCount") or 1),
+            }
+        )
+    return {
+        "runtime": {
+            "enabled": True,
+            "target": target,
+            "account": GMAIL_RUNTIME_ACCOUNT,
+            "mode": "ssh_gog_read_only",
+        },
+        "query": query,
+        "limit": safe_limit,
+        "count": len(items),
+        "items": items,
+    }
+
+
+def _gmail_message_remote_command(message_id: str) -> str:
+    safe_msg_id = shlex.quote(message_id.strip())
+    quoted_account = shlex.quote(GMAIL_RUNTIME_ACCOUNT)
+    quoted_gog = shlex.quote(GMAIL_RUNTIME_GOG_BIN)
+    backend = GMAIL_RUNTIME_KEYRING_BACKEND or "file"
+    quoted_backend = shlex.quote(backend)
+    quoted_password = shlex.quote(GMAIL_RUNTIME_KEYRING_PASSWORD) if GMAIL_RUNTIME_KEYRING_PASSWORD else None
+    exports = [
+        "export PATH=/opt/homebrew/bin:/usr/bin:/bin",
+        f"export GOG_KEYRING_BACKEND={quoted_backend}",
+    ]
+    if quoted_password:
+        exports.append(f"export GOG_KEYRING_PASSWORD={quoted_password}")
+    exports.append(
+        f"{quoted_gog} gmail get {safe_msg_id} -a {quoted_account} -j --results-only --gmail-no-send"
+    )
+    return "; ".join(exports)
+
+
+def _gmail_message_runtime(message_id: str) -> dict[str, Any]:
+    ready, reason = _gmail_runtime_ready()
+    if not ready:
+        raise RuntimeError(f"Gmail runtime not ready: {reason}")
+
+    safe_msg_id = message_id.strip()
+    if not safe_msg_id or len(safe_msg_id) > 64:
+        raise ValueError("Invalid message ID")
+
+    target = _gmail_runtime_target()
+    assert target is not None
+    completed = subprocess.run(
+        [GMAIL_RUNTIME_SSH_BIN, target, _gmail_message_remote_command(safe_msg_id)],
+        capture_output=True,
+        text=True,
+        timeout=GMAIL_RUNTIME_TIMEOUT_S,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip()
+        raise RuntimeError(f"Gmail message retrieve failed: {detail or 'unknown error'}")
+    raw = completed.stdout.strip()
+    try:
+        data = json.loads(raw) if raw else {}
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Gmail message returned invalid JSON: {exc}") from exc
+
+    return {
+        "id": message_id,
+        "subject": data.get("headers", {}).get("subject") or "",
+        "from": data.get("headers", {}).get("from") or "",
+        "to": data.get("headers", {}).get("to") or "",
+        "date": data.get("headers", {}).get("date") or "",
+        "body": data.get("body") or "",
+        "snippet": data.get("message", {}).get("snippet") or "",
+    }
+
+
+def _parse_to_rfc3339(dt_str: str) -> str:
+    dt_str = dt_str.strip()
+    # If already has offset or Z, return as is
+    if "Z" in dt_str or "+" in dt_str or ("-" in dt_str and len(dt_str.split("-")) > 3):
+        return dt_str
+    
+    # Replace space with T
+    if " " in dt_str:
+        dt_str = dt_str.replace(" ", "T")
+        
+    # Check if timezone is missing
+    if "T" in dt_str:
+        # Check if seconds are missing (e.g. 2026-05-28T14:00)
+        parts = dt_str.split("T")
+        time_part = parts[1]
+        if len(time_part.split(":")) == 2:
+            dt_str += ":00"
+        return dt_str + "+09:00"
+    else:
+        # Date only (e.g. 2026-05-28)
+        return dt_str + "T00:00:00+09:00"
+
+
+def _calendar_events_remote_command(from_time: str, to_time: str, max_results: int) -> str:
+    quoted_account = shlex.quote(GMAIL_RUNTIME_ACCOUNT)
+    quoted_gog = shlex.quote(GMAIL_RUNTIME_GOG_BIN)
+    backend = GMAIL_RUNTIME_KEYRING_BACKEND or "file"
+    quoted_backend = shlex.quote(backend)
+    quoted_password = shlex.quote(GMAIL_RUNTIME_KEYRING_PASSWORD) if GMAIL_RUNTIME_KEYRING_PASSWORD else None
+    exports = [
+        "export PATH=/opt/homebrew/bin:/usr/bin:/bin",
+        f"export GOG_KEYRING_BACKEND={quoted_backend}",
+    ]
+    if quoted_password:
+        exports.append(f"export GOG_KEYRING_PASSWORD={quoted_password}")
+    
+    cmd = f"{quoted_gog} calendar events primary -a {quoted_account} -j --results-only --max {max_results}"
+    if from_time:
+        cmd += f" --from {shlex.quote(from_time)}"
+    if to_time:
+        cmd += f" --to {shlex.quote(to_time)}"
+    
+    exports.append(cmd)
+    return "; ".join(exports)
+
+
+def _calendar_events_runtime(from_time: str = "today", to_time: str = "", max_results: int = 10) -> dict[str, Any]:
+    ready, reason = _gmail_runtime_ready()
+    if not ready:
+        raise RuntimeError(f"Calendar runtime not ready: {reason}")
+
+    # Sanitize datetime strings
+    if from_time and not from_time.lower() in {"today", "tomorrow", "yesterday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}:
+        from_time = _parse_to_rfc3339(from_time)
+    if to_time and not to_time.lower() in {"today", "tomorrow", "yesterday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}:
+        to_time = _parse_to_rfc3339(to_time)
+
+    target = _gmail_runtime_target()
+    assert target is not None
+    completed = subprocess.run(
+        [GMAIL_RUNTIME_SSH_BIN, target, _calendar_events_remote_command(from_time, to_time, max_results)],
+        capture_output=True,
+        text=True,
+        timeout=GMAIL_RUNTIME_TIMEOUT_S,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip()
+        raise RuntimeError(f"Calendar events failed: {detail or 'unknown error'}")
+    raw = completed.stdout.strip()
+    try:
+        payload = json.loads(raw) if raw else {"events": []}
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Calendar events returned invalid JSON: {exc}") from exc
+    return payload
+
+
+def _calendar_create_remote_command(summary: str, from_time: str, to_time: str, description: str, location: str) -> str:
+    quoted_account = shlex.quote(GMAIL_RUNTIME_ACCOUNT)
+    quoted_gog = shlex.quote(GMAIL_RUNTIME_GOG_BIN)
+    backend = GMAIL_RUNTIME_KEYRING_BACKEND or "file"
+    quoted_backend = shlex.quote(backend)
+    quoted_password = shlex.quote(GMAIL_RUNTIME_KEYRING_PASSWORD) if GMAIL_RUNTIME_KEYRING_PASSWORD else None
+    exports = [
+        "export PATH=/opt/homebrew/bin:/usr/bin:/bin",
+        f"export GOG_KEYRING_BACKEND={quoted_backend}",
+    ]
+    if quoted_password:
+        exports.append(f"export GOG_KEYRING_PASSWORD={quoted_password}")
+    
+    cmd = f"{quoted_gog} calendar create primary -a {quoted_account} -j --results-only"
+    cmd += f" --summary {shlex.quote(summary)}"
+    cmd += f" --from {shlex.quote(from_time)}"
+    cmd += f" --to {shlex.quote(to_time)}"
+    if description:
+        cmd += f" --description {shlex.quote(description)}"
+    if location:
+        cmd += f" --location {shlex.quote(location)}"
+    
+    exports.append(cmd)
+    return "; ".join(exports)
+
+
+def _calendar_create_runtime(summary: str, from_time: str, to_time: str, description: str = "", location: str = "") -> dict[str, Any]:
+    ready, reason = _gmail_runtime_ready()
+    if not ready:
+        raise RuntimeError(f"Calendar runtime not ready: {reason}")
+
+    # Sanitize inputs to RFC3339
+    from_time = _parse_to_rfc3339(from_time)
+    to_time = _parse_to_rfc3339(to_time)
+
+    target = _gmail_runtime_target()
+    assert target is not None
+    completed = subprocess.run(
+        [GMAIL_RUNTIME_SSH_BIN, target, _calendar_create_remote_command(summary, from_time, to_time, description, location)],
+        capture_output=True,
+        text=True,
+        timeout=GMAIL_RUNTIME_TIMEOUT_S,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip()
+        raise RuntimeError(f"Calendar create failed: {detail or 'unknown error'}")
+    raw = completed.stdout.strip()
+    try:
+        payload = json.loads(raw) if raw else {}
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Calendar create returned invalid JSON: {exc}") from exc
+    return payload
+
 
 
 def _load_jsonl(path: Path, *, tail: int = 50) -> list[dict[str, Any]]:
@@ -1096,6 +1391,484 @@ def command_status(args: argparse.Namespace) -> None:
     _write_output(rendered, args.output)
 
 
+def command_gmail_get(args: argparse.Namespace) -> None:
+    try:
+        payload = _gmail_message_runtime(args.message_id)
+    except Exception as exc:
+        _write_output(_json_dump({"ok": False, "error": str(exc)}), args.output)
+        return
+    if args.format == "json":
+        rendered = _json_dump(payload)
+    else:
+        rendered = (
+            f"Subject: {payload['subject']}\n"
+            f"From: {payload['from']}\n"
+            f"To: {payload['to']}\n"
+            f"Date: {payload['date']}\n"
+            f"Snippet: {payload['snippet']}\n"
+            f"----------------------------------------\n"
+            f"Body:\n{payload['body']}"
+        )
+    _write_output(rendered, args.output)
+
+
+def command_gmail_search(args: argparse.Namespace) -> None:
+    try:
+        payload = _gmail_search_runtime(args.query, args.limit)
+    except Exception as exc:
+        _write_output(_json_dump({"ok": False, "error": str(exc)}), args.output)
+        return
+    if args.format == "json":
+        rendered = _json_dump(payload)
+    else:
+        lines = [
+            f"Gmail runtime: {payload['runtime']['target']}",
+            f"Account: {payload['runtime']['account']}",
+            f"Query: {payload['query']}",
+            f"Count: {payload['count']}",
+            "",
+        ]
+        for item in payload["items"]:
+            lines.append(f"- {item['date']} | {item['from']} | {item['subject']}")
+        rendered = "\n".join(lines).strip()
+    _write_output(rendered, args.output)
+
+
+def command_calendar_list(args: argparse.Namespace) -> None:
+    try:
+        payload = _calendar_events_runtime(args.from_time, args.to_time, args.limit)
+    except Exception as exc:
+        _write_output(_json_dump({"ok": False, "error": str(exc)}), args.output)
+        return
+    if args.format == "json":
+        rendered = _json_dump(payload)
+    else:
+        lines = ["=== Google Calendar 일정 ==="]
+        events = payload.get("events", [])
+        if not events:
+            lines.append("일정이 없습니다.")
+        for ev in events:
+            start = ev.get("start", {}).get("dateTime") or ev.get("start", {}).get("date") or ""
+            summary = ev.get("summary") or "(제목 없음)"
+            loc = f" ({ev['location']})" if ev.get("location") else ""
+            lines.append(f"- {start} | {summary}{loc}")
+        rendered = "\n".join(lines).strip()
+    _write_output(rendered, args.output)
+
+
+def command_calendar_create(args: argparse.Namespace) -> None:
+    try:
+        payload = _calendar_create_runtime(
+            args.summary,
+            args.from_time,
+            args.to_time,
+            args.description,
+            args.location
+        )
+    except Exception as exc:
+        _write_output(_json_dump({"ok": False, "error": str(exc)}), args.output)
+        return
+    if args.format == "json":
+        rendered = _json_dump(payload)
+    else:
+        rendered = f"✅ 일정 등록 성공: {payload.get('summary')} ({payload.get('startLocal')} ~ {payload.get('endLocal')})"
+    _write_output(rendered, args.output)
+
+
+def command_alpaca_status(args: argparse.Namespace) -> None:
+    try:
+        from scripts.alpaca_paper_trading import get_full_dashboard
+        payload = get_full_dashboard()
+    except Exception as exc:
+        _write_output(_json_dump({"ok": False, "error": str(exc)}), args.output)
+        return
+
+    if args.format == "json":
+        rendered = _json_dump(payload)
+    else:
+        rendered = _render_alpaca_status_text(payload)
+    _write_output(rendered, args.output)
+
+
+# ---------------------------------------------------------------------------
+# Browser control commands (Playwright)
+# ---------------------------------------------------------------------------
+
+def command_browser_open(args: argparse.Namespace) -> None:
+    """URL을 열고 페이지 제목 + 텍스트를 반환."""
+    try:
+        from scripts.browser_control import browser_open
+        result = browser_open(args.url, extract_text=not args.no_text)
+    except Exception as exc:
+        result = {"ok": False, "url": args.url, "error": str(exc)}
+
+    if args.format == "json":
+        _write_output(_json_dump(result), args.output)
+    else:
+        if result.get("ok"):
+            lines = [
+                f"🌐 URL: {result['url']}",
+                f"📄 제목: {result['title']}",
+                "",
+                result.get("text", ""),
+            ]
+            _write_output("\n".join(lines), args.output)
+        else:
+            _write_output(f"❌ 오류: {result.get('error')}", args.output)
+
+
+def command_browser_screenshot(args: argparse.Namespace) -> None:
+    """URL 스크린샷을 파일로 저장."""
+    try:
+        from scripts.browser_control import browser_screenshot
+        result = browser_screenshot(args.url, filename=args.filename or None)
+    except Exception as exc:
+        result = {"ok": False, "error": str(exc)}
+
+    if args.format == "json":
+        _write_output(_json_dump(result), args.output)
+    else:
+        if result.get("ok"):
+            _write_output(f"📸 스크린샷 저장: {result['path']}", args.output)
+        else:
+            _write_output(f"❌ 오류: {result.get('error')}", args.output)
+
+
+def command_browser_search(args: argparse.Namespace) -> None:
+    """검색엔진에서 검색 후 결과 반환."""
+    try:
+        from scripts.browser_control import browser_search
+        result = browser_search(args.query, engine=args.engine, limit=args.limit)
+    except Exception as exc:
+        result = {"ok": False, "query": args.query, "results": [], "error": str(exc)}
+
+    if args.format == "json":
+        _write_output(_json_dump(result), args.output)
+    else:
+        if result.get("ok"):
+            lines = [f"🔍 검색: {result['query']} ({result.get('engine', 'google')})\n"]
+            for i, r in enumerate(result.get("results", []), 1):
+                lines.append(f"{i}. {r.get('title', '')}")
+                lines.append(f"   🔗 {r.get('url', '')}")
+                if r.get("snippet"):
+                    lines.append(f"   {r['snippet'][:150]}")
+                lines.append("")
+            _write_output("\n".join(lines), args.output)
+        else:
+            _write_output(f"❌ 오류: {result.get('error')}", args.output)
+
+
+def command_browser_extract(args: argparse.Namespace) -> None:
+    """CSS selector로 특정 요소 텍스트 추출."""
+    try:
+        from scripts.browser_control import browser_extract
+        result = browser_extract(args.url, args.selector)
+    except Exception as exc:
+        result = {"ok": False, "url": args.url, "texts": [], "error": str(exc)}
+
+    if args.format == "json":
+        _write_output(_json_dump(result), args.output)
+    else:
+        if result.get("ok"):
+            texts = result.get("texts", [])
+            lines = [f"🔎 URL: {result['url']}  |  Selector: {result['selector']}\n"]
+            for i, t in enumerate(texts, 1):
+                lines.append(f"{i}. {t}")
+            _write_output("\n".join(lines) if texts else "(결과 없음)", args.output)
+        else:
+            _write_output(f"❌ 오류: {result.get('error')}", args.output)
+
+
+def command_browser_fill(args: argparse.Namespace) -> None:
+    """폼 입력 + 클릭 자동화 (JSON actions 파일 또는 인라인 JSON 사용)."""
+    import json as _json
+    try:
+        # actions는 JSON 문자열 또는 파일 경로
+        raw = args.actions
+        if raw.endswith(".json") and Path(raw).exists():
+            actions = _json.loads(Path(raw).read_text())
+        else:
+            actions = _json.loads(raw)
+    except Exception as exc:
+        _write_output(f"❌ actions 파싱 오류: {exc}", args.output)
+        return
+
+    try:
+        from scripts.browser_control import browser_fill
+        result = browser_fill(args.url, actions)
+    except Exception as exc:
+        result = {"ok": False, "error": str(exc)}
+
+    if args.format == "json":
+        _write_output(_json_dump(result), args.output)
+    else:
+        if result.get("ok"):
+            lines = [
+                f"✅ 자동화 완료",
+                f"🌐 최종 URL: {result.get('final_url', '')}",
+                "",
+                result.get("text", "")[:2000],
+            ]
+            _write_output("\n".join(lines), args.output)
+        else:
+            _write_output(f"❌ 오류: {result.get('error')}", args.output)
+
+
+
+def command_coupang_setup(args: argparse.Namespace) -> None:
+    """쿠팡 1회성 GUI 로그인 수행."""
+    try:
+        import subprocess as _sub
+        print("Starting Coupang login setup...")
+        res = _sub.run([".venv/bin/python", "scripts/coupang_auto_order.py", "setup"])
+        if res.returncode == 0:
+            _write_output("✅ 쿠팡 로그인 설정 완료!", args.output)
+        else:
+            _write_output("❌ 쿠팡 로그인 설정 실패 또는 취소됨.", args.output)
+    except Exception as exc:
+        _write_output(f"❌ 오류: {exc}", args.output)
+
+
+def command_coupang_status(args: argparse.Namespace) -> None:
+    """쿠팡 세션 로그인 상태 조회."""
+    import json as _json
+    try:
+        import subprocess as _sub
+        res = _sub.run([".venv/bin/python", "scripts/coupang_auto_order.py", "status"], capture_output=True, text=True)
+        is_logged_in = res.returncode == 0
+        result = {"ok": True, "logged_in": is_logged_in, "output": res.stdout.strip()}
+    except Exception as exc:
+        result = {"ok": False, "error": str(exc)}
+
+    if args.format == "json":
+        _write_output(_json_dump(result), args.output)
+    else:
+        status_str = "LOGGED_IN (로그인 완료)" if result.get("logged_in") else "NOT_LOGGED_IN (로그인 필요)"
+        _write_output(f"📢 쿠팡 세션 상태: {status_str}", args.output)
+
+
+def command_coupang_cart(args: argparse.Namespace) -> None:
+    """쿠팡 특정 상품 장바구니/주문서 진입 및 견적 수집."""
+    import json as _json
+    if not args.url:
+        _write_output("❌ 오류: --url 파라미터가 필요합니다.", args.output)
+        return
+
+    try:
+        import subprocess as _sub
+        res = _sub.run(
+            [".venv/bin/python", "scripts/coupang_auto_order.py", "cart", "--url", args.url, "--qty", str(args.qty)],
+            capture_output=True, text=True
+        )
+        lines = res.stdout.strip().split("\n")
+        json_str = next((l for l in reversed(lines) if l.strip().startswith("{")), None)
+        if json_str:
+            result = _json.loads(json_str)
+        else:
+            result = {"ok": False, "error": f"Invalid output: {res.stdout.strip()}"}
+    except Exception as exc:
+        result = {"ok": False, "error": str(exc)}
+
+    if args.format == "json":
+        _write_output(_json_dump(result), args.output)
+    else:
+        if result.get("ok"):
+            comment_text = (
+                f"🛍️ *[쿠팡 결제 승인 요청 - Capital Action]*\n\n"
+                f"• *상품명*: {result.get('product', '')}\n"
+                f"• *수량*: {args.qty}개\n"
+                f"• *최종 결제 금액*: *{result.get('price', '')}*\n"
+                f"• *배송 예정*: 로켓배송 상품\n\n"
+                f"👉 최종 결제를 완료하시려면 아래 명령어를 타이핑하여 전송해주십시오:\n"
+                f"`coupang-pay-approve`"
+            )
+            try:
+                _sub.run([
+                    ".venv/bin/python", "scripts/send_slack_file.py",
+                    result.get("screenshot", "docs/browser_screenshots/checkout_page_loaded.png"),
+                    "--route", "exec_president_decisions",
+                    "--title", f"쿠팡 결제 대기 ({result.get('price', '')})",
+                    "--comment", comment_text
+                ], capture_output=True)
+                slack_sent = True
+            except Exception as slack_err:
+                print(f"Slack card dispatch failed: {slack_err}")
+                slack_sent = False
+
+            lines = [
+                f"✅ 쿠팡 장바구니 담기 및 주문 대기 완료",
+                f"📦 상품명: {result.get('product', '')}",
+                f"💵 결제 금액: {result.get('price', '')}",
+                f"📸 주문서 스크린샷: {result.get('screenshot', '')}",
+                f"💬 Slack 발송 상태: {'성공 (exec_president_decisions)' if slack_sent else '실패'}",
+                "",
+                "📢 대표님께 Capital Action 승인 요청 카드가 발송되었습니다."
+            ]
+            _write_output("\n".join(lines), args.output)
+        else:
+            _write_output(f"❌ 장바구니 자동화 실패: {result.get('error')}", args.output)
+
+
+def command_coupang_pay(args: argparse.Namespace) -> None:
+    """쿠팡 최종 결제 대기 승인 처리."""
+    import json as _json
+    try:
+        import subprocess as _sub
+        res = _sub.run(
+            [".venv/bin/python", "scripts/coupang_auto_order.py", "pay"],
+            capture_output=True, text=True
+        )
+        lines = res.stdout.strip().split("\n")
+        json_str = next((l for l in reversed(lines) if l.strip().startswith("{")), None)
+        if json_str:
+            result = _json.loads(json_str)
+        else:
+            result = {"ok": False, "error": f"Invalid output: {res.stdout.strip()}"}
+    except Exception as exc:
+        result = {"ok": False, "error": str(exc)}
+
+    if args.format == "json":
+        _write_output(_json_dump(result), args.output)
+    else:
+        if result.get("ok"):
+            _write_output("🎉 [결제 완료] 쿠팡 최종 주문 및 결제가 성공적으로 실행되었습니다!", args.output)
+        else:
+            _write_output(f"❌ 결제 완료 실패: {result.get('error')}", args.output)
+
+
+def _render_alpaca_status_text(payload: dict[str, Any]) -> str:
+    account = payload.get("account") or {}
+    positions = payload.get("positions") or []
+    orders = payload.get("orders") or []
+    active_signals = payload.get("active_signals") or []
+    kpi = payload.get("ar018_kpi") or {}
+
+    lines = []
+    lines.append("=" * 60)
+    lines.append("📊 HARNESS ALPACA PAPER TRADING DASHBOARD")
+    lines.append("=" * 60)
+    
+    # 1. Account Summary
+    lines.append("[1] 계좌 요약 (Account Summary)")
+    if account.get("ok"):
+        lines.append(f"  • 계좌 ID: {account.get('account_id')}")
+        lines.append(f"  • 상태: {account.get('status')}")
+        lines.append(f"  • 총 자산 가치: ${account.get('portfolio_value'):,.2f}")
+        lines.append(f"  • 현금 잔고: ${account.get('cash'):,.2f}")
+        lines.append(f"  • 매수 여력: ${account.get('buying_power'):,.2f}")
+        pnl = account.get('total_pnl', 0)
+        pnl_pct = account.get('total_pnl_pct', 0)
+        sign = "+" if pnl >= 0 else ""
+        lines.append(f"  • 총 누적 수익: {sign}${pnl:,.2f} ({sign}{pnl_pct:.3f}%)")
+        lines.append(f"  • 당일 거래 횟수: {account.get('day_trade_count')}회")
+    else:
+        lines.append(f"  ❌ 계좌 조회 실패: {account.get('error')}")
+    lines.append("-" * 60)
+
+    # 2. Portfolio Positions
+    lines.append("[2] 보유 포지션 (Active Positions)")
+    if positions:
+        for p in positions:
+            if not isinstance(p, dict) or "error" in p:
+                lines.append(f"  ❌ 포지션 오류: {p.get('error') if isinstance(p, dict) else p}")
+                continue
+            sym = p.get("symbol")
+            qty = p.get("qty")
+            side = p.get("side", "").upper()
+            entry = p.get("entry_price")
+            cur = p.get("current_price")
+            mv = p.get("market_value")
+            pnl = p.get("unrealized_pnl")
+            pnl_pct = p.get("unrealized_pnl_pct")
+            sign = "+" if pnl >= 0 else ""
+            near_stop = "⚠️ STOP NEAR!" if p.get("near_stop") else ""
+            lines.append(
+                f"  • {sym} ({side}) | {qty}주 | 평단 ${entry:,.2f} | 현재 ${cur:,.2f}\n"
+                f"    평가금액: ${mv:,.2f} | 손익: {sign}${pnl:,.2f} ({sign}{pnl_pct:.2f}%) | ATR: {p.get('atr')} | SL: {p.get('stop_loss')} {near_stop}"
+            )
+    else:
+        lines.append("  • 현재 보유 중인 포지션이 없습니다.")
+    lines.append("-" * 60)
+
+    # 3. Active Turtle Signals
+    lines.append("[3] 실시간 신호 감지 (Active Signals - S1/S2 Breakout)")
+    if active_signals:
+        for s in active_signals:
+            sym = s.get("symbol")
+            sig = s.get("signal").upper()
+            sys = s.get("system")
+            dir_str = "롱(매수)" if s.get("direction") == "long" else "숏(공매도)"
+            cp = s.get("current_price")
+            atr = s.get("atr")
+            lines.append(
+                f"  • {sym} ➡️ {sig} ({sys} - {dir_str}) @ ${cp:,.2f} | ATR: {atr}\n"
+                f"    S1 고가/저가: ${s.get('s1_high')} / ${s.get('s1_low')} | S2 고가/저가: ${s.get('s2_high')} / ${s.get('s2_low')}"
+            )
+    else:
+        lines.append("  • 현재 감지된 S1/S2 돌파 신호가 없습니다.")
+    lines.append("-" * 60)
+
+    # 4. Recent Orders
+    lines.append("[4] 최근 주문 내역 (Recent Orders)")
+    filled_orders = [o for o in orders if isinstance(o, dict) and "error" not in o]
+    if filled_orders:
+        for o in filled_orders[:5]:  # show top 5
+            fill_price_str = f" @ ${float(o.get('fill_price')):,.2f}" if o.get("fill_price") else ""
+            lines.append(
+                f"  • [{o.get('submitted_at')}] {o.get('symbol')} | {o.get('side').upper()} | {o.get('qty')}주 (체결 {o.get('filled_qty')}주{fill_price_str}) | 상태: {o.get('status').upper()}"
+            )
+    elif orders and "error" in orders[0]:
+        lines.append(f"  ❌ 주문 내역 조회 실패: {orders[0].get('error')}")
+    else:
+        lines.append("  • 최근 주문 내역이 없습니다.")
+    lines.append("-" * 60)
+
+    # 5. SOUL.md Paper Trading KPIs
+    lines.append("[5] SOUL.md Paper Trading 선행 의무 프로토콜 검증")
+    if kpi.get("ok"):
+        days = kpi.get("days_elapsed", 0)
+        target = kpi.get("week_target", 2)
+        lines.append(f"  • 모의 투자 경과일: {days}일 (목표 {target}주 - 14일)")
+        
+        # KPI 1
+        k1_pass = "✅ 통과" if kpi.get("return_pass") else "❌ 미달"
+        lines.append(
+            f"  {kpi.get('kpi_1_desc')}\n"
+            f"    - 포트폴리오 수익률(5/24이후): {kpi.get('portfolio_return_since_start'):+.3f}%\n"
+            f"    - SPY 벤치마크 수익률(5/24이후): {kpi.get('spy_return_since_start'):+.3f}%\n"
+            f"    - 초과 수익률: {kpi.get('return_diff'):+.3f}% (목표 대비 {kpi.get('portfolio_return_since_start') - (kpi.get('spy_return_since_start') - 5.0):+.3f}%p) ➡️ {k1_pass}"
+        )
+        
+        # KPI 2
+        k2_pass = "✅ 통과" if kpi.get("signal_accuracy_pass") else "❌ 미달"
+        acc_pct = f"{kpi.get('signal_accuracy_pct')}%" if kpi.get("signal_accuracy_pct") is not None else "데이터 부족 (2주 경과 필요)"
+        lines.append(
+            f"  {kpi.get('kpi_2_desc')}\n"
+            f"    - 신호 정확도: {acc_pct} ➡️ {k2_pass} (대기)"
+        )
+        
+        # KPI 3
+        k3_pass = "✅ 통과" if kpi.get("max_loss_pass") else "❌ 미달"
+        lines.append(
+            f"  {kpi.get('kpi_3_desc')}\n"
+            f"    - 단일 포지션 최대 손실률: {kpi.get('max_position_loss_pct'):+.2f}% ➡️ {k3_pass}"
+        )
+        
+        # Overall status
+        if kpi.get("return_pass") and kpi.get("max_loss_pass"):
+            lines.append("  ➡️ 🌟 종합 판정: PASS (Paper Trading 선행 조건 충족 중)")
+        else:
+            lines.append("  ➡️ ⚠️ 종합 판정: WARNING (선행 조건 미달 상태)")
+    else:
+        lines.append("  ❌ KPI 산출 실패")
+        
+    lines.append("=" * 60)
+    lines.append(f"조회 일시(UTC): {payload.get('generated_at')}")
+    lines.append("=" * 60)
+
+    return "\n".join(lines)
+
+
 def _render_status_text(payload: dict[str, Any]) -> str:
     integrations = payload["integrations"]
     lines = [
@@ -1837,6 +2610,42 @@ def build_parser() -> argparse.ArgumentParser:
     minutes_reupload.add_argument("--output")
     minutes_reupload.set_defaults(func=command_minutes_reupload)
 
+    gmail_search = subparsers.add_parser("gmail-search", help="Read-only Gmail search via Mac Mini gog runtime.")
+    gmail_search.add_argument("query")
+    gmail_search.add_argument("--limit", type=int, default=10)
+    gmail_search.add_argument("--format", choices=["json", "text"], default="json")
+    gmail_search.add_argument("--output")
+    gmail_search.set_defaults(func=command_gmail_search)
+
+    gmail_get = subparsers.add_parser("gmail-get", help="Read-only Gmail get message details via Mac Mini gog runtime.")
+    gmail_get.add_argument("message_id")
+    gmail_get.add_argument("--format", choices=["json", "text"], default="json")
+    gmail_get.add_argument("--output")
+    gmail_get.set_defaults(func=command_gmail_get)
+
+    calendar_list = subparsers.add_parser("calendar-list", help="Read-only Calendar events listing via Mac Mini gog runtime.")
+    calendar_list.add_argument("--from-time", dest="from_time", default="today")
+    calendar_list.add_argument("--to-time", dest="to_time", default="")
+    calendar_list.add_argument("--limit", type=int, default=10)
+    calendar_list.add_argument("--format", choices=["json", "text"], default="json")
+    calendar_list.add_argument("--output")
+    calendar_list.set_defaults(func=command_calendar_list)
+
+    calendar_create = subparsers.add_parser("calendar-create", help="Create Calendar event via Mac Mini gog runtime.")
+    calendar_create.add_argument("summary")
+    calendar_create.add_argument("from_time")
+    calendar_create.add_argument("to_time")
+    calendar_create.add_argument("--description", default="")
+    calendar_create.add_argument("--location", default="")
+    calendar_create.add_argument("--format", choices=["json", "text"], default="json")
+    calendar_create.set_defaults(func=command_calendar_create)
+
+    alpaca_status = subparsers.add_parser("alpaca-status", help="Fetch Alpaca paper trading account status and KPIs (read-only).")
+    alpaca_status.add_argument("--format", choices=["json", "text"], default="text")
+    alpaca_status.add_argument("--output")
+    alpaca_status.set_defaults(func=command_alpaca_status)
+
+
     ibkr_check = subparsers.add_parser("ibkr-etf-check", help="Resolve ETF whitelist items into IBKR contracts (read-only).")
     ibkr_check.add_argument("--format", choices=["text", "json"], default="text")
     ibkr_check.add_argument("--whitelist", default=None, help="path to whitelist json (default: docs/trading/etf_whitelist_v0.json)")
@@ -2098,6 +2907,67 @@ def build_parser() -> argparse.ArgumentParser:
     goal_status_parser.add_argument("--format", choices=["text", "json"], default="text")
     goal_status_parser.add_argument("--output")
     goal_status_parser.set_defaults(func=command_goal_status)
+
+    # ------------------------------------------------------------------
+    # browser-* commands
+    # ------------------------------------------------------------------
+    browser_open_parser = subparsers.add_parser("browser-open", help="URL을 열고 페이지 제목 + 텍스트를 반환합니다.")
+    browser_open_parser.add_argument("url", help="열 URL (예: https://example.com)")
+    browser_open_parser.add_argument("--no-text", action="store_true", help="텍스트 추출 생략")
+    browser_open_parser.add_argument("--format", choices=["text", "json"], default="text")
+    browser_open_parser.add_argument("--output")
+    browser_open_parser.set_defaults(func=command_browser_open)
+
+    browser_screenshot_parser = subparsers.add_parser("browser-screenshot", help="URL 스크린샷을 파일로 저장합니다.")
+    browser_screenshot_parser.add_argument("url", help="캡처할 URL")
+    browser_screenshot_parser.add_argument("--filename", default="", help="저장 파일명 (비워두면 자동 생성)")
+    browser_screenshot_parser.add_argument("--format", choices=["text", "json"], default="text")
+    browser_screenshot_parser.add_argument("--output")
+    browser_screenshot_parser.set_defaults(func=command_browser_screenshot)
+
+    browser_search_parser = subparsers.add_parser("browser-search", help="검색엔진에서 검색 후 결과를 반환합니다.")
+    browser_search_parser.add_argument("query", help="검색어")
+    browser_search_parser.add_argument("--engine", choices=["naver", "duckduckgo", "google"], default="naver", help="검색 엔진 (기본: naver)")
+    browser_search_parser.add_argument("--limit", type=int, default=5, help="최대 결과 수 (기본: 5)")
+    browser_search_parser.add_argument("--format", choices=["text", "json"], default="text")
+    browser_search_parser.add_argument("--output")
+    browser_search_parser.set_defaults(func=command_browser_search)
+
+    browser_extract_parser = subparsers.add_parser("browser-extract", help="CSS selector로 특정 요소 텍스트를 추출합니다.")
+    browser_extract_parser.add_argument("url", help="대상 URL")
+    browser_extract_parser.add_argument("selector", help="CSS selector (예: h1, .title, #main p)")
+    browser_extract_parser.add_argument("--format", choices=["text", "json"], default="text")
+    browser_extract_parser.add_argument("--output")
+    browser_extract_parser.set_defaults(func=command_browser_extract)
+
+    browser_fill_parser = subparsers.add_parser("browser-fill", help="폼 입력 + 버튼 클릭 자동화를 수행합니다.")
+    browser_fill_parser.add_argument("url", help="시작 URL")
+    browser_fill_parser.add_argument("actions", help="액션 JSON 문자열 또는 .json 파일 경로")
+    browser_fill_parser.add_argument("--format", choices=["text", "json"], default="text")
+    browser_fill_parser.add_argument("--output")
+    browser_fill_parser.set_defaults(func=command_browser_fill)
+
+    # coupang-* commands
+    coupang_setup_parser = subparsers.add_parser("coupang-setup", help="쿠팡 1회성 GUI 로그인을 설정합니다.")
+    coupang_setup_parser.add_argument("--output")
+    coupang_setup_parser.set_defaults(func=command_coupang_setup)
+
+    coupang_status_parser = subparsers.add_parser("coupang-status", help="쿠팡 로그인 세션 상태를 확인합니다.")
+    coupang_status_parser.add_argument("--format", choices=["text", "json"], default="text")
+    coupang_status_parser.add_argument("--output")
+    coupang_status_parser.set_defaults(func=command_coupang_status)
+
+    coupang_cart_parser = subparsers.add_parser("coupang-cart", help="쿠팡 상품을 장바구니에 담고 주문서 대기 상태로 이동합니다.")
+    coupang_cart_parser.add_argument("url", help="쿠팡 상품 URL")
+    coupang_cart_parser.add_argument("--qty", type=int, default=1, help="수량 (기본: 1)")
+    coupang_cart_parser.add_argument("--format", choices=["text", "json"], default="text")
+    coupang_cart_parser.add_argument("--output")
+    coupang_cart_parser.set_defaults(func=command_coupang_cart)
+
+    coupang_pay_parser = subparsers.add_parser("coupang-pay-approve", help="대표님의 2단계 승인을 얻은 후 최종 결제를 체결합니다.")
+    coupang_pay_parser.add_argument("--format", choices=["text", "json"], default="text")
+    coupang_pay_parser.add_argument("--output")
+    coupang_pay_parser.set_defaults(func=command_coupang_pay)
 
     return parser
 
