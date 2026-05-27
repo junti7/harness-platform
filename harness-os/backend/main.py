@@ -232,6 +232,12 @@ def _hash_pw(pw: str) -> str:
 
 
 def _load_passwords() -> dict[str, str]:
+    # env 변수가 설정된 경우 항상 우선 (파일보다 env가 source of truth)
+    env_ceo = os.environ.get("HARNESS_CEO_PASSWORD")
+    env_vp = os.environ.get("HARNESS_VP_PASSWORD")
+    if env_ceo and env_vp:
+        return {"ceo": _hash_pw(env_ceo), "vp": _hash_pw(env_vp)}
+    # env 미설정 시 파일 fallback
     if _PASSWORDS_FILE.exists():
         try:
             data = json.loads(_PASSWORDS_FILE.read_text())
@@ -239,9 +245,8 @@ def _load_passwords() -> dict[str, str]:
                 return dict(data)
         except Exception:
             pass
-    ceo = os.environ.get("HARNESS_CEO_PASSWORD", "ceo123")
-    vp = os.environ.get("HARNESS_VP_PASSWORD", "vp123")
-    passwords = {"ceo": _hash_pw(ceo), "vp": _hash_pw(vp)}
+    # 최종 fallback: 기본값으로 파일 생성
+    passwords = {"ceo": _hash_pw("ceo123"), "vp": _hash_pw("vp123")}
     try:
         _PASSWORDS_FILE.write_text(json.dumps(passwords))
     except Exception:
@@ -277,6 +282,13 @@ def auth_change_password(req: AuthChangePasswordRequest, _: None = Depends(_requ
     global _PASSWORDS
     if req.role not in ("ceo", "vp"):
         raise HTTPException(status_code=400, detail="Invalid role")
+    # env 우선 모드에서는 파일 변경 불가 — .env 수정 필요
+    env_key = "HARNESS_CEO_PASSWORD" if req.role == "ceo" else "HARNESS_VP_PASSWORD"
+    if os.environ.get(env_key):
+        raise HTTPException(
+            status_code=400,
+            detail=f"비밀번호는 .env 파일의 {env_key} 값을 직접 변경하세요."
+        )
     with _PW_LOCK:
         if _PASSWORDS.get(req.role) != _hash_pw(req.current_password):
             raise HTTPException(status_code=401, detail="Current password incorrect")
