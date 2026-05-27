@@ -957,12 +957,17 @@ def _gmail_runtime_target() -> str | None:
     return f"{GMAIL_RUNTIME_USER}@{GMAIL_RUNTIME_HOST}"
 
 
+def _gmail_local_mode() -> bool:
+    """HARNESS_GMAIL_RUNTIME_HOST 미설정 시 로컬 gog 직접 실행 모드."""
+    return not GMAIL_RUNTIME_HOST
+
+
 def _gmail_runtime_ready() -> tuple[bool, str | None]:
     if not GMAIL_RUNTIME_ENABLED:
         return False, "HARNESS_GMAIL_RUNTIME_ENABLED=false"
     if not GMAIL_RUNTIME_ACCOUNT:
         return False, "HARNESS_GMAIL_ACCOUNT missing"
-    if _gmail_runtime_target() is None:
+    if not _gmail_local_mode() and _gmail_runtime_target() is None:
         return False, "HARNESS_GMAIL_RUNTIME_HOST or HARNESS_GMAIL_RUNTIME_USER missing"
     return True, None
 
@@ -992,16 +997,32 @@ def _gmail_search_runtime(query: str, limit: int = 10) -> dict[str, Any]:
     cache_key = f"gmail_search:{query}:{safe_limit}"
 
     def producer() -> dict[str, Any]:
-        target = _gmail_runtime_target()
-        assert target is not None
-        proc = subprocess.run(
-            [GMAIL_RUNTIME_SSH_BIN, target, _gmail_remote_command(query, safe_limit)],
-            cwd=str(PROJECT_ROOT),
-            capture_output=True,
-            text=True,
-            timeout=GMAIL_RUNTIME_TIMEOUT_S,
-            check=False,
-        )
+        env = os.environ.copy()
+        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+        if GMAIL_RUNTIME_KEYRING_BACKEND:
+            env["GOG_KEYRING_BACKEND"] = GMAIL_RUNTIME_KEYRING_BACKEND
+        if GMAIL_RUNTIME_KEYRING_PASSWORD:
+            env["GOG_KEYRING_PASSWORD"] = GMAIL_RUNTIME_KEYRING_PASSWORD
+
+        if _gmail_local_mode():
+            # 로컬 gog 직접 실행
+            cmd = [
+                GMAIL_RUNTIME_GOG_BIN, "gmail", "search", query,
+                "-a", GMAIL_RUNTIME_ACCOUNT, "-j", "--results-only",
+                "--gmail-no-send", "--max", str(safe_limit),
+            ]
+            proc = subprocess.run(
+                cmd, cwd=str(PROJECT_ROOT), capture_output=True,
+                text=True, timeout=GMAIL_RUNTIME_TIMEOUT_S, check=False, env=env,
+            )
+        else:
+            target = _gmail_runtime_target()
+            assert target is not None
+            proc = subprocess.run(
+                [GMAIL_RUNTIME_SSH_BIN, target, _gmail_remote_command(query, safe_limit)],
+                cwd=str(PROJECT_ROOT), capture_output=True,
+                text=True, timeout=GMAIL_RUNTIME_TIMEOUT_S, check=False,
+            )
         if proc.returncode != 0:
             detail = (proc.stderr or proc.stdout or "").strip()[:800]
             raise HTTPException(status_code=502, detail=f"Gmail search failed: {detail or 'unknown error'}")
