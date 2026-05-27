@@ -359,25 +359,39 @@ export function ConferenceRoomPage({ apiBase, authHeaders, viewRole, actorDispla
   }
 
   useEffect(() => {
-    void loadRoom(false)
+    const initial = window.setTimeout(() => {
+      void loadRoom(false)
+    }, 0)
     const timer = setInterval(() => {
       void loadRoom(true, true)
     }, 15000)
-    return () => clearInterval(timer)
+    return () => {
+      window.clearTimeout(initial)
+      clearInterval(timer)
+    }
   }, [])
 
   useEffect(() => {
-    void loadDetail(selectedId)
+    const timer = window.setTimeout(() => {
+      void loadDetail(selectedId)
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [selectedId])
 
   useEffect(() => {
-    if (!selectedId) setComposeMode('root')
+    const timer = window.setTimeout(() => {
+      if (!selectedId) setComposeMode('root')
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [selectedId])
 
   useEffect(() => {
-    if (selectedId) {
-      setMobilePane('thread')
-    }
+    const timer = window.setTimeout(() => {
+      if (selectedId) {
+        setMobilePane('thread')
+      }
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [selectedId])
 
   const togglePinned = (itemId: string) => {
@@ -480,12 +494,15 @@ export function ConferenceRoomPage({ apiBase, authHeaders, viewRole, actorDispla
     if (!selectedId || !payload) return
     const target = payload.items.find(item => item.id === selectedId)
     const nextTimestamp = timestampValue(target?.posted_at) || Date.now()
-    setReadState(current => {
-      if ((current[selectedId] ?? 0) >= nextTimestamp) return current
-      const next = { ...current, [selectedId]: nextTimestamp }
-      localStorage.setItem(CONFERENCE_READ_STATE_KEY, JSON.stringify(next))
-      return next
-    })
+    const timer = window.setTimeout(() => {
+      setReadState(current => {
+        if ((current[selectedId] ?? 0) >= nextTimestamp) return current
+        const next = { ...current, [selectedId]: nextTimestamp }
+        localStorage.setItem(CONFERENCE_READ_STATE_KEY, JSON.stringify(next))
+        return next
+      })
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [selectedId, payload])
 
   const submitMessage = async () => {
@@ -633,7 +650,7 @@ export function ConferenceRoomPage({ apiBase, authHeaders, viewRole, actorDispla
   }, [decisionUnpinnedItems, importantUnpinnedItems, pinnedItems, regularUnpinnedItems, systemUnpinnedItems, threadView])
 
   const markThreadRead = (itemId: string, itemAt?: string | null) => {
-    const nextTimestamp = timestampValue(itemAt) || Date.now()
+    const nextTimestamp = timestampValue(itemAt) || 1
     setReadState(current => {
       const next = { ...current, [itemId]: nextTimestamp }
       localStorage.setItem(CONFERENCE_READ_STATE_KEY, JSON.stringify(next))
@@ -702,12 +719,12 @@ export function ConferenceRoomPage({ apiBase, authHeaders, viewRole, actorDispla
               앞으로 진행되는 회의만 가볍게 쌓는 전용 대화면입니다. 과거 Slack/Notion 이력은 불러오지 않고, 현재부터 생성되는 회의 대화만 빠르게 보여줍니다.
             </p>
             <p className="data-meta" style={{ marginTop: '0.35rem' }}>
-              Source: {payload?.source ?? '회의실 forward stream'} · Last sync: {formatDateTime(payload?.updated_at)}
+              데이터 출처: {payload?.source ?? '회의실 실시간 기록'} · 마지막 갱신: {formatDateTime(payload?.updated_at)}
             </p>
           </div>
           <div className="conference-head-actions">
             <span className={`conference-sync-pill ${payload?.sync_mode === 'local' ? 'live' : payload?.sync_mode === 'live' ? 'live' : 'fallback'}`}>
-              {payload?.sync_mode === 'local' ? '회의실 전용 실시간 스트림' : payload?.sync_mode === 'live' ? 'Slack 실시간 동기화' : '기록 기반 fallback'}
+              {payload?.sync_mode === 'local' ? '회의실 전용 실시간 기록' : payload?.sync_mode === 'live' ? 'Slack 실시간 동기화' : '저장 기록 기반 표시'}
             </span>
             <button type="button" className="conference-refresh-button" onClick={() => void loadRoom(true)}>
               새로고침

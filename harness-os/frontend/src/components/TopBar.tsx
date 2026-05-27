@@ -34,7 +34,7 @@ const NAV_GROUPS: NavGroup[] = [
     id: 'records',
     label: '기록',
     items: [
-      { view: 'ars', label: 'AR현황' },
+      { view: 'ars', label: '실행요청 현황' },
       { view: 'meetings', label: '회의록' },
     ],
   },
@@ -62,7 +62,10 @@ export function TopBar({
   )
 
   useEffect(() => {
-    setMobileMenuOpen(false)
+    const timer = window.setTimeout(() => {
+      setMobileMenuOpen(false)
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [activeView])
 
   useEffect(() => {
@@ -78,6 +81,7 @@ export function TopBar({
   }
 
   return (
+    <>
     <header className="topbar">
       <div className="topbar-brand" onClick={() => onChangeView('dashboard')} style={{ cursor: 'pointer' }}>
         <div className="brand-icon" aria-hidden="true">⬡</div>
@@ -197,10 +201,32 @@ export function TopBar({
           className="topbar-mobile-menu-button"
           onClick={() => setMobileMenuOpen(current => !current)}
           aria-expanded={mobileMenuOpen}
-          aria-label="모바일 메뉴 열기"
+          aria-label={mobileMenuOpen ? '모바일 메뉴 닫기' : '모바일 메뉴 열기'}
+          title={mobileMenuOpen ? '모바일 메뉴 닫기' : '모바일 메뉴 열기'}
         >
-          메뉴
-          {pendingApprovals > 0 && <span className="nav-trigger-badge">{pendingApprovals > 99 ? '99+' : pendingApprovals}</span>}
+          <svg className="mobile-menu-icon" viewBox="0 0 24 24" aria-hidden="true">
+            {mobileMenuOpen ? (
+              <>
+                <path d="M6 6l12 12" />
+                <path d="M18 6L6 18" />
+              </>
+            ) : (
+              <>
+                <path d="M4 7h16" />
+                <path d="M4 12h16" />
+                <path d="M4 17h16" />
+              </>
+            )}
+          </svg>
+        </button>
+        <button
+          type="button"
+          className="theme-toggle"
+          onClick={onToggleTheme}
+          aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+          title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+        >
+          {theme === 'dark' ? '☀︎' : '☽'}
         </button>
         {onLogout && (
           <button
@@ -217,15 +243,6 @@ export function TopBar({
             </svg>
           </button>
         )}
-        <button
-          type="button"
-          className="theme-toggle"
-          onClick={onToggleTheme}
-          aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-          title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-        >
-          {theme === 'dark' ? '☀︎' : '☽'}
-        </button>
         <div className="status-chip">
           <span className={loading ? 'status-pulse' : 'status-ok'}>
             {loading ? '동기화 중' : '실시간'}
@@ -234,9 +251,11 @@ export function TopBar({
         </div>
       </div>
 
-      {mobileMenuOpen && (
-        <div className="mobile-nav-backdrop" onClick={() => setMobileMenuOpen(false)}>
-          <div className="mobile-nav-sheet" onClick={event => event.stopPropagation()}>
+    </header>
+
+    {mobileMenuOpen && (
+      <div className="mobile-nav-backdrop" onClick={() => setMobileMenuOpen(false)}>
+        <div className="mobile-nav-sheet" onClick={event => event.stopPropagation()}>
             <div className="mobile-nav-head">
               <div>
                 <strong>빠른 이동</strong>
@@ -286,9 +305,9 @@ export function TopBar({
                 </div>
               </div>
             ))}
-          </div>
         </div>
-      )}
-    </header>
+      </div>
+    )}
+    </>
   )
 }

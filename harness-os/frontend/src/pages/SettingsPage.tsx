@@ -37,6 +37,15 @@ type Props = {
 }
 
 export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase, authHeaders }: Props) {
+  const [runtimeHealth, setRuntimeHealth] = useState<{
+    ok: boolean
+    target?: string
+    account?: string
+    count?: number
+    lastSuccessAt?: string | null
+    error?: string | null
+  } | null>(null)
+
   // 역할별 설정
   const [settings, setSettings] = useState<Settings>(() => {
     const saved = localStorage.getItem(`harness-settings-${currentRole}`)
@@ -83,6 +92,43 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase,
     setPwError(null)
     setPwSuccess(null)
   }, [currentRole])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadRuntimeHealth = async () => {
+      try {
+        const res = await fetch(
+          `${apiBase}/api/gmail/search?q=${encodeURIComponent('in:inbox newer_than:14d -category:promotions')}&limit=1`,
+          { headers: authHeaders() },
+        )
+        if (!res.ok) throw new Error(`Gmail API ${res.status}`)
+        const data = await res.json()
+        if (cancelled) return
+        setRuntimeHealth({
+          ok: true,
+          target: data?.runtime?.target,
+          account: data?.runtime?.account,
+          count: data?.count,
+          lastSuccessAt: new Date().toISOString(),
+          error: null,
+        })
+      } catch (err) {
+        if (cancelled) return
+        setRuntimeHealth(prev => ({
+          ok: false,
+          target: prev?.target,
+          account: prev?.account,
+          count: prev?.count,
+          lastSuccessAt: prev?.lastSuccessAt ?? null,
+          error: err instanceof Error ? err.message : 'Runtime health check failed',
+        }))
+      }
+    }
+    void loadRuntimeHealth()
+    return () => {
+      cancelled = true
+    }
+  }, [apiBase, authHeaders])
 
   const updateSetting = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     const newSettings = { ...settings, [key]: value }
@@ -177,6 +223,64 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase,
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '1.5rem', alignItems: 'start', paddingBottom: '1.2rem', borderBottom: '1px solid var(--color-border)' }}>
+            <div>
+              <strong style={{ display: 'block', fontSize: '0.95rem' }}>자동화 서버 연결 상태</strong>
+              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>대표 메일과 내부 자동화가 읽기 전용으로 연결되어 있는지 확인합니다.</span>
+            </div>
+            <div style={{
+              border: '1px solid var(--color-border)',
+              borderRadius: '14px',
+              padding: '1rem 1.1rem',
+              background: 'var(--color-surface-lighter)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.65rem',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                <strong style={{ fontSize: '0.96rem', color: 'var(--color-text)' }}>자동화 서버 상태</strong>
+                <span style={{
+                  padding: '0.28rem 0.68rem',
+                  borderRadius: '999px',
+                  border: `1px solid ${runtimeHealth?.ok ? 'color-mix(in srgb, var(--color-accent) 35%, var(--color-border))' : 'color-mix(in srgb, var(--color-danger) 35%, var(--color-border))'}`,
+                  color: runtimeHealth?.ok ? 'var(--color-accent)' : 'var(--color-danger)',
+                  background: 'var(--color-surface)',
+                  fontSize: '0.76rem',
+                  fontWeight: 800,
+                }}>
+                  {runtimeHealth === null ? '확인 중' : runtimeHealth.ok ? '자동화 서버 연결됨' : '연결 점검 필요'}
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
+                <div>
+                  <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>연결 대상</span>
+                  <strong style={{ fontSize: '0.88rem', color: 'var(--color-text)' }}>{runtimeHealth?.target ?? '자동화 서버'}</strong>
+                </div>
+                <div>
+                  <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>연결된 계정</span>
+                  <strong style={{ fontSize: '0.88rem', color: 'var(--color-text)' }}>{runtimeHealth?.account ?? '대표 Gmail 계정'}</strong>
+                </div>
+                <div>
+                  <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>점검 결과</span>
+                  <strong style={{ fontSize: '0.88rem', color: 'var(--color-text)' }}>
+                    {runtimeHealth?.ok ? `최근 메일 ${runtimeHealth.count ?? 0}건 확인` : 'Gmail probe 실패'}
+                  </strong>
+                </div>
+                <div>
+                  <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>Last successful probe</span>
+                  <strong style={{ fontSize: '0.88rem', color: 'var(--color-text)' }}>
+                    {runtimeHealth?.lastSuccessAt ? new Date(runtimeHealth.lastSuccessAt).toLocaleString('ko-KR') : '기록 없음'}
+                  </strong>
+                </div>
+              </div>
+              {runtimeHealth?.error && (
+                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-danger)', fontWeight: 600 }}>
+                  {runtimeHealth.error}
+                </p>
+              )}
+            </div>
+          </div>
+
           {/* 1. Theme Configuration */}
           <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '1.5rem', alignItems: 'center', paddingBottom: '1.2rem', borderBottom: '1px solid var(--color-border)' }}>
             <div>

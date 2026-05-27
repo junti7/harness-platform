@@ -1,5 +1,5 @@
 import { SparkChart } from './SparkChart'
-import { formatPercent, formatUsd } from './utils'
+import { formatPercent } from './utils'
 
 type KpiCardProps = {
   title: string
@@ -12,14 +12,30 @@ type KpiCardProps = {
   trendDates?: string[]
   statusVariant?: 'ok' | 'warn' | 'danger' | 'neutral'
   badge?: string
+  className?: string
+  onClick?: () => void
+  actionLabel?: string
 }
 
 export function KpiCard({
   title, value, subtitle, progress, progressLabel,
-  trend, trendColorClass, trendDates, statusVariant = 'neutral', badge
+  trend, trendColorClass, trendDates, statusVariant = 'neutral', badge, className, onClick, actionLabel
 }: KpiCardProps) {
+  const classes = ['kpi-card', `kpi-${statusVariant}`, className].filter(Boolean).join(' ')
+  const isActionable = typeof onClick === 'function'
   return (
-    <article className={`kpi-card kpi-${statusVariant}`}>
+    <article
+      className={isActionable ? `${classes} kpi-card-actionable` : classes}
+      onClick={onClick}
+      role={isActionable ? 'button' : undefined}
+      tabIndex={isActionable ? 0 : undefined}
+      onKeyDown={isActionable ? (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick()
+        }
+      } : undefined}
+    >
       <div className="kpi-header">
         <h2 className="kpi-title">{title}</h2>
         {badge && <span className="kpi-badge">{badge}</span>}
@@ -34,9 +50,10 @@ export function KpiCard({
       {subtitle && <p className="kpi-meta">{subtitle}</p>}
       {trend && trend.length > 0 && trendColorClass && (
         <div className="kpi-trend">
-          <SparkChart values={trend} colorClass={trendColorClass} dates={trendDates} />
+          <SparkChart values={trend} colorClass={trendColorClass} dates={trendDates} height={92} />
         </div>
       )}
+      {isActionable && actionLabel && <p className="kpi-action-label">{actionLabel}</p>}
     </article>
   )
 }

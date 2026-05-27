@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { MeetingNoteDetail, MeetingNotesPayload } from '../components/types'
@@ -190,7 +190,7 @@ export function MeetingNotesPage({ apiBase, authHeaders, initialSelectedId }: Pr
   const [detailLoading, setDetailLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const loadMeetingNotes = async () => {
+  const loadMeetingNotes = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -204,9 +204,9 @@ export function MeetingNotesPage({ apiBase, authHeaders, initialSelectedId }: Pr
     } finally {
       setLoading(false)
     }
-  }
+  }, [apiBase, authHeaders])
 
-  const loadDetail = async (id: string | null) => {
+  const loadDetail = useCallback(async (id: string | null) => {
     if (!id) {
       setDetail(null)
       return
@@ -223,20 +223,29 @@ export function MeetingNotesPage({ apiBase, authHeaders, initialSelectedId }: Pr
     } finally {
       setDetailLoading(false)
     }
-  }
+  }, [apiBase, authHeaders])
 
   useEffect(() => {
-    void loadMeetingNotes()
-  }, [])
+    const timer = window.setTimeout(() => {
+      void loadMeetingNotes()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [loadMeetingNotes])
 
   useEffect(() => {
     if (!initialSelectedId) return
-    setSelectedId(initialSelectedId)
+    const timer = window.setTimeout(() => {
+      setSelectedId(initialSelectedId)
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [initialSelectedId])
 
   useEffect(() => {
-    void loadDetail(selectedId)
-  }, [selectedId])
+    const timer = window.setTimeout(() => {
+      void loadDetail(selectedId)
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [loadDetail, selectedId])
 
   const emptyLabel = useMemo(() => '저장된 회의록이 없습니다.', [])
   const digest = useMemo(() => buildMeetingDigest(detail?.decision), [detail?.decision])
@@ -251,7 +260,7 @@ export function MeetingNotesPage({ apiBase, authHeaders, initialSelectedId }: Pr
               `#회의실` 회의 결과를 Notion 저장본 기준으로 읽기 좋게 재구성한 내부 열람 화면입니다.
             </p>
             <p className="data-meta" style={{ marginTop: '0.35rem' }}>
-              Source: {payload?.source ?? 'docs/reports/notion_minutes_runs.jsonl'} · Last sync: {formatDateTime(payload?.updated_at)}
+              데이터 출처: {payload?.source ?? 'docs/reports/notion_minutes_runs.jsonl'} · 마지막 갱신: {formatDateTime(payload?.updated_at)}
             </p>
           </div>
           <div className="meeting-notes-count">{payload?.total ?? 0}건</div>

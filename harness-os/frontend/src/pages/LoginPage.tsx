@@ -16,8 +16,11 @@ export function LoginPage({ onLogin, apiBase, authHeaders }: Props) {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    setPassword('')
-    setError('')
+    const timer = window.setTimeout(() => {
+      setPassword('')
+      setError('')
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [role])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -50,16 +53,18 @@ export function LoginPage({ onLogin, apiBase, authHeaders }: Props) {
 
   return (
     <div style={{
-      minHeight: '100vh',
+      minHeight: '100dvh',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       background: 'var(--color-bg)',
+      padding: 'calc(20px + var(--safe-top)) calc(16px + var(--safe-right)) calc(20px + var(--safe-bottom)) calc(16px + var(--safe-left))',
+      overflow: 'hidden',
     }}>
       <div style={{
-        width: '100%',
-        maxWidth: '400px',
-        padding: '0 1.5rem',
+        width: 'min(400px, calc(100vw - 32px))',
+        minWidth: 0,
+        boxSizing: 'border-box',
       }}>
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
@@ -81,7 +86,7 @@ export function LoginPage({ onLogin, apiBase, authHeaders }: Props) {
           background: 'var(--color-surface)',
           border: '1px solid var(--color-border)',
           borderRadius: '12px',
-          padding: '2rem',
+          padding: 'clamp(1.25rem, 6vw, 2rem)',
           animation: shake ? 'shake 0.4s ease' : undefined,
         }}>
           <h2 style={{ margin: '0 0 1.5rem 0', fontSize: '1.05rem', fontWeight: 700, color: 'var(--color-text)' }}>
@@ -94,7 +99,7 @@ export function LoginPage({ onLogin, apiBase, authHeaders }: Props) {
               <p style={{ margin: '0 0 0.6rem 0', fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 역할 선택
               </p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.5rem' }}>
                 {(['ceo', 'vp'] as const).map((r) => (
                   <button
                     key={r}
@@ -111,10 +116,12 @@ export function LoginPage({ onLogin, apiBase, authHeaders }: Props) {
                         : 'var(--color-surface-lighter)',
                       color: role === r ? 'var(--color-accent)' : 'var(--color-text-muted)',
                       fontWeight: role === r ? 800 : 500,
-                      fontSize: '0.9rem',
+                      fontSize: 'clamp(0.78rem, 3.4vw, 0.9rem)',
                       cursor: 'pointer',
                       transition: 'all 0.15s',
                       textAlign: 'center',
+                      minWidth: 0,
+                      whiteSpace: 'normal',
                     }}
                   >
                     {r === 'ceo' ? '대표님 (CEO)' : '부대표님 (VP)'}

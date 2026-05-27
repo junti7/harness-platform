@@ -1,6 +1,8 @@
 import { platformLabel } from './utils'
 
-const PLATFORM_ORDER = ['all', 'substack', 'maily'] as const
+// Substack, Maily 사업 보류 결정에 따라 플랫폼 탭을 숨김
+// 현재는 'all' 통합 뷰만 사용
+const ALLOWED_PLATFORMS = new Set(['all'])
 
 type Props = {
   selected: string
@@ -10,12 +12,18 @@ type Props = {
 }
 
 export function PlatformSelector({ selected, available, onSelect, description }: Props) {
-  const availableSet = new Set(available)
+  // Substack/Maily 등 보류중 플랫폼을 필터링
+  const filteredAvailable = available.filter(p => ALLOWED_PLATFORMS.has(p))
+  const availableSet = new Set(filteredAvailable)
+
+  // 플랫폼이 'all' 하나밖엀 없으면 선택 바 자체 숨김
+  if (filteredAvailable.length <= 1) return null
+
   return (
     <section className="platform-bar" aria-label="Platform selector">
-      <span className="platform-bar-label">Platform</span>
+      <span className="platform-bar-label">플랫폼</span>
       <div className="platform-tabs" role="tablist">
-        {PLATFORM_ORDER.map(platform => {
+        {filteredAvailable.map(platform => {
           const isDisabled = !availableSet.has(platform)
           const isActive = selected === platform
           return (
@@ -29,9 +37,6 @@ export function PlatformSelector({ selected, available, onSelect, description }:
               disabled={isDisabled}
             >
               {platformLabel(platform)}
-              {platform === 'maily' && isDisabled && (
-                <span className="platform-soon">준비중</span>
-              )}
             </button>
           )
         })}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react"
+import React, { useCallback, useEffect, useState } from "react"
 import type { CostsSummaryPayload } from "../components/types"
 import { formatUsdAndKrw, formatUsdAndKrwDetailed } from "../components/utils"
 
@@ -14,7 +14,7 @@ export const CostsPage: React.FC<CostsPageProps> = ({ apiSecret, backendUrl, exc
   const [error, setError] = useState<string | null>(null)
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
 
-  const fetchCosts = async () => {
+  const fetchCosts = useCallback(async () => {
     try {
       setLoading(true)
       const res = await fetch(`${backendUrl}/api/costs/summary`, {
@@ -28,17 +28,20 @@ export const CostsPage: React.FC<CostsPageProps> = ({ apiSecret, backendUrl, exc
       const payload: CostsSummaryPayload = await res.json()
       setData(payload)
       setError(null)
-    } catch (err: any) {
+    } catch (err) {
       console.error("Failed to fetch cost summary:", err)
-      setError(err.message || "Failed to load cost statistics")
+      setError(err instanceof Error ? err.message : "Failed to load cost statistics")
     } finally {
       setLoading(false)
     }
-  }
+  }, [apiSecret, backendUrl])
 
   useEffect(() => {
-    fetchCosts()
-  }, [apiSecret, backendUrl])
+    const timer = window.setTimeout(() => {
+      void fetchCosts()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [fetchCosts])
 
   if (loading) {
     return (

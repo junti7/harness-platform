@@ -184,7 +184,9 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
       if (!res.ok) return
       const data = await res.json()
       setJobs(data.jobs ?? [])
-    } catch {}
+    } catch (err) {
+      void err
+    }
   }, [apiBase, authHeaders])
 
   const fetchSourceStats = useCallback(async () => {
@@ -193,7 +195,9 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
       if (!res.ok) return
       const data = await res.json()
       setSourceStats(data.stats ?? {})
-    } catch {}
+    } catch (err) {
+      void err
+    }
   }, [apiBase, authHeaders])
 
   const fetchQueries = useCallback(async () => {
@@ -202,7 +206,9 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
       if (!res.ok) return
       const data = await res.json()
       setCustomQueries(data.queries ?? [])
-    } catch {}
+    } catch (err) {
+      void err
+    }
   }, [apiBase, authHeaders])
 
   const fetchSignals = useCallback(async (offset = 0) => {
@@ -216,7 +222,9 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
       if (!res.ok) return
       setSignals(await res.json())
       setSigOffset(offset)
-    } catch {} finally {
+    } catch (err) {
+      void err
+    } finally {
       setSigLoading(false)
     }
   }, [apiBase, authHeaders, sigFilter])
@@ -224,27 +232,38 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
   // 폴링 설정 (stale closure 방지: jobsRef 사용)
   const resetPoll = useCallback((fast: boolean) => {
     if (pollRef.current) clearInterval(pollRef.current)
+    const intervalMs = fast ? 2000 : 15000
     pollRef.current = setInterval(async () => {
       await fetchStatus()
       const nowRunning = jobsRef.current.some(j => j.status === 'running')
       if (!nowRunning && fast) {
-        // 완료됐으면 느리게 전환 + stats 갱신
-        resetPoll(false)
+        if (pollRef.current) clearInterval(pollRef.current)
+        pollRef.current = setInterval(async () => {
+          await fetchStatus()
+        }, 15000)
         fetchSourceStats()
       }
-    }, fast ? 2000 : 15000)
+    }, intervalMs)
   }, [fetchStatus, fetchSourceStats])
 
   useEffect(() => {
-    fetchStatus()
-    fetchSourceStats()
-    fetchQueries()
-    resetPoll(false)
-    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+    const timer = window.setTimeout(() => {
+      void fetchStatus()
+      void fetchSourceStats()
+      void fetchQueries()
+      resetPoll(false)
+    }, 0)
+    return () => {
+      window.clearTimeout(timer)
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
   }, [])
 
   useEffect(() => {
-    if (tab === 'raw') fetchSignals(0)
+    const timer = window.setTimeout(() => {
+      if (tab === 'raw') void fetchSignals(0)
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [tab, sigFilter])
 
   const runJob = async (source: string) => {
@@ -288,7 +307,9 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
         body: JSON.stringify({ text: newQuery.trim(), targets: ['scholar', 'arxiv'] }),
       })
       if (res.ok) { setNewQuery(''); await fetchQueries() }
-    } catch {} finally { setAddingQuery(false) }
+    } catch (err) {
+      void err
+    } finally { setAddingQuery(false) }
   }
 
   const deleteQuery = async (idx: number) => {
@@ -627,9 +648,10 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
                     job={job}
                     expanded={expandedJobs.has(job.id)}
                     onToggle={() => setExpandedJobs(prev => {
-                      const s = new Set(prev)
-                      s.has(job.id) ? s.delete(job.id) : s.add(job.id)
-                      return s
+                      const next = new Set(prev)
+                      if (next.has(job.id)) next.delete(job.id)
+                      else next.add(job.id)
+                      return next
                     })}
                     onStop={() => stopJob(job.id)}
                   />
@@ -649,9 +671,10 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
                   <div key={job.id}>
                     <div
                       onClick={() => setExpandedJobs(prev => {
-                        const s = new Set(prev)
-                        s.has(job.id) ? s.delete(job.id) : s.add(job.id)
-                        return s
+                        const next = new Set(prev)
+                        if (next.has(job.id)) next.delete(job.id)
+                        else next.add(job.id)
+                        return next
                       })}
                       style={{
                         display: 'grid', gridTemplateColumns: '1fr auto auto auto auto',

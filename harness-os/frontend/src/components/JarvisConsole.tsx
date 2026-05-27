@@ -1,13 +1,48 @@
-import { memo, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import ReactMarkdown from 'react-markdown'
+import Markdown from 'react-markdown'
+import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { JarvisResponse } from './types'
-import { renderTableCell, textFromNode } from './SparkChart'
 import { formatDueDateWithCountdown } from './utils'
 
 const BOX_TABLE_RE = /[┌┬┐├┼┤└┴┘│]/
 const PIPE_TABLE_LINE_RE = /^\s*\|.*\|\s*$/m
+const MENTION_TOKEN_RE = /(^|\s)(@[a-z0-9_-]+)/gi
+const ICON_SYMBOL_RE = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu
+const LEADING_MENTION_RE = /^\s*(@[a-z0-9_-]+)/i
+
+const JARVIS_MD_COMPONENTS: Components = {
+  h1: ({ children, ...rest }) => <h4 className="jarvis-md-h1" {...rest}>{children}</h4>,
+  h2: ({ children, ...rest }) => <h5 className="jarvis-md-h2" {...rest}>{children}</h5>,
+  h3: ({ children, ...rest }) => <h6 className="jarvis-md-h3" {...rest}>{children}</h6>,
+  h4: ({ children, ...rest }) => <p className="jarvis-md-h4" {...rest}>{children}</p>,
+  p: ({ children, ...rest }) => <p className="jarvis-md-p" {...rest}>{children}</p>,
+  ul: ({ children, ...rest }) => <ul className="jarvis-md-list" {...rest}>{children}</ul>,
+  ol: ({ children, ...rest }) => <ol className="jarvis-md-list jarvis-md-ol" {...rest}>{children}</ol>,
+  li: ({ children, ...rest }) => <li className="jarvis-md-li" {...rest}>{children}</li>,
+  strong: ({ children, ...rest }) => <strong className="jarvis-md-strong" {...rest}>{children}</strong>,
+  em: ({ children, ...rest }) => <em className="jarvis-md-em" {...rest}>{children}</em>,
+  code: ({ children, className, ...rest }) => {
+    const isBlock = className?.includes('language-')
+    return isBlock
+      ? <code className={`jarvis-md-codeblock ${className ?? ''}`} {...rest}>{children}</code>
+      : <code className="jarvis-md-inline-code" {...rest}>{children}</code>
+  },
+  pre: ({ children, ...rest }) => <pre className="jarvis-md-pre" {...rest}>{children}</pre>,
+  blockquote: ({ children, ...rest }) => <blockquote className="jarvis-md-blockquote" {...rest}>{children}</blockquote>,
+  hr: () => <hr className="jarvis-md-hr" />,
+  a: ({ children, href, ...rest }) => <a className="jarvis-md-link" href={href} target="_blank" rel="noopener noreferrer" {...rest}>{children}</a>,
+  table: ({ children, ...rest }) => (
+    <div className="jarvis-table-shell">
+      <div className="jarvis-table-wrap">
+        <table className="jarvis-table" {...rest}>{children}</table>
+      </div>
+    </div>
+  ),
+  th: ({ children, ...rest }) => <th className="jarvis-md-th" {...rest}>{children}</th>,
+  td: ({ children, ...rest }) => <td className="jarvis-md-td" {...rest}>{children}</td>,
+}
 
 function isPreformattedTableOutput(text: string): boolean {
   if (BOX_TABLE_RE.test(text)) return true
@@ -16,36 +51,115 @@ function isPreformattedTableOutput(text: string): boolean {
   return pipeLines >= 3
 }
 
-type ParsedTable = { leadLines: string[]; headers: string[]; rows: string[][] }
+type ParsedBlock =
+  | { type: 'markdown'; text: string }
+  | { type: 'table'; headers: string[]; rows: string[][]; dueColumnIndexes: number[] }
 
 function isDecorationLine(line: string): boolean {
   return line.replace(/[|┌┬┐├┼┤└┴┘─\-\s]/g, '').length === 0
 }
 
-function parseAsciiTable(text: string): ParsedTable | null {
+function parseBlocks(text: string): ParsedBlock[] {
   const lines = text.split('\n')
-  const parsedRows: string[][] = []
-  let firstRowLineIndex = -1
-  for (let i = 0; i < lines.length; i++) {
-    const normalized = lines[i].replaceAll('│', '|')
-    if (!normalized.includes('|')) continue
-    if (isDecorationLine(normalized)) continue
-    const rawCells = normalized.split('|').map(c => c.trim())
-    const cells = rawCells.length >= 2 && rawCells[0] === '' && rawCells[rawCells.length - 1] === ''
-      ? rawCells.slice(1, -1) : rawCells
-    const nonEmptyCount = cells.filter(c => c.length > 0).length
-    if (nonEmptyCount < 2) continue
-    if (firstRowLineIndex < 0) firstRowLineIndex = i
-    parsedRows.push(cells)
+  const blocks: ParsedBlock[] = []
+  let currentMdLines: string[] = []
+
+  let inTable = false
+  let tableRows: string[][] = []
+
+  const flushMd = () => {
+    if (currentMdLines.length > 0) {
+      blocks.push({ type: 'markdown', text: currentMdLines.join('\n') })
+      currentMdLines = []
+    }
   }
-  if (parsedRows.length < 2) return null
-  const columnCount = Math.max(...parsedRows.map(r => r.length))
-  const normalizedRows = parsedRows.map(row =>
-    row.length === columnCount ? row : [...row, ...Array.from({ length: columnCount - row.length }, () => '')]
-  )
-  const leadLines = firstRowLineIndex <= 0 ? []
-    : lines.slice(0, firstRowLineIndex).map(l => l.trim()).filter(l => l.length > 0 && !isDecorationLine(l))
-  return { leadLines, headers: normalizedRows[0], rows: normalizedRows.slice(1) }
+
+  const flushTable = () => {
+    if (tableRows.length >= 2) {
+       const columnCount = Math.max(...tableRows.map(r => r.length))
+       const normRows = tableRows.map(row =>
+         row.length === columnCount ? row : [...row, ...Array.from({ length: columnCount - row.length }, () => '')]
+       )
+       const headers = normRows[0]
+       const dueColumnIndexes = headers.map((h, idx) => ({ h: h.toLowerCase(), idx }))
+         .filter(({ h }) => ['기한', 'due', 'due date', 'deadline'].some(k => h.includes(k)))
+         .map(({ idx }) => idx)
+       blocks.push({ type: 'table', headers, rows: normRows.slice(1), dueColumnIndexes })
+    } else if (tableRows.length > 0) {
+       currentMdLines.push(...tableRows.map(r => r.join(' | ')))
+    }
+    tableRows = []
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const normalized = line.replaceAll('│', '|')
+    const isTableRow = normalized.includes('|') && !isDecorationLine(normalized)
+
+    if (isTableRow) {
+      if (!inTable) {
+        flushMd()
+        inTable = true
+      }
+      const rawCells = normalized.split('|').map(c => c.trim())
+      const cells = rawCells.length >= 2 && rawCells[0] === '' && rawCells[rawCells.length - 1] === ''
+        ? rawCells.slice(1, -1) : rawCells
+      if (cells.filter(c => c.length > 0).length >= 2) {
+         tableRows.push(cells)
+      } else {
+         if (inTable) flushTable()
+         inTable = false
+         currentMdLines.push(line)
+      }
+    } else {
+      if (inTable) {
+        if (!isDecorationLine(normalized)) {
+          flushTable()
+          inTable = false
+          currentMdLines.push(line)
+        }
+      } else {
+        currentMdLines.push(line)
+      }
+    }
+  }
+
+  if (inTable) flushTable()
+  flushMd()
+
+  return blocks
+}
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function renderMentionHighlightedHtml(text: string): string {
+  const escaped = escapeHtml(text)
+  return escaped.replace(MENTION_TOKEN_RE, (_, prefix, mention) => `${prefix}<mark class="jarvis-mention-token">${mention}</mark>`)
+}
+
+function normalizeOutputForRender(raw: string): string {
+  let text = raw ?? ''
+  const escapedNewlineCount = (text.match(/\\n/g) || []).length
+  const realNewlineCount = (text.match(/\n/g) || []).length
+  if (escapedNewlineCount > 0 && escapedNewlineCount >= realNewlineCount) {
+    text = text.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\t/g, '  ')
+  }
+  text = text
+    .replace(ICON_SYMBOL_RE, '')
+    .replace(/^(#{1,6})([^\s#])/gm, '$1 $2')
+    .replace(/\r\n/g, '\n')
+  return text
+}
+
+function detectLeadingMention(text: string): string | null {
+  const match = text.match(LEADING_MENTION_RE)
+  return match ? match[1] : null
 }
 
 const INFLIGHT_STEPS = ['요청을 안전하게 검사하는 중', '관련 컨텍스트를 수집하는 중', '에이전트 응답을 생성하는 중', '결과를 포맷팅하는 중']
@@ -59,7 +173,7 @@ const JarvisLogFeed = memo(function JarvisLogFeed({ invoking, logs }: LogFeedPro
         <article className="jarvis-entry in-flight">
           <div className="inflight-head">
             <span className="spinner" />
-            <p translate="no">Jarvis가 작업 중입니다…</p>
+            <p translate="no">운영 도우미가 작업 중입니다…</p>
           </div>
           <ol className="inflight-steps">
             {INFLIGHT_STEPS.map((step, i) => <li key={step} className={i === 0 ? 'active' : ''}>{step}</li>)}
@@ -70,69 +184,71 @@ const JarvisLogFeed = memo(function JarvisLogFeed({ invoking, logs }: LogFeedPro
         <p className="jarvis-placeholder">명령 기록이 없습니다. 첫 명령을 실행하세요.</p>
       )}
       {logs.map(entry => {
-        const parsedTable = parseAsciiTable(entry.output)
-        const dueColumnIndexes = parsedTable
-          ? parsedTable.headers
-              .map((h, idx) => ({ h: h.toLowerCase(), idx }))
-              .filter(({ h }) => ['기한', 'due', 'due date', 'deadline'].some(k => h.includes(k)))
-              .map(({ idx }) => idx)
-          : []
+        const normalizedOutput = normalizeOutputForRender(entry.output)
+        const isPreform = isPreformattedTableOutput(normalizedOutput) && !normalizedOutput.includes('|')
+        const blocks = isPreform ? [] : parseBlocks(normalizedOutput)
+
         return (
           <article key={`${entry.generated_at}-${entry.command}`} className="jarvis-entry">
             <p className="jarvis-cmd">→ {entry.command}</p>
             <div className="jarvis-rendered">
-              {parsedTable ? (
-                <div className="jarvis-table-shell">
-                  {parsedTable.leadLines.map(line => <p key={line} className="jarvis-table-lead">{line}</p>)}
-                  <div className="jarvis-table-wrap">
-                    <table className="jarvis-table">
-                      <thead><tr>{parsedTable.headers.map((h, i) => <th key={`${h}-${i}`}>{h}</th>)}</tr></thead>
-                      <tbody>
-                        {parsedTable.rows.map((row, ri) => (
-                          <tr key={`row-${ri}`}>
-                            {row.map((cell, ci) => (
-                              <td key={`cell-${ri}-${ci}`}>
-                                {dueColumnIndexes.includes(ci) ? formatDueDateWithCountdown(cell) : renderTableCell(cell)}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : isPreformattedTableOutput(entry.output) ? (
-                <pre className="jarvis-preformatted">{entry.output}</pre>
+              {isPreform ? (
+                <pre className="jarvis-preformatted">{normalizedOutput}</pre>
               ) : (
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    h1: ({ children }) => <h4>{children}</h4>,
-                    h2: ({ children }) => <h5>{children}</h5>,
-                    h3: ({ children }) => <h6>{children}</h6>,
-                    p: ({ children }) => <p>{children}</p>,
-                    li: ({ children }) => <li>{children}</li>,
-                    code: ({ children }) => <code>{children}</code>,
-                    blockquote: ({ children }) => <blockquote>{children}</blockquote>,
-                    table: ({ children }) => (
-                      <div className="jarvis-table-shell">
-                        <div className="jarvis-table-wrap">
-                          <table className="jarvis-table">{children}</table>
-                        </div>
+                blocks.map((block, idx) => {
+                  if (block.type === 'markdown') {
+                    return (
+                      <Markdown
+                        key={`block-${idx}`}
+                        remarkPlugins={[remarkGfm]}
+                        components={JARVIS_MD_COMPONENTS}
+                      >
+                        {block.text}
+                      </Markdown>
+                    )
+                  }
+                  return (
+                    <div key={`block-${idx}`} className="jarvis-table-shell">
+                      <div className="jarvis-table-wrap">
+                        <table className="jarvis-table">
+                          <thead><tr>{block.headers.map((h, i) => <th key={`${h}-${i}`}>{h}</th>)}</tr></thead>
+                          <tbody>
+                            {block.rows.map((row, ri) => (
+                              <tr key={`row-${ri}`}>
+                                {row.map((cell, ci) => (
+                                  <td key={`cell-${ri}-${ci}`}>
+                                    {block.dueColumnIndexes.includes(ci)
+                                      ? formatDueDateWithCountdown(cell)
+                                      : <Markdown remarkPlugins={[remarkGfm]} components={JARVIS_MD_COMPONENTS}>{cell}</Markdown>}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
-                    ),
-                    th: ({ children }) => <th>{children}</th>,
-                    td: ({ children }) => {
-                      const text = textFromNode(children)
-                      if (text === null) return <td>{children}</td>
-                      return <td>{renderTableCell(text)}</td>
-                    },
-                  }}
-                >
-                  {entry.output}
-                </ReactMarkdown>
+                    </div>
+                  )
+                })
               )}
             </div>
+            {!!entry.relay_notes?.length && (
+              <div className="jarvis-relay-notes">
+                <span className="jarvis-relay-label">Slack</span>
+                {entry.relay_notes.map(note => {
+                  const isOk = note.includes('완료')
+                  const isFail = note.includes('실패') || note.includes('미설정') || note.includes('건너뜀')
+                  return (
+                    <span
+                      key={note}
+                      className={`jarvis-relay-chip ${isOk ? 'ok' : isFail ? 'fail' : 'info'}`}
+                    >
+                      {isOk ? '✓' : isFail ? '✕' : '·'} {note}
+                    </span>
+                  )
+                })}
+              </div>
+            )}
             <small className="jarvis-timestamp">{entry.generated_at}</small>
           </article>
         )
@@ -153,6 +269,15 @@ export function JarvisConsole({ apiBase, authHeaders, templateCommands = [], vie
   const [invoking, setInvoking] = useState(false)
   const [logs, setLogs] = useState<JarvisResponse[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [coarsePointer, setCoarsePointer] = useState(false)
+
+  useEffect(() => {
+    const media = window.matchMedia('(pointer: coarse)')
+    const update = () => setCoarsePointer(media.matches)
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -185,17 +310,18 @@ export function JarvisConsole({ apiBase, authHeaders, templateCommands = [], vie
   const vpTemplates = [
     '오늘 관찰해야 할 리스크 트리거 5개만 우선순위로 정리해줘',
     '리스크-리워드 비가 좋은 시나리오 3개를 근거와 함께 제시해줘',
-    '실행 전 체크해야 할 게이트를 pre-trade checklist로 요약해줘',
+    '실행 전 확인해야 할 승인·안전 조건을 쉬운 체크리스트로 요약해줘',
   ]
-  const templates = viewRole === 'ceo' ? templateCommands : vpTemplates.map(t => ({ label: 'Analyst', command: t }))
+  const templates = viewRole === 'ceo' ? templateCommands : vpTemplates.map(t => ({ label: '애널리스트', command: t }))
+  const leadingMention = detectLeadingMention(command)
 
   return (
     <section className="panel jarvis-panel">
       <div className="panel-head">
-        <h3>Jarvis — Trading Desk Console</h3>
-        <p className="panel-desc">operator console · 명령 실행 · 결과 로그</p>
+        <h3>운영 도우미</h3>
+        <p className="panel-desc">팀별 자동화에게 질문하고 실행 결과를 확인합니다. 예: @Friday 오늘 핵심 지표 이상징후 3개와 대응 우선순위 정리</p>
       </div>
-      {error && <div className="section-error" role="alert">Jarvis: {error}</div>}
+      {error && <div className="section-error" role="alert">운영 도우미: {error}</div>}
       {templates.length > 0 && (
         <div className="cmd-templates">
           {templates.map(tpl => (
@@ -207,16 +333,44 @@ export function JarvisConsole({ apiBase, authHeaders, templateCommands = [], vie
         </div>
       )}
       <form onSubmit={handleSubmit} className="jarvis-form">
-        <input
-          id="jarvis-input"
-          value={command}
-          onChange={e => setCommand(e.target.value)}
-          placeholder="예: 오늘 장 시작 전 포지션 계획을 리스크 기준으로 정리해줘"
-          disabled={invoking}
-          autoComplete="off"
-        />
-        <button type="submit" disabled={invoking} translate="no">
-          {invoking ? 'WORKING…' : 'RUN'}
+        {coarsePointer ? (
+          <div className="jarvis-input-wrap mobile-safe">
+            {!!leadingMention && (
+              <p className="jarvis-mobile-mention-hint">
+                대상 <mark className="jarvis-mention-token">{leadingMention.toLowerCase()}</mark>
+              </p>
+            )}
+            <input
+              id="jarvis-input"
+              className="jarvis-input-mobile"
+              value={command}
+              onChange={e => setCommand(e.target.value)}
+              placeholder="예: @friday 오늘 핵심 지표 이상징후 3개와 대응 우선순위 정리해줘"
+              disabled={invoking}
+              autoComplete="off"
+              inputMode="text"
+            />
+          </div>
+        ) : (
+          <div className="jarvis-input-wrap">
+            <div
+              className="jarvis-input-highlight"
+              aria-hidden
+              dangerouslySetInnerHTML={{ __html: renderMentionHighlightedHtml(command) || '&nbsp;' }}
+            />
+            {!command && <span className="jarvis-input-placeholder">예: 오늘 장 시작 전 포지션 계획을 리스크 기준으로 정리해줘</span>}
+            <input
+              id="jarvis-input"
+              className="jarvis-input-real"
+              value={command}
+              onChange={e => setCommand(e.target.value)}
+              disabled={invoking}
+              autoComplete="off"
+            />
+          </div>
+        )}
+        <button type="submit" disabled={invoking}>
+          {invoking ? '실행중…' : '실행'}
         </button>
       </form>
       <JarvisLogFeed invoking={invoking} logs={logs} />

@@ -3,12 +3,22 @@ export function formatPercent(value: number) {
 }
 
 export function formatUsd(value: number) {
-  return `$${value.toFixed(2)}`
+  return `$${value.toFixed(1)}`
 }
 
 export function formatKrw(value?: number) {
   if (!value) return '₩0'
   return `₩${value.toLocaleString('ko-KR')}`
+}
+
+export function formatUsdAndKrw(usdValue: number, exchangeRate: number = 1400) {
+  const krwValue = Math.round(usdValue * exchangeRate)
+  return `$${usdValue.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} (₩${krwValue.toLocaleString('ko-KR')})`
+}
+
+export function formatUsdAndKrwDetailed(usdValue: number, exchangeRate: number = 1400) {
+  const krwValue = Math.round(usdValue * exchangeRate)
+  return `$${usdValue.toFixed(1)} (₩${krwValue.toLocaleString('ko-KR')})`
 }
 
 export function platformLabel(value: string) {

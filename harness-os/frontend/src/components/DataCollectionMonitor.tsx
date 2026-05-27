@@ -5,9 +5,9 @@ type Monitor = NonNullable<DashboardPayload['data_collection_monitor']>
 type Props = { monitor: Monitor }
 
 const STATUS_BADGE: Record<string, { label: string; color: string }> = {
-  pending:       { label: 'Pending',  color: 'var(--color-warn)' },
-  filtered_pass: { label: 'Passed',   color: 'var(--color-ok)' },
-  filtered_fail: { label: 'Failed',   color: 'var(--color-text-muted)' },
+  pending:       { label: '분류 대기',  color: 'var(--color-warn)' },
+  filtered_pass: { label: '채택',   color: 'var(--color-ok)' },
+  filtered_fail: { label: '제외',   color: 'var(--color-text-muted)' },
 }
 
 function pct(n: number, total: number) {
@@ -56,13 +56,13 @@ export function DataCollectionMonitor({ monitor }: Props) {
         {/* FUNNEL */}
         <div className="panel" style={{ padding: '1.25rem' }}>
           <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
-            Pipeline Funnel
+            수집 처리 현황
           </p>
           {[
             { label: '수집됨', value: total, color: 'var(--color-text)', rate: null },
-            { label: '통과 (Pass)', value: pass_count, color: 'var(--color-ok)', rate: pct(pass_count, total) },
-            { label: '탈락 (Fail)', value: fail_count, color: 'var(--color-text-muted)', rate: pct(fail_count, total) },
-            { label: '대기 (Pending)', value: pending_count, color: 'var(--color-warn)', rate: pct(pending_count, total) },
+            { label: '채택', value: pass_count, color: 'var(--color-ok)', rate: pct(pass_count, total) },
+            { label: '제외', value: fail_count, color: 'var(--color-text-muted)', rate: pct(fail_count, total) },
+            { label: '분류 대기', value: pending_count, color: 'var(--color-warn)', rate: pct(pending_count, total) },
           ].map(({ label, value, color, rate }) => (
             <div key={label} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', alignItems: 'center', gap: '0.5rem', padding: '0.45rem 0', borderBottom: '1px solid var(--color-border)' }}>
               <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>{label}</span>
@@ -172,4 +172,3 @@ export function DataCollectionMonitor({ monitor }: Props) {
     </section>
   )
 }
-
