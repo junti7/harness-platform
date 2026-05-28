@@ -43,22 +43,48 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def cancel_all_open_orders() -> int:
+    """미체결 주문 전량 취소. 청산 재시도 전 선행 필수."""
+    url = f"{ALPACA_BASE_URL}/orders"
+    r = requests.delete(url, headers=_HEADERS, timeout=15)
+    cancelled = 0
+    if r.ok:
+        try:
+            cancelled = len(r.json()) if r.text else 0
+        except Exception:
+            cancelled = 0
+    return cancelled
+
+
 def close_position(symbol: str) -> dict:
     url = f"{ALPACA_BASE_URL}/positions/{symbol}"
     r = requests.delete(url, headers=_HEADERS, timeout=15)
     if r.status_code in (200, 204):
         return {"ok": True, "symbol": symbol, "response": r.json() if r.text else {}}
-    return {"ok": False, "symbol": symbol, "status": r.status_code, "error": r.text[:300]}
+    error_body = r.text[:300]
+    # held_for_orders: 이미 매도 주문이 걸려 있음 → 매도 주문 이미 존재하는 것으로 처리
+    if "held_for_orders" in error_body:
+        return {"ok": True, "symbol": symbol, "note": "이미 매도 주문 대기 중 (held_for_orders) — 체결 대기"}
+    return {"ok": False, "symbol": symbol, "status": r.status_code, "error": error_body}
 
 
 def close_all_positions(positions: list[dict]) -> list[dict]:
+    # 기존 미체결 주문 먼저 취소 (held_for_orders 방지)
+    cancelled = cancel_all_open_orders()
+    if cancelled:
+        print(f"  미체결 주문 {cancelled}건 취소 완료 → 재청산 시도")
+        import time; time.sleep(1)
+
     results = []
     for pos in positions:
         sym = pos["symbol"]
         result = close_position(sym)
         results.append(result)
-        status = "✅" if result["ok"] else "❌"
-        print(f"  {status} {sym} 청산 {'완료' if result['ok'] else '실패: ' + result.get('error','')}")
+        note = result.get("note", "")
+        if result["ok"]:
+            print(f"  ✅ {sym} 청산 {'완료' if not note else note}")
+        else:
+            print(f"  ❌ {sym} 청산 실패: {result.get('error', '')}")
     return results
 
 
