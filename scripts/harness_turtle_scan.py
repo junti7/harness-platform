@@ -49,7 +49,6 @@ HARNESS_UNIVERSE_META = [
 
 # 하위 호환 (tuple 슬라이싱용)
 HARNESS_UNIVERSE = [(t, s, sc) for t, _, s, sc, _ in HARNESS_UNIVERSE_META]
-]
 
 SCAN_OUTPUT_PATH = ROOT / "docs/trading/harness_turtle_scan_2026-05-28.json"
 
