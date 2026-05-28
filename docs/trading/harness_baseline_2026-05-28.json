@@ -1,0 +1,15 @@
+{
+  "harness_baseline": true,
+  "version": "1.0",
+  "established_at": "2026-05-28T12:39:30+00:00",
+  "established_by": "CEO 지시 2026-05-28",
+  "purpose": "Harness 리서치 파이프라인(Physical AI·AGI·Robotics·반도체) + Turtle Trading 순수 실적 측정 베이스라인",
+  "starting_portfolio_value": 99632.11,
+  "starting_cash": -95425.32,
+  "starting_equity": 99632.11,
+  "performance_measurement_rule": "이 파일의 starting_portfolio_value를 기준으로 이후 모든 실적을 계산한다. 이전 손익(-$666.38 등)은 포함하지 않는다.",
+  "method": {
+    "layer1": "Harness DEEP RESEARCH 파이프라인 기반 종목 선정 (Physical AI·AGI·Robotics·반도체)",
+    "layer2": "Turtle Trading System 1/2 진입 신호 + ATR 1% 포지션 사이징 + 2×ATR 손절"
+  }
+}

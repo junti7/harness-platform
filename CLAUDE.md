@@ -384,7 +384,7 @@ agent는 어떤 상황에서도 `signal_approve`, `opportunity_approve`, `report
 - 발행 언어는 `docs/governance/LANGUAGE_POLICY.md`의 Phase 정책을 따른다. Phase 1은 한국어 + 영어 on-demand 만 허용. 추가 언어 launch는 Phase 2 진입 조건 충족 후 대표 승인 필수.
 - pipeline 실행 전 schema/env/model identity preflight를 통과해야 한다. DB 스키마 누락, 필수 env 누락, 모델 식별 불가 상태에서는 run을 중단한다.
 - 리포트의 핵심 claim은 `verified`, `company-self-report`, `speculative` 중 하나의 근거 자세를 드러내야 한다.
-- **[트레이딩 절대 원칙]** Harness의 모든 주식 트레이딩 활동은 `docs/trading/TURTLE_TRADING_PRINCIPLES.md`의 Turtle Trading 5대 원칙(시장 선택·포지션 사이징·진입 신호·손절·청산)을 반드시 준수한다. 이 원칙은 감정·직관·예측이 아닌 알고리즘과 규율에 기반한다.
+- **[트레이딩 절대 원칙]** Harness의 모든 주식 트레이딩 활동은 `docs/trading/TURTLE_TRADING_PRINCIPLES.md`의 Turtle Trading 5대 원칙(종목 선정·포지션 사이징·진입 신호·손절·청산)을 반드시 준수한다. 이 원칙은 감정·직관·예측이 아닌 알고리즘과 규율에 기반한다.
 - **[트레이딩 capital_action 조건]** 트레이딩 관련 `capital_action_approve`는 Turtle 파라미터(ATR, 진입 시스템, 손절가, 포지션 리스크 ≤1%)가 모두 기재된 경우에만 유효하다.
 - **[외국환거래 한도 — 2026-05-27 한국은행 답변 반영]** IBKR 계좌로의 연간 총 송금액은 **$100,000(10만 달러) 이하**로 유지한다. 이 한도 내에서는 별도 외국환거래 신고가 불필요하다 (한국은행 외환심사팀 비공식 참고 답변 기준, `docs/reports/legal/bok_response_ibkr_2026-05.md` 참조). 연간 $100,000 초과 시 기획재정부 또는 외국환거래 신고기관에 사전 신고 후 진행한다. 이 답변은 법적 증빙으로 사용 불가하며 참고용이다.
 
@@ -578,7 +578,7 @@ PLATFORM.md는 플랫폼 헌법이다.
 | `docs/operations/CHART_AUTHORING_PLAYBOOK.md` | 차트/다이어그램/생성형 이미지 작성 기준, build pipeline 함정 체크리스트, 다른 LLM 위임 prompt template |
 | `docs/governance/RISK_REGISTER.md` | 전사 리스크 레지스터. BRM Team이 주간 업데이트하며 재무·운영·전략·법적·평판·기술 리스크를 추적 |
 | `docs/governance/BRM_PLAYBOOK.md` | Business Risk Management 운영 절차. 리스크 분류 체계, 주간 cadence, escalation 임계값, Pre-Mortem 품질 검토, Kill Criteria 모니터링 |
-| **`docs/trading/TURTLE_TRADING_PRINCIPLES.md`** | **[필수] Harness 주식 트레이딩의 절대 원칙. Turtle Trading 5대 구성요소(시장 선택·포지션 사이징·진입·손절·청산). 모든 capital_action_approve의 선행 준수 조건.** |
+| **`docs/trading/TURTLE_TRADING_PRINCIPLES.md`** | **[필수] Harness 주식 트레이딩의 절대 원칙. Turtle Trading 5대 구성요소(종목 선정·포지션 사이징·진입 신호·손절·청산). 모든 capital_action_approve의 선행 준수 조건.** |
 | `docs/trading/IBKR_A_TO_Z_SETUP.md` | IBKR 계좌 개설·설정 절차 |
 | `docs/trading/INVESTMENT_THESIS_TEMPLATE.md` | 투자 thesis 작성 템플릿 |
 

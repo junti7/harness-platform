@@ -40,10 +40,11 @@ SLACK_CHANNEL = os.getenv("SLACK_CHANNEL_EXEC_PRESIDENT_DECISIONS", "")
 LOG_PATH = ROOT / "docs/reports/paper_trading_log.jsonl"
 STATE_PATH = ROOT / "docs/reports/paper_trading_positions.json"
 
-# Turtle Trading 유니버스 (Physical AI ETF 중심)
+# Turtle Trading 유니버스 — Harness 리서치 파이프라인 선정 (2026-05-28 갱신)
+# Layer 1(리서치) harness_score ≥ 7인 종목만 포함. 이전 ETF 중심 유니버스 대체.
 UNIVERSE = os.getenv(
     "PAPER_TRADING_UNIVERSE",
-    "NVDA,SMH,SOXX,BOTZ,TSLA,PLTR,ROBO,QQQ"
+    "NVDA,AVGO,TSM,MU,ANET,VRT,TER,CRWV,SYM,ISRG,ROK"
 ).split(",")
 
 MAX_POSITIONS = int(os.getenv("PAPER_TRADING_MAX_POSITIONS", "6"))
