@@ -5,7 +5,7 @@
 
 set -e
 
-PROJECT_DIR="/Users/juntae.park/projects/harness-platform"
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 VENV_PYTHON="$PROJECT_DIR/.venv/bin/python"
 SCRIPT="$PROJECT_DIR/scripts/turtle_auto_trader.py"
 PLIST_NAME="com.harness.turtle-auto-trader"
