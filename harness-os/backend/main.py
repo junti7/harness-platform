@@ -3435,6 +3435,99 @@ def ack_drop_alert(req: DropAlertAckRequest, _: None = Depends(_require_secret))
         return {"ok": False, "error": str(e)}
 
 
+# ── OpenClaw 관제 API ─────────────────────────────────────────────────────────
+
+_OPENCLAW_BIN = os.getenv("HARNESS_OPENCLAW_BIN", "/opt/homebrew/bin/openclaw")
+_OPENCLAW_GATEWAY_PORT = int(os.getenv("HARNESS_OPENCLAW_GATEWAY_PORT", "18789"))
+_OPENCLAW_LAUNCHAGENT_LABEL = os.getenv("HARNESS_OPENCLAW_LAUNCHAGENT", "ai.openclaw.gateway")
+
+
+def _openclaw_gateway_reachable() -> tuple[bool, int | None]:
+    """OpenClaw 게이트웨이 HTTP ping. (alive, latency_ms)"""
+    url = f"http://127.0.0.1:{_OPENCLAW_GATEWAY_PORT}/"
+    try:
+        t0 = time.time()
+        r = httpx.get(url, timeout=3.0, follow_redirects=False)
+        ms = int((time.time() - t0) * 1000)
+        return r.status_code < 500, ms
+    except Exception:
+        return False, None
+
+
+def _openclaw_pid() -> int | None:
+    try:
+        out = subprocess.check_output(["pgrep", "-f", "openclaw.*gateway"], text=True).strip()
+        pids = [int(x) for x in out.split() if x.strip().isdigit()]
+        return pids[0] if pids else None
+    except Exception:
+        return None
+
+
+def _openclaw_service_status() -> dict[str, Any]:
+    pid = _openclaw_pid()
+    reachable, latency_ms = _openclaw_gateway_reachable()
+    binary_exists = Path(_OPENCLAW_BIN).exists()
+    launchagent_path = Path.home() / "Library" / "LaunchAgents" / f"{_OPENCLAW_LAUNCHAGENT_LABEL}.plist"
+    launchagent_installed = launchagent_path.exists()
+    return {
+        "running": pid is not None,
+        "gateway_reachable": reachable,
+        "pid": pid,
+        "latency_ms": latency_ms,
+        "gateway_url": f"http://127.0.0.1:{_OPENCLAW_GATEWAY_PORT}",
+        "binary_exists": binary_exists,
+        "binary_path": _OPENCLAW_BIN,
+        "launchagent_installed": launchagent_installed,
+        "launchagent_label": _OPENCLAW_LAUNCHAGENT_LABEL,
+        "checked_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+@app.get("/api/system/openclaw/status")
+def openclaw_status(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    status = _openclaw_service_status()
+    status["ok"] = status["running"] and status["gateway_reachable"]
+    return status
+
+
+@app.post("/api/system/openclaw/restart")
+def openclaw_restart(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    """LaunchAgent 기반 재시동. launchctl kickstart -k 사용."""
+    try:
+        uid = os.getuid()
+        label = _OPENCLAW_LAUNCHAGENT_LABEL
+        result = subprocess.run(
+            ["launchctl", "kickstart", "-k", f"gui/{uid}/{label}"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0:
+            time.sleep(2)
+            status = _openclaw_service_status()
+            return {
+                "ok": True,
+                "message": "재시동 명령 전달 완료",
+                "stdout": result.stdout.strip(),
+                "status": status,
+            }
+        # launchctl 실패 시 binary 직접 재시동 시도
+        kill_result = subprocess.run(["pkill", "-f", "openclaw.*gateway"], capture_output=True)
+        time.sleep(1)
+        start_result = subprocess.run(
+            [_OPENCLAW_BIN, "gateway", "--port", str(_OPENCLAW_GATEWAY_PORT)],
+            start_new_session=True, capture_output=True, timeout=3,
+        )
+        time.sleep(2)
+        status = _openclaw_service_status()
+        return {
+            "ok": status["running"],
+            "message": "launchctl 실패 → 직접 재시동 시도",
+            "stderr": result.stderr.strip(),
+            "status": status,
+        }
+    except Exception as e:
+        return {"ok": False, "message": str(e), "status": _openclaw_service_status()}
+
+
 # ── SPA Static File Serving (프로덕션 배포용) ────────────────────────────────
 # Vite 빌드 결과물을 FastAPI에서 직접 서빙.
 # /api/* 경로는 위의 라우트들이 우선 처리하므로 충돌 없음.

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 type Settings = {
   theme: 'light' | 'dark'
@@ -7,6 +7,20 @@ type Settings = {
   nickname: string
   welcomeMessage: string
   exchangeRateMode: 'realtime' | 'manual'
+}
+
+type OpenClawStatus = {
+  ok: boolean
+  running: boolean
+  gateway_reachable: boolean
+  pid: number | null
+  latency_ms: number | null
+  gateway_url: string
+  binary_exists: boolean
+  binary_path: string
+  launchagent_installed: boolean
+  launchagent_label: string
+  checked_at: string
 }
 
 const defaultSettings = {
@@ -45,6 +59,12 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase,
     lastSuccessAt?: string | null
     error?: string | null
   } | null>(null)
+
+  const [openClawStatus, setOpenClawStatus] = useState<OpenClawStatus | null>(null)
+  const [openClawLoading, setOpenClawLoading] = useState(false)
+  const [openClawRestartLoading, setOpenClawRestartLoading] = useState(false)
+  const [openClawRestartMsg, setOpenClawRestartMsg] = useState<{ ok: boolean; msg: string } | null>(null)
+  const openClawIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // 역할별 설정
   const [settings, setSettings] = useState<Settings>(() => {
@@ -180,6 +200,45 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase,
     }
   }
 
+  const fetchOpenClawStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiBase}/api/system/openclaw/status`, { headers: authHeaders() })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = (await res.json()) as OpenClawStatus
+      setOpenClawStatus(data)
+    } catch (err) {
+      setOpenClawStatus(prev => prev ? { ...prev, ok: false, gateway_reachable: false, running: false } : null)
+    }
+  }, [apiBase, authHeaders])
+
+  useEffect(() => {
+    setOpenClawLoading(true)
+    void fetchOpenClawStatus().finally(() => setOpenClawLoading(false))
+    openClawIntervalRef.current = setInterval(() => void fetchOpenClawStatus(), 30_000)
+    return () => {
+      if (openClawIntervalRef.current) clearInterval(openClawIntervalRef.current)
+    }
+  }, [fetchOpenClawStatus])
+
+  const handleOpenClawRestart = async () => {
+    setOpenClawRestartLoading(true)
+    setOpenClawRestartMsg(null)
+    try {
+      const res = await fetch(`${apiBase}/api/system/openclaw/restart`, {
+        method: 'POST',
+        headers: authHeaders(),
+      })
+      const data = await res.json()
+      setOpenClawRestartMsg({ ok: data.ok, msg: data.message ?? (data.ok ? '재시동 완료' : '재시동 실패') })
+      if (data.status) setOpenClawStatus(data.status)
+      setTimeout(() => void fetchOpenClawStatus(), 3000)
+    } catch (err) {
+      setOpenClawRestartMsg({ ok: false, msg: '서버에 연결할 수 없습니다.' })
+    } finally {
+      setOpenClawRestartLoading(false)
+    }
+  }
+
   const handleReset = () => {
     const defaults = defaultSettings[currentRole]
     setSettings(defaults)
@@ -278,6 +337,123 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase,
                   {runtimeHealth.error}
                 </p>
               )}
+            </div>
+          </div>
+
+          {/* OpenClaw 관제 패널 */}
+          <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '1.5rem', alignItems: 'start', paddingBottom: '1.2rem', borderBottom: '1px solid var(--color-border)' }}>
+            <div>
+              <strong style={{ display: 'block', fontSize: '0.95rem' }}>OpenClaw 에이전트 게이트웨이</strong>
+              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>AI 에이전트 게이트웨이 프로세스 상태를 30초마다 자동 점검하고 강제 재시동할 수 있습니다.</span>
+            </div>
+            <div style={{
+              border: '1px solid var(--color-border)',
+              borderRadius: '14px',
+              padding: '1rem 1.1rem',
+              background: 'var(--color-surface-lighter)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.75rem',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                <strong style={{ fontSize: '0.96rem', color: 'var(--color-text)' }}>OpenClaw 게이트웨이</strong>
+                <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+                  <span style={{
+                    padding: '0.28rem 0.68rem',
+                    borderRadius: '999px',
+                    border: `1px solid ${openClawLoading ? 'var(--color-border)' : openClawStatus?.ok ? 'color-mix(in srgb, var(--color-accent) 35%, var(--color-border))' : 'color-mix(in srgb, var(--color-danger) 35%, var(--color-border))'}`,
+                    color: openClawLoading ? 'var(--color-text-muted)' : openClawStatus?.ok ? 'var(--color-accent)' : 'var(--color-danger)',
+                    background: 'var(--color-surface)',
+                    fontSize: '0.76rem',
+                    fontWeight: 800,
+                  }}>
+                    {openClawLoading ? '확인 중…' : openClawStatus?.ok ? '정상 운영 중' : openClawStatus === null ? '연결 중…' : '응답 없음'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void fetchOpenClawStatus()}
+                    disabled={openClawLoading}
+                    style={{
+                      padding: '0.28rem 0.6rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--color-border)',
+                      background: 'var(--color-surface)',
+                      color: 'var(--color-text-muted)',
+                      fontSize: '0.74rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    새로고침
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
+                <div>
+                  <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>프로세스</span>
+                  <strong style={{ fontSize: '0.88rem', color: openClawStatus?.running ? 'var(--color-accent)' : 'var(--color-danger)' }}>
+                    {openClawStatus?.running ? `PID ${openClawStatus.pid}` : '프로세스 없음'}
+                  </strong>
+                </div>
+                <div>
+                  <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>게이트웨이 응답</span>
+                  <strong style={{ fontSize: '0.88rem', color: openClawStatus?.gateway_reachable ? 'var(--color-accent)' : 'var(--color-danger)' }}>
+                    {openClawStatus?.gateway_reachable
+                      ? `응답 ${openClawStatus.latency_ms ?? '?'}ms`
+                      : '응답 없음'}
+                  </strong>
+                </div>
+                <div>
+                  <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>LaunchAgent</span>
+                  <strong style={{ fontSize: '0.88rem', color: openClawStatus?.launchagent_installed ? 'var(--color-text)' : 'var(--color-danger)' }}>
+                    {openClawStatus?.launchagent_installed ? '등록됨' : '미등록'}
+                  </strong>
+                </div>
+                <div>
+                  <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>최종 점검</span>
+                  <strong style={{ fontSize: '0.88rem', color: 'var(--color-text)' }}>
+                    {openClawStatus?.checked_at
+                      ? new Date(openClawStatus.checked_at).toLocaleTimeString('ko-KR')
+                      : '—'}
+                  </strong>
+                </div>
+              </div>
+
+              {openClawRestartMsg && (
+                <div style={{
+                  padding: '0.5rem 0.8rem',
+                  borderRadius: '8px',
+                  background: openClawRestartMsg.ok ? 'color-mix(in srgb, var(--color-accent) 10%, var(--color-surface))' : 'color-mix(in srgb, var(--color-danger) 10%, var(--color-surface))',
+                  border: `1px solid ${openClawRestartMsg.ok ? 'color-mix(in srgb, var(--color-accent) 30%, var(--color-border))' : 'color-mix(in srgb, var(--color-danger) 30%, var(--color-border))'}`,
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  color: openClawRestartMsg.ok ? 'var(--color-accent)' : 'var(--color-danger)',
+                }}>
+                  {openClawRestartMsg.msg}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => void handleOpenClawRestart()}
+                disabled={openClawRestartLoading}
+                style={{
+                  alignSelf: 'flex-start',
+                  padding: '0.45rem 1.1rem',
+                  borderRadius: '8px',
+                  border: '1px solid color-mix(in srgb, var(--color-danger) 40%, var(--color-border))',
+                  background: openClawRestartLoading ? 'var(--color-surface)' : 'color-mix(in srgb, var(--color-danger) 8%, var(--color-surface))',
+                  color: 'var(--color-danger)',
+                  fontWeight: 700,
+                  fontSize: '0.82rem',
+                  cursor: openClawRestartLoading ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s ease',
+                  opacity: openClawRestartLoading ? 0.6 : 1,
+                }}
+              >
+                {openClawRestartLoading ? '재시동 중…' : '강제 재시동'}
+              </button>
             </div>
           </div>
 
