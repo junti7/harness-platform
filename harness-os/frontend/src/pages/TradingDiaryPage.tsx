@@ -1,10 +1,53 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+// 티커 → 기업명 매핑 (UI 표기용)
+const TICKER_NAMES: Record<string, string> = {
+  // Physical AI / AGI 인프라
+  NVDA: 'NVIDIA',
+  AVGO: 'Broadcom',
+  TSM:  'TSMC',
+  MU:   'Micron',
+  ANET: 'Arista Networks',
+  VRT:  'Vertiv',
+  TER:  'Teradyne',
+  CRWV: 'CoreWeave',
+  SYM:  'Symbotic',
+  ISRG: 'Intuitive Surgical',
+  ROK:  'Rockwell Automation',
+  PLTR: 'Palantir',
+  TSLA: 'Tesla',
+  ARM:  'ARM Holdings',
+  // 전력 인프라
+  CEG:  'Constellation Energy',
+  VST:  'Vistra Corp',
+  GEV:  'GE Vernova',
+  PWR:  'Quanta Services',
+  NEE:  'NextEra Energy',
+  // 냉각수
+  XYL:  'Xylem',
+  ECL:  'Ecolab',
+  VLTO: 'Veralto',
+  // 배터리
+  QS:   'QuantumScape',
+  STEM: 'Stem Inc',
+  ALTM: 'Arcadium Lithium',
+  LTHM: 'Livent',
+  // ETF
+  SMH:  'VanEck Semiconductor ETF',
+  SOXX: 'iShares Semiconductor ETF',
+  BOTZ: 'Global X Robotics ETF',
+  ROBO: 'Robo Global Robotics ETF',
+  QQQ:  'Invesco NASDAQ-100 ETF',
+  SPY:  'SPDR S&P500 ETF',
+}
+
 type DiaryEntry = {
   id: string
   timestamp: string
   type: 'trade_entry' | 'trade_exit' | 'ceo_note' | 'signal_scan' | 'research_update'
   ticker?: string
+  company_name?: string
+  selection_reason?: string
   side?: string
   shares?: number
   price?: number
@@ -113,15 +156,25 @@ function EntryCard({ entry }: { entry: DiaryEntry }) {
           {label}
         </span>
         {entry.ticker && (
-          <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{entry.ticker}</span>
+          <span style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+            <span style={{ fontWeight: 700, fontSize: '0.95rem', lineHeight: 1.2 }}>{entry.ticker}</span>
+            <span style={{ fontSize: '0.7rem', color: 'var(--color-muted)', lineHeight: 1.2 }}>
+              {entry.company_name ?? TICKER_NAMES[entry.ticker] ?? ''}
+            </span>
+          </span>
         )}
         {entry.system && (
           <span style={{ fontSize: '0.75rem', color: 'var(--color-muted)', fontWeight: 600 }}>
             {entry.system}
           </span>
         )}
+        {entry.sector && (
+          <span style={{ fontSize: '0.7rem', color: '#a78bfa', padding: '0.1rem 0.35rem', borderRadius: '4px', background: 'rgba(167,139,250,0.12)' }}>
+            {entry.sector}
+          </span>
+        )}
         {entry.harness_score != null && entry.harness_score > 0 && (
-          <span style={{ fontSize: '0.72rem', color: '#a78bfa' }}>
+          <span style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 700 }}>
             ★{entry.harness_score}
           </span>
         )}
@@ -129,6 +182,21 @@ function EntryCard({ entry }: { entry: DiaryEntry }) {
           {fmtTime(entry.timestamp)}
         </span>
       </div>
+
+      {/* 선정 사유 */}
+      {entry.selection_reason && (
+        <div style={{
+          fontSize: '0.79rem',
+          color: 'var(--color-text)',
+          background: 'rgba(167,139,250,0.07)',
+          borderRadius: '6px',
+          padding: '0.4rem 0.6rem',
+          borderLeft: '2px solid #a78bfa',
+        }}>
+          <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#a78bfa', marginRight: '0.4rem' }}>선정 사유</span>
+          {entry.selection_reason}
+        </div>
+      )}
 
       {/* 거래 상세 */}
       {(entry.type === 'trade_entry' || entry.type === 'trade_exit') && (

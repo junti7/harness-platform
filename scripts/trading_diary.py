@@ -28,6 +28,18 @@ def _write(entry: dict[str, Any]) -> None:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+TICKER_NAMES: dict[str, str] = {
+    "NVDA": "NVIDIA", "AVGO": "Broadcom", "TSM": "TSMC", "MU": "Micron",
+    "ANET": "Arista Networks", "VRT": "Vertiv", "TER": "Teradyne",
+    "CRWV": "CoreWeave", "SYM": "Symbotic", "ISRG": "Intuitive Surgical",
+    "ROK": "Rockwell Automation", "PLTR": "Palantir", "TSLA": "Tesla",
+    "CEG": "Constellation Energy", "VST": "Vistra Corp", "GEV": "GE Vernova",
+    "PWR": "Quanta Services", "XYL": "Xylem", "ECL": "Ecolab",
+    "VLTO": "Veralto", "QS": "QuantumScape", "STEM": "Stem Inc",
+    "ALTM": "Arcadium Lithium", "ARM": "ARM Holdings",
+}
+
+
 def log_trade_entry(
     ticker: str,
     side: str,               # "buy" | "sell"
@@ -39,6 +51,7 @@ def log_trade_entry(
     signal: str,             # "breakout_long" | "breakout_short"
     sector: str = "",
     harness_score: int = 0,
+    selection_reason: str = "",
     note: str = "",
 ) -> str:
     entry_id = str(uuid.uuid4())[:8]
@@ -47,6 +60,7 @@ def log_trade_entry(
         "timestamp": _now(),
         "type": "trade_entry",
         "ticker": ticker,
+        "company_name": TICKER_NAMES.get(ticker, ""),
         "side": side,
         "shares": shares,
         "price": round(price, 2),
@@ -58,6 +72,7 @@ def log_trade_entry(
         "signal": signal,
         "sector": sector,
         "harness_score": harness_score,
+        "selection_reason": selection_reason,
         "pnl": None,
         "pnl_pct": None,
         "status": "open",

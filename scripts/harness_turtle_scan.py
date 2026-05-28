@@ -21,18 +21,34 @@ from scripts.alpaca_paper_trading import (
 )
 
 # Harness 리서치 파이프라인 선정 종목 (Layer 1 결과)
-HARNESS_UNIVERSE = [
-    ("NVDA", "Physical AI / AGI인프라", 9),
-    ("AVGO", "AGI인프라 / 반도체",     9),
-    ("TSM",  "반도체 파운드리",         9),
-    ("MU",   "AI 메모리 반도체",        8),
-    ("ANET", "AGI 네트워킹",            8),
-    ("VRT",  "데이터센터 인프라",       8),
-    ("TER",  "Robotics / 반도체 테스트",8),
-    ("CRWV", "AI 특화 클라우드",        7),
-    ("SYM",  "웨어하우스 자동화",       7),
-    ("ISRG", "의료 로봇",               7),
-    ("ROK",  "산업 자동화",             7),
+# (ticker, company_name, sector, harness_score, selection_reason)
+HARNESS_UNIVERSE_META = [
+    ("NVDA", "NVIDIA",              "Physical AI / AGI인프라",  9,
+     "AI 가속기 80-90% 점유율. Isaac GR00T·Cosmos로 로봇 OS 표준화 중. 2026 로보틱스 매출 YoY +72%."),
+    ("AVBO", "Broadcom",            "AGI인프라 / 반도체",       9,
+     "커스텀 AI ASIC 1위. FY2026 Q1 AI칩 매출 YoY +106%. $73B 수주 잔고. Anthropic TPU 공급."),
+    ("TSM",  "TSMC",                "반도체 파운드리",          9,
+     "AI칩 유일한 2nm 첨단 파운드리. 2026 Q1 매출 YoY +35%, 마진 66.2%. 대체 불가 병목 자산."),
+    ("MU",   "Micron",              "AI 메모리 반도체",         8,
+     "HBM3E 전량 완판·HBM4 NVDA Vera Rubin 공급. FY26Q2 EPS $12.07 사상 최대. 시총 $1T 달성."),
+    ("ANET", "Arista Networks",     "AGI 네트워킹",             8,
+     "AI 데이터센터 고속 이더넷 스위칭 1위. AI 네트워킹 매출 가이던스 $3.25B. GPU간 통신 필수 인프라."),
+    ("VRT",  "Vertiv",              "데이터센터 전력·냉각",     8,
+     "AI 데이터센터 냉각·전력 인프라 1위. NVDA와 차세대 전력 아키텍처 공동 개발 파트너."),
+    ("TER",  "Teradyne",            "Robotics / 반도체 테스트", 8,
+     "반도체 테스트 장비 1위 + Universal Robots 자회사. Q1 매출 YoY +87%. AI칩 테스트 수요 구조적 성장."),
+    ("CRWV", "CoreWeave",           "AI 특화 클라우드",         7,
+     "AI 전용 클라우드 순수 플레이. $66B 수주 잔고. Meta $21B 장기 계약. 2026 매출 가이던스 $12-13B."),
+    ("SYM",  "Symbotic",            "웨어하우스 자동화 Robotics",7,
+     "창고 완전 자동화 1위. FY2026 Q1 GAAP 첫 흑자 전환. 월마트·C&S 배치 진행 중."),
+    ("ISRG", "Intuitive Surgical",  "의료 로봇",                7,
+     "다빈치 수술 로봇 세계 독점. 구독형 소모품 수익 구조. 다빈치 5세대 + AI 수술 보조 확장 중."),
+    ("ROK",  "Rockwell Automation", "산업 자동화",              7,
+     "미국 리쇼어링 수혜 1위. 인더스트리 4.0 + AI 예측 유지보수. YTD +32.2%. 목표가 $480-525."),
+]
+
+# 하위 호환 (tuple 슬라이싱용)
+HARNESS_UNIVERSE = [(t, s, sc) for t, _, s, sc, _ in HARNESS_UNIVERSE_META]
 ]
 
 SCAN_OUTPUT_PATH = ROOT / "docs/trading/harness_turtle_scan_2026-05-28.json"
@@ -48,7 +64,7 @@ def run_scan(account_value: float) -> dict:
     results = []
     breakout_signals = []
 
-    for ticker, sector, score in HARNESS_UNIVERSE:
+    for ticker, company_name, sector, score, selection_reason in HARNESS_UNIVERSE_META:
         try:
             sig = get_turtle_signal(ticker)
         except Exception as e:
@@ -74,19 +90,20 @@ def run_scan(account_value: float) -> dict:
 
         tag = "🚀 BREAKOUT" if "breakout" in signal else "⏳ 중립   "
         print(
-            f"{tag} [{ticker:5s}] ${price:8.2f} | ATR={atr:7.2f} "
-            f"| S1고점={s1_high:8.2f}({dist_s1:+5.1f}%) "
-            f"| S2고점={s2_high:8.2f}({dist_s2:+5.1f}%) "
-            f"| 신호={signal}"
+            f"{tag} [{ticker:5s}({company_name})] ${price:8.2f} | ATR={atr:7.2f} "
+            f"| S2고점={s2_high:8.2f}({dist_s2:+5.1f}%) | 신호={signal}"
         )
         if "breakout" in signal:
             print(
                 f"         → {system} 매수 {shares}주 | 포지션=${pos_value:,.0f} "
                 f"| 손절=${stop_loss} | 리스크=${risk_usd:,.0f}({risk_pct}%)"
             )
+            print(f"         선정 사유: {selection_reason[:80]}")
 
         row = {
-            "ticker":      ticker,
+            "ticker":           ticker,
+            "company_name":     company_name,
+            "selection_reason": selection_reason,
             "sector":      sector,
             "harness_score": score,
             "signal":      signal,

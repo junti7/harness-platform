@@ -33,6 +33,12 @@ from scripts.alpaca_paper_trading import (
     get_recent_orders, _get_bars, _calc_atr,
 )
 from scripts.trading_diary import log_trade_entry, log_trade_exit, log_signal_scan
+from scripts.harness_turtle_scan import HARNESS_UNIVERSE_META as _UNIVERSE_META
+
+_UNIVERSE_INFO: dict[str, dict] = {
+    t: {"company_name": cn, "sector": s, "harness_score": sc, "selection_reason": r}
+    for t, cn, s, sc, r in _UNIVERSE_META
+}
 
 PAPER_AUTO_EXECUTE = os.getenv("PAPER_TRADING_AUTO_EXECUTE", "false").lower() == "true"
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
@@ -226,7 +232,8 @@ def enter_position(symbol: str, gate: dict, signal: dict, dry_run: bool, state: 
                 "qty": qty,
                 "side": entry["side"],
             }
-            # 거래 일기 기록
+            # 거래 일기 기록 (기업명·섹터·선정 사유 포함)
+            _info = _UNIVERSE_INFO.get(symbol, {})
             log_trade_entry(
                 ticker=symbol,
                 side=entry["side"],
@@ -236,6 +243,9 @@ def enter_position(symbol: str, gate: dict, signal: dict, dry_run: bool, state: 
                 stop_loss=gate["stop_loss"],
                 system=gate["system"],
                 signal=signal["signal"],
+                sector=_info.get("sector", ""),
+                harness_score=_info.get("harness_score", 0),
+                selection_reason=_info.get("selection_reason", ""),
                 note=f"Turtle {gate['system']} 브레이크아웃 자동 진입 | 리스크 {gate['risk_pct']:.3f}%",
             )
         except Exception as e:
