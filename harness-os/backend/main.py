@@ -222,8 +222,11 @@ def _require_secret(x_harness_secret: str | None = Header(default=None)) -> None
         raise HTTPException(status_code=401, detail="Invalid dashboard secret")
 
 
-# ── 비밀번호 관리 (서버 파일 기반, 브라우저 독립) ──────────────────────────────
-_PASSWORDS_FILE = Path(__file__).parent / "passwords.json"
+# ── 비밀번호 관리 ─────────────────────────────────────────────────────────────
+# ~/.harness/passwords.json — git 바깥, 배포/재시작에 절대 영향받지 않음.
+# 우선순위: ~/.harness/passwords.json > 기본값(ceo123/vp123)
+_HARNESS_DATA_DIR = Path.home() / ".harness"
+_PASSWORDS_FILE = _HARNESS_DATA_DIR / "passwords.json"
 _PW_LOCK = threading.Lock()
 
 
@@ -231,33 +234,7 @@ def _hash_pw(pw: str) -> str:
     return hashlib.sha256(pw.encode("utf-8")).hexdigest()
 
 
-def _read_env_file_passwords() -> tuple[str | None, str | None]:
-    """.env 파일에서 직접 읽기 — LaunchAgent plist env보다 우선."""
-    ceo, vp = None, None
-    try:
-        env_file = PROJECT_ROOT / ".env"
-        if env_file.exists():
-            for line in env_file.read_text().splitlines():
-                if line.startswith("HARNESS_CEO_PASSWORD="):
-                    ceo = line.split("=", 1)[1].strip()
-                elif line.startswith("HARNESS_VP_PASSWORD="):
-                    vp = line.split("=", 1)[1].strip()
-    except Exception:
-        pass
-    return ceo, vp
-
-
 def _load_passwords() -> dict[str, str]:
-    # .env 파일 직접 파싱 우선 (LaunchAgent plist에 값이 박혀 있어도 override 가능)
-    env_ceo, env_vp = _read_env_file_passwords()
-    # .env에 없으면 프로세스 환경변수 fallback
-    if not env_ceo:
-        env_ceo = os.environ.get("HARNESS_CEO_PASSWORD")
-    if not env_vp:
-        env_vp = os.environ.get("HARNESS_VP_PASSWORD")
-    if env_ceo and env_vp:
-        return {"ceo": _hash_pw(env_ceo), "vp": _hash_pw(env_vp)}
-    # env 미설정 시 파일 fallback
     if _PASSWORDS_FILE.exists():
         try:
             data = json.loads(_PASSWORDS_FILE.read_text())
@@ -265,13 +242,25 @@ def _load_passwords() -> dict[str, str]:
                 return dict(data)
         except Exception:
             pass
-    # 최종 fallback: 기본값으로 파일 생성
+    # 최초 기동: 기본값으로 파일 생성
     passwords = {"ceo": _hash_pw("ceo123"), "vp": _hash_pw("vp123")}
     try:
-        _PASSWORDS_FILE.write_text(json.dumps(passwords))
+        _HARNESS_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        _PASSWORDS_FILE.write_text(json.dumps(passwords, indent=2))
     except Exception:
         pass
     return passwords
+
+
+def _persist_password(role: str, new_hash: str) -> None:
+    """비밀번호 해시를 ~/.harness/passwords.json에 저장."""
+    _HARNESS_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        data = json.loads(_PASSWORDS_FILE.read_text()) if _PASSWORDS_FILE.exists() else {}
+    except Exception:
+        data = {}
+    data[role] = new_hash
+    _PASSWORDS_FILE.write_text(json.dumps(data, indent=2))
 
 
 _PASSWORDS: dict[str, str] = _load_passwords()
@@ -297,23 +286,6 @@ def auth_login(req: AuthLoginRequest, _: None = Depends(_require_secret)):
     return {"ok": True, "role": req.role}
 
 
-def _update_env_password(env_key: str, new_value: str) -> None:
-    """비밀번호를 .env 파일에 업데이트하고 현재 프로세스 환경변수도 갱신한다."""
-    env_path = PROJECT_ROOT / ".env"
-    if env_path.exists():
-        lines = env_path.read_text().splitlines(keepends=True)
-        updated = False
-        for i, line in enumerate(lines):
-            if line.startswith(f"{env_key}=") or line.startswith(f"{env_key} ="):
-                lines[i] = f"{env_key}={new_value}\n"
-                updated = True
-                break
-        if not updated:
-            lines.append(f"{env_key}={new_value}\n")
-        env_path.write_text("".join(lines))
-    os.environ[env_key] = new_value
-
-
 @app.post("/api/auth/change-password")
 def auth_change_password(req: AuthChangePasswordRequest, _: None = Depends(_require_secret)):
     global _PASSWORDS
@@ -321,14 +293,13 @@ def auth_change_password(req: AuthChangePasswordRequest, _: None = Depends(_requ
         raise HTTPException(status_code=400, detail="Invalid role")
     if len(req.new_password) < 4:
         raise HTTPException(status_code=400, detail="새 비밀번호는 4자 이상이어야 합니다.")
-    env_key = "HARNESS_CEO_PASSWORD" if req.role == "ceo" else "HARNESS_VP_PASSWORD"
     with _PW_LOCK:
         if _PASSWORDS.get(req.role) != _hash_pw(req.current_password):
             raise HTTPException(status_code=401, detail="Current password incorrect")
-        _PASSWORDS[req.role] = _hash_pw(req.new_password)
-        # .env 파일과 현재 환경변수 모두 업데이트 → 재시작 후에도 유지
+        new_hash = _hash_pw(req.new_password)
+        _PASSWORDS[req.role] = new_hash
         try:
-            _update_env_password(env_key, req.new_password)
+            _persist_password(req.role, new_hash)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to save password: {e}")
     return {"ok": True}
@@ -3453,6 +3424,72 @@ def ack_drop_alert(req: DropAlertAckRequest, _: None = Depends(_require_secret))
         return {"ok": found}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# ── 원격 배포 API ─────────────────────────────────────────────────────────────
+# MBP에서 curl 한 줄로 Mac Mini 배포 완료.
+# HARNESS_DEPLOY_TOKEN을 Mac Mini ~/.harness/passwords.json 옆 .env에 설정.
+
+_DEPLOY_TOKEN = os.getenv("HARNESS_DEPLOY_TOKEN", "").strip()
+_DEPLOY_LOG = _HARNESS_DATA_DIR / "deploy.log"
+_deploy_status: dict[str, Any] = {"running": False, "last_result": None}
+
+
+def _run_deploy() -> None:
+    global _deploy_status
+    _deploy_status["running"] = True
+    _HARNESS_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    started_at = datetime.now().isoformat(timespec="seconds")
+    log_lines: list[str] = [f"[{started_at}] 배포 시작"]
+
+    def run(cmd: list[str], cwd: str | None = None) -> tuple[int, str]:
+        r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=300)
+        out = (r.stdout + r.stderr).strip()
+        log_lines.append(f"$ {' '.join(cmd)}\n{out}")
+        return r.returncode, out
+
+    try:
+        run(["git", "pull"], cwd=str(PROJECT_ROOT))
+        run(["npm", "install", "--prefer-offline"], cwd=str(PROJECT_ROOT / "harness-os" / "frontend"))
+        rc, out = run(["npm", "run", "build"], cwd=str(PROJECT_ROOT / "harness-os" / "frontend"))
+        success = rc == 0
+        log_lines.append(f"빌드 {'성공' if success else '실패'}")
+        _deploy_status["last_result"] = {
+            "ok": success,
+            "finished_at": datetime.now().isoformat(timespec="seconds"),
+            "output": "\n".join(log_lines[-5:]),
+        }
+    except Exception as e:
+        _deploy_status["last_result"] = {"ok": False, "error": str(e)}
+    finally:
+        _deploy_status["running"] = False
+        try:
+            _DEPLOY_LOG.write_text("\n---\n".join(log_lines))
+        except Exception:
+            pass
+    # 배포 성공 시 백엔드 자체 재시동 (LaunchAgent가 자동 재시작)
+    if _deploy_status["last_result"] and _deploy_status["last_result"].get("ok"):
+        import signal
+        os.kill(os.getpid(), signal.SIGTERM)
+
+
+@app.post("/api/admin/deploy")
+def admin_deploy(x_deploy_token: str = Header(default="")):
+    if not _DEPLOY_TOKEN:
+        raise HTTPException(status_code=503, detail="HARNESS_DEPLOY_TOKEN 미설정")
+    if x_deploy_token != _DEPLOY_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid deploy token")
+    if _deploy_status["running"]:
+        return {"ok": False, "message": "이미 배포 중입니다", "status": _deploy_status}
+    threading.Thread(target=_run_deploy, daemon=True).start()
+    return {"ok": True, "message": "배포 시작됨. 30~60초 후 자동 재시동됩니다."}
+
+
+@app.get("/api/admin/deploy/status")
+def admin_deploy_status(x_deploy_token: str = Header(default="")):
+    if not _DEPLOY_TOKEN or x_deploy_token != _DEPLOY_TOKEN:
+        raise HTTPException(status_code=403)
+    return _deploy_status
 
 
 # ── OpenClaw 관제 API ─────────────────────────────────────────────────────────
