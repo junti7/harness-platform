@@ -7,6 +7,10 @@ ENV_FILE="$PROJECT_ROOT/.env"
 CEO_PW="${1:-ceo123}"
 VP_PW="${2:-vp123}"
 
+echo "=== 프론트엔드 .env 강제 설정 ==="
+printf 'VITE_HARNESS_OS_API_BASE=\nVITE_HARNESS_OS_SECRET=\n' \
+  > "$PROJECT_ROOT/harness-os/frontend/.env"
+
 echo "=== 비밀번호 초기화 ==="
 
 if [ ! -f "$ENV_FILE" ]; then

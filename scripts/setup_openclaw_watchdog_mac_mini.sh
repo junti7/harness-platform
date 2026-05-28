@@ -9,8 +9,13 @@ LABEL="com.harness.openclaw-watchdog"
 echo "=== 1. git pull ==="
 git -C "$PROJECT_ROOT" pull
 
-echo "=== 2. 프론트엔드 빌드 ==="
+echo "=== 2. 프론트엔드 .env 강제 설정 (API_BASE 반드시 비워야 모바일 작동) ==="
+printf 'VITE_HARNESS_OS_API_BASE=\nVITE_HARNESS_OS_SECRET=\n' \
+  > "$PROJECT_ROOT/harness-os/frontend/.env"
+
+echo "=== 3. 프론트엔드 빌드 ==="
 cd "$PROJECT_ROOT/harness-os/frontend"
+npm install --prefer-offline
 npm run build
 cd "$PROJECT_ROOT"
 
