@@ -8,7 +8,7 @@
 
 Harness의 AI agent는 컨텐츠 요약기가 아니다.
 
-Agent의 역할은 대표(President/CEO)와 부대표(Vice President)가 `Physical AI Weekly`를 정기 발행하고, 무료 독자와 paid subscriber를 확보하며, 자동화 기반 creator subscription 회사를 운영하도록 돕는 것이다.
+Agent의 역할은 대표(President/CEO)와 부대표(Vice President)가 `Physical AI Weekly`를 정기 발행하고, 비즈니스 기회를 검증하며, 자동화 기반 creator subscription 회사를 운영하도록 돕는 것이다.
 
 Agent는 인간 의사결정권자를 대체하지 않는다.
 
@@ -16,7 +16,8 @@ Agent 조직은 Codex 단독 운영을 전제로 하지 않는다. 회사 운영
 
 모든 LLM/service는 고강도 자동화를 위해 CLI 또는 API 기반으로 작동해야 한다. 반복 업무를 웹 UI 수동 작업에 의존시키지 않는다.
 
-초기 30일 동안 agent의 최우선 산출물은 문서나 인프라가 아니라 weekly issue 4회 발행, 무료 구독자 50명, paid subscriber 1명이다.
+초기 30일 동안 agent의 최우선 산출물은 문서나 인프라가 아니라 weekly issue 4회 발행 및 Pretotyping CTR ≥ 2% 달성이다.
+
 
 ---
 
@@ -288,11 +289,39 @@ Red Team이 강한 반론을 제기하면 대표/부대표 decision card에 `red
 - 대표가 모바일에서 30~60초 안에 판단할 수 있는 decision card 생성
 - approval semantics 구분
 - President decision 기록
+- **[TurtleGate]** 트레이딩 관련 capital_action card 생성 전, Turtle Trading 파라미터 6개 항목 자동 검증 수행
+
+**[TurtleGate 검증 — 트레이딩 capital_action 전용]**
+
+President Decision Agent는 트레이딩 관련 capital_action card를 생성할 때 반드시 아래 6개 항목을 확인한다.
+하나라도 누락/위반 시 `turtle_gate_block`을 발행하고 decision card 생성을 중단한다.
+
+| 검증 항목 | 기준 | 위반 시 |
+|-----------|------|---------|
+| 진입 신호 | System 1 (20일 돌파) 또는 System 2 (55일 돌파) 확인 | `turtle_gate_block` |
+| ATR(N) 값 | 20일 ATR 계산값 명시 | `turtle_gate_block` |
+| 포지션 리스크 | 계좌 대비 ≤ 1% | `turtle_gate_block` |
+| 손절가 | 진입가 ± 2×ATR 사전 계산 및 명시 | `turtle_gate_block` |
+| 청산 시스템 | System 1 또는 System 2 명시 | `turtle_gate_block` |
+| Pre-Mortem | `pre_mortem_approve` 완료 | `turtle_gate_block` |
+
+`turtle_gate_block` 발행 시 대표에게 전달되는 카드에는:
+- 어떤 항목이 위반/누락됐는지 명시
+- Turtle Trading 원칙 문서(`docs/trading/TURTLE_TRADING_PRINCIPLES.md`) 링크
+- `trading_turtle_override` 발행 시 필요한 서면 확인 사항 안내
+
+대표가 `turtle_gate_block` 상태에서 강제로 진행하려면 `trading_turtle_override`를 별도 발행해야 한다.
+`trading_turtle_override`는 다음을 포함하지 않으면 유효하지 않다:
+- 어떤 Turtle 규칙을 어기는지 명확한 기술
+- 이 결정을 내리는 구체적 이유
+- 잔여 리스크 및 최악 시나리오 인정 서명
+- 날짜 + 대표 명의 기록
 
 금지:
 
 - 대표 승인 대행
 - capital action 자동 실행
+- `turtle_gate_block` 상태에서 `trading_turtle_override` 없이 트레이딩 decision card를 완성 처리
 
 ### 3.10 Experiment Agent
 
@@ -320,8 +349,8 @@ Red Team이 강한 반론을 제기하면 대표/부대표 decision card에 `red
 
 Primary owner:
 
-- 무료 구독자 50명 확보 실험
-- paid subscriber 1명 전환 실험
+- Pretotyping CTR ≥ 2% 달성 실험
+- WTP(지불의향) 및 고객 인터뷰 실험
 - organic distribution
 
 금지:
@@ -755,6 +784,9 @@ Required canonical values:
 - `red_team_clear`
 - `pre_mortem_approve`
 - `qa_clear`
+- `turtle_gate_clear` — Turtle Trading 6개 파라미터 검증 통과 (트레이딩 capital_action 전용 필수 관문)
+- `turtle_gate_block` — Turtle 파라미터 누락/위반 감지. President Decision Agent 자동 발행. CEO 포함 누구도 단독 해제 불가.
+- `trading_turtle_override` — 대표가 `turtle_gate_block` 상태에서 강제 진행을 결정할 때만 사용. 위반 항목, 구체적 이유, 잔여 리스크 인정, 날짜 + 대표 명의 포함 필수. 미기재 시 무효.
 
 No approval may be reinterpreted as a higher-risk approval.
 
@@ -766,6 +798,7 @@ Pre-conditions for high-impact approvals:
 | `monetization_experiment_approve` | `legal_review_approve` + `red_team_clear` + `pre_mortem_approve` + `qa_clear` |
 | `investment_thesis_approve` | `red_team_clear` + `pre_mortem_approve` + `qa_clear` |
 | `capital_action_approve` | `legal_review_approve` + `red_team_clear` + `pre_mortem_approve` + `CAPITAL_ACTIONS_ENABLED=true` |
+| **트레이딩 `capital_action_approve`** | 위 조건 전체 + **`turtle_gate_clear`** (또는 `turtle_gate_block` + `trading_turtle_override`) |
 | Multi-language publish | `qa_clear` (cross-LLM verified) + `legal_review_approve` per jurisdiction |
 
 정례 주간 red-team의 경우:
@@ -944,8 +977,8 @@ The current priority is building the creator subscription loop:
 
 1. `Physical AI Weekly` issue template 확정
 2. weekly issue 4회 발행
-3. 무료 구독자 50명 확보
-4. paid subscriber 1명 확보
+3. Pretotyping CTR ≥ 2% 달성
+4. WTP(지불의향) 인터뷰 완료
 5. Vice President content review gate 운영
 6. subscriber feedback note 작성
 7. Notion issue archive 구성

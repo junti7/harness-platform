@@ -356,8 +356,172 @@ def watchlist_matrix() -> None:
     _save(fig, "watchlist")
 
 
+def edu_parent_readiness_chart() -> None:
+    """Customer education sample: parents-first AI readiness gap.
+
+    Synthetic example for customer-facing education visual sample.
+    Message:
+      - awareness is already high
+      - household standards and parent weekly usage are still low
+      - therefore "parents first, children later" training is justified
+    """
+    labels = [
+        "AI가 중요하다고 느낀다",
+        "자녀 교육에 AI가 필요하다고 느낀다",
+        "우리 집 AI 사용 기준이 있다",
+        "부모가 매주 직접 AI를 써본다",
+    ]
+    values = np.array([88, 81, 39, 27])
+    colors = [PRIMARY, PRIMARY, GREEN, RED]
+    ypos = np.arange(len(labels))
+
+    fig, ax = plt.subplots(figsize=(11, 8), dpi=220)
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+
+    bars = ax.barh(ypos, values, color=colors, height=0.6, zorder=3)
+    ax.set_xlim(0, 100)
+    ax.set_yticks(ypos, labels=labels)
+    ax.invert_yaxis()
+
+    ax.set_title(
+        "학부모 AI 인식은 높지만 실행 기준은 아직 낮다",
+        fontsize=22, fontweight="900", color=INK, pad=38, loc="left",
+    )
+    ax.text(
+        0.0, 1.04, "Parents-first education sample  |  awareness vs. household operating standard",
+        transform=ax.transAxes, fontsize=12, color=MUTED, fontweight="600",
+    )
+
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(20))
+    ax.xaxis.set_major_formatter(ticker.PercentFormatter())
+    ax.grid(True, axis="x", color=GRID, linewidth=0.9, zorder=0)
+
+    for spine in ("top", "right", "left"):
+        ax.spines[spine].set_visible(False)
+    ax.spines["bottom"].set_color(MUTED)
+    ax.tick_params(axis="y", labelsize=13, colors=SUB, length=0)
+    ax.tick_params(axis="x", labelsize=11, colors=SUB)
+
+    for rect, value in zip(bars, values):
+        ax.text(
+            min(value + 2.2, 96),
+            rect.get_y() + rect.get_height() / 2,
+            f"{value}%",
+            va="center",
+            ha="left",
+            fontsize=13,
+            fontweight="bold",
+            color=INK,
+        )
+
+    ax.annotate(
+        "인식과 실행 사이의 격차가 상품의 핵심 진입점",
+        xy=(39, 2), xytext=(57, 2.8),
+        fontsize=12, color=SUB, fontweight="bold",
+        arrowprops=dict(arrowstyle="->", color=PRIMARY, lw=1.6),
+    )
+
+    fig.text(
+        0.02, -0.02,
+        "Sample asset for customer education consulting. Illustrative percentages for design demonstration only.",
+        fontsize=9, color=MUTED, style="italic",
+    )
+
+    plt.tight_layout()
+    _save(fig, "edu_parent_readiness")
+
+
+def edu_parents_first_infographic() -> None:
+    """Customer education sample infographic: parents first, children later."""
+    fig, ax = plt.subplots(figsize=(11, 8), dpi=220)
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 100)
+    ax.axis("off")
+
+    ax.text(4, 95, "부모 먼저, 자녀는 나중", fontsize=24, fontweight="900", color=INK)
+    ax.text(4, 89, "AI 시대 가정 학습 기준을 만드는 3-step 교육 흐름", fontsize=12, color=MUTED, fontweight="600")
+
+    cards = [
+        (6, 26, 25, 48, PRIMARY, "1", "부모가 먼저 AI를 직접 써본다", "도구 체험\n업무/일상 적용\n실패 포인트 기록"),
+        (37.5, 26, 25, 48, GREEN, "2", "우리 집 사용 기준을 만든다", "허용/금지 선 정리\n시간 기준 설정\n질문 방식 통일"),
+        (69, 26, 25, 48, RED, "3", "그 기준으로 자녀 원칙을 설계한다", "학년별 사용 규칙\n대화 가이드\n주간 점검 루틴"),
+    ]
+
+    for x, y, w, h, color, num, title, body in cards:
+        ax.add_patch(plt.Rectangle((x, y), w, h, facecolor="white", edgecolor=color, linewidth=3.0, zorder=2))
+        ax.add_patch(plt.Rectangle((x, y + h - 5), w, 5, facecolor=color, edgecolor="none", zorder=3))
+        ax.text(x + 3, y + h - 10, num, fontsize=21, fontweight="900", color=color, va="top")
+        ax.text(x + 3, y + h - 18, title, fontsize=14, fontweight="900", color=INK, va="top")
+        ax.text(x + 3, y + h - 29, body, fontsize=11, color=SUB, va="top", linespacing=1.55)
+
+    for x1, x2 in ((31.5, 37.5), (63, 69)):
+        ax.annotate("", xy=(x2 - 1.2, 50), xytext=(x1 + 1.2, 50),
+                    arrowprops=dict(arrowstyle="->", lw=2.0, color=MUTED))
+
+    ax.add_patch(plt.Rectangle((6, 8), 88, 12, facecolor="#f8fafc", edgecolor=GRID, linewidth=1.8))
+    ax.text(50, 14, "핵심 메시지: 부모가 기준을 체험 없이 만들지 못하면 자녀 AI 교육은 공허해진다",
+            ha="center", va="center", fontsize=13, fontweight="bold", color=SUB)
+
+    fig.text(
+        0.02, 0.02,
+        "Sample infographic for customer education consulting. Final Korean copy should be post-edited before client delivery.",
+        fontsize=9, color=MUTED, style="italic",
+    )
+
+    plt.tight_layout()
+    _save(fig, "edu_parents_first_infographic")
+
+
+def edu_parent_action_flashcard() -> None:
+    """Customer education sample flashcard: 3 actions this week."""
+    fig, ax = plt.subplots(figsize=(11, 8), dpi=220)
+    fig.patch.set_facecolor("#f8fafc")
+    ax.set_facecolor("#f8fafc")
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 100)
+    ax.axis("off")
+
+    ax.add_patch(plt.Rectangle((6, 8), 88, 84, facecolor="white", edgecolor=GRID, linewidth=2.2))
+    ax.add_patch(plt.Rectangle((6, 82), 88, 10, facecolor=PRIMARY, edgecolor="none"))
+    ax.text(10, 86.5, "이번 주 부모가 먼저 해볼 것 3가지", fontsize=20, fontweight="900", color="white", va="center")
+    ax.text(10, 74, "AI 교육은 정보 습득보다 부모의 직접 체험에서 시작됩니다.", fontsize=13, color=MUTED, fontweight="600")
+
+    actions = [
+        ("1", "ChatGPT에 실제 질문 1개 해보기", "내 업무/가정에서 지금 바로 필요한 질문으로 시작"),
+        ("2", "자녀와 AI 사용에 대해 10분 대화하기", "통제보다 관찰과 질문으로 시작"),
+        ("3", "우리 집 AI 허용/금지 기준 1줄 쓰기", "예: 숙제 초안은 가능, 최종 답안 대필은 금지"),
+    ]
+
+    y = 58
+    for num, title, desc in actions:
+        ax.add_patch(plt.Circle((13, y + 2), 3.6, color=PRIMARY))
+        ax.text(13, y + 2, num, ha="center", va="center", fontsize=12, fontweight="900", color="white")
+        ax.text(19, y + 5, title, fontsize=15, fontweight="900", color=INK, va="top")
+        ax.text(19, y - 1, desc, fontsize=11.5, color=SUB, va="top")
+        y -= 18
+
+    ax.add_patch(plt.Rectangle((10, 13), 80, 9, facecolor="#eff6ff", edgecolor="none"))
+    ax.text(50, 17.5, "Takeaway: 부모가 먼저 기준을 가져야 자녀에게도 일관된 원칙을 줄 수 있습니다.",
+            ha="center", va="center", fontsize=12, color=PRIMARY, fontweight="bold")
+
+    fig.text(
+        0.02, 0.02,
+        "Sample flashcard for adult parent education clients. Reusable card template for post-session follow-up.",
+        fontsize=9, color=MUTED, style="italic",
+    )
+
+    plt.tight_layout()
+    _save(fig, "edu_parent_action_flashcard")
+
+
 if __name__ == "__main__":
     cost_trend_chart()
     concept_diagram()
     tam_breakdown_chart()
     watchlist_matrix()
+    edu_parent_readiness_chart()
+    edu_parents_first_infographic()
+    edu_parent_action_flashcard()

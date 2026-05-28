@@ -629,6 +629,59 @@ def tool_render_pdf(title: str, content: str, channel_id: str) -> str:
         return f"❌ render_pdf 오류: {e}"
 
 
+def tool_gmail_search(query: str, limit: int = 10) -> str:
+    try:
+        limit = max(1, min(int(limit or 10), 25))
+        cmd = [
+            str(VENV_PYTHON),
+            str(PROJECT_ROOT / "scripts/openclaw_codex_bridge.py"),
+            "gmail-search",
+            query,
+            "--limit",
+            str(limit),
+            "--format",
+            "text",
+        ]
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            cwd=str(PROJECT_ROOT),
+        )
+        output = ((result.stdout or "") + (result.stderr or "")).strip()
+        if result.returncode == 0:
+            return output
+        return f"❌ Gmail 검색 실패 (code={result.returncode})\n{output}"
+    except Exception as exc:
+        return f"❌ Gmail 검색 중 오류 발생: {exc}"
+
+
+def tool_gmail_get(message_id: str) -> str:
+    try:
+        cmd = [
+            str(VENV_PYTHON),
+            str(PROJECT_ROOT / "scripts/openclaw_codex_bridge.py"),
+            "gmail-get",
+            message_id,
+            "--format",
+            "text",
+        ]
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            cwd=str(PROJECT_ROOT),
+        )
+        output = ((result.stdout or "") + (result.stderr or "")).strip()
+        if result.returncode == 0:
+            return output
+        return f"❌ Gmail 메일 본문 수집 실패 (code={result.returncode})\n{output}"
+    except Exception as exc:
+        return f"❌ Gmail 메일 수집 중 오류 발생: {exc}"
+
+
 TOOL_EXECUTORS = {
     "read_file": lambda inp: tool_read_file(inp["path"]),
     "write_file": lambda inp: tool_write_file(inp["path"], inp["content"], inp.get("mode", "overwrite")),
@@ -649,4 +702,6 @@ TOOL_EXECUTORS = {
         inp["keyword"],
         inp.get("limit", 5),
     ),
+    "gmail_search": lambda inp: tool_gmail_search(inp["query"], inp.get("limit", 10)),
+    "gmail_get": lambda inp: tool_gmail_get(inp["message_id"]),
 }

@@ -1,0 +1,26 @@
+{
+  "generated_at": "2026-05-23T10:38:57",
+  "owner": "Codex Chief of Staff",
+  "task_kind": "red_team",
+  "title": "ibkr etf whitelist resolver + registry gating",
+  "objective": "Red-team the IBKR ETF whitelist resolver plan and code changes BEFORE any further execution. Identify catastrophic failure modes (wrong conid, unauthorized mutation, hallucinated tradability), and propose hardening steps.",
+  "input_artifacts": [
+    "docs/governance/RED_TEAM_REQUEST_IBKR_ETF_2026-05-23.md",
+    "scripts/ibkr_cp_client.py",
+    "scripts/openclaw_codex_bridge.py",
+    "adapters/content/openclaw_agent.py",
+    "docs/trading/etf_whitelist_v0.json",
+    "docs/reports/instrument_registry.jsonl"
+  ],
+  "output_artifacts": [],
+  "checks": [
+    "Never assert tradable/permission unless explicitly verified by IBKR API response.",
+    "ibkr-etf-approve must require CEO identity + explicit confirm.",
+    "Ambiguous candidates must degrade to human confirm required, not auto-best."
+  ],
+  "notes": [
+    "Assume CP API may be reachable but authenticated=false; block mutation.",
+    "Assume KRX tickers/codes may not uniquely map; prefer conservative selection."
+  ],
+  "callback_route": "agent_openclaw_routing"
+}

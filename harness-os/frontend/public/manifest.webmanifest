@@ -1,0 +1,31 @@
+{
+  "name": "Harness OS",
+  "short_name": "Harness",
+  "description": "CEO and VP mobile-ready operating console for approvals, AR status, trading operations, and meeting records.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "orientation": "portrait",
+  "lang": "ko-KR",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "48x46",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "결재",
+      "short_name": "결재",
+      "url": "/?view=approvals"
+    },
+    {
+      "name": "회의록",
+      "short_name": "회의록",
+      "url": "/?view=meetings"
+    }
+  ]
+}

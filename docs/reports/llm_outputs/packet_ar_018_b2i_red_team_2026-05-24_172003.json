@@ -1,0 +1,14 @@
+{
+  "generated_at": "2026-05-24T17:20:03",
+  "owner": "Codex Chief of Staff",
+  "task_kind": "risk_assessment",
+  "title": "AR-018 B2I 전환 Red Team 검증",
+  "objective": "Harness B2C→B2I 전환 및 IBKR 자기계정 ETF 운용 결정에 대한 독립 비판 검토. (1) 자본시장법/외국환거래법 위반 리스크 (2) LLM 환각 신호→실주문 시스템 리스크 (3) Physical AI 단일섹터 집중 리스크 (4) $7,000 자본 대비 법률 제재 비용 비대칭성 (5) 놓친 가정·약한 근거. 각 항목 APPROVE/CONCERN/BLOCK 판정, overall: red_team_clear 또는 red_team_block 명시.",
+  "input_artifacts": [],
+  "output_artifacts": [],
+  "checks": [],
+  "notes": [
+    "pre_mortem_approve 충족(HIGH/conditional_go). Gemini 사전분석: 한국은행신고 HIGH, 자본시장법 자기계정 LOW. 초기자본 $7,000."
+  ],
+  "callback_route": "agent_openclaw_routing"
+}

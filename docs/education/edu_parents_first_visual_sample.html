@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>부모 먼저, 자녀는 나중 — 고객용 교육 시각화 샘플</title>
+    <style>
+      :root {
+        --bg: #f5f7fb;
+        --surface: #ffffff;
+        --ink: #101828;
+        --sub: #475467;
+        --muted: #98a2b3;
+        --line: #e4e7ec;
+        --blue: #2563eb;
+        --blue-soft: #eff6ff;
+        --green: #12b76a;
+        --green-soft: #ecfdf3;
+        --red: #ef4444;
+        --red-soft: #fef3f2;
+        --shadow: 0 20px 60px rgba(16, 24, 40, 0.08);
+        --radius-xl: 28px;
+        --radius-lg: 20px;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 28%),
+          linear-gradient(180deg, #f8fbff 0%, var(--bg) 28%, #f7f8fb 100%);
+        color: var(--ink);
+        font-family: "SUIT Variable", "Pretendard Variable", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+        line-height: 1.6;
+      }
+
+      .page {
+        width: min(1200px, calc(100vw - 40px));
+        margin: 36px auto 80px;
+      }
+
+      .hero {
+        padding: 36px 40px;
+        border: 1px solid rgba(37, 99, 235, 0.12);
+        border-radius: 32px;
+        background: rgba(255, 255, 255, 0.78);
+        backdrop-filter: blur(14px);
+        box-shadow: var(--shadow);
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: var(--blue-soft);
+        color: var(--blue);
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+
+      h1 {
+        margin: 20px 0 10px;
+        font-size: clamp(34px, 5vw, 56px);
+        line-height: 1.08;
+        letter-spacing: -0.04em;
+      }
+
+      .hero p {
+        margin: 0;
+        max-width: 820px;
+        color: var(--sub);
+        font-size: 18px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        gap: 24px;
+        margin-top: 24px;
+      }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow);
+      }
+
+      .section {
+        padding: 28px;
+      }
+
+      .section h2 {
+        margin: 0 0 8px;
+        font-size: 26px;
+        letter-spacing: -0.03em;
+      }
+
+      .section .meta {
+        margin: 0 0 22px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .chart {
+        display: grid;
+        gap: 18px;
+      }
+
+      .chart-visual {
+        padding: 16px 18px 8px;
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: linear-gradient(180deg, #fcfdff 0%, #f8fbff 100%);
+      }
+
+      .chart-visual svg {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      .bar-row {
+        display: grid;
+        grid-template-columns: 240px 1fr 54px;
+        gap: 14px;
+        align-items: center;
+      }
+
+      .bar-label {
+        color: var(--sub);
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .bar-track {
+        position: relative;
+        height: 20px;
+        background: #eef2f6;
+        border-radius: 999px;
+        overflow: hidden;
+      }
+
+      .bar-fill {
+        height: 100%;
+        border-radius: inherit;
+      }
+
+      .bar-value {
+        text-align: right;
+        font-size: 15px;
+        font-weight: 800;
+      }
+
+      .callout {
+        margin-top: 18px;
+        padding: 18px 20px;
+        border-radius: var(--radius-lg);
+        background: #f8fafc;
+        color: var(--sub);
+        font-size: 15px;
+        border: 1px solid #eef2f6;
+      }
+
+      .steps {
+        display: grid;
+        gap: 14px;
+      }
+
+      .flow-visual {
+        margin: 8px 0 20px;
+        padding: 14px;
+        border-radius: 24px;
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, #fcfdff 0%, #f8fafc 100%);
+      }
+
+      .flow-visual svg {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      .step {
+        display: grid;
+        grid-template-columns: 60px 1fr;
+        gap: 16px;
+        padding: 18px;
+        border-radius: 22px;
+        border: 1px solid var(--line);
+      }
+
+      .step-no {
+        width: 60px;
+        height: 60px;
+        border-radius: 18px;
+        display: grid;
+        place-items: center;
+        font-size: 22px;
+        font-weight: 900;
+        color: white;
+      }
+
+      .step h3 {
+        margin: 2px 0 6px;
+        font-size: 18px;
+        letter-spacing: -0.02em;
+      }
+
+      .step p {
+        margin: 0;
+        color: var(--sub);
+        font-size: 14px;
+      }
+
+      .flashcard {
+        margin-top: 24px;
+        overflow: hidden;
+      }
+
+      .flashcard-head {
+        padding: 16px 20px;
+        background: linear-gradient(135deg, #2563eb, #1d4ed8);
+        color: white;
+        font-size: 18px;
+        font-weight: 900;
+      }
+
+      .flashcard-body {
+        padding: 22px 22px 18px;
+      }
+
+      .flashcard-list {
+        display: grid;
+        gap: 14px;
+      }
+
+      .flash-item {
+        display: grid;
+        grid-template-columns: 36px 1fr;
+        gap: 14px;
+        align-items: start;
+      }
+
+      .flash-index {
+        width: 36px;
+        height: 36px;
+        border-radius: 999px;
+        background: var(--blue);
+        color: white;
+        display: grid;
+        place-items: center;
+        font-size: 14px;
+        font-weight: 900;
+      }
+
+      .flash-item strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 15px;
+      }
+
+      .flash-item span {
+        color: var(--sub);
+        font-size: 14px;
+      }
+
+      .footer-note {
+        margin-top: 24px;
+        padding: 18px 20px;
+        border-radius: 18px;
+        background: var(--blue-soft);
+        color: var(--blue);
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .product-box {
+        padding: 24px;
+      }
+
+      .product-box h2 {
+        margin: 0 0 8px;
+        font-size: 24px;
+      }
+
+      .product-box p {
+        margin: 0 0 18px;
+        color: var(--sub);
+        font-size: 15px;
+      }
+
+      .pill-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 22px;
+      }
+
+      .pill {
+        padding: 10px 14px;
+        border-radius: 999px;
+        background: #f8fafc;
+        border: 1px solid var(--line);
+        font-size: 13px;
+        font-weight: 800;
+        color: var(--sub);
+      }
+
+      .summary-panel {
+        display: grid;
+        gap: 12px;
+      }
+
+      .summary-box {
+        padding: 16px 18px;
+        border-radius: 18px;
+        background: #fcfcfd;
+        border: 1px solid var(--line);
+      }
+
+      .summary-box .label {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+
+      .summary-box .value {
+        font-size: 15px;
+        font-weight: 800;
+        color: var(--ink);
+      }
+
+      .summary-box .desc {
+        margin-top: 4px;
+        color: var(--sub);
+        font-size: 14px;
+      }
+
+      @media (max-width: 900px) {
+        .page {
+          width: calc(100vw - 24px);
+          margin-top: 16px;
+        }
+
+        .hero,
+        .section,
+        .product-box {
+          padding: 22px;
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .bar-row {
+          grid-template-columns: 1fr;
+          gap: 8px;
+        }
+
+        .bar-value {
+          text-align: left;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <div class="eyebrow">고객용 교육사업 샘플</div>
+        <h1>부모 먼저, 자녀는 나중</h1>
+        <p>
+          AI 시대 학부모 AX 교육 8주 로드맵의 핵심은 자녀 교육 팁을 먼저 주는 것이 아니라,
+          부모가 먼저 AI를 체험하고 가정의 사용 기준을 만든 뒤 자녀 원칙을 설계하게 만드는 것입니다.
+        </p>
+      </section>
+
+      <section class="grid">
+        <article class="card section">
+          <h2>학부모 AI 인식은 높지만 실행 기준은 낮다</h2>
+          <p class="meta">sample chart · 교육 컨설팅 orientation 페이지</p>
+
+          <div class="chart-visual" aria-label="학부모 AI 인식과 실행 기준 차트">
+            <svg viewBox="0 0 760 360" role="img">
+              <defs>
+                <linearGradient id="bgGlow" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#eff6ff" />
+                  <stop offset="100%" stop-color="#ffffff" />
+                </linearGradient>
+              </defs>
+              <rect x="0" y="0" width="760" height="360" rx="24" fill="url(#bgGlow)" />
+              <line x1="180" y1="48" x2="180" y2="302" stroke="#d0d5dd" stroke-width="1.5" />
+              <line x1="180" y1="302" x2="710" y2="302" stroke="#d0d5dd" stroke-width="1.5" />
+              <g fill="#98a2b3" font-size="12" font-weight="700">
+                <text x="180" y="324">0</text>
+                <text x="285" y="324">20</text>
+                <text x="390" y="324">40</text>
+                <text x="495" y="324">60</text>
+                <text x="600" y="324">80</text>
+                <text x="690" y="324">100</text>
+              </g>
+              <g font-size="14" font-weight="800" fill="#475467">
+                <text x="16" y="82">AI가 중요하다고 느낀다</text>
+                <text x="16" y="142">자녀 교육에 AI가 필요하다고 느낀다</text>
+                <text x="16" y="202">우리 집 AI 사용 기준이 있다</text>
+                <text x="16" y="262">부모가 매주 직접 AI를 써본다</text>
+              </g>
+              <g>
+                <rect x="180" y="58" width="466" height="28" rx="14" fill="#2563eb" />
+                <rect x="180" y="118" width="429" height="28" rx="14" fill="#2563eb" />
+                <rect x="180" y="178" width="206" height="28" rx="14" fill="#12b76a" />
+                <rect x="180" y="238" width="143" height="28" rx="14" fill="#ef4444" />
+              </g>
+              <g font-size="14" font-weight="900">
+                <text x="658" y="77" fill="#101828">88%</text>
+                <text x="621" y="137" fill="#101828">81%</text>
+                <text x="398" y="197" fill="#101828">39%</text>
+                <text x="335" y="257" fill="#101828">27%</text>
+              </g>
+              <g>
+                <path d="M 430 162 C 500 152, 520 146, 560 120" fill="none" stroke="#2563eb" stroke-width="2.5" />
+                <circle cx="560" cy="120" r="4" fill="#2563eb" />
+                <rect x="430" y="144" width="138" height="42" rx="12" fill="#ffffff" stroke="#bfdbfe" />
+                <text x="442" y="161" font-size="12" font-weight="800" fill="#1d4ed8">인식과 실행 사이의</text>
+                <text x="442" y="176" font-size="12" font-weight="800" fill="#1d4ed8">격차가 상품 진입점</text>
+              </g>
+            </svg>
+          </div>
+
+          <div class="chart">
+            <div class="bar-row">
+              <div class="bar-label">AI가 중요하다고 느낀다</div>
+              <div class="bar-track"><div class="bar-fill" style="width:88%; background: var(--blue)"></div></div>
+              <div class="bar-value">88%</div>
+            </div>
+            <div class="bar-row">
+              <div class="bar-label">자녀 교육에 AI가 필요하다고 느낀다</div>
+              <div class="bar-track"><div class="bar-fill" style="width:81%; background: var(--blue)"></div></div>
+              <div class="bar-value">81%</div>
+            </div>
+            <div class="bar-row">
+              <div class="bar-label">우리 집 AI 사용 기준이 있다</div>
+              <div class="bar-track"><div class="bar-fill" style="width:39%; background: var(--green)"></div></div>
+              <div class="bar-value">39%</div>
+            </div>
+            <div class="bar-row">
+              <div class="bar-label">부모가 매주 직접 AI를 써본다</div>
+              <div class="bar-track"><div class="bar-fill" style="width:27%; background: var(--red)"></div></div>
+              <div class="bar-value">27%</div>
+            </div>
+          </div>
+
+          <div class="callout">
+            핵심 인사이트: 인식은 이미 충분히 높다. 상품의 첫 가치는 "AI가 중요하다"를 설명하는 데
+            있지 않고, 부모가 가정 안에서 실제 기준을 세우도록 돕는 데 있다.
+          </div>
+
+          <div class="flashcard card">
+            <div class="flashcard-head">이번 주 부모가 먼저 해볼 것 3가지</div>
+            <div class="flashcard-body">
+              <div class="flashcard-list">
+                <div class="flash-item">
+                  <div class="flash-index">1</div>
+                  <div>
+                    <strong>ChatGPT에 실제 질문 1개 해보기</strong>
+                    <span>내 업무나 가정에서 지금 바로 필요한 질문으로 시작한다.</span>
+                  </div>
+                </div>
+                <div class="flash-item">
+                  <div class="flash-index">2</div>
+                  <div>
+                    <strong>자녀와 AI 사용에 대해 10분 대화하기</strong>
+                    <span>통제보다 관찰과 질문으로 시작한다.</span>
+                  </div>
+                </div>
+                <div class="flash-item">
+                  <div class="flash-index">3</div>
+                  <div>
+                    <strong>우리 집 AI 허용/금지 기준 1줄 쓰기</strong>
+                    <span>예: 숙제 초안은 가능, 최종 답안 대필은 금지.</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="footer-note">
+                Takeaway: 부모가 먼저 기준을 가져야 자녀에게도 일관된 원칙을 줄 수 있습니다.
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <aside class="card product-box">
+          <h2>3-step 교육 구조</h2>
+          <p>자녀를 먼저 가르치지 않는다. 부모 체험 → 가정 기준 → 자녀 원칙 설계 순서를 따른다.</p>
+
+          <div class="flow-visual" aria-label="부모 먼저 자녀는 나중 인포그래픽">
+            <svg viewBox="0 0 420 220" role="img">
+              <defs>
+                <linearGradient id="stepBlue" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#2563eb" />
+                  <stop offset="100%" stop-color="#1d4ed8" />
+                </linearGradient>
+                <linearGradient id="stepGreen" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#12b76a" />
+                  <stop offset="100%" stop-color="#039855" />
+                </linearGradient>
+                <linearGradient id="stepRed" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#ef4444" />
+                  <stop offset="100%" stop-color="#dc2626" />
+                </linearGradient>
+              </defs>
+
+              <rect x="16" y="54" width="108" height="116" rx="22" fill="#ffffff" stroke="#d0d5dd" />
+              <rect x="156" y="54" width="108" height="116" rx="22" fill="#ffffff" stroke="#d0d5dd" />
+              <rect x="296" y="54" width="108" height="116" rx="22" fill="#ffffff" stroke="#d0d5dd" />
+
+              <rect x="30" y="68" width="36" height="36" rx="12" fill="url(#stepBlue)" />
+              <rect x="170" y="68" width="36" height="36" rx="12" fill="url(#stepGreen)" />
+              <rect x="310" y="68" width="36" height="36" rx="12" fill="url(#stepRed)" />
+
+              <text x="48" y="92" text-anchor="middle" font-size="16" font-weight="900" fill="#ffffff">1</text>
+              <text x="188" y="92" text-anchor="middle" font-size="16" font-weight="900" fill="#ffffff">2</text>
+              <text x="328" y="92" text-anchor="middle" font-size="16" font-weight="900" fill="#ffffff">3</text>
+
+              <text x="30" y="122" font-size="14" font-weight="900" fill="#101828">부모가 먼저</text>
+              <text x="30" y="140" font-size="14" font-weight="900" fill="#101828">AI를 직접 써본다</text>
+              <text x="30" y="158" font-size="11.5" fill="#475467">도구 체험</text>
+
+              <text x="170" y="122" font-size="14" font-weight="900" fill="#101828">우리 집</text>
+              <text x="170" y="140" font-size="14" font-weight="900" fill="#101828">사용 기준 수립</text>
+              <text x="170" y="158" font-size="11.5" fill="#475467">허용/금지 선</text>
+
+              <text x="310" y="122" font-size="14" font-weight="900" fill="#101828">그 기준으로</text>
+              <text x="310" y="140" font-size="14" font-weight="900" fill="#101828">자녀 원칙 설계</text>
+              <text x="310" y="158" font-size="11.5" fill="#475467">학년별 규칙</text>
+
+              <path d="M 128 112 C 138 112, 142 112, 152 112" fill="none" stroke="#98a2b3" stroke-width="2.5" />
+              <path d="M 268 112 C 278 112, 282 112, 292 112" fill="none" stroke="#98a2b3" stroke-width="2.5" />
+              <path d="M 145 106 L 152 112 L 145 118" fill="none" stroke="#98a2b3" stroke-width="2.5" />
+              <path d="M 285 106 L 292 112 L 285 118" fill="none" stroke="#98a2b3" stroke-width="2.5" />
+
+              <rect x="48" y="184" width="324" height="22" rx="11" fill="#eff6ff" />
+              <text x="210" y="199" text-anchor="middle" font-size="12" font-weight="800" fill="#1d4ed8">
+                기준 없는 자녀 교육보다, 기준 있는 부모 체험이 먼저다
+              </text>
+            </svg>
+          </div>
+
+          <div class="steps">
+            <div class="step">
+              <div class="step-no" style="background: var(--blue)">1</div>
+              <div>
+                <h3>부모가 먼저 AI를 직접 써본다</h3>
+                <p>도구 체험, 일상 적용, 실패 포인트 기록. 정보가 아니라 직접 경험을 확보한다.</p>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-no" style="background: var(--green)">2</div>
+              <div>
+                <h3>우리 집 사용 기준을 만든다</h3>
+                <p>허용/금지 선, 시간 기준, 질문 방식과 검토 규칙을 정리한다.</p>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-no" style="background: var(--red)">3</div>
+              <div>
+                <h3>그 기준으로 자녀 원칙을 설계한다</h3>
+                <p>학년별 사용 규칙, 대화 가이드, 주간 점검 루틴으로 연결한다.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="pill-list" style="margin-top: 22px;">
+            <div class="pill">학부모 대상</div>
+            <div class="pill">성인 학습자 중심</div>
+            <div class="pill">실행 카드 포함</div>
+            <div class="pill">가정 운영 기준 수립</div>
+          </div>
+
+          <div class="summary-panel">
+            <div class="summary-box">
+              <span class="label">Program Angle</span>
+              <div class="value">도구 소개가 아니라 기준 설계</div>
+              <div class="desc">정보 전달보다 가정 안의 AI 운영 원칙을 만드는 데 초점을 둔다.</div>
+            </div>
+            <div class="summary-box">
+              <span class="label">Deliverable Form</span>
+              <div class="value">차트 + 인포그래픽 + 실행 카드</div>
+              <div class="desc">설명, 납득, 행동 전환을 각기 다른 자산으로 분리한다.</div>
+            </div>
+            <div class="summary-box">
+              <span class="label">Recommended Production</span>
+              <div class="value">차트는 코드, 설명 이미지는 LLM, 최종 카피는 후편집</div>
+              <div class="desc">정확성과 미감, 수정 효율을 동시에 확보하는 가장 안정적인 분업이다.</div>
+            </div>
+          </div>
+        </aside>
+      </section>
+    </main>
+  </body>
+</html>

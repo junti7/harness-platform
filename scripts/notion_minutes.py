@@ -236,6 +236,17 @@ def build_minutes_blocks_from_decision_card(
             sections[current].append(line.rstrip())
         return {k: "\n".join(v).strip() for k, v in sections.items()}
 
+    def normalize_heading(text: str) -> str:
+        return re.sub(r"[\s()·—\-_/]+", "", (text or "").lower())
+
+    def find_section(sections_map: dict[str, str], *needles: str) -> str:
+        normalized_needles = [normalize_heading(needle) for needle in needles if needle]
+        for key, value in sections_map.items():
+            key_norm = normalize_heading(key)
+            if any(needle in key_norm for needle in normalized_needles):
+                return value
+        return ""
+
     def bullets(section_text: str, lim: int) -> list[str]:
         out: list[str] = []
         for raw in (section_text or "").splitlines():
@@ -272,6 +283,49 @@ def build_minutes_blocks_from_decision_card(
             cleaned.append(x[:300])
         return cleaned
 
+    def table_rows(section_text: str, lim: int, *, skip_headers: tuple[str, ...] = ()) -> list[str]:
+        rows: list[str] = []
+        normalized_headers = {header.lower() for header in skip_headers}
+        for raw in (section_text or "").splitlines():
+            s = raw.strip()
+            if not (s.startswith("|") and s.endswith("|")):
+                continue
+            if re.search(r"\|\s*-+\s*\|", s):
+                continue
+            cells = [c.strip().replace("**", "").replace("*", "") for c in s.strip("|").split("|")]
+            cells = [re.sub(r"\s+", " ", cell).strip() for cell in cells if cell.strip()]
+            if len(cells) < 2:
+                continue
+            if cells[0].lower() in normalized_headers:
+                continue
+            row = f"{cells[0]} — {cells[1]}"
+            if len(cells) >= 3:
+                row += f": {cells[2]}"
+            rows.append(row[:360])
+        return rows[:lim]
+
+    def hybrid_items(section_text: str, lim: int, *, skip_headers: tuple[str, ...] = ()) -> list[str]:
+        extracted = bullets(section_text, lim)
+        if extracted:
+            return extracted
+        extracted = numbered(section_text, lim)
+        if extracted:
+            return extracted
+        extracted = table_rows(section_text, lim, skip_headers=skip_headers)
+        if extracted:
+            return extracted
+        fallback: list[str] = []
+        for raw in (section_text or "").splitlines():
+            s = raw.strip()
+            if not s or s.startswith(("## ", "### ", "---")):
+                continue
+            cleaned = re.sub(r"\s+", " ", s.replace("**", "").replace("*", "")).strip()
+            if cleaned:
+                fallback.append(cleaned[:320])
+            if len(fallback) >= lim:
+                break
+        return fallback
+
     def gate_rows(section_text: str, lim: int) -> list[str]:
         rows: list[str] = []
         for raw in (section_text or "").splitlines():
@@ -296,16 +350,33 @@ def build_minutes_blocks_from_decision_card(
         return rows[:lim]
 
     sections = parse_sections(decision_md)
-    one_liner = sections.get("1) 한 줄 요약") or ""
-    consensus = bullets(sections.get("2) 합의된 점 (Consensus)", "") or sections.get("2) 합의된 점", ""), 10)
-    dissent = bullets(sections.get("3) 미합의 / 이견 (Dissent)", "") or sections.get("3) 미합의 / 이견", ""), 10)
-    actions = numbered(sections.get("4) 권고 액션 (대표님 결정 요청)", "") or sections.get("4) 권고 액션", ""), 10)
-    gates = gate_rows(sections.get("5) 막힌 게이트 (Blocked Gates)", "") or sections.get("5) 막힌 게이트", ""), 12)
+    one_liner = find_section(sections, "한 줄 요약", "요약")
+    consensus = hybrid_items(find_section(sections, "합의된 점", "consensus"), 10, skip_headers=("항목",))
+    dissent = hybrid_items(find_section(sections, "미합의", "이견", "dissent"), 10, skip_headers=("항목",))
+    actions = hybrid_items(find_section(sections, "권고 액션", "recommended actions", "즉시 수행 지시"), 10, skip_headers=("AR", "#"))
+    gates = gate_rows(find_section(sections, "막힌 게이트", "blocked gates", "gates blocking"), 12)
+    decision_requests = hybrid_items(
+        find_section(sections, "ceo 결정 요청 사항", "대표님 결재 요청 사항", "결정 요청 사항", "결재 요청 사항"),
+        8,
+        skip_headers=("항목",),
+    )
 
     blocks: list[dict] = []
     if one_liner:
         summary = re.sub(r"\s+", " ", one_liner).strip()
-        blocks.append(_paragraph(f"요약: {summary[:350]}"))
+        blocks.append(_callout(f"핵심 요약: {summary[:350]}", emoji="🧭", color="blue_background"))
+
+    blocks.append(_heading_2("합의된 핵심"))
+    if consensus:
+        blocks.extend([_bul(c) for c in consensus])
+    else:
+        blocks.append(_bul("합의된 핵심 항목이 추출되지 않았습니다."))
+
+    blocks.append(_heading_2("미합의 / 이견"))
+    if dissent:
+        blocks.extend([_bul(d) for d in dissent])
+    else:
+        blocks.append(_bul("미합의 또는 반대 의견이 명시되지 않았습니다."))
 
     blocks.append(_heading_2("Action Items (미완료)"))
     if actions:
@@ -313,29 +384,23 @@ def build_minutes_blocks_from_decision_card(
     else:
         blocks.append(_bul("권고 액션이 추출되지 않았습니다 (decision card 포맷 확인 필요)."))
 
+    if decision_requests:
+        blocks.append(_heading_2("대표 확인 필요 사항"))
+        blocks.extend([_todo(item, checked=False) for item in decision_requests])
+
     blocks.append(_heading_2("Blocked Gates"))
     if gates:
         blocks.extend([_bul(g) for g in gates])
     else:
         blocks.append(_bul("막힌 게이트 항목이 없습니다(또는 추출 실패)."))
 
-    blocks.append(_heading_2("Consensus"))
-    if consensus:
-        blocks.extend([_bul(c) for c in consensus])
-    else:
-        blocks.append(_bul("합의된 점이 없습니다(또는 추출 실패)."))
-
-    blocks.append(_heading_2("Dissent / Unresolved"))
-    if dissent:
-        blocks.extend([_bul(d) for d in dissent])
-    else:
-        blocks.append(_bul("이견/미결정 항목이 없습니다(또는 추출 실패)."))
-
     if ts or correlation_id:
-        blocks.append(_heading_2("Meta"))
+        blocks.append(_divider())
+        meta_parts: list[str] = []
         if ts:
-            blocks.append(_bul(f"ts: {ts}"))
+            meta_parts.append(f"기록 시각: {ts}")
         if correlation_id:
-            blocks.append(_bul(f"correlation_id: {correlation_id}"))
+            meta_parts.append(f"correlation_id: {correlation_id}")
+        blocks.append(_paragraph(" | ".join(meta_parts)))
 
     return blocks[: int(limit)]

@@ -564,7 +564,7 @@ def collect_arxiv(logger: HarnessLogger, tracker: SaturationTracker,
 # ---------------------------------------------------------------------------
 
 def collect_youtube(yt_targets: list[dict], logger: HarnessLogger,
-                    tracker: SaturationTracker, dry_run: bool) -> dict:
+                    tracker: SaturationTracker, dry_run: bool, max_results: int = 5) -> dict:
     if not Path(YT_DLP_BIN).exists():
         logger.warning(f"yt-dlp 없음: {YT_DLP_BIN}. YouTube 수집 건너뜀.")
         return {"attempted": 0, "new": 0, "error": 1}
@@ -583,15 +583,16 @@ def collect_youtube(yt_targets: list[dict], logger: HarnessLogger,
             stats["new"] += 1
             continue
 
-        cmd = [
+        cmd_base = [
             YT_DLP_BIN,
-            "--cookies-from-browser", "chrome",  # 브라우저 인증 쿠키로 429 우회
             "--skip-download",           # 영상 다운로드 금지 (legal_review_approve 조건)
+            "--impersonate", "chrome",
+            "--extractor-args", "youtube:player-client=ios,android,web",
             "--write-auto-sub",
             "--write-sub",
             "--sub-lang", "en",          # ko 제거 — 자막 요청 수 절반으로 감소
             "--write-info-json",
-            "--playlist-end", "5",       # 최근 5개만
+            "--playlist-end", str(max_results),       # 지정된 개수만큼만
             "--sleep-requests", "3.0",
             "--sleep-interval", "5.0",
             "--max-sleep-interval", "15.0",
@@ -603,11 +604,31 @@ def collect_youtube(yt_targets: list[dict], logger: HarnessLogger,
         ]
 
         success = False
+        use_impersonate = True
         for attempt in range(1, 3):
             try:
+                cmd = cmd_base.copy()
+                if use_impersonate:
+                    cmd.extend(["--impersonate", "chrome"])
+                if attempt == 1:
+                    # 첫 번째 시도에는 크롬 브라우저 쿠키 추가
+                    cmd.extend(["--cookies-from-browser", "chrome"])
+                
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
                 if result.returncode != 0:
                     err_msg = result.stderr or ""
+                    
+                    # Impersonate 타겟 오류 발생 시, impersonate 옵션을 제외하고 즉시 재시도
+                    if use_impersonate and "Impersonate target" in err_msg:
+                        logger.warning(f"  이 환경에서 Impersonate chrome 사용 불가. 해당 옵션을 제외하고 즉시 재시도합니다.")
+                        use_impersonate = False
+                        continue
+                    
+                    # 쿠키 잠금/권한 오류 감지 시 쿠키 없이 즉시 재시도
+                    if attempt == 1 and ("Cookie" in err_msg or "locked" in err_msg or "Keyring" in err_msg or "Profile" in err_msg):
+                        logger.warning(f"  크롬 쿠키 로드 실패(데이터베이스 잠금 등). 쿠키 없이 재시도합니다.")
+                        continue
+                    
                     if "429" in err_msg or "Too Many Requests" in err_msg:
                         backoff = 60 * attempt
                         logger.warning(f"  [Attempt {attempt}/2] HTTP 429 감지 — {backoff}초 대기...")
@@ -695,7 +716,7 @@ def _yt_api_get(path: str, params: dict, logger: HarnessLogger) -> dict | None:
 
 def collect_youtube_via_api(yt_targets: list[dict], search_queries: list[str],
                             extra_query: str, logger: HarnessLogger,
-                            tracker: SaturationTracker, dry_run: bool) -> dict | None:
+                            tracker: SaturationTracker, dry_run: bool, max_results: int = 5) -> dict | None:
     """YouTube Data API v3로 채널 영상 메타데이터 수집.
     YOUTUBE_API_KEY 미설정 시 None 반환 → yt-dlp fallback."""
     api_key = os.getenv("YOUTUBE_API_KEY", "")
@@ -734,7 +755,7 @@ def collect_youtube_via_api(yt_targets: list[dict], search_queries: list[str],
         data = _yt_api_get("search", {
             "part": "snippet",
             "channelId": channel_id,
-            "maxResults": 5,
+            "maxResults": max_results,
             "order": "date",
             "type": "video",
         }, logger)
@@ -786,7 +807,7 @@ def collect_youtube_via_api(yt_targets: list[dict], search_queries: list[str],
         data = _yt_api_get("search", {
             "part": "snippet",
             "q": query,
-            "maxResults": 5,
+            "maxResults": max_results,
             "type": "video",
             "order": "relevance",
         }, logger)
@@ -1264,6 +1285,8 @@ def main():
     parser.add_argument("--scholar-mode", default="en_only",
                         choices=["en_only", "multilingual"],
                         help="Scholar 쿼리 모드: en_only(영어 20개, 빠름) / multilingual(60개+, 느림)")
+    parser.add_argument("--max-yt-results", type=int, default=5,
+                        help="유튜브 채널 및 검색어당 최대 수집 수 (기본: 5)")
     args = parser.parse_args()
 
     enabled = {s.strip() for s in args.sources.split(",")}
@@ -1353,18 +1376,24 @@ def main():
         total_new += r["new"]
 
     if "youtube" in enabled or "all" in enabled:
-        api_result = collect_youtube_via_api(
-            yt_targets, yt_search_queries, args.extra_query, logger, tracker, dry_run
-        )
-        if api_result is not None:
-            logger.info("--- [YouTube Data API v3] ---")
-            results["youtube"] = api_result
-            total_new += api_result["new"]
+        logger.info("--- [YouTube yt-dlp (Primary Method)] ---")
+        # 1. yt-dlp 수집을 최우선으로 먼저 시도 (Primary)
+        r = collect_youtube(yt_targets, logger, tracker, dry_run, max_results=args.max_yt_results)
+        results["youtube"] = r
+        total_new += r["new"]
+        
+        # 2. YOUTUBE_API_KEY가 있는 경우에 한하여 보조(Secondary) 수단으로 API를 활용하여 검색 결과 등 추가 데이터 보충
+        if os.getenv("YOUTUBE_API_KEY"):
+            logger.info("--- [YouTube Data API v3 (Secondary Method)] ---")
+            api_result = collect_youtube_via_api(
+                yt_targets, yt_search_queries, args.extra_query, logger, tracker, dry_run, max_results=args.max_yt_results
+            )
+            if api_result:
+                results["youtube_api"] = api_result
+                total_new += api_result["new"]
+                logger.info(f"  YouTube 수집 병합 완료 (yt-dlp 신규: {r['new']}개, API 신규: {api_result['new']}개)")
         else:
-            logger.info("--- [YouTube yt-dlp (YOUTUBE_API_KEY 미설정 → browser-cookies fallback)] ---")
-            r = collect_youtube(yt_targets, logger, tracker, dry_run)
-            results["youtube"] = r
-            total_new += r["new"]
+            logger.info(f"  YouTube 수집 완료 (yt-dlp 단독 수집, 신규: {r['new']}개)")
 
     # 포화도 리포트
     saturation = tracker.summary()

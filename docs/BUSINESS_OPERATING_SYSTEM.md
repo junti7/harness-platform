@@ -23,7 +23,7 @@ Phase 1 primary model:
 - Audience: Physical AI, AGI, robotics, semiconductor, automation에 호기심 있는 한국어 독자
 - Free tier: weekly public issue
 - Paid tier: 월 ₩9,900~₩19,900
-- 30-day target: free subscribers 50명 + paid subscriber 1명
+- 30-day target: Pretotyping CTR ≥ 2%
 - Delivery: Substack primary + Notion archive (per `docs/operations/NOTION_OPERATING_SYSTEM.md`) + Slack operating workflow
 
 Phase 2:
@@ -342,8 +342,7 @@ Customer memory rule:
 30일 목표:
 
 - `Physical AI Weekly` 4회 발행
-- 무료 구독자 50명
-- paid subscriber 1명
+- Pretotyping CTR ≥ 2% 달성
 - 부대표 content review 4회 완료
 - weekly business review 4회 완료
 - paid tier 가격 1회 이상 노출

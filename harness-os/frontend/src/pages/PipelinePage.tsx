@@ -22,6 +22,8 @@ type Job = {
   exit_code: number | null
   log_tail: string[]
   log_total: number
+  topic?: string
+  new_count?: number
 }
 
 type Signal = {
@@ -107,21 +109,7 @@ const SOURCE_DEFS = [
   },
 ]
 
-const STATUS_COLOR: Record<string, string> = {
-  running: 'var(--color-accent)',
-  completed: 'var(--color-ok)',
-  failed: 'var(--color-danger)',
-  stopped: 'var(--color-text-muted)',
-  error: 'var(--color-danger)',
-}
 
-const STATUS_LABEL: Record<string, string> = {
-  running: '실행 중',
-  completed: '완료',
-  failed: '실패',
-  stopped: '중지됨',
-  error: '오류',
-}
 
 function elapsed(startedAt: string) {
   const ms = Date.now() - new Date(startedAt).getTime()
@@ -162,6 +150,28 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
   const [topicMode, setTopicMode] = useState<'preset' | 'custom'>('preset')
   const [maxRssItems, setMaxRssItems] = useState(50)
   const [scholarMode, setScholarMode] = useState<'en_only' | 'multilingual'>('en_only')
+
+  // 2026 AI launchd 데몬 모니터링 상태
+  type DaemonStatus = {
+    label: string
+    is_active: boolean
+    pid: number | null
+    last_exit_code: number | null
+    last_run_time: string | null
+    last_collected_count: number
+    db_count_today: number
+    db_count_total: number
+    latest_logs: string[]
+    interval_hours: number
+  }
+  const [daemonStatus, setDaemonStatus] = useState<DaemonStatus | null>(null)
+  const [daemonLoading, setDaemonLoading] = useState(false)
+
+  // 최근 실행 이력용 검색 및 지능형 필터 상태
+  const [historySearch, setHistorySearch] = useState('')
+  const [historySourceFilter, setHistorySourceFilter] = useState('')
+  const [historyStatusFilter, setHistoryStatusFilter] = useState('')
+  const [historyPeriodFilter, setHistoryPeriodFilter] = useState('all')
 
   // 연구 주제 관리 탭 상태
   const [newQuery, setNewQuery] = useState('')
@@ -229,28 +239,45 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
     }
   }, [apiBase, authHeaders, sigFilter])
 
+  const fetchDaemonStatus = useCallback(async () => {
+    setDaemonLoading(true)
+    try {
+      const res = await fetch(`${apiBase}/api/pipeline/daemon/status`, { headers: authHeaders() })
+      if (!res.ok) return
+      const data = await res.json()
+      setDaemonStatus(data)
+    } catch (err) {
+      void err
+    } finally {
+      setDaemonLoading(false)
+    }
+  }, [apiBase, authHeaders])
+
   // 폴링 설정 (stale closure 방지: jobsRef 사용)
   const resetPoll = useCallback((fast: boolean) => {
     if (pollRef.current) clearInterval(pollRef.current)
     const intervalMs = fast ? 2000 : 15000
     pollRef.current = setInterval(async () => {
       await fetchStatus()
+      await fetchDaemonStatus()
       const nowRunning = jobsRef.current.some(j => j.status === 'running')
       if (!nowRunning && fast) {
         if (pollRef.current) clearInterval(pollRef.current)
         pollRef.current = setInterval(async () => {
           await fetchStatus()
+          await fetchDaemonStatus()
         }, 15000)
         fetchSourceStats()
       }
     }, intervalMs)
-  }, [fetchStatus, fetchSourceStats])
+  }, [fetchStatus, fetchSourceStats, fetchDaemonStatus])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void fetchStatus()
       void fetchSourceStats()
       void fetchQueries()
+      void fetchDaemonStatus()
       resetPoll(false)
     }, 0)
     return () => {
@@ -332,7 +359,130 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
   }
 
   const runningJobs = jobs.filter(j => j.status === 'running')
-  const recentJobs = jobs.filter(j => j.status !== 'running').slice(0, 10)
+  const recentJobs = jobs.filter(j => j.status !== 'running')
+
+  // CEO 1-클릭 실물 데이터 바로가기 연동
+  const viewIngestedData = (jobSource: string, jobTopic: string | undefined) => {
+    let srcVal = ''
+    const s = jobSource.toLowerCase()
+    if (s.includes('scholar')) srcVal = 'semantic_scholar'
+    else if (s.startsWith('arxiv')) srcVal = 'arxiv_api'
+    else if (s.startsWith('youtube')) srcVal = 'youtube'
+    else if (s.startsWith('rss')) srcVal = 'rss'
+
+    setSigFilter({
+      source: srcVal,
+      status: '',
+      q: jobTopic && jobTopic !== '기본 쿼리 수집' ? jobTopic : '',
+    })
+    setTab('raw')
+  }
+
+  // 지능형 상황 요약 (Intelligent Natural Language Summary)
+  const generateSmartSummary = (job: Job) => {
+    const logStr = job.log_tail.join('\n')
+    
+    if (job.status === 'failed' || job.status === 'error') {
+      if (logStr.includes('429') || logStr.includes('Too Many Requests')) {
+        return {
+          text: '구글/유튜브 차단(429 Too Many Requests)으로 인해 수집 중단. yt-dlp 우회 가동 필요.',
+          type: 'danger'
+        }
+      }
+      if (logStr.includes('Quota Exceeded') || logStr.includes('quota')) {
+        return {
+          text: '유튜브 API 일일 할당량(Quota) 초과. yt-dlp 예비 수집 기동 권장.',
+          type: 'danger'
+        }
+      }
+      return {
+        text: '수집 도중 치명적 시스템 오류 발생. 상세 개발 로그를 검토해주십시오.',
+        type: 'danger'
+      }
+    }
+    
+    if (job.status === 'stopped') {
+      return {
+        text: '사용자 명령 또는 관리자에 의해 수집 프로세스가 강제 중지되었습니다.',
+        type: 'warn'
+      }
+    }
+
+    const hasSubtitleBypass = logStr.includes('자막 없음') || logStr.includes('설명글') || logStr.includes('description')
+    const has429Bypass = logStr.includes('yt-dlp 우회') || logStr.includes('429 우회')
+    const noChannel = logStr.includes('채널 없음') || logStr.includes('WARNING |   채널 없음')
+    
+    if (job.new_count && job.new_count > 0) {
+      let warnDetails = []
+      if (hasSubtitleBypass) warnDetails.push('자막 유실로 설명글 대체 수집')
+      if (has429Bypass) warnDetails.push('yt-dlp 429 우회 통로 개척')
+      if (noChannel) warnDetails.push('일부 타깃 채널 실종 경고')
+      
+      return {
+        text: `주제에 맞는 신규 실물 영상 및 자료 ${job.new_count}건을 무결 적재 완료했습니다.` + 
+              (warnDetails.length > 0 ? ` (⚠️ ${warnDetails.join(', ')})` : ''),
+        type: warnDetails.length > 0 ? 'warn' : 'success'
+      }
+    } else {
+      if (logStr.includes('완료: 0개 신규') || logStr.includes('0개 신규') || logStr.includes('already exists')) {
+        return {
+          text: '모든 자료가 이미 최신 상태(Up-to-date)로 중복 없는 완벽한 아카이브 상태를 유지하고 있습니다.',
+          type: 'info'
+        }
+      }
+      return {
+        text: '수집 사이클이 정상 수행되었으나, 이 주제로 새로 발표되거나 적재할 신규 신호는 검출되지 않았습니다.',
+        type: 'info'
+      }
+    }
+  }
+
+  // 지능형 검색 필터 적용
+  const filteredRecentJobs = recentJobs.filter(job => {
+    // 1. 검색어 필터 (주제, 소스, 라벨 등)
+    if (historySearch.trim()) {
+      const q = historySearch.toLowerCase()
+      const matchesTopic = job.topic ? job.topic.toLowerCase().includes(q) : false
+      const matchesSource = job.source.toLowerCase().includes(q)
+      const matchesLabel = job.label ? job.label.toLowerCase().includes(q) : false
+      if (!matchesTopic && !matchesSource && !matchesLabel) return false
+    }
+    
+    // 2. 소스 필터
+    if (historySourceFilter) {
+      if (job.source !== historySourceFilter) return false
+    }
+    
+    // 3. 성과/상태 필터
+    if (historyStatusFilter) {
+      if (historyStatusFilter === 'has_new') {
+        if (!job.new_count || job.new_count === 0) return false
+      } else if (historyStatusFilter === 'completed') {
+        if (job.status !== 'completed') return false
+      } else if (historyStatusFilter === 'failed') {
+        if (job.status !== 'failed' && job.status !== 'error') return false
+      }
+    }
+    
+    // 4. 기간 필터
+    if (historyPeriodFilter && historyPeriodFilter !== 'all') {
+      const jobTime = new Date(job.started_at).getTime()
+      const now = Date.now()
+      if (historyPeriodFilter === 'today') {
+        const todayStart = new Date().setHours(0,0,0,0)
+        if (jobTime < todayStart) return false
+      } else if (historyPeriodFilter === 'week') {
+        const weekAgo = now - 7 * 24 * 60 * 60 * 1000
+        if (jobTime < weekAgo) return false
+      } else if (historyPeriodFilter === 'month') {
+        const monthAgo = now - 30 * 24 * 60 * 60 * 1000
+        if (jobTime < monthAgo) return false
+      }
+    }
+    
+    return true
+  })
+
   const effectiveTopic = topicMode === 'custom' ? customTopicInput.trim() : selectedTopic
 
   return (
@@ -375,6 +525,130 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
       {/* ── 수집 현황 탭 ── */}
       {tab === 'status' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          
+          {/* launchd 데몬 모니터링 섹션 카드 */}
+          <div className="panel" style={{ padding: '1.25rem', border: '1px solid var(--color-border)', borderRadius: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <span style={{ fontSize: '1.3rem' }}>📡</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800 }}>
+                    2026 AI 글로벌 대량 수집 자동화 데몬 (launchd)
+                  </h3>
+                  <p style={{ margin: '0.15rem 0 0', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                    6시간 주기 백그라운드 구동 · 상호 보완형 이중화 및 429 설명글 폴백 아키텍처 탑재
+                  </p>
+                </div>
+              </div>
+              
+              {daemonStatus && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span style={{
+                    display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+                    backgroundColor: daemonStatus.is_active ? 'var(--color-ok)' : 'var(--color-warn)',
+                    boxShadow: daemonStatus.is_active ? '0 0 8px var(--color-ok)' : 'none',
+                  }} />
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: daemonStatus.is_active ? 'var(--color-ok)' : 'var(--color-warn)' }}>
+                    {daemonStatus.is_active ? '동작 중 (Active)' : '정지됨 (Inactive)'}
+                  </span>
+                  {daemonStatus.pid && (
+                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', background: 'var(--color-surface-lighter)', padding: '0.1rem 0.35rem', borderRadius: '4px' }}>
+                      PID: {daemonStatus.pid}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 통계 카드 그리드 */}
+            {daemonStatus && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
+                <div style={{ background: 'var(--color-surface-lighter)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.3rem' }}>
+                    오늘 적재 실적 (유튜브)
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem' }}>
+                    <span style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--color-accent)' }}>
+                      {daemonStatus.db_count_today.toLocaleString('ko-KR')}
+                    </span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>건 적재</span>
+                  </div>
+                </div>
+
+                <div style={{ background: 'var(--color-surface-lighter)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.3rem' }}>
+                    2026 AI 누적 적재
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem' }}>
+                    <span style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--color-text)' }}>
+                      {daemonStatus.db_count_total.toLocaleString('ko-KR')}
+                    </span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>건 누적</span>
+                  </div>
+                </div>
+
+                <div style={{ background: 'var(--color-surface-lighter)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.3rem' }}>
+                    최근 수집 성공 규모
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem' }}>
+                    <span style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--color-ok)' }}>
+                      +{daemonStatus.last_collected_count}
+                    </span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>개 신규 영상</span>
+                  </div>
+                </div>
+
+                <div style={{ background: 'var(--color-surface-lighter)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.3rem' }}>
+                    마지막 백그라운드 동작
+                  </div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text)', marginTop: '0.2rem' }}>
+                    {daemonStatus.last_run_time ? daemonStatus.last_run_time : '대기 중'}
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', marginTop: '0.1rem' }}>
+                    다음 주기: 6시간 간격 순환
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 터미널 로그 */}
+            {daemonStatus && daemonStatus.latest_logs && daemonStatus.latest_logs.length > 0 && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--color-text)' }}>
+                    📡 데몬 실시간 동작 로그 (최신 30줄)
+                  </span>
+                  <button onClick={fetchDaemonStatus} disabled={daemonLoading} style={{
+                    background: 'transparent', border: 'none', color: 'var(--color-accent)',
+                    fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
+                  }}>
+                    {daemonLoading ? '갱신 중...' : '🔄 로그 새로고침'}
+                  </button>
+                </div>
+                <div style={{
+                  background: 'var(--color-bg-dark, #0d1117)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '6px',
+                  padding: '0.65rem 0.85rem',
+                  maxHeight: '180px',
+                  overflowY: 'auto',
+                  fontFamily: 'monospace',
+                  fontSize: '0.75rem',
+                  lineHeight: '1.4',
+                  whiteSpace: 'pre-wrap',
+                }}>
+                  {daemonStatus.latest_logs.map((line, idx) => (
+                    <div key={idx} style={{ color: colorLine(line), marginBottom: '0.2rem' }}>
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {monitor && <DataCollectionMonitor monitor={monitor} />}
 
           {/* 1단계: 연구 주제 선택 */}
@@ -662,48 +936,319 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
 
           {/* 최근 완료 이력 */}
           {recentJobs.length > 0 && (
-            <div>
-              <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)' }}>
-                최근 실행 이력
-              </h3>
-              <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
-                {recentJobs.map((job, idx) => (
-                  <div key={job.id}>
-                    <div
-                      onClick={() => setExpandedJobs(prev => {
-                        const next = new Set(prev)
-                        if (next.has(job.id)) next.delete(job.id)
-                        else next.add(job.id)
-                        return next
-                      })}
+            <div style={{ marginTop: '2rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text)' }}>
+                  지능형 수집 이력 및 성과 피드 (Timeline)
+                </h3>
+                <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                  필터 결과: <strong>{filteredRecentJobs.length}건</strong> / 총 {recentJobs.length}건
+                </span>
+              </div>
+
+              {/* 지능형 다차원 검색 필터바 */}
+              <div className="panel" style={{ padding: '1rem', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {/* 1열: 검색어 입력 및 기간 선택 */}
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div style={{ flex: 1, minWidth: '260px', position: 'relative' }}>
+                    <input
+                      type="text"
+                      placeholder="🔍 수집 주제, 출처명, 키워드 검색..."
+                      value={historySearch}
+                      onChange={e => setHistorySearch(e.target.value)}
                       style={{
-                        display: 'grid', gridTemplateColumns: '1fr auto auto auto auto',
-                        gap: '1rem', alignItems: 'center',
-                        padding: '0.75rem 1.25rem',
-                        borderBottom: expandedJobs.has(job.id) ? '1px solid var(--color-border)' : (idx < recentJobs.length - 1 ? '1px solid var(--color-border)' : 'none'),
-                        cursor: 'pointer',
-                        background: expandedJobs.has(job.id) ? 'var(--color-surface-lighter)' : 'transparent',
-                      }}>
-                      <div>
-                        <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{job.label ?? job.source}</span>
-                        {job.dry_run && <span style={{ marginLeft: '0.4rem', fontSize: '0.7rem', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 4, padding: '0.05rem 0.3rem' }}>테스트 실행</span>}
-                      </div>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{job.log_total}줄</span>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{job.finished_at ? relTime(job.finished_at) : relTime(job.started_at)}</span>
-                      <span style={{ fontSize: '0.78rem', fontWeight: 700, color: STATUS_COLOR[job.status] ?? 'var(--color-text-muted)' }}>
-                        {STATUS_LABEL[job.status] ?? job.status}
-                        {job.exit_code != null && job.exit_code !== 0 && ` (code ${job.exit_code})`}
-                      </span>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
-                        {expandedJobs.has(job.id) ? '▲ 닫기' : '▼ 로그'}
-                      </span>
-                    </div>
-                    {expandedJobs.has(job.id) && (
-                      <LogViewer lines={job.log_tail} />
+                        width: '100%',
+                        padding: '0.55rem 0.85rem',
+                        borderRadius: '6px',
+                        border: '1.5px solid var(--color-border)',
+                        background: 'var(--color-surface-lighter)',
+                        color: 'var(--color-text)',
+                        fontSize: '0.85rem',
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                    {historySearch && (
+                      <button 
+                        onClick={() => setHistorySearch('')}
+                        style={{
+                          position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
+                          background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: '0.85rem'
+                        }}
+                      >
+                        ✕
+                      </button>
                     )}
                   </div>
-                ))}
+
+                  <select
+                    value={historyPeriodFilter}
+                    onChange={e => setHistoryPeriodFilter(e.target.value)}
+                    style={{
+                      padding: '0.55rem 0.75rem',
+                      borderRadius: '6px',
+                      border: '1.5px solid var(--color-border)',
+                      background: 'var(--color-surface-lighter)',
+                      color: 'var(--color-text)',
+                      fontSize: '0.85rem',
+                      outline: 'none',
+                      minWidth: '130px'
+                    }}
+                  >
+                    <option value="all">🗓️ 전체 기간</option>
+                    <option value="today">오늘 수집</option>
+                    <option value="week">최근 7일</option>
+                    <option value="month">최근 30일</option>
+                  </select>
+                </div>
+
+                {/* 2열: 소스 퀵 필터 칩 */}
+                <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-muted)', marginRight: '0.4rem' }}>자료 소스:</span>
+                  {[
+                    { id: '', label: '전체' },
+                    { id: 'youtube', label: '🔴 YouTube' },
+                    { id: 'scholar', label: '🎓 Scholar' },
+                    { id: 'arxiv', label: '🔬 arXiv' },
+                    { id: 'rss', label: '📡 RSS/뉴스' },
+                    { id: 'filter', label: '📈 투자 분석' }
+                  ].map(chip => (
+                    <button
+                      key={chip.id}
+                      onClick={() => setHistorySourceFilter(chip.id)}
+                      style={{
+                        padding: '0.25rem 0.65rem',
+                        borderRadius: '15px',
+                        border: '1px solid',
+                        borderColor: historySourceFilter === chip.id ? 'var(--color-accent)' : 'var(--color-border)',
+                        background: historySourceFilter === chip.id ? 'rgba(0, 229, 153, 0.15)' : 'var(--color-surface-lighter)',
+                        color: historySourceFilter === chip.id ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* 3열: 수집 성과/상황 퀵 필터 칩 */}
+                <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-muted)', marginRight: '0.4rem' }}>수집 성과:</span>
+                  {[
+                    { id: '', label: '전체' },
+                    { id: 'has_new', label: '📊 신규 적재 완료 건만' },
+                    { id: 'completed', label: '✅ 정상 완료' },
+                    { id: 'failed', label: '❌ 수집 오류/실패 건만' }
+                  ].map(chip => (
+                    <button
+                      key={chip.id}
+                      onClick={() => setHistoryStatusFilter(chip.id)}
+                      style={{
+                        padding: '0.25rem 0.65rem',
+                        borderRadius: '15px',
+                        border: '1px solid',
+                        borderColor: historyStatusFilter === chip.id ? 'var(--color-accent)' : 'var(--color-border)',
+                        background: historyStatusFilter === chip.id ? 'rgba(0, 229, 153, 0.15)' : 'var(--color-surface-lighter)',
+                        color: historyStatusFilter === chip.id ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {/* 타임라인 피드 목록 */}
+              {filteredRecentJobs.length === 0 ? (
+                <div className="panel" style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                  <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>🔍</div>
+                  <h4 style={{ margin: '0 0 0.25rem', color: 'var(--color-text)' }}>부합하는 수집 이력이 없습니다</h4>
+                  <p style={{ margin: 0, fontSize: '0.8rem' }}>검색어나 필터 조건을 조정해 보십시오.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', position: 'relative', paddingLeft: '1.5rem' }}>
+                  {/* 타임라인 수직선 */}
+                  <div style={{
+                    position: 'absolute', left: '7px', top: '10px', bottom: '10px', width: '2px',
+                    background: 'linear-gradient(180deg, var(--color-border) 0%, rgba(255,255,255,0.05) 100%)',
+                    zIndex: 1
+                  }} />
+
+                  {filteredRecentJobs.map((job) => {
+                    const summary = generateSmartSummary(job)
+                    const isExpanded = expandedJobs.has(job.id)
+                    
+                    // 수집 소스 매핑 및 스타일 지정
+                    let sourceInfo = { label: job.label ?? job.source, color: 'var(--color-text-muted)', icon: '⚙️' }
+                    const srcL = job.source.toLowerCase()
+                    if (srcL.startsWith('youtube')) {
+                      sourceInfo = { label: 'YouTube', color: '#ff4d4d', icon: '🔴' }
+                    } else if (srcL.includes('scholar')) {
+                      sourceInfo = { label: 'Semantic Scholar', color: '#6666ff', icon: '🎓' }
+                    } else if (srcL.startsWith('arxiv')) {
+                      sourceInfo = { label: 'arXiv', color: '#cc66ff', icon: '🔬' }
+                    } else if (srcL.startsWith('rss')) {
+                      sourceInfo = { label: 'RSS/뉴스', color: '#00e599', icon: '📡' }
+                    } else if (srcL === 'filter') {
+                      sourceInfo = { label: '투자 신호 정제', color: '#ffb300', icon: '📈' }
+                    } else if (srcL === 'all') {
+                      sourceInfo = { label: '전체 수집', color: 'var(--color-accent)', icon: '🚀' }
+                    }
+
+                    // 성과 유형별 CSS 테두리 및 그림자 (Glow) 매핑
+                    let summaryStyle = { border: '1px solid var(--color-border)', bg: 'rgba(255,255,255,0.02)' }
+                    if (summary.type === 'success') {
+                      summaryStyle = { border: '1.5px solid rgba(0, 229, 153, 0.4)', bg: 'rgba(0, 229, 153, 0.04)' }
+                    } else if (summary.type === 'danger') {
+                      summaryStyle = { border: '1.5px solid rgba(255, 77, 77, 0.4)', bg: 'rgba(255, 77, 77, 0.04)' }
+                    } else if (summary.type === 'warn') {
+                      summaryStyle = { border: '1.5px solid rgba(255, 179, 0, 0.4)', bg: 'rgba(255, 179, 0, 0.04)' }
+                    }
+
+                    return (
+                      <div key={job.id} style={{ position: 'relative', zIndex: 2 }}>
+                        {/* 타임라인 노드 도트 */}
+                        <div style={{
+                          position: 'absolute', left: '-22px', top: '16px', width: '12px', height: '12px',
+                          borderRadius: '50%', border: '2px solid var(--color-bg)',
+                          background: job.status === 'completed' ? 'var(--color-ok)' : (job.status === 'failed' || job.status === 'error' ? 'var(--color-danger)' : 'var(--color-text-muted)'),
+                          boxShadow: job.status === 'completed' ? '0 0 8px var(--color-ok)' : 'none'
+                        }} />
+
+                        {/* 피드 카드 본체 */}
+                        <div className="panel" style={{
+                          padding: '1.1rem',
+                          background: 'var(--color-surface)',
+                          border: isExpanded ? '1px dashed var(--color-accent)' : '1px solid var(--color-border)',
+                          borderRadius: '8px',
+                          transition: 'all 0.2s',
+                          boxShadow: isExpanded ? '0 4px 15px rgba(0, 229, 153, 0.08)' : 'none'
+                        }}>
+                          {/* 1행: 출처 배지 및 시각 */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <span style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                                padding: '0.15rem 0.55rem', borderRadius: '4px',
+                                background: 'var(--color-surface-lighter)', border: `1px solid ${sourceInfo.color}33`,
+                                color: sourceInfo.color, fontSize: '0.72rem', fontWeight: 700
+                              }}>
+                                {sourceInfo.icon} {sourceInfo.label}
+                              </span>
+
+                              {job.dry_run && (
+                                <span style={{
+                                  padding: '0.15rem 0.55rem', borderRadius: '4px',
+                                  background: 'rgba(255,255,255,0.05)', border: '1px solid var(--color-border)',
+                                  color: 'var(--color-text-muted)', fontSize: '0.72rem', fontWeight: 600
+                                }}>
+                                  🧪 테스트 모드
+                                </span>
+                              )}
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                              <span>⏱️ 경과: {job.finished_at ? elapsed(job.started_at) : '수집 완료'}</span>
+                              <span>•</span>
+                              <span>{job.finished_at ? relTime(job.finished_at) : relTime(job.started_at)} ({new Date(job.started_at).toLocaleString('ko-KR', { hour12: false }).substring(2, 16)})</span>
+                            </div>
+                          </div>
+
+                          {/* 2행: 핵심 수집 주제 */}
+                          <div style={{ marginBottom: '0.75rem' }}>
+                            <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-text)' }}>
+                              <span style={{ color: 'var(--color-text-muted)', fontWeight: 500, marginRight: '0.4rem' }}>수집 주제:</span>
+                              "{job.topic ?? '기본 쿼리 수집'}"
+                            </h4>
+                          </div>
+
+                          {/* 3행: 지능형 상황 요약 블록 (Smart Summary Card) */}
+                          <div style={{
+                            padding: '0.75rem 0.9rem',
+                            borderRadius: '6px',
+                            background: summaryStyle.bg,
+                            border: summaryStyle.border,
+                            marginBottom: '0.85rem'
+                          }}>
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                              <span style={{ fontSize: '0.95rem', lineHeight: '1.2' }}>
+                                {summary.type === 'success' ? '📊' : summary.type === 'danger' ? '🚨' : summary.type === 'warn' ? '⚠️' : 'ℹ️'}
+                              </span>
+                              <div>
+                                <strong style={{ 
+                                  display: 'block', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em',
+                                  color: summary.type === 'success' ? 'var(--color-ok)' : summary.type === 'danger' ? 'var(--color-danger)' : summary.type === 'warn' ? 'var(--color-warn)' : 'var(--color-accent)',
+                                  marginBottom: '0.2rem'
+                                }}>
+                                  {summary.type === 'success' ? '성공 리포트' : summary.type === 'danger' ? '장애 검출됨' : summary.type === 'warn' ? '상황 경고 발생' : '일반 정보'}
+                                </strong>
+                                <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--color-text)', lineHeight: '1.4', fontWeight: 500 }}>
+                                  {summary.text}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 4행: 하단 제어 & 연동 액션 바 */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem' }}>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                              {/* 1-클릭 실물 데이터 바로가기 연동 (scholar, arxiv, youtube, rss 한정) */}
+                              {['youtube', 'scholar', 'arxiv', 'rss', 'all'].includes(job.source.toLowerCase()) && (
+                                <button
+                                  onClick={() => viewIngestedData(job.source, job.topic)}
+                                  style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+                                    padding: '0.4rem 0.8rem', borderRadius: '6px',
+                                    border: 'none', background: 'var(--color-accent)',
+                                    color: '#000', fontWeight: 700, fontSize: '0.78rem',
+                                    cursor: 'pointer', transition: 'all 0.15s'
+                                  }}
+                                  onMouseOver={e => e.currentTarget.style.filter = 'brightness(1.1)'}
+                                  onMouseOut={e => e.currentTarget.style.filter = 'none'}
+                                >
+                                  🔍 이 주제의 실물 데이터 조회 →
+                                </button>
+                              )}
+                            </div>
+
+                            <button
+                              onClick={() => setExpandedJobs(prev => {
+                                const next = new Set(prev)
+                                if (next.has(job.id)) next.delete(job.id)
+                                else next.add(job.id)
+                                return next
+                              })}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                                padding: '0.4rem 0.8rem', borderRadius: '6px',
+                                border: '1px solid var(--color-border)', background: isExpanded ? 'var(--color-surface-lighter)' : 'transparent',
+                                color: 'var(--color-text-muted)', fontSize: '0.75rem', fontWeight: 600,
+                                cursor: 'pointer', transition: 'all 0.15s'
+                              }}
+                            >
+                              {isExpanded ? '📋 원본 로그 닫기 ▲' : '📋 원본 로그 조회 ▼'} ({job.log_total}줄)
+                            </button>
+                          </div>
+
+                          {/* 확장 시 실시간/최종 로그 뷰어 */}
+                          {isExpanded && (
+                            <div style={{ marginTop: '0.85rem', borderTop: '1px solid var(--color-border)', paddingTop: '0.85rem' }}>
+                              <LogViewer lines={job.log_tail} />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>

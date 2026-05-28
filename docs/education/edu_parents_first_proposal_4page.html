@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI 시대, 우리 아이 교육 기준부터 세우는 법 — 4페이지 고객 제안서</title>
+    <style>
+      :root {
+        --bg: #eaf0f7;
+        --surface: #ffffff;
+        --ink: #0f172a;
+        --sub: #475467;
+        --muted: #98a2b3;
+        --line: #e4e7ec;
+        --blue: #2563eb;
+        --blue-2: #1d4ed8;
+        --green: #12b76a;
+        --red: #ef4444;
+        --amber: #f59e0b;
+        --shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: linear-gradient(180deg, #f4f7fb 0%, #ebf0f7 100%);
+        font-family: "SUIT Variable", "Pretendard Variable", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+        color: var(--ink);
+      }
+
+      .deck {
+        padding: 24px 0 60px;
+      }
+
+      .page {
+        position: relative;
+        width: 1280px;
+        min-height: 720px;
+        margin: 0 auto 18px;
+        padding: 42px 48px 54px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 30px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .page::before {
+        content: "";
+        position: absolute;
+        inset: 0 auto auto 0;
+        width: 100%;
+        height: 6px;
+        background: linear-gradient(90deg, #2563eb 0%, #0891b2 100%);
+      }
+
+      .eyebrow {
+        display: inline-block;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: #eff6ff;
+        color: var(--blue);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      h1 {
+        margin: 18px 0 10px;
+        font-size: 54px;
+        letter-spacing: -0.05em;
+        line-height: 1.02;
+      }
+
+      h2 {
+        margin: 0 0 8px;
+        font-size: 28px;
+        letter-spacing: -0.04em;
+      }
+
+      p {
+        margin: 0;
+        color: var(--sub);
+        line-height: 1.7;
+      }
+
+      .page-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 24px;
+        margin-bottom: 24px;
+      }
+
+      .page-no {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .hero-grid,
+      .two-col {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 24px;
+      }
+
+      .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 28px;
+      }
+
+      .stat,
+      .box {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: #fcfcfd;
+      }
+
+      .stat {
+        padding: 18px;
+      }
+
+      .stat label {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .stat strong {
+        display: block;
+        margin-top: 10px;
+        font-size: 22px;
+        letter-spacing: -0.03em;
+      }
+
+      .stat span {
+        display: block;
+        margin-top: 6px;
+        color: var(--sub);
+        font-size: 14px;
+      }
+
+      .box {
+        padding: 24px;
+      }
+
+      .chart-box {
+        padding: 14px;
+        background: linear-gradient(180deg, #fcfdff 0%, #f6f9ff 100%);
+      }
+
+      .chart-box svg,
+      .flow-box svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .flow-box {
+        padding: 10px;
+        background: linear-gradient(180deg, #fcfdff 0%, #f8fafc 100%);
+      }
+
+      .bullets {
+        display: grid;
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .bullet {
+        display: grid;
+        grid-template-columns: 14px 1fr;
+        gap: 12px;
+        align-items: start;
+      }
+
+      .dot {
+        width: 14px;
+        height: 14px;
+        margin-top: 7px;
+        border-radius: 4px;
+        background: var(--blue);
+      }
+
+      .bullet strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 16px;
+      }
+
+      .bullet span {
+        color: var(--sub);
+        font-size: 14px;
+      }
+
+      .step-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .step-item {
+        display: grid;
+        grid-template-columns: 44px 1fr;
+        gap: 12px;
+        padding: 16px;
+        border-radius: 20px;
+        border: 1px solid var(--line);
+        background: #fcfcfd;
+      }
+
+      .step-no {
+        width: 44px;
+        height: 44px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        color: white;
+        font-size: 16px;
+        font-weight: 900;
+      }
+
+      .step-item strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 16px;
+      }
+
+      .step-item span {
+        font-size: 14px;
+        color: var(--sub);
+      }
+
+      .timeline {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .timeline-card {
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: #fcfcfd;
+      }
+
+      .timeline-card label {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .timeline-card strong {
+        display: block;
+        margin-top: 10px;
+        font-size: 18px;
+      }
+
+      .timeline-card p {
+        margin-top: 8px;
+        font-size: 14px;
+      }
+
+      .action-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .action-card {
+        padding: 18px;
+        border-radius: 22px;
+        background: #fcfcfd;
+        border: 1px solid var(--line);
+      }
+
+      .action-card .tag {
+        display: inline-flex;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: #eff6ff;
+        color: var(--blue);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .action-card h3 {
+        margin: 14px 0 8px;
+        font-size: 18px;
+      }
+
+      .action-card p {
+        font-size: 14px;
+      }
+
+      .footer-note {
+        position: absolute;
+        left: 48px;
+        right: 48px;
+        bottom: 26px;
+        display: flex;
+        justify-content: space-between;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      @media print {
+        body { background: white; }
+        .deck { padding: 0; }
+        .page {
+          width: 1280px;
+          min-height: 720px;
+          margin: 0;
+          border-radius: 0;
+          box-shadow: none;
+          page-break-after: always;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="deck">
+      <section class="page">
+        <div class="page-head">
+          <div>
+            <span class="eyebrow">Client Proposal · Page 1</span>
+            <h1>AI 시대,<br />우리 아이 교육 기준부터 세우는 법</h1>
+            <p>아이에게 AI를 어디까지 허용해야 할지, 무조건 막을지 그냥 맡길지 흔들리는 부모를 위해 만든 8주 교육 제안입니다. 더 많은 정보보다 먼저, 우리 집에 맞는 기준과 대화 원칙을 차분하게 세우는 데 초점을 둡니다.</p>
+          </div>
+          <div class="page-no">01 / 04</div>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat">
+            <label>Core Problem</label>
+            <strong>중요하다는 건 아는데, 기준은 아직 없습니다</strong>
+            <span>학부모의 AI 관심은 높지만 “어디까지 허용할지”는 여전히 감으로 정하는 경우가 많습니다.</span>
+          </div>
+          <div class="stat">
+            <label>Program Logic</label>
+            <strong>먼저 써보고, 그 다음 기준을 세웁니다</strong>
+            <span>부모가 먼저 직접 체험한 뒤, 우리 집 원칙을 정리하고 자녀 기준으로 연결합니다.</span>
+          </div>
+          <div class="stat">
+            <label>Outcome</label>
+            <strong>우리 집 AI 기준표와 대화 가이드</strong>
+            <span>도구 설명으로 끝나는 강의가 아니라, 집에서 바로 쓸 수 있는 문장과 원칙을 남깁니다.</span>
+          </div>
+        </div>
+
+        <div class="hero-grid" style="margin-top:24px;">
+          <div class="box chart-box">
+            <svg viewBox="0 0 760 360" role="img">
+              <rect x="0" y="0" width="760" height="360" rx="24" fill="#f8fbff" />
+              <line x1="180" y1="48" x2="180" y2="302" stroke="#d0d5dd" stroke-width="1.5" />
+              <line x1="180" y1="302" x2="710" y2="302" stroke="#d0d5dd" stroke-width="1.5" />
+              <g fill="#98a2b3" font-size="12" font-weight="700">
+                <text x="180" y="324">0</text><text x="285" y="324">20</text><text x="390" y="324">40</text><text x="495" y="324">60</text><text x="600" y="324">80</text><text x="690" y="324">100</text>
+              </g>
+              <g font-size="14" font-weight="800" fill="#475467">
+                <text x="16" y="82">AI가 중요하다고 느낀다</text>
+                <text x="16" y="142">자녀 교육에 AI가 필요하다고 느낀다</text>
+                <text x="16" y="202">우리 집 AI 사용 기준이 있다</text>
+                <text x="16" y="262">부모가 매주 직접 AI를 써본다</text>
+              </g>
+              <rect x="180" y="58" width="466" height="28" rx="14" fill="#2563eb" />
+              <rect x="180" y="118" width="429" height="28" rx="14" fill="#2563eb" />
+              <rect x="180" y="178" width="206" height="28" rx="14" fill="#12b76a" />
+              <rect x="180" y="238" width="143" height="28" rx="14" fill="#ef4444" />
+              <g font-size="14" font-weight="900" fill="#101828">
+                <text x="658" y="77">88%</text><text x="621" y="137">81%</text><text x="398" y="197">39%</text><text x="335" y="257">27%</text>
+              </g>
+            </svg>
+          </div>
+
+          <div class="box">
+            <h2>제안 핵심</h2>
+            <div class="bullets">
+              <div class="bullet"><div class="dot"></div><div><strong>불안을 줄이는 건 정보보다 기준입니다</strong><span>이미 중요하다는 인식은 높습니다. 실제로 필요한 것은 “우리 집에서는 어떻게 쓸 것인가”에 대한 기준입니다.</span></div></div>
+              <div class="bullet"><div class="dot"></div><div><strong>부모가 먼저 이해해야 아이도 흔들리지 않습니다</strong><span>부모가 직접 써보고 한계를 알아야, 아이에게도 일관된 원칙을 말해줄 수 있습니다.</span></div></div>
+              <div class="bullet"><div class="dot"></div><div><strong>이 프로그램은 도구 강의가 아닙니다</strong><span>AI를 더 잘 쓰는 방법보다, 집 안에서 건강하게 다루는 기준을 세우는 교육입니다.</span></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer-note"><span>Harness Education Consulting · orientation concept</span><span>Sample for customer-facing proposal</span></div>
+      </section>
+
+      <section class="page">
+        <div class="page-head">
+          <div>
+            <span class="eyebrow">Client Proposal · Page 2</span>
+            <h2>이 프로그램이 실제로 도와드리는 것</h2>
+            <p>아이를 먼저 가르치지 않습니다. 부모가 먼저 AI를 이해하고, 우리 집 기준을 세운 뒤, 그 기준으로 자녀 대화와 원칙까지 정리합니다.</p>
+          </div>
+          <div class="page-no">02 / 04</div>
+        </div>
+
+        <div class="two-col">
+          <div class="box flow-box">
+            <svg viewBox="0 0 720 360" role="img">
+              <rect x="20" y="70" width="190" height="180" rx="28" fill="#ffffff" stroke="#d0d5dd" />
+              <rect x="265" y="70" width="190" height="180" rx="28" fill="#ffffff" stroke="#d0d5dd" />
+              <rect x="510" y="70" width="190" height="180" rx="28" fill="#ffffff" stroke="#d0d5dd" />
+
+              <rect x="42" y="92" width="48" height="48" rx="16" fill="#2563eb" />
+              <rect x="287" y="92" width="48" height="48" rx="16" fill="#12b76a" />
+              <rect x="532" y="92" width="48" height="48" rx="16" fill="#ef4444" />
+              <g fill="#ffffff" font-size="20" font-weight="900">
+                <text x="66" y="123" text-anchor="middle">1</text>
+                <text x="311" y="123" text-anchor="middle">2</text>
+                <text x="556" y="123" text-anchor="middle">3</text>
+              </g>
+
+              <g fill="#0f172a">
+                <text x="42" y="170" font-size="24" font-weight="900">부모가 먼저</text>
+                <text x="42" y="200" font-size="24" font-weight="900">AI를 직접 써본다</text>
+                <text x="42" y="226" font-size="14" fill="#475467">질문법 · 오류 · 한계 체험</text>
+
+                <text x="287" y="170" font-size="24" font-weight="900">우리 집</text>
+                <text x="287" y="200" font-size="24" font-weight="900">사용 기준 수립</text>
+                <text x="287" y="226" font-size="14" fill="#475467">허용/금지 · 시간 기준</text>
+
+                <text x="532" y="170" font-size="24" font-weight="900">그 기준으로</text>
+                <text x="532" y="200" font-size="24" font-weight="900">자녀 원칙 설계</text>
+                <text x="532" y="226" font-size="14" fill="#475467">학년별 규칙 · 대화 가이드</text>
+              </g>
+
+              <path d="M 216 158 L 252 158" stroke="#98a2b3" stroke-width="3" />
+              <path d="M 461 158 L 497 158" stroke="#98a2b3" stroke-width="3" />
+              <path d="M 242 148 L 252 158 L 242 168" fill="none" stroke="#98a2b3" stroke-width="3" />
+              <path d="M 487 148 L 497 158 L 487 168" fill="none" stroke="#98a2b3" stroke-width="3" />
+            </svg>
+          </div>
+
+          <div class="step-list">
+            <div class="step-item">
+              <div class="step-no" style="background:#2563eb">1</div>
+              <div><strong>Week 1–2: 부모가 먼저 직접 써봅니다</strong><span>질문법, 오류, 한계를 먼저 경험하면서 도구를 현실적으로 이해합니다.</span></div>
+            </div>
+            <div class="step-item">
+              <div class="step-no" style="background:#12b76a">2</div>
+              <div><strong>Week 3–4: 우리 집 기준을 정리합니다</strong><span>숙제, 검색, 요약, 글쓰기에서 어디까지 허용할지 문장으로 남깁니다.</span></div>
+            </div>
+            <div class="step-item">
+              <div class="step-no" style="background:#ef4444">3</div>
+              <div><strong>Week 5–8: 자녀와의 대화와 원칙을 설계합니다</strong><span>학년별 사용 원칙, 주간 점검 루틴, 부모-자녀 대화 문장까지 연결합니다.</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer-note"><span>Program structure</span><span>Parent-first learning architecture</span></div>
+      </section>
+
+      <section class="page">
+        <div class="page-head">
+          <div>
+            <span class="eyebrow">Client Proposal · Page 3</span>
+            <h2>8주 로드맵</h2>
+            <p>강의를 듣고 끝나는 것이 아니라, 8주 안에 부모의 AI 체험과 가정 운영 기준을 실제 문장으로 남기는 커리큘럼입니다.</p>
+          </div>
+          <div class="page-no">03 / 04</div>
+        </div>
+
+        <div class="timeline">
+          <div class="timeline-card"><label>Week 1–2</label><strong>부모의 AI 체험</strong><p>부모가 직접 질문하고, 어디서 편해지고 어디서 위험해지는지 몸으로 익힙니다.</p></div>
+          <div class="timeline-card"><label>Week 3–4</label><strong>우리 집 기준 정리</strong><p>우리 집 허용/금지 기준, 검토 원칙, 시간 기준을 짧고 분명한 문장으로 남깁니다.</p></div>
+          <div class="timeline-card"><label>Week 5–6</label><strong>자녀 패턴 관찰</strong><p>아이를 바로 통제하기보다, 현재 어떤 상황에서 AI를 쓰는지 먼저 파악합니다.</p></div>
+          <div class="timeline-card"><label>Week 7–8</label><strong>대화와 점검 루틴</strong><p>대화 가이드, 주간 점검 루틴, 다음 30일 운영 계획까지 연결합니다.</p></div>
+        </div>
+
+        <div class="two-col" style="margin-top: 24px;">
+          <div class="box">
+            <h2>학습 산출물</h2>
+            <div class="bullets">
+              <div class="bullet"><div class="dot"></div><div><strong>부모용 AI 체험 로그</strong><span>실제 질문, 실패 사례, 예상과 달랐던 지점을 기록해 “체험”을 남깁니다.</span></div></div>
+              <div class="bullet"><div class="dot"></div><div><strong>우리 집 AI 기준표 1장</strong><span>허용/금지선, 숙제/검색/요약 사용 규칙을 문장으로 정리합니다.</span></div></div>
+              <div class="bullet"><div class="dot"></div><div><strong>자녀 대화 가이드 카드</strong><span>부모가 자녀와 AI에 대해 대화할 때 바로 꺼내 쓸 수 있는 문장을 제공합니다.</span></div></div>
+            </div>
+          </div>
+          <div class="box">
+            <h2>가치 제안</h2>
+            <div class="bullets">
+              <div class="bullet"><div class="dot"></div><div><strong>막연한 불안을 기준으로 바꿉니다</strong><span>“어쩌지?”에서 “우리 집은 이렇게 한다”로 옮겨가는 것이 이 프로그램의 핵심입니다.</span></div></div>
+              <div class="bullet"><div class="dot"></div><div><strong>설명보다 행동이 먼저 남습니다</strong><span>긴 보고서보다 이번 주 실행 카드와 기준표가 먼저 전달됩니다.</span></div></div>
+              <div class="bullet"><div class="dot"></div><div><strong>학부모가 신뢰할 수 있는 톤으로 만듭니다</strong><span>과한 동기부여나 훈계 대신, 차분하고 실질적인 도움을 주는 언어로 설계합니다.</span></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer-note"><span>8-week roadmap</span><span>From anxiety to household operating standard</span></div>
+      </section>
+
+      <section class="page">
+        <div class="page-head">
+          <div>
+            <span class="eyebrow">Client Proposal · Page 4</span>
+            <h2>이번 주 바로 해볼 수 있는 작은 시작</h2>
+            <p>교육은 듣고 끝나지 않아야 하므로, 프로그램은 항상 부담 없는 실천 카드와 함께 마무리됩니다.</p>
+          </div>
+          <div class="page-no">04 / 04</div>
+        </div>
+
+        <div class="action-grid">
+          <div class="action-card">
+            <span class="tag">Action 01</span>
+            <h3>부모가 먼저 질문 하나를 직접 던져봅니다</h3>
+            <p>부모 본인의 업무나 가정에서 지금 가장 현실적인 질문 하나를 AI에게 직접 묻습니다.</p>
+          </div>
+          <div class="action-card">
+            <span class="tag">Action 02</span>
+            <h3>자녀와 10분만 이야기해봅니다</h3>
+            <p>통제보다 관찰이 먼저입니다. 아이가 언제, 왜 AI를 찾는지 먼저 들어봅니다.</p>
+          </div>
+          <div class="action-card">
+            <span class="tag">Action 03</span>
+            <h3>우리 집 기준을 한 줄로 적어봅니다</h3>
+            <p>예: 숙제 초안은 가능하지만, 최종 답안 대필은 금지. 기준은 짧고 분명할수록 좋습니다.</p>
+          </div>
+        </div>
+
+        <div class="two-col" style="margin-top:24px;">
+          <div class="box">
+            <h2>제작 기준</h2>
+            <div class="bullets">
+              <div class="bullet"><div class="dot"></div><div><strong>숫자 차트는 코드 기반</strong><span>정확성과 QA를 위해 수치 차트는 항상 코드 원본을 남깁니다.</span></div></div>
+              <div class="bullet"><div class="dot"></div><div><strong>설명 이미지는 LLM 활용 가능</strong><span>인포그래픽과 플래시카드는 LLM 이미지 생성 또는 SVG로 확장 가능합니다.</span></div></div>
+              <div class="bullet"><div class="dot"></div><div><strong>긴 한글 카피는 후편집</strong><span>이미지 생성물에 직접 박지 않고, 최종은 Figma/SVG/HTML에서 마감합니다.</span></div></div>
+            </div>
+          </div>
+          <div class="box">
+            <h2>다음 제안</h2>
+            <div class="bullets">
+              <div class="bullet"><div class="dot"></div><div><strong>기관/학교 맞춤 버전</strong><span>고객 브랜드 컬러와 실제 상담 언어에 맞춰 같은 구조를 다시 구성할 수 있습니다.</span></div></div>
+              <div class="bullet"><div class="dot"></div><div><strong>모바일 세로형 카드 세트</strong><span>카카오톡이나 모바일 PDF로 보내기 좋은 세로형 자산으로도 확장 가능합니다.</span></div></div>
+              <div class="bullet"><div class="dot"></div><div><strong>학부모 설명회 deck 버전</strong><span>이 4페이지 구조를 그대로 발표용 설명회 슬라이드로 전환할 수 있습니다.</span></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer-note"><span>Client-ready next step</span><span>Can be exported or re-skinned for branded delivery</span></div>
+      </section>
+    </main>
+  </body>
+</html>

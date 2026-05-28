@@ -22,6 +22,10 @@ DAILY_MESSAGE='Use the harness-control skill to review the Harness control plane
 WEEKLY_RED_TEAM_NAME="harness-weekly-multi-llm-red-team"
 WEEKLY_RED_TEAM_MESSAGE='Use the harness-control skill, then run: DATABASE_URL=postgresql://localhost/harness_prod PYTHONPYCACHEPREFIX=/private/tmp .venv/bin/python scripts/run_weekly_red_team_latest.py. Return only a short confirmation with target, verdict, gate_open, and memo path.'
 
+GMAIL_CHECK_NAME="harness-gmail-ops-check"
+GMAIL_CHECK_MESSAGE='대표님의 Gmail에서 최근 1일 이내 수신된 메일을 검색하고, 그 중에서 우리 회사 경영에 관련된 메일이 있는지 확인한 뒤 내용을 간결하게 요약하여 #exec-president-decisions 채널에 보고해 주세요. 경영 관련 메일이 없더라도 "최근 수신된 메일 중 회사 경영에 관련된 메일은 없습니다."라고 간결하게 보고해 주세요.'
+
+
 register_if_missing() {
   NAME="$1"
   shift
@@ -48,7 +52,7 @@ ensure_cron_schedule() {
   fi
 
   # `openclaw cron get` already returns JSON to stdout.
-  CURRENT="$("$OPENCLAW_BIN" cron get "$JOB_ID" | python3 -c 'import json,sys; job=json.load(sys.stdin); sch=(job.get("schedule") or {}); print((sch.get("expr") or "") + "|" + (sch.get("tz") or ""))')"
+  CURRENT="$("$OPENCLAW_BIN" cron show "$JOB_ID" --json | python3 -c 'import json,sys; job=json.load(sys.stdin); sch=(job.get("schedule") or {}); print((sch.get("expr") or "") + "|" + (sch.get("tz") or ""))')"
   CUR_EXPR="${CURRENT%%|*}"
   CUR_TZ="${CURRENT#*|}"
 
@@ -99,5 +103,19 @@ register_if_missing \
   --message "$WEEKLY_RED_TEAM_MESSAGE" \
   --timeout-seconds 900 \
   --no-deliver
+
+register_if_missing \
+  "$GMAIL_CHECK_NAME" \
+  --name "$GMAIL_CHECK_NAME" \
+  --description "Check the CEO's Gmail inbox twice daily (05:00 and 14:00 KST) for company management-related emails, summarize them, and report to Slack." \
+  --cron "0 5,14 * * *" \
+  --tz "Asia/Seoul" \
+  --agent main \
+  --session isolated \
+  --message "$GMAIL_CHECK_MESSAGE" \
+  --timeout-seconds 300 \
+  --no-deliver
+
+ensure_cron_schedule "$GMAIL_CHECK_NAME" "0 5,14 * * *" "Asia/Seoul"
 
 "$OPENCLAW_BIN" cron list --json

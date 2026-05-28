@@ -145,6 +145,21 @@ def _tail_process(job_id: str, proc: subprocess.Popen) -> None:
                 _PIPELINE_JOBS[job_id]["status"] = "completed" if rc == 0 else "failed"
                 _PIPELINE_JOBS[job_id]["exit_code"] = rc
                 _PIPELINE_JOBS[job_id]["finished_at"] = datetime.utcnow().isoformat() + "Z"
+                
+                # 로그 버퍼 분석하여 실시간 적재 수량 파싱 및 갱신
+                new_count = 0
+                log_lines = _PIPELINE_LOGS.get(job_id, [])
+                for log_line in log_lines:
+                    if "총 신규 항목:" in log_line:
+                        match = re.search(r'총 신규 항목:\s*(\d+)개', log_line)
+                        if match:
+                            new_count = int(match.group(1))
+                            break
+                    elif "new=" in log_line or "'new':" in log_line:
+                        matches = re.findall(r"'new':\s*(\d+)", log_line)
+                        if matches:
+                            new_count = sum(int(m) for m in matches)
+                _PIPELINE_JOBS[job_id]["new_count"] = new_count
     except Exception as exc:
         with _JOB_LOCK:
             if job_id in _PIPELINE_JOBS and _PIPELINE_JOBS[job_id]["status"] == "running":
@@ -3199,6 +3214,81 @@ def toggle_ar_status(
 
 # ── Pipeline Control API ─────────────────────────────────────────
 
+@app.get("/api/pipeline/daemon/status")
+def get_daemon_status(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    daemon_label = "com.harness.2026-ai-seamless-gather"
+    is_active = False
+    pid = None
+    last_exit_code = None
+    
+    try:
+        res = subprocess.run(["launchctl", "list"], capture_output=True, text=True, timeout=5)
+        for line in res.stdout.splitlines():
+            if daemon_label in line:
+                parts = line.split()
+                if len(parts) >= 3:
+                    is_active = True
+                    pid = int(parts[0]) if parts[0].isdigit() else None
+                    last_exit_code = int(parts[1]) if parts[1].isdigit() else None
+                    break
+    except Exception:
+        pass
+        
+    log_path = _PROJECT_ROOT / "logs" / "2026-ai-seamless-gather.log"
+    latest_logs = []
+    last_run_time = None
+    last_collected_count = 0
+    
+    if log_path.exists():
+        try:
+            lines = log_path.read_text(encoding="utf-8").splitlines()
+            latest_logs = lines[-30:]
+            
+            for line in reversed(lines):
+                time_match = re.match(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', line)
+                if time_match and not last_run_time:
+                    last_run_time = time_match.group(1)
+                
+                if "총 신규 항목:" in line:
+                    count_match = re.search(r'총 신규 항목:\s*(\d+)개', line)
+                    if count_match:
+                        last_collected_count = int(count_match.group(1))
+                        break
+        except Exception:
+            pass
+            
+    db_count_today = 0
+    db_count_total = 0
+    try:
+        from core.database import execute_query
+        res_today = execute_query(
+            "SELECT count(*) FROM raw_signals WHERE domain = 'edu_consulting' AND source LIKE 'youtube_%%' AND ingested_at::date = current_date"
+        )
+        if res_today:
+            db_count_today = res_today[0][0]
+            
+        res_total = execute_query(
+            "SELECT count(*) FROM raw_signals WHERE domain = 'edu_consulting' AND source LIKE 'youtube_%%'"
+        )
+        if res_total:
+            db_count_total = res_total[0][0]
+    except Exception:
+        pass
+        
+    return {
+        "label": daemon_label,
+        "is_active": is_active,
+        "pid": pid,
+        "last_exit_code": last_exit_code,
+        "last_run_time": last_run_time,
+        "last_collected_count": last_collected_count,
+        "db_count_today": db_count_today,
+        "db_count_total": db_count_total,
+        "latest_logs": latest_logs,
+        "interval_hours": 6
+    }
+
+
 @app.post("/api/pipeline/run")
 def run_pipeline_job(body: PipelineRunRequest, _: None = Depends(_require_secret)) -> dict[str, Any]:
     if body.source not in _SOURCE_MAP:
@@ -3226,6 +3316,7 @@ def run_pipeline_job(body: PipelineRunRequest, _: None = Depends(_require_secret
             cmd += ["--extra-query", body.topic]
         cmd += ["--max-rss-items", str(body.max_rss_items)]
         cmd += ["--scholar-mode", body.scholar_mode]
+        cmd += ["--max-yt-results", "15"]
 
     job_id = str(uuid4())[:8]
 
@@ -3246,6 +3337,7 @@ def run_pipeline_job(body: PipelineRunRequest, _: None = Depends(_require_secret
         _PIPELINE_JOBS[job_id] = {
             "id": job_id,
             "source": body.source,
+            "topic": body.topic or "기본 쿼리 수집",
             "label": {"scholar": "Semantic Scholar", "arxiv": "arXiv", "youtube": "YouTube",
                       "rss": "RSS", "all": "전체 수집", "filter": "투자 신호 정제"}.get(body.source, body.source),
             "started_at": datetime.utcnow().isoformat() + "Z",
@@ -3254,6 +3346,7 @@ def run_pipeline_job(body: PipelineRunRequest, _: None = Depends(_require_secret
             "dry_run": body.dry_run,
             "finished_at": None,
             "exit_code": None,
+            "new_count": 0,
         }
         _PIPELINE_LOGS[job_id] = [f"[시작] pid={proc.pid} cmd={' '.join(cmd[-3:])}"]
         # 오래된 job 제거

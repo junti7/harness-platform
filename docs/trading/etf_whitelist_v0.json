@@ -1,0 +1,95 @@
+{
+  "version": "v0",
+  "generated_at": "2026-05-23",
+  "policy": {
+    "phase": "phase1",
+    "asset_class": "theme_etf",
+    "notes": [
+      "This file is a candidate list for automated IBKR contract resolution (conid).",
+      "Nothing in this file is a trading instruction. Execution requires separate approval gates."
+    ]
+  },
+  "items": [
+    {
+      "id": "krx-069500",
+      "region": "KRX",
+      "type": "etf",
+      "query": "069500",
+      "exchange_hint": "KRX",
+      "name_hint": "KODEX 200"
+    },
+    {
+      "id": "krx-395160",
+      "region": "KRX",
+      "type": "etf",
+      "query": "395160",
+      "exchange_hint": "KRX",
+      "name_hint": "TIGER 글로벌자율주행&로봇"
+    },
+    {
+      "id": "krx-396500",
+      "region": "KRX",
+      "type": "etf",
+      "query": "396500",
+      "exchange_hint": "KRX",
+      "name_hint": "TIGER Fn반도체TOP10"
+    },
+    {
+      "id": "krx-445290",
+      "region": "KRX",
+      "type": "etf",
+      "query": "445290",
+      "exchange_hint": "KRX",
+      "name_hint": "KODEX AI반도체"
+    },
+    {
+      "id": "krx-466950",
+      "region": "KRX",
+      "type": "etf",
+      "query": "466950",
+      "exchange_hint": "KRX",
+      "name_hint": "KODEX 테슬라밸류체인액티브"
+    },
+    {
+      "id": "us-SMH",
+      "region": "US",
+      "type": "etf",
+      "query": "SMH",
+      "exchange_hint": "NASDAQ",
+      "name_hint": "VanEck Semiconductor ETF"
+    },
+    {
+      "id": "us-SOXX",
+      "region": "US",
+      "type": "etf",
+      "query": "SOXX",
+      "exchange_hint": "NASDAQ",
+      "name_hint": "iShares Semiconductor ETF"
+    },
+    {
+      "id": "us-BOTZ",
+      "region": "US",
+      "type": "etf",
+      "query": "BOTZ",
+      "exchange_hint": "NYSEARCA",
+      "name_hint": "Global X Robotics & Artificial Intelligence ETF"
+    },
+    {
+      "id": "jp-2638",
+      "region": "JP",
+      "type": "etf",
+      "query": "2638",
+      "exchange_hint": "TSE",
+      "name_hint": "Global X Japan Robotics & AI (code may vary by broker)"
+    },
+    {
+      "id": "eu-2B76",
+      "region": "EU",
+      "type": "ucits_etf",
+      "query": "2B76",
+      "exchange_hint": "XETRA",
+      "name_hint": "iShares Automation & Robotics UCITS ETF (ticker varies by exchange)"
+    }
+  ]
+}
+

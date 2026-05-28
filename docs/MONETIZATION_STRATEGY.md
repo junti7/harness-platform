@@ -140,12 +140,11 @@ Paid acquisition:
 Success:
 
 - weekly issue 4회 발행
-- 무료 구독자 50명
-- paid subscriber 1명
+- Pretotyping CTR ≥ 2% 달성
 
 Acceptable learning:
 
-- 무료 구독자 50명 미만이어도 open/reply/share가 강하면 계속 실험
+- Pretotyping CTR ≥ 1% 이고 hesitation reason을 기록하면 학습 인정
 - paid subscriber가 없어도 paid tier 노출과 hesitation reason을 기록하면 학습 인정
 
 Failure:

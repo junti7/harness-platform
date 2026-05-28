@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.harness.2026-ai-seamless-gather</string>
+
+  <!-- 파이썬 가상환경 및 수집 스크립트 백그라운드 실행 -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/juntae.park/projects/harness-platform/.venv/bin/python</string>
+    <string>/Users/juntae.park/projects/harness-platform/scripts/run_edu_deep_research.py</string>
+    <string>--sources</string>
+    <string>youtube</string>
+    <string>--extra-query</string>
+    <string>AI 2026 trends, artificial intelligence 2026, generative AI education 2026, 2026 에듀테크 AI, 인공지능 교육 2026</string>
+    <string>--max-yt-results</string>
+    <string>15</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/juntae.park/projects/harness-platform</string>
+
+  <!-- 6시간마다 실행 (21600초)로 429 차단 만료를 회피하며 Seamless 순환 축적 -->
+  <key>StartInterval</key>
+  <integer>21600</integer>
+
+  <!-- 로그 파일 기록 -->
+  <key>StandardOutPath</key>
+  <string>/Users/juntae.park/projects/harness-platform/logs/2026-ai-seamless-gather.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/juntae.park/projects/harness-platform/logs/2026-ai-seamless-gather.error.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+  </dict>
+</dict>
+</plist>
