@@ -1,0 +1,181 @@
+{
+  "version": "v1",
+  "generated_at": "2026-05-28",
+  "policy": {
+    "phase": "phase1",
+    "notes": [
+      "This file defines the operator-facing trading watchlist.",
+      "Items are organized by sector: Physical AI Core, Power/Grid, Water/Cooling, Battery/Energy Storage.",
+      "Active trading universe (harness_score >= 7, Layer1 approved): NVDA, AVGO, TSM, MU, ANET, VRT, TER, CRWV, SYM, ISRG, ROK.",
+      "Watch items below require Layer1 research completion before entering active universe."
+    ]
+  },
+  "active_universe": {
+    "note": "Harness 리서치 파이프라인 Layer1 통과 + Turtle Layer2 신호 대기 종목",
+    "tickers": ["NVDA", "AVGO", "TSM", "MU", "ANET", "VRT", "TER", "CRWV", "SYM", "ISRG", "ROK"],
+    "last_updated": "2026-05-28",
+    "basis": "docs/trading/investment_thesis_TSM_MU_2026-05-28.md"
+  },
+  "items": [
+    {
+      "id": "us-SMH",
+      "active": false,
+      "priority": 99,
+      "watch_reason": "ETF → 개별 종목 전환으로 비활성화 (2026-05-28)",
+      "query": "SMH",
+      "exchange_hint": "NASDAQ",
+      "name_hint": "VanEck Semiconductor ETF",
+      "region": "US"
+    },
+    {
+      "id": "us-SOXX",
+      "active": false,
+      "priority": 99,
+      "watch_reason": "ETF → 개별 종목 전환으로 비활성화 (2026-05-28)",
+      "query": "SOXX",
+      "exchange_hint": "NASDAQ",
+      "name_hint": "iShares Semiconductor ETF",
+      "region": "US"
+    },
+    {
+      "id": "us-BOTZ",
+      "active": false,
+      "priority": 99,
+      "watch_reason": "ETF → 개별 종목 전환으로 비활성화 (2026-05-28)",
+      "query": "BOTZ",
+      "exchange_hint": "NYSEARCA",
+      "name_hint": "Global X Robotics & Artificial Intelligence ETF",
+      "region": "US"
+    },
+    {
+      "id": "krx-445290",
+      "active": true,
+      "priority": 10,
+      "watch_reason": "Korean AI semiconductor proxy",
+      "query": "445290",
+      "exchange_hint": "KRX",
+      "name_hint": "KODEX AI반도체",
+      "region": "KRX"
+    },
+    {
+      "id": "us-CEG",
+      "active": true,
+      "priority": 1,
+      "sector": "전력 인프라",
+      "watch_reason": "AI 데이터센터 전력 공급 핵심 수혜주. 원전(Calvert Cliffs) 기반 무탄소 전력 공급. Microsoft, Google과 PPA 계약. 2026년 전력 수요 폭증의 직접 수혜.",
+      "layer1_status": "research_required",
+      "query": "CEG",
+      "exchange_hint": "NASDAQ",
+      "name_hint": "Constellation Energy Group",
+      "region": "US"
+    },
+    {
+      "id": "us-VST",
+      "active": true,
+      "priority": 2,
+      "sector": "전력 인프라",
+      "watch_reason": "텍사스 ERCOT 전력망 기반 독립 발전사. AI 데이터센터 밀집 텍사스에서 전력 수요 직접 수혜. 천연가스+원전 포트폴리오.",
+      "layer1_status": "research_required",
+      "query": "VST",
+      "exchange_hint": "NYSE",
+      "name_hint": "Vistra Corp",
+      "region": "US"
+    },
+    {
+      "id": "us-GEV",
+      "active": true,
+      "priority": 3,
+      "sector": "전력 인프라",
+      "watch_reason": "GE Vernova. 가스 터빈·풍력·전력망 장비 제조. AI 데이터센터 신규 전력 인프라 건설의 핵심 장비 공급사. 전력망 현대화 투자의 직접 수혜.",
+      "layer1_status": "research_required",
+      "query": "GEV",
+      "exchange_hint": "NYSE",
+      "name_hint": "GE Vernova",
+      "region": "US"
+    },
+    {
+      "id": "us-PWR",
+      "active": true,
+      "priority": 4,
+      "sector": "전력 인프라",
+      "watch_reason": "Quanta Services. 전력망·통신·파이프라인 인프라 시공 1위. 데이터센터 연결 전력선 시공 수요 폭증 수혜. 하이퍼스케일러들의 전력 인프라 투자 집행처.",
+      "layer1_status": "research_required",
+      "query": "PWR",
+      "exchange_hint": "NYSE",
+      "name_hint": "Quanta Services",
+      "region": "US"
+    },
+    {
+      "id": "us-XYL",
+      "active": true,
+      "priority": 5,
+      "sector": "냉각수 공급 기술",
+      "watch_reason": "Xylem. 데이터센터 냉각 시스템 솔루션. 액체 냉각·수처리·펌프 기술. AI GPU 열밀도 증가로 냉각수 수요 구조적 성장. VRT의 전력 측면을 보완하는 물 측면 수혜주.",
+      "layer1_status": "research_required",
+      "query": "XYL",
+      "exchange_hint": "NYSE",
+      "name_hint": "Xylem Inc",
+      "region": "US"
+    },
+    {
+      "id": "us-ECL",
+      "active": true,
+      "priority": 6,
+      "sector": "냉각수 공급 기술",
+      "watch_reason": "Ecolab. 데이터센터 수처리·냉각탑 화학약품 1위 공급사. AI 데이터센터 냉각 인프라 확대 시 Ecolab 소모품 수요 자동 증가. 안정적 구독형 수익 구조.",
+      "layer1_status": "research_required",
+      "query": "ECL",
+      "exchange_hint": "NYSE",
+      "name_hint": "Ecolab Inc",
+      "region": "US"
+    },
+    {
+      "id": "us-VLTO",
+      "active": true,
+      "priority": 7,
+      "sector": "냉각수 공급 기술",
+      "watch_reason": "Veralto. 수질 분석·처리 솔루션. 데이터센터 냉각수 품질 관리 필수. Danaher 스핀오프로 안정적 사업 구조. 물 인프라 순수 플레이.",
+      "layer1_status": "research_required",
+      "query": "VLTO",
+      "exchange_hint": "NYSE",
+      "name_hint": "Veralto Corp",
+      "region": "US"
+    },
+    {
+      "id": "us-QS",
+      "active": true,
+      "priority": 8,
+      "sector": "로봇 배터리 기술",
+      "watch_reason": "QuantumScape. 전고체 리튬 배터리 기술 선도. 로봇 에너지 밀도 한계를 돌파할 핵심 기술. 기존 리튬이온 대비 에너지 밀도 2배, 충전 속도 대폭 향상 목표. VW·폭스바겐 그룹 투자.",
+      "layer1_status": "research_required",
+      "query": "QS",
+      "exchange_hint": "NYSE",
+      "name_hint": "QuantumScape Corp",
+      "region": "US"
+    },
+    {
+      "id": "us-STEM",
+      "active": true,
+      "priority": 9,
+      "sector": "로봇 배터리 기술",
+      "watch_reason": "Stem Inc. AI 기반 배터리 에너지 저장 시스템(BESS) 운영 플랫폼. 로봇·데이터센터 전력 저장 최적화. Athena AI 소프트웨어로 배터리 수명·충방전 AI 최적화.",
+      "layer1_status": "research_required",
+      "query": "STEM",
+      "exchange_hint": "NYSE",
+      "name_hint": "Stem Inc",
+      "region": "US"
+    },
+    {
+      "id": "us-LTHM",
+      "active": true,
+      "priority": 10,
+      "sector": "로봇 배터리 기술",
+      "watch_reason": "Livent(현 Arcadium Lithium). 고성능 리튬 소재 공급사. EV·로봇 배터리용 리튬 하이드록사이드·리튬 금속 생산. 로봇 대중화 시 리튬 수요 구조적 성장.",
+      "layer1_status": "research_required",
+      "query": "ALTM",
+      "exchange_hint": "NYSE",
+      "name_hint": "Arcadium Lithium",
+      "region": "US"
+    }
+  ]
+}

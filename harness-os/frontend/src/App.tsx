@@ -18,6 +18,7 @@ import { MeetingNotesPage } from './pages/MeetingNotesPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { LoginPage } from './pages/LoginPage'
 import { PipelinePage } from './pages/PipelinePage'
+import { TradingDiaryPage } from './pages/TradingDiaryPage'
 
 const SESSION_KEY = 'harness-session'
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000 // 30분
@@ -132,7 +133,7 @@ function App() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   })
   const [viewRole, setViewRole] = useState<'ceo' | 'vp'>(() => session?.role ?? 'ceo')
-  const [activeView, setActiveView] = useState<'dashboard' | 'approvals' | 'conference' | 'ars' | 'meetings' | 'costs' | 'tokens' | 'settings' | 'pipeline'>('dashboard')
+  const [activeView, setActiveView] = useState<'dashboard' | 'approvals' | 'conference' | 'ars' | 'meetings' | 'costs' | 'tokens' | 'settings' | 'pipeline' | 'trading-diary'>('dashboard')
   const [selectedPlatform, setSelectedPlatform] = useState('all')
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null)
   const [loading, setLoading] = useState(true)
@@ -655,6 +656,13 @@ function App() {
           apiBase={API_BASE}
           authHeaders={authHeaders}
           monitor={dashboard?.data_collection_monitor}
+        />
+      )}
+
+      {activeView === 'trading-diary' && (
+        <TradingDiaryPage
+          apiBase={API_BASE}
+          authHeaders={authHeaders()}
         />
       )}
 

@@ -3588,6 +3588,83 @@ def openclaw_restart(_: None = Depends(_require_secret)) -> dict[str, Any]:
         return {"ok": False, "message": str(e), "status": _openclaw_service_status()}
 
 
+# ── Trading Diary ────────────────────────────────────────────────────────────
+
+_DIARY_PATH = PROJECT_ROOT / "docs/trading/trading_diary.jsonl"
+
+
+def _load_diary(limit: int = 300) -> list[dict[str, Any]]:
+    if not _DIARY_PATH.exists():
+        return []
+    entries: list[dict[str, Any]] = []
+    for line in _DIARY_PATH.read_text(encoding="utf-8").strip().splitlines():
+        try:
+            entries.append(json.loads(line))
+        except Exception:
+            pass
+    entries.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
+    return entries[:limit]
+
+
+@app.get("/api/trading/diary")
+def trading_diary_list(
+    limit: int = 100,
+    entry_type: str = "",
+    ticker: str = "",
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    entries = _load_diary(limit=500)
+    if entry_type:
+        entries = [e for e in entries if e.get("type") == entry_type]
+    if ticker:
+        entries = [e for e in entries if e.get("ticker", "").upper() == ticker.upper()]
+    entries = entries[:limit]
+
+    exits   = [e for e in entries if e.get("type") == "trade_exit"]
+    total_pnl = sum(e.get("pnl") or 0 for e in exits)
+    winning   = [e for e in exits if (e.get("pnl") or 0) > 0]
+    win_rate  = round(len(winning) / len(exits) * 100, 1) if exits else 0
+
+    return {
+        "ok": True,
+        "stats": {
+            "total_entries": len(entries),
+            "closed_trades": len(exits),
+            "win_rate_pct": win_rate,
+            "total_pnl": round(total_pnl, 2),
+        },
+        "entries": entries,
+    }
+
+
+class DiaryNoteRequest(BaseModel):
+    note: str
+    ticker: str = ""
+    tags: list[str] = []
+
+
+@app.post("/api/trading/diary/note")
+def trading_diary_add_note(
+    req: DiaryNoteRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    import uuid
+    from datetime import datetime, timezone
+    entry_id = str(uuid.uuid4())[:8]
+    entry: dict[str, Any] = {
+        "id": entry_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "type": "ceo_note",
+        "ticker": req.ticker,
+        "note": req.note,
+        "tags": req.tags,
+    }
+    _DIARY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(_DIARY_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return {"ok": True, "id": entry_id}
+
+
 # ── SPA Static File Serving (프로덕션 배포용) ────────────────────────────────
 # Vite 빌드 결과물을 FastAPI에서 직접 서빙.
 # /api/* 경로는 위의 라우트들이 우선 처리하므로 충돌 없음.

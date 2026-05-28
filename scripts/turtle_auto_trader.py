@@ -32,6 +32,7 @@ from scripts.alpaca_paper_trading import (
     get_account_summary, get_positions, get_turtle_signal,
     get_recent_orders, _get_bars, _calc_atr,
 )
+from scripts.trading_diary import log_trade_entry, log_trade_exit, log_signal_scan
 
 PAPER_AUTO_EXECUTE = os.getenv("PAPER_TRADING_AUTO_EXECUTE", "false").lower() == "true"
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
@@ -225,6 +226,18 @@ def enter_position(symbol: str, gate: dict, signal: dict, dry_run: bool, state: 
                 "qty": qty,
                 "side": entry["side"],
             }
+            # 거래 일기 기록
+            log_trade_entry(
+                ticker=symbol,
+                side=entry["side"],
+                shares=qty,
+                price=signal["current_price"],
+                atr=signal["atr"],
+                stop_loss=gate["stop_loss"],
+                system=gate["system"],
+                signal=signal["signal"],
+                note=f"Turtle {gate['system']} 브레이크아웃 자동 진입 | 리스크 {gate['risk_pct']:.3f}%",
+            )
         except Exception as e:
             entry["status"] = "error"
             entry["error"] = str(e)
@@ -306,6 +319,17 @@ def manage_positions(positions: list, state: dict, dry_run: bool) -> list[dict]:
                     })
                     action["order_id"] = order.get("id", "")[:16]
                     action["status"] = "submitted"
+                    # 거래 일기 기록 (청산)
+                    exit_reason_key = "stop_loss" if "stop_loss" in reason else "exit_signal_s2" if "exit_signal" in reason else "manual"
+                    log_trade_exit(
+                        ticker=sym,
+                        side="sell",
+                        shares=int(pos["qty"]),
+                        price=cp,
+                        entry_price=tracked.get("entry_price", cp),
+                        exit_reason=exit_reason_key,
+                        note=reason,
+                    )
                     del state["turtle_positions"][sym]
                 except Exception as e:
                     action["status"] = "error"
@@ -403,9 +427,21 @@ def run(execute: bool = False) -> dict:
         print(f"      → {status_msg}")
         entered.append(result)
 
-    # 5. 상태 저장
+    # 5. 상태 저장 + 신호 스캔 일기 기록
     state["last_run"] = now_iso()
     save_state(state)
+    try:
+        all_signals = []
+        for sym in UNIVERSE:
+            try:
+                sig = get_turtle_signal(sym.strip())
+                sig["ticker"] = sym.strip()
+                all_signals.append(sig)
+            except Exception:
+                pass
+        log_signal_scan(all_signals, account_value)
+    except Exception:
+        pass
 
     # 6. 요약
     print(f"\n{'=' * 60}")
