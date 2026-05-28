@@ -1280,6 +1280,8 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="DB 저장 없이 수집 예상 항목만 출력")
     parser.add_argument("--domain", default=DOMAIN, help="도메인 태그 (기본: edu_consulting)")
     parser.add_argument("--extra-query", default="", help="추가 연구 주제 쿼리 (scholar + arXiv 앞에 삽입)")
+    parser.add_argument("--topic-only", action="store_true",
+                        help="extra-query를 유일한 검색 주제로 사용. 프리셋 쿼리 전체 대체 (직접 입력 모드 전용).")
     parser.add_argument("--max-rss-items", type=int, default=50,
                         help="RSS 소스당 최대 수집 항목 수 (기본: 50)")
     parser.add_argument("--scholar-mode", default="en_only",
@@ -1293,29 +1295,48 @@ def main():
     domain = args.domain
     dry_run = args.dry_run
 
-    # 추가 쿼리를 각 소스 쿼리 목록 앞에 삽입
+    # 쿼리 모드 결정: --topic-only 시 프리셋 전면 대체, 아니면 앞에 삽입
     if args.extra_query:
-        SCHOLAR_QUERIES.insert(0, args.extra_query)
-        arxiv_q = "abs:" + args.extra_query.replace(" ", "+")
-        ARXIV_QUERIES.insert(0, arxiv_q)
-        ACADEMIC_EN_QUERIES.insert(0, args.extra_query)
-        HN_QUERIES.insert(0, args.extra_query)
-        NAVER_QUERIES.insert(0, args.extra_query)
+        if args.topic_only:
+            # 직접 입력 모드: 프리셋 쿼리를 모두 비우고 입력 주제만 사용
+            SCHOLAR_QUERIES.clear(); SCHOLAR_QUERIES.append(args.extra_query)
+            SCHOLAR_QUERIES_EN_ONLY.clear(); SCHOLAR_QUERIES_EN_ONLY.append(args.extra_query)
+            arxiv_q = "abs:" + args.extra_query.replace(" ", "+")
+            ARXIV_QUERIES.clear(); ARXIV_QUERIES.append(arxiv_q)
+            ACADEMIC_EN_QUERIES.clear(); ACADEMIC_EN_QUERIES.append(args.extra_query)
+            HN_QUERIES.clear(); HN_QUERIES.append(args.extra_query)
+            NAVER_QUERIES.clear(); NAVER_QUERIES.append(args.extra_query)
+        else:
+            # 프리셋 + 추가 쿼리 병합 모드 (기존 동작)
+            SCHOLAR_QUERIES.insert(0, args.extra_query)
+            arxiv_q = "abs:" + args.extra_query.replace(" ", "+")
+            ARXIV_QUERIES.insert(0, arxiv_q)
+            ACADEMIC_EN_QUERIES.insert(0, args.extra_query)
+            HN_QUERIES.insert(0, args.extra_query)
+            NAVER_QUERIES.insert(0, args.extra_query)
 
     logger = HarnessLogger(tier=1, correlation_id=CORRELATION_ID)
-    logger.info(f"=== 교육 DEEP RESEARCH 수집 시작 | domain={domain} | sources={args.sources} | dry_run={dry_run} | extra_query={args.extra_query!r} ===")
+    logger.info(
+        f"=== 교육 DEEP RESEARCH 수집 시작 | domain={domain} | sources={args.sources} "
+        f"| dry_run={dry_run} | extra_query={args.extra_query!r} | topic_only={args.topic_only} ==="
+    )
 
     if not dry_run:
         ensure_domain_column(logger)
 
     # 소스 레지스트리 로드
+    # topic_only 모드: RSS/YouTube도 입력 주제 기반으로 동작
     sources = load_default_sources("edu_consulting")
     yt_config = json.loads(
         (Path(__file__).resolve().parent.parent / "configs" / "sources" / "edu_consulting.json")
         .read_text(encoding="utf-8")
     ).get("youtube_targets", {})
     yt_targets = yt_config.get("channels", [])
-    yt_search_queries = yt_config.get("multilingual_search_queries", [])
+    if args.extra_query and args.topic_only:
+        # 직접 입력 모드: 채널 수집은 유지하되 검색 쿼리는 입력 주제만 사용
+        yt_search_queries = [args.extra_query]
+    else:
+        yt_search_queries = yt_config.get("multilingual_search_queries", [])
 
     tracker = SaturationTracker()
     total_new = 0

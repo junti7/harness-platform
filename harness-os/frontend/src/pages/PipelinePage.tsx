@@ -301,7 +301,7 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
       const res = await fetch(`${apiBase}/api/pipeline/run`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source, dry_run: dryRun, topic, max_rss_items: maxRssItems, scholar_mode: scholarMode }),
+        body: JSON.stringify({ source, dry_run: dryRun, topic, topic_only: topicMode === 'custom' && !!topic, max_rss_items: maxRssItems, scholar_mode: scholarMode }),
       })
       const data = await res.json()
       if (!res.ok) {

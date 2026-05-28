@@ -187,8 +187,9 @@ def _save_custom_queries(queries: list[dict]) -> None:
 class PipelineRunRequest(BaseModel):
     source: str
     dry_run: bool = False
-    topic: str = ""  # 연구 주제 (비어있으면 기본 쿼리 사용)
-    max_rss_items: int = 50  # RSS 소스당 최대 수집 항목 수
+    topic: str = ""        # 연구 주제 (비어있으면 기본 쿼리 사용)
+    topic_only: bool = False  # True 시 topic이 유일한 검색 주제 (프리셋 대체)
+    max_rss_items: int = 50
     scholar_mode: str = "en_only"  # "en_only" | "multilingual"
 
 
@@ -3314,6 +3315,8 @@ def run_pipeline_job(body: PipelineRunRequest, _: None = Depends(_require_secret
             cmd += ["--dry-run"]
         if body.topic:
             cmd += ["--extra-query", body.topic]
+            if body.topic_only:
+                cmd += ["--topic-only"]
         cmd += ["--max-rss-items", str(body.max_rss_items)]
         cmd += ["--scholar-mode", body.scholar_mode]
         cmd += ["--max-yt-results", "15"]
