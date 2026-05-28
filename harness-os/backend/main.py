@@ -231,10 +231,30 @@ def _hash_pw(pw: str) -> str:
     return hashlib.sha256(pw.encode("utf-8")).hexdigest()
 
 
+def _read_env_file_passwords() -> tuple[str | None, str | None]:
+    """.env 파일에서 직접 읽기 — LaunchAgent plist env보다 우선."""
+    ceo, vp = None, None
+    try:
+        env_file = PROJECT_ROOT / ".env"
+        if env_file.exists():
+            for line in env_file.read_text().splitlines():
+                if line.startswith("HARNESS_CEO_PASSWORD="):
+                    ceo = line.split("=", 1)[1].strip()
+                elif line.startswith("HARNESS_VP_PASSWORD="):
+                    vp = line.split("=", 1)[1].strip()
+    except Exception:
+        pass
+    return ceo, vp
+
+
 def _load_passwords() -> dict[str, str]:
-    # env 변수가 설정된 경우 항상 우선 (파일보다 env가 source of truth)
-    env_ceo = os.environ.get("HARNESS_CEO_PASSWORD")
-    env_vp = os.environ.get("HARNESS_VP_PASSWORD")
+    # .env 파일 직접 파싱 우선 (LaunchAgent plist에 값이 박혀 있어도 override 가능)
+    env_ceo, env_vp = _read_env_file_passwords()
+    # .env에 없으면 프로세스 환경변수 fallback
+    if not env_ceo:
+        env_ceo = os.environ.get("HARNESS_CEO_PASSWORD")
+    if not env_vp:
+        env_vp = os.environ.get("HARNESS_VP_PASSWORD")
     if env_ceo and env_vp:
         return {"ceo": _hash_pw(env_ceo), "vp": _hash_pw(env_vp)}
     # env 미설정 시 파일 fallback
