@@ -2,6 +2,7 @@ import google.generativeai as genai
 import json
 import logging
 import os
+import re
 from dotenv import load_dotenv
 from core.domain_config import load_prompt_text
 from core.database import execute_query
@@ -157,8 +158,18 @@ def refine_signal(model: genai.GenerativeModel, row: dict) -> dict:
     evidence = parsed.get("evidence_posture") or {}
     if not isinstance(evidence, dict):
         raise ValueError("evidence_posture가 dict 형태가 아님")
-    if evidence.get("classification") not in {"verified", "company-self-report", "speculative"}:
-        raise ValueError(f"evidence_posture.classification 값 오류: {evidence.get('classification')}")
+    # LLM이 "verified | speculative" 같이 복합값을 반환하는 경우 첫 번째 유효값으로 정규화
+    _VALID_CLASS = {"verified", "company-self-report", "speculative"}
+    raw_class = str(evidence.get("classification", "")).strip()
+    if raw_class not in _VALID_CLASS:
+        for candidate in re.split(r"[|,/]", raw_class):
+            candidate = candidate.strip()
+            if candidate in _VALID_CLASS:
+                evidence["classification"] = candidate
+                parsed["evidence_posture"] = evidence
+                break
+        else:
+            raise ValueError(f"evidence_posture.classification 값 오류: {raw_class}")
     if not evidence.get("why"):
         raise ValueError("evidence_posture.why 누락")
 
