@@ -1,0 +1,27 @@
+## IBKR Client Portal Web API Gateway 설정
+## Harness Platform — Mac Mini 전용
+## 포트 5001 사용 (5000은 macOS ControlCenter 점유)
+
+listenPort: 5001
+listenSsl: true
+
+## 페이퍼 트레이딩 전용 설정
+paperTrading: true
+
+## 자동 재인증 (세션 만료 방지)
+reauthenticate: true
+
+## 세션 keepalive
+sessionTimeout: 86400
+
+## CORS (로컬 API 접근용)
+cors:
+  enabled: true
+  allowedOrigins:
+    - https://localhost:5001
+    - http://localhost:8000
+    - http://100.97.175.44:8000
+
+## 로그 레벨
+log:
+  level: INFO
