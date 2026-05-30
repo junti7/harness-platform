@@ -226,6 +226,7 @@ def run(execute: bool = False) -> None:
 
             if not dry_run:
                 order = MarketOrder("BUY", shares)
+                order.tif = "GTC"  # 장 마감 후에도 유효 (DAY 자동설정 방지)
                 trade = ib.placeOrder(contract, order)
                 ib.sleep(2)
                 state["positions"][sym] = {
