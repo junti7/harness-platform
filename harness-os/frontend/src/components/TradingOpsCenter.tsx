@@ -1,0 +1,1250 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type {
+  AlpacaPaperDashboard,
+  AlpacaPosition,
+  AlpacaOrder,
+  DropAlert,
+} from './types'
+
+// ── 타입 ──────────────────────────────────────────────────────────────────────
+
+type IbkrAccount = {
+  account_id: string
+  nav: number
+  cash: number
+  baseline_nav: number
+  total_pnl: number
+  total_pnl_pct: number
+}
+
+type IbkrPosition = {
+  symbol: string
+  exchange: string
+  qty: number
+  entry_ts: string
+  entry_price: number
+  current_price: number | null
+  market_value: number | null
+  unrealized_pnl: number | null
+  unrealized_pnl_pct: number | null
+  atr: number
+  stop_loss: number
+  stop_distance_pct: number | null
+  s1_low: number | null
+  s1_distance_pct: number | null
+  s2_low: number | null
+  s2_distance_pct: number | null
+  action: 'HOLD' | 'STOP_LOSS' | 'S1_EXIT' | 'S2_EXIT'
+  near_stop: boolean
+  near_s1: boolean
+}
+
+type IbkrCandidate = {
+  symbol: string
+  current_price: number | null
+  s1_high: number | null
+  s2_high: number | null
+  atr: number | null
+  signal: string
+  active_signal: string | null
+  gap_pct: number | null
+  in_position: boolean
+}
+
+type IbkrMonitorData = {
+  ok: boolean
+  ts: string
+  gateway_connected: boolean
+  account: IbkrAccount | null
+  positions: IbkrPosition[]
+  exit_signals: string[]
+  entry_candidates: IbkrCandidate[]
+  universe_source: string
+  error: string | null
+}
+
+type RunResult = { ok: boolean; stdout: string; stderr: string }
+
+type Props = {
+  apiBase: string
+  authHeaders: () => Record<string, string>
+}
+
+const INITIAL_CAPITAL = 100_000
+
+// ── 심볼 이름 맵 ─────────────────────────────────────────────────────────────
+
+const ALPACA_SYMBOL_NAMES: Record<string, string> = {
+  GOOG: 'Google', GOOGL: 'Google', GOOP: 'Google',
+  NVDA: 'NVIDIA', TER: 'Teradyne', TSLA: 'Tesla',
+  SMH: '반도체 ETF', SOXX: '반도체 ETF', BOTZ: '로보틱스 ETF',
+  PLTR: 'Palantir', ROBO: '로봇 ETF', SPY: 'S&P 500 ETF', QQQ: '나스닥 100 ETF',
+}
+
+const IBKR_SYMBOL_NAMES: Record<string, string> = {
+  NVDA: 'NVIDIA', AVGO: 'Broadcom', TSM: 'TSMC (ADR)',
+  MU: 'Micron', ANET: 'Arista Networks', VRT: 'Vertiv',
+  TER: 'Teradyne', SYM: 'Symbotic', ISRG: 'Intuitive Surgical',
+  ROK: 'Rockwell Auto.', CEG: 'Constellation Energy', VST: 'Vistra',
+  GEV: 'GE Vernova', PWR: 'Quanta Services',
+}
+
+const ALL_SYMBOL_NAMES: Record<string, string> = { ...ALPACA_SYMBOL_NAMES, ...IBKR_SYMBOL_NAMES }
+
+function symDisplay(symbol?: string | null, names = ALL_SYMBOL_NAMES) {
+  const code = String(symbol || '').trim().toUpperCase()
+  return { code: code || '—', name: names[code] || '종목명 확인 필요' }
+}
+
+// ── 포맷 헬퍼 ─────────────────────────────────────────────────────────────────
+
+function fmt(n: number | undefined | null, decimals = 2): string {
+  if (n === undefined || n === null || isNaN(n as number)) return '—'
+  return (n as number).toLocaleString('en-US', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })
+}
+
+function fmtPct(n: number | undefined | null): string {
+  if (n === undefined || n === null || isNaN(n as number)) return '—'
+  const v = n as number
+  const sign = v >= 0 ? '+' : ''
+  return `${sign}${fmt(v, 2)}%`
+}
+
+function fmtUsd(n: number | undefined | null): string {
+  if (n === undefined || n === null || isNaN(n as number)) return '—'
+  const v = n as number
+  const sign = v >= 0 ? '+$' : '-$'
+  return `${sign}${fmt(Math.abs(v), 2)}`
+}
+
+function relativeTime(iso: string): string {
+  try {
+    const diff = (Date.now() - new Date(iso).getTime()) / 1000
+    if (diff < 60) return '방금 전'
+    if (diff < 3600) return `${Math.floor(diff / 60)}분 전`
+    if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`
+    return `${Math.floor(diff / 86400)}일 전`
+  } catch {
+    return iso.slice(0, 16).replace('T', ' ')
+  }
+}
+
+function formatEntryDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })
+  } catch {
+    return iso.slice(0, 10)
+  }
+}
+
+// ── 공통 서브 컴포넌트 ────────────────────────────────────────────────────────
+
+function SymbolCell({ symbol, names = ALL_SYMBOL_NAMES }: { symbol?: string | null; names?: Record<string, string> }) {
+  const item = symDisplay(symbol, names)
+  return (
+    <span className="symbol-cell">
+      <strong>{item.code}</strong>
+      <small>{item.name}</small>
+    </span>
+  )
+}
+
+function AlpacaSignalBadge({ signal }: { signal: string }) {
+  const cls =
+    signal === 'breakout_long' ? 'signal-long'
+    : signal === 'breakout_short' ? 'signal-short'
+    : signal === 'neutral' ? 'signal-neutral'
+    : 'signal-na'
+  const label =
+    signal === 'breakout_long' ? '▲ LONG'
+    : signal === 'breakout_short' ? '▼ SHORT'
+    : signal === 'neutral' ? '— 중립'
+    : signal === 'insufficient_data' ? '데이터 부족'
+    : signal
+  return <span className={`signal-badge ${cls}`}>{label}</span>
+}
+
+function IbkrSignalBadge({ signal, active }: { signal: string; active: string | null }) {
+  if (signal === 'breakout_long')
+    return <span className="signal-badge signal-long">▲ {active === 'S2' ? 'S2 LONG' : 'S1 LONG'}</span>
+  if (signal === 'neutral') return <span className="signal-badge signal-neutral">— 중립</span>
+  if (signal === 'insufficient_data') return <span className="signal-badge signal-na">데이터 부족</span>
+  if (signal === 'no_connection') return <span className="signal-badge signal-na">미연결</span>
+  return <span className="signal-badge signal-na">{signal}</span>
+}
+
+function ActionBadge({ action }: { action: IbkrPosition['action'] }) {
+  if (action === 'HOLD') return <span className="position-action-badge action-hold">HOLD</span>
+  if (action === 'STOP_LOSS') return <span className="position-action-badge action-exit-badge">손절 청산!</span>
+  if (action === 'S1_EXIT') return <span className="position-action-badge action-warn-badge">S1 청산</span>
+  if (action === 'S2_EXIT') return <span className="position-action-badge action-warn-badge">S2 청산</span>
+  return <span className="position-action-badge action-hold">{action}</span>
+}
+
+function PnlCell({ v }: { v: number | undefined | null }) {
+  if (v === undefined || v === null) return <td className="num">—</td>
+  const cls = v > 0 ? 'pnl-pos' : v < 0 ? 'pnl-neg' : ''
+  return <td className={`num ${cls}`}>{fmtPct(v)}</td>
+}
+
+function KpiRow({ label, value, pass, note }: { label: string; value: string; pass?: boolean; note?: string }) {
+  const icon = pass === undefined ? '○' : pass ? '✓' : '✗'
+  const cls = pass === undefined ? '' : pass ? 'ok' : 'danger'
+  return (
+    <li className={`kpi-row ${cls}`}>
+      <span className="kpi-icon">{icon}</span>
+      <span className="kpi-label">{label}</span>
+      <span className="kpi-value">{value}</span>
+      {note && <span className="kpi-note">{note}</span>}
+    </li>
+  )
+}
+
+// ── 포트폴리오 차트 (Alpaca 30D) ──────────────────────────────────────────────
+
+type ChartPoint = { date: string; value: number; pnl_pct: number }
+
+function PortfolioChart({ data }: { data: ChartPoint[] }) {
+  const svgRef = useRef<SVGSVGElement>(null)
+  const [hover, setHover] = useState<{ x: number; y: number; idx: number } | null>(null)
+
+  if (data.length < 2) return null
+
+  const W = 520, H = 120
+  const ml = 72, mr = 16, mt = 12, mb = 28
+  const cw = W - ml - mr
+  const ch = H - mt - mb
+
+  const vals = data.map(d => d.value)
+  const minV = Math.min(...vals)
+  const maxV = Math.max(...vals)
+  const range = maxV - minV || Math.max(maxV * 0.002, 1)
+  const padV = range * 0.1
+
+  const yMin = minV - padV
+  const yMax = maxV + padV
+  const yRange = yMax - yMin
+
+  const px = (i: number) => ml + (i / (data.length - 1)) * cw
+  const py = (v: number) => mt + (1 - (v - yMin) / yRange) * ch
+
+  const pts = data.map((d, i) => `${px(i)},${py(d.value)}`).join(' ')
+  const area = data.map((d, i) => `${px(i)},${py(d.value)}`).join(' ')
+    + ` ${px(data.length - 1)},${mt + ch} ${ml},${mt + ch}`
+
+  const isUp = vals[vals.length - 1] >= vals[0]
+  const lineColor = isUp ? '#ef4444' : '#3b82f6'
+
+  const yTicks = [yMin + yRange * 0.05, yMin + yRange * 0.5, yMin + yRange * 0.95]
+  const xIdxs = [0, Math.floor((data.length - 1) / 2), data.length - 1]
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const relX = (e.clientX - rect.left) * (W / rect.width)
+    const chartX = relX - ml
+    if (chartX < 0 || chartX > cw) { setHover(null); return }
+    const idx = Math.round((chartX / cw) * (data.length - 1))
+    const clampedIdx = Math.max(0, Math.min(data.length - 1, idx))
+    setHover({ x: px(clampedIdx), y: py(data[clampedIdx].value), idx: clampedIdx })
+  }
+
+  const hPoint = hover !== null ? data[hover.idx] : null
+  const tooltipX = hover ? Math.min(hover.x + 8, W - 130) : 0
+  const tooltipY = hover ? Math.max(hover.y - 48, mt) : 0
+
+  return (
+    <svg
+      ref={svgRef}
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+      className="spark-svg spark-full"
+      onMouseMove={handleMouseMove}
+      onMouseLeave={() => setHover(null)}
+    >
+      <defs>
+        <linearGradient id="tocPGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={lineColor} stopOpacity="0.25" />
+          <stop offset="100%" stopColor={lineColor} stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+      {yTicks.map((v, i) => (
+        <g key={i}>
+          <line x1={ml} y1={py(v)} x2={ml + cw} y2={py(v)} stroke="rgba(0,0,0,0.06)" strokeWidth="1" />
+          <text x={ml - 6} y={py(v) + 4} textAnchor="end" className="chart-axis-label">
+            ${(v / 1000).toFixed(1)}k
+          </text>
+        </g>
+      ))}
+      {xIdxs.map(i => (
+        <text key={i} x={px(i)} y={H - 6} textAnchor="middle" className="chart-axis-label">
+          {data[i].date}
+        </text>
+      ))}
+      <polygon points={area} fill="url(#tocPGrad)" />
+      <polyline points={pts} fill="none" stroke={lineColor} strokeWidth="1.5" strokeLinejoin="round" />
+      {hover && (
+        <>
+          <line x1={hover.x} y1={mt} x2={hover.x} y2={mt + ch} stroke="rgba(0,0,0,0.15)" strokeWidth="1" strokeDasharray="3,3" />
+          <circle cx={hover.x} cy={hover.y} r="4" fill={lineColor} stroke="#fff" strokeWidth="2" />
+          <rect x={tooltipX} y={tooltipY} width="118" height="44" rx="5"
+            fill="#fff" stroke="#e2e8f0" strokeWidth="1" />
+          <text x={tooltipX + 8} y={tooltipY + 14} className="chart-axis-label" style={{ fill: '#64748b' }}>{hPoint?.date}</text>
+          <text x={tooltipX + 8} y={tooltipY + 30} style={{ fill: '#0f172a', fontSize: '0.72rem', fontWeight: '600' }}>
+            ${hPoint ? (hPoint.value / 1000).toFixed(2) : ''}k
+          </text>
+          <text x={tooltipX + 80} y={tooltipY + 30} style={{ fill: (hPoint?.pnl_pct ?? 0) >= 0 ? '#ef4444' : '#3b82f6', fontSize: '0.7rem', fontWeight: '600' }}>
+            {hPoint ? `${hPoint.pnl_pct >= 0 ? '+' : ''}${hPoint.pnl_pct.toFixed(2)}%` : ''}
+          </text>
+        </>
+      )}
+    </svg>
+  )
+}
+
+// ── 급락 브리핑 패널 (Alpaca 전용) ───────────────────────────────────────────
+
+function triggerLabel(trigger: DropAlert['trigger']) {
+  return trigger === 'rapid' ? '급속 낙폭' : '누적 낙폭'
+}
+
+function DropAlertPanel({ alerts, onAck, threshold }: {
+  alerts: DropAlert[]
+  onAck: (id: string) => void
+  threshold: number
+}) {
+  const unacked = alerts.filter(a => !a.acknowledged)
+  const hasActive = unacked.length > 0
+
+  return (
+    <article className={`panel alpaca-full drop-alert-panel ${hasActive ? 'drop-alert-active' : ''}`}>
+      <div className="panel-head">
+        <h3 className="drop-alert-title">
+          {hasActive && <span className="drop-alert-badge">{unacked.length}</span>}
+          급락 브리핑 <span className="broker-tag alpaca">Alpaca</span>
+        </h3>
+        <span className="data-meta">임계값: 단기 {threshold}% | 진입가 대비 -5% | 60초 폴링 · 30분 쿨다운</span>
+        <span className="term-note">OpenClaw가 급락 감지 시 자동 수집 후 Claude가 원인을 분석하고 CEO에게 Slack 긴급 보고합니다.</span>
+      </div>
+      {alerts.length === 0 ? (
+        <p className="drop-alert-empty">현재 감지된 급락 이벤트 없음 — 실시간 모니터링 중</p>
+      ) : (
+        <div className="drop-alert-list">
+          {alerts.map(a => (
+            <div key={a.id} className={`drop-alert-card ${a.acknowledged ? 'drop-alert-acked' : 'drop-alert-unacked'}`}>
+              <div className="drop-alert-header">
+                <span className="drop-alert-symbol">{a.symbol}</span>
+                <span className={`drop-alert-pct ${a.drop_pct <= -5 ? 'severe' : ''}`}>{a.drop_pct.toFixed(1)}%</span>
+                <span className="signal-badge signal-short">{triggerLabel(a.trigger)}</span>
+                <span className="drop-alert-time">{relativeTime(a.detected_at)}</span>
+                {!a.acknowledged && (
+                  <button className="drop-alert-ack-btn" onClick={() => onAck(a.id)}>확인</button>
+                )}
+              </div>
+              <div className="drop-alert-price">${a.prev_price.toFixed(2)} → ${a.current_price.toFixed(2)}</div>
+              {a.news_titles.length > 0 && (
+                <ul className="drop-alert-news">
+                  {a.news_titles.slice(0, 3).map((t, i) => <li key={i}>{t}</li>)}
+                </ul>
+              )}
+              <p className="drop-alert-briefing">{a.briefing}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </article>
+  )
+}
+
+// ── IBKR 위험 바 ──────────────────────────────────────────────────────────────
+
+function RiskBar({ label, distancePct, referencePrice }: {
+  label: string
+  distancePct: number | null
+  referencePrice: number | null
+}) {
+  if (distancePct === null || referencePrice === null) {
+    return (
+      <div className="risk-bar-row">
+        <span className="risk-bar-label">{label}</span>
+        <span className="risk-bar-ref">—</span>
+        <div className="risk-bar-track"><div className="risk-bar-fill safe" style={{ width: '0%' }} /></div>
+        <span className="risk-bar-pct">—</span>
+      </div>
+    )
+  }
+  const clampedPct = Math.min(Math.max(distancePct, 0), 100)
+  const fillClass = distancePct < 5 ? 'danger' : distancePct < 15 ? 'warn' : 'safe'
+  return (
+    <div className="risk-bar-row">
+      <span className="risk-bar-label">{label}</span>
+      <span className="risk-bar-ref">${fmt(referencePrice)}</span>
+      <div className="risk-bar-track">
+        <div className={`risk-bar-fill ${fillClass}`} style={{ width: `${clampedPct}%` }} />
+      </div>
+      <span className={`risk-bar-pct ${fillClass}`}>{fmt(distancePct, 1)}% 여유</span>
+    </div>
+  )
+}
+
+// ── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
+
+export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
+  // Alpaca state
+  const [alpacaData, setAlpacaData] = useState<AlpacaPaperDashboard | null>(null)
+  const [alpacaLoading, setAlpacaLoading] = useState(true)
+  const [alpacaError, setAlpacaError] = useState<string | null>(null)
+  const [alpacaLastFetch, setAlpacaLastFetch] = useState<string | null>(null)
+  const [alpacaRunning, setAlpacaRunning] = useState(false)
+  const [alpacaRunResult, setAlpacaRunResult] = useState<RunResult | null>(null)
+  const [dropAlerts, setDropAlerts] = useState<DropAlert[]>([])
+
+  // IBKR state
+  const [ibkrData, setIbkrData] = useState<IbkrMonitorData | null>(null)
+  const [ibkrLoading, setIbkrLoading] = useState(true)
+  const [ibkrError, setIbkrError] = useState<string | null>(null)
+  const [ibkrLastFetch, setIbkrLastFetch] = useState<string | null>(null)
+  const [ibkrRunning, setIbkrRunning] = useState(false)
+  const [ibkrRunResult, setIbkrRunResult] = useState<RunResult | null>(null)
+  const [confirmIbkrExecute, setConfirmIbkrExecute] = useState(false)
+
+  // UI state
+  const [activeSignalTab, setActiveSignalTab] = useState<'alpaca' | 'ibkr'>('ibkr')
+
+  // ── Alpaca 데이터 로드 ──────────────────────────────────────────────────────
+
+  const loadAlpaca = useCallback(async (silent = false) => {
+    if (!silent) setAlpacaLoading(true)
+    setAlpacaError(null)
+    try {
+      const res = await fetch(`${apiBase}/api/paper-trading/dashboard`, { headers: authHeaders() })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const json = (await res.json()) as AlpacaPaperDashboard
+      if (json.error && !json.account) throw new Error(json.error)
+      setAlpacaData(json)
+      setAlpacaLastFetch(new Date().toLocaleTimeString('ko-KR'))
+    } catch (e) {
+      setAlpacaError(e instanceof Error ? e.message : '로드 실패')
+    } finally {
+      setAlpacaLoading(false)
+    }
+  }, [apiBase, authHeaders])
+
+  const runAlpacaTrader = useCallback(async (execute: boolean) => {
+    setAlpacaRunning(true)
+    setAlpacaRunResult(null)
+    try {
+      const endpoint = execute ? 'execute' : 'run'
+      const res = await fetch(`${apiBase}/api/paper-trading/${endpoint}`, {
+        method: 'POST',
+        headers: authHeaders(),
+      })
+      const json = (await res.json()) as RunResult
+      setAlpacaRunResult(json)
+      if (json.ok) void loadAlpaca(true)
+    } catch (e) {
+      setAlpacaRunResult({ ok: false, stdout: '', stderr: e instanceof Error ? e.message : '실행 실패' })
+    } finally {
+      setAlpacaRunning(false)
+    }
+  }, [apiBase, authHeaders, loadAlpaca])
+
+  const loadDropAlerts = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiBase}/api/paper-trading/drop-alerts`, { headers: authHeaders() })
+      if (!res.ok) return
+      const json = await res.json() as { ok: boolean; alerts: DropAlert[] }
+      if (json.ok) setDropAlerts(json.alerts)
+    } catch { /* silent */ }
+  }, [apiBase, authHeaders])
+
+  const ackAlert = useCallback(async (alertId: string) => {
+    try {
+      await fetch(`${apiBase}/api/paper-trading/drop-alerts/ack`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alert_id: alertId }),
+      })
+      setDropAlerts(prev => prev.map(a => a.id === alertId ? { ...a, acknowledged: true } : a))
+    } catch { /* silent */ }
+  }, [apiBase, authHeaders])
+
+  // ── IBKR 데이터 로드 ──────────────────────────────────────────────────────
+
+  const loadIbkr = useCallback(async (silent = false) => {
+    if (!silent) setIbkrLoading(true)
+    setIbkrError(null)
+    try {
+      const res = await fetch(`${apiBase}/api/ibkr/monitor`, { headers: authHeaders() })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const json = (await res.json()) as IbkrMonitorData
+      setIbkrData(json)
+      setIbkrLastFetch(new Date().toLocaleTimeString('ko-KR'))
+    } catch (e) {
+      setIbkrError(e instanceof Error ? e.message : '로드 실패')
+    } finally {
+      setIbkrLoading(false)
+    }
+  }, [apiBase, authHeaders])
+
+  const runIbkrMonitor = useCallback(async (mode: 'scan' | 'execute') => {
+    setIbkrRunning(true)
+    setIbkrRunResult(null)
+    setConfirmIbkrExecute(false)
+    try {
+      const endpoint = mode === 'execute' ? 'execute' : 'scan'
+      const res = await fetch(`${apiBase}/api/ibkr/monitor/${endpoint}`, {
+        method: 'POST',
+        headers: authHeaders(),
+      })
+      const json = (await res.json()) as RunResult
+      setIbkrRunResult(json)
+      if (json.ok) void loadIbkr(true)
+    } catch (e) {
+      setIbkrRunResult({ ok: false, stdout: '', stderr: e instanceof Error ? e.message : '실행 실패' })
+    } finally {
+      setIbkrRunning(false)
+    }
+  }, [apiBase, authHeaders, loadIbkr])
+
+  // ── 초기 로드 + 자동 갱신 ────────────────────────────────────────────────
+
+  useEffect(() => {
+    const t = setTimeout(() => void loadAlpaca(), 0)
+    const iv = setInterval(() => void loadAlpaca(true), 5 * 60 * 1000)
+    return () => { clearTimeout(t); clearInterval(iv) }
+  }, [loadAlpaca])
+
+  useEffect(() => {
+    void loadDropAlerts()
+    const iv = setInterval(() => void loadDropAlerts(), 30 * 1000)
+    return () => clearInterval(iv)
+  }, [loadDropAlerts])
+
+  useEffect(() => {
+    const t = setTimeout(() => void loadIbkr(), 0)
+    const iv = setInterval(() => void loadIbkr(true), 5 * 60 * 1000)
+    return () => { clearTimeout(t); clearInterval(iv) }
+  }, [loadIbkr])
+
+  // ── 파생 값 계산 ─────────────────────────────────────────────────────────
+
+  const alpacaAccount = alpacaData?.account
+  const alpacaPositions = (alpacaData?.positions ?? []).filter(
+    (p): p is AlpacaPosition & { symbol: string } => !p.error && !!p.symbol
+  )
+  const alpacaSignals = (alpacaData?.signals ?? []).filter(s => !s.error)
+  const alpacaActiveSignals = alpacaData?.active_signals ?? []
+  const alpacaOrders = alpacaData?.orders ?? []
+  const ar018Kpi = alpacaData?.ar018_kpi
+
+  const ibkrAccount = ibkrData?.account
+  const ibkrPositions = ibkrData?.positions ?? []
+  const ibkrCandidates = ibkrData?.entry_candidates ?? []
+  const ibkrExitSignals = ibkrData?.exit_signals ?? []
+  const gatewayConnected = ibkrData?.gateway_connected ?? false
+
+  const totalPnl = alpacaAccount?.total_pnl ?? 0
+  const totalPnlPct = alpacaAccount?.total_pnl_pct ?? 0
+
+  const alpacaChartData = (() => {
+    if (!alpacaData) return []
+    const base = alpacaData.history.base ?? INITIAL_CAPITAL
+    const current = alpacaAccount?.portfolio_value ?? base
+    const pct = base > 0 ? ((current - base) / base) * 100 : 0
+    const today = new Date().toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' }).replace('. ', '/').replace('.', '')
+    const raw = alpacaData.history.chart.filter(d => d.value > 0).slice(-30)
+    if (raw.length >= 2) {
+      return [...raw.slice(0, -1), { ...raw[raw.length - 1], value: current, pnl_pct: pct }]
+    }
+    return [
+      { date: 'start', value: base, pnl_pct: 0 },
+      { date: today, value: current, pnl_pct: pct },
+    ]
+  })()
+
+  const hasAnyPositions = alpacaPositions.length > 0 || ibkrPositions.length > 0
+
+  // ── 렌더 ──────────────────────────────────────────────────────────────────
+
+  return (
+    <section className="trading-ops-section">
+
+      {/* ── 섹션 헤더 ── */}
+      <div className="section-head">
+        <div>
+          <h2>트레이딩 오퍼레이션</h2>
+          <p>Alpaca(모의투자)와 IBKR(실전 동일 규칙)을 동등하게 비교합니다.</p>
+          <p className="term-note">두 브로커 모두 Turtle Trading 5원칙을 기반으로 운영됩니다.</p>
+        </div>
+        <div className="section-head-actions">
+          <span className="data-meta">
+            {alpacaLastFetch && `Alpaca: ${alpacaLastFetch}`}
+            {alpacaLastFetch && ibkrLastFetch && ' · '}
+            {ibkrLastFetch && `IBKR: ${ibkrLastFetch}`}
+          </span>
+          <button
+            type="button"
+            className="btn-secondary btn-sm"
+            onClick={() => { void loadAlpaca(); void loadIbkr() }}
+            disabled={alpacaRunning || ibkrRunning}
+          >
+            새로고침
+          </button>
+          {/* Alpaca 버튼 */}
+          <button
+            type="button"
+            className="btn-secondary btn-sm"
+            onClick={() => void runAlpacaTrader(false)}
+            disabled={alpacaRunning || ibkrRunning}
+            title="Alpaca: 신호 스캔 + 포지션 관리 (주문 없음)"
+          >
+            {alpacaRunning ? '실행 중…' : 'Alpaca 점검'}
+          </button>
+          <button
+            type="button"
+            className="btn-execute btn-sm"
+            onClick={() => void runAlpacaTrader(true)}
+            disabled={alpacaRunning || ibkrRunning}
+            title="Alpaca: Turtle 신호 시 실제 Paper 주문 실행"
+          >
+            {alpacaRunning ? '실행 중…' : 'Alpaca 가상 주문'}
+          </button>
+          {/* IBKR 버튼 */}
+          <button
+            type="button"
+            className="btn-secondary btn-sm"
+            onClick={() => void runIbkrMonitor('scan')}
+            disabled={alpacaRunning || ibkrRunning}
+            title="IBKR: 신호 스캔 (주문 없음)"
+          >
+            {ibkrRunning ? '실행 중…' : 'IBKR 점검'}
+          </button>
+          {!confirmIbkrExecute ? (
+            <button
+              type="button"
+              className="btn-execute btn-sm"
+              onClick={() => setConfirmIbkrExecute(true)}
+              disabled={alpacaRunning || ibkrRunning || ibkrExitSignals.length === 0}
+              title={ibkrExitSignals.length > 0 ? `EXIT 신호: ${ibkrExitSignals.join(', ')}` : '현재 EXIT 신호 없음'}
+            >
+              IBKR 청산 실행
+            </button>
+          ) : (
+            <span className="ibkr-confirm-row">
+              <span className="ibkr-confirm-label">{ibkrExitSignals.join(', ')} 청산?</span>
+              <button type="button" className="btn-danger btn-sm" onClick={() => void runIbkrMonitor('execute')} disabled={ibkrRunning}>확인</button>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => setConfirmIbkrExecute(false)}>취소</button>
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ── ROW 1: 계좌 요약 (side-by-side) ── */}
+      <div className="trading-accounts-grid">
+
+        {/* Alpaca 계좌 카드 */}
+        <article className="trading-account-card alpaca">
+          <div className="panel-head">
+            <h3>Alpaca <span className="broker-tag alpaca">모의투자</span></h3>
+          </div>
+          {alpacaLoading ? (
+            <p className="data-meta loading-pulse">Alpaca 계좌 로드 중…</p>
+          ) : alpacaError || !alpacaAccount ? (
+            <div>
+              <p className="data-warn">연결 오류: {alpacaError ?? '알 수 없는 오류'}</p>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => void loadAlpaca()}>재시도</button>
+            </div>
+          ) : !alpacaAccount.ok ? (
+            <p className="data-warn">계좌 조회 실패: {alpacaAccount.error}</p>
+          ) : (
+            <>
+              <div className="split-2">
+                <div>
+                  <p className="data-label">포트폴리오 가치</p>
+                  <p className="data-value">${fmt(alpacaAccount.portfolio_value)}</p>
+                </div>
+                <div>
+                  <p className="data-label">총 손익</p>
+                  <p className={`data-value ${totalPnl >= 0 ? 'pnl-pos' : 'pnl-neg'}`}>
+                    {fmtUsd(totalPnl)}
+                    <span className="data-sub"> ({fmtPct(totalPnlPct)})</span>
+                  </p>
+                </div>
+              </div>
+              <div className="split-3 mt-2">
+                <div>
+                  <p className="data-label">현금</p>
+                  <p className="data-value-sm">${fmt(alpacaAccount.cash)}</p>
+                </div>
+                <div>
+                  <p className="data-label">매수 가능</p>
+                  <p className="data-value-sm">${fmt(alpacaAccount.buying_power)}</p>
+                </div>
+                <div>
+                  <p className="data-label">당일 매매</p>
+                  <p className="data-value-sm">{alpacaAccount.day_trade_count ?? 0}회</p>
+                </div>
+              </div>
+              <div className="alpaca-spark">
+                <p className="data-label">포트폴리오 추이 (30D)</p>
+                <PortfolioChart data={alpacaChartData} />
+              </div>
+            </>
+          )}
+        </article>
+
+        {/* IBKR 계좌 카드 */}
+        <article className="trading-account-card ibkr">
+          <div className="panel-head">
+            <h3>IBKR <span className="broker-tag ibkr">실전 동일 규칙</span></h3>
+            {ibkrAccount?.account_id && (
+              <span className="data-meta mono">{ibkrAccount.account_id} · Paper Trading</span>
+            )}
+          </div>
+          {ibkrLoading ? (
+            <p className="data-meta loading-pulse">IBKR 계좌 로드 중…</p>
+          ) : ibkrError && !ibkrData ? (
+            <div>
+              <p className="data-warn">연결 오류: {ibkrError}</p>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => void loadIbkr()}>재시도</button>
+            </div>
+          ) : (
+            <>
+              {/* 게이트웨이 상태 */}
+              <div className={`ibkr-status-row ${ibkrExitSignals.length > 0 ? 'has-exit' : ''}`} style={{ marginBottom: '0.75rem' }}>
+                <span className={`gateway-dot ${gatewayConnected ? 'online' : 'offline'}`} />
+                <span className="ibkr-status-item">
+                  <span className="ibkr-status-label">Gateway</span>
+                  <span className="ibkr-status-value">{gatewayConnected ? '연결됨' : '오프라인'}</span>
+                </span>
+                {ibkrData?.ts && (
+                  <>
+                    <span className="ibkr-status-sep">·</span>
+                    <span className="ibkr-status-meta">{relativeTime(ibkrData.ts)}</span>
+                  </>
+                )}
+                {ibkrExitSignals.length > 0 && (
+                  <>
+                    <span className="ibkr-status-sep">·</span>
+                    <span className="ibkr-exit-alert">⚠ EXIT {ibkrExitSignals.length}건</span>
+                  </>
+                )}
+              </div>
+
+              {ibkrAccount ? (
+                <>
+                  <div className="split-2">
+                    <div>
+                      <p className="data-label">NAV</p>
+                      <p className="data-value">${fmt(ibkrAccount.nav)}</p>
+                    </div>
+                    <div>
+                      <p className="data-label">총 손익</p>
+                      <p className={`data-value ${ibkrAccount.total_pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}`}>
+                        {fmtUsd(ibkrAccount.total_pnl)}
+                        <span className="data-sub"> ({fmtPct(ibkrAccount.total_pnl_pct)})</span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="split-3 mt-2">
+                    <div>
+                      <p className="data-label">현금</p>
+                      <p className="data-value-sm">${fmt(ibkrAccount.cash, 0)}</p>
+                    </div>
+                    <div>
+                      <p className="data-label">포지션</p>
+                      <p className="data-value-sm">{ibkrPositions.length}건</p>
+                    </div>
+                    <div>
+                      <p className="data-label">신호</p>
+                      <p className="data-value-sm">{ibkrExitSignals.length > 0 ? `EXIT ${ibkrExitSignals.length}` : '없음'}</p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="data-meta">{gatewayConnected ? '계좌 정보 없음' : 'Gateway 연결 후 계좌 정보 표시'}</p>
+              )}
+
+              {/* IBKR 포지션 미니 요약 */}
+              {ibkrPositions.length > 0 && (
+                <div className="ibkr-pos-summary">
+                  <p className="data-label" style={{ marginBottom: '0.35rem' }}>포지션 현황</p>
+                  {ibkrPositions.map(pos => (
+                    <div key={pos.symbol} className={`ibkr-pos-row ${pos.action !== 'HOLD' ? 'ibkr-pos-exit' : ''}`}>
+                      <span className="ibkr-pos-symbol">
+                        <strong>{pos.symbol}</strong>
+                        <small>{ibkrData?.positions && IBKR_SYMBOL_NAMES[pos.symbol] ? IBKR_SYMBOL_NAMES[pos.symbol] : ''}</small>
+                      </span>
+                      <span className={`ibkr-pos-pnl ${(pos.unrealized_pnl_pct ?? 0) >= 0 ? 'pnl-pos' : 'pnl-neg'}`}>
+                        {fmtPct(pos.unrealized_pnl_pct)}
+                      </span>
+                      <ActionBadge action={pos.action} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </article>
+      </div>
+
+      {/* ── ROW 1.5: IBKR 오프라인 / EXIT 배너 ── */}
+      {!ibkrLoading && ibkrData && !gatewayConnected && (
+        <div className="ibkr-offline-banner">
+          <span className="gateway-dot offline" />
+          IB Gateway 오프라인 — 포지션은 상태 파일 기준으로 표시됩니다. 현재가 및 신호는 연결 후 갱신됩니다.
+        </div>
+      )}
+      {!ibkrLoading && ibkrExitSignals.length > 0 && (
+        <div className="ibkr-exit-banner">
+          <span>⚠ EXIT 신호 발생: </span>
+          {ibkrExitSignals.map(s => <strong key={s}>{s} </strong>)}
+          <span>— "IBKR 청산 실행" 버튼으로 GTC 매도 주문을 발행하세요.</span>
+        </div>
+      )}
+
+      {/* ── 실행 결과 박스 ── */}
+      {alpacaRunResult && (
+        <div className={`run-result-box ${alpacaRunResult.ok ? 'run-ok' : 'run-err'}`}>
+          <div className="run-result-head">
+            <span>Alpaca 실행 결과 — {alpacaRunResult.ok ? '✓ 완료' : '✗ 실패'}</span>
+            <button type="button" className="btn-ghost btn-xs" onClick={() => setAlpacaRunResult(null)}>✕</button>
+          </div>
+          {alpacaRunResult.stdout && <pre className="run-output">{alpacaRunResult.stdout}</pre>}
+          {alpacaRunResult.stderr && <pre className="run-output run-stderr">{alpacaRunResult.stderr}</pre>}
+        </div>
+      )}
+      {ibkrRunResult && (
+        <div className={`run-result-box ${ibkrRunResult.ok ? 'run-ok' : 'run-err'}`}>
+          <div className="run-result-head">
+            <span>IBKR 실행 결과 — {ibkrRunResult.ok ? '✓ 완료' : '✗ 실패'}</span>
+            <button type="button" className="btn-ghost btn-xs" onClick={() => setIbkrRunResult(null)}>✕</button>
+          </div>
+          {ibkrRunResult.stdout && <pre className="run-output">{ibkrRunResult.stdout}</pre>}
+          {ibkrRunResult.stderr && <pre className="run-output run-stderr">{ibkrRunResult.stderr}</pre>}
+        </div>
+      )}
+
+      {/* ── ROW 2: 통합 포지션 테이블 ── */}
+      {hasAnyPositions && (
+        <article className="panel alpaca-full">
+          <div className="panel-head">
+            <h3>현재 포지션</h3>
+            <span className="data-meta">
+              총 {alpacaPositions.length + ibkrPositions.length}건
+              {alpacaPositions.length > 0 && ` (Alpaca ${alpacaPositions.length})`}
+              {ibkrPositions.length > 0 && ` (IBKR ${ibkrPositions.length})`}
+            </span>
+          </div>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>브로커</th>
+                  <th>종목</th>
+                  <th className="num">수량</th>
+                  <th className="num">진입가</th>
+                  <th className="num">현재가</th>
+                  <th className="num">손익</th>
+                  <th className="num">손익%</th>
+                  <th className="num">손절가</th>
+                  <th>상태</th>
+                </tr>
+              </thead>
+              <tbody>
+                {alpacaPositions.map(p => (
+                  <tr key={`alpaca-${p.symbol}`} className={p.near_stop ? 'row-warning' : ''}>
+                    <td><span className="broker-tag alpaca">Alpaca</span></td>
+                    <td><SymbolCell symbol={p.symbol} names={ALPACA_SYMBOL_NAMES} /></td>
+                    <td className="num">{p.qty}</td>
+                    <td className="num">${fmt(p.entry_price)}</td>
+                    <td className="num">${fmt(p.current_price)}</td>
+                    <td className={`num ${(p.unrealized_pnl ?? 0) > 0 ? 'pnl-pos' : (p.unrealized_pnl ?? 0) < 0 ? 'pnl-neg' : ''}`}>
+                      {fmtUsd(p.unrealized_pnl)}
+                    </td>
+                    <PnlCell v={p.unrealized_pnl_pct} />
+                    <td className="num">{p.stop_loss ? `$${fmt(p.stop_loss)}` : '—'}</td>
+                    <td>
+                      {p.near_stop
+                        ? <span className="signal-badge signal-short">⚠ 손절 근접</span>
+                        : <span className="signal-badge signal-neutral">정상</span>}
+                    </td>
+                  </tr>
+                ))}
+                {ibkrPositions.map(pos => (
+                  <tr key={`ibkr-${pos.symbol}`} className={pos.near_stop ? 'row-warning' : pos.action !== 'HOLD' ? 'row-highlight' : ''}>
+                    <td><span className="broker-tag ibkr">IBKR</span></td>
+                    <td><SymbolCell symbol={pos.symbol} names={IBKR_SYMBOL_NAMES} /></td>
+                    <td className="num">{pos.qty}</td>
+                    <td className="num">${fmt(pos.entry_price)}</td>
+                    <td className="num">{pos.current_price !== null ? `$${fmt(pos.current_price)}` : '—'}</td>
+                    <td className={`num ${(pos.unrealized_pnl ?? 0) > 0 ? 'pnl-pos' : (pos.unrealized_pnl ?? 0) < 0 ? 'pnl-neg' : ''}`}>
+                      {fmtUsd(pos.unrealized_pnl)}
+                    </td>
+                    <PnlCell v={pos.unrealized_pnl_pct} />
+                    <td className="num">${fmt(pos.stop_loss)}{pos.stop_distance_pct !== null ? ` (${fmt(pos.stop_distance_pct, 1)}%)` : ''}</td>
+                    <td><ActionBadge action={pos.action} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* IBKR 포지션 위험 바 (포지션이 있을 때만) */}
+          {ibkrPositions.length > 0 && (
+            <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border, #e2e8f0)', paddingTop: '0.75rem' }}>
+              <p className="data-label" style={{ marginBottom: '0.5rem' }}>IBKR 위험 지표 (손절·청산선 거리)</p>
+              <div className="position-cards-grid">
+                {ibkrPositions.map(pos => (
+                  <div key={`risk-${pos.symbol}`} className={`position-risk-card ${pos.action !== 'HOLD' ? 'action-exit' : ''}`}>
+                    <div className="prcard-header">
+                      <div className="prcard-symbol">
+                        <strong>{pos.symbol}</strong>
+                        <small>{IBKR_SYMBOL_NAMES[pos.symbol] ?? '—'}</small>
+                      </div>
+                      <ActionBadge action={pos.action} />
+                    </div>
+                    <div className="prcard-meta">{pos.qty}주 · {pos.exchange} · 진입 {formatEntryDate(pos.entry_ts)}</div>
+                    <div className="prcard-prices">
+                      <div className="prcard-price-main">{pos.current_price !== null ? `$${fmt(pos.current_price)}` : '—'}</div>
+                      <div className="prcard-price-entry">진입 ${fmt(pos.entry_price)}</div>
+                      <div className={`prcard-pnl ${(pos.unrealized_pnl ?? 0) >= 0 ? 'pnl-pos' : 'pnl-neg'}`}>
+                        {fmtUsd(pos.unrealized_pnl)}<span> ({fmtPct(pos.unrealized_pnl_pct)})</span>
+                      </div>
+                    </div>
+                    <div className="prcard-risk-section">
+                      <p className="prcard-risk-title">위험 지표 <small>(낮을수록 청산 임박)</small></p>
+                      <RiskBar label="손절가" distancePct={pos.stop_distance_pct} referencePrice={pos.stop_loss} />
+                      <RiskBar label="S1 청산" distancePct={pos.s1_distance_pct} referencePrice={pos.s1_low} />
+                      <RiskBar label="S2 청산" distancePct={pos.s2_distance_pct} referencePrice={pos.s2_low} />
+                    </div>
+                    <div className="prcard-footer">
+                      <span>ATR ${fmt(pos.atr)}</span>
+                      {pos.market_value !== null && <span>시장가치 ${fmt(pos.market_value, 0)}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </article>
+      )}
+
+      {/* ── ROW 3: 투자 신호 모니터 (탭) ── */}
+      <article className="panel alpaca-full">
+        <div className="panel-head">
+          <h3>투자 신호 모니터</h3>
+          <span className="term-note">Turtle Trading S1(20일)/S2(55일) 브레이크아웃 기준</span>
+        </div>
+
+        <div className="signal-tabs">
+          <button
+            type="button"
+            className={`signal-tab ${activeSignalTab === 'ibkr' ? 'active' : ''}`}
+            onClick={() => setActiveSignalTab('ibkr')}
+          >
+            IBKR 유니버스
+            {ibkrCandidates.filter(c => c.signal === 'breakout_long').length > 0 && (
+              <span className="signal-tab-badge">{ibkrCandidates.filter(c => c.signal === 'breakout_long').length}</span>
+            )}
+          </button>
+          <button
+            type="button"
+            className={`signal-tab ${activeSignalTab === 'alpaca' ? 'active' : ''}`}
+            onClick={() => setActiveSignalTab('alpaca')}
+          >
+            Alpaca 유니버스
+            {alpacaActiveSignals.length > 0 && (
+              <span className="signal-tab-badge">{alpacaActiveSignals.length}</span>
+            )}
+          </button>
+        </div>
+
+        {/* IBKR 신호 탭 */}
+        {activeSignalTab === 'ibkr' && (
+          <>
+            <span className="data-meta" style={{ display: 'block', marginBottom: '0.5rem' }}>
+              Universe 소스: <code>{ibkrData?.universe_source ?? '—'}</code>
+              {ibkrCandidates.filter(c => c.signal === 'breakout_long').length > 0 && (
+                <span className="entry-scanner-active">
+                  {' '}· 활성 신호 {ibkrCandidates.filter(c => c.signal === 'breakout_long').length}건
+                </span>
+              )}
+            </span>
+            {ibkrLoading ? (
+              <p className="data-meta loading-pulse">IBKR 신호 로드 중…</p>
+            ) : ibkrCandidates.length === 0 ? (
+              <p className="data-meta">IBKR 신호 데이터 없음</p>
+            ) : (
+              <>
+                {ibkrCandidates.filter(c => c.signal === 'breakout_long').length > 0 && (
+                  <div className="entry-breakout-bar">
+                    <span className="data-label-inline">활성 신호:</span>
+                    {ibkrCandidates.filter(c => c.signal === 'breakout_long').map(c => (
+                      <span key={c.symbol} className="active-signal-chip">
+                        <strong>{c.symbol}</strong>
+                        <IbkrSignalBadge signal={c.signal} active={c.active_signal} />
+                        {c.in_position && <span className="in-pos-chip">보유 중</span>}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>종목</th>
+                        <th className="num">현재가</th>
+                        <th className="num">S1 돌파기준</th>
+                        <th className="num">S2 돌파기준</th>
+                        <th className="num">S2 거리</th>
+                        <th className="num">ATR</th>
+                        <th>신호</th>
+                        <th>상태</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...ibkrCandidates.filter(c => c.signal === 'breakout_long'), ...ibkrCandidates.filter(c => c.signal !== 'breakout_long')].map(c => (
+                        <tr key={c.symbol} className={c.signal === 'breakout_long' ? 'row-highlight' : c.in_position ? 'row-in-position' : ''}>
+                          <td><SymbolCell symbol={c.symbol} names={IBKR_SYMBOL_NAMES} /></td>
+                          <td className="num">{c.current_price !== null ? `$${fmt(c.current_price)}` : '—'}</td>
+                          <td className="num">{c.s1_high !== null ? `$${fmt(c.s1_high)}` : '—'}</td>
+                          <td className="num">{c.s2_high !== null ? `$${fmt(c.s2_high)}` : '—'}</td>
+                          <td className={`num ${c.gap_pct !== null && c.gap_pct > 0 ? 'pnl-pos' : c.gap_pct !== null && c.gap_pct < 0 ? 'pnl-neg' : ''}`}>
+                            {c.gap_pct !== null ? `${c.gap_pct >= 0 ? '+' : ''}${fmt(c.gap_pct, 1)}%` : '—'}
+                          </td>
+                          <td className="num">{c.atr !== null ? fmt(c.atr, 2) : '—'}</td>
+                          <td><IbkrSignalBadge signal={c.signal} active={c.active_signal} /></td>
+                          <td>{c.in_position ? <span className="in-pos-chip">보유 중</span> : <span className="data-meta">—</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {/* Alpaca 신호 탭 */}
+        {activeSignalTab === 'alpaca' && (
+          <>
+            <span className="data-meta" style={{ display: 'block', marginBottom: '0.5rem' }}>
+              관찰 종목: {(alpacaData?.universe ?? []).map(sym => {
+                const item = symDisplay(sym, ALPACA_SYMBOL_NAMES)
+                return `${item.code}(${item.name})`
+              }).join(', ') || '—'}
+            </span>
+            {alpacaLoading ? (
+              <p className="data-meta loading-pulse">Alpaca 신호 로드 중…</p>
+            ) : alpacaSignals.length === 0 ? (
+              <p className="data-meta">Alpaca 신호 데이터 없음</p>
+            ) : (
+              <>
+                {alpacaActiveSignals.length > 0 && (
+                  <div className="active-signals-bar">
+                    <span className="data-label-inline">활성 신호:</span>
+                    {alpacaActiveSignals.map(s => (
+                      <span key={s.symbol} className="active-signal-chip">
+                        <SymbolCell symbol={s.symbol} names={ALPACA_SYMBOL_NAMES} />
+                        <AlpacaSignalBadge signal={s.signal} />
+                        {s.system}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>종목</th>
+                        <th>신호</th>
+                        <th>시스템</th>
+                        <th className="num">현재가</th>
+                        <th className="num">ATR</th>
+                        <th className="num">S1 고가</th>
+                        <th className="num">S1 저가</th>
+                        <th className="num">S2 고가</th>
+                        <th className="num">S2 저가</th>
+                        <th className="num">손절(롱)</th>
+                        <th>기준일</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {alpacaSignals.map(s => (
+                        <tr key={s.symbol} className={s.signal !== 'neutral' ? 'row-highlight' : ''}>
+                          <td><SymbolCell symbol={s.symbol} names={ALPACA_SYMBOL_NAMES} /></td>
+                          <td><AlpacaSignalBadge signal={s.signal} /></td>
+                          <td>{s.system ?? '—'}</td>
+                          <td className="num">${fmt(s.current_price)}</td>
+                          <td className="num">{s.atr ? fmt(s.atr, 4) : '—'}</td>
+                          <td className="num">${fmt(s.s1_high)}</td>
+                          <td className="num">${fmt(s.s1_low)}</td>
+                          <td className="num">${fmt(s.s2_high)}</td>
+                          <td className="num">${fmt(s.s2_low)}</td>
+                          <td className="num">{s.stop_long ? `$${fmt(s.stop_long)}` : '—'}</td>
+                          <td>{s.as_of ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </article>
+
+      {/* ── ROW 4: Turtle 시스템 준비도 ── */}
+      <div className="turtle-readiness-grid">
+        {/* Alpaca AR-018 KPI */}
+        <article className="panel">
+          <div className="panel-head">
+            <h3>AR-018 통과 기준 <span className="broker-tag alpaca">Alpaca</span></h3>
+            <span className="data-meta">8주 모의 투자 기간에 반드시 확인할 조건</span>
+          </div>
+          {ar018Kpi ? (
+            <ul className="kpi-list">
+              <KpiRow
+                label="누적 수익률"
+                value={fmtPct(totalPnlPct)}
+                pass={undefined}
+                note="목표: 미국 대표 주가지수보다 5%p 이상 뒤처지지 않기"
+              />
+              <KpiRow
+                label="최대 단일 포지션 손실"
+                value={fmtPct(ar018Kpi.max_position_loss_pct)}
+                pass={ar018Kpi.max_loss_pass}
+                note="기준: ≤ −15%"
+              />
+              <KpiRow
+                label="실제 입금 한도"
+                value={`$${ar018Kpi.deposit_cap_usd} hard-cap`}
+                pass={undefined}
+                note="8주 기준을 통과하기 전에는 실제 입금 금지"
+              />
+              <KpiRow
+                label="모의투자 기간 목표"
+                value={`${ar018Kpi.week_target}주`}
+                pass={undefined}
+                note="실제 증권계좌로 옮기기 전 선행 조건"
+              />
+            </ul>
+          ) : (
+            <p className="data-meta">{alpacaLoading ? '로드 중…' : 'KPI 데이터 없음'}</p>
+          )}
+          <div className="alpaca-gate-status">
+            <span className="gate-chip blocked">실전 투자 잠금</span>
+            <span className="data-meta"> — 일부 안전 조건이 아직 끝나지 않았습니다</span>
+            <p className="term-note">TurtleGate는 손절가·위험 한도·사전 검토가 모두 맞는지 보는 자동 안전장치입니다.</p>
+          </div>
+        </article>
+
+        {/* IBKR TurtleGate 상태 */}
+        <article className="panel">
+          <div className="panel-head">
+            <h3>TurtleGate 상태 <span className="broker-tag ibkr">IBKR</span></h3>
+            <span className="data-meta">capital_action_approve 선행 조건</span>
+          </div>
+          <ul className="kpi-list">
+            <KpiRow
+              label="Gateway 연결"
+              value={gatewayConnected ? '연결됨' : '오프라인'}
+              pass={gatewayConnected}
+              note="IB Gateway 4002 포트 연결 상태"
+            />
+            <KpiRow
+              label="포지션 모니터링"
+              value={ibkrPositions.length > 0 ? `${ibkrPositions.length}건 감시 중` : '포지션 없음'}
+              pass={ibkrPositions.length === 0 || ibkrPositions.every(p => p.stop_loss > 0)}
+              note="모든 포지션에 손절가 설정 확인"
+            />
+            <KpiRow
+              label="계좌 리스크"
+              value={ibkrAccount ? `NAV $${fmt(ibkrAccount.nav, 0)}` : '—'}
+              pass={ibkrAccount ? Math.abs(ibkrAccount.total_pnl_pct) < 1 : undefined}
+              note="단일 트레이드 계좌 리스크 ≤ 1% 원칙"
+            />
+            <KpiRow
+              label="EXIT 신호"
+              value={ibkrExitSignals.length > 0 ? `${ibkrExitSignals.join(', ')}` : '없음'}
+              pass={ibkrExitSignals.length === 0}
+              note="청산 신호 발생 시 즉시 실행 필요"
+            />
+          </ul>
+          <div className="alpaca-gate-status">
+            {ibkrError ? (
+              <span className="gate-chip blocked">연결 오류</span>
+            ) : gatewayConnected ? (
+              <span className="gate-chip clear">Gateway 정상</span>
+            ) : (
+              <span className="gate-chip blocked">Gateway 오프라인</span>
+            )}
+            <p className="term-note">turtle_gate_clear는 6대 파라미터(진입 신호·ATR·포지션 리스크·손절가·청산·pre_mortem) 전부 통과 시 발행됩니다.</p>
+          </div>
+        </article>
+      </div>
+
+      {/* ── ROW 5: 최근 주문 내역 (Alpaca) ── */}
+      {alpacaOrders.length > 0 && !alpacaOrders[0]?.error && (
+        <article className="panel alpaca-full">
+          <div className="panel-head">
+            <h3>최근 주문 내역 <span className="broker-tag alpaca">Alpaca</span></h3>
+          </div>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>주문ID</th><th>종목</th><th>방향</th><th>유형</th>
+                  <th className="num">수량</th><th className="num">체결수량</th>
+                  <th className="num">체결가</th><th>상태</th><th>제출시각</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(alpacaOrders as AlpacaOrder[]).map((o, i) => (
+                  <tr key={`${o.id ?? ''}-${i}`}>
+                    <td className="mono">{o.id}</td>
+                    <td><SymbolCell symbol={o.symbol} names={ALPACA_SYMBOL_NAMES} /></td>
+                    <td>
+                      <span className={`signal-badge ${o.side === 'buy' ? 'signal-long' : 'signal-short'}`}>
+                        {o.side === 'buy' ? '매수' : '매도'}
+                      </span>
+                    </td>
+                    <td>{o.type}</td>
+                    <td className="num">{o.qty}</td>
+                    <td className="num">{o.filled_qty ?? '—'}</td>
+                    <td className="num">{o.fill_price ? `$${fmt(parseFloat(o.fill_price))}` : '—'}</td>
+                    <td>
+                      <span className={`freshness-chip ${o.status === 'filled' ? 'fresh' : o.status === 'canceled' ? 'stale' : 'aging'}`}>
+                        {o.status}
+                      </span>
+                    </td>
+                    <td className="data-meta">{o.submitted_at}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* IBKR EXIT 신호 노트 */}
+          {ibkrExitSignals.length > 0 && (
+            <p className="term-note" style={{ marginTop: '0.5rem' }}>
+              IBKR EXIT 신호: {ibkrExitSignals.join(', ')} — 위 "IBKR 청산 실행" 버튼으로 실행하세요.
+            </p>
+          )}
+        </article>
+      )}
+
+      {/* ── ROW 6: 급락 브리핑 (Alpaca 전용) ── */}
+      <DropAlertPanel
+        alerts={dropAlerts}
+        onAck={ackAlert}
+        threshold={-3}
+      />
+
+    </section>
+  )
+}

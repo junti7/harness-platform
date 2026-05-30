@@ -6419,3 +6419,159 @@ td.pnl-neg,
   padding: 0.05rem 0.45rem;
   font-weight: 500;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   트레이딩 오퍼레이션 센터 (TradingOpsCenter)
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+.trading-ops-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.trading-ops-section .section-head {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+.trading-ops-section .section-head h2 { margin: 0; }
+.trading-ops-section .section-head p  { margin: 0; color: var(--muted); font-size: 0.85rem; }
+
+/* 두 계좌 카드 그리드 */
+.trading-accounts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+/* 계좌 카드 공통 */
+.trading-account-card {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-left: 4px solid var(--border-strong, #cbd5e1);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.trading-account-card.alpaca { border-left-color: #2563eb; }
+.trading-account-card.ibkr   { border-left-color: #0ea5e9; }
+
+/* 브로커 태그 (인라인 pill) */
+.broker-tag {
+  display: inline-block;
+  padding: 0.08rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.broker-tag.alpaca {
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+  border: 1px solid rgba(37, 99, 235, 0.2);
+}
+.broker-tag.ibkr {
+  background: rgba(14, 165, 233, 0.1);
+  color: #0ea5e9;
+  border: 1px solid rgba(14, 165, 233, 0.2);
+}
+
+/* 신호 탭 바 */
+.signal-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  margin-bottom: 0.75rem;
+  padding-bottom: 0;
+}
+.signal-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.85rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-muted, #475569);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  border-radius: 4px 4px 0 0;
+  transition: color 0.12s, border-color 0.12s;
+}
+.signal-tab:hover { color: var(--ink-strong, #0f172a); background: var(--bg-elevated, #f4f7fb); }
+.signal-tab.active {
+  color: var(--accent, #2563eb);
+  border-bottom-color: var(--accent, #2563eb);
+  font-weight: 600;
+}
+.signal-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  background: rgba(37, 99, 235, 0.15);
+  color: var(--accent, #2563eb);
+  padding: 0 0.25rem;
+}
+
+/* IBKR 포지션 미니 요약 (계좌 카드 내) */
+.ibkr-pos-summary {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border, #e2e8f0);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.ibkr-pos-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: 5px;
+  background: var(--bg-elevated, #f4f7fb);
+  font-size: 0.8rem;
+}
+.ibkr-pos-row.ibkr-pos-exit {
+  background: rgba(220, 38, 38, 0.04);
+  border: 1px solid rgba(220, 38, 38, 0.15);
+}
+.ibkr-pos-symbol {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 4rem;
+}
+.ibkr-pos-symbol strong { font-size: 0.82rem; font-weight: 700; color: var(--ink-strong, #0f172a); }
+.ibkr-pos-symbol small  { font-size: 0.64rem; color: var(--text-faint, #64748b); }
+.ibkr-pos-pnl {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-left: auto;
+}
+
+/* Turtle 준비도 그리드 */
+.turtle-readiness-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+/* ── 반응형 (≤700px) ── */
+@media (max-width: 700px) {
+  .trading-accounts-grid  { grid-template-columns: 1fr; }
+  .turtle-readiness-grid  { grid-template-columns: 1fr; }
+  .signal-tab { padding: 0.35rem 0.6rem; font-size: 0.78rem; }
+}

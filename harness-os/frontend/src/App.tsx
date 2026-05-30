@@ -6,8 +6,7 @@ import { PlatformSelector } from './components/PlatformSelector'
 import { KpiCard, RiskBanner } from './components/KpiCard'
 import { JarvisConsole } from './components/JarvisConsole'
 import { TradingApiMonitor } from './components/TradingApiMonitor'
-import { AlpacaPaperMonitor } from './components/AlpacaPaperMonitor'
-import { IbkrTurtleMonitor } from './components/IbkrTurtleMonitor'
+import { TradingOpsCenter } from './components/TradingOpsCenter'
 import { formatUsd, formatPercent, platformLabel } from './components/utils'
 
 // Import newly structured pages
@@ -376,11 +375,8 @@ function App() {
             </div>
           </section>
 
-          {/* ── ALPACA PAPER TRADING ── */}
-          <AlpacaPaperMonitor apiBase={API_BASE} authHeaders={authHeaders} />
-
-          {/* ── IBKR TURTLE MONITOR ── */}
-          <IbkrTurtleMonitor apiBase={API_BASE} authHeaders={authHeaders} />
+          {/* ── 트레이딩 오퍼레이션 센터 (Alpaca + IBKR 통합) ── */}
+          <TradingOpsCenter apiBase={API_BASE} authHeaders={authHeaders} />
 
           {/* ── LAYER 2: CHECKLIST / COMMANDS ── */}
           {viewRole === 'ceo' ? (
