@@ -7,6 +7,7 @@ import { KpiCard, RiskBanner } from './components/KpiCard'
 import { JarvisConsole } from './components/JarvisConsole'
 import { TradingApiMonitor } from './components/TradingApiMonitor'
 import { AlpacaPaperMonitor } from './components/AlpacaPaperMonitor'
+import { IbkrTurtleMonitor } from './components/IbkrTurtleMonitor'
 import { formatUsd, formatPercent, platformLabel } from './components/utils'
 
 // Import newly structured pages
@@ -19,6 +20,7 @@ import { SettingsPage } from './pages/SettingsPage'
 import { LoginPage } from './pages/LoginPage'
 import { PipelinePage } from './pages/PipelinePage'
 import { TradingDiaryPage } from './pages/TradingDiaryPage'
+import { OpenClawMonitorPage } from './pages/OpenClawMonitorPage'
 
 const SESSION_KEY = 'harness-session'
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000 // 30분
@@ -133,7 +135,7 @@ function App() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   })
   const [viewRole, setViewRole] = useState<'ceo' | 'vp'>(() => session?.role ?? 'ceo')
-  const [activeView, setActiveView] = useState<'dashboard' | 'approvals' | 'conference' | 'ars' | 'meetings' | 'costs' | 'tokens' | 'settings' | 'pipeline' | 'trading-diary'>('dashboard')
+  const [activeView, setActiveView] = useState<'dashboard' | 'approvals' | 'conference' | 'ars' | 'meetings' | 'costs' | 'tokens' | 'settings' | 'pipeline' | 'trading-diary' | 'openclaw'>('dashboard')
   const [selectedPlatform, setSelectedPlatform] = useState('all')
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null)
   const [loading, setLoading] = useState(true)
@@ -377,7 +379,8 @@ function App() {
           {/* ── ALPACA PAPER TRADING ── */}
           <AlpacaPaperMonitor apiBase={API_BASE} authHeaders={authHeaders} />
 
-
+          {/* ── IBKR TURTLE MONITOR ── */}
+          <IbkrTurtleMonitor apiBase={API_BASE} authHeaders={authHeaders} />
 
           {/* ── LAYER 2: CHECKLIST / COMMANDS ── */}
           {viewRole === 'ceo' ? (
@@ -663,6 +666,13 @@ function App() {
         <TradingDiaryPage
           apiBase={API_BASE}
           authHeaders={authHeaders()}
+        />
+      )}
+
+      {activeView === 'openclaw' && (
+        <OpenClawMonitorPage
+          apiBase={API_BASE}
+          authHeaders={authHeaders}
         />
       )}
 

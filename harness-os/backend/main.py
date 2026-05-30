@@ -1088,30 +1088,48 @@ def _gmail_message_runtime(message_id: str) -> dict[str, Any]:
     cache_key = f"gmail_message:{message_id}"
 
     def producer() -> dict[str, Any]:
-        target = _gmail_runtime_target()
-        assert target is not None
-
-        exports = ["export PATH=/opt/homebrew/bin:/usr/bin:/bin"]
+        env = os.environ.copy()
+        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
         if GMAIL_RUNTIME_KEYRING_BACKEND:
-            exports.append(f"export GOG_KEYRING_BACKEND={shlex.quote(GMAIL_RUNTIME_KEYRING_BACKEND)}")
+            env["GOG_KEYRING_BACKEND"] = GMAIL_RUNTIME_KEYRING_BACKEND
         if GMAIL_RUNTIME_KEYRING_PASSWORD:
-            exports.append(f"export GOG_KEYRING_PASSWORD={shlex.quote(GMAIL_RUNTIME_KEYRING_PASSWORD)}")
+            env["GOG_KEYRING_PASSWORD"] = GMAIL_RUNTIME_KEYRING_PASSWORD
 
-        cmd = (
-            f"{shlex.quote(GMAIL_RUNTIME_GOG_BIN)} gmail get {safe_msg_id} "
-            f"-a {shlex.quote(GMAIL_RUNTIME_ACCOUNT)} -j --results-only --gmail-no-send"
-        )
-        exports.append(cmd)
-        full_cmd = "; ".join(exports)
+        if _gmail_local_mode():
+            cmd = [
+                GMAIL_RUNTIME_GOG_BIN, "gmail", "get", message_id.strip(),
+                "-a", GMAIL_RUNTIME_ACCOUNT, "-j", "--results-only", "--gmail-no-send"
+            ]
+            proc = subprocess.run(
+                cmd, cwd=str(PROJECT_ROOT), capture_output=True,
+                text=True, timeout=GMAIL_RUNTIME_TIMEOUT_S, check=False, env=env,
+            )
+        else:
+            target = _gmail_runtime_target()
+            assert target is not None
 
-        proc = subprocess.run(
-            [GMAIL_RUNTIME_SSH_BIN, target, full_cmd],
-            cwd=str(PROJECT_ROOT),
-            capture_output=True,
-            text=True,
-            timeout=GMAIL_RUNTIME_TIMEOUT_S,
-            check=False,
-        )
+            exports = ["export PATH=/opt/homebrew/bin:/usr/bin:/bin"]
+            if GMAIL_RUNTIME_KEYRING_BACKEND:
+                exports.append(f"export GOG_KEYRING_BACKEND={shlex.quote(GMAIL_RUNTIME_KEYRING_BACKEND)}")
+            if GMAIL_RUNTIME_KEYRING_PASSWORD:
+                exports.append(f"export GOG_KEYRING_PASSWORD={shlex.quote(GMAIL_RUNTIME_KEYRING_PASSWORD)}")
+
+            cmd_str = (
+                f"{shlex.quote(GMAIL_RUNTIME_GOG_BIN)} gmail get {safe_msg_id} "
+                f"-a {shlex.quote(GMAIL_RUNTIME_ACCOUNT)} -j --results-only --gmail-no-send"
+            )
+            exports.append(cmd_str)
+            full_cmd = "; ".join(exports)
+
+            proc = subprocess.run(
+                [GMAIL_RUNTIME_SSH_BIN, target, full_cmd],
+                cwd=str(PROJECT_ROOT),
+                capture_output=True,
+                text=True,
+                timeout=GMAIL_RUNTIME_TIMEOUT_S,
+                check=False,
+            )
+
         if proc.returncode != 0:
             detail = (proc.stderr or proc.stdout or "").strip()[:800]
             raise HTTPException(status_code=502, detail=f"Gmail message retrieve failed: {detail or 'unknown error'}")
@@ -3008,6 +3026,67 @@ def execute_paper_trading(_: None = Depends(_require_secret)) -> dict[str, Any]:
         return {"ok": False, "stdout": "", "stderr": str(e)}
 
 
+@app.get("/api/ibkr/monitor")
+def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    """IBKR Turtle Monitor 스크립트에서 구조화된 JSON 반환."""
+    import subprocess, sys as _sys, json as _json
+    script = PROJECT_ROOT / "scripts" / "ibkr_turtle_monitor.py"
+    if not script.exists():
+        return {
+            "ok": False, "error": "ibkr_turtle_monitor.py not found",
+            "gateway_connected": False, "positions": [], "entry_candidates": [],
+        }
+    try:
+        result = subprocess.run(
+            [_sys.executable, str(script), "--json"],
+            capture_output=True, text=True, timeout=90,
+            cwd=str(PROJECT_ROOT),
+        )
+        if result.stdout.strip():
+            return _json.loads(result.stdout.strip())
+        return {
+            "ok": False, "error": result.stderr[:500] or "no output",
+            "gateway_connected": False, "positions": [], "entry_candidates": [],
+        }
+    except Exception as e:
+        return {
+            "ok": False, "error": str(e),
+            "gateway_connected": False, "positions": [], "entry_candidates": [],
+        }
+
+
+@app.post("/api/ibkr/monitor/scan")
+def post_ibkr_monitor_scan(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    """Dry-run: 포지션 + 신호 스캔 (주문 없음)."""
+    import subprocess, sys as _sys
+    script = PROJECT_ROOT / "scripts" / "ibkr_turtle_monitor.py"
+    try:
+        result = subprocess.run(
+            [_sys.executable, str(script)],
+            capture_output=True, text=True, timeout=90,
+            cwd=str(PROJECT_ROOT),
+        )
+        return {"ok": result.returncode == 0, "stdout": result.stdout, "stderr": result.stderr}
+    except Exception as e:
+        return {"ok": False, "stdout": "", "stderr": str(e)}
+
+
+@app.post("/api/ibkr/monitor/execute")
+def post_ibkr_monitor_execute(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    """EXIT 신호 포지션에 GTC 매도 주문 실행."""
+    import subprocess, sys as _sys
+    script = PROJECT_ROOT / "scripts" / "ibkr_turtle_monitor.py"
+    try:
+        result = subprocess.run(
+            [_sys.executable, str(script), "--execute"],
+            capture_output=True, text=True, timeout=90,
+            cwd=str(PROJECT_ROOT),
+        )
+        return {"ok": result.returncode == 0, "stdout": result.stdout, "stderr": result.stderr}
+    except Exception as e:
+        return {"ok": False, "stdout": "", "stderr": str(e)}
+
+
 _JARVIS_TIMEOUT_SEC = int(os.getenv("HARNESS_OS_JARVIS_TIMEOUT_SEC", "120"))
 
 
@@ -3643,6 +3722,27 @@ def _openclaw_service_status() -> dict[str, Any]:
 def openclaw_status(_: None = Depends(_require_secret)) -> dict[str, Any]:
     status = _openclaw_service_status()
     status["ok"] = status["running"] and status["gateway_reachable"]
+    
+    # 24/7 백그라운드 브릿지가 기록한 세부 통합 상태 로드
+    snapshot_path = _PROJECT_ROOT / "runtime" / "openclaw_status.json"
+    snapshot_data = {}
+    if snapshot_path.exists():
+        try:
+            snapshot_data = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+            
+    # 워치독 자가 복구 진단 로그 꼬리 로드
+    watchdog_log_path = Path.home() / ".openclaw" / "watchdog" / "watchdog.log"
+    watchdog_logs = []
+    if watchdog_log_path.exists():
+        try:
+            watchdog_logs = watchdog_log_path.read_text(encoding="utf-8").splitlines()[-30:]
+        except Exception:
+            pass
+            
+    status["snapshot"] = snapshot_data
+    status["watchdog_logs"] = watchdog_logs
     return status
 
 
