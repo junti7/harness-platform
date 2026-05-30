@@ -32,7 +32,7 @@ from ib_insync import IB, Stock, MarketOrder, util
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 
 TWS_HOST = "127.0.0.1"
-TWS_PORT = 7497          # 페이퍼 트레이딩 포트
+TWS_PORT = 4002          # IB Gateway 페이퍼 트레이딩 포트          # 페이퍼 트레이딩 포트
 TWS_CLIENT_ID = 10       # 임의 클라이언트 ID (충돌 방지)
 
 LOG_PATH  = ROOT / "docs/reports/ibkr_tws_paper_log.jsonl"
