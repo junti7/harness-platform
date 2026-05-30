@@ -38,7 +38,11 @@ load_dotenv(ROOT / ".env", override=True)
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 
 TWS_HOST = "127.0.0.1"
-TWS_PORT = 4002          # IB Gateway 페이퍼 트레이딩 포트
+
+# IBKR_TRADING_MODE=paper (기본) → IB Gateway 페이퍼 포트 4002
+# IBKR_TRADING_MODE=live         → IB Gateway 실전 포트 4001
+IBKR_TRADING_MODE = os.getenv("IBKR_TRADING_MODE", "paper").strip().lower()
+TWS_PORT = 4002 if IBKR_TRADING_MODE == "paper" else 4001
 TWS_CLIENT_ID = 11       # paper_trader(10)와 충돌 방지
 
 LOG_PATH   = ROOT / "docs" / "reports" / "ibkr_turtle_monitor.jsonl"
@@ -503,19 +507,53 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
             pass
 
     state["last_run"] = now_iso()
+
+    # NAV 이력 축적 (포트폴리오 차트용)
+    if account_data:
+        history = state.setdefault("nav_history", [])
+        today = ts[:10]  # YYYY-MM-DD
+        baseline = account_data["baseline_nav"]
+        pnl_pct = account_data["total_pnl_pct"]
+        # 같은 날 기록이 있으면 최신값으로 갱신, 없으면 추가
+        existing = next((i for i, h in enumerate(history) if h.get("date") == today), None)
+        snap = {"date": today, "value": account_data["nav"], "pnl_pct": pnl_pct}
+        if existing is not None:
+            history[existing] = snap
+        else:
+            history.append(snap)
+        # 최대 90일치 유지
+        state["nav_history"] = history[-90:]
+
     save_state(state)
+
+    # 프론트엔드 차트용 이력 (날짜 레이블 MM/DD로 변환)
+    raw_history = state.get("nav_history", [])
+    chart_history = []
+    for h in raw_history:
+        try:
+            from datetime import datetime as _dt
+            d = _dt.strptime(h["date"], "%Y-%m-%d")
+            chart_history.append({
+                "date": d.strftime("%m/%d"),
+                "value": h["value"],
+                "pnl_pct": h.get("pnl_pct", 0.0),
+            })
+        except Exception:
+            pass
 
     _p(f"\n완료 | 포지션: {len(position_results)}건 | EXIT 신호: {len(exit_signals)}건 | 스캔: {len(entry_candidates)}종목", json_mode)
 
     return {
         "ok":               True,
         "ts":               ts,
+        "mode":             IBKR_TRADING_MODE,
         "gateway_connected": gateway_connected,
         "account":          account_data,
         "positions":        position_results,
         "exit_signals":     exit_signals,
         "entry_candidates": entry_candidates,
         "universe_source":  universe_source,
+        "nav_history":      chart_history,
         "error":            None,
     }
 
@@ -539,6 +577,7 @@ def run_offline() -> dict:
     return {
         "ok":               True,
         "ts":               now_iso(),
+        "mode":             IBKR_TRADING_MODE,
         "gateway_connected": False,
         "account":          None,
         "positions":        positions,

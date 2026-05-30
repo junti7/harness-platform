@@ -51,15 +51,19 @@ type IbkrCandidate = {
   in_position: boolean
 }
 
+type NavPoint = { date: string; value: number; pnl_pct: number }
+
 type IbkrMonitorData = {
   ok: boolean
   ts: string
+  mode: 'paper' | 'live'
   gateway_connected: boolean
   account: IbkrAccount | null
   positions: IbkrPosition[]
   exit_signals: string[]
   entry_candidates: IbkrCandidate[]
   universe_source: string
+  nav_history: NavPoint[]
   error: string | null
 }
 
@@ -207,7 +211,7 @@ function KpiRow({ label, value, pass, note }: { label: string; value: string; pa
 
 type ChartPoint = { date: string; value: number; pnl_pct: number }
 
-function PortfolioChart({ data }: { data: ChartPoint[] }) {
+function PortfolioChart({ data, gradientId = 'tocPGrad' }: { data: ChartPoint[]; gradientId?: string }) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [hover, setHover] = useState<{ x: number; y: number; idx: number } | null>(null)
 
@@ -266,7 +270,7 @@ function PortfolioChart({ data }: { data: ChartPoint[] }) {
       onMouseLeave={() => setHover(null)}
     >
       <defs>
-        <linearGradient id="tocPGrad" x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={lineColor} stopOpacity="0.25" />
           <stop offset="100%" stopColor={lineColor} stopOpacity="0.02" />
         </linearGradient>
@@ -284,7 +288,7 @@ function PortfolioChart({ data }: { data: ChartPoint[] }) {
           {data[i].date}
         </text>
       ))}
-      <polygon points={area} fill="url(#tocPGrad)" />
+      <polygon points={area} fill={`url(#${gradientId})`} />
       <polyline points={pts} fill="none" stroke={lineColor} strokeWidth="1.5" strokeLinejoin="round" />
       {hover && (
         <>
@@ -567,20 +571,47 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
   })()
 
   const hasAnyPositions = alpacaPositions.length > 0 || ibkrPositions.length > 0
+  const ibkrMode = ibkrData?.mode ?? 'paper'
+  const isLive = ibkrMode === 'live'
+
+  // IBKR 차트 데이터 (nav_history 기반)
+  const ibkrChartData: NavPoint[] = (() => {
+    const hist = ibkrData?.nav_history ?? []
+    if (hist.length >= 1) return hist
+    // 단일 포인트: baseline → current
+    const acct = ibkrData?.account
+    if (!acct) return []
+    const today = new Date().toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' }).replace('. ', '/').replace('.', '')
+    return [
+      { date: 'start', value: acct.baseline_nav, pnl_pct: 0 },
+      { date: today,   value: acct.nav, pnl_pct: acct.total_pnl_pct },
+    ]
+  })()
 
   // ── 렌더 ──────────────────────────────────────────────────────────────────
 
   return (
     <section className="trading-ops-section">
 
+      {/* ── 실전 투자 모드 경고 배너 ── */}
+      {isLive && (
+        <div className="live-mode-banner">
+          <span className="live-mode-icon">⚠</span>
+          <span>
+            <strong>IBKR 실전 투자 모드</strong> — 모든 주문은 실제 자금으로 체결됩니다.
+            IB Gateway 포트 4001 · capital_action_approve 필요
+          </span>
+        </div>
+      )}
+
       {/* ── 섹션 헤더 ── */}
       <div className="section-head">
         <div>
           <h2>트레이딩 오퍼레이션</h2>
-          <p>Alpaca(모의투자)와 IBKR(실전 동일 규칙)을 동등하게 비교합니다.</p>
+          <p>Alpaca(모의투자)와 IBKR({isLive ? '실전 투자' : '실전 동일 규칙'})을 동등하게 비교합니다.</p>
           <p className="term-note">두 브로커 모두 Turtle Trading 5원칙을 기반으로 운영됩니다.</p>
         </div>
-        <div className="section-head-actions">
+        <div className="section-head-actions trading-action-buttons">
           <span className="data-meta">
             {alpacaLastFetch && `Alpaca: ${alpacaLastFetch}`}
             {alpacaLastFetch && ibkrLastFetch && ' · '}
@@ -698,11 +729,19 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
         </article>
 
         {/* IBKR 계좌 카드 */}
-        <article className="trading-account-card ibkr">
+        <article className={`trading-account-card ibkr${isLive ? ' live-mode' : ''}`}>
           <div className="panel-head">
-            <h3>IBKR <span className="broker-tag ibkr">실전 동일 규칙</span></h3>
+            <h3>
+              IBKR{' '}
+              {isLive
+                ? <span className="broker-tag live">실전 투자</span>
+                : <span className="broker-tag ibkr">실전 동일 규칙</span>
+              }
+            </h3>
             {ibkrAccount?.account_id && (
-              <span className="data-meta mono">{ibkrAccount.account_id} · Paper Trading</span>
+              <span className="data-meta mono">
+                {ibkrAccount.account_id} · {isLive ? '실전 투자' : 'Paper Trading'}
+              </span>
             )}
           </div>
           {ibkrLoading ? (
@@ -777,7 +816,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                     <div key={pos.symbol} className={`ibkr-pos-row ${pos.action !== 'HOLD' ? 'ibkr-pos-exit' : ''}`}>
                       <span className="ibkr-pos-symbol">
                         <strong>{pos.symbol}</strong>
-                        <small>{ibkrData?.positions && IBKR_SYMBOL_NAMES[pos.symbol] ? IBKR_SYMBOL_NAMES[pos.symbol] : ''}</small>
+                        <small>{IBKR_SYMBOL_NAMES[pos.symbol] ?? ''}</small>
                       </span>
                       <span className={`ibkr-pos-pnl ${(pos.unrealized_pnl_pct ?? 0) >= 0 ? 'pnl-pos' : 'pnl-neg'}`}>
                         {fmtPct(pos.unrealized_pnl_pct)}
@@ -785,6 +824,14 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                       <ActionBadge action={pos.action} />
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* IBKR 포트폴리오 추이 차트 */}
+              {ibkrChartData.length >= 2 && (
+                <div className="alpaca-spark" style={{ marginTop: '0.75rem' }}>
+                  <p className="data-label">포트폴리오 추이</p>
+                  <PortfolioChart data={ibkrChartData} gradientId="ibkrGrad" />
                 </div>
               )}
             </>

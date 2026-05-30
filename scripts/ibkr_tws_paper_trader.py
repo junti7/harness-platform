@@ -32,7 +32,11 @@ from ib_insync import IB, Stock, MarketOrder, util
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 
 TWS_HOST = "127.0.0.1"
-TWS_PORT = 4002          # IB Gateway 페이퍼 트레이딩 포트          # 페이퍼 트레이딩 포트
+# IBKR_TRADING_MODE=paper → 4002 (IB Gateway 페이퍼)
+# IBKR_TRADING_MODE=live  → 4001 (IB Gateway 실전)
+import os as _os
+IBKR_TRADING_MODE = _os.getenv("IBKR_TRADING_MODE", "paper").strip().lower()
+TWS_PORT = 4002 if IBKR_TRADING_MODE == "paper" else 4001
 TWS_CLIENT_ID = 10       # 임의 클라이언트 ID (충돌 방지)
 
 LOG_PATH  = ROOT / "docs/reports/ibkr_tws_paper_log.jsonl"
