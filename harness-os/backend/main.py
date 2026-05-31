@@ -4341,123 +4341,109 @@ def news_center_daily_digest(
     }
 
 
+
+def _build_news_pdf(date: str) -> bytes:
+    """뉴스 리포트 PDF bytes 생성 (재사용 가능)."""
+    import json as _json, io
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    rows = _execute_query(
+        "SELECT ro.final_title, ro.final_body, ro.tags, ro.created_at "
+        "FROM refined_outputs ro ORDER BY ro.created_at DESC LIMIT 30",
+        (),
+    ) or []
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=2*cm, rightMargin=2*cm,
+                            topMargin=2*cm, bottomMargin=2*cm)
+    styles = getSampleStyleSheet()
+
+    _font_name = "Helvetica"
+    _KOREAN_FONTS = [
+        "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
+        "/System/Library/Fonts/Supplemental/NotoSansGothic-Regular.ttf",
+        "/Library/Fonts/NanumGothic.ttf",
+    ]
+    for fp in _KOREAN_FONTS:
+        try:
+            if "KoreanPdf" not in pdfmetrics.getRegisteredFontNames():
+                pdfmetrics.registerFont(TTFont("KoreanPdf", fp))
+            _font_name = "KoreanPdf"
+            break
+        except Exception:
+            continue
+
+    def _ps(name, **kw):
+        return ParagraphStyle(name, parent=styles["Normal"], fontName=_font_name, **kw)
+
+    t_style = _ps("nt", fontSize=22, leading=28, textColor=colors.HexColor("#1e293b"), spaceAfter=4)
+    s_style = _ps("ns", fontSize=10, textColor=colors.HexColor("#64748b"), spaceAfter=14)
+    h_style = _ps("nh", fontSize=13, leading=18, textColor=colors.HexColor("#1e40af"), spaceBefore=14, spaceAfter=4)
+    b_style = _ps("nb", fontSize=10, leading=15, textColor=colors.HexColor("#334155"), spaceAfter=6)
+    k_style = _ps("nk", fontSize=10, leading=15, textColor=colors.HexColor("#7c3aed"), spaceAfter=4)
+
+    def _esc(s):
+        return (str(s) or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    story: list = [
+        Paragraph("Harness News Center", t_style),
+        Paragraph(f"Daily Intelligence Report · {date}", s_style),
+        HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e2e8f0")),
+        Spacer(1, 0.4*cm),
+    ]
+
+    for r in rows:
+        title = r.get("final_title") or "(제목 없음)"
+        body = r.get("final_body") or {}
+        if isinstance(body, str):
+            try:
+                body = _json.loads(body)
+            except Exception:
+                body = {}
+        hook = body.get("hook") or ""
+        korea = body.get("korea_strategic_context") or ""
+        exec_b = body.get("executive_decision_block") or {}
+        buy = ""
+        if isinstance(exec_b, dict):
+            buy = exec_b.get("buy_signal") or exec_b.get("action") or ""
+        elif isinstance(exec_b, str):
+            buy = exec_b
+
+        story.append(Paragraph(_esc(title), h_style))
+        if hook:
+            story.append(Paragraph(_esc(hook[:500]), b_style))
+        if korea:
+            story.append(Paragraph(f"[한국 전략] {_esc(korea[:350])}", k_style))
+        if buy:
+            story.append(Paragraph(f"[CEO 액션] {_esc(str(buy)[:250])}", b_style))
+        story.append(Spacer(1, 0.15*cm))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
 @app.post("/api/news-center/generate-pdf")
 def news_center_generate_pdf(
     req: dict[str, Any],
     _: None = Depends(_require_secret),
 ) -> Any:
-    import json as _json
     from datetime import datetime, timezone as _tz
     from fastapi.responses import Response
-
     date = req.get("date", datetime.now(_tz.utc).strftime("%Y-%m-%d"))
-
-    # 기사 목록 가져오기
-    rows = _execute_query(
-        """
-        SELECT ro.final_title, ro.final_body, ro.tags, ro.created_at
-        FROM refined_outputs ro
-        ORDER BY ro.created_at DESC
-        LIMIT 30
-        """,
-        (),
-    ) or []
-
     try:
-        from reportlab.lib.pagesizes import A4
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.units import cm
-        from reportlab.lib import colors
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
-        from reportlab.pdfbase import pdfmetrics
-        from reportlab.pdfbase.ttfonts import TTFont
-        import io
-
-        buf = io.BytesIO()
-        doc = SimpleDocTemplate(
-            buf, pagesize=A4,
-            leftMargin=2*cm, rightMargin=2*cm,
-            topMargin=2*cm, bottomMargin=2*cm,
-        )
-
-        styles = getSampleStyleSheet()
-
-        # 한글 폰트 등록 시도 (없으면 영문 폰트 사용)
-        _font_name = "Helvetica"
-        for font_path in [
-            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
-            "/Library/Fonts/NanumGothic.ttf",
-            "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
-        ]:
-            try:
-                pdfmetrics.registerFont(TTFont("Korean", font_path))
-                _font_name = "Korean"
-                break
-            except Exception:
-                continue
-
-        title_style = ParagraphStyle(
-            "nc_title", parent=styles["Heading1"],
-            fontName=_font_name, fontSize=22, leading=28,
-            textColor=colors.HexColor("#1e293b"), spaceAfter=6,
-        )
-        sub_style = ParagraphStyle(
-            "nc_sub", parent=styles["Normal"],
-            fontName=_font_name, fontSize=10,
-            textColor=colors.HexColor("#64748b"), spaceAfter=16,
-        )
-        h2_style = ParagraphStyle(
-            "nc_h2", parent=styles["Heading2"],
-            fontName=_font_name, fontSize=13, leading=18,
-            textColor=colors.HexColor("#1e293b"), spaceBefore=14, spaceAfter=4,
-        )
-        body_style = ParagraphStyle(
-            "nc_body", parent=styles["Normal"],
-            fontName=_font_name, fontSize=10, leading=15,
-            textColor=colors.HexColor("#334155"), spaceAfter=8,
-        )
-
-        story: list = [
-            Paragraph("Harness News Center", title_style),
-            Paragraph(f"Daily Intelligence Report · {date}", sub_style),
-            HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e2e8f0")),
-            Spacer(1, 0.4*cm),
-        ]
-
-        for r in rows:
-            title = r.get("final_title") or "(제목 없음)"
-            body = r.get("final_body") or {}
-            if isinstance(body, str):
-                try:
-                    body = _json.loads(body)
-                except Exception:
-                    body = {}
-            hook = body.get("hook") or ""
-            korea = body.get("korea_strategic_context") or ""
-            exec_block = body.get("executive_decision_block") or ""
-
-            # 특수문자 이스케이프
-            def _esc(s: str) -> str:
-                return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-            story.append(Paragraph(_esc(title), h2_style))
-            if hook:
-                story.append(Paragraph(_esc(hook[:400]), body_style))
-            if korea:
-                story.append(Paragraph(f"<b>한국 전략 맥락:</b> {_esc(korea[:300])}", body_style))
-            if exec_block:
-                story.append(Paragraph(f"<b>CEO 결정 포인트:</b> {_esc(str(exec_block)[:200])}", body_style))
-            story.append(Spacer(1, 0.2*cm))
-
-        doc.build(story)
-        pdf_bytes = buf.getvalue()
-
+        pdf_bytes = _build_news_pdf(date)
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="harness-news-{date}.pdf"'},
         )
-
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"PDF 생성 실패: {exc}")
 
@@ -4467,18 +4453,40 @@ def news_center_send_slack(
     req: dict[str, Any],
     _: None = Depends(_require_secret),
 ) -> dict[str, Any]:
-    date = req.get("date", "")
-    webhook = os.getenv("SLACK_WEBHOOK_URL", "")
-    if not webhook:
-        return {"ok": False, "error": "SLACK_WEBHOOK_URL 미설정"}
+    from datetime import datetime, timezone as _tz
+    date = req.get("date", datetime.now(_tz.utc).strftime("%Y-%m-%d"))
+    bot_token = os.getenv("SLACK_BOT_TOKEN", "")
+    channel = os.getenv("SLACK_CHANNEL_EXEC_PRESIDENT_DECISIONS", "")
+    if not bot_token or not channel:
+        return {"ok": False, "error": "SLACK_BOT_TOKEN 또는 채널 미설정"}
     try:
-        digest = news_center_daily_digest(date=date)
-        msg = (
-            f"*📰 Harness News Center — {digest['date']}*\n"
-            f"총 신호 {digest['total_signals']}건 | "
-            + " | ".join(f"{ch}: {cnt}" for ch, cnt in (digest.get("channels") or {}).items())
-        )
-        httpx.post(webhook, json={"text": msg}, timeout=10)
+        pdf_bytes = _build_news_pdf(date)
+        # Slack files.getUploadURLExternal → upload → completeUpload
+        # Step 1: get upload URL
+        url_resp = httpx.post(
+            "https://slack.com/api/files.getUploadURLExternal",
+            headers={"Authorization": f"Bearer {bot_token}"},
+            data={"filename": f"harness-news-{date}.pdf", "length": len(pdf_bytes)},
+            timeout=15,
+        ).json()
+        if not url_resp.get("ok"):
+            raise RuntimeError(url_resp.get("error", "URL 발급 실패"))
+        upload_url = url_resp["upload_url"]
+        file_id = url_resp["file_id"]
+        # Step 2: upload binary
+        httpx.post(upload_url, content=pdf_bytes,
+                   headers={"Content-Type": "application/octet-stream"}, timeout=30)
+        # Step 3: complete upload → share to channel
+        comp = httpx.post(
+            "https://slack.com/api/files.completeUploadExternal",
+            headers={"Authorization": f"Bearer {bot_token}", "Content-Type": "application/json"},
+            json={"files": [{"id": file_id}],
+                  "channel_id": channel,
+                  "initial_comment": f"📰 *Harness News Center* — {date} 리포트입니다."},
+            timeout=15,
+        ).json()
+        if not comp.get("ok"):
+            raise RuntimeError(comp.get("error", "업로드 완료 실패"))
         return {"ok": True}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
