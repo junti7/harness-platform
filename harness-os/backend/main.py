@@ -3806,7 +3806,7 @@ def get_schedule_status(_: None = Depends(_require_secret)) -> dict[str, Any]:
             "label": "com.harness.pipeline",
             "name": "전체 파이프라인",
             "role": "Tier 1→2→3→QA→4 (Notion 발행)",
-            "schedule": "매일 06:00 KST",
+            "schedule": "매일 10:00 KST",
             "interval_type": "calendar",
             "log_file": "pipeline.log",
         },
@@ -3883,7 +3883,7 @@ def get_pipeline_signals(
     offset: int = 0,
     _: None = Depends(_require_secret),
 ) -> dict[str, Any]:
-    where = ["domain = 'edu_consulting'"]
+    where: list[str] = []
     params: list[Any] = []
     if source:
         where.append("source ILIKE %s")
@@ -3896,7 +3896,7 @@ def get_pipeline_signals(
         params.append(f"%{q}%")
         params.append(f"%{q}%")
 
-    wc = " AND ".join(where)
+    wc = " AND ".join(where) if where else "TRUE"
     count_r = _execute_query(f"SELECT count(*) FROM raw_signals WHERE {wc}", tuple(params))
     total = int(count_r[0]["count"]) if count_r else 0
 
