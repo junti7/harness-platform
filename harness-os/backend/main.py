@@ -19,7 +19,7 @@ from uuid import uuid4
 
 import httpx
 import anthropic
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Body, Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -3395,6 +3395,33 @@ def post_ibkr_monitor_scan(_: None = Depends(_require_secret)) -> dict[str, Any]
         return {"ok": result.returncode == 0, "stdout": result.stdout, "stderr": result.stderr}
     except Exception as e:
         return {"ok": False, "stdout": "", "stderr": str(e)}
+
+
+@app.post("/api/ibkr/monitor/cache-upload")
+def post_ibkr_cache_upload(payload: dict = Body(...), _: None = Depends(_require_secret)) -> dict[str, Any]:
+    """MacBook → Mac Mini 캐시 직접 주입. ibkr_monitor_cache.json을 덮어씁니다."""
+    import json as _json
+    try:
+        _IBKR_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(_IBKR_CACHE_PATH, "w", encoding="utf-8") as f:
+            _json.dump(payload, f, ensure_ascii=False, indent=2)
+        return {"ok": True, "message": f"캐시 업데이트 완료 ({len(payload.get('entry_candidates', []))}개 캔디데이트, {len(payload.get('positions', []))}개 포지션)"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/ibkr/monitor/positions-upload")
+def post_ibkr_positions_upload(payload: dict = Body(...), _: None = Depends(_require_secret)) -> dict[str, Any]:
+    """MacBook → Mac Mini 포지션 상태 직접 주입. ibkr_tws_positions.json을 덮어씁니다."""
+    import json as _json
+    try:
+        state_path = PROJECT_ROOT / "docs" / "reports" / "ibkr_tws_positions.json"
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(state_path, "w", encoding="utf-8") as f:
+            _json.dump(payload, f, ensure_ascii=False, indent=2)
+        return {"ok": True, "message": f"포지션 업데이트 완료 ({len(payload.get('positions', {}))}개 포지션)"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @app.post("/api/ibkr/monitor/execute")
