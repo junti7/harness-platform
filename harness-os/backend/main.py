@@ -3888,7 +3888,8 @@ def get_pipeline_signals(
     if source:
         # 프론트 드롭다운 별칭 → 실제 DB source 패턴으로 매핑
         if source in ("rss", "news"):
-            where.append("rs.source NOT ILIKE '%youtube%' AND rs.source NOT ILIKE '%arxiv%' AND rs.source NOT ILIKE '%scholar%'")
+            where.append("rs.source NOT ILIKE %s AND rs.source NOT ILIKE %s AND rs.source NOT ILIKE %s")
+            params.extend(["%youtube%", "%arxiv%", "%scholar%"])
         elif source in ("arxiv", "arxiv_api"):
             where.append("rs.source ILIKE %s")
             params.append("%arxiv%")
