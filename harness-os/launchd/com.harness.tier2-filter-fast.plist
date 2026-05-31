@@ -12,7 +12,7 @@
     <string>--max-batches</string>
     <string>2</string>
     <string>--min-pending</string>
-    <string>200</string>
+    <string>0</string>
   </array>
 
   <key>WorkingDirectory</key>
