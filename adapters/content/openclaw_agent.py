@@ -55,6 +55,7 @@ VENV_PYTHON = PROJECT_ROOT / ".venv/bin/python"
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 BRIDGE_SCRIPT = PROJECT_ROOT / "scripts/openclaw_codex_bridge.py"
 ROUTE_AUDIT_PATH = PROJECT_ROOT / "runtime" / "openclaw_route_audit.jsonl"
+STATUS_JSON_PATH = PROJECT_ROOT / "runtime" / "openclaw_status.json"
 SOUL_PATH = PROJECT_ROOT / "SOUL.md"
 GROUND_RULES_PATH = PROJECT_ROOT / "docs/openclaw/OPENCLAW_GROUND_RULES.md"
 FAILURE_MEMORY_PATH = PROJECT_ROOT / "docs/openclaw/OPENCLAW_FAILURE_MEMORY.md"
@@ -74,13 +75,13 @@ OPENCLAW_CHAT_MODEL = os.environ.get("OPENCLAW_CHAT_MODEL", "claude-sonnet-4-5")
 OPENCLAW_TOOL_MODEL = os.environ.get("OPENCLAW_TOOL_MODEL", OPENCLAW_CHAT_MODEL)
 OPENCLAW_FORMATTER_MODEL = os.environ.get("OPENCLAW_FORMATTER_MODEL", OPENCLAW_CHAT_MODEL)
 OPENCLAW_CHAT_BACKEND = os.environ.get("OPENCLAW_CHAT_BACKEND", "auto").strip().lower()
-OPENCLAW_HISTORY_TURNS = int(os.environ.get("OPENCLAW_HISTORY_TURNS", "20"))
-OPENCLAW_MAX_HISTORY_CHARS = int(os.environ.get("OPENCLAW_MAX_HISTORY_CHARS", "6000"))
-OPENCLAW_CHAT_MAX_TOKENS = int(os.environ.get("OPENCLAW_CHAT_MAX_TOKENS", "512"))
+OPENCLAW_HISTORY_TURNS = int(os.environ.get("OPENCLAW_HISTORY_TURNS", "40"))
+OPENCLAW_MAX_HISTORY_CHARS = int(os.environ.get("OPENCLAW_MAX_HISTORY_CHARS", "12000"))
+OPENCLAW_CHAT_MAX_TOKENS = int(os.environ.get("OPENCLAW_CHAT_MAX_TOKENS", "1200"))
 OPENCLAW_TOOL_MAX_TOKENS = int(os.environ.get("OPENCLAW_TOOL_MAX_TOKENS", "2048"))
 OPENCLAW_INTENT_ENABLED = os.environ.get("OPENCLAW_INTENT_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
 
-# 도구 사용이 필요한 키워드 — 매칭 시 Claude Sonnet으로 라우팅
+# 도구 사용이 필요한 키워드 — 매칭 시 Claude Sonnet tool path로 라우팅
 TOOL_KEYWORDS = [
     "파일", "보고서", "pdf", "실행", "스크립트", "수정", "저장", "삭제",
     "보내", "전송", "작성", "만들어", "만들어줘", "읽어", "읽어줘", "목록",
@@ -92,6 +93,34 @@ TOOL_KEYWORDS = [
     "검색", "찾아줘", "최신", "페이지", "substack.com", "봐줘", "검토", "status", "상태", "헬스",
     "health", "decision card", "승인", "approve", "hold", "reject", "pipeline",
 ]
+_EXPLICIT_TOOL_NEED_RE = re.compile(
+    r"(파일|pdf|실행|스크립트|수정|저장|삭제|보내|전송|작성|만들어|읽어|목록|"
+    r"채널|슬랙|생성|업로드|코드|수집|뉴스레터|이슈|배포|구독자|"
+    r"링크|url|http://|https://|웹검색|웹 검색|브라우저|browser|"
+    r"쿠팡|파트너스 api|상품|최저가|가격비교|가격 비교|검색|찾아줘|최신|페이지|substack\.com|"
+    r"봐줘|검토|decision card|승인|approve|hold|reject|pipeline)",
+    re.IGNORECASE,
+)
+_HARD_TOOL_NEED_RE = re.compile(
+    r"(파일|pdf|실행|스크립트|수정|저장|삭제|보내|전송|작성|만들어|읽어|목록|"
+    r"채널|슬랙|생성|업로드|코드|수집|뉴스레터|이슈|배포|구독자|"
+    r"링크|url|http://|https://|웹검색|웹 검색|브라우저|browser|"
+    r"쿠팡|파트너스 api|상품|최저가|가격비교|가격 비교|검색|찾아줘|최신|페이지|substack\.com|"
+    r"decision card|승인|approve|hold|reject|pipeline)",
+    re.IGNORECASE,
+)
+_ANALYSIS_CHAT_RE = re.compile(
+    r"(브리핑|요약|정리|분석|진단|병목|top risk|리스크|우선순위)",
+    re.IGNORECASE,
+)
+_HIGH_STAKES_CHAT_RE = re.compile(
+    r"(가격|유료|paid|결제|환불|광고|legal|법률|투자|capital|approve|승인|publish|발행|red team|qa_clear|legal_review_approve)",
+    re.IGNORECASE,
+)
+_VP_REVIEW_CHAT_RE = re.compile(
+    r"(문체|자연스러움|독자|공감|가독성|어색|제목|리드|lead|톤|표현|문장|부대표)",
+    re.IGNORECASE,
+)
 
 CHANNEL_MAP = {
     "exec-president-decisions": os.environ.get("SLACK_CHANNEL_EXEC_PRESIDENT_DECISIONS", "C0B2TQV3RDG"),
@@ -122,6 +151,8 @@ Strict Governance Guidelines:
 - After executing tools, summarize what was done clearly
 - If a task requires multiple steps, execute them in sequence using multiple tool calls
 - Never expose API keys or secrets in responses
+- Do not act forgetful when this session already established context. Resolve short follow-ups like `그거`, `이어서`, `방금 거`, `위 내용` against recent session history whenever it is safe.
+- Prefer being concretely useful over apologetic. If a mutation requires approval, explain the exact gate and offer the next best read-only or approval-prep action instead of only refusing.
 - Gmail Access Capability: You have direct, read-only tools to search and fetch the CEO's Gmail messages (`gmail_search` and `gmail_get`).
   - You MUST NEVER say "I cannot access your email directly" or ask the user to forward/paste email text.
   - When asked about emails (e.g. "오늘 온 메일 정리", "메일 확인"), you MUST call `gmail_search` with a suitable query (e.g. `newer_than:1d` or `newer_than:7d`), then call `gmail_get` for relevant message IDs to fetch their bodies, summarize them, and answer the request.
@@ -344,6 +375,41 @@ _STATUS_HINT_RE = re.compile(
     r"|pipeline\s+status",                    # English status query
     re.IGNORECASE,
 )
+_STATUS_BRIEF_RE = re.compile(
+    r"(top\s*risk|리스크|병목|현황|상태|health|헬스|ops|운영상황|운영\s*상태|"
+    r"파이프라인\s*어때|지금\s*어때|상황\s*어때|무슨\s*문제)",
+    re.IGNORECASE,
+)
+_GMAIL_SUMMARY_RE = re.compile(
+    r"(메일|gmail).*(확인|보여|정리|요약|브리핑|체크)|"
+    r"(확인|보여|정리|요약|브리핑|체크).*(메일|gmail)|"
+    r"오늘\s*온\s*메일",
+    re.IGNORECASE,
+)
+_RESPONSE_GREETING_RE = re.compile(
+    r"^(안녕하세요[!.\s]*|감사합니다[!.\s]*|좋습니다[!.\s]*)+",
+    re.IGNORECASE,
+)
+_ROUTE_RESPONSE_LIMITS = {
+    "deterministic_arithmetic": 80,
+    "deterministic_newsletter_status": 500,
+    "deterministic_status_brief": 420,
+    "deterministic_gmail_summary": 520,
+    "bypass_minutes_latest": 700,
+    "bypass_ar_list": 700,
+    "structured_bridge": 900,
+    "intent_bridge": 800,
+    "local_chat": 380,
+    "economy_chat": 520,
+    "premium_chat": 700,
+    "premium_tool_agent": 1000,
+    "contextual_risk_block": 420,
+    "structured_command_auth_block": 420,
+    "structured_command_preflight_block": 520,
+    "intent_bridge_preflight_block": 520,
+    "cost_guard_block": 320,
+    "tool_contextual_risk_block": 420,
+}
 
 
 def _load_text(path: Path) -> str:
@@ -359,6 +425,177 @@ def _load_ground_rules() -> str:
 
 def _load_soul_rules() -> str:
     return _load_text(SOUL_PATH)
+
+
+def _load_status_payload() -> dict[str, Any]:
+    try:
+        data = json.loads(STATUS_JSON_PATH.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _derive_status_health(payload: dict[str, Any]) -> str:
+    integrations = payload.get("integrations") if isinstance(payload.get("integrations"), dict) else {}
+    services = payload.get("services") if isinstance(payload.get("services"), dict) else {}
+    blockers = 0
+    if isinstance(integrations, dict):
+        for key in ("postgres", "notion", "slack_bot"):
+            value = integrations.get(key)
+            if isinstance(value, dict) and value.get("available") is False:
+                blockers += 1
+    if isinstance(services, dict) and services.get("ollama_11434") is False:
+        blockers += 1
+    if blockers >= 2:
+        return "red"
+    if blockers == 1:
+        return "yellow"
+    return "green"
+
+
+def _extract_top_risks(payload: dict[str, Any]) -> list[str]:
+    explicit = payload.get("top_risks")
+    if isinstance(explicit, list):
+        cleaned = [str(item).strip() for item in explicit if str(item).strip()]
+        if cleaned:
+            return cleaned[:5]
+
+    risks: list[str] = []
+    runtime = payload.get("runtime") if isinstance(payload.get("runtime"), dict) else {}
+    integrations = payload.get("integrations") if isinstance(payload.get("integrations"), dict) else {}
+    services = payload.get("services") if isinstance(payload.get("services"), dict) else {}
+
+    if isinstance(runtime, dict) and str(runtime.get("capital_actions_enabled", "")).lower() == "false":
+        risks.append("Capital actions remain gated off")
+    if isinstance(integrations, dict):
+        if isinstance(integrations.get("postgres"), dict) and integrations["postgres"].get("available") is False:
+            risks.append("Postgres unavailable")
+        if isinstance(integrations.get("notion"), dict) and integrations["notion"].get("available") is False:
+            risks.append("Notion unavailable")
+        if isinstance(integrations.get("openclaw"), dict) and integrations["openclaw"].get("available") is False:
+            risks.append("OpenClaw integration unavailable")
+    if isinstance(services, dict) and services.get("ollama_11434") is False:
+        risks.append("Ollama port 11434 not responding")
+    return risks[:5]
+
+
+def _try_status_brief_response(user_message: str) -> str | None:
+    if not _STATUS_BRIEF_RE.search(user_message):
+        return None
+
+    payload = _load_status_payload()
+    if not payload:
+        return None
+
+    health = _derive_status_health(payload)
+    generated_at = str(payload.get("generated_at") or "-")
+    runtime = payload.get("runtime") if isinstance(payload.get("runtime"), dict) else {}
+    phase = runtime.get("slack_phase") if isinstance(runtime, dict) else None
+    risks = _extract_top_risks(payload)
+
+    if re.search(r"(top\s*risk|리스크|병목)", user_message, re.IGNORECASE):
+        lines = [f"현재 top risk ({health})"]
+        if phase:
+            lines.append(f"- phase: {phase}")
+        if risks:
+            lines.extend(f"- {risk}" for risk in risks[:5])
+        else:
+            lines.append("- 확인된 핵심 리스크 없음")
+        lines.append(f"- snapshot: {generated_at}")
+        return "\n".join(lines)
+
+    integrations = payload.get("integrations") if isinstance(payload.get("integrations"), dict) else {}
+    services = payload.get("services") if isinstance(payload.get("services"), dict) else {}
+    lines = [f"Harness ops status: {health}"]
+    if phase:
+        lines.append(f"- phase: {phase}")
+    if isinstance(runtime, dict):
+        lines.append(f"- capital_actions_enabled: {runtime.get('capital_actions_enabled', '-')}")
+    if isinstance(integrations, dict):
+        for key in ("postgres", "notion", "slack_bot", "openclaw"):
+            value = integrations.get(key)
+            if isinstance(value, dict):
+                lines.append(f"- {key}: {'ok' if value.get('available') else 'down'}")
+    if isinstance(services, dict) and "ollama_11434" in services:
+        lines.append(f"- ollama_11434: {'ok' if services.get('ollama_11434') else 'down'}")
+    if risks:
+        lines.append(f"- top_risk: {risks[0]}")
+    lines.append(f"- snapshot: {generated_at}")
+    return "\n".join(lines)
+
+
+def _infer_gmail_query(user_message: str) -> str:
+    lowered = (user_message or "").lower()
+    if "2주" in lowered or "14일" in lowered:
+        return "newer_than:14d"
+    if "이번주" in lowered or "7일" in lowered or "일주일" in lowered:
+        return "newer_than:7d"
+    if "어제" in lowered:
+        return "newer_than:2d"
+    return "newer_than:1d"
+
+
+def _gmail_search_json(query: str, limit: int = 5) -> dict[str, Any]:
+    cmd = [
+        str(VENV_PYTHON),
+        str(BRIDGE_SCRIPT),
+        "gmail-search",
+        query,
+        "--limit",
+        str(max(1, min(limit, 10))),
+        "--format",
+        "json",
+    ]
+    try:
+        result_proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=20,
+            cwd=str(PROJECT_ROOT),
+        )
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+    output = ((result_proc.stdout or "") + (result_proc.stderr or "")).strip()
+    try:
+        payload = json.loads(output) if output else {}
+    except json.JSONDecodeError:
+        return {"ok": False, "error": output or "invalid gmail payload"}
+    if result_proc.returncode != 0:
+        if isinstance(payload, dict):
+            payload.setdefault("ok", False)
+        return payload if isinstance(payload, dict) else {"ok": False, "error": output}
+    return payload if isinstance(payload, dict) else {"ok": False, "error": "unexpected gmail payload"}
+
+
+def _try_gmail_summary_response(user_message: str) -> str | None:
+    if not _GMAIL_SUMMARY_RE.search(user_message):
+        return None
+
+    query = _infer_gmail_query(user_message)
+    payload = _gmail_search_json(query, limit=5)
+    if payload.get("ok") is False and payload.get("error"):
+        return f"Gmail 조회 오류\n- {payload['error']}"
+
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return None
+
+    if not items:
+        return f"최근 메일 없음\n- 검색 조건: `{query}`"
+
+    lines = [f"최근 메일 {len(items)}건", f"- 검색 조건: `{query}`"]
+    for item in items[:5]:
+        if not isinstance(item, dict):
+            continue
+        lines.append(
+            f"- {item.get('date') or '-'} | {item.get('from') or '-'} | {item.get('subject') or '(제목 없음)'}"
+        )
+    return "\n".join(lines)
 
 
 def _get_conversation_history(session_id: str | None) -> list[dict[str, str]]:
@@ -410,11 +647,14 @@ def _log_route_audit(
     model: str | None = None,
     blocked: bool = False,
     reason: str | None = None,
+    response_chars: int | None = None,
+    kind: str = "route",
 ) -> None:
     try:
         ROUTE_AUDIT_PATH.parent.mkdir(parents=True, exist_ok=True)
         record = {
             "ts": datetime.now().isoformat(timespec="seconds"),
+            "kind": kind,
             "session_id": session_id,
             "requester_user_id": requester_user_id,
             "message": _redact_for_audit(user_message),
@@ -428,6 +668,8 @@ def _log_route_audit(
             "current_high_terms": risk_scan.get("current_high_terms", []),
             "context_sensitive_terms": risk_scan.get("context_sensitive_terms", []),
         }
+        if response_chars is not None:
+            record["response_chars"] = int(response_chars)
         with ROUTE_AUDIT_PATH.open("a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception as exc:
@@ -522,7 +764,7 @@ def _contextual_risk_block_message(risk_scan: dict[str, Any]) -> str:
     return (
         "⚠️ 이 요청은 이전 대화의 민감한 대상에 대한 참조형 실행 요청으로 감지됐습니다.\n"
         f"감지 맥락: {terms}\n"
-        "무엇을 어디에 실행/발송/수정할지 명시해서 다시 지시해 주세요. "
+        "무엇을 어디에 실행/발송/수정할지 한 줄로만 더 구체적으로 적어주시면 바로 이어서 처리하겠습니다. "
         "외부 발행, Slack 전송, 파일 수정, 승인 기록은 필요한 gate를 통과해야 합니다."
     )
 
@@ -549,7 +791,13 @@ def _preflight_action(
         return _contextual_risk_block_message(risk_scan)
 
     if spec.get("requires_approval") and not _authorized_for_high_risk(requester_user_id):
-        return "❌ 이 작업은 상태 변경/외부 효과가 있어 CEO 승인 surface에서만 실행할 수 있습니다."
+        return (
+            "❌ 이 작업은 상태 변경 또는 외부 효과가 있어서 여기서 바로 실행할 수는 없습니다.\n"
+            "대신 바로 할 수 있는 다음 단계는 있습니다:\n"
+            "- 현재 상태와 영향 범위를 읽어서 요약\n"
+            "- 실행 전 필요한 gate/approval checklist 정리\n"
+            "- 대표 승인용 decision card 또는 승인 요청 문안 준비"
+        )
 
     return None
 
@@ -1239,11 +1487,20 @@ def _authorize_structured_command(intent: str, requester_user_id: str | None) ->
 
     expected_user_id = os.environ.get("SLACK_CEO_USER_ID", "").strip()
     if not expected_user_id:
-        return "❌ SLACK_CEO_USER_ID 미설정 — 뮤테이션 명령 전체 차단. 서버 .env를 확인하세요."
+        return (
+            "❌ 서버에 `SLACK_CEO_USER_ID`가 설정되지 않아 변경 작업을 잠가 두었습니다.\n"
+            "지금은 읽기/요약/초안 준비까지만 처리할 수 있습니다."
+        )
     if not requester_user_id:
-        return "❌ 이 명령은 호출자 식별값 없이 실행할 수 없습니다. CEO Slack 사용자로 다시 시도하세요."
+        return (
+            "❌ 호출자 식별값이 없어서 변경 작업을 실행할 수 없습니다.\n"
+            "CEO Slack 계정에서 다시 실행하거나, 제가 승인 전 점검용 요약을 먼저 준비하겠습니다."
+        )
     if requester_user_id != expected_user_id:
-        return "❌ 이 명령은 CEO 승인 surface에서만 실행할 수 있습니다."
+        return (
+            "❌ 이 명령은 CEO 승인 surface에서만 바로 실행할 수 있습니다.\n"
+            "대신 제가 실행 전 체크리스트, 영향 범위, 승인 문안을 바로 준비할 수 있습니다."
+        )
     return None
 
 TOOLS = [
@@ -1500,12 +1757,102 @@ from adapters.content.tools import TOOL_EXECUTORS
 def _needs_tools(message: str) -> bool:
     """도구 사용이 필요한 메시지인지 키워드로 판별"""
     msg_lower = message.lower()
+    if (_ANALYSIS_CHAT_RE.search(msg_lower) or _VP_REVIEW_CHAT_RE.search(msg_lower)) and not _HARD_TOOL_NEED_RE.search(msg_lower):
+        return False
     return any(kw in msg_lower for kw in TOOL_KEYWORDS)
+
+
+def _infer_requester_role(requester_user_id: str | None, dm_channel_id: str | None) -> str:
+    ceo_user_id = os.environ.get("SLACK_CEO_USER_ID", "").strip()
+    vp_user_id = os.environ.get("SLACK_VP_USER_ID", "").strip()
+    vp_channel_id = os.environ.get("SLACK_CHANNEL_VP_CONTENT_REVIEW", "C0B2TQVV602").strip()
+    if requester_user_id and ceo_user_id and requester_user_id == ceo_user_id:
+        return "ceo"
+    if requester_user_id and vp_user_id and requester_user_id == vp_user_id:
+        return "vp"
+    if dm_channel_id and dm_channel_id == vp_channel_id:
+        return "vp"
+    return "general"
+
+
+def _should_preserve_premium_context(
+    user_message: str,
+    history: list[dict[str, str]],
+    risk_scan: dict[str, Any],
+) -> bool:
+    if not history:
+        return False
+    if _PERSONAL_RECALL_RE.search(user_message):
+        return False
+    if _FOLLOW_UP_CONTEXT_RE.search(user_message) or _WORK_INTENT_RE.search(user_message):
+        return True
+    return bool(risk_scan.get("context_sensitive_terms"))
+
+
+def _select_chat_route(
+    *,
+    user_message: str,
+    history: list[dict[str, str]],
+    risk_scan: dict[str, Any],
+    requester_role: str,
+    chat_backend_mode: str,
+    effective_chat_model: str,
+) -> tuple[str, str]:
+    """
+    Returns (route_label, model_label).
+    model_label is one of: local, haiku, sonnet.
+    """
+    allow_local = not (_ANALYSIS_CHAT_RE.search(user_message) or _VP_REVIEW_CHAT_RE.search(user_message))
+    if allow_local and risk_scan["risk_level"] == "low" and (
+        chat_backend_mode == "ollama" or (
+            chat_backend_mode == "auto" and _is_low_cost_chat_candidate(user_message, history)
+        )
+    ):
+        return ("local_chat", "local")
+
+    if _should_preserve_premium_context(user_message, history, risk_scan):
+        return ("premium_chat", "sonnet")
+
+    if _HIGH_STAKES_CHAT_RE.search(user_message):
+        return ("premium_chat", "sonnet")
+
+    if requester_role == "vp" and _VP_REVIEW_CHAT_RE.search(user_message) and risk_scan["risk_level"] == "low":
+        return ("economy_chat", "haiku")
+
+    if _ANALYSIS_CHAT_RE.search(user_message) and risk_scan["risk_level"] == "low":
+        return ("economy_chat", "haiku")
+
+    if _ANALYSIS_CHAT_RE.search(user_message) and risk_scan["risk_level"] == "medium" and not _HIGH_STAKES_CHAT_RE.search(user_message):
+        return ("economy_chat", "haiku")
+
+    return ("premium_chat", "sonnet")
 
 
 _SIMPLE_CHAT_RE = re.compile(
     r"^\s*(안녕|고마워|감사|ok|오케이|그래|응|네|아니|좋아|좋습니다|"
     r"\d+\s*[\+\-\*/x×]\s*\d+.*|거기에|여기에|그럼|그러면|이어서|계속)\b",
+    re.IGNORECASE,
+)
+_FOLLOW_UP_CONTEXT_RE = re.compile(
+    r"(그거|이거|저거|아까|방금|위에|앞에서|이어서|계속|그 다음|그다음|전 거|이전 거|방금 거|위 내용)",
+    re.IGNORECASE,
+)
+_WORK_INTENT_RE = re.compile(
+    r"(메일|gmail|calendar|goal|status|현황|상태|회의|회의록|초안|newsletter|report|보고서|slack|notion|pipeline|approval|승인|브리핑|요약|search|찾아|확인|보여)",
+    re.IGNORECASE,
+)
+_PERSONAL_RECALL_RE = re.compile(
+    r"(내\s*이름|내가\s*뭐라고|기억해|기억나|내\s*말\s*기억|내\s*소개)",
+    re.IGNORECASE,
+)
+_BRIEFING_RE = re.compile(r"(브리핑|요약|정리|summary|brief)", re.IGNORECASE)
+_MEETING_STATUS_RE = re.compile(
+    r"(회의|토론|오케스트레이션).*(진행|상황|상태|현황|어떻게|어때)|"
+    r"(진행|상황|상태|현황|어떻게|어때).*(회의|토론|오케스트레이션)",
+    re.IGNORECASE,
+)
+_MEETING_SUMMON_RE = re.compile(
+    r"(회의\s*소집|소집해|소집해줘|회의\s*열어|회의\s*잡아|논의하기\s*위한\s*회의)",
     re.IGNORECASE,
 )
 
@@ -1544,9 +1891,13 @@ def _is_low_cost_chat_candidate(message: str, history: list[dict[str, str]]) -> 
     stripped = message.strip()
     if not stripped:
         return True
-    if len(stripped) <= 80 and (_SIMPLE_CHAT_RE.search(stripped) or history):
+    if history and (_FOLLOW_UP_CONTEXT_RE.search(stripped) or _WORK_INTENT_RE.search(stripped)):
+        return False
+    if history and _PERSONAL_RECALL_RE.search(stripped):
         return True
-    if len(stripped) <= 40 and not _needs_tools(stripped):
+    if len(stripped) <= 80 and _SIMPLE_CHAT_RE.search(stripped):
+        return True
+    if len(stripped) <= 40 and not history and not _needs_tools(stripped):
         return True
     return False
 
@@ -1556,6 +1907,15 @@ def _should_skip_intent_classifier(message: str, history: list[dict[str, str]]) 
     if not OPENCLAW_INTENT_ENABLED:
         return True
     return _is_low_cost_chat_candidate(message, history)
+
+
+def _should_bypass_minutes_latest(message: str) -> bool:
+    normalized = " ".join((message or "").strip().split())
+    if not normalized:
+        return False
+    if _MEETING_SUMMON_RE.search(normalized):
+        return False
+    return bool(_MEETING_STATUS_RE.search(normalized))
 
 
 def _ollama_probe(host: str) -> bool:
@@ -1700,6 +2060,8 @@ def _classify_intent_with_haiku(user_message: str) -> dict[str, Any] | None:
     """
     if not OPENCLAW_INTENT_ENABLED or _cost_limit_reached():
         return None
+    if _BRIEFING_RE.search(user_message):
+        return None
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return None
@@ -1812,33 +2174,71 @@ def _is_orchestration_request(message: str) -> bool:
     return bool(_ORCHESTRATION_RE.search(message))
 
 
+def _register_ar(title: str, owner: str = "Jarvis", category: str = "LLM_EXECUTABLE") -> None:
+    """지시사항을 AR tracker에 등록 (docs/reports/ar_tracker.jsonl)."""
+    try:
+        import uuid as _uuid
+        ar_path = ROOT / "docs" / "reports" / "ar_tracker.jsonl"
+        ar_path.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "id": f"AR-auto-{_uuid.uuid4().hex[:6].upper()}",
+            "title": title[:200],
+            "owner": owner,
+            "category": category,
+            "status": "open",
+            "registered_at": now_iso(),
+            "due": "same_day",
+            "source": "openclaw_agent_auto",
+        }
+        with open(ar_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        logger.info(f"[ar-register] 등록: {entry['id']} — {title[:60]}")
+    except Exception as exc:
+        logger.warning(f"[ar-register] 등록 실패: {exc}")
+
+
+def _slack_post(channel_id: str, text: str) -> None:
+    """SLACK_BOT_TOKEN으로 채널에 메시지 발송."""
+    token = os.getenv("SLACK_BOT_TOKEN", "")
+    if not token or not channel_id:
+        return
+    try:
+        import httpx as _httpx
+        _httpx.post(
+            "https://slack.com/api/chat.postMessage",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"channel": channel_id, "text": text[:3900]},
+            timeout=15.0,
+        )
+    except Exception as exc:
+        logger.error(f"[slack_post] 발송 실패: {exc}")
+
+
 def _orchestrate_and_dm(order: str, dm_channel_id: str | None) -> None:
     """Background thread: run full orchestration and post synthesis to DM."""
     try:
         from adapters.content.orchestrator import orchestrate
         result = orchestrate(order)
-        if not dm_channel_id:
-            return
         decision = result.get("decision", "(결과 없음)")
         corr_id = result.get("correlation_id", "")
         cost = result.get("estimated_cost_usd", 0.0)
-        token = os.getenv("SLACK_BOT_TOKEN", "")
-        if not token:
-            return
         summary = (
             f"*Jarvis(비서실장)* — 전사 회의 완료 [{corr_id}]\n"
             f"(LLM 비용 추정 ${cost:.3f})\n\n"
             f"{decision}"
         )
-        import httpx as _httpx
-        _httpx.post(
-            "https://slack.com/api/chat.postMessage",
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json={"channel": dm_channel_id, "text": summary[:3900]},
-            timeout=15.0,
-        )
+        if dm_channel_id:
+            _slack_post(dm_channel_id, summary)
     except Exception as exc:
         logger.error(f"[orchestrate_dm] 오류: {exc}")
+        # 실패 시 대표님께 에러 알림 (묵묵부답 방지)
+        if dm_channel_id:
+            _slack_post(dm_channel_id,
+                f"⚠️ *[비서실장 오류]* 전사 회의 실행 중 오류가 발생했습니다.\n"
+                f"- 오류: `{type(exc).__name__}: {exc}`\n"
+                f"- 지시: {order[:100]}\n"
+                f"- 조치: 로그 확인 후 재시도하겠습니다."
+            )
 
 
 # Claude Code CLI(-p)가 긴 프롬프트를 처리할 때 stdout에 흘러나오는
@@ -1872,6 +2272,29 @@ def _sanitize_response(text: str) -> str:
         )
         
     return cleaned or text
+
+
+def _trim_response_text(text: str, max_chars: int) -> str:
+    cleaned = re.sub(r"\n{3,}", "\n\n", (text or "").strip())
+    cleaned = _RESPONSE_GREETING_RE.sub("", cleaned).strip()
+    if len(cleaned) <= max_chars:
+        return cleaned
+
+    window = cleaned[:max_chars].rstrip()
+    split_points = [window.rfind(token) for token in (". ", "! ", "? ", "\n- ", "\n")]
+    sentence_cut = max(split_points)
+    if sentence_cut >= int(max_chars * 0.6):
+        clipped = window[: sentence_cut + 1].strip()
+        if clipped:
+            return clipped
+
+    fallback = window.rsplit(" ", 1)[0].strip()
+    return (fallback or window).strip()
+
+
+def _finalize_response(text: str, route: str) -> str:
+    limit = _ROUTE_RESPONSE_LIMITS.get(route, 700)
+    return _trim_response_text(_sanitize_response(text), limit)
 
 
 
@@ -1914,6 +2337,22 @@ def run(
     effective_chat_max_tokens = (
         chat_max_tokens if isinstance(chat_max_tokens, int) and chat_max_tokens > 0 else OPENCLAW_CHAT_MAX_TOKENS
     )
+    requester_role = _infer_requester_role(requester_user_id, dm_channel_id)
+
+    def _finish(route: str, response_text: str, *, record: bool = True) -> str:
+        final_text = _finalize_response(response_text, route)
+        _log_route_audit(
+            session_id=effective_session_id,
+            requester_user_id=requester_user_id,
+            user_message=user_message,
+            route=route,
+            risk_scan=risk_scan,
+            response_chars=len(final_text),
+            kind="response_metric",
+        )
+        if record:
+            _record_conversation_turn(effective_session_id, user_message, final_text)
+        return final_text
 
     arithmetic_response = _try_arithmetic_response(user_message, history)
     if arithmetic_response is not None:
@@ -1924,8 +2363,7 @@ def run(
             route="deterministic_arithmetic",
             risk_scan=risk_scan,
         )
-        _record_conversation_turn(effective_session_id, user_message, arithmetic_response)
-        return arithmetic_response
+        return _finish("deterministic_arithmetic", arithmetic_response)
 
     newsletter_status_response = _try_newsletter_draft_status_response(user_message)
     if newsletter_status_response is not None:
@@ -1937,14 +2375,37 @@ def run(
             risk_scan=risk_scan,
             action_name="newsletter_draft_status",
         )
-        _record_conversation_turn(effective_session_id, user_message, newsletter_status_response)
-        return newsletter_status_response
+        return _finish("deterministic_newsletter_status", newsletter_status_response)
+
+    status_brief_response = _try_status_brief_response(user_message)
+    if status_brief_response is not None:
+        _log_route_audit(
+            session_id=effective_session_id,
+            requester_user_id=requester_user_id,
+            user_message=user_message,
+            route="deterministic_status_brief",
+            risk_scan=risk_scan,
+            action_name="status_brief",
+        )
+        return _finish("deterministic_status_brief", status_brief_response)
+
+    gmail_summary_response = _try_gmail_summary_response(user_message)
+    if gmail_summary_response is not None:
+        _log_route_audit(
+            session_id=effective_session_id,
+            requester_user_id=requester_user_id,
+            user_message=user_message,
+            route="deterministic_gmail_summary",
+            risk_scan=risk_scan,
+            action_name="gmail_summary",
+        )
+        return _finish("deterministic_gmail_summary", gmail_summary_response)
 
     # === 초고속 바이패스 필터 (Bypass intent API for latency & accuracy) ===
     msg_clean = " ".join(user_message.strip().split()).lower()
     
-    # 1. 회의 소집/진행 상황 질문에 대한 즉각적인 bridge minutes-latest 매칭
-    if ("회의" in msg_clean or "소집" in msg_clean or "토론" in msg_clean) and ("진행" in msg_clean or "상황" in msg_clean or "상태" in msg_clean or "현황" in msg_clean or "어떻게" in msg_clean or "어때" in msg_clean):
+    # 1. 기존 회의/오케스트레이션의 진행 상황 조회만 즉시 bridge로 보낸다.
+    if _should_bypass_minutes_latest(user_message):
         logger.info("[bypass-router] 회의 진행 상황 쿼리 감지 -> minutes-latest 즉시 구동")
         _log_route_audit(
             session_id=effective_session_id,
@@ -1955,8 +2416,7 @@ def run(
         )
         raw = _run_bridge_command(["minutes-latest", "--format", "text"])
         response = _format_with_haiku(user_message, raw) if "error" not in raw.lower() else raw
-        _record_conversation_turn(effective_session_id, user_message, response)
-        return response
+        return _finish("bypass_minutes_latest", response)
 
     # 2. 단순 AR 목록 요청 감지 시 Haiku API 우회
     if "ar" in msg_clean and ("목록" in msg_clean or "리스트" in msg_clean or "list" in msg_clean or "현황" in msg_clean or "조회" in msg_clean):
@@ -1972,8 +2432,7 @@ def run(
         args = ["ar-list", "--format", "text"] + (["--all"] if include_all else [])
         raw = _run_bridge_command(args)
         response = _format_with_haiku(user_message, raw)
-        _record_conversation_turn(effective_session_id, user_message, response)
-        return response
+        return _finish("bypass_ar_list", response)
 
 
     # Orchestration shortcut — multi-persona 전사 협의 요청을 orchestrate()로 위임.
@@ -1993,19 +2452,25 @@ def run(
             args=(user_message, dm_channel_id),
             daemon=True,
         ).start()
+        # AR 자동 등록 (지시 이행 추적 — CLAUDE.md 10조)
+        threading.Thread(
+            target=_register_ar,
+            args=(f"[전사회의] {user_message[:150]}",),
+            daemon=True,
+        ).start()
         ack = (
             "🗣️ 전사 회의를 소집합니다. 팀장님들 의견을 취합한 뒤 Jarvis(비서실장)가 "
-            "결과를 정리해 이 채널로 보고드리겠습니다. (소요 시간: 수 분)"
+            "결과를 정리해 이 채널로 보고드리겠습니다. (소요 시간: 수 분)\n"
+            "_(AR 등록 완료 — 미이행 시 자동 에스컬레이션)_"
         )
-        _record_conversation_turn(effective_session_id, user_message, ack)
-        return ack
+        return _finish("orchestration_delegate", ack)
 
     # Explicit CLI-style commands and mutations (snapshot, record-decision, run-pipeline)
     parsed_command = _parse_structured_command(user_message)
     if parsed_command:
         if parsed_command.get("error"):
             logger.info(f"[router] 명령 인식했지만 필수 필드 부족: {parsed_command['intent']}")
-            return parsed_command["error"]
+            return _finish("structured_bridge", parsed_command["error"], record=False)
         auth_error = _authorize_structured_command(parsed_command["intent"], requester_user_id)
         if auth_error:
             logger.warning(f"[router] structured command blocked: intent={parsed_command['intent']}")
@@ -2019,7 +2484,7 @@ def run(
                 blocked=True,
                 reason=auth_error,
             )
-            return auth_error
+            return _finish("structured_command_auth_block", auth_error, record=False)
         preflight_error = _preflight_bridge_command(
             parsed_command["bridge_args"],
             requester_user_id,
@@ -2037,7 +2502,7 @@ def run(
                 blocked=True,
                 reason=preflight_error,
             )
-            return preflight_error
+            return _finish("structured_command_preflight_block", preflight_error, record=False)
         logger.info(f"[router] 구조화 명령 감지 → bridge {parsed_command['intent']}")
         _log_route_audit(
             session_id=effective_session_id,
@@ -2049,8 +2514,7 @@ def run(
         )
         bridge_args = _augment_bridge_args(parsed_command["intent"], parsed_command["bridge_args"], requester_user_id)
         response = _run_bridge_command(bridge_args)
-        _record_conversation_turn(effective_session_id, user_message, response)
-        return response
+        return _finish("structured_bridge", response)
 
     # Rules are not a complete classifier. They only allow deterministic safe
     # actions or force escalation/blocking. Anything risk-bearing must not be
@@ -2079,7 +2543,7 @@ def run(
                         blocked=True,
                         reason=preflight_error,
                     )
-                    return preflight_error
+                    return _finish("intent_bridge_preflight_block", preflight_error, record=False)
                 logger.info(f"[router] intent-classifier → bridge {intent['tool']}")
                 _log_route_audit(
                     session_id=effective_session_id,
@@ -2092,8 +2556,7 @@ def run(
                 )
                 raw = _run_bridge_command(bridge_args)
                 response = _format_with_haiku(user_message, raw)
-                _record_conversation_turn(effective_session_id, user_message, response)
-                return response
+                return _finish("intent_bridge", response)
 
     if "contextual_high_risk_reference" in risk_scan.get("flags", []):
         response = _contextual_risk_block_message(risk_scan)
@@ -2106,20 +2569,24 @@ def run(
             blocked=True,
             reason=response,
         )
-        return response
+        return _finish("contextual_risk_block", response, record=False)
 
     if not _needs_tools(user_message):
-        if risk_scan["risk_level"] == "low" and (
-            chat_backend_mode == "ollama" or (
-                chat_backend_mode == "auto" and _is_low_cost_chat_candidate(user_message, history)
-            )
-        ):
+        route_label, model_label = _select_chat_route(
+            user_message=user_message,
+            history=history,
+            risk_scan=risk_scan,
+            requester_role=requester_role,
+            chat_backend_mode=chat_backend_mode,
+            effective_chat_model=effective_chat_model,
+        )
+        if model_label == "local":
             logger.info("[router] 일반 대화 → Tier0/Ollama")
             _log_route_audit(
                 session_id=effective_session_id,
                 requester_user_id=requester_user_id,
                 user_message=user_message,
-                route="local_chat",
+                route=route_label,
                 risk_scan=risk_scan,
                 model=OLLAMA_CHAT_MODEL,
             )
@@ -2130,23 +2597,26 @@ def run(
                 fallback_max_tokens=effective_chat_max_tokens,
             )
         else:
-            logger.info(f"[router] 일반 대화 → Anthropic({effective_chat_model})")
+            selected_model = OPENCLAW_INTENT_MODEL if model_label == "haiku" else effective_chat_model
+            logger.info(f"[router] 일반 대화 → Anthropic({selected_model})")
             _log_route_audit(
                 session_id=effective_session_id,
                 requester_user_id=requester_user_id,
                 user_message=user_message,
-                route="premium_chat",
+                route=route_label,
                 risk_scan=risk_scan,
-                model=effective_chat_model,
+                model=selected_model,
             )
-            response = _run_anthropic_chat(
-                user_message,
-                model=effective_chat_model,
-                history=history,
-                max_tokens=effective_chat_max_tokens,
-            )
-        _record_conversation_turn(effective_session_id, user_message, response)
-        return response
+            if model_label == "haiku":
+                response = _run_haiku_chat(user_message, history=history)
+            else:
+                response = _run_anthropic_chat(
+                    user_message,
+                    model=effective_chat_model,
+                    history=history,
+                    max_tokens=effective_chat_max_tokens,
+                )
+        return _finish(route_label, response)
 
     logger.info(f"[router] 도구 사용 감지 → Tier2/Sonnet")
     if _cost_limit_reached():
@@ -2160,7 +2630,7 @@ def run(
             blocked=True,
             reason=response,
         )
-        return response
+        return _finish("cost_guard_block", response, record=False)
     if "contextual_high_risk_reference" in risk_scan.get("flags", []):
         response = _contextual_risk_block_message(risk_scan)
         _log_route_audit(
@@ -2172,7 +2642,7 @@ def run(
             blocked=True,
             reason=response,
         )
-        return response
+        return _finish("tool_contextual_risk_block", response, record=False)
     _log_route_audit(
         session_id=effective_session_id,
         requester_user_id=requester_user_id,
@@ -2188,8 +2658,7 @@ def run(
         requester_user_id=requester_user_id,
         risk_scan=risk_scan,
     )
-    _record_conversation_turn(effective_session_id, user_message, response)
-    return response
+    return _finish("premium_tool_agent", response)
 
 
 def _run_tool_agent(
