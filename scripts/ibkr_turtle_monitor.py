@@ -152,7 +152,7 @@ def get_usd_rate(ib: "object | None", currency: str) -> float:
             bars = ib.reqHistoricalData(
                 pair, endDateTime="", durationStr="2 D",
                 barSizeSetting="1 day", whatToShow="MIDPOINT",
-                useRTH=True, formatDate=1,
+                useRTH=True, formatDate=1, timeout=10,
             )
             if bars:
                 usd_per_local = 1.0 / bars[-1].close
@@ -259,6 +259,7 @@ def calc_full_signal(ib, contract, json_mode: bool) -> dict | None:
             whatToShow="TRADES",
             useRTH=True,
             formatDate=1,
+            timeout=15,
         )
         if not bars or len(bars) < TURTLE_S2_ENTRY + 2:
             _p(f"  [{contract.symbol}] 데이터 부족 (bar 수: {len(bars) if bars else 0})", json_mode)
@@ -417,9 +418,27 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
         util.logToConsole(False)
 
         ib = IB()
-        ib.connect(TWS_HOST, TWS_PORT, clientId=TWS_CLIENT_ID, timeout=10)
-        gateway_connected = True
-        _p(f"게이트웨이 연결 성공 (포트 {TWS_PORT}, clientId={TWS_CLIENT_ID})", json_mode)
+        
+        # clientId 충돌 방지를 위해 예비 ID 풀 사용
+        client_ids_to_try = [TWS_CLIENT_ID, 12, 13, 14, 15]
+        connected_client_id = TWS_CLIENT_ID
+        
+        for cid in client_ids_to_try:
+            try:
+                ib.connect(TWS_HOST, TWS_PORT, clientId=cid, timeout=8)
+                gateway_connected = True
+                connected_client_id = cid
+                break
+            except Exception as conn_err:
+                if cid == client_ids_to_try[-1]:
+                    raise conn_err
+                else:
+                    continue
+
+        _p(f"게이트웨이 연결 성공 (포트 {TWS_PORT}, clientId={connected_client_id})", json_mode)
+
+        # HMDS(히스토리 데이터 서버) 활성화 대기
+        ib.sleep(5)
 
         # 계좌 정보
         accounts = ib.managedAccounts()
