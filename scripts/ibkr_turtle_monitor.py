@@ -632,6 +632,66 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
 
     state["last_run"] = now_iso()
 
+    # ── 진입 신호 Slack 알림 (24시간 중복 방지) ──────────────────────────────
+    if SLACK_WEBHOOK_URL and account_data:
+        alerts_log = state.setdefault("signal_alerts", {})
+        new_signals = []
+        for cand in entry_candidates:
+            if cand.get("signal") != "breakout_long" or cand.get("in_position"):
+                continue
+            sym       = cand["symbol"]
+            name      = cand.get("name", sym)
+            currency  = cand.get("currency", "USD")
+            region    = cand.get("region", "?")
+            price     = cand.get("current_price")
+            s2_high   = cand.get("s2_high")
+            atr       = cand.get("atr")
+            active    = cand.get("active_signal", "S2")
+            sector    = cand.get("sector", "")
+
+            # 24시간 cooldown
+            last = alerts_log.get(sym, {})
+            if last.get("signal") == "breakout_long" and last.get("alerted_at"):
+                try:
+                    elapsed = (datetime.now(timezone.utc) -
+                               datetime.fromisoformat(last["alerted_at"])).total_seconds()
+                    if elapsed < 86400:
+                        continue
+                except Exception:
+                    pass
+
+            # 가격 포맷 (KRW/JPY 정수)
+            def _fp_s(v: float | None, cur: str) -> str:
+                if v is None:
+                    return "—"
+                return f"{int(v):,}" if cur in ("KRW", "JPY") else f"${v:.2f}"
+
+            # NAV 기준 예상 수량
+            if atr and atr > 0 and account_data:
+                usd_r = get_usd_rate(None, currency)
+                atr_usd = atr * usd_r
+                est_shares = int((account_data["nav"] * TURTLE_RISK_PCT) / atr_usd) if atr_usd > 0 else 0
+                shares_str = f"{est_shares:,}주 (계좌 1% 리스크)"
+            else:
+                shares_str = "—"
+
+            flag = {"US": "🇺🇸", "KR": "🇰🇷", "TW": "🇹🇼", "JP": "🇯🇵", "HK": "🇭🇰"}.get(region, "🌐")
+            msg = (
+                f"{flag} *[Turtle Entry Signal]* {name} ({sym}) — {active} 브레이크아웃\n"
+                f"• 현재가: {_fp_s(price, currency)} {currency}\n"
+                f"• S2 돌파 기준: {_fp_s(s2_high, currency)} {currency}\n"
+                f"• ATR (20일): {_fp_s(atr, currency)} {currency}\n"
+                f"• 예상 수량: {shares_str}\n"
+                f"• 섹터: {sector} | 계좌: {account_data['account_id']}"
+            )
+            send_slack(msg)
+            alerts_log[sym] = {"signal": "breakout_long", "alerted_at": now_iso()}
+            new_signals.append(f"{name}({sym})")
+            _p(f"  [Slack 발송] {name} S2 브레이크아웃 알림", json_mode)
+
+        if new_signals:
+            state["signal_alerts"] = alerts_log
+
     # NAV 이력 축적 (포트폴리오 차트용)
     if account_data:
         history = state.setdefault("nav_history", [])
