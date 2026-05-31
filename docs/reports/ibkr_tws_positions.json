@@ -1,6 +1,27 @@
 {
-  "positions": {},
-  "last_run": "2026-05-31T13:00:41+00:00",
+  "positions": {
+    "AVGO": {
+      "symbol": "AVGO",
+      "qty": 605,
+      "exchange": "SMART",
+      "currency": "USD",
+      "entry_price": 446.77,
+      "entry_ts": "2026-05-30T00:00:00+00:00",
+      "atr": 16.5085,
+      "stop_loss": 413.75
+    },
+    "MU": {
+      "symbol": "MU",
+      "qty": 158,
+      "exchange": "SMART",
+      "currency": "USD",
+      "entry_price": 971.0,
+      "entry_ts": "2026-05-30T00:00:00+00:00",
+      "atr": 62.93,
+      "stop_loss": 845.14
+    }
+  },
+  "last_run": "2026-05-31T13:06:56+00:00",
   "signal_alerts": {
     "AVGO": {
       "signal": "breakout_long",
