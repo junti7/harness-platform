@@ -203,21 +203,99 @@ def _mentions_bg(handles: list[str], question: str, channel: str, logger):
         logger.error(f"[meeting] mention 응답 실패: {exc}")
 
 
-def _open_floor_bg(question: str, channel: str, logger):
-    """CEO/VP 자유 발언 → Jarvis 먼저 + 모든 활성 페르소나 순서대로 응답."""
+def _fetch_url_text(url: str) -> str:
+    """URL 내용을 텍스트로 가져옴. 실패 시 빈 문자열."""
     try:
-        from adapters.content.orchestrator import respond_as_persona
-        from agents.registry import get_active_personas
-        # Jarvis가 먼저 사회 보고, 나머지 페르소나가 의견 개진
-        jarvis_first = ["jarvis"]
-        others = [p.handle for p in get_active_personas() if p.handle != "jarvis"]
-        for handle in jarvis_first + others:
+        import httpx
+        r = httpx.get(url, timeout=10, follow_redirects=True,
+                      headers={"User-Agent": "Mozilla/5.0"})
+        # HTML 태그 제거 후 앞 3000자만
+        import re
+        text = re.sub(r"<[^>]+>", " ", r.text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text[:3000]
+    except Exception:
+        return ""
+
+
+def _jarvis_route_bg(question: str, channel: str, logger):
+    """
+    비서실장(Jarvis) 라우터: CEO/VP 모든 메시지의 1차 수신자.
+    1. URL이 있으면 내용 파악
+    2. Claude로 어떤 페르소나가 답해야 할지 결정
+    3. #회의실에 라우팅 안내 게시
+    4. 선택된 페르소나 호출
+    """
+    import re, json as _json
+    from adapters.content.orchestrator import respond_as_persona, _post_raw
+    from agents.registry import get_active_personas
+    from scripts.run_persona import call_llm
+
+    active = [p for p in get_active_personas() if p.handle != "jarvis"]
+    active_info = "\n".join(
+        f"- {p.handle} ({p.name}, {p.team_short}팀)" for p in active
+    )
+
+    # URL 내용 수집
+    urls = re.findall(r"https?://\S+", question)
+    url_summaries = ""
+    for url in urls[:2]:
+        content = _fetch_url_text(url)
+        if content:
+            url_summaries += f"\n[{url} 내용 요약]\n{content[:1500]}\n"
+        else:
+            url_summaries += f"\n[{url}: 직접 접근 불가 — URL만 페르소나에게 전달]\n"
+
+    # Jarvis가 라우팅 결정
+    routing_prompt = (
+        "당신은 Harness의 비서실장(Jarvis)입니다.\n"
+        "대표님이 #회의실에 다음 지시를 내리셨습니다.\n\n"
+        f"[대표님 지시]\n{question}\n"
+        f"{url_summaries}\n"
+        "[활성 팀 목록]\n"
+        f"{active_info}\n\n"
+        "이 지시에 답변하기 가장 적절한 팀 handle을 1~3개 선택하고, "
+        "그 팀들에게 전달할 구체적인 과제를 작성하세요.\n"
+        "반드시 아래 JSON 형식으로만 응답하세요:\n"
+        '{"route_to": ["handle1"], '
+        '"enriched_task": "페르소나에게 전달할 구체 과제 (URL 요약 포함)", '
+        '"jarvis_note": "#회의실에 게시할 비서실장 한 줄 안내"}'
+    )
+
+    routing_text, ok = call_llm("claude", routing_prompt)
+
+    # JSON 파싱
+    route_to, enriched_task, jarvis_note = [], question, ""
+    try:
+        m = re.search(r"\{.*\}", routing_text, re.DOTALL)
+        if m:
+            parsed = _json.loads(m.group())
+            route_to = parsed.get("route_to", [])
+            enriched_task = parsed.get("enriched_task", question)
+            jarvis_note = parsed.get("jarvis_note", "")
+    except Exception:
+        pass
+
+    # 폴백: 파싱 실패 시 전 팀 호출
+    if not route_to:
+        route_to = [p.handle for p in active]
+        enriched_task = question + (f"\n\n[URL 참고]\n{url_summaries}" if url_summaries else "")
+
+    # #회의실에 비서실장 안내 게시
+    target_names = ", ".join(
+        f"{p.name}님" for p in active if p.handle in route_to
+    ) or "전 팀"
+    note = jarvis_note or f"{target_names}께 과제를 전달했습니다."
+    _post_raw(channel, f"*Jarvis(비서실장)*: {note}")
+    logger.info(f"[meeting] Jarvis 라우팅: {route_to} | task={enriched_task[:60]!r}")
+
+    # 선택된 페르소나 호출
+    for p in active:
+        if p.handle in route_to:
             try:
-                respond_as_persona(handle, question, channel_id=channel)
+                respond_as_persona(p.handle, enriched_task, channel_id=channel)
             except Exception as e:
-                logger.warning(f"[meeting] {handle} 응답 실패: {e}")
-    except Exception as exc:
-        logger.error(f"[meeting] open_floor 실패: {exc}")
+                logger.warning(f"[meeting] {p.handle} 응답 실패: {e}")
 
 
 def _handle_meeting_message(user: str, text: str, channel: str, say, logger):
@@ -253,9 +331,9 @@ def _handle_meeting_message(user: str, text: str, channel: str, say, logger):
         threading.Thread(target=_mentions_bg, args=(handles, text, channel, logger), daemon=True).start()
         return
 
-    # 3. 자유 발언 → 모든 페르소나가 회의실에서 응답 (대표/부대표 직접 참여)
-    logger.info(f"[meeting] 자유 발언 by {user}: {text[:60]!r}")
-    threading.Thread(target=_open_floor_bg, args=(text, channel, logger), daemon=True).start()
+    # 3. 자유 발언 / URL / 복합 지시 → Jarvis가 라우팅 결정 후 적절한 페르소나 호출
+    logger.info(f"[meeting] Jarvis 라우팅 위임 by {user}: {text[:60]!r}")
+    threading.Thread(target=_jarvis_route_bg, args=(text, channel, logger), daemon=True).start()
 
 
 def _handle_vp_dm(user: str, text: str, say, logger):
