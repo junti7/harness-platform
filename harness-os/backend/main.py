@@ -4342,22 +4342,124 @@ def news_center_daily_digest(
 
 
 
+_PDF_CHANNEL_KW = {
+    "policy_reg":    {"regulation","policy","regulatory","compliance","audit","govtech","ai act","legislation","law","rule","governance","online safety","regtech"},
+    "edu_business":  {"education","edtech","learning","teaching","school","curriculum","training","talent","pedagogy","upskilling"},
+    "market_invest": {"venture capital","investment","market","economics","startup ecosystem","hard tech","creator economy","data licensing","ipo","equity","revenue","monetization","supply chain","llm economics"},
+}
+_PDF_CHANNEL_LABELS = {
+    "tech_ai":       "🤖 AI·테크",
+    "edu_business":  "📚 교육·사업",
+    "market_invest": "📈 시장·투자",
+    "policy_reg":    "⚖️ 정책·규제",
+}
+_PDF_CH_ORDER = ["tech_ai", "market_invest", "policy_reg", "edu_business"]
+
+
+def _pdf_infer_channel(tags) -> str:
+    if not isinstance(tags, list):
+        return "tech_ai"
+    tag_lower = {str(t).lower() for t in tags}
+    scores = {ch: sum(1 for kw in kws for t in tag_lower if kw in t)
+              for ch, kws in _PDF_CHANNEL_KW.items()}
+    best = max(scores, key=lambda k: scores[k])
+    return best if scores[best] > 0 else "tech_ai"
+
+
+def _pdf_parse_body(body) -> dict:
+    if isinstance(body, str):
+        try:
+            return json.loads(body)
+        except Exception:
+            return {}
+    return body if isinstance(body, dict) else {}
+
+
+def _pdf_extract_buy(exec_b) -> str:
+    if isinstance(exec_b, dict):
+        return (exec_b.get("buy_signal") or exec_b.get("action") or "").strip()
+    if isinstance(exec_b, str):
+        return exec_b.strip()
+    return ""
+
+
+def _pdf_generate_insights(articles: list[dict]) -> dict:
+    """Claude CLI로 오늘의 흐름·인사이트·주목 기사 생성. 실패 시 fallback."""
+    if not articles:
+        return {"flow": "오늘은 기사가 없습니다.", "insights": [], "top_story": ""}
+    summaries = []
+    for a in articles[:20]:
+        body = _pdf_parse_body(a.get("final_body") or {})
+        hook  = (body.get("hook") or "")[:180]
+        korea = (body.get("korea_strategic_context") or "")[:80]
+        title = a.get("final_title") or ""
+        summaries.append(f"- {title}: {hook}  [한국맥락: {korea}]")
+    prompt = (
+        "당신은 Harness의 최고 인텔리전스 분석가입니다. "
+        "CEO가 30초 만에 핵심을 파악할 수 있게 분석하세요.\n\n"
+        "=== 오늘 수집된 기사 ===\n" + "\n".join(summaries) + "\n\n"
+        "아래 형식으로 정확히 출력하세요. 다른 말은 쓰지 마세요.\n\n"
+        "FLOW: (전체 기사를 관통하는 핵심 흐름 1문장)\n\n"
+        "INSIGHTS:\n"
+        "• (인사이트 1 — 1~2문장, 전문용어엔 괄호 설명)\n"
+        "• (인사이트 2)\n"
+        "• (인사이트 3)\n"
+        "• (인사이트 4, 있으면)\n\n"
+        "TOP: (CEO가 가장 먼저 읽어야 할 기사 제목 — 한 줄로 왜 중요한지)\n"
+    )
+    try:
+        import subprocess as _sp
+        r = _sp.run(
+            ["/opt/homebrew/bin/claude", "-p", prompt],
+            capture_output=True, text=True, timeout=60,
+            env={**os.environ,
+                 "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+                 "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY", "")},
+        )
+        raw = (r.stdout or "").strip()
+        if raw and r.returncode == 0:
+            flow, insights, top_story = "", [], ""
+            section = None
+            for line in raw.splitlines():
+                s = line.strip()
+                if s.startswith("FLOW:"):
+                    flow = s[5:].strip(); section = None
+                elif s.startswith("INSIGHTS:"):
+                    section = "insights"
+                elif s.startswith("TOP:"):
+                    top_story = s[4:].strip(); section = None
+                elif section == "insights" and s.startswith("•"):
+                    insights.append(s)
+            return {"flow": flow, "insights": insights, "top_story": top_story}
+    except Exception:
+        pass
+    return {
+        "flow": "오늘 수집된 주요 기사를 확인하세요.",
+        "insights": [f"• {a.get('final_title','')[:80]}" for a in articles[:5] if a.get("final_title")],
+        "top_story": articles[0].get("final_title", "") if articles else "",
+    }
+
+
 def _build_news_pdf(date: str) -> bytes:
-    """뉴스 리포트 PDF bytes 생성 (재사용 가능)."""
-    import json as _json, io
+    """뉴스 리포트 PDF bytes 생성 — 3단 브리핑 박스 + 투자 시그널 + 채널별 기사."""
+    import io
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import cm
     from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, HRFlowable,
+        Table, TableStyle, KeepTogether,
+    )
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
 
     rows = _execute_query(
-        "SELECT ro.final_title, ro.final_body, ro.tags, ro.created_at "
-        "FROM refined_outputs ro ORDER BY ro.created_at DESC LIMIT 30",
+        """SELECT ro.id, ro.final_title, ro.final_body, ro.tags, ro.created_at
+           FROM refined_outputs ro ORDER BY ro.created_at DESC LIMIT 100""",
         (),
     ) or []
+    articles = [dict(r) for r in rows]
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
@@ -4365,65 +4467,188 @@ def _build_news_pdf(date: str) -> bytes:
                             topMargin=2*cm, bottomMargin=2*cm)
     styles = getSampleStyleSheet()
 
-    _font_name = "Helvetica"
-    _KOREAN_FONTS = [
+    font = "Helvetica"
+    for fp in [
         "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
         "/System/Library/Fonts/Supplemental/NotoSansGothic-Regular.ttf",
         "/Library/Fonts/NanumGothic.ttf",
-    ]
-    for fp in _KOREAN_FONTS:
+    ]:
         try:
-            if "KoreanPdf" not in pdfmetrics.getRegisteredFontNames():
-                pdfmetrics.registerFont(TTFont("KoreanPdf", fp))
-            _font_name = "KoreanPdf"
+            if "KoreanPdf2" not in pdfmetrics.getRegisteredFontNames():
+                pdfmetrics.registerFont(TTFont("KoreanPdf2", fp))
+            font = "KoreanPdf2"
             break
         except Exception:
             continue
 
-    def _ps(name, **kw):
-        return ParagraphStyle(name, parent=styles["Normal"], fontName=_font_name, **kw)
+    def ps(name, **kw):
+        return ParagraphStyle(name, parent=styles["Normal"], fontName=font, **kw)
 
-    t_style = _ps("nt", fontSize=22, leading=28, textColor=colors.HexColor("#1e293b"), spaceAfter=4)
-    s_style = _ps("ns", fontSize=10, textColor=colors.HexColor("#64748b"), spaceAfter=14)
-    h_style = _ps("nh", fontSize=13, leading=18, textColor=colors.HexColor("#1e40af"), spaceBefore=14, spaceAfter=4)
-    b_style = _ps("nb", fontSize=10, leading=15, textColor=colors.HexColor("#334155"), spaceAfter=6)
-    k_style = _ps("nk", fontSize=10, leading=15, textColor=colors.HexColor("#7c3aed"), spaceAfter=4)
-
-    def _esc(s):
+    def esc(s):
         return (str(s) or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
+    C_NAVY   = colors.HexColor("#0f172a")
+    C_BLUE   = colors.HexColor("#2563eb")
+    C_BLUE_L = colors.HexColor("#1e40af")
+    C_INDIGO = colors.HexColor("#1e3a5f")
+    C_SLATE  = colors.HexColor("#475569")
+    C_MUTED  = colors.HexColor("#94a3b8")
+    C_PURPLE = colors.HexColor("#7c3aed")
+    C_BG     = colors.HexColor("#eff6ff")
+    C_AMBER  = colors.HexColor("#d97706")
+    C_GREEN  = colors.HexColor("#059669")
+    C_DIVIDER= colors.HexColor("#bfdbfe")
+
+    title_s  = ps("pt",   fontSize=22, leading=28, textColor=C_NAVY,   spaceAfter=2)
+    sub_s    = ps("ps",   fontSize=9,  textColor=C_MUTED,              spaceAfter=10)
+    flow_s   = ps("pfl",  fontSize=11, leading=17, textColor=C_INDIGO, spaceAfter=0)
+    ins_s    = ps("pins", fontSize=10, leading=16, textColor=C_NAVY,   spaceAfter=2)
+    top_s    = ps("ptop", fontSize=10, leading=16, textColor=C_AMBER,  spaceAfter=0)
+    ch_s     = ps("pch",  fontSize=12, leading=16, textColor=C_BLUE_L, spaceBefore=16, spaceAfter=4)
+    art_h_s  = ps("pah",  fontSize=11, leading=15, textColor=C_NAVY,   spaceBefore=8,  spaceAfter=3)
+    art_b_s  = ps("pab",  fontSize=9,  leading=14, textColor=C_SLATE,  spaceAfter=3)
+    art_k_s  = ps("pak",  fontSize=9,  leading=14, textColor=C_PURPLE, spaceAfter=2)
+    inv_h_s  = ps("pih",  fontSize=10, leading=14, textColor=C_GREEN,  spaceAfter=3)
+    inv_s    = ps("pi",   fontSize=9,  leading=14, textColor=colors.HexColor("#065f46"), spaceAfter=2)
+    inv_tag_s= ps("pit",  fontSize=8,  textColor=colors.HexColor("#047857"))
+
     story: list = [
-        Paragraph("Harness News Center", t_style),
-        Paragraph(f"Daily Intelligence Report · {date}", s_style),
-        HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e2e8f0")),
-        Spacer(1, 0.4*cm),
+        Paragraph("Harness News Center", title_s),
+        Paragraph(f"CEO Daily Intelligence Brief · {date}", sub_s),
+        HRFlowable(width="100%", thickness=2, color=C_BLUE),
+        Spacer(1, 0.35*cm),
     ]
 
-    for r in rows:
-        title = r.get("final_title") or "(제목 없음)"
-        body = r.get("final_body") or {}
-        if isinstance(body, str):
-            try:
-                body = _json.loads(body)
-            except Exception:
-                body = {}
-        hook = body.get("hook") or ""
-        korea = body.get("korea_strategic_context") or ""
-        exec_b = body.get("executive_decision_block") or {}
-        buy = ""
-        if isinstance(exec_b, dict):
-            buy = exec_b.get("buy_signal") or exec_b.get("action") or ""
-        elif isinstance(exec_b, str):
-            buy = exec_b
+    # 채널별 집계
+    ch_groups: dict[str, list] = {ch: [] for ch in _PDF_CH_ORDER}
+    for a in articles:
+        ch_groups.setdefault(_pdf_infer_channel(a.get("tags")), []).append(a)
 
-        story.append(Paragraph(_esc(title), h_style))
-        if hook:
-            story.append(Paragraph(_esc(hook[:500]), b_style))
-        if korea:
-            story.append(Paragraph(f"[한국 전략] {_esc(korea[:350])}", k_style))
+    # 채널 분포 바
+    dist_parts = [
+        f"{_PDF_CHANNEL_LABELS[ch]} {len(ch_groups[ch])}건"
+        for ch in _PDF_CH_ORDER if ch_groups.get(ch)
+    ]
+    dist_row = Table(
+        [[Paragraph(
+            f"신규 기사 <b>{len(articles)}건</b>  |  {'  ·  '.join(dist_parts)}",
+            ps("pdist", fontSize=9, textColor=C_INDIGO),
+        )]],
+        colWidths=[doc.width],
+    )
+    dist_row.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,-1), colors.HexColor("#dbeafe")),
+        ("LEFTPADDING",   (0,0), (-1,-1), 14),
+        ("RIGHTPADDING",  (0,0), (-1,-1), 14),
+        ("TOPPADDING",    (0,0), (-1,-1), 7),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 7),
+    ]))
+
+    # 인사이트 생성 (Claude, best-effort)
+    insights = _pdf_generate_insights(articles)
+
+    def _divider():
+        t = Table([[""]], colWidths=[doc.width - 28])
+        t.setStyle(TableStyle([
+            ("LINEABOVE",     (0,0), (-1,-1), 0.5, C_DIVIDER),
+            ("LEFTPADDING",   (0,0), (-1,-1), 0),
+            ("RIGHTPADDING",  (0,0), (-1,-1), 0),
+            ("TOPPADDING",    (0,0), (-1,-1), 4),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+        ]))
+        return t
+
+    sec1 = [
+        Paragraph("오늘의 흐름", ps("psl1", fontSize=8, textColor=C_BLUE, spaceAfter=3)),
+        Paragraph(f"→  {esc(insights.get('flow') or '오늘 수집된 기사를 확인하세요.')}", flow_s),
+    ]
+    raw_insights = insights.get("insights") or []
+    sec2 = (
+        [Paragraph("핵심 인사이트", ps("psl2", fontSize=8, textColor=C_BLUE, spaceAfter=3))]
+        + ([Paragraph(esc(i), ins_s) for i in raw_insights if i.strip()]
+           or [Paragraph("• 신규 분석 기사를 확인하세요.", ins_s)])
+    )
+    top_text = insights.get("top_story") or ""
+    sec3 = [
+        Paragraph("오늘 가장 주목할 뉴스", ps("psl3", fontSize=8, textColor=C_AMBER, spaceAfter=3)),
+        Paragraph(f"★  {esc(top_text)}" if top_text else "★  PDF 본문을 확인하세요.", top_s),
+    ]
+
+    box_inner = [dist_row, Spacer(1, 0.2*cm)] + sec1 + [_divider()] + sec2 + [_divider()] + sec3
+    box_table = Table([[box_inner]], colWidths=[doc.width])
+    box_table.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,-1), C_BG),
+        ("LEFTPADDING",   (0,0), (-1,-1), 14),
+        ("RIGHTPADDING",  (0,0), (-1,-1), 14),
+        ("TOPPADDING",    (0,0), (-1,-1), 0),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 14),
+        ("BOX",           (0,0), (-1,-1), 2, C_BLUE),
+    ]))
+    story += [box_table, Spacer(1, 0.5*cm)]
+
+    # 투자 시그널 섹션
+    invest_articles = []
+    for a in articles:
+        body = _pdf_parse_body(a.get("final_body") or {})
+        buy = _pdf_extract_buy(body.get("executive_decision_block") or {})
         if buy:
-            story.append(Paragraph(f"[CEO 액션] {_esc(str(buy)[:250])}", b_style))
-        story.append(Spacer(1, 0.15*cm))
+            invest_articles.append((a, body, buy))
+
+    if invest_articles:
+        story += [
+            Paragraph("💹  투자 시그널 — IBKR / Alpaca 검토 대상",
+                      ps("pinvh", fontSize=13, leading=17,
+                         textColor=C_GREEN, spaceBefore=4, spaceAfter=4)),
+            HRFlowable(width="100%", thickness=1.5, color=C_GREEN),
+        ]
+        for a, body, buy in invest_articles:
+            ticker = body.get("ticker") or body.get("symbol") or ""
+            atr    = body.get("atr") or ""
+            stop   = body.get("stop_loss") or body.get("stop") or ""
+            hook   = (body.get("hook") or "")[:300]
+            tags = [f"티커: {ticker}"] if ticker else []
+            if atr:   tags.append(f"ATR: {atr}")
+            if stop:  tags.append(f"손절가: {stop}")
+            block = [Paragraph(esc(a.get("final_title") or "(제목 없음)"), inv_h_s)]
+            if tags:
+                block.append(Paragraph(esc("  |  ".join(tags)), inv_tag_s))
+            if hook:
+                block.append(Paragraph(esc(hook), inv_s))
+            block.append(Paragraph(f"→ 시그널: {esc(buy[:300])}",
+                                   ps(f"pbuy{a.get('id','x')}", fontSize=9, leading=14,
+                                      textColor=colors.HexColor("#b45309"), spaceAfter=4)))
+            inner = Table([[block]], colWidths=[doc.width - 24])
+            inner.setStyle(TableStyle([
+                ("BACKGROUND",    (0,0), (-1,-1), colors.HexColor("#ecfdf5")),
+                ("LEFTPADDING",   (0,0), (-1,-1), 12),
+                ("RIGHTPADDING",  (0,0), (-1,-1), 12),
+                ("TOPPADDING",    (0,0), (-1,-1), 8),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 8),
+                ("BOX",           (0,0), (-1,-1), 0.75, C_GREEN),
+            ]))
+            story += [inner, Spacer(1, 0.2*cm)]
+        story.append(Spacer(1, 0.3*cm))
+
+    # 채널별 기사
+    for ch in _PDF_CH_ORDER:
+        group = ch_groups.get(ch, [])
+        if not group:
+            continue
+        story.append(Paragraph(f"{_PDF_CHANNEL_LABELS.get(ch, ch)}  ({len(group)}건)", ch_s))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
+        for a in group:
+            body = _pdf_parse_body(a.get("final_body") or {})
+            hook  = body.get("hook") or ""
+            korea = body.get("korea_strategic_context") or ""
+            buy   = _pdf_extract_buy(body.get("executive_decision_block") or {})
+            block = [Paragraph(esc(a.get("final_title") or "(제목 없음)"), art_h_s)]
+            if hook:
+                block.append(Paragraph(esc(hook[:400]), art_b_s))
+            if korea:
+                block.append(Paragraph(f"▸ {esc(korea[:300])}", art_k_s))
+            if buy:
+                block.append(Paragraph(f"→ CEO 액션: {esc(buy[:200])}", art_b_s))
+            story.append(KeepTogether(block))
 
     doc.build(story)
     return buf.getvalue()
