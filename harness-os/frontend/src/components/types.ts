@@ -198,14 +198,94 @@ export type DashboardPayload = {
   command_templates?: Array<{ label: string; command: string }>
   trading_api?: TradingApiPayload
   data_collection_monitor?: {
+    domain?: string
     total: number
     pending_count: number
     pass_count: number
     fail_count: number
     sources?: Array<{
       id: string; label: string; type: string
+      channel?: string
+      mode?: string
+      status?: string
       count: number; last_ingested_at: string; active: boolean
+      expected_signal_type?: string
+      reliability_score?: number
+      base_url?: string
+      preferred_worker?: string
+      requires_login?: boolean
+      notes?: string
+      activation_policy?: string
     }>
+    channel_coverage?: Array<{
+      channel: string
+      label: string
+      total_sources: number
+      active_sources: number
+      standby_sources: number
+      restricted_sources: number
+      preferred_worker?: string
+      notes?: string[]
+    }>
+    tier2_worker?: {
+      pending_count: number
+      oldest_pending_at?: string
+      latest_pending_at?: string
+      mbp_active?: boolean
+      main?: {
+        loaded?: boolean
+        running?: boolean
+        pid?: number | null
+        last_exit_code?: string | number | null
+        label?: string
+        interval_seconds?: number
+        log_tail?: string[]
+      }
+      fast_lane?: {
+        loaded?: boolean
+        running?: boolean
+        pid?: number | null
+        last_exit_code?: string | number | null
+        label?: string
+        interval_seconds?: number
+        active_threshold?: number
+        log_tail?: string[]
+      }
+    }
+    current_topics?: Array<{
+      topic: string
+      kind: string
+      confidence?: number | null
+      evidence_count?: number | null
+      reason?: string
+      sample_title?: string
+      active?: boolean
+    }>
+    suggested_topics?: Array<{
+      topic: string
+      confidence?: number | null
+      evidence_count?: number | null
+      reason?: string
+      sample_title?: string
+      active?: boolean
+    }>
+    generated_query_sources?: Array<{
+      name: string
+      url: string
+      topic?: string
+      generated?: boolean
+    }>
+    topic_registry_generated_at?: string | null
+    expansion_policy?: {
+      safe_auto_channels?: string[]
+      restricted_channels?: string[]
+      auto_topic_expansion?: boolean
+      auto_channel_expansion?: boolean
+    }
+    workers?: {
+      mini?: { role?: string; active?: boolean }
+      mbp?: { role?: string; active?: boolean; host?: string }
+    }
     configured_languages?: Array<{ code: string; label: string; flag: string }>
     recent_activity?: Array<{ source: string; status: string; ingested_at: string; title: string }>
   }

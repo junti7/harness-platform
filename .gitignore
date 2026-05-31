@@ -27,3 +27,7 @@ docs/reports/*.html
 # Claude internal
 .claude/
 harness-os/backend/passwords.json
+
+# Local workspace temporary files
+.antigravitycli/
+scratch/

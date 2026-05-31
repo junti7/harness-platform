@@ -1,0 +1,12 @@
+{
+  "collected_at": "2026-05-25T10:55:26.244146",
+  "total_records": 144,
+  "files": [
+    "eric_collected.json",
+    "rss_collected.json",
+    "gplay_reviews.json",
+    "hackernews_collected.json",
+    "openalex_collected.json"
+  ],
+  "errors": []
+}

@@ -28,3 +28,38 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: low
+
+## 2026-05-31 persona-2f43bc61 우리 파이프라인이 tier 3에서 얼마나 느려?
+- what_i_did: run_persona 실행 → 채널 발언 (failed)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: low
+
+## 2026-05-31 persona-58df5908 우리 파이프라인 tier 3가 느린 이유가 뭐야?
+- what_i_did: run_persona 실행 → 채널 발언 (failed)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: low
+
+## 2026-05-31 persona-a46f2a17 우리 파이프라인 tier 3가 느린 이유가 뭐야?
+- what_i_did: run_persona 실행 → 채널 발언 (llm_ok_no_post)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 persona-6509396c 파이프라인 구조를 간단히 설명해줘
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-3a0c28c2 PoC 계속 진행 관련하여 최근 커밋(자료수집 자동 스케줄 패널, fast lane 5분 주기)의 안정성 확인 결과(파이프라인이 timeout 
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium

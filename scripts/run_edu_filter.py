@@ -30,19 +30,19 @@ OLLAMA_HOST = "http://localhost:11434"
 
 RELEVANCE_PROMPT = """You are a research analyst for an AI education consulting firm targeting Korean parents and workers.
 
-Evaluate if this paper is relevant to our business. We care about:
+Evaluate if this paper/article is relevant to our business. We care about:
 - AI dependency / cognitive offloading in students or workers
-- Parental anxiety about children's AI use
-- Critical thinking skills vs AI use
-- AI literacy education (K-12, adults, elderly, workplace)
-- Psychological effects of AI on learning or work
-- Workplace AI adoption anxiety or job displacement fears
-- Generative AI use in education (students, teachers)
+- Parental anxiety or public sentiment about children's and teens' AI use
+- Critical thinking skills, metacognition, and creativity vs AI use
+- AI literacy, AI skills training, prompt engineering education (K-12, university, adults, corporate workplace)
+- Psychological effects of AI on learning, productivity, or career development
+- Workplace AI adoption, job market changes, career transition anxiety, or job displacement fears (including how workers, faculty, and students view AI replacement/augmentation)
+- Practical EdTech, Web 2.0 tools in education, and Generative AI applications for teaching and learning
 
-NOT relevant:
-- Pure ML/AI technical papers (model architectures, benchmarks)
-- AI applied to non-human domains (robotics hardware, physics simulations)
-- Medical AI papers unrelated to education/psychology
+NOT relevant (strictly exclude):
+- Pure ML/AI technical papers (deep learning architecture math, model training benchmarks, hardware accelerators)
+- AI applied to non-human/non-cognitive domains (autonomous vehicle hardware, industrial manufacturing robotics, material science simulations)
+- Medical/clinical AI papers completely unrelated to psychology, cognitive distress, or education
 
 Paper title: {title}
 Abstract: {abstract}
@@ -90,11 +90,14 @@ def run_filter(model: str, limit: int, logger: HarnessLogger):
         try:
             result = call_ollama(model, prompt)
             is_relevant = result.get("relevant", False)
-            score = result.get("score", 0)
+            score = int(result.get("score", 0))
             reason = result.get("reason", "")
             insight = result.get("key_insight", "")
 
-            status = "filtered_pass" if is_relevant else "filtered_fail"
+            # 관련성이 true이거나, 점수가 4점 이상인 경우 유연하게 통과시킴
+            is_passed = is_relevant or (score >= 4)
+            status = "filtered_pass" if is_passed else "filtered_fail"
+            
             execute_query(
                 """UPDATE raw_signals
                    SET status = %s,
@@ -107,9 +110,9 @@ def run_filter(model: str, limit: int, logger: HarnessLogger):
                 }), sig_id),
             )
 
-            mark = "✅" if is_relevant else "❌"
+            mark = "✅" if is_passed else "❌"
             logger.info(f"  {mark} [{score}/10] {title[:60]} — {reason[:80]}")
-            if is_relevant:
+            if is_passed:
                 passed += 1
             else:
                 failed += 1

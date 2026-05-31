@@ -29,3 +29,19 @@
 - root_cause: governance guardrail보다 작업 완료 압력이 우선되었다.
 - fix_rule: high-impact publish/paid approval은 legal, red-team, qa precondition을 확인하기 전에는 확정하지 않는다.
 - trigger_patterns: ["발행 승인", "publish", "qa_clear", "legal_review_approve", "red_team_clear"]
+
+## FM-005 Briefing Collapsed To Status
+- input_text: AI 교육 사업 관련해서 지금까지 진행된 내용을 요약해서 브리핑 하세요.
+- wrong_behavior: topic briefing 요청을 `status` bridge로 축약해 현재 control-plane 상태만 반환한다.
+- expected_behavior: business topic briefing은 일반 비서 브리핑 경로로 보내고, 필요 시 관련 파일/기록을 짧게 확인해 요약한다.
+- root_cause: `브리핑/요약` 같은 보고 요청이 Haiku intent router에서 status intent로 과잉 분류되었다.
+- fix_rule: `브리핑`, `요약`, `정리`가 포함된 주제 브리핑 요청은 read-only status tool classification에서 제외한다.
+- trigger_patterns: ["브리핑", "요약", "정리", "AI 교육 사업", "진행된 내용"]
+
+## FM-006 Meeting Summon Misread As Minutes Status
+- input_text: Pretotyping 랜딩 페이지 제작하려면 어떻게 해야할지 논의하기 위한 회의 소집해.
+- wrong_behavior: 새 회의 소집 요청을 `minutes-latest` 조회로 오인해 최근 회의록만 보여준다.
+- expected_behavior: `회의 소집`은 orchestration request로 취급하고 전사/가상 회의 소집 경로 또는 일반 작업 계획 경로로 보낸다.
+- root_cause: `회의`와 `어떻게`가 함께 들어간 문장을 모두 회의 상태 조회로 우회 매칭했다.
+- fix_rule: `회의 소집`, `소집해`, `회의 열어`, `논의하기 위한 회의` 패턴은 `minutes-latest` bypass에서 제외한다.
+- trigger_patterns: ["회의 소집", "소집해", "논의하기 위한 회의", "Pretotyping"]

@@ -19,6 +19,7 @@ const SYMBOL_NAMES: Record<string, string> = {
   PLTR: 'Palantir',
   ROBO: '로봇 ETF',
   SPY: 'S&P 500 ETF',
+  QQQ: '나스닥 100 ETF',
 }
 
 function symbolDisplay(symbol?: string | null) {

@@ -63,3 +63,24 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-31 persona-e5426c71 우리가 투자 회사를 시작할 때 법적 리스크가 뭐가 가장 큰가?
+- what_i_did: run_persona 실행 → 채널 발언 (llm_ok_no_post)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 persona-ca063c7a 간단하게 답변해줘
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-e7f6445b file:///Users/juntae.park/projects/harness-platform/docs/education/edu_parents_f
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium

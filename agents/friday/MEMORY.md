@@ -105,3 +105,80 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-31 persona-867bda53 간단하게 답변해줘
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 persona-47c671e3 간단하게 답변해줘
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 orch-b663a8f8 범용 LLM 즉답 가능성이 우리 구독 전환율·리텐션 KPI에 주는 위협을 진단하고, killer content 가설별 예상 CTR/WTP 영향과
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-7ff44ea1 대표님 지시: '말로만 하면 안 되고 실제 산출물로 나와야 한다.' 각 팀은 진행 중이라고 보고한 모든 항목을 검증 가능한 산출물(파일 경로/U
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-2ccc8f69 대표님 지시: 말로만 하면 안 되고 실제 산출물로 나와야 한다. 진행 중이라고 보고한 모든 항목에 대해 워크스페이스 쓰기 권한이 unblock되
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-523375d1 B2I 사업 전환 상황에서 운영지표와 목표진단(goal_health_brief, goal_diagnostic_memo)을 정리해보고해주세요.
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-f7496b7e B2I 사업 전환 상황에서 운영지표와 목표진단(goal_health_brief, goal_diagnostic_memo)을 정리해보고해주세요.
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-7d1bc74d B2I 사업 전환 상황에서 운영지표와 목표진단(goal_health_brief, goal_diagnostic_memo)을 정리해보고해주세요.
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-e76cffca B2I 사업 전환 상황에서 운영지표와 목표진단(goal_health_brief, goal_diagnostic_memo)을 정리해보고해주세요.
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-25631e4e B2I 사업 전환 상황에서 운영지표와 목표진단(goal_health_brief, goal_diagnostic_memo)을 정리해보고해주세요.
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-27dd443d file:///Users/juntae.park/projects/harness-platform/docs/education/edu_parents_f
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium

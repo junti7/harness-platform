@@ -56,3 +56,66 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-31 persona-f2c7f55e 우리 제품 라인업을 어떻게 구성해야 할까?
+- what_i_did: run_persona 실행 → 채널 발언 (llm_ok_no_post)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 persona-650a231c 간단하게 답변해줘
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 orch-b663a8f8 범용 LLM(ChatGPT/Gemini/Claude)이 즉답 못 하는 'killer content' 후보를 정의하라. 학부모가 폰의 무료 LLM
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-639b0d26 대표님 지시: '말로만 하면 안 되고 실제 산출물로 나와야 한다.' 각 팀은 진행 중이라고 보고한 모든 항목을 검증 가능한 산출물(파일 경로/U
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-c4423aae 대표님 지시: 말로만 하면 안 되고 실제 산출물로 나와야 한다. 진행 중이라고 보고한 모든 항목에 대해 워크스페이스 쓰기 권한이 unblock되
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-b9212bf7 B2I 전략 전환에 맞춰 Physical AI Weekly를 B2I(Business-to-Investor)로 개편하는 상품 기획(product_
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-d39d7b11 B2I 전략 전환에 맞춰 Physical AI Weekly를 B2I(Business-to-Investor)로 개편하는 상품 기획(product_
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-808b1835 B2I 전략 전환에 맞춰 Physical AI Weekly를 B2I(Business-to-Investor)로 개편하는 상품 기획(product_
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-a657cabe file:///Users/juntae.park/projects/harness-platform/docs/education/edu_parents_f
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium

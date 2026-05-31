@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.harness.pipeline</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/juntaepark/projects/harness-platform/.venv/bin/python3</string>
+    <string>/Users/juntaepark/projects/harness-platform/run_pipeline.py</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/juntaepark/projects/harness-platform</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    <key>DATABASE_URL</key>
+    <string>postgresql://localhost/harness_prod</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>10</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/juntaepark/projects/harness-platform/logs/pipeline.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/juntaepark/projects/harness-platform/logs/pipeline.error.log</string>
+</dict>
+</plist>

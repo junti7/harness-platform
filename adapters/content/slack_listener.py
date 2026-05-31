@@ -11,6 +11,7 @@ import os
 import sys
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -219,8 +220,19 @@ def _orchestrate_bg(order: str, logger):
 def _mentions_bg(handles: list[str], question: str, channel: str, logger):
     try:
         from adapters.content.orchestrator import respond_as_persona
-        for handle in handles:
-            respond_as_persona(handle, question, channel_id=channel)
+        # 병렬 호출: 특정 페르소나 다중 멘션 시 직렬 대기로 인한 무응답 체감 방지
+        workers = min(4, max(1, len(handles)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(respond_as_persona, handle, question, channel_id=channel): handle
+                for handle in handles
+            }
+            for future in as_completed(futures):
+                handle = futures[future]
+                try:
+                    future.result()
+                except Exception as exc:  # noqa: BLE001
+                    logger.error(f"[meeting] {handle} 멘션 처리 실패: {exc}")
     except Exception as exc:
         logger.error(f"[meeting] mention 응답 실패: {exc}")
 
@@ -305,19 +317,40 @@ def _jarvis_route_bg(question: str, channel: str, logger):
         else:
             url_summaries += f"\n[{url}: 직접 접근 불가 — URL만 페르소나에게 전달]\n"
 
+    # 로컬 파일 경로 수집 (file://... 또는 /Users/juntae.park/projects/harness-platform/...)
+    local_paths = re.findall(r"(?:file://)?(/Users/juntae.park/projects/harness-platform/[a-zA-Z0-9_\-\./#%+]+)", question)
+    cleaned_local_paths = []
+    for p in local_paths:
+        p_clean = p.rstrip("#.,?!*)]\"'")
+        if p_clean not in cleaned_local_paths:
+            cleaned_local_paths.append(p_clean)
+
+    local_summaries = ""
+    for path_str in cleaned_local_paths[:3]:
+        p = Path(path_str)
+        if p.exists() and p.is_file():
+            try:
+                content = p.read_text(encoding="utf-8")
+                local_summaries += f"\n[로컬 파일 내용: {p.name}]\n{content[:3000]}\n"
+            except Exception as exc:
+                local_summaries += f"\n[로컬 파일 내용: {p.name} (읽기 실패: {exc})]\n"
+        else:
+            local_summaries += f"\n[로컬 파일: {p.name} (존재하지 않거나 파일이 아님: {path_str})]\n"
+
     # Jarvis가 라우팅 결정
     routing_prompt = (
         "당신은 Harness의 비서실장(Jarvis)입니다.\n"
         "대표님이 #회의실에 다음 지시를 내리셨습니다.\n\n"
         f"[대표님 지시]\n{question}\n"
         f"{url_summaries}\n"
+        f"{local_summaries}\n"
         "[활성 팀 목록]\n"
         f"{active_info}\n\n"
         "이 지시에 답변하기 가장 적절한 팀 handle을 1~3개 선택하고, "
         "그 팀들에게 전달할 구체적인 과제를 작성하세요.\n"
         "반드시 아래 JSON 형식으로만 응답하세요:\n"
         '{"route_to": ["handle1"], '
-        '"enriched_task": "페르소나에게 전달할 구체 과제 (URL 요약 포함)", '
+        '"enriched_task": "페르소나에게 전달할 구체 과제 (URL/로컬파일 요약 포함)", '
         '"jarvis_note": "#회의실에 게시할 비서실장 한 줄 안내"}'
     )
 
@@ -338,7 +371,11 @@ def _jarvis_route_bg(question: str, channel: str, logger):
     # 폴백: 파싱 실패 시 전 팀 호출
     if not route_to:
         route_to = [p.handle for p in active]
-        enriched_task = question + (f"\n\n[URL 참고]\n{url_summaries}" if url_summaries else "")
+        enriched_task = question
+        if url_summaries:
+            enriched_task += f"\n\n[URL 참고]\n{url_summaries}"
+        if local_summaries:
+            enriched_task += f"\n\n[로컬 파일 내용 참고]\n{local_summaries}"
 
     # #회의실에 비서실장 안내 게시
     target_names = ", ".join(

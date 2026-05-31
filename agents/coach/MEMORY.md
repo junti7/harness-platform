@@ -28,3 +28,17 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-31 persona-7d0796d9 간단하게 답변해줘
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-ce801a69 file:///Users/juntae.park/projects/harness-platform/docs/education/edu_parents_f
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium

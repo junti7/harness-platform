@@ -71,7 +71,7 @@
 
 | ID | 유형 | 설명 | 확률 | 영향 | 상태 | 완화 조치 | Owner | 감지일 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| TRD-001 | 법적·규제 | 한국 거주자의 해외 자기계정 투자 외국환거래법 저촉 가능성 | low | critical | mitigating | 2026-05-27 한국은행 답변: 연간 $100,000 이하 송금 신고 불필요. **단, 비공식 참고 답변.** 2026-05-27 Cross-LLM Legal Review 완료(CONCERN): 4개 조건 확인 필요 — 특히 **조건#2 은행 해외예금신고 확인 CEO 직접 필요**. 자본시장법 OK, 자기계정 알고리즘 OK, 양도세 신고 의무 확인. 상세: `docs/reports/llm_outputs/legal_review_ar018_cond7_2026-05-27.md` | Legal Counsel | 2026-05-26 |
+| TRD-001 | 법적·규제 | 한국 거주자의 해외 자기계정 투자 외국환거래법 저촉 가능성 | low | critical | resolved | 2026-05-27 한국은행 답변: 연간 $100,000 이하 송금 신고 불필요. 2026-05-31 지정은행 해외예금/증권취득 신고 조건 완료 CEO 최종 승인 및 resolved 처리 완료. 자본시장법 OK, 자기계정 알고리즘 OK, 양도세 신고 의무 확인. | Legal Counsel | 2026-05-26 |
 | TRD-002 | 운영 | Alpaca Paper Trading 포지션 추적 파일(`paper_trading_positions.json`) 손실 시 손절 관리 불가 | low | high | mitigating | Mac Mini + 로컬 양쪽 유지. 파일 삭제 금지 rule CLAUDE.md 명시. | Codex | 2026-05-26 |
 | TRD-003 | 전략 | IBKR Prediction Markets 계좌를 일반 증권 계좌(Pro)로 오인할 위험 | medium | high | resolved | 2026-05-26 CEO 직접 확인: IBKR Pro 계좌 개설 완료. | Codex | 2026-05-26 |
 | TRD-004 | 전략 | Turtle Trading 유니버스(SOXX 등) Physical AI 테마 집중 — 섹터 충격 시 전 포지션 동시 손실 | medium | high | mitigating | 최대 6개 종목 분산, 1% 리스크 한도. Paper Trading 기간 **8주→2주로 CEO 단축 결정 (2026-05-27)**. 완료 기준일: 2026-06-08. 기완료 항목: Alpaca 연결·SOXX 주문·Cross-LLM 게이트. 잔여: MDD 모니터링·청산 로직 검증. | Business Risk Management | 2026-05-26 |
@@ -89,3 +89,4 @@
 | 2026-05-27 | TRD-001 open→mitigating — 한국은행 답변 수신: 연간 $100K 이하 신고 불필요. 운영 한도 $100K/년 확정. | Claude (Sonnet 4.6) |
 | 2026-05-27 | TRD-001 mitigating 갱신 — Cross-LLM Legal Review 완료 (Claude+Gemini, CONCERN). 4개 조건 중 조건#2(해외예금신고) CEO 확인 필요. 자본시장법·알고리즘 매매 OK. 양도세 의무 확인. | Claude (Sonnet 4.6) |
 | 2026-05-27 | TRD-004 갱신 — CEO 결정: Paper Trading 기간 8주→2주 단축. 완료 기준일 2026-06-08. 기완료 항목 인정(Alpaca·SOXX·Cross-LLM). | Claude (Sonnet 4.6) |
+| 2026-05-31 | TRD-001 resolved — CEO 직접 확인 및 완료 선언: 한국은행 외환거래 회신 및 지정은행 해외예금/증권취득 신고 조건 완료. | Claude (Sonnet 4.6) |

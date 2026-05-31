@@ -1,0 +1,352 @@
+[
+  {
+    "source": "OpenAlex",
+    "title": "ChatGPT for good? On opportunities and challenges of large language models for education",
+    "year": 2023,
+    "doi": "https://doi.org/10.1016/j.lindif.2023.102274",
+    "cited_by": 4784,
+    "open_access": true,
+    "pdf_url": "https://epub.ub.uni-muenchen.de/125071/1/ChatGPT_for_Good_v3.pdf",
+    "query_tag": "anxiety"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "Global incidence, prevalence, years lived with disability (YLDs), disability-adjusted life-years (DALYs), and healthy life expectancy (HALE) for 371 diseases and injuries in 204 countries and territories and 811 subnational locations, 1990–2021: a systematic analysis for the Global Burden of Disease Study 2021",
+    "year": 2024,
+    "doi": "https://doi.org/10.1016/s0140-6736(24)00757-8",
+    "cited_by": 4248,
+    "open_access": true,
+    "pdf_url": "http://www.thelancet.com/article/S0140673624007578/pdf",
+    "query_tag": "korea_edu"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "Global, regional, and national burden of diabetes from 1990 to 2021, with projections of prevalence to 2050: a systematic analysis for the Global Burden of Disease Study 2021",
+    "year": 2023,
+    "doi": "https://doi.org/10.1016/s0140-6736(23)01301-6",
+    "cited_by": 4099,
+    "open_access": true,
+    "pdf_url": "http://www.thelancet.com/article/S0140673623013016/pdf",
+    "query_tag": "korea_edu"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "Opinion Paper: “So what if ChatGPT wrote it?” Multidisciplinary perspectives on opportunities, challenges and implications of generative conversational AI for research, practice and policy",
+    "year": 2023,
+    "doi": "https://doi.org/10.1016/j.ijinfomgt.2023.102642",
+    "cited_by": 3567,
+    "open_access": true,
+    "pdf_url": "https://linkinghub.elsevier.com/science/article/pii/S0268401223000233/pdfft?md5=492895056a2fa29b1cb81876a1c57544&pid=1-s2.0-S0268401223000233-main.pdf",
+    "query_tag": "chatgpt_academic"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "Performance of ChatGPT on USMLE: Potential for AI-assisted medical education using large language models",
+    "year": 2023,
+    "doi": "https://doi.org/10.1371/journal.pdig.0000198",
+    "cited_by": 3485,
+    "open_access": true,
+    "pdf_url": "https://journals.plos.org/digitalhealth/article/file?id=10.1371/journal.pdig.0000198&type=printable",
+    "query_tag": "cognitive_offload"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "Minimal information for studies of extracellular vesicles (MISEV2023): From basic to advanced approaches",
+    "year": 2024,
+    "doi": "https://doi.org/10.1002/jev2.12404",
+    "cited_by": 3432,
+    "open_access": true,
+    "pdf_url": "https://doi.org/10.1002/jev2.12404",
+    "query_tag": "korea_edu"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "Global mortality associated with 33 bacterial pathogens in 2019: a systematic analysis for the Global Burden of Disease Study 2019",
+    "year": 2022,
+    "doi": "https://doi.org/10.1016/s0140-6736(22)02185-7",
+    "cited_by": 2046,
+    "open_access": true,
+    "pdf_url": "http://www.thelancet.com/article/S0140673622021857/pdf",
+    "query_tag": "korea_edu"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "TRIPOD+AI statement: updated guidance for reporting clinical prediction models that use regression or machine learning methods",
+    "year": 2024,
+    "doi": "https://doi.org/10.1136/bmj-2023-078378",
+    "cited_by": 1896,
+    "open_access": true,
+    "pdf_url": "https://www.bmj.com/content/bmj/385/bmj-2023-078378.full.pdf",
+    "query_tag": "chatgpt_academic"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "ChatGPT: five priorities for research",
+    "year": 2023,
+    "doi": "https://doi.org/10.1038/d41586-023-00288-7",
+    "cited_by": 1768,
+    "open_access": true,
+    "pdf_url": "https://pure.amsterdamumc.nl/ws/files/139807637/Chatgpt.pdf",
+    "query_tag": "chatgpt_academic"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "2022 ACC/AHA Guideline for the Diagnosis and Management of Aortic Disease: A Report of the American Heart Association/American College of Cardiology Joint Committee on Clinical Practice Guidelines",
+    "year": 2022,
+    "doi": "https://doi.org/10.1161/cir.0000000000001106",
+    "cited_by": 1760,
+    "open_access": true,
+    "pdf_url": "https://www.ahajournals.org/doi/pdf/10.1161/CIR.0000000000001106",
+    "query_tag": "korea_edu"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "A Metaverse: Taxonomy, Components, Applications, and Open Challenges",
+    "year": 2022,
+    "doi": "https://doi.org/10.1109/access.2021.3140175",
+    "cited_by": 1740,
+    "open_access": true,
+    "pdf_url": "https://ieeexplore.ieee.org/ielx7/6287639/9668973/09667507.pdf",
+    "query_tag": "anxiety"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "Brain charts for the human lifespan",
+    "year": 2022,
+    "doi": "https://doi.org/10.1038/s41586-022-04554-y",
+    "cited_by": 1739,
+    "open_access": true,
+    "pdf_url": "https://doi.org/10.1038/s41586-022-04554-y",
+    "query_tag": "korea_edu"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "Students’ voices on generative AI: perceptions, benefits, and challenges in higher education",
+    "year": 2023,
+    "doi": "https://doi.org/10.1186/s41239-023-00411-8",
+    "cited_by": 1677,
+    "open_access": true,
+    "pdf_url": "https://educationaltechnologyjournal.springeropen.com/counter/pdf/10.1186/s41239-023-00411-8",
+    "query_tag": "chatgpt_academic"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "ChatGPT: Bullshit spewer or the end of traditional assessments in higher education?",
+    "year": 2023,
+    "doi": "https://doi.org/10.37074/jalt.2023.6.1.9",
+    "cited_by": 1642,
+    "open_access": true,
+    "pdf_url": "https://journals.sfu.ca/jalt/index.php/jalt/article/download/689/539",
+    "query_tag": "anxiety"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "What if the devil is my guardian angel: ChatGPT as a case study of using chatbots in education",
+    "year": 2023,
+    "doi": "https://doi.org/10.1186/s40561-023-00237-x",
+    "cited_by": 1543,
+    "open_access": true,
+    "pdf_url": "https://slejournal.springeropen.com/counter/pdf/10.1186/s40561-023-00237-x",
+    "query_tag": "chatgpt_academic"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "World guidelines for falls prevention and management for older adults: a global initiative",
+    "year": 2022,
+    "doi": "https://doi.org/10.1093/ageing/afac205",
+    "cited_by": 1457,
+    "open_access": true,
+    "pdf_url": "https://academic.oup.com/ageing/article-pdf/51/9/afac205/47819177/afac205.pdf",
+    "query_tag": "anxiety"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "A SWOT analysis of ChatGPT: Implications for educational practice and research",
+    "year": 2023,
+    "doi": "https://doi.org/10.1080/14703297.2023.2195846",
+    "cited_by": 1143,
+    "open_access": true,
+    "pdf_url": "https://doi.org/10.1080/14703297.2023.2195846",
+    "query_tag": "anxiety"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "Chatting about ChatGPT: how may AI and GPT impact academia and libraries?",
+    "year": 2023,
+    "doi": "https://doi.org/10.1108/lhtn-01-2023-0009",
+    "cited_by": 1091,
+    "open_access": true,
+    "pdf_url": "https://hal.science/hal-05063020v1/document",
+    "query_tag": "anxiety"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "A survey on large language model based autonomous agents",
+    "year": 2024,
+    "doi": "https://doi.org/10.1007/s11704-024-40231-1",
+    "cited_by": 1064,
+    "open_access": true,
+    "pdf_url": "https://link.springer.com/content/pdf/10.1007/s11704-024-40231-1.pdf",
+    "query_tag": "anxiety"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "Intelligent Clinical Documentation: Harnessing Generative AI for Patient-Centric Clinical Note Generation",
+    "year": 2024,
+    "doi": "https://doi.org/10.38124/ijisrt/ijisrt24may1483",
+    "cited_by": 1017,
+    "open_access": true,
+    "pdf_url": "https://doi.org/10.38124/ijisrt/ijisrt24may1483",
+    "query_tag": "anxiety"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "AI Tools in Society: Impacts on Cognitive Offloading and the Future of Critical Thinking",
+    "year": 2025,
+    "doi": "https://doi.org/10.3390/soc15010006",
+    "cited_by": 537,
+    "open_access": true,
+    "pdf_url": "https://www.mdpi.com/2075-4698/15/1/6/pdf?version=1735907439",
+    "query_tag": "cognitive_offload"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "Edge AI: A survey",
+    "year": 2023,
+    "doi": "https://doi.org/10.1016/j.iotcps.2023.02.004",
+    "cited_by": 429,
+    "open_access": true,
+    "pdf_url": "https://ars.els-cdn.com/content/image/1-s2.0-S2667345223000196-ga1_lrg.jpg",
+    "query_tag": "cognitive_offload"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "<scp>AI</scp>‐driven adaptive learning for sustainable educational transformation",
+    "year": 2024,
+    "doi": "https://doi.org/10.1002/sd.3221",
+    "cited_by": 362,
+    "open_access": true,
+    "pdf_url": "https://onlinelibrary.wiley.com/doi/pdfdirect/10.1002/sd.3221",
+    "query_tag": "parental_concern"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "Beware of metacognitive laziness: Effects of generative artificial intelligence on learning motivation, processes, and performance",
+    "year": 2024,
+    "doi": "https://doi.org/10.1111/bjet.13544",
+    "cited_by": 358,
+    "open_access": true,
+    "pdf_url": "https://onlinelibrary.wiley.com/doi/pdfdirect/10.1111/bjet.13544",
+    "query_tag": "cognitive_offload"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "Not quite eye to A.I.: student and teacher perspectives on the use of generative artificial intelligence in the writing process",
+    "year": 2023,
+    "doi": "https://doi.org/10.1186/s41239-023-00427-0",
+    "cited_by": 295,
+    "open_access": true,
+    "pdf_url": "https://educationaltechnologyjournal.springeropen.com/counter/pdf/10.1186/s41239-023-00427-0",
+    "query_tag": "cognitive_offload"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "Deep Learning for Phishing Detection: Taxonomy, Current Challenges and Future Directions",
+    "year": 2022,
+    "doi": "https://doi.org/10.1109/access.2022.3151903",
+    "cited_by": 197,
+    "open_access": true,
+    "pdf_url": "https://ieeexplore.ieee.org/ielx7/6287639/9668973/09716113.pdf",
+    "query_tag": "cognitive_offload"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "6G-Enabled Edge AI for Metaverse: Challenges, Methods, and Future Research Directions",
+    "year": 2022,
+    "doi": "https://doi.org/10.23919/jcin.2022.9815195",
+    "cited_by": 190,
+    "open_access": true,
+    "pdf_url": "https://ieeexplore.ieee.org/ielx7/8892389/9815192/09815195.pdf",
+    "query_tag": "cognitive_offload"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "Disparities in Vision Health and Eye Care",
+    "year": 2022,
+    "doi": "https://doi.org/10.1016/j.ophtha.2022.07.010",
+    "cited_by": 183,
+    "open_access": true,
+    "pdf_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10109525/pdf/nihms-1884543.pdf",
+    "query_tag": "parental_concern"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "AI and English language teaching: Affordances and challenges",
+    "year": 2024,
+    "doi": "https://doi.org/10.1111/bjet.13460",
+    "cited_by": 179,
+    "open_access": true,
+    "pdf_url": "https://onlinelibrary.wiley.com/doi/pdfdirect/10.1111/bjet.13460",
+    "query_tag": "parental_concern"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "AI and 6G Into the Metaverse: Fundamentals, Challenges and Future Research Trends",
+    "year": 2024,
+    "doi": "https://doi.org/10.1109/ojcoms.2024.3349465",
+    "cited_by": 159,
+    "open_access": true,
+    "pdf_url": "https://ieeexplore.ieee.org/ielx7/8782661/10362961/10415393.pdf",
+    "query_tag": "cognitive_offload"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "Human-centred learning analytics and AI in education: A systematic literature review",
+    "year": 2024,
+    "doi": "https://doi.org/10.1016/j.caeai.2024.100215",
+    "cited_by": 151,
+    "open_access": true,
+    "pdf_url": "https://doi.org/10.1016/j.caeai.2024.100215",
+    "query_tag": "parental_concern"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "The Influence of Emerging Technologies on Distance Education",
+    "year": 2023,
+    "doi": "https://doi.org/10.3390/electronics12071550",
+    "cited_by": 140,
+    "open_access": true,
+    "pdf_url": "https://www.mdpi.com/2079-9292/12/7/1550/pdf?version=1679732829",
+    "query_tag": "parental_concern"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "Implementing artificial intelligence education for middle school technology education in Republic of Korea",
+    "year": 2023,
+    "doi": "https://doi.org/10.1007/s10798-023-09812-2",
+    "cited_by": 110,
+    "open_access": true,
+    "pdf_url": "https://link.springer.com/content/pdf/10.1007/s10798-023-09812-2.pdf",
+    "query_tag": "parental_concern"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "A systematic scoping review of reflective writing in medical education",
+    "year": 2023,
+    "doi": "https://doi.org/10.1186/s12909-022-03924-4",
+    "cited_by": 104,
+    "open_access": true,
+    "pdf_url": "https://bmcmededuc.biomedcentral.com/counter/pdf/10.1186/s12909-022-03924-4",
+    "query_tag": "parental_concern"
+  },
+  {
+    "source": "OpenAlex",
+    "title": "“ChatGPT seems too good to be true”: College students’ use and perceptions of generative AI",
+    "year": 2024,
+    "doi": "https://doi.org/10.1016/j.caeai.2024.100294",
+    "cited_by": 94,
+    "open_access": true,
+    "pdf_url": "https://doi.org/10.1016/j.caeai.2024.100294",
+    "query_tag": "parental_concern"
+  }
+]

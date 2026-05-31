@@ -72,6 +72,241 @@
         .hero, .section, .cta { padding: 22px; }
         .metrics, .two-col, .proof, .scenes, .skills { grid-template-columns: 1fr; }
       }
+
+      /* Curriculum Grid Styles */
+      .curriculum-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+        margin-top: 24px;
+      }
+      .curriculum-card {
+        background: rgba(255,255,255,.95);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 20px;
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        display: flex;
+        flex-direction: column;
+      }
+      .curriculum-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 16px 36px rgba(37,99,235,.08);
+        border-color: rgba(37,99,235,.3);
+      }
+      .week-badge {
+        display: inline-flex;
+        align-self: flex-start;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(37,99,235,.08);
+        color: var(--blue);
+        font-size: 11px;
+        font-weight: 800;
+        margin-bottom: 12px;
+      }
+      .curriculum-card strong {
+        font-size: 16px;
+        line-height: 1.4;
+        margin-bottom: 8px;
+        color: var(--ink);
+      }
+      .curriculum-card p {
+        margin: 0;
+        color: var(--sub);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+      @media (max-width: 960px) {
+        .curriculum-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      @media (max-width: 540px) {
+        .curriculum-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* Modal Backdrop & Glassmorphism Styles */
+      .modal-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(15, 23, 42, 0.4);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        z-index: 9999;
+      }
+      .modal-backdrop.active {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .modal-container {
+        background: rgba(255, 255, 255, 0.95);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        box-shadow: 0 32px 80px rgba(15, 23, 42, 0.15);
+        border-radius: 28px;
+        width: min(520px, calc(100vw - 32px));
+        padding: 32px;
+        transform: scale(0.95) translateY(10px);
+        transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .modal-backdrop.active .modal-container {
+        transform: scale(1) translateY(0);
+      }
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+      .modal-title {
+        font-size: 22px;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        color: var(--ink);
+      }
+      .modal-close {
+        background: rgba(15, 23, 42, 0.05);
+        border: none;
+        width: 32px;
+        height: 32px;
+        border-radius: 999px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        color: var(--sub);
+        transition: all 0.2s;
+      }
+      .modal-close:hover {
+        background: rgba(15, 23, 42, 0.1);
+        color: var(--ink);
+      }
+      .form-group {
+        margin-bottom: 18px;
+      }
+      .form-label {
+        display: block;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--sub);
+        margin-bottom: 6px;
+      }
+      .form-input {
+        width: 100%;
+        min-height: 48px;
+        padding: 0 16px;
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        background: rgba(255, 255, 255, 0.8);
+        color: var(--ink);
+        font-size: 15px;
+        transition: all 0.2s;
+      }
+      .form-input:focus {
+        outline: none;
+        border-color: var(--blue);
+        box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+      }
+      .modal-submit {
+        width: 100%;
+        min-height: 48px;
+        border-radius: 12px;
+        border: none;
+        background: var(--blue);
+        color: white;
+        font-weight: 800;
+        font-size: 15px;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .modal-submit:hover {
+        background: #1d4ed8;
+      }
+      
+      /* Calendar/Scheduler Grid Styles */
+      .date-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-bottom: 18px;
+      }
+      .date-btn {
+        background: white;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        padding: 10px;
+        border-radius: 12px;
+        cursor: pointer;
+        text-align: center;
+        transition: all 0.2s;
+        color: var(--sub);
+      }
+      .date-btn:hover {
+        border-color: var(--blue);
+        background: rgba(37, 99, 235, 0.02);
+      }
+      .date-btn.selected {
+        border-color: var(--blue);
+        background: rgba(37, 99, 235, 0.08);
+        color: var(--blue);
+        font-weight: 800;
+      }
+      .date-btn span {
+        display: block;
+      }
+      .date-btn .date-day {
+        font-size: 14px;
+        font-weight: 700;
+      }
+      .date-btn .date-desc {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      
+      /* Form Submission Success States */
+      .success-view {
+        text-align: center;
+        padding: 16px 0;
+      }
+      .success-icon {
+        width: 56px;
+        height: 56px;
+        background: rgba(18, 183, 106, 0.1);
+        color: var(--green);
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 28px;
+        margin-bottom: 16px;
+      }
+      .success-title {
+        font-size: 20px;
+        font-weight: 800;
+        margin-bottom: 8px;
+        color: var(--ink);
+      }
+      .success-desc {
+        font-size: 14px;
+        color: var(--sub);
+        line-height: 1.6;
+        margin-bottom: 24px;
+      }
     </style>
   </head>
   <body>
@@ -213,6 +448,53 @@
         </div>
       </section>
 
+      <section class="section">
+        <h2>8주 과정 커리큘럼 상세 안내</h2>
+        <p class="meta">강의를 넘어 가정에서 실제로 작동하는 '우리 집 AI 사용 기준'을 직접 만듭니다</p>
+        <div class="curriculum-grid">
+          <div class="curriculum-card">
+            <span class="week-badge">1주차</span>
+            <strong>AI 시대의 자녀 교육, 무엇을 준비할 것인가?</strong>
+            <p>인류 역사상 가장 빠르고 강력하게 일상에 스며들고 있는 AI 기술 변화의 본질을 이해하고, 부모와 자녀 간의 심리적·경험적 격차를 진단합니다.</p>
+          </div>
+          <div class="curriculum-card">
+            <span class="week-badge">2주차</span>
+            <strong>부모가 먼저 쓰는 ChatGPT / Claude 실전 가이드</strong>
+            <p>다양한 AI 도구를 부모가 직접 체험합니다. 프롬프트 엔지니어링의 기본 원리인 '구체성'과 '맥락 설정'을 배우고 최선의 답변을 이끌어내는 힘을 기릅니다.</p>
+          </div>
+          <div class="curriculum-card">
+            <span class="week-badge">3주차</span>
+            <strong>'검색'과 '요약'의 허용 경계선 긋기</strong>
+            <p>과제 수행에서 단순 검색과 AI가 주는 요약을 그대로 베끼는 것의 차이를 파악합니다. 교육적 성장을 해치지 않으면서 활용할 수 있는 가이드라인을 설계합니다.</p>
+          </div>
+          <div class="curriculum-card">
+            <span class="week-badge">4주차</span>
+            <strong>숙제와 독서록, AI를 '도구'로 쓰는 법</strong>
+            <p>아이들이 가장 흔하게 사용하는 작문 및 탐구 과제 영역입니다. AI를 단순 대필자가 아닌, 생각의 깊이를 더해주는 든든한 페이스메이커로 바꾸는 피드백 기법을 익힙니다.</p>
+          </div>
+          <div class="curriculum-card">
+            <span class="week-badge">5주차</span>
+            <strong>할루시네이션(거짓 정보)과 디지털 리터러시</strong>
+            <p>AI가 완벽하지 않다는 것을 실제 오답 유도 실험을 통해 직접 경험합니다. 자녀에게 AI 답변을 맹신하지 않고 팩트체크할 수 있는 비판적 사고를 심어줍니다.</p>
+          </div>
+          <div class="curriculum-card">
+            <span class="week-badge">6주차</span>
+            <strong>우리 집 고유의 'AI 홈 스탠다드' 설계</strong>
+            <p>각 가정이 지향하는 인성적·지능적 가치관에 따라 구체적이고 실현 가능한 맞춤형 '우리 집 AI 10대 허용/규제 규칙' 초안 문서를 작성합니다.</p>
+          </div>
+          <div class="curriculum-card">
+            <span class="week-badge">7주차</span>
+            <strong>갈등 없는 자녀 기준 타협 및 약속 선언</strong>
+            <p>부모의 일방적인 통보가 아니라, 자녀가 스스로 기준에 동의하고 따르도록 만드는 협상 기법을 배우고 가상 롤플레잉을 통해 실생활 소통을 조율합니다.</p>
+          </div>
+          <div class="curriculum-card">
+            <span class="week-badge">8주차</span>
+            <strong>기준표 최종 확정 및 디지털 프런티어 부모</strong>
+            <p>집안 잘 보이는 곳에 붙여놓고 꺼내볼 수 있는 맞춤형 '우리 집 AI 기준표'를 인쇄/PDF 문서로 확정하고, 앞으로 새롭게 등장할 AI 도구에 대응하는 지속 가능한 지침을 완성합니다.</p>
+          </div>
+        </div>
+      </section>
+
       <section class="cta">
         <h2>신청 전에 먼저 확인해보세요. 지금 우리 집에는 기준이 있습니까, 반응만 있습니까?</h2>
         <p>
@@ -222,11 +504,204 @@
           지금 우리 집이 어디서 가장 흔들리는지부터 확인해보세요.
         </p>
         <div class="cta-actions">
-          <a class="btn btn-primary" href="#">우리 집 AI 기준표 예시 받기</a>
-          <a class="btn btn-secondary" href="#">학부모 설명회 예약하기</a>
+          <a class="btn btn-primary" href="javascript:void(0)" onclick="openModal('modal-standard')">우리 집 AI 기준표 예시 받기</a>
+          <a class="btn btn-secondary" href="javascript:void(0)" onclick="openModal('modal-session')">학부모 설명회 예약하기</a>
         </div>
         <div class="cta-note">권장 CTA 구조: 진단 질문 7개 → 설명회 → 8주 등록 상담</div>
       </section>
     </main>
+
+    <!-- Modals -->
+    <!-- Modal 1: 우리 집 AI 기준표 예시 받기 -->
+    <div id="modal-standard" class="modal-backdrop">
+      <div class="modal-container">
+        <div class="modal-header">
+          <div class="modal-title">우리 집 AI 기준표 예시 받기</div>
+          <button class="modal-close" onclick="closeModal('modal-standard')">&times;</button>
+        </div>
+        <div id="form-standard-view">
+          <p style="font-size: 14px; color: var(--sub); line-height: 1.6; margin-bottom: 20px;">
+            AI 시대 자녀 교육의 첫걸음, 이미 검증된 다른 가정의 <strong>'AI 홈 스탠다드(기준표) 예시 PDF'</strong>와 핵심 가이드라인을 무료로 보내드립니다.
+          </p>
+          <div class="form-group">
+            <label class="form-label" for="std-email">이메일 주소</label>
+            <input type="email" id="std-email" class="form-input" placeholder="example@harness.edu" required />
+          </div>
+          <div class="form-group" style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px;">
+            <div style="display: flex; gap: 8px; align-items: flex-start;">
+              <input type="checkbox" id="std-agree-required" style="margin-top: 3px;" required />
+              <label for="std-agree-required" style="font-size: 12px; color: var(--sub); cursor: pointer; font-weight: 700;">
+                [필수] 개인정보 수집 및 이용에 동의합니다.
+              </label>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: flex-start;">
+              <input type="checkbox" id="std-agree-optional" style="margin-top: 3px;" />
+              <label for="std-agree-optional" style="font-size: 12px; color: var(--muted); cursor: pointer;">
+                [선택] 신규 교육 과정 및 설명회 마케팅 정보 수신에 동의합니다.
+              </label>
+            </div>
+          </div>
+          <button class="modal-submit" onclick="submitStandardForm()">기준표 예시 무료로 받기</button>
+        </div>
+        <div id="success-standard-view" class="success-view" style="display: none;">
+          <div class="success-icon">✓</div>
+          <div class="success-title">발송 완료!</div>
+          <p class="success-desc">
+            입력하신 이메일로 <strong>'우리 집 AI 기준표 예시 가이드(PDF)'</strong>가 성공적으로 발송되었습니다.<br />
+            수신함에 메일이 도착하지 않았다면 스팸 메일함을 확인해 주세요.
+          </p>
+          <button class="modal-submit" onclick="closeModal('modal-standard')">확인</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal 2: 학부모 설명회 예약하기 -->
+    <div id="modal-session" class="modal-backdrop">
+      <div class="modal-container">
+        <div class="modal-header">
+          <div class="modal-title">학부모 설명회 예약 신청</div>
+          <button class="modal-close" onclick="closeModal('modal-session')">&times;</button>
+        </div>
+        <div id="form-session-view">
+          <p style="font-size: 14px; color: var(--sub); line-height: 1.6; margin-bottom: 20px;">
+            온라인(Zoom)으로 진행되는 설명회에 참석하고, 우리 집 AI 허용선의 해답을 만나보세요. <strong>원하는 날짜와 시간</strong>을 선택해 주세요.
+          </p>
+          <div class="form-group">
+            <label class="form-label">설명회 일정 선택</label>
+            <div class="date-grid">
+              <button class="date-btn selected" onclick="selectDate(this, '6월 10일 (수) 오후 8:00')">
+                <span class="date-day">6/10 (수)</span>
+                <span class="date-desc">오후 8시 (Zoom)</span>
+              </button>
+              <button class="date-btn" onclick="selectDate(this, '6월 17일 (수) 오후 8:00')">
+                <span class="date-day">6/17 (수)</span>
+                <span class="date-desc">오후 8시 (Zoom)</span>
+              </button>
+              <button class="date-btn" onclick="selectDate(this, '6월 24일 (수) 오후 8:00')">
+                <span class="date-day">6/24 (수)</span>
+                <span class="date-desc">오후 8시 (Zoom)</span>
+              </button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="sess-name">학부모 성함</label>
+            <input type="text" id="sess-name" class="form-input" placeholder="홍길동" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="sess-phone">휴대폰 번호 (접속 링크 발송용)</label>
+            <input type="tel" id="sess-phone" class="form-input" placeholder="010-1234-5678" required />
+          </div>
+          <div class="form-group" style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px;">
+            <div style="display: flex; gap: 8px; align-items: flex-start;">
+              <input type="checkbox" id="sess-agree-required" style="margin-top: 3px;" required />
+              <label for="sess-agree-required" style="font-size: 12px; color: var(--sub); cursor: pointer; font-weight: 700;">
+                [필수] 설명회 예약 및 안내 문자 발송을 위한 개인정보 수집 및 이용에 동의합니다.
+              </label>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: flex-start;">
+              <input type="checkbox" id="sess-agree-optional" style="margin-top: 3px;" />
+              <label for="sess-agree-optional" style="font-size: 12px; color: var(--muted); cursor: pointer;">
+                [선택] 신규 안내 및 마케팅성 정보 수신에 동의합니다.
+              </label>
+            </div>
+          </div>
+          <button class="modal-submit" onclick="submitSessionForm()">설명회 무료 예약하기</button>
+        </div>
+        <div id="success-session-view" class="success-view" style="display: none;">
+          <div class="success-icon">✓</div>
+          <div class="success-title">예약이 완료되었습니다!</div>
+          <p class="success-desc">
+            신청하신 일정: <strong id="selected-schedule-text">6월 10일 (수) 오후 8:00</strong><br /><br />
+            입력하신 번호로 <strong>상세 안내 문자 및 온라인 접속(Zoom) 링크</strong>가 전송되었습니다. 설명회 시간에 맞춰 입장해 주시기 바랍니다.
+          </p>
+          <button class="modal-submit" onclick="closeModal('modal-session')">확인</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let selectedSchedule = '6월 10일 (수) 오후 8:00';
+
+      function openModal(modalId) {
+        document.getElementById(modalId).classList.add('active');
+        document.body.style.overflow = 'hidden';
+      }
+
+      function closeModal(modalId) {
+        document.getElementById(modalId).classList.remove('active');
+        document.body.style.overflow = '';
+        
+        setTimeout(() => {
+          if (modalId === 'modal-standard') {
+            document.getElementById('form-standard-view').style.display = 'block';
+            document.getElementById('success-standard-view').style.display = 'none';
+            document.getElementById('std-email').value = '';
+            document.getElementById('std-agree-required').checked = false;
+            document.getElementById('std-agree-optional').checked = false;
+          } else if (modalId === 'modal-session') {
+            document.getElementById('form-session-view').style.display = 'block';
+            document.getElementById('success-session-view').style.display = 'none';
+            document.getElementById('sess-name').value = '';
+            document.getElementById('sess-phone').value = '';
+            document.getElementById('sess-agree-required').checked = false;
+            document.getElementById('sess-agree-optional').checked = false;
+          }
+        }, 300);
+      }
+
+      document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+        backdrop.addEventListener('click', function(e) {
+          if (e.target === this) {
+            closeModal(this.id);
+          }
+        });
+      });
+
+      function selectDate(btn, dateTime) {
+        btn.parentNode.querySelectorAll('.date-btn').forEach(b => {
+          b.classList.remove('selected');
+        });
+        btn.classList.add('selected');
+        selectedSchedule = dateTime;
+      }
+
+      function submitStandardForm() {
+        const email = document.getElementById('std-email').value.trim();
+        const agreeRequired = document.getElementById('std-agree-required').checked;
+        if (!email) {
+          alert('이메일 주소를 입력해 주세요.');
+          return;
+        }
+        if (!agreeRequired) {
+          alert('[필수] 개인정보 수집 및 이용에 동의해 주세요.');
+          return;
+        }
+        
+        document.getElementById('form-standard-view').style.display = 'none';
+        document.getElementById('success-standard-view').style.display = 'block';
+      }
+
+      function submitSessionForm() {
+        const name = document.getElementById('sess-name').value.trim();
+        const phone = document.getElementById('sess-phone').value.trim();
+        const agreeRequired = document.getElementById('sess-agree-required').checked;
+        if (!name) {
+          alert('성함을 입력해 주세요.');
+          return;
+        }
+        if (!phone) {
+          alert('휴대폰 번호를 입력해 주세요.');
+          return;
+        }
+        if (!agreeRequired) {
+          alert('[필수] 개인정보 수집 및 이용에 동의해 주세요.');
+          return;
+        }
+        
+        document.getElementById('selected-schedule-text').innerText = selectedSchedule;
+        document.getElementById('form-session-view').style.display = 'none';
+        document.getElementById('success-session-view').style.display = 'block';
+      }
+    </script>
   </body>
 </html>

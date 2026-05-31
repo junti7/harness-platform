@@ -143,7 +143,7 @@ def collect_rss(sources: list[dict], logger: HarnessLogger,
                 tracker: SaturationTracker, dry_run: bool,
                 max_rss_items: int = 50) -> dict:
     rss_sources = [s for s in sources
-                   if s.get("type") in ("rss",)
+                   if s.get("type") in ("rss", "rss_daily")
                    and s.get("legal_risk", "low") != "high"
                    and s.get("active", True)]
     stats = {"attempted": len(rss_sources), "new": 0, "duplicate": 0, "error": 0}
@@ -586,7 +586,7 @@ def collect_youtube(yt_targets: list[dict], logger: HarnessLogger,
         cmd_base = [
             YT_DLP_BIN,
             "--skip-download",           # 영상 다운로드 금지 (legal_review_approve 조건)
-            "--impersonate", "chrome",
+            "--impersonate", "Chrome-131",
             "--extractor-args", "youtube:player-client=ios,android,web",
             "--write-auto-sub",
             "--write-sub",
@@ -608,8 +608,6 @@ def collect_youtube(yt_targets: list[dict], logger: HarnessLogger,
         for attempt in range(1, 3):
             try:
                 cmd = cmd_base.copy()
-                if use_impersonate:
-                    cmd.extend(["--impersonate", "chrome"])
                 if attempt == 1:
                     # 첫 번째 시도에는 크롬 브라우저 쿠키 추가
                     cmd.extend(["--cookies-from-browser", "chrome"])

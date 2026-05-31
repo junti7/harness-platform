@@ -77,8 +77,8 @@ OPENCLAW_FORMATTER_MODEL = os.environ.get("OPENCLAW_FORMATTER_MODEL", OPENCLAW_C
 OPENCLAW_CHAT_BACKEND = os.environ.get("OPENCLAW_CHAT_BACKEND", "auto").strip().lower()
 OPENCLAW_HISTORY_TURNS = int(os.environ.get("OPENCLAW_HISTORY_TURNS", "40"))
 OPENCLAW_MAX_HISTORY_CHARS = int(os.environ.get("OPENCLAW_MAX_HISTORY_CHARS", "12000"))
-OPENCLAW_CHAT_MAX_TOKENS = int(os.environ.get("OPENCLAW_CHAT_MAX_TOKENS", "1200"))
-OPENCLAW_TOOL_MAX_TOKENS = int(os.environ.get("OPENCLAW_TOOL_MAX_TOKENS", "2048"))
+OPENCLAW_CHAT_MAX_TOKENS = int(os.environ.get("OPENCLAW_CHAT_MAX_TOKENS", "4096"))
+OPENCLAW_TOOL_MAX_TOKENS = int(os.environ.get("OPENCLAW_TOOL_MAX_TOKENS", "4096"))
 OPENCLAW_INTENT_ENABLED = os.environ.get("OPENCLAW_INTENT_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
 
 # 도구 사용이 필요한 키워드 — 매칭 시 Claude Sonnet tool path로 라우팅
@@ -2013,7 +2013,7 @@ def _run_anthropic_chat(
     *,
     model: str,
     history: list[dict[str, str]] | None = None,
-    max_tokens: int = 1024,
+    max_tokens: int = 4096,
 ) -> str:
     """Anthropic chat path with prior conversation turns."""
     if _cost_limit_reached():
@@ -2045,7 +2045,7 @@ def _run_haiku_chat(user_message: str, history: list[dict[str, str]] | None = No
         user_message,
         model=OPENCLAW_INTENT_MODEL,
         history=history,
-        max_tokens=1024,
+        max_tokens=4096,
     )
 
 
@@ -2131,7 +2131,7 @@ def _format_with_haiku(user_message: str, raw_output: str) -> str:
         today_str = datetime.now().strftime("%Y년 %m월 %d일")
         resp = client.messages.create(
             model=OPENCLAW_FORMATTER_MODEL,
-            max_tokens=512,
+            max_tokens=2048,
             system=(
                 f"오늘 날짜는 {today_str}입니다. "
                 "당신은 Harness의 AI 비서 OpenClaw입니다. "

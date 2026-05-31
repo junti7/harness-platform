@@ -219,12 +219,14 @@ Heartbeat 목적:
   - 세션: `isolated`
   - delivery: `none`
 - `harness-daily-ops-brief`
-  - 주기: 매일 09:05 `Asia/Seoul`
+  - 주기: 매일 04:30 `Asia/Seoul`
   - 세션: `isolated`
   - delivery: `none`
-- `harness-weekly-competitor-benchmark`
-  - 주기: 매주 월요일 10:15 `Asia/Seoul`
+- `harness-weekly-multi-llm-red-team`
+  - 주기: 매주 월요일 10:00 `Asia/Seoul`
   - 세션: `isolated`
   - delivery: `none`
-  - 현재 provider: `gemini`
-  - 비고: Claude/Copilot 원격 인증 완료 전까지는 Gemini-only로 운영
+- `harness-gmail-ops-check`
+  - 주기: 매일 05:00, 14:00 `Asia/Seoul`
+  - 세션: `isolated`
+  - delivery: `none`

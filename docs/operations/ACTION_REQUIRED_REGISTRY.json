@@ -56,7 +56,7 @@
       "id": "AR-017",
       "owner": "KITT",
       "due_date": "2026-05-27",
-      "status": "hold",
+      "status": "completed",
       "title": "[AR-017] 내부 투자 운영 법률 검토 및 자기계정 적법성 진단",
       "description": "KITT, 당사 자본을 미국 Interactive Brokers(IBKR) 해외 계좌에 예치하여 미국 및 한국 상장 ETF를 자기계정으로 직접 운용 및 매매하는 형태에 대해 한국 자본시장법 및 관련 약관 규정상 적법성을 진단하라."
     },

@@ -17,7 +17,7 @@ WEEKLY_RED_TEAM_DIR = PROJECT_ROOT / "docs" / "reviews" / "weekly_red_team"
 PROVIDERS = {
     "claude": lambda prompt: [_find_cli("claude"), "-p", prompt],
     "codex": lambda prompt: [
-        _find_cli("codex"), "exec", "--skip-git-repo-check", "--sandbox", "read-only", "-C", str(PROJECT_ROOT), prompt
+        _find_cli("codex"), "exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "-C", str(PROJECT_ROOT), prompt
     ],
     "gemini": lambda prompt: [_find_cli("gemini"), "-p", prompt, "--skip-trust"],
 }

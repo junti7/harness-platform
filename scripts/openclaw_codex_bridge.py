@@ -216,6 +216,44 @@ def _gmail_runtime_target() -> str | None:
     return f"{GMAIL_RUNTIME_USER}@{GMAIL_RUNTIME_HOST}"
 
 
+def _gmail_runtime_is_local() -> bool:
+    host = GMAIL_RUNTIME_HOST.strip().lower()
+    if not host:
+        return False
+    local_hosts = {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+        socket.gethostname().lower(),
+    }
+    try:
+        local_hosts.add(socket.getfqdn().lower())
+    except Exception:
+        pass
+    return host in local_hosts
+
+
+def _gmail_runtime_run(command: str) -> subprocess.CompletedProcess[str]:
+    if _gmail_runtime_is_local():
+        return subprocess.run(
+            ["/bin/zsh", "-lc", command],
+            capture_output=True,
+            text=True,
+            timeout=GMAIL_RUNTIME_TIMEOUT_S,
+            check=False,
+        )
+
+    target = _gmail_runtime_target()
+    assert target is not None
+    return subprocess.run(
+        [GMAIL_RUNTIME_SSH_BIN, target, command],
+        capture_output=True,
+        text=True,
+        timeout=GMAIL_RUNTIME_TIMEOUT_S,
+        check=False,
+    )
+
+
 def _gmail_runtime_ready() -> tuple[bool, str | None]:
     if not GMAIL_RUNTIME_ENABLED:
         return False, "HARNESS_GMAIL_RUNTIME_ENABLED=false"
@@ -252,15 +290,7 @@ def _gmail_search_runtime(query: str, limit: int = 10) -> dict[str, Any]:
         raise RuntimeError(f"Gmail runtime not ready: {reason}")
 
     safe_limit = max(1, min(limit, 25))
-    target = _gmail_runtime_target()
-    assert target is not None
-    completed = subprocess.run(
-        [GMAIL_RUNTIME_SSH_BIN, target, _gmail_remote_command(query, safe_limit)],
-        capture_output=True,
-        text=True,
-        timeout=GMAIL_RUNTIME_TIMEOUT_S,
-        check=False,
-    )
+    completed = _gmail_runtime_run(_gmail_remote_command(query, safe_limit))
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout or "").strip()
         raise RuntimeError(f"Gmail search failed: {detail or 'unknown error'}")
@@ -288,9 +318,9 @@ def _gmail_search_runtime(query: str, limit: int = 10) -> dict[str, Any]:
     return {
         "runtime": {
             "enabled": True,
-            "target": target,
+            "target": "local" if _gmail_runtime_is_local() else _gmail_runtime_target(),
             "account": GMAIL_RUNTIME_ACCOUNT,
-            "mode": "ssh_gog_read_only",
+            "mode": "local_gog_read_only" if _gmail_runtime_is_local() else "ssh_gog_read_only",
         },
         "query": query,
         "limit": safe_limit,
@@ -327,15 +357,7 @@ def _gmail_message_runtime(message_id: str) -> dict[str, Any]:
     if not safe_msg_id or len(safe_msg_id) > 64:
         raise ValueError("Invalid message ID")
 
-    target = _gmail_runtime_target()
-    assert target is not None
-    completed = subprocess.run(
-        [GMAIL_RUNTIME_SSH_BIN, target, _gmail_message_remote_command(safe_msg_id)],
-        capture_output=True,
-        text=True,
-        timeout=GMAIL_RUNTIME_TIMEOUT_S,
-        check=False,
-    )
+    completed = _gmail_runtime_run(_gmail_message_remote_command(safe_msg_id))
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout or "").strip()
         raise RuntimeError(f"Gmail message retrieve failed: {detail or 'unknown error'}")
@@ -413,15 +435,7 @@ def _calendar_events_runtime(from_time: str = "today", to_time: str = "", max_re
     if to_time and not to_time.lower() in {"today", "tomorrow", "yesterday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}:
         to_time = _parse_to_rfc3339(to_time)
 
-    target = _gmail_runtime_target()
-    assert target is not None
-    completed = subprocess.run(
-        [GMAIL_RUNTIME_SSH_BIN, target, _calendar_events_remote_command(from_time, to_time, max_results)],
-        capture_output=True,
-        text=True,
-        timeout=GMAIL_RUNTIME_TIMEOUT_S,
-        check=False,
-    )
+    completed = _gmail_runtime_run(_calendar_events_remote_command(from_time, to_time, max_results))
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout or "").strip()
         raise RuntimeError(f"Calendar events failed: {detail or 'unknown error'}")
@@ -468,15 +482,7 @@ def _calendar_create_runtime(summary: str, from_time: str, to_time: str, descrip
     from_time = _parse_to_rfc3339(from_time)
     to_time = _parse_to_rfc3339(to_time)
 
-    target = _gmail_runtime_target()
-    assert target is not None
-    completed = subprocess.run(
-        [GMAIL_RUNTIME_SSH_BIN, target, _calendar_create_remote_command(summary, from_time, to_time, description, location)],
-        capture_output=True,
-        text=True,
-        timeout=GMAIL_RUNTIME_TIMEOUT_S,
-        check=False,
-    )
+    completed = _gmail_runtime_run(_calendar_create_remote_command(summary, from_time, to_time, description, location))
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout or "").strip()
         raise RuntimeError(f"Calendar create failed: {detail or 'unknown error'}")

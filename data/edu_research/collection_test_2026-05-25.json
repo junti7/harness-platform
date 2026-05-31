@@ -1,0 +1,156 @@
+{
+  "tested_at": "2026-05-25T10:50:35.043172",
+  "results": [
+    {
+      "name": "arXiv_cs.AI",
+      "status": "✅ OK",
+      "items": 0,
+      "elapsed": 0.1,
+      "note": "(no entries)"
+    },
+    {
+      "name": "EdSurge",
+      "status": "✅ OK",
+      "items": 50,
+      "elapsed": 1.5,
+      "note": "Surgeon General Advisory Wants"
+    },
+    {
+      "name": "EdWeek",
+      "status": "❌ FAIL",
+      "error": "bozo=<unknown>:223:289: not well-formed (invalid token)"
+    },
+    {
+      "name": "Edutopia",
+      "status": "❌ FAIL",
+      "error": "bozo=<unknown>:3:6: syntax error"
+    },
+    {
+      "name": "MIT_Tech_Review",
+      "status": "✅ OK",
+      "items": 10,
+      "elapsed": 0.2,
+      "note": "The Download: coding’s future,"
+    },
+    {
+      "name": "TechCrunch_edu",
+      "status": "✅ OK",
+      "items": 20,
+      "elapsed": 0.1,
+      "note": "US lawmakers demand answers fr"
+    },
+    {
+      "name": "AI타임스",
+      "status": "✅ OK",
+      "items": 50,
+      "elapsed": 0.1,
+      "note": "\"AI 추론으로 CPU 수요 폭증\"...AMD, 대만 "
+    },
+    {
+      "name": "Anthropic_Blog",
+      "status": "❌ FAIL",
+      "error": "bozo=<unknown>:2:3549: not well-formed (invalid token)"
+    },
+    {
+      "name": "연합뉴스",
+      "status": "❌ FAIL",
+      "error": "bozo=<urlopen error [Errno 54] Connection reset by peer>"
+    },
+    {
+      "name": "Brookings",
+      "status": "❌ FAIL",
+      "error": "bozo=<unknown>:19:126: not well-formed (invalid token)"
+    },
+    {
+      "name": "WEF_Edu",
+      "status": "❌ FAIL",
+      "error": "bozo=<unknown>:10:2: mismatched tag"
+    },
+    {
+      "name": "Coursera_Blog",
+      "status": "✅ OK",
+      "items": 10,
+      "elapsed": 0.9,
+      "note": "Coursera and Udemy are now one"
+    },
+    {
+      "name": "Khan_Academy_Blog",
+      "status": "✅ OK",
+      "items": 10,
+      "elapsed": 0.1,
+      "note": "The Hidden Cost of PreK Assess"
+    },
+    {
+      "name": "VentureBeat_AI",
+      "status": "✅ OK",
+      "items": 7,
+      "elapsed": 0.1,
+      "note": "Google just redesigned the sea"
+    },
+    {
+      "name": "Mollick",
+      "status": "✅ OK",
+      "items": 20,
+      "elapsed": 0.2,
+      "note": "Sign of the future: GPT-5.5"
+    },
+    {
+      "name": "조선일보_교육",
+      "status": "❌ FAIL",
+      "error": "bozo=<unknown>:2:0: syntax error"
+    },
+    {
+      "name": "한겨레",
+      "status": "✅ OK",
+      "items": 28,
+      "elapsed": 0.4,
+      "note": "유의동 “김용남, 대부업체 의혹 해명 앞뒤 안 맞아…고"
+    },
+    {
+      "name": "Semantic_Scholar",
+      "status": "❌ FAIL",
+      "error": "Client error '429 ' for url 'https://api.semanticscholar.org/graph/v1/paper/sear"
+    },
+    {
+      "name": "OpenAlex_API",
+      "status": "❌ FAIL",
+      "error": "Client error '400 Bad Request' for url 'https://api.openalex.org/works?filter=co"
+    },
+    {
+      "name": "ERIC_API",
+      "status": "✅ OK",
+      "items": 1477545,
+      "elapsed": 1.1,
+      "note": "['Implementing Artificial Intelligence Edu', 'Digital Plagiarism in EFL Education duri']"
+    },
+    {
+      "name": "HackerNews_Algolia",
+      "status": "✅ OK",
+      "items": 5,
+      "elapsed": 0.5,
+      "note": "['Teach kids creativity. Ultimately, machi', 'Ask HN: With the rise of AI, how to appr']"
+    },
+    {
+      "name": "arXiv_API",
+      "status": "❌ FAIL",
+      "error": "Redirect response '301 Moved Permanently' for url 'http://export.arxiv.org/api/q"
+    },
+    {
+      "name": "Reddit_API",
+      "status": "❌ FAIL",
+      "error": "REDDIT_CLIENT_ID 미설정 — API 키 발급 필요 (reddit.com/prefs/apps)"
+    },
+    {
+      "name": "GooglePlay_콴다",
+      "status": "✅ OK",
+      "items": 5,
+      "elapsed": 0.2,
+      "note": "학원 선생님으로써 너무좋아요"
+    },
+    {
+      "name": "ProductHunt_API",
+      "status": "❌ FAIL",
+      "error": "PRODUCT_HUNT_TOKEN 미설정 — api.producthunt.com 에서 발급 필요"
+    }
+  ]
+}

@@ -35,10 +35,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from adapters.content.slack_format import to_slack_mrkdwn  # noqa: E402
 from agents.registry import Persona, get_persona  # noqa: E402
+from scripts.llm_fallback_manager import get_current_provider, record_fallback  # noqa: E402
 
 load_dotenv(override=True)
 
-PROVIDER_TIMEOUT = 240
+PROVIDER_TIMEOUT = int(os.getenv("PERSONA_PROVIDER_TIMEOUT_SEC", "90"))
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OPENCLAW_STATUS_PATH = PROJECT_ROOT / "runtime/openclaw_status.json"
 AR_TRACKER_PATH = PROJECT_ROOT / "docs/reports/ar_tracker.jsonl"
@@ -143,14 +144,14 @@ def _enforce_persona_shape(persona: Persona, text: str) -> str:
         lowered = line.lower()
         if lowered in {"허용", "보류", "금지", "리스크", "트리거", "숫자", "의미"}:
             continue
-        compact.append(_clip_line(line, 120))
+        compact.append(_clip_line(line, 1000))
         if len(compact) >= (4 if persona.handle in {"vision", "friday"} else 3):
             break
 
     # 기존 레이블 제거 후 재부착 (LLM이 이미 "패키지: ..." 형식으로 쓸 경우 중복 방지)
     _all_labels = {"핵심 판단", "근거", "다음 액션", "패키지", "리스크", "상태", "병목", "수정"}
     def _strip_existing_label(line: str) -> str:
-        m = re.match(r"^([\w ]+):\s*", line)
+        m = re.match(r"^\*?\*?([\w ]+)\*?\*?(:|\s*->|\s*→|\s*=>|\s*⇒|:?\s*-+>)\s*", line)
         if m and m.group(1).strip() in _all_labels:
             return line[m.end():].strip()
         return line
@@ -159,7 +160,7 @@ def _enforce_persona_shape(persona: Persona, text: str) -> str:
         labels = ("핵심 판단", "근거", "다음 액션")
         compact = compact[:3]
         compact = [
-            f"{labels[idx]}: {_clip_line(_strip_existing_label(line), 110)}"
+            f"{labels[idx]}: {_clip_line(_strip_existing_label(line), 1000)}"
             for idx, line in enumerate(compact)
             if line
         ]
@@ -167,7 +168,7 @@ def _enforce_persona_shape(persona: Persona, text: str) -> str:
         labels = ("패키지", "근거", "리스크", "다음 액션")
         compact = compact[:4]
         compact = [
-            f"{labels[idx]}: {_clip_line(_strip_existing_label(line), 108)}"
+            f"{labels[idx]}: {_clip_line(_strip_existing_label(line), 1000)}"
             for idx, line in enumerate(compact)
             if line
         ]
@@ -175,30 +176,30 @@ def _enforce_persona_shape(persona: Persona, text: str) -> str:
         labels = ("상태", "병목", "수정", "다음 액션")
         compact = compact[:4]
         compact = [
-            f"{labels[idx]}: {_clip_line(_strip_existing_label(line), 108)}"
+            f"{labels[idx]}: {_clip_line(_strip_existing_label(line), 1000)}"
             for idx, line in enumerate(compact)
             if line
         ]
 
     shaped = "\n".join(line for line in compact if line).strip()
-    fallback_limit = 420 if persona.handle in {"vision", "friday"} else 360
+    fallback_limit = 2000 if persona.handle in {"vision", "friday"} else 1500
     return shaped or _clip_line((text or "").strip(), fallback_limit)
 
 
 def _persona_max_chars(persona: Persona) -> int:
     if persona.handle == "tars":
-        return 500
+        return 2000
     if persona.handle in {"c3po", "coach"}:
-        return 420
+        return 2000
     if persona.handle in {"kitt", "ledger", "watchman"}:
-        return 360
+        return 2000
     if persona.handle in {"vision", "friday"}:
-        return 420
+        return 3000
     if persona.handle == "scribe":
-        return 520
+        return 2500
     if persona.handle == "jarvis":
-        return 420
-    return 700
+        return 3000
+    return 4000
 
 
 def _persona_style_instruction(persona: Persona) -> str:
@@ -222,37 +223,37 @@ def _persona_style_instruction(persona: Persona) -> str:
         return (
             " 추가 규칙: 숫자 없는 재무 감상 금지. "
             "반드시 `숫자 -> 의미 -> 한도/다음 액션` 순서로 3줄 이내로 쓰세요. "
-            "각 줄은 120자 이하로 유지하고, 달러·원·개월·비율 중 최소 1개를 포함하세요. 장문 배경 설명은 금지합니다."
+            "각 줄은 잘리지 않도록 상세하고 자연스럽게 유지하고, 달러·원·개월·비율 중 최소 1개를 포함하세요. 장문 배경 설명은 금지합니다."
         )
     if persona.handle == "kitt":
         return (
             " 추가 규칙: 법무 의견은 3줄 이내로 끝내세요. "
             "반드시 `허용/보류/금지 -> 근거 법령 1개 -> 필요한 게이트/다음 액션` 순서로 쓰세요. "
-            "각 줄은 120자 이하로 유지하세요. 면책성 서론과 장문 사례 설명은 금지합니다."
+            "각 줄은 상세하게 유지하세요. 면책성 서론과 장문 사례 설명은 금지합니다."
         )
     if persona.handle == "watchman":
         return (
             " 추가 규칙: 리스크 의견은 3줄 이내로 끝내세요. "
             "반드시 `리스크 -> 트리거 -> 완화/킬스위치` 순서로 쓰세요. "
-            "각 줄은 120자 이하로 유지하세요. 과거 경위 설명과 도구 실행 로그 복붙은 금지합니다."
+            "각 줄은 상세하게 유지하세요. 과거 경위 설명과 도구 실행 로그 복붙은 금지합니다."
         )
     if persona.handle == "vision":
         return (
             " 추가 규칙: 상품 의견은 4줄 이내로 끝내세요. "
             "반드시 `패키지 -> 근거 -> 리스크 -> 다음 액션` 순서로 쓰세요. "
-            "각 줄은 120자 이하로 유지하고, 미사여구와 장문 시장 설명은 금지합니다."
+            "각 줄은 상세하고 명확하게 유지하고, 미사여구와 장문 시장 설명은 금지합니다."
         )
     if persona.handle == "friday":
         return (
             " 추가 규칙: 운영 의견은 4줄 이내로 끝내세요. "
             "반드시 `상태 -> 병목 -> 수정 -> 다음 액션` 순서로 쓰세요. "
-            "각 줄은 120자 이하로 유지하고, 회고성 배경 설명은 금지합니다."
+            "각 줄은 상세하고 명확하게 유지하고, 회고성 배경 설명은 금지합니다."
         )
     if persona.handle == "jarvis":
         return (
             " 추가 규칙: 비서실장 정리는 3줄 이내로 끝내세요. "
             "반드시 `핵심 판단 -> 근거 -> 다음 액션` 순서로만 쓰세요. "
-            "각 줄은 120자 이하로 유지하고, 인사말/배경 설명/반복/장문 dissent 나열은 금지합니다."
+            "각 줄은 상세하고 완성도 높게 유지하고, 인사말/배경 설명/반복/장문 dissent 나열은 금지합니다."
         )
     return ""
 
@@ -373,7 +374,7 @@ def _load_goal_kpi_context() -> str:
                 ORDER BY snapshot_date DESC, created_at DESC
                 LIMIT 1
             ) s ON TRUE
-            WHERE status NOT IN ('completed', 'cancelled', 'archived')
+            WHERE status NOT IN ('completed', 'cancelled', 'archived', 'hold', 'draft')
             ORDER BY
                 CASE
                     WHEN g.target_metric = 'paid_subscribers' THEN 0
@@ -465,42 +466,137 @@ def _find_cli(name: str) -> str:
     return name
 
 
-def _build_command(provider: str, prompt: str) -> list[str]:
+def _build_command(provider: str) -> list[str]:
+    """Build CLI command without prompt (will be passed via stdin)."""
     cli = _find_cli(provider)
     if provider == "claude":
-        return [cli, "-p", prompt]
+        return [cli, "-p", "-"]
     if provider == "gemini":
-        return [cli, "--skip-trust", "-p", prompt, "-o", "text"]
+        return [cli, "--skip-trust", "-p", "-", "-o", "text"]
     if provider == "codex":
-        return [cli, "exec", "--sandbox", "read-only", prompt]
+        return [cli, "exec", "--sandbox", "workspace-write", "-"]
     if provider == "copilot":
-        return [cli, "-p", prompt, "--no-ask-user", "--silent"]
+        return [cli, "-p", "-", "--no-ask-user", "--silent"]
     raise ValueError(f"Unknown provider: {provider}")
 
 
-def call_llm(provider: str, prompt: str) -> tuple[str, bool]:
-    """Run a provider CLI with a fully-formed prompt. Returns (text, ok)."""
-    command = _build_command(provider, prompt)
-    # .env의 ANTHROPIC_API_KEY를 환경변수로 명시 전달 (SSH 세션에서 Keychain 미접근 대비)
+def call_llm(provider: str, prompt: str, persona_handle: str | None = None, persona_obj: Persona | None = None) -> tuple[str, bool]:
+    """Run a provider CLI with a fully-formed prompt via stdin. Returns (text, ok).
+    
+    If persona_handle and persona_obj are provided, will attempt fallback on failure.
+    """
+    # Attempt primary provider
+    command = _build_command(provider)
+    output, ok = _run_llm_command(command, provider, prompt)
+    
+    if ok:
+        return output, True
+    
+    fallback = persona_obj.fallback_provider if persona_obj else None
+    can_fallback = bool(persona_handle and fallback and fallback != provider)
+    if can_fallback:
+        low = output.lower()
+        if (
+            "usage_limit_exceeded" in low
+            or "usage limit" in low
+            or "credit" in low
+            or "you've hit your usage limit" in low
+            or "rate limit" in low
+            or "quota" in low
+        ):
+            reason = "usage_limit_exceeded"
+            reason_text = "크레딧/쿼터 문제"
+        elif "timeout" in low or "timed out" in low or "타임아웃" in low:
+            reason = "timeout"
+            reason_text = "응답 지연(타임아웃)"
+        else:
+            reason = "provider_failure"
+            reason_text = "호출 실패"
+
+        record_fallback(persona_handle, provider, fallback, reason)
+
+        # Retry with fallback provider
+        fallback_command = _build_command(fallback)
+        fallback_output, fallback_ok = _run_llm_command(fallback_command, fallback, prompt)
+        if fallback_ok:
+            return f"[⚠️ {provider} {reason_text} → {fallback} 사용] {fallback_output}", True
+        return f"({provider} {reason_text}, {fallback} 재시도 실패: {fallback_output})", False
+    
+    return output, ok
+
+
+def _run_llm_command(command: list[str], provider: str, prompt: str) -> tuple[str, bool]:
+    """Execute LLM command via direct SDK or CLI fallback for speed and low latency."""
     from dotenv import dotenv_values
     env_file_vals = dotenv_values(PROJECT_ROOT / ".env")
+
+    # Direct SDK call for high speed and low latency
+    if provider == "claude":
+        api_key = env_file_vals.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY", "")
+        if api_key:
+            try:
+                import anthropic
+                client = anthropic.Anthropic(api_key=api_key)
+                resp = client.messages.create(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=4096,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                if resp.content:
+                    stdout = resp.content[0].text.strip()
+                    stdout = _compress_persona_output(_strip_internal_messages(stdout))
+                    return stdout, True
+            except Exception:
+                # Fall through to CLI fallback
+                pass
+
+    elif provider == "gemini":
+        api_key = (
+            env_file_vals.get("GOOGLE_API_KEY")
+            or env_file_vals.get("GEMINI_API_KEY")
+            or os.environ.get("GOOGLE_API_KEY", "")
+            or os.environ.get("GEMINI_API_KEY", "")
+        )
+        if api_key:
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=api_key)
+                model_name = (
+                    os.environ.get("GEMINI_MODEL")
+                    or env_file_vals.get("GEMINI_MODEL")
+                    or "gemini-1.5-flash"
+                )
+                model = genai.GenerativeModel(model_name)
+                resp = model.generate_content(prompt)
+                if resp.text:
+                    stdout = resp.text.strip()
+                    stdout = _compress_persona_output(_strip_internal_messages(stdout))
+                    return stdout, True
+            except Exception:
+                # Fall through to CLI fallback
+                pass
+
+    # CLI fallback
     run_env = {
         **os.environ,
         "PATH": f"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:{os.environ.get('PATH', '')}",
     }
-    for key in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY"):
+    for key in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY"):
         val = env_file_vals.get(key) or os.environ.get(key, "")
         if val:
             run_env[key] = val
     try:
         completed = subprocess.run(
             command,
+            input=prompt,
             capture_output=True,
             text=True,
             timeout=PROVIDER_TIMEOUT,
             check=False,
             env=run_env,
         )
+    except subprocess.TimeoutExpired as exc:
+        return f"({provider} 타임아웃: {PROVIDER_TIMEOUT}초 초과)", False
     except Exception as exc:  # noqa: BLE001
         return f"({provider} 호출 실패: {exc})", False
 
@@ -568,9 +664,12 @@ def call_persona(
     correlation_id: str,
     extra_context: str = "",
 ) -> tuple[str, bool]:
-    """Build the persona prompt and call its primary LLM. Returns (text, ok)."""
+    """Build the persona prompt and call its primary LLM (or fallback). Returns (text, ok)."""
+    # Determine which provider to use (may be fallback)
+    effective_provider = get_current_provider(persona.handle, persona.provider, persona.fallback_provider)
+    
     prompt = _build_prompt(persona, task, correlation_id, extra_context)
-    text, ok = call_llm(persona.provider, prompt)
+    text, ok = call_llm(effective_provider, prompt, persona.handle, persona)
     if ok:
         # OOC(책임 회피) 감지 시 재시도 — URL 분석 불가 주장 금지
         if _OOC_PATTERNS.search(text):
@@ -581,7 +680,7 @@ def call_persona(
                 "URL 내용을 직접 열람하지 못해도, 주제와 맥락을 바탕으로 최선의 분석을 제시하세요. "
                 "'할 수 없다'는 표현 없이 바로 본론으로 답변하세요."
             )
-            text, ok = call_llm(persona.provider, retry_prompt)
+            text, ok = call_llm(effective_provider, retry_prompt, persona.handle, persona)
         if ok:
             text = format_persona_output(persona, text)
     return text, ok

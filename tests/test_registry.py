@@ -11,6 +11,26 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(persona.channel_env, "SLACK_CHANNEL_TEAM_LEDGER")
         self.assertTrue(persona.active)
 
+    def test_core_personas_use_claude_primary(self):
+        expected = {
+            "jarvis": "claude",
+            "friday": "claude",
+            "vision": "claude",
+            "kitt": "claude",
+            "watchman": "claude",
+            "scribe": "claude",
+        }
+
+        for handle, provider in expected.items():
+            with self.subTest(handle=handle):
+                self.assertEqual(get_persona(handle).provider, provider)
+
+    def test_tars_persona_uses_codex_primary(self):
+        persona = get_persona("tars")
+
+        self.assertEqual(persona.provider, "codex")
+        self.assertEqual(persona.escalation, "claude")
+
     def test_find_mentioned_personas_matches_ledger_by_name_and_team(self):
         by_name = find_mentioned_personas("Ledger님, 이번 달 burn rate 봐주세요.")
         by_team = find_mentioned_personas("재무팀 의견도 같이 듣고 싶어요.")

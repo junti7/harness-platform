@@ -32,6 +32,8 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
+import requests
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
@@ -201,6 +203,137 @@ def _p(msg: str, json_mode: bool) -> None:
         print(msg)
 
 
+def _compute_signal_from_bars(symbol: str, bars: list[dict], json_mode: bool) -> dict | None:
+    if not bars or len(bars) < TURTLE_S2_ENTRY + 2:
+        _p(f"  [{symbol}] 데이터 부족 (bar 수: {len(bars) if bars else 0})", json_mode)
+        return None
+
+    closes = [float(b["close"]) for b in bars]
+    highs = [float(b["high"]) for b in bars]
+    lows = [float(b["low"]) for b in bars]
+    current_price = closes[-1]
+
+    s1_high = max(highs[-TURTLE_S1_ENTRY - 1:-1])
+    s2_high = max(highs[-TURTLE_S2_ENTRY - 1:-1])
+    s1_entry = current_price > s1_high
+    s2_entry = current_price > s2_high
+
+    if s2_entry:
+        signal = "breakout_long"
+        active_signal = "S2"
+    elif s1_entry:
+        signal = "breakout_long"
+        active_signal = "S1"
+    else:
+        signal = "neutral"
+        active_signal = None
+
+    s1_low = min(lows[-TURTLE_S1_EXIT - 1:-1])
+    s2_low = min(lows[-TURTLE_S2_EXIT - 1:-1])
+
+    tr_list = []
+    for i in range(-TURTLE_ATR_DAYS, 0):
+        tr = max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i] - closes[i - 1]),
+        )
+        tr_list.append(tr)
+    atr = sum(tr_list) / len(tr_list)
+    gap_s2_pct = (current_price - s2_high) / s2_high * 100 if s2_high > 0 else None
+
+    return {
+        "symbol": symbol,
+        "current_price": round(current_price, 2),
+        "s1_high": round(s1_high, 2),
+        "s2_high": round(s2_high, 2),
+        "s1_low": round(s1_low, 2),
+        "s2_low": round(s2_low, 2),
+        "atr": round(atr, 4),
+        "signal": signal,
+        "active_signal": active_signal,
+        "gap_pct": round(gap_s2_pct, 2) if gap_s2_pct is not None else None,
+    }
+
+
+def _yahoo_symbol_candidates(contract) -> list[str]:
+    candidates: list[str] = []
+
+    def _add(value: str | None) -> None:
+        if value and value not in candidates:
+            candidates.append(value)
+
+    symbol = getattr(contract, "symbol", None)
+    local_symbol = getattr(contract, "localSymbol", None)
+    exchange = (getattr(contract, "exchange", "") or "").upper()
+    primary_exchange = (getattr(contract, "primaryExchange", "") or "").upper()
+
+    _add(local_symbol if local_symbol and "." in local_symbol else None)
+    _add(symbol)
+
+    market = primary_exchange or exchange
+    if symbol:
+        if market == "KRX":
+            _add(f"{symbol}.KS")
+        elif market in {"TSEJ", "TSE"}:
+            _add(f"{symbol}.T")
+        elif market in {"SEHK", "HKEX"}:
+            _add(f"{symbol}.HK")
+        elif market in {"TWSE", "TSEC"}:
+            _add(f"{symbol}.TW")
+
+    return candidates
+
+
+def _fetch_yahoo_daily_bars(symbol: str) -> list[dict]:
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+    resp = requests.get(
+        url,
+        params={
+            "range": "6mo",
+            "interval": "1d",
+            "includePrePost": "false",
+            "events": "div,splits",
+        },
+        headers={"User-Agent": "harness-platform/ibkr-turtle-monitor"},
+        timeout=8,
+    )
+    resp.raise_for_status()
+    payload = resp.json()
+    result = (((payload or {}).get("chart") or {}).get("result") or [None])[0] or {}
+    timestamps = result.get("timestamp") or []
+    quote = (((result.get("indicators") or {}).get("quote") or [None])[0]) or {}
+    highs = quote.get("high") or []
+    lows = quote.get("low") or []
+    closes = quote.get("close") or []
+
+    bars: list[dict] = []
+    for ts, high, low, close in zip(timestamps, highs, lows, closes):
+        if high is None or low is None or close is None:
+            continue
+        bars.append({
+            "date": ts,
+            "high": float(high),
+            "low": float(low),
+            "close": float(close),
+        })
+    return bars
+
+
+def _fetch_yahoo_daily_bars_for_contract(contract) -> tuple[list[dict], str | None]:
+    last_exc: Exception | None = None
+    for candidate in _yahoo_symbol_candidates(contract):
+        try:
+            bars = _fetch_yahoo_daily_bars(candidate)
+            if bars:
+                return bars, candidate
+        except Exception as exc:
+            last_exc = exc
+    if last_exc:
+        raise last_exc
+    return [], None
+
+
 def load_universe() -> tuple[list[dict], str]:
     """universe.json이 있으면 동적 로드, 없으면 fallback."""
     if UNIVERSE_PATH.exists():
@@ -253,6 +386,17 @@ def send_slack(msg: str) -> None:
 def calc_full_signal(ib, contract, json_mode: bool) -> dict | None:
     """S1/S2 진입 신호 + S1/S2 청산 저가 + ATR 계산."""
     try:
+        yahoo_bars, yahoo_symbol = _fetch_yahoo_daily_bars_for_contract(contract)
+        if yahoo_bars:
+            _p(
+                f"  [{contract.symbol}] Yahoo 일봉 우선 사용 ({yahoo_symbol}, bar 수: {len(yahoo_bars)})",
+                json_mode,
+            )
+            return _compute_signal_from_bars(contract.symbol, yahoo_bars, json_mode)
+    except Exception as yahoo_first_exc:
+        _p(f"  [{contract.symbol}] Yahoo 우선 조회 실패: {yahoo_first_exc} | IBKR 시도", json_mode)
+
+    try:
         from ib_insync import IB  # noqa: F401
         bars = ib.reqHistoricalData(
             contract,
@@ -264,63 +408,32 @@ def calc_full_signal(ib, contract, json_mode: bool) -> dict | None:
             formatDate=1,
             timeout=15,
         )
-        if not bars or len(bars) < TURTLE_S2_ENTRY + 2:
-            _p(f"  [{contract.symbol}] 데이터 부족 (bar 수: {len(bars) if bars else 0})", json_mode)
-            return None
+        if bars and len(bars) >= TURTLE_S2_ENTRY + 2:
+            normalized = [{"high": b.high, "low": b.low, "close": b.close} for b in bars]
+            return _compute_signal_from_bars(contract.symbol, normalized, json_mode)
 
-        closes = [b.close for b in bars]
-        highs  = [b.high  for b in bars]
-        lows   = [b.low   for b in bars]
-
-        current_price = closes[-1]
-
-        # 진입 신호
-        s1_high = max(highs[-TURTLE_S1_ENTRY - 1:-1])
-        s2_high = max(highs[-TURTLE_S2_ENTRY - 1:-1])
-        s1_entry = current_price > s1_high
-        s2_entry = current_price > s2_high
-
-        if s2_entry:
-            signal = "breakout_long"
-            active_signal = "S2"
-        elif s1_entry:
-            signal = "breakout_long"
-            active_signal = "S1"
-        else:
-            signal = "neutral"
-            active_signal = None
-
-        # 청산 기준 (10일 저가, 20일 저가)
-        s1_low = min(lows[-TURTLE_S1_EXIT - 1:-1])
-        s2_low = min(lows[-TURTLE_S2_EXIT - 1:-1])
-
-        # 20일 ATR
-        tr_list = []
-        for i in range(-TURTLE_ATR_DAYS, 0):
-            tr = max(
-                highs[i] - lows[i],
-                abs(highs[i] - closes[i - 1]),
-                abs(lows[i]  - closes[i - 1]),
+        _p(f"  [{contract.symbol}] IBKR HMDS 부족/타임아웃 → Yahoo 폴백 시도", json_mode)
+        yahoo_bars, yahoo_symbol = _fetch_yahoo_daily_bars_for_contract(contract)
+        if yahoo_bars:
+            _p(
+                f"  [{contract.symbol}] Yahoo 일봉 폴백 성공 ({yahoo_symbol}, bar 수: {len(yahoo_bars)})",
+                json_mode,
             )
-            tr_list.append(tr)
-        atr = sum(tr_list) / len(tr_list)
-
-        gap_s2_pct = (current_price - s2_high) / s2_high * 100 if s2_high > 0 else None
-
-        return {
-            "symbol":        contract.symbol,
-            "current_price": round(current_price, 2),
-            "s1_high":       round(s1_high, 2),
-            "s2_high":       round(s2_high, 2),
-            "s1_low":        round(s1_low, 2),
-            "s2_low":        round(s2_low, 2),
-            "atr":           round(atr, 4),
-            "signal":        signal,
-            "active_signal": active_signal,
-            "gap_pct":       round(gap_s2_pct, 2) if gap_s2_pct is not None else None,
-        }
+            return _compute_signal_from_bars(contract.symbol, yahoo_bars, json_mode)
+        _p(f"  [{contract.symbol}] 데이터 부족 (bar 수: {len(bars) if bars else 0})", json_mode)
+        return None
     except Exception as e:
-        _p(f"  [{contract.symbol}] 신호 계산 실패: {e}", json_mode)
+        _p(f"  [{contract.symbol}] IBKR 신호 계산 실패: {e} | Yahoo 폴백 시도", json_mode)
+        try:
+            yahoo_bars, yahoo_symbol = _fetch_yahoo_daily_bars_for_contract(contract)
+            if yahoo_bars:
+                _p(
+                    f"  [{contract.symbol}] Yahoo 일봉 폴백 성공 ({yahoo_symbol}, bar 수: {len(yahoo_bars)})",
+                    json_mode,
+                )
+                return _compute_signal_from_bars(contract.symbol, yahoo_bars, json_mode)
+        except Exception as fallback_exc:
+            _p(f"  [{contract.symbol}] Yahoo 폴백 실패: {fallback_exc}", json_mode)
         return None
 
 
