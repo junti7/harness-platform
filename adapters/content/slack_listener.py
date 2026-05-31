@@ -128,16 +128,33 @@ def handle_dm(event, say, logger):
     text = event.get("text", "")
     channel = event.get("channel", "")
 
-    # 모든 메시지 이벤트 즉시 로깅
     logger.info(f"[event] channel={channel} user={user} text={text[:40]!r}")
 
-    # 회의실/팀 채널 메시지 → orchestration 라우터
     if not channel.startswith("D"):
         orch = _orchestration_channels()
         logger.info(f"[event] non-DM: in_orch={channel in orch}")
         if channel in orch:
             _handle_meeting_message(user, text, channel, say, logger)
         return
+
+    # DM 처리는 아래로 이어짐
+
+
+# @app.event("message")와 별도로 채널 메시지를 잡기 위한 핸들러
+@app.message(re.compile(r".*"))
+def handle_channel_message(message, say, logger):
+    """채널 메시지 전용 핸들러 — @app.event('message')가 못 잡는 경우 대비."""
+    if message.get("bot_id") or message.get("subtype"):
+        return
+    user = message.get("user", "unknown")
+    text = message.get("text", "")
+    channel = message.get("channel", "")
+    if channel.startswith("D"):
+        return  # DM은 handle_dm에서 처리
+    logger.info(f"[ch-msg] channel={channel} user={user} text={text[:40]!r}")
+    orch = _orchestration_channels()
+    if channel in orch and not _is_duplicate_event(message):
+        _handle_meeting_message(user, text, channel, say, logger)
 
     logger.info(f"[DM] user={user} text={text!r}")
 
