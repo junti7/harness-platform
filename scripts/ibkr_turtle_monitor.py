@@ -574,7 +574,11 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
         nav  = next((float(v.value) for v in nav_vals if v.tag == "NetLiquidation" and v.currency == "USD"), 0)
         cash = next((float(v.value) for v in nav_vals if v.tag == "TotalCashValue" and v.currency == "USD"), 0)
 
-        baseline_nav = state.get("baseline", {}).get("nav", nav)
+        if state.get("baseline") and state["baseline"].get("nav"):
+            baseline_nav = state["baseline"]["nav"]
+        else:
+            baseline_nav = nav
+            state["baseline"] = {"nav": round(nav, 2), "ts": ts}
         total_pnl = round(nav - baseline_nav, 2)
         total_pnl_pct = round(total_pnl / baseline_nav * 100, 3) if baseline_nav > 0 else 0.0
 
