@@ -581,7 +581,11 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
                 entry_candidates.append(cand)
 
                 sig_str = f"*** {sig['signal'].upper()} ({sig['active_signal']}) ***" if sig["signal"] != "neutral" else "중립"
-                _p(f"  [{region}] {sym}: {sig['current_price']:.4g} {currency} | S1고점 {sig['s1_high']:.4g} | S2고점 {sig['s2_high']:.4g} | {sig_str}", json_mode)
+                # KRW/JPY는 정수 포맷, 나머지는 소수 2자리
+                def _fp(v: float, cur: str) -> str:
+                    return f"{int(v):,}" if cur in ("KRW", "JPY") else f"{v:.2f}"
+                _p(f"  [{region}] {sym}: {_fp(sig['current_price'], currency)} {currency} | "
+                   f"S1고점 {_fp(sig['s1_high'], currency)} | S2고점 {_fp(sig['s2_high'], currency)} | {sig_str}", json_mode)
             else:
                 entry_candidates.append({
                     "symbol":        sym,
