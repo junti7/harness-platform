@@ -3886,30 +3886,31 @@ def get_pipeline_signals(
     where: list[str] = []
     params: list[Any] = []
     if source:
-        where.append("source ILIKE %s")
+        where.append("rs.source ILIKE %s")
         params.append(f"%{source}%")
     if status:
-        where.append("status = %s")
+        where.append("rs.status = %s")
         params.append(status)
     if q:
-        where.append("(raw_data->>'title' ILIKE %s OR raw_data->>'abstract' ILIKE %s)")
+        where.append("(rs.raw_data->>'title' ILIKE %s OR rs.raw_data->>'abstract' ILIKE %s)")
         params.append(f"%{q}%")
         params.append(f"%{q}%")
 
     wc = " AND ".join(where) if where else "TRUE"
-    count_r = _execute_query(f"SELECT count(*) FROM raw_signals WHERE {wc}", tuple(params))
+    join = "FROM raw_signals rs LEFT JOIN filtered_signals fs ON fs.raw_signal_id = rs.id"
+    count_r = _execute_query(f"SELECT count(*) {join} WHERE {wc}", tuple(params))
     total = int(count_r[0]["count"]) if count_r else 0
 
     rows = _execute_query(
-        f"SELECT id, source, status, ingested_at, "
-        f"raw_data->>'title' as title, "
-        f"raw_data->>'url' as url, "
-        f"raw_data->>'query' as query, "
-        f"raw_data->>'tier2_score' as tier2_score, "
-        f"raw_data->>'tier2_reason' as tier2_reason, "
-        f"raw_data->>'tier2_insight' as tier2_insight "
-        f"FROM raw_signals WHERE {wc} "
-        f"ORDER BY ingested_at DESC LIMIT %s OFFSET %s",
+        f"SELECT rs.id, rs.source, rs.status, rs.ingested_at, "
+        f"rs.raw_data->>'title' as title, "
+        f"rs.raw_data->>'url' as url, "
+        f"rs.raw_data->>'query' as query, "
+        f"fs.score as tier2_score, "
+        f"fs.summary as tier2_reason, "
+        f"fs.category as tier2_category "
+        f"{join} WHERE {wc} "
+        f"ORDER BY rs.ingested_at DESC LIMIT %s OFFSET %s",
         tuple(params) + (limit, offset),
     )
     return {"total": total, "limit": limit, "offset": offset, "items": [dict(r) for r in rows]}

@@ -35,9 +35,9 @@ type Signal = {
   title: string
   url: string | null
   query: string | null
-  tier2_score?: string | null
+  tier2_score?: number | null
   tier2_reason?: string | null
-  tier2_insight?: string | null
+  tier2_category?: string | null
 }
 
 type SignalsResponse = {
@@ -1433,35 +1433,39 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
                   const statusColor = item.status === 'filtered_pass' ? 'var(--color-ok)' : item.status === 'filtered_fail' ? 'var(--color-text-muted)' : 'var(--color-warn)'
                   const statusLabel = item.status === 'filtered_pass' ? '채택' : item.status === 'filtered_fail' ? '제외' : '분류 대기'
                   
-                  // 필터 디테일 가독성 높은 UI 블록
                   const hasTier2 = item.tier2_score !== undefined && item.tier2_score !== null
-                  
+                  const scoreNum = hasTier2 ? Math.round((item.tier2_score as number) * 10) : null
+                  const scorePct = hasTier2 ? Math.round((item.tier2_score as number) * 100) : null
+                  const scoreColor = scorePct !== null
+                    ? scorePct >= 70 ? 'var(--color-ok)' : scorePct >= 50 ? 'var(--color-warn)' : 'var(--color-danger)'
+                    : 'var(--color-text-muted)'
+                  const categoryLabel: Record<string, string> = {
+                    physical_ai: '🤖 Physical AI',
+                    deep_scraped: '🔍 딥 스크랩',
+                    keyword_pass: '🔑 키워드 통과',
+                  }
+
                   return [
                     <div key={`src-${item.id}`} style={{ padding: '0.8rem 1rem', fontSize: '0.78rem', color: 'var(--color-text-muted)', borderBottom: isLast ? 'none' : '1px solid var(--color-border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.source}</div>,
                     <div key={`ttl-${item.id}`} style={{ padding: '0.8rem 1rem', fontSize: '0.82rem', borderBottom: isLast ? 'none' : '1px solid var(--color-border)', overflow: 'hidden' }}>
-                      <div style={{ marginBottom: hasTier2 ? '0.4rem' : 0 }}>
+                      <div style={{ marginBottom: hasTier2 ? '0.5rem' : 0 }}>
                         {item.url ? <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent)', textDecoration: 'none', fontWeight: 600 }}>{item.title || '(제목 없음)'}</a> : (item.title || '(제목 없음)')}
                       </div>
                       {hasTier2 && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', padding: '0.5rem 0.75rem', borderRadius: '6px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', fontSize: '0.75rem' }}>
-                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                            <span style={{ display: 'inline-flex', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'var(--color-surface-lighter)', color: 'var(--color-accent)', fontWeight: 700, fontSize: '0.7rem' }}>
-                              평가 점수: {item.tier2_score}/10
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', padding: '0.5rem 0.75rem', borderRadius: '6px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', fontSize: '0.75rem' }}>
+                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'var(--color-surface-lighter)', color: scoreColor, fontWeight: 700, fontSize: '0.7rem' }}>
+                              Tier 2 점수 {scoreNum}/10
                             </span>
-                            {item.tier2_insight && (
-                              <span style={{ color: 'var(--color-ok)', fontWeight: 600, fontSize: '0.7rem' }}>
-                                💡 마케팅 인사이트 포함됨
+                            {item.tier2_category && (
+                              <span style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid var(--color-border)' }}>
+                                {categoryLabel[item.tier2_category] ?? item.tier2_category}
                               </span>
                             )}
                           </div>
                           {item.tier2_reason && (
-                            <div style={{ color: 'var(--color-text-muted)', marginTop: '0.15rem' }}>
-                              <strong>판단 근거:</strong> {item.tier2_reason}
-                            </div>
-                          )}
-                          {item.tier2_insight && (
-                            <div style={{ color: 'var(--color-text)', marginTop: '0.15rem', fontStyle: 'italic', borderLeft: '2px solid var(--color-ok)', paddingLeft: '0.4rem' }}>
-                              <strong>인사이트:</strong> {item.tier2_insight}
+                            <div style={{ color: 'var(--color-text-muted)', lineHeight: 1.4 }}>
+                              <strong style={{ color: 'var(--color-text)' }}>분류 사유:</strong> {item.tier2_reason}
                             </div>
                           )}
                         </div>
