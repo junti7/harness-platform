@@ -483,7 +483,7 @@ def call_llm(provider: str, prompt: str) -> tuple[str, bool]:
     command = _build_command(provider, prompt)
     # .env의 ANTHROPIC_API_KEY를 환경변수로 명시 전달 (SSH 세션에서 Keychain 미접근 대비)
     from dotenv import dotenv_values
-    env_file_vals = dotenv_values(ROOT / ".env")
+    env_file_vals = dotenv_values(PROJECT_ROOT / ".env")
     run_env = {
         **os.environ,
         "PATH": f"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:{os.environ.get('PATH', '')}",
