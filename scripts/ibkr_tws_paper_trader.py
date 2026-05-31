@@ -21,6 +21,13 @@ import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+import asyncio
+try:
+    asyncio.get_event_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
