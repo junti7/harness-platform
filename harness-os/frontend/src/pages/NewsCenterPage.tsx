@@ -268,10 +268,20 @@ export function NewsCenterPage({ apiBase, authHeaders }: Props) {
   const generatePdf = async () => {
     setLoadingAction('pdf')
     try {
-      const res = await fetch(`${apiBase}/api/news-center/generate-pdf`, { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ date: selectedDate }) })
-      if (!res.ok) throw new Error()
-      // success toast could go here
-    } catch { setError('PDF 생성 실패') } finally { setLoadingAction(null) }
+      const res = await fetch(`${apiBase}/api/news-center/generate-pdf`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: selectedDate }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `harness-news-${selectedDate}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) { setError('PDF 생성 실패: ' + String(e).slice(0, 80)) } finally { setLoadingAction(null) }
   }
 
   const sendSlack = async () => {
