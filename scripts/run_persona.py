@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -38,6 +39,10 @@ from agents.registry import Persona, get_persona  # noqa: E402
 load_dotenv(override=True)
 
 PROVIDER_TIMEOUT = 240
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+OPENCLAW_STATUS_PATH = PROJECT_ROOT / "runtime/openclaw_status.json"
+AR_TRACKER_PATH = PROJECT_ROOT / "docs/reports/ar_tracker.jsonl"
+ORCHESTRATION_RUNS_PATH = PROJECT_ROOT / "docs/reports/orchestration_runs.jsonl"
 
 # Patterns emitted by Claude Code's internal context-compaction machinery.
 # These must never propagate into persona responses or conversation history.
@@ -48,11 +53,399 @@ _INTERNAL_CLI_RE = re.compile(
     r"|update_topic\(.*?\)\n?",
     re.DOTALL | re.IGNORECASE,
 )
+_PERSONA_NOISE_RE = re.compile(
+    r"(?is)(\n?---\n?.*)?$"
+)
+_DIARY_APPEND_RE = re.compile(
+    r"(?is)(\*\*diary append\*\*:|diary append:|##\s*diary append).*"
+)
+_FAILURE_NOISE_PATTERNS = (
+    "my apologies",
+    "plan mode",
+    "update_topic(",
+    "reading additional input from stdin",
+    "failed to refresh token",
+    "i will write the content to the file",
+)
+
+
+def _query_rows(query: str, params: tuple | None = None) -> list[dict]:
+    from core.database import execute_query
+
+    rows = execute_query(query, params, fetch=True)
+    return [dict(row) for row in (rows or [])]
 
 
 def _strip_internal_messages(text: str) -> str:
     cleaned = _INTERNAL_CLI_RE.sub("", text).strip()
     return cleaned or text  # return original if everything was stripped
+
+
+def _compress_persona_output(text: str, max_chars: int = 1200) -> str:
+    cleaned = (text or "").strip()
+    cleaned = _DIARY_APPEND_RE.sub("", cleaned).strip()
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    lines = [line.rstrip() for line in cleaned.splitlines()]
+    trimmed: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        lowered = stripped.lower()
+        if any(pattern in lowered for pattern in _FAILURE_NOISE_PATTERNS):
+            continue
+        if re.fullmatch(r"(안녕하세요!?|감사합니다!?|좋습니다!?|여러분[, ]*)", stripped):
+            continue
+        if re.match(r"^(안녕하세요|감사합니다|좋아,|여러분,|법무팀장님, 안녕하세요|대표님, 그리고 팀원 여러분)", stripped):
+            continue
+        trimmed.append(line)
+    cleaned = "\n".join(trimmed).strip()
+    if len(cleaned) <= max_chars:
+        return cleaned
+
+    window = cleaned[:max_chars].rstrip()
+    sentence_cut = max(window.rfind(token) for token in (". ", "! ", "? ", "\n- ", "\n"))
+    if sentence_cut >= max_chars * 0.6:
+        clipped = window[: sentence_cut + 1].strip()
+        if clipped:
+            return clipped
+
+    fallback = window.rsplit(" ", 1)[0].strip()
+    return (fallback or window).strip()
+
+
+def _clip_line(text: str, max_chars: int) -> str:
+    cleaned = (text or "").strip()
+    if len(cleaned) <= max_chars:
+        return cleaned
+    window = cleaned[:max_chars].rstrip()
+    sentence_cut = max(window.rfind(token) for token in (". ", "! ", "? ", ", ", " "))
+    if sentence_cut >= max_chars * 0.6:
+        clipped = window[:sentence_cut].strip(" ,")
+        if clipped:
+            return clipped
+    return window.strip(" ,")
+
+
+def _enforce_persona_shape(persona: Persona, text: str) -> str:
+    if persona.handle not in {"ledger", "kitt", "watchman", "jarvis", "vision", "friday"}:
+        return text
+
+    raw_lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    normalized: list[str] = []
+    for line in raw_lines:
+        line = re.sub(r"^\s*(#{1,6}|\*+|-+|\d+[.)])\s*", "", line).strip()
+        if not line:
+            continue
+        parts = re.split(r"(?<=[.!?])\s+", line)
+        normalized.extend(part.strip() for part in parts if part.strip())
+
+    compact = []
+    for line in normalized:
+        lowered = line.lower()
+        if lowered in {"허용", "보류", "금지", "리스크", "트리거", "숫자", "의미"}:
+            continue
+        compact.append(_clip_line(line, 120))
+        if len(compact) >= (4 if persona.handle in {"vision", "friday"} else 3):
+            break
+
+    if persona.handle == "jarvis":
+        labels = ("핵심 판단", "근거", "다음 액션")
+        compact = compact[:3]
+        compact = [
+            f"{labels[idx]}: {_clip_line(line, 110)}"
+            for idx, line in enumerate(compact)
+            if line
+        ]
+    elif persona.handle == "vision":
+        labels = ("패키지", "근거", "리스크", "다음 액션")
+        compact = compact[:4]
+        compact = [
+            f"{labels[idx]}: {_clip_line(line, 108)}"
+            for idx, line in enumerate(compact)
+            if line
+        ]
+    elif persona.handle == "friday":
+        labels = ("상태", "병목", "수정", "다음 액션")
+        compact = compact[:4]
+        compact = [
+            f"{labels[idx]}: {_clip_line(line, 108)}"
+            for idx, line in enumerate(compact)
+            if line
+        ]
+
+    shaped = "\n".join(line for line in compact if line).strip()
+    fallback_limit = 420 if persona.handle in {"vision", "friday"} else 360
+    return shaped or _clip_line((text or "").strip(), fallback_limit)
+
+
+def _persona_max_chars(persona: Persona) -> int:
+    if persona.handle == "tars":
+        return 500
+    if persona.handle in {"c3po", "coach"}:
+        return 420
+    if persona.handle in {"kitt", "ledger", "watchman"}:
+        return 360
+    if persona.handle in {"vision", "friday"}:
+        return 420
+    if persona.handle == "scribe":
+        return 520
+    if persona.handle == "jarvis":
+        return 420
+    return 700
+
+
+def _persona_style_instruction(persona: Persona) -> str:
+    if persona.handle == "tars":
+        return (
+            " 추가 규칙: 구현 의견만 말하세요. 설계 감상, 배경 설명, 일반론 금지. "
+            "반드시 `무엇을 바꿀지 -> 위험 -> 바로 할 테스트` 순서로 쓰세요. "
+            "가능하면 파일명/테스트명/명령 1개씩만 짧게 넣고, 코드 패치 제안이 없으면 구현 가능/불가만 답하세요."
+        )
+    if persona.handle == "c3po":
+        return (
+            " 추가 규칙: 마케팅 메시지는 3줄 이내로 끝내세요. "
+            "반드시 `타깃 -> 메시지 -> 채널`만 말하고, 형용사성 수식과 브랜드 미사여구는 금지합니다."
+        )
+    if persona.handle == "coach":
+        return (
+            " 추가 규칙: 교육 의견은 3줄 이내로 끝내세요. "
+            "반드시 `현재 단계 -> 부족한 것 1개 -> 다음 훈련 1개`만 말하고, 격려 문구는 금지합니다."
+        )
+    if persona.handle == "ledger":
+        return (
+            " 추가 규칙: 숫자 없는 재무 감상 금지. "
+            "반드시 `숫자 -> 의미 -> 한도/다음 액션` 순서로 3줄 이내로 쓰세요. "
+            "각 줄은 120자 이하로 유지하고, 달러·원·개월·비율 중 최소 1개를 포함하세요. 장문 배경 설명은 금지합니다."
+        )
+    if persona.handle == "kitt":
+        return (
+            " 추가 규칙: 법무 의견은 3줄 이내로 끝내세요. "
+            "반드시 `허용/보류/금지 -> 근거 법령 1개 -> 필요한 게이트/다음 액션` 순서로 쓰세요. "
+            "각 줄은 120자 이하로 유지하세요. 면책성 서론과 장문 사례 설명은 금지합니다."
+        )
+    if persona.handle == "watchman":
+        return (
+            " 추가 규칙: 리스크 의견은 3줄 이내로 끝내세요. "
+            "반드시 `리스크 -> 트리거 -> 완화/킬스위치` 순서로 쓰세요. "
+            "각 줄은 120자 이하로 유지하세요. 과거 경위 설명과 도구 실행 로그 복붙은 금지합니다."
+        )
+    if persona.handle == "vision":
+        return (
+            " 추가 규칙: 상품 의견은 4줄 이내로 끝내세요. "
+            "반드시 `패키지 -> 근거 -> 리스크 -> 다음 액션` 순서로 쓰세요. "
+            "각 줄은 120자 이하로 유지하고, 미사여구와 장문 시장 설명은 금지합니다."
+        )
+    if persona.handle == "friday":
+        return (
+            " 추가 규칙: 운영 의견은 4줄 이내로 끝내세요. "
+            "반드시 `상태 -> 병목 -> 수정 -> 다음 액션` 순서로 쓰세요. "
+            "각 줄은 120자 이하로 유지하고, 회고성 배경 설명은 금지합니다."
+        )
+    if persona.handle == "jarvis":
+        return (
+            " 추가 규칙: 비서실장 정리는 3줄 이내로 끝내세요. "
+            "반드시 `핵심 판단 -> 근거 -> 다음 액션` 순서로만 쓰세요. "
+            "각 줄은 120자 이하로 유지하고, 인사말/배경 설명/반복/장문 dissent 나열은 금지합니다."
+        )
+    return ""
+
+
+def format_persona_output(persona: Persona, text: str) -> str:
+    text = _compress_persona_output(text, max_chars=_persona_max_chars(persona))
+    return _enforce_persona_shape(persona, text)
+
+
+def _build_live_company_context() -> str:
+    try:
+        if not OPENCLAW_STATUS_PATH.exists():
+            return ""
+        status = json.loads(OPENCLAW_STATUS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+
+    runtime = status.get("runtime") or {}
+    integrations = status.get("integrations") or {}
+    integrity = status.get("integrity") or {}
+    services = status.get("services") or {}
+
+    risks: list[str] = []
+    if not (integrations.get("postgres") or {}).get("available"):
+        risks.append("Postgres degraded")
+    if not services.get("ollama_11434"):
+        risks.append("Ollama down")
+    if not ((integrations.get("slack_bot") or {}).get("available") or (integrations.get("slack_webhook") or {}).get("available")):
+        risks.append("Slack degraded")
+    if not (integrations.get("notion") or {}).get("available"):
+        risks.append("Notion degraded")
+    if not integrity.get("ok", False):
+        risks.append("Integrity failed")
+    if runtime.get("capital_actions_enabled", "false").lower() != "true":
+        risks.append("Capital actions gated off")
+
+    top_risks = ", ".join(risks[:3]) if risks else "No active control-plane degradation detected"
+    return (
+        "[LIVE COMPANY CONTEXT]\n"
+        f"- generated_at: {status.get('generated_at', 'unknown')}\n"
+        f"- slack_phase: {runtime.get('slack_phase', 'unknown')}\n"
+        f"- capital_actions_enabled: {runtime.get('capital_actions_enabled', 'false')}\n"
+        f"- postgres_ok: {bool((integrations.get('postgres') or {}).get('available'))}\n"
+        f"- notion_ok: {bool((integrations.get('notion') or {}).get('available'))}\n"
+        f"- ollama_ok: {bool(services.get('ollama_11434'))}\n"
+        f"- integrity_ok: {bool(integrity.get('ok'))}\n"
+        f"- top_risks: {top_risks}\n"
+    )
+
+
+def _load_latest_open_ar() -> str:
+    try:
+        if not AR_TRACKER_PATH.exists():
+            return ""
+        entries = []
+        for line in AR_TRACKER_PATH.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            payload = json.loads(line)
+            status = str(payload.get("status", "")).lower()
+            if status in {"open", "pending", "hold", "in_progress"}:
+                entries.append(payload)
+        if not entries:
+            return ""
+        latest = entries[-1]
+        ar_id = latest.get("id", "-")
+        owner = latest.get("owner", "-")
+        status = latest.get("status", "-")
+        title = " ".join(str(latest.get("title", "-")).split())[:140]
+        due = latest.get("due") or latest.get("due_by") or "-"
+        return f"- latest_ar: {ar_id} | owner={owner} | status={status} | due={due} | title={title}\n"
+    except Exception:
+        return ""
+
+
+def _load_latest_orchestration_summary() -> str:
+    try:
+        if not ORCHESTRATION_RUNS_PATH.exists():
+            return ""
+        lines = [line.strip() for line in ORCHESTRATION_RUNS_PATH.read_text(encoding="utf-8").splitlines() if line.strip()]
+        if not lines:
+            return ""
+        latest = json.loads(lines[-1])
+        cid = latest.get("correlation_id", "-")
+        ts = latest.get("ts", "-")
+        personas = latest.get("personas") or []
+        persona_count = len(personas)
+        decision = " ".join(str(latest.get("decision", "")).split())
+        decision = decision[:180]
+        return (
+            f"- latest_meeting: {cid} | ts={ts} | personas={persona_count}\n"
+            f"- latest_decision: {decision}\n"
+        )
+    except Exception:
+        return ""
+
+
+def _load_goal_kpi_context() -> str:
+    try:
+        goal_rows = _query_rows(
+            """
+            SELECT
+                g.id,
+                g.title,
+                g.target_metric,
+                g.target_value,
+                COALESCE(s.actual_value, g.current_value) AS current_value,
+                g.unit,
+                g.deadline,
+                g.status,
+                g.updated_at
+            FROM strategic_goals g
+            LEFT JOIN LATERAL (
+                SELECT actual_value
+                FROM goal_progress_snapshots
+                WHERE goal_id = g.id
+                ORDER BY snapshot_date DESC, created_at DESC
+                LIMIT 1
+            ) s ON TRUE
+            WHERE status NOT IN ('completed', 'cancelled', 'archived')
+            ORDER BY
+                CASE
+                    WHEN g.target_metric = 'paid_subscribers' THEN 0
+                    WHEN g.target_metric = 'free_subscribers' THEN 1
+                    ELSE 2
+                END,
+                g.updated_at DESC,
+                g.id DESC
+            LIMIT 2
+            """
+        )
+
+        goal_lines: list[str] = []
+        forecast_lines: list[str] = []
+        for latest_goal in goal_rows:
+            goal_id = latest_goal["id"]
+            unit = latest_goal.get("unit") or ""
+            metric = latest_goal.get("target_metric", "-")
+            goal_lines.append(
+                f"- latest_goal: #{goal_id} | metric={metric} | status={latest_goal.get('status', '-')} | "
+                f"{str(latest_goal.get('title', '-')).strip()[:84]} | "
+                f"{latest_goal.get('current_value', 0)}/{latest_goal.get('target_value', 0)} {unit}".rstrip()
+            )
+            forecast_rows = _query_rows(
+                """
+                SELECT probability_to_hit, recommended_mode, confidence, narrative
+                FROM goal_forecasts
+                WHERE goal_id = %s
+                ORDER BY forecast_date DESC, created_at DESC
+                LIMIT 1
+                """,
+                (goal_id,),
+            )
+            snapshot_rows = _query_rows(
+                """
+                SELECT health_status, variance
+                FROM goal_progress_snapshots
+                WHERE goal_id = %s
+                ORDER BY snapshot_date DESC, created_at DESC
+                LIMIT 1
+                """,
+                (goal_id,),
+            )
+            latest_forecast = forecast_rows[0] if forecast_rows else {}
+            latest_snapshot = snapshot_rows[0] if snapshot_rows else {}
+            probability = latest_forecast.get("probability_to_hit")
+            probability_text = (
+                f"{round(float(probability) * 100)}%" if probability is not None else "unknown"
+            )
+            mode = latest_forecast.get("recommended_mode", "-")
+            health = latest_snapshot.get("health_status", "-")
+            forecast_lines.append(
+                f"- latest_forecast: goal=#{goal_id} | health={health} | p_hit={probability_text} | mode={mode}"
+            )
+
+        snap_rows = _query_rows(
+            """
+            SELECT snapshot_date, free_subscribers, paid_subscribers
+            FROM subscriber_snapshots
+            WHERE platform = 'substack'
+            ORDER BY snapshot_date DESC
+            LIMIT 2
+            """
+        )
+        kpi_line = ""
+        if snap_rows:
+            latest = snap_rows[0]
+            prev = snap_rows[1] if len(snap_rows) > 1 else {}
+            free_now = int(latest.get("free_subscribers") or 0)
+            paid_now = int(latest.get("paid_subscribers") or 0)
+            free_delta = free_now - int(prev.get("free_subscribers") or 0)
+            paid_delta = paid_now - int(prev.get("paid_subscribers") or 0)
+            kpi_line = (
+                f"- latest_kpi: {latest.get('snapshot_date')} | free={free_now} ({free_delta:+d}) | "
+                f"paid={paid_now} ({paid_delta:+d})\n"
+            )
+
+        return ("\n".join(goal_lines + forecast_lines) + ("\n" if goal_lines or forecast_lines else "")) + kpi_line
+    except Exception:
+        return ""
 
 
 # ── LLM invocation ──────────────────────────────────────────────────────────
@@ -99,7 +492,7 @@ def call_llm(provider: str, prompt: str) -> tuple[str, bool]:
     stderr = (completed.stderr or "").strip()
     if completed.returncode != 0 or not stdout:
         return f"({provider} 응답 없음: {stdout or stderr or completed.returncode})", False
-    stdout = _strip_internal_messages(stdout)
+    stdout = _compress_persona_output(_strip_internal_messages(stdout))
     return stdout, True
 
 
@@ -108,14 +501,29 @@ def _build_prompt(persona: Persona, task: str, correlation_id: str, extra_contex
     if persona.system_prompt_path.exists():
         system = persona.system_prompt_path.read_text(encoding="utf-8").strip()
     context_block = f"\n[참고 — 다른 팀 발언]\n{extra_context}\n" if extra_context else ""
+    live_company_context = (
+        _build_live_company_context()
+        + _load_latest_open_ar()
+        + _load_latest_orchestration_summary()
+        + _load_goal_kpi_context()
+    )
     return (
         f"{system}\n\n"
+        f"{live_company_context}\n"
         "─────────────────────────────────────\n"
         f"[correlation_id: {correlation_id}]\n"
-        f"이건 #{persona.team_short} / #회의실 에 올라갈 발언입니다. Charter §4.3대로 **공손한 존댓말 구어체**로, "
-        "회사 동료처럼 자연스럽게 말씀해 주세요. **반말 금지**(회사에서는 반말을 쓰지 않습니다), 보고서 문체도 금지. "
+        f"이건 #{persona.team_short} / #회의실 에 올라갈 발언입니다. Charter §4.3대로 **공손한 존댓말 구어체**로만 답하세요. "
+        "**반말 금지**, **보고서 문체 금지**, **인사말/감탄사/감사 멘트 금지**, **메타 설명 금지**, **자기소개 금지**. "
         "다른 팀을 언급할 때는 'Friday님', 'KITT님'처럼 반드시 '님'을 붙입니다. "
-        "근거(지표/법령 등)는 대화 속에 녹이고, 추정이면 confidence를 밝혀 주세요."
+        "반드시 **새로운 정보만** 말하세요. 이미 나온 말을 반복하지 마세요. "
+        "형식은 최대 5개 bullet, bullet당 최대 2문장, 전체 600자 안쪽을 목표로 하세요. "
+        "가능하면 `핵심 판단 -> 근거 -> 다음 액션` 순서로 짧게 말하세요. "
+        "근거(지표/법령 등)는 대화 속에 짧게 녹이고, 추정이면 confidence만 짧게 붙이세요. "
+        "**[필수] 전문용어·영어 약어를 쓸 때는 반드시 괄호로 쉬운 설명을 붙이세요.** "
+        "예) CTR(클릭률 — 100명이 보면 몇 명이 클릭하는지), CAC(고객 획득 비용 — 고객 1명을 데려오는 데 드는 돈), "
+        "ARR(연간 반복 매출), MoM(전월 대비), KPI(핵심 성과 지표). "
+        "대표님·부대표님이 마케팅/투자 비전문가임을 항상 염두에 두고, 초등학생도 이해할 수 있는 수준으로 설명하세요."
+        f"{_persona_style_instruction(persona)}"
         f"{context_block}\n"
         f"[TASK]\n{task}\n"
     )
@@ -129,7 +537,10 @@ def call_persona(
 ) -> tuple[str, bool]:
     """Build the persona prompt and call its primary LLM. Returns (text, ok)."""
     prompt = _build_prompt(persona, task, correlation_id, extra_context)
-    return call_llm(persona.provider, prompt)
+    text, ok = call_llm(persona.provider, prompt)
+    if ok:
+        text = format_persona_output(persona, text)
+    return text, ok
 
 
 # ── Slack + memory ────────────────────────────────────────────────────────────
