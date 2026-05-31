@@ -4200,21 +4200,40 @@ _NEWS_CHANNELS = [
     {"id": "policy_reg",    "label": "정책·규제","icon": "⚖️",  "description": "규제·법률·정책 변화"},
 ]
 
-# refined_outputs.final_body 태그 → 채널 매핑
-_TAG_CHANNEL_MAP = {
-    "AI Safety": "policy_reg", "Regulation": "policy_reg", "Policy": "policy_reg",
-    "Education": "edu_business", "EdTech": "edu_business", "Learning": "edu_business",
-    "Investment": "market_invest", "Market": "market_invest", "Economics": "market_invest",
+_CHANNEL_KEYWORDS = {
+    "policy_reg": {
+        "regulation", "policy", "regulatory", "compliance", "audit", "govtech",
+        "gov tech", "eu dsa", "online safety", "regtech", "ai act", "legislation",
+        "legal", "law", "rule", "standard", "certification", "certified",
+        "korea ai policy", "risk management", "governance",
+    },
+    "edu_business": {
+        "education", "edtech", "learning", "teaching", "school", "curriculum",
+        "training", "talent", "academic", "education pipeline", "special needs education",
+        "knowledge production", "pedagogy", "upskilling",
+    },
+    "market_invest": {
+        "venture capital", "investment", "market", "economics", "startup ecosystem",
+        "hard tech", "creator economy", "data licensing", "ipo", "equity",
+        "revenue", "monetization", "supply chain", "business model",
+        "copyright ai", "llm economics",
+    },
 }
 
 
 def _infer_channel(tags: Any) -> str:
-    if isinstance(tags, list):
-        for tag in tags:
-            mapped = _TAG_CHANNEL_MAP.get(str(tag))
-            if mapped:
-                return mapped
-    return "tech_ai"
+    """태그 목록에서 채널을 우선순위에 따라 결정."""
+    if not isinstance(tags, list):
+        return "tech_ai"
+    tag_lower = {str(t).lower() for t in tags}
+    scores: dict[str, int] = {"policy_reg": 0, "edu_business": 0, "market_invest": 0}
+    for ch, keywords in _CHANNEL_KEYWORDS.items():
+        for kw in keywords:
+            for tag in tag_lower:
+                if kw in tag:
+                    scores[ch] += 1
+    best = max(scores, key=lambda k: scores[k])
+    return best if scores[best] > 0 else "tech_ai"
 
 
 @app.get("/api/news-center/channels")
