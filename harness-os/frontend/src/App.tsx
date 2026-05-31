@@ -20,6 +20,7 @@ import { LoginPage } from './pages/LoginPage'
 import { PipelinePage } from './pages/PipelinePage'
 import { TradingDiaryPage } from './pages/TradingDiaryPage'
 import { OpenClawMonitorPage } from './pages/OpenClawMonitorPage'
+import { NewsCenterPage } from './pages/NewsCenterPage'
 
 const SESSION_KEY = 'harness-session'
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000 // 30분
@@ -134,7 +135,7 @@ function App() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   })
   const [viewRole, setViewRole] = useState<'ceo' | 'vp'>(() => session?.role ?? 'ceo')
-  const [activeView, setActiveView] = useState<'dashboard' | 'approvals' | 'conference' | 'ars' | 'meetings' | 'costs' | 'tokens' | 'settings' | 'pipeline' | 'trading-diary' | 'openclaw'>('dashboard')
+  const [activeView, setActiveView] = useState<'dashboard' | 'approvals' | 'conference' | 'ars' | 'meetings' | 'costs' | 'tokens' | 'settings' | 'pipeline' | 'trading-diary' | 'openclaw' | 'news-center'>('dashboard')
   const [selectedPlatform, setSelectedPlatform] = useState('all')
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null)
   const [loading, setLoading] = useState(true)
@@ -156,6 +157,26 @@ function App() {
   const [gmailExcludeSocial, setGmailExcludeSocial] = useState<boolean>(true)
   const [gmailExcludeForums, setGmailExcludeForums] = useState<boolean>(false)
   const [gmailExcludeUpdates, setGmailExcludeUpdates] = useState<boolean>(false)
+  const [gmailCategory, setGmailCategory] = useState<'business' | 'notifications' | 'all'>('business')
+
+  const isNotification = useCallback((item: { subject?: string; from?: string }) => {
+    const subject = (item.subject || '').toLowerCase()
+    const from = (item.from || '').toLowerCase()
+    
+    const notificationKeywords = [
+      '알리미', '알럿', 'alert', '쿠팡', 'coupang', '주문', '배송', '결제', 
+      '광고', '구독', 'bill', 'receipt', 'invoice', '설문', 'newsletter', 
+      '뉴스레터', '티켓', '예약'
+    ]
+    const notificationSenders = [
+      'alerts', 'noreply', 'no-reply', 'coupang', 'info', 'news', 'billing'
+    ]
+    
+    return (
+      notificationKeywords.some(keyword => subject.includes(keyword)) ||
+      notificationSenders.some(sender => from.includes(sender))
+    )
+  }, [])
 
 
   // 로그인 시 역할 동기화
@@ -523,79 +544,121 @@ function App() {
                       </div>
                     </div>
 
+                    {/* Gmail Category Tabs */}
+                    <div className="gmail-tabs">
+                      <button
+                        className={`gmail-tab-btn ${gmailCategory === 'business' ? 'active' : ''}`}
+                        onClick={() => setGmailCategory('business')}
+                      >
+                        💼 회사/업무 메일
+                        <span className="gmail-tab-count">
+                          {(gmailInbox?.items ?? []).filter(item => !isNotification(item)).length}
+                        </span>
+                      </button>
+                      <button
+                        className={`gmail-tab-btn ${gmailCategory === 'notifications' ? 'active' : ''}`}
+                        onClick={() => setGmailCategory('notifications')}
+                      >
+                        🔔 알림 및 기타
+                        <span className="gmail-tab-count">
+                          {(gmailInbox?.items ?? []).filter(item => isNotification(item)).length}
+                        </span>
+                      </button>
+                      <button
+                        className={`gmail-tab-btn ${gmailCategory === 'all' ? 'active' : ''}`}
+                        onClick={() => setGmailCategory('all')}
+                      >
+                        📂 전체 메일
+                        <span className="gmail-tab-count">
+                          {(gmailInbox?.items ?? []).length}
+                        </span>
+                      </button>
+                    </div>
+
                     <div className="gmail-list">
-                      {(gmailInbox?.items ?? []).map(item => {
-                        const isExpanded = selectedGmailId === item.id
-                        const detail = gmailDetail[item.id]
-                        const isLoading = gmailDetailLoading[item.id]
-                        const detailErr = gmailDetailError[item.id]
+                      {(gmailInbox?.items ?? [])
+                        .filter(item => {
+                          if (gmailCategory === 'business') return !isNotification(item)
+                          if (gmailCategory === 'notifications') return isNotification(item)
+                          return true
+                        })
+                        .map(item => {
+                          const isExpanded = selectedGmailId === item.id
+                          const detail = gmailDetail[item.id]
+                          const isLoading = gmailDetailLoading[item.id]
+                          const detailErr = gmailDetailError[item.id]
 
-                        return (
-                          <article
-                            key={item.id}
-                            className={`gmail-item ${isExpanded ? 'active' : ''}`}
-                            onClick={() => {
-                              if (isExpanded) {
-                                setSelectedGmailId(null)
-                              } else {
-                                setSelectedGmailId(item.id)
-                                void loadGmailMessage(item.id)
-                              }
-                            }}
-                            style={{ cursor: 'pointer' }}
-                          >
-                            <div className="gmail-item-header">
-                              <div className="gmail-item-main">
-                                <div className="gmail-item-subject-row">
-                                  <h4>{item.subject}</h4>
-                                  <span className="gmail-item-date">{item.date ?? '시간 미상'}</span>
+                          return (
+                            <article
+                              key={item.id}
+                              className={`gmail-item ${isExpanded ? 'active' : ''}`}
+                              onClick={() => {
+                                if (isExpanded) {
+                                  setSelectedGmailId(null)
+                                } else {
+                                  setSelectedGmailId(item.id)
+                                  void loadGmailMessage(item.id)
+                                }
+                              }}
+                              style={{ cursor: 'pointer' }}
+                            >
+                              <div className="gmail-item-header">
+                                <div className="gmail-item-main">
+                                  <div className="gmail-item-subject-row">
+                                    <h4>{item.subject}</h4>
+                                    <span className="gmail-item-date">{item.date ?? '시간 미상'}</span>
+                                  </div>
+                                  <p className="gmail-item-from">{item.from}</p>
                                 </div>
-                                <p className="gmail-item-from">{item.from}</p>
-                              </div>
-                              <div className="gmail-item-side">
-                                <div className="gmail-item-labels">
-                                  {(item.labels ?? []).slice(0, 3).map(label => (
-                                    <span key={label} className="gmail-item-label">{label}</span>
-                                  ))}
+                                <div className="gmail-item-side">
+                                  <div className="gmail-item-labels">
+                                    {(item.labels ?? []).slice(0, 3).map(label => (
+                                      <span key={label} className="gmail-item-label">{label}</span>
+                                    ))}
+                                  </div>
+                                  {(item.messageCount ?? 1) > 1 && (
+                                    <span className="gmail-thread-count">{item.messageCount} msgs</span>
+                                  )}
                                 </div>
-                                {(item.messageCount ?? 1) > 1 && (
-                                  <span className="gmail-thread-count">{item.messageCount} msgs</span>
-                                )}
                               </div>
-                            </div>
 
-                            {isExpanded && (
-                              <div
-                                className="gmail-item-body"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {isLoading ? (
-                                  <div className="gmail-detail-loading">메일 본문 동기화 중...</div>
-                                ) : detailErr ? (
-                                  <div className="gmail-detail-error">오류: {detailErr}</div>
-                                ) : detail ? (
-                                  <>
-                                    <div className="gmail-body-meta">
-                                      <span>보낸 사람: <strong>{detail.from}</strong></span>
-                                      {detail.to && <span>받는 사람: <strong>{detail.to}</strong></span>}
-                                      <span>날짜: <strong>{detail.date}</strong></span>
-                                    </div>
-                                    <div className="gmail-body-content">
-                                      {detail.body || detail.snippet || '(본문 내용 없음)'}
-                                    </div>
-                                  </>
-                                ) : (
-                                  <div className="gmail-detail-loading">본문 없음</div>
-                                )}
-                              </div>
-                            )}
-                          </article>
-                        )
-                      })}
-                      {!gmailLoading && (gmailInbox?.items?.length ?? 0) === 0 && (
+                              {isExpanded && (
+                                <div
+                                  className="gmail-item-body"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {isLoading ? (
+                                    <div className="gmail-detail-loading">메일 본문 동기화 중...</div>
+                                  ) : detailErr ? (
+                                    <div className="gmail-detail-error">오류: {detailErr}</div>
+                                  ) : detail ? (
+                                    <>
+                                      <div className="gmail-body-meta">
+                                        <span>보낸 사람: <strong>{detail.from}</strong></span>
+                                        {detail.to && <span>받는 사람: <strong>{detail.to}</strong></span>}
+                                        <span>날짜: <strong>{detail.date}</strong></span>
+                                      </div>
+                                      <div className="gmail-body-content">
+                                        {detail.body || detail.snippet || '(본문 내용 없음)'}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div className="gmail-detail-loading">본문 없음</div>
+                                  )}
+                                </div>
+                              )}
+                            </article>
+                          )
+                        })}
+                      {!gmailLoading && (gmailInbox?.items ?? [])
+                        .filter(item => {
+                          if (gmailCategory === 'business') return !isNotification(item)
+                          if (gmailCategory === 'notifications') return isNotification(item)
+                          return true
+                        }).length === 0 && (
                         <div className="gmail-empty-state">
                           <strong>표시할 메일이 없습니다.</strong>
-                          <p>현재 필터 조건에 맞는 최근 메일이 없습니다.</p>
+                          <p>현재 탭에 표시할 수 있는 최근 메일이 없습니다.</p>
                         </div>
                       )}
                     </div>
@@ -667,6 +730,13 @@ function App() {
 
       {activeView === 'openclaw' && (
         <OpenClawMonitorPage
+          apiBase={API_BASE}
+          authHeaders={authHeaders}
+        />
+      )}
+
+      {activeView === 'news-center' && (
+        <NewsCenterPage
           apiBase={API_BASE}
           authHeaders={authHeaders}
         />

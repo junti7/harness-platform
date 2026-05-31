@@ -10,6 +10,7 @@ import threading
 import time
 import html
 import subprocess
+import shutil
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -32,6 +33,20 @@ try:
     load_dotenv(PROJECT_ROOT / ".env", override=False)
 except ImportError:
     pass
+
+from core.domain_config import load_default_sources, load_keyword_list
+from core.source_registry import (
+    build_channel_coverage,
+    merge_catalog_rows_with_defaults,
+    parse_rate_limit_policy,
+    source_channel,
+    source_collection_mode,
+    source_notes,
+    source_preferred_worker,
+    source_requires_login,
+    source_status,
+)
+from core.topic_registry import ensure_fresh_topic_registry
 
 TARGET_FREE_SUBSCRIBERS = 50
 TARGET_PAID_SUBSCRIBERS = 1
@@ -1184,50 +1199,228 @@ _CONFIGURED_SOURCES = [
 ]
 
 
+def _probe_ollama_host(host: str) -> bool:
+    if not host:
+        return False
+    try:
+        resp = httpx.get(f"{host}/api/tags", timeout=2.5)
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def _physical_ai_recent_rows(limit: int = 120) -> list[dict[str, Any]]:
+    return _execute_query(
+        "SELECT source, status, ingested_at, raw_data->>'title' as title "
+        "FROM raw_signals "
+        "WHERE coalesce(raw_data->>'domain', 'physical_ai') = 'physical_ai' "
+        "ORDER BY ingested_at DESC LIMIT %s",
+        (limit,),
+    )
+
+
+def _physical_ai_source_rows() -> list[dict[str, Any]]:
+    rows = _execute_query(
+        "SELECT source_name, base_url, source_type, enabled, expected_signal_type, reliability_score, rate_limit_policy "
+        "FROM source_catalog ORDER BY enabled DESC, source_name"
+    )
+    defaults = load_default_sources("physical_ai")
+    return merge_catalog_rows_with_defaults(rows or [], defaults)
+
+
+def _run_text(cmd: list[str]) -> str:
+    try:
+        return subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL, timeout=3).strip()
+    except Exception:
+        return ""
+
+
+def _pending_backlog_stats(domain: str) -> dict[str, Any]:
+    rows = _execute_query(
+        "SELECT count(*) AS cnt, min(ingested_at) AS oldest_at, max(ingested_at) AS latest_at "
+        "FROM raw_signals WHERE status = 'pending' AND coalesce(raw_data->>'domain', 'physical_ai') = %s",
+        (domain,),
+    )
+    row = (rows or [{}])[0]
+    return {
+        "pending_count": int(row.get("cnt") or 0),
+        "oldest_pending_at": str(row.get("oldest_at") or ""),
+        "latest_pending_at": str(row.get("latest_at") or ""),
+    }
+
+
+def _launchctl_label_state(label: str) -> dict[str, Any]:
+    launchctl = shutil.which("launchctl")
+    if not launchctl:
+        return {"loaded": False, "running": False, "pid": None, "last_exit_code": None}
+    out = _run_text([launchctl, "print", f"gui/{os.getuid()}/{label}"])
+    if not out:
+        return {"loaded": False, "running": False, "pid": None, "last_exit_code": None}
+    pid_match = re.search(r"\bpid = (\d+)", out)
+    exit_match = re.search(r"last exit code = ([^\n]+)", out)
+    running = "state = running" in out
+    return {
+        "loaded": True,
+        "running": running,
+        "pid": int(pid_match.group(1)) if pid_match else None,
+        "last_exit_code": None if not exit_match or "(never exited)" in exit_match.group(1) else exit_match.group(1).strip(),
+    }
+
+
+def _tail_log(path: Path, max_lines: int = 5) -> list[str]:
+    try:
+        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        return lines[-max_lines:]
+    except Exception:
+        return []
+
+
+def _tier2_worker_health(domain: str) -> dict[str, Any]:
+    backlog = _pending_backlog_stats(domain)
+    main_state = _launchctl_label_state("com.harness.tier2-filter")
+    fast_state = _launchctl_label_state("com.harness.tier2-filter-fast")
+    mbp_active = _probe_ollama_host(os.getenv("OLLAMA_REMOTE_HOST", "").strip())
+    return {
+        **backlog,
+        "mbp_active": mbp_active,
+        "main": {
+            **main_state,
+            "label": "com.harness.tier2-filter",
+            "interval_seconds": 900,
+            "log_tail": _tail_log(PROJECT_ROOT / "logs" / "tier2-filter.log"),
+        },
+        "fast_lane": {
+            **fast_state,
+            "label": "com.harness.tier2-filter-fast",
+            "interval_seconds": 300,
+            "active_threshold": 4000,
+            "log_tail": _tail_log(PROJECT_ROOT / "logs" / "tier2-filter-fast.log"),
+        },
+    }
+
+
+def _source_metrics_for_dashboard(source_name: str, source_row: dict[str, Any], source_map: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    direct = source_map.get(source_name)
+    if direct:
+        return direct
+
+    channel = source_channel(source_row)
+    if channel == "substack":
+        total = 0
+        last_at = ""
+        for key, value in source_map.items():
+            if not str(key).startswith("substack_feed_"):
+                continue
+            total += int(value.get("count") or 0)
+            candidate_last = str(value.get("last_at") or "")
+            if candidate_last and candidate_last > last_at:
+                last_at = candidate_last
+        return {"count": total, "last_at": last_at}
+
+    return {"count": 0, "last_at": ""}
+
+
 def _data_collection_monitor() -> dict[str, Any]:
     try:
-        # 전체 카운트
+        domain = "physical_ai"
         totals = _execute_query(
-            "SELECT status, count(*) as cnt FROM raw_signals WHERE domain = 'edu_consulting' GROUP BY status"
+            "SELECT status, count(*) as cnt FROM raw_signals "
+            "WHERE coalesce(raw_data->>'domain', 'physical_ai') = %s GROUP BY status",
+            (domain,),
         )
         counts: dict[str, int] = {r["status"]: int(r["cnt"]) for r in totals}
         total = sum(counts.values())
 
-        # 소스별 집계
         by_source = _execute_query(
             "SELECT source, count(*) as cnt, max(ingested_at) as last_at "
-            "FROM raw_signals WHERE domain = 'edu_consulting' GROUP BY source"
+            "FROM raw_signals WHERE coalesce(raw_data->>'domain', 'physical_ai') = %s GROUP BY source",
+            (domain,),
         )
         source_map = {r["source"]: {"count": int(r["cnt"]), "last_at": str(r["last_at"] or "")} for r in by_source}
 
+        source_rows = _physical_ai_source_rows()
         sources_out = []
-        for src in _CONFIGURED_SOURCES:
-            sid = src["id"]
-            # youtube는 source prefix 매칭
-            matched = {k: v for k, v in source_map.items() if k.startswith(sid) or k == sid}
-            s_count = sum(v["count"] for v in matched.values())
-            s_last = max((v["last_at"] for v in matched.values()), default="") if matched else ""
-            sources_out.append({
-                "id": sid,
-                "label": src["label"],
-                "type": src["type"],
-                "count": s_count,
-                "last_ingested_at": s_last,
-                "active": s_count > 0,
-            })
+        for src in source_rows:
+            source_name = str(src.get("source_name") or "")
+            matched = _source_metrics_for_dashboard(source_name, src, source_map)
+            policy = parse_rate_limit_policy(src.get("rate_limit_policy"))
+            sources_out.append(
+                {
+                    "id": source_name,
+                    "label": source_name.replace("_", " "),
+                    "type": str(src.get("source_type") or "rss"),
+                    "channel": source_channel(src),
+                    "mode": source_collection_mode(src),
+                    "status": source_status(src),
+                    "count": int(matched["count"]),
+                    "last_ingested_at": matched["last_at"],
+                    "active": bool(src.get("enabled", True)),
+                    "expected_signal_type": str(src.get("expected_signal_type") or ""),
+                    "reliability_score": float(src.get("reliability_score") or 0),
+                    "base_url": str(src.get("base_url") or ""),
+                    "preferred_worker": source_preferred_worker(src),
+                    "requires_login": source_requires_login(src),
+                    "notes": source_notes(src),
+                    "activation_policy": str(policy.get("activation_policy") or ""),
+                }
+            )
 
-        # 최근 활동 10건
-        recent = _execute_query(
-            "SELECT source, status, ingested_at, raw_data->>'title' as title "
-            "FROM raw_signals WHERE domain = 'edu_consulting' ORDER BY ingested_at DESC LIMIT 10"
+        recent = _physical_ai_recent_rows(limit=12)
+        topic_registry = ensure_fresh_topic_registry(domain, recent)
+        seed_topics = load_keyword_list(domain)
+        active_topics = [
+            {
+                "topic": topic,
+                "kind": "seed",
+                "confidence": 1.0,
+                "evidence_count": None,
+                "reason": "seed_keyword",
+                "sample_title": "",
+                "active": True,
+            }
+            for topic in seed_topics
+        ]
+        active_topics.extend(
+            {
+                "topic": str(item.get("topic") or ""),
+                "kind": "auto",
+                "confidence": float(item.get("confidence") or 0),
+                "evidence_count": int(item.get("evidence_count") or 0),
+                "reason": str(item.get("reason") or ""),
+                "sample_title": str(item.get("sample_title") or ""),
+                "active": bool(item.get("active")),
+            }
+            for item in topic_registry.get("auto_topics", [])
+            if item.get("active")
         )
 
         return {
+            "domain": domain,
             "total": total,
             "pending_count": counts.get("pending", 0),
             "pass_count": counts.get("filtered_pass", 0),
             "fail_count": counts.get("filtered_fail", 0),
             "sources": sources_out,
+            "channel_coverage": build_channel_coverage(source_rows),
+            "tier2_worker": _tier2_worker_health(domain),
+            "current_topics": active_topics,
+            "suggested_topics": topic_registry.get("suggested_topics", []),
+            "generated_query_sources": topic_registry.get("query_sources", []),
+            "topic_registry_generated_at": topic_registry.get("generated_at"),
+            "expansion_policy": {
+                "safe_auto_channels": ["rss", "rss_search", "public_api"],
+                "restricted_channels": ["discord", "instagram", "threads", "x", "naver_cafe"],
+                "auto_topic_expansion": True,
+                "auto_channel_expansion": False,
+            },
+            "workers": {
+                "mini": {"role": "rss-collector+filter+serving", "active": True},
+                "mbp": {
+                    "role": "topic-expansion+browser-discovery",
+                    "active": _probe_ollama_host(os.getenv("OLLAMA_REMOTE_HOST", "").strip()),
+                    "host": os.getenv("OLLAMA_REMOTE_HOST", "").strip(),
+                },
+            },
             "configured_languages": _CONFIGURED_LANGUAGES,
             "recent_activity": [
                 {
@@ -1241,8 +1434,32 @@ def _data_collection_monitor() -> dict[str, Any]:
         }
     except Exception:
         return {
+            "domain": "physical_ai",
             "total": 0, "pending_count": 0, "pass_count": 0, "fail_count": 0,
             "sources": _CONFIGURED_SOURCES,
+            "channel_coverage": [],
+            "tier2_worker": {
+                "pending_count": 0,
+                "oldest_pending_at": "",
+                "latest_pending_at": "",
+                "mbp_active": False,
+                "main": {"loaded": False, "running": False, "pid": None, "last_exit_code": None, "label": "com.harness.tier2-filter", "interval_seconds": 900, "log_tail": []},
+                "fast_lane": {"loaded": False, "running": False, "pid": None, "last_exit_code": None, "label": "com.harness.tier2-filter-fast", "interval_seconds": 300, "active_threshold": 4000, "log_tail": []},
+            },
+            "current_topics": [],
+            "suggested_topics": [],
+            "generated_query_sources": [],
+            "topic_registry_generated_at": None,
+            "expansion_policy": {
+                "safe_auto_channels": ["rss", "rss_search", "public_api"],
+                "restricted_channels": ["discord", "instagram", "threads", "x", "naver_cafe"],
+                "auto_topic_expansion": True,
+                "auto_channel_expansion": False,
+            },
+            "workers": {
+                "mini": {"role": "rss-collector+filter+serving", "active": True},
+                "mbp": {"role": "topic-expansion+browser-discovery", "active": False, "host": os.getenv("OLLAMA_REMOTE_HOST", "").strip()},
+            },
             "configured_languages": _CONFIGURED_LANGUAGES,
             "recent_activity": [],
         }
@@ -3026,33 +3243,142 @@ def execute_paper_trading(_: None = Depends(_require_secret)) -> dict[str, Any]:
         return {"ok": False, "stdout": "", "stderr": str(e)}
 
 
-@app.get("/api/ibkr/monitor")
-def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
-    """IBKR Turtle Monitor 스크립트에서 구조화된 JSON 반환."""
+_IBKR_CACHE_PATH = PROJECT_ROOT / "docs" / "reports" / "ibkr_monitor_cache.json"
+_IBKR_LOCK = threading.Lock()
+_IBKR_LAST_RUN = 0.0
+
+def _run_ibkr_monitor_background():
+    global _IBKR_LAST_RUN
     import subprocess, sys as _sys, json as _json
     script = PROJECT_ROOT / "scripts" / "ibkr_turtle_monitor.py"
     if not script.exists():
-        return {
-            "ok": False, "error": "ibkr_turtle_monitor.py not found",
-            "gateway_connected": False, "positions": [], "entry_candidates": [],
-        }
+        return
     try:
         result = subprocess.run(
             [_sys.executable, str(script), "--json"],
-            capture_output=True, text=True, timeout=90,
+            capture_output=True, text=True, timeout=450,
             cwd=str(PROJECT_ROOT),
         )
-        if result.stdout.strip():
-            return _json.loads(result.stdout.strip())
-        return {
-            "ok": False, "error": result.stderr[:500] or "no output",
-            "gateway_connected": False, "positions": [], "entry_candidates": [],
-        }
+        if result.returncode == 0 and result.stdout.strip():
+            data = _json.loads(result.stdout.strip())
+            _IBKR_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with open(_IBKR_CACHE_PATH, "w", encoding="utf-8") as f:
+                _json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
+        try:
+            with open(PROJECT_ROOT / "logs" / "harness-os-backend.error.log", "a") as err_f:
+                err_f.write(f"\n[Background Thread Error] IBKR background scan failed: {e}\n")
+        except Exception:
+            pass
+    finally:
+        with _IBKR_LOCK:
+            _IBKR_LAST_RUN = time.time()
+
+
+@app.get("/api/ibkr/monitor")
+def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    """IBKR Turtle Monitor 캐시된 결과 즉시 반환 + 5분 주기 백그라운드 자동 갱신."""
+    global _IBKR_LAST_RUN
+    import json as _json
+    
+    # 1. 캐시 파일이 존재하면 즉시 로드
+    cache_data = None
+    if _IBKR_CACHE_PATH.exists():
+        try:
+            with open(_IBKR_CACHE_PATH, "r", encoding="utf-8") as f:
+                cache_data = _json.load(f)
+        except Exception:
+            pass
+            
+    # 2. 캐시가 없거나 마지막 실행 후 5분이 지났다면 백그라운드 갱신 스레드 기동
+    now = time.time()
+    should_run = False
+    with _IBKR_LOCK:
+        if now - _IBKR_LAST_RUN > 300:  # 5분 주기
+            _IBKR_LAST_RUN = now
+            should_run = True
+            
+    if should_run:
+        threading.Thread(target=_run_ibkr_monitor_background, daemon=True).start()
+        
+    if cache_data:
+        return cache_data
+        
+    # 3. 최초 진입 시 빈 캐시 일 때만 즉각적인 Offline 구조체 리턴하여 화면 락 방지
+    try:
+        state_path = PROJECT_ROOT / "docs" / "reports" / "ibkr_tws_positions.json"
+        universe_path = PROJECT_ROOT / "configs" / "universe.json"
+        
+        # Gateway 4002 포트 활성화 여부 1ms 만에 초고속 핑 감지
+        gateway_connected = False
+        import socket as _socket
+        try:
+            with _socket.create_connection(("127.0.0.1", 4002), timeout=1.0) as sock:
+                gateway_connected = True
+        except Exception:
+            pass
+        
+        positions = []
+        if state_path.exists():
+            with open(state_path, "r", encoding="utf-8") as f:
+                state_data = _json.load(f)
+            for sym, meta in state_data.get("positions", {}).items():
+                positions.append({
+                    "symbol": sym,
+                    "qty": meta.get("qty", 0),
+                    "entry_price": meta.get("entry_price", 0.0),
+                    "stop_loss": meta.get("stop_loss", 0.0),
+                    "action": "HOLD",
+                })
+        
+        universe = []
+        if universe_path.exists():
+            with open(universe_path, "r", encoding="utf-8") as f:
+                univ_data = _json.load(f)
+            universe = [
+                {
+                    "symbol": u.get("symbol"),
+                    "region": u.get("region", "US"),
+                    "name": u.get("name", ""),
+                    "sector": u.get("sector", ""),
+                    "currency": u.get("currency", "USD"),
+                    "signal": "no_connection",
+                    "in_position": any(p["symbol"] == u.get("symbol") for p in positions),
+                }
+                for u in univ_data
+            ]
+            
+        import datetime
+        ts = datetime.datetime.utcnow().isoformat() + "Z"
         return {
-            "ok": False, "error": str(e),
-            "gateway_connected": False, "positions": [], "entry_candidates": [],
+            "ok": True,
+            "ts": ts,
+            "mode": "paper",
+            "gateway_connected": gateway_connected,
+            "account": None,
+            "positions": positions,
+            "exit_signals": [],
+            "entry_candidates": universe,
+            "universe_source": "universe.json",
+            "error": "Initializing background cache... showing offline state",
         }
+    except Exception as fallback_err:
+        pass
+
+    import datetime
+    ts = datetime.datetime.utcnow().isoformat() + "Z"
+    return {
+        "ok": True,
+        "ts": ts,
+        "mode": "paper",
+        "gateway_connected": False,
+        "account": None,
+        "positions": [],
+        "exit_signals": [],
+        "entry_candidates": [],
+        "universe_source": "universe.json",
+        "error": "Initializing background cache... please wait 1-2 minutes",
+    }
 
 
 @app.post("/api/ibkr/monitor/scan")
@@ -3513,7 +3839,10 @@ def get_pipeline_signals(
         f"SELECT id, source, status, ingested_at, "
         f"raw_data->>'title' as title, "
         f"raw_data->>'url' as url, "
-        f"raw_data->>'query' as query "
+        f"raw_data->>'query' as query, "
+        f"raw_data->>'tier2_score' as tier2_score, "
+        f"raw_data->>'tier2_reason' as tier2_reason, "
+        f"raw_data->>'tier2_insight' as tier2_insight "
         f"FROM raw_signals WHERE {wc} "
         f"ORDER BY ingested_at DESC LIMIT %s OFFSET %s",
         tuple(params) + (limit, offset),
@@ -3859,6 +4188,164 @@ def trading_diary_add_note(
     with open(_DIARY_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     return {"ok": True, "id": entry_id}
+
+
+# ── News Center API ──────────────────────────────────────────────────────────
+
+_NEWS_CHANNELS = [
+    {"id": "all",           "label": "전체",        "icon": "🌐", "description": "모든 채널"},
+    {"id": "tech_ai",       "label": "AI·테크",      "icon": "🤖", "description": "AI·반도체·Physical AI 연구"},
+    {"id": "edu_business",  "label": "교육·사업",    "icon": "📚", "description": "교육 컨설팅·시장 동향"},
+    {"id": "market_invest", "label": "시장·투자",    "icon": "📈", "description": "투자 thesis·거시경제"},
+    {"id": "policy_reg",    "label": "정책·규제",    "icon": "⚖️",  "description": "규제·법률·정책 변화"},
+]
+
+
+@app.get("/api/news-center/channels")
+def news_center_channels(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    return {"channels": _NEWS_CHANNELS}
+
+
+@app.get("/api/news-center/feed")
+def news_center_feed(
+    date: str = "",
+    channel: str = "",
+    limit: int = 50,
+    offset: int = 0,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    from datetime import datetime, timezone as _tz
+    today = datetime.now(_tz.utc).strftime("%Y-%m-%d")
+    selected = date if date else today
+
+    # channel 필터: DB의 raw_data->>'category' 또는 source 기반 매핑
+    channel_filter = ""
+    params: list[Any] = [selected, selected]
+    if channel and channel != "all":
+        channel_filter = "AND coalesce(raw_data->>'category', 'tech_ai') = %s"
+        params.append(channel)
+
+    rows = _execute_query(
+        f"""
+        SELECT id, raw_data->>'title' AS title,
+               coalesce(raw_data->>'source_name', source) AS source,
+               coalesce(raw_data->>'url', '') AS url,
+               coalesce(raw_data->>'category', 'tech_ai') AS channel,
+               tier2_score,
+               raw_data->>'tier2_insight' AS tier2_insight,
+               raw_data->>'tier2_reason' AS tier2_reason,
+               ingested_at,
+               raw_data->>'abstract' AS abstract
+        FROM raw_signals
+        WHERE date(ingested_at AT TIME ZONE 'UTC') BETWEEN %s::date - 7 AND %s::date
+          AND status = 'filtered_pass'
+          {channel_filter}
+        ORDER BY tier2_score DESC NULLS LAST, ingested_at DESC
+        LIMIT {min(limit, 200)} OFFSET {offset}
+        """,
+        tuple(params),
+    ) or []
+
+    # channel counts
+    count_rows = _execute_query(
+        """
+        SELECT coalesce(raw_data->>'category', 'tech_ai') AS ch, count(*) AS cnt
+        FROM raw_signals
+        WHERE date(ingested_at AT TIME ZONE 'UTC') BETWEEN %s::date - 7 AND %s::date
+          AND status = 'filtered_pass'
+        GROUP BY ch
+        """,
+        (selected, selected),
+    ) or []
+    channel_counts: dict[str, int] = {r["ch"]: int(r["cnt"]) for r in count_rows}
+
+    items = []
+    for r in rows:
+        items.append({
+            "id": r.get("id") or 0,
+            "title": r.get("title") or "(제목 없음)",
+            "source": r.get("source") or "",
+            "url": r.get("url") or "",
+            "channel": r.get("channel") or "tech_ai",
+            "tier2_score": r.get("tier2_score"),
+            "tier2_insight": r.get("tier2_insight"),
+            "tier2_reason": r.get("tier2_reason"),
+            "ingested_at": str(r.get("ingested_at") or ""),
+            "abstract": r.get("abstract"),
+        })
+
+    return {
+        "total": len(items),
+        "channel": channel or "all",
+        "date": selected,
+        "items": items,
+        "channel_counts": channel_counts,
+    }
+
+
+@app.get("/api/news-center/daily-digest")
+def news_center_daily_digest(
+    date: str = "",
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    from datetime import datetime, timezone as _tz
+    today = datetime.now(_tz.utc).strftime("%Y-%m-%d")
+    selected = date if date else today
+
+    total_row = _execute_query(
+        "SELECT count(*) AS cnt FROM raw_signals "
+        "WHERE date(ingested_at AT TIME ZONE 'UTC') BETWEEN %s::date - 7 AND %s::date "
+        "  AND status = 'filtered_pass'",
+        (selected, selected),
+    ) or [{"cnt": 0}]
+
+    channel_rows = _execute_query(
+        "SELECT coalesce(raw_data->>'category', 'tech_ai') AS ch, count(*) AS cnt "
+        "FROM raw_signals "
+        "WHERE date(ingested_at AT TIME ZONE 'UTC') BETWEEN %s::date - 7 AND %s::date "
+        "  AND status = 'filtered_pass' "
+        "GROUP BY ch ORDER BY cnt DESC",
+        (selected, selected),
+    ) or []
+
+    source_rows = _execute_query(
+        "SELECT coalesce(raw_data->>'source_name', source) AS src, count(*) AS cnt "
+        "FROM raw_signals "
+        "WHERE date(ingested_at AT TIME ZONE 'UTC') BETWEEN %s::date - 7 AND %s::date "
+        "  AND status = 'filtered_pass' "
+        "GROUP BY src ORDER BY cnt DESC LIMIT 5",
+        (selected, selected),
+    ) or []
+
+    return {
+        "date": selected,
+        "total_signals": int((total_row[0] or {}).get("cnt") or 0),
+        "channels": {r["ch"]: int(r["cnt"]) for r in channel_rows},
+        "top_sources": [r["src"] for r in source_rows if r.get("src")],
+        "generated_at": datetime.now(_tz.utc).isoformat(timespec="seconds"),
+    }
+
+
+@app.post("/api/news-center/send-slack")
+def news_center_send_slack(
+    req: dict[str, Any],
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    date = req.get("date", "")
+    webhook = os.getenv("SLACK_WEBHOOK_URL", "")
+    if not webhook:
+        return {"ok": False, "error": "SLACK_WEBHOOK_URL 미설정"}
+    try:
+        digest = news_center_daily_digest(date=date)
+        msg = (
+            f"*📰 Harness News Center — {digest['date']}*\n"
+            f"총 신호 {digest['total_signals']}건 | "
+            + " | ".join(f"{ch}: {cnt}" for ch, cnt in (digest.get("channels") or {}).items())
+        )
+        httpx.post(webhook, json={"text": msg}, timeout=10)
+        return {"ok": True}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 # ── SPA Static File Serving (프로덕션 배포용) ────────────────────────────────
