@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import socket
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,33 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 STATUS_PATH = PROJECT_ROOT / "docs/trading/ibkr_onboarding_status.json"
+_MONITOR_CACHE_PATH = PROJECT_ROOT / "docs/reports/ibkr_monitor_cache.json"
+_TWS_PORT = 4002
+
+
+def _check_tws() -> tuple[bool, bool, bool]:
+    """(tws_reachable, tws_authenticated, tws_account_visible) via port 4002 + monitor cache."""
+    # monitor cache 먼저 읽기 (ibkr_turtle_monitor가 기록한 최신 상태)
+    cache: dict[str, Any] = {}
+    if _MONITOR_CACHE_PATH.exists():
+        try:
+            cache = json.loads(_MONITOR_CACHE_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    # 직접 소켓 체크, 실패하면 캐시의 gateway_connected 를 fallback으로 사용
+    reachable = False
+    try:
+        with socket.create_connection(("127.0.0.1", _TWS_PORT), timeout=1.0):
+            reachable = True
+    except OSError:
+        reachable = bool(cache.get("gateway_connected"))
+
+    if not reachable:
+        return False, False, False
+
+    account_visible = bool((cache.get("account") or {}).get("account_id"))
+    return True, account_visible, account_visible
 
 MANUAL_STEP_DEFS = [
     ("account_opened", "IBKR Pro account opened", "Open an IBKR Pro individual account."),
@@ -98,9 +126,15 @@ def compute_status(preflight: dict[str, Any], accounts_payload: dict[str, Any]) 
         }
 
     auth = preflight.get("auth") or {}
-    gateway_ok = bool(preflight.get("ok"))
-    authenticated = auth.get("authenticated") is True
-    account_visible = int(accounts_payload.get("count") or 0) > 0
+    cp_ok = bool(preflight.get("ok"))
+    cp_authenticated = auth.get("authenticated") is True
+    cp_account_visible = int(accounts_payload.get("count") or 0) > 0
+
+    tws_reachable, tws_authenticated, tws_account_visible = _check_tws()
+
+    gateway_ok = cp_ok or tws_reachable
+    authenticated = cp_authenticated or tws_authenticated
+    account_visible = cp_account_visible or tws_account_visible
 
     steps = [manual_step(step_id, label, note) for step_id, label, note in MANUAL_STEP_DEFS]
     steps.extend(

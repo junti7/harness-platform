@@ -2339,6 +2339,25 @@ def _trading_api_overview() -> dict[str, Any]:
     pending_recent = pending_rows[-5:]
     preflight = safe_check_connectivity()
     auth = preflight.get("auth") or {}
+
+    # TWS(port 4002) fallback: CP Gateway가 없어도 TWS로 연결됐으면 ok/authenticated 표시
+    _tws_ok = False
+    _tws_account_id = None
+    try:
+        import socket as _socket_tws
+        with _socket_tws.create_connection(("127.0.0.1", 4002), timeout=1.0):
+            _tws_ok = True
+        _monitor_cache = PROJECT_ROOT / "docs" / "reports" / "ibkr_monitor_cache.json"
+        if _tws_ok and _monitor_cache.exists():
+            import json as _json_tws
+            _cache = _json_tws.loads(_monitor_cache.read_text(encoding="utf-8"))
+            _tws_account_id = (_cache.get("account") or {}).get("account_id")
+    except Exception:
+        pass
+
+    preflight_ok = bool(preflight.get("ok")) or _tws_ok
+    preflight_authenticated = auth.get("authenticated") if preflight.get("ok") else (True if _tws_account_id else None)
+
     accounts_payload: dict[str, Any] = {"count": 0, "accounts": [], "error": None}
     if preflight.get("ok") and auth.get("authenticated") is True:
         client = IbkrCpClient()
@@ -2369,6 +2388,8 @@ def _trading_api_overview() -> dict[str, Any]:
             accounts_payload = {"count": 0, "accounts": [], "error": str(exc)}
         finally:
             client.close()
+    elif _tws_account_id:
+        accounts_payload = {"count": 1, "accounts": [{"id": _tws_account_id, "account_type": "paper", "currency": "USD", "description": "TWS Paper"}], "error": None}
     onboarding = compute_status(preflight, accounts_payload)
     watchlist = _build_trading_watchlist()
     quote_rows = _fetch_ibkr_quotes(watchlist)
@@ -2381,11 +2402,11 @@ def _trading_api_overview() -> dict[str, Any]:
 
     return {
         "preflight": {
-            "ok": bool(preflight.get("ok")),
-            "authenticated": auth.get("authenticated"),
+            "ok": preflight_ok,
+            "authenticated": preflight_authenticated,
             "base_url": preflight.get("base_url"),
             "tls_verify": preflight.get("tls_verify"),
-            "error": preflight.get("error"),
+            "error": preflight.get("error") if not _tws_ok else None,
         },
         "accounts": accounts_payload,
         "onboarding": onboarding,
