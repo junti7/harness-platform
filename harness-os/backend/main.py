@@ -3913,7 +3913,13 @@ def get_pipeline_signals(
         f"ORDER BY rs.ingested_at DESC LIMIT %s OFFSET %s",
         tuple(params) + (limit, offset),
     )
-    return {"total": total, "limit": limit, "offset": offset, "items": [dict(r) for r in rows]}
+    items = []
+    for r in rows:
+        d = dict(r)
+        if d.get("tier2_reason"):
+            d["tier2_reason"] = html.unescape(d["tier2_reason"])
+        items.append(d)
+    return {"total": total, "limit": limit, "offset": offset, "items": items}
 
 
 @app.get("/api/pipeline/source-stats")
