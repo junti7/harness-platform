@@ -203,6 +203,23 @@ def _mentions_bg(handles: list[str], question: str, channel: str, logger):
         logger.error(f"[meeting] mention 응답 실패: {exc}")
 
 
+def _open_floor_bg(question: str, channel: str, logger):
+    """CEO/VP 자유 발언 → Jarvis 먼저 + 모든 활성 페르소나 순서대로 응답."""
+    try:
+        from adapters.content.orchestrator import respond_as_persona
+        from agents.registry import get_active_personas
+        # Jarvis가 먼저 사회 보고, 나머지 페르소나가 의견 개진
+        jarvis_first = ["jarvis"]
+        others = [p.handle for p in get_active_personas() if p.handle != "jarvis"]
+        for handle in jarvis_first + others:
+            try:
+                respond_as_persona(handle, question, channel_id=channel)
+            except Exception as e:
+                logger.warning(f"[meeting] {handle} 응답 실패: {e}")
+    except Exception as exc:
+        logger.error(f"[meeting] open_floor 실패: {exc}")
+
+
 def _handle_meeting_message(user: str, text: str, channel: str, say, logger):
     # CEO/VP만 트리거. persona 발언(bot)·독자는 위에서 이미 걸러짐.
     if not _is_principal(user):
@@ -210,6 +227,7 @@ def _handle_meeting_message(user: str, text: str, channel: str, say, logger):
     if not text.strip():
         return
 
+    # 1. 소집 트리거 → 오케스트레이션 시작
     if _CONVENE_RE.search(text):
         from core.meeting_scheduler import add_meeting, parse_meeting_time
 
@@ -225,6 +243,7 @@ def _handle_meeting_message(user: str, text: str, channel: str, say, logger):
         threading.Thread(target=_orchestrate_bg, args=(order, logger), daemon=True).start()
         return
 
+    # 2. 특정 페르소나 멘션 → 해당 페르소나만 응답
     personas = find_mentioned_personas(text)
     if personas:
         handles = [p.handle for p in personas]
@@ -232,6 +251,11 @@ def _handle_meeting_message(user: str, text: str, channel: str, say, logger):
         logger.info(f"[meeting] 멘션 by {user}: {handles}")
         say(text=f":speech_balloon: {names} 호출하셨습니다. 답변 준비하겠습니다.")
         threading.Thread(target=_mentions_bg, args=(handles, text, channel, logger), daemon=True).start()
+        return
+
+    # 3. 자유 발언 → 모든 페르소나가 회의실에서 응답 (대표/부대표 직접 참여)
+    logger.info(f"[meeting] 자유 발언 by {user}: {text[:60]!r}")
+    threading.Thread(target=_open_floor_bg, args=(text, channel, logger), daemon=True).start()
 
 
 def _handle_vp_dm(user: str, text: str, say, logger):
