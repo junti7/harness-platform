@@ -4064,6 +4064,8 @@ def _run_deploy() -> None:
         return r.returncode, out
 
     try:
+        # 로컬 변경사항이 있으면 stash 후 pull (untracked 파일 포함)
+        run(["git", "stash", "-u"], cwd=str(PROJECT_ROOT))
         run(["git", "pull"], cwd=str(PROJECT_ROOT))
         # API_BASE 반드시 비워야 모바일에서 상대경로로 동작 (로컬 수정값 강제 덮어쓰기)
         fe_env = PROJECT_ROOT / "harness-os" / "frontend" / ".env"
