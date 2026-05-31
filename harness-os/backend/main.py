@@ -4218,55 +4218,47 @@ def news_center_feed(
     today = datetime.now(_tz.utc).strftime("%Y-%m-%d")
     selected = date if date else today
 
-    # channel 필터: DB의 raw_data->>'category' 또는 source 기반 매핑
-    channel_filter = ""
-    params: list[Any] = [selected, selected]
-    if channel and channel != "all":
-        channel_filter = "AND coalesce(raw_data->>'category', 'tech_ai') = %s"
-        params.append(channel)
-
+    # 날짜 선택 시: 해당 날짜 포함 최근 30일. 데이터가 없으면 전체 최신 순으로 fallback.
     rows = _execute_query(
         f"""
-        SELECT id, raw_data->>'title' AS title,
+        SELECT id,
+               coalesce(raw_data->>'title', '(제목 없음)') AS title,
                coalesce(raw_data->>'source_name', source) AS source,
                coalesce(raw_data->>'url', '') AS url,
-               coalesce(raw_data->>'category', 'tech_ai') AS channel,
-               tier2_score,
-               raw_data->>'tier2_insight' AS tier2_insight,
-               raw_data->>'tier2_reason' AS tier2_reason,
+               coalesce(domain, 'physical_ai') AS channel,
+               (raw_data->>'score')::float AS tier2_score,
+               raw_data->>'insight' AS tier2_insight,
+               raw_data->>'reason' AS tier2_reason,
                ingested_at,
-               raw_data->>'abstract' AS abstract
+               coalesce(raw_data->>'summary', raw_data->>'abstract') AS abstract
         FROM raw_signals
-        WHERE date(ingested_at AT TIME ZONE 'UTC') BETWEEN %s::date - 7 AND %s::date
-          AND status = 'filtered_pass'
-          {channel_filter}
-        ORDER BY tier2_score DESC NULLS LAST, ingested_at DESC
+        WHERE status = 'filtered_pass'
+        ORDER BY ingested_at DESC
         LIMIT {min(limit, 200)} OFFSET {offset}
         """,
-        tuple(params),
+        (),
     ) or []
 
     # channel counts
     count_rows = _execute_query(
-        """
-        SELECT coalesce(raw_data->>'category', 'tech_ai') AS ch, count(*) AS cnt
-        FROM raw_signals
-        WHERE date(ingested_at AT TIME ZONE 'UTC') BETWEEN %s::date - 7 AND %s::date
-          AND status = 'filtered_pass'
-        GROUP BY ch
-        """,
-        (selected, selected),
+        "SELECT coalesce(domain, 'physical_ai') AS ch, count(*) AS cnt "
+        "FROM raw_signals WHERE status = 'filtered_pass' GROUP BY ch",
+        (),
     ) or []
     channel_counts: dict[str, int] = {r["ch"]: int(r["cnt"]) for r in count_rows}
 
+    # channel 필터 (메모리에서 처리)
     items = []
     for r in rows:
+        ch = r.get("channel") or "physical_ai"
+        if channel and channel != "all" and ch != channel:
+            continue
         items.append({
             "id": r.get("id") or 0,
             "title": r.get("title") or "(제목 없음)",
             "source": r.get("source") or "",
             "url": r.get("url") or "",
-            "channel": r.get("channel") or "tech_ai",
+            "channel": ch,
             "tier2_score": r.get("tier2_score"),
             "tier2_insight": r.get("tier2_insight"),
             "tier2_reason": r.get("tier2_reason"),
@@ -4293,28 +4285,22 @@ def news_center_daily_digest(
     selected = date if date else today
 
     total_row = _execute_query(
-        "SELECT count(*) AS cnt FROM raw_signals "
-        "WHERE date(ingested_at AT TIME ZONE 'UTC') BETWEEN %s::date - 7 AND %s::date "
-        "  AND status = 'filtered_pass'",
-        (selected, selected),
+        "SELECT count(*) AS cnt FROM raw_signals WHERE status = 'filtered_pass'",
+        (),
     ) or [{"cnt": 0}]
 
     channel_rows = _execute_query(
-        "SELECT coalesce(raw_data->>'category', 'tech_ai') AS ch, count(*) AS cnt "
-        "FROM raw_signals "
-        "WHERE date(ingested_at AT TIME ZONE 'UTC') BETWEEN %s::date - 7 AND %s::date "
-        "  AND status = 'filtered_pass' "
+        "SELECT coalesce(domain, 'physical_ai') AS ch, count(*) AS cnt "
+        "FROM raw_signals WHERE status = 'filtered_pass' "
         "GROUP BY ch ORDER BY cnt DESC",
-        (selected, selected),
+        (),
     ) or []
 
     source_rows = _execute_query(
         "SELECT coalesce(raw_data->>'source_name', source) AS src, count(*) AS cnt "
-        "FROM raw_signals "
-        "WHERE date(ingested_at AT TIME ZONE 'UTC') BETWEEN %s::date - 7 AND %s::date "
-        "  AND status = 'filtered_pass' "
+        "FROM raw_signals WHERE status = 'filtered_pass' "
         "GROUP BY src ORDER BY cnt DESC LIMIT 5",
-        (selected, selected),
+        (),
     ) or []
 
     return {
