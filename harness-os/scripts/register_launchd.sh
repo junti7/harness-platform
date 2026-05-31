@@ -14,7 +14,8 @@ for name in \
   com.harness.maily-metrics-sync \
   com.harness.tier2-filter \
   com.harness.tier2-filter-fast \
-  com.harness.daily-news-pdf; do
+  com.harness.daily-news-pdf \
+  com.harness.pipeline-watchdog; do
   src="$PLIST_DIR/$name.plist"
   dst="$AGENT_DIR/$name.plist"
   cp "$src" "$dst"

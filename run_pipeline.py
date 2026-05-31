@@ -46,16 +46,14 @@ def _notify_on_failure(run_id: int, correlation_id: str, error: str) -> None:
     tier, detail = _parse_failure(error)
     truncated_error = _truncate_error(detail)
     text = (
-        f":fire: Pipeline {correlation_id} failed at Tier {tier}: "
-        f"{truncated_error} | pipeline_run_id={run_id or 'n/a'}"
+        f":fire: *[파이프라인 장애]* Tier {tier} 실패\n"
+        f"오류: `{truncated_error}`\n"
+        f"correlation_id: `{correlation_id}` | run_id: `{run_id or 'n/a'}`"
     )
     payload = {
         "text": text,
         "blocks": [
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": text},
-            },
+            {"type": "section", "text": {"type": "mrkdwn", "text": text}},
             {
                 "type": "context",
                 "elements": [
@@ -65,7 +63,9 @@ def _notify_on_failure(run_id: int, correlation_id: str, error: str) -> None:
             },
         ],
     }
+    # ops 채널 + CEO 채널 동시 발송
     send_slack_route("ops_incidents", payload)
+    send_slack_route("exec_president_decisions", payload)
 
 
 def _save_run_end(run_id: int, results: dict, status: str, error: str = None):
@@ -160,6 +160,37 @@ def run():
         logger.error(f"[Tier 3] 실패: {e}")
         _save_run_end(run_id, results, "failed", f"tier3:{e}")
         sys.exit(1)
+
+    # QA — qa_clear 없는 refined_outputs 자동 검사
+    logger.info("[QA] 자동 QA 검사 시작")
+    try:
+        from adapters.content.qa_agent import qa_check_refined_output
+        pending_qa = execute_query("""
+            SELECT ro.id FROM refined_outputs ro
+            WHERE NOT EXISTS (
+                SELECT 1 FROM ceo_decisions cd
+                WHERE cd.target_type = 'refined_output'
+                  AND cd.target_id = ro.id
+                  AND cd.approval_type = 'qa_clear'
+            )
+            ORDER BY ro.created_at DESC
+            LIMIT 50
+        """, fetch=True) or []
+
+        qa_passed = 0
+        qa_failed = 0
+        for qrow in pending_qa:
+            ok = qa_check_refined_output(qrow["id"], correlation_id=pipeline_cid)
+            if ok:
+                qa_passed += 1
+            else:
+                qa_failed += 1
+
+        results["qa_passed"] = qa_passed
+        results["qa_failed"] = qa_failed
+        logger.info(f"[QA] 완료: 통과 {qa_passed}건 / 탈락 {qa_failed}건 (대상 {len(pending_qa)}건)")
+    except Exception as e:
+        logger.warning(f"[QA] 자동 QA 실패 (비치명적, 발행 계속): {e}")
 
     # Tier 4
     logger.info("[Tier 4] 발행 시작")
