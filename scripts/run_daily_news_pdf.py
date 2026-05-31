@@ -323,6 +323,84 @@ def _build_pdf(articles: list[dict], insights: dict, date_str: str) -> bytes:
     ]))
     story += [box_table, Spacer(1, 0.5*cm)]
 
+    # ── 투자 시그널 섹션 ─────────────────────────────────────────────────────────
+    inv_s    = ps("inv",  fontSize=9,  leading=14, textColor=colors.HexColor("#065f46"), spaceAfter=2)
+    inv_h_s  = ps("invh", fontSize=10, leading=14, textColor=colors.HexColor("#065f46"), spaceAfter=3, fontName=font)
+    inv_tag_s= ps("invt", fontSize=8,  textColor=colors.HexColor("#047857"))
+
+    def _parse_body(a: dict) -> dict:
+        body = a.get("final_body") or {}
+        if isinstance(body, str):
+            try:
+                return json.loads(body)
+            except Exception:
+                return {}
+        return body if isinstance(body, dict) else {}
+
+    def _extract_buy(exec_b) -> str:
+        if isinstance(exec_b, dict):
+            return (exec_b.get("buy_signal") or exec_b.get("action") or "").strip()
+        if isinstance(exec_b, str):
+            return exec_b.strip()
+        return ""
+
+    # buy_signal이 있는 기사만 추출 (IBKR / Alpaca 투자 검토 대상)
+    invest_articles = []
+    for a in articles:
+        body = _parse_body(a)
+        buy = _extract_buy(body.get("executive_decision_block") or {})
+        if buy:
+            invest_articles.append((a, body, buy))
+
+    if invest_articles:
+        inv_section_header = Paragraph(
+            "💹  투자 시그널 — IBKR / Alpaca 검토 대상",
+            ps("invsh", fontSize=13, leading=17,
+               textColor=colors.HexColor("#065f46"), spaceBefore=4, spaceAfter=4),
+        )
+        story += [
+            inv_section_header,
+            HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#059669")),
+        ]
+        for a, body, buy in invest_articles:
+            ticker = body.get("ticker") or body.get("symbol") or ""
+            atr    = body.get("atr") or ""
+            stop   = body.get("stop_loss") or body.get("stop") or ""
+            hook   = (body.get("hook") or "")[:300]
+
+            tags = []
+            if ticker:
+                tags.append(f"티커: {ticker}")
+            if atr:
+                tags.append(f"ATR: {atr}")
+            if stop:
+                tags.append(f"손절가: {stop}")
+            tag_line = "  |  ".join(tags)
+
+            block = [
+                Paragraph(esc(a.get("final_title") or "(제목 없음)"), inv_h_s),
+            ]
+            if tag_line:
+                block.append(Paragraph(esc(tag_line), inv_tag_s))
+            if hook:
+                block.append(Paragraph(esc(hook), inv_s))
+            block.append(Paragraph(f"→ 시그널: {esc(buy[:300])}", ps(
+                f"buys{a['id']}", fontSize=9, leading=14,
+                textColor=colors.HexColor("#b45309"), spaceAfter=4)))
+
+            inner = Table([[block]], colWidths=[doc.width - 24])
+            inner.setStyle(TableStyle([
+                ("BACKGROUND",    (0,0), (-1,-1), colors.HexColor("#ecfdf5")),
+                ("LEFTPADDING",   (0,0), (-1,-1), 12),
+                ("RIGHTPADDING",  (0,0), (-1,-1), 12),
+                ("TOPPADDING",    (0,0), (-1,-1), 8),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 8),
+                ("BOX",           (0,0), (-1,-1), 0.75, colors.HexColor("#059669")),
+            ]))
+            story += [inner, Spacer(1, 0.2*cm)]
+
+        story.append(Spacer(1, 0.3*cm))
+
     # ── 채널별 기사 (박스에서 집계한 ch_groups 재사용) ──
     for ch in ch_order:
         group = ch_groups.get(ch, [])
@@ -334,20 +412,10 @@ def _build_pdf(articles: list[dict], insights: dict, date_str: str) -> bytes:
                                 color=colors.HexColor("#dbeafe")))
 
         for a in group:
-            body = a.get("final_body") or {}
-            if isinstance(body, str):
-                try:
-                    body = json.loads(body)
-                except Exception:
-                    body = {}
+            body = _parse_body(a)
             hook  = body.get("hook") or ""
             korea = body.get("korea_strategic_context") or ""
-            exec_b = body.get("executive_decision_block") or {}
-            buy = ""
-            if isinstance(exec_b, dict):
-                buy = exec_b.get("buy_signal") or exec_b.get("action") or ""
-            elif isinstance(exec_b, str):
-                buy = exec_b
+            buy   = _extract_buy(body.get("executive_decision_block") or {})
 
             block = [
                 Paragraph(esc(a.get("final_title") or "(제목 없음)"), art_h_s),
@@ -357,7 +425,7 @@ def _build_pdf(articles: list[dict], insights: dict, date_str: str) -> bytes:
             if korea:
                 block.append(Paragraph(f"▸ {esc(korea[:300])}", art_k_s))
             if buy:
-                block.append(Paragraph(f"→ CEO 액션: {esc(str(buy)[:200])}", art_b_s))
+                block.append(Paragraph(f"→ CEO 액션: {esc(buy[:200])}", art_b_s))
             story.append(KeepTogether(block))
 
     doc.build(story)
