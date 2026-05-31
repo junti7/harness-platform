@@ -2,12 +2,33 @@ import type { DashboardPayload } from './types'
 
 type Monitor = NonNullable<DashboardPayload['data_collection_monitor']>
 
-type Props = { monitor: Monitor }
+export type ScheduleService = {
+  label: string
+  name: string
+  role: string
+  schedule: string
+  interval_type: 'calendar' | 'interval'
+  interval_seconds?: number
+  log_file: string
+  loaded: boolean
+  running: boolean
+  pid: number | null
+  last_exit_code: string | null
+  log_tail: string[]
+}
+
+type Props = { monitor: Monitor; scheduleServices?: ScheduleService[] }
 
 const STATUS_BADGE: Record<string, { label: string; color: string }> = {
   pending:       { label: '분류 대기',  color: 'var(--color-warn)' },
   filtered_pass: { label: '채택',   color: 'var(--color-ok)' },
   filtered_fail: { label: '제외',   color: 'var(--color-text-muted)' },
+}
+
+const SOURCE_STATUS_BADGE: Record<string, { label: string; color: string }> = {
+  active: { label: '활성', color: 'var(--color-ok)' },
+  standby: { label: '대기', color: 'var(--color-warn)' },
+  restricted: { label: '제한', color: 'var(--color-danger)' },
 }
 
 function pct(n: number, total: number) {
@@ -28,8 +49,23 @@ function relativeTime(iso: string) {
   }
 }
 
-export function DataCollectionMonitor({ monitor }: Props) {
-  const { total, pending_count, pass_count, fail_count, sources = [], configured_languages = [], recent_activity = [] } = monitor
+export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props) {
+  const {
+    total,
+    pending_count,
+    pass_count,
+    fail_count,
+    sources = [],
+    channel_coverage = [],
+    tier2_worker,
+    current_topics = [],
+    suggested_topics = [],
+    generated_query_sources = [],
+    expansion_policy,
+    workers,
+    configured_languages = [],
+    recent_activity = [],
+  } = monitor
   const passRate = total ? (pass_count / total) * 100 : 0
 
   const healthVariant = passRate >= 15 ? 'ok' : passRate >= 5 ? 'warn' : 'danger'
@@ -38,6 +74,69 @@ export function DataCollectionMonitor({ monitor }: Props) {
 
   return (
     <section className="ops-section" style={{ marginTop: '1.5rem' }}>
+      {/* ── 자동 스케줄 현황 ── */}
+      {scheduleServices.length > 0 && (
+        <div className="panel" style={{ padding: '1.25rem', marginBottom: '1rem' }}>
+          <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
+            자동 스케줄 현황
+          </p>
+          <div style={{ display: 'grid', gap: '0.5rem' }}>
+            {scheduleServices.map(svc => {
+              const statusColor = svc.running
+                ? 'var(--color-ok)'
+                : svc.loaded && svc.last_exit_code !== null && svc.last_exit_code !== '0'
+                ? 'var(--color-danger)'
+                : svc.loaded
+                ? 'var(--color-text-muted)'
+                : 'var(--color-warn)'
+              const statusLabel = svc.running
+                ? '실행 중'
+                : svc.loaded && svc.last_exit_code !== null && svc.last_exit_code !== '0'
+                ? `오류 (exit ${svc.last_exit_code})`
+                : svc.loaded
+                ? '대기'
+                : '미등록'
+              return (
+                <div key={svc.label} style={{
+                  display: 'grid',
+                  gridTemplateColumns: '10px 1fr auto auto',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  padding: '0.6rem 0.75rem',
+                  borderRadius: 6,
+                  background: 'var(--color-surface-lighter)',
+                  border: '1px solid var(--color-border)',
+                }}>
+                  <span style={{
+                    width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                    background: statusColor,
+                    boxShadow: svc.running ? `0 0 6px ${statusColor}` : 'none',
+                    display: 'inline-block',
+                  }} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.83rem' }}>{svc.name}</span>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>{svc.role}</span>
+                    </div>
+                    {svc.log_tail.length > 0 && (
+                      <div style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', marginTop: '0.15rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {svc.log_tail[svc.log_tail.length - 1]}
+                      </div>
+                    )}
+                  </div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
+                    {svc.schedule}
+                  </span>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: statusColor, whiteSpace: 'nowrap', minWidth: '4rem', textAlign: 'right' }}>
+                    {statusLabel}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="section-head">
         <div>
           <h2>데이터 수집 파이프라인</h2>
@@ -89,13 +188,18 @@ export function DataCollectionMonitor({ monitor }: Props) {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                     <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{src.label}</span>
                     <span style={{ fontSize: '0.85rem', fontWeight: 700, color: src.active ? 'var(--color-text)' : 'var(--color-text-muted)' }}>
-                      {src.active ? `${src.count.toLocaleString('ko-KR')}건` : '미실행'}
+                      {src.active ? `${src.count.toLocaleString('ko-KR')}건` : SOURCE_STATUS_BADGE[src.status || 'standby']?.label || '미실행'}
                     </span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', color: 'var(--color-text-muted)', marginTop: '0.1rem' }}>
-                    <span style={{ textTransform: 'uppercase', letterSpacing: '0.03em' }}>{src.type}</span>
-                    <span>{src.active ? relativeTime(src.last_ingested_at) : '—'}</span>
+                    <span style={{ textTransform: 'uppercase', letterSpacing: '0.03em' }}>{src.channel || src.type}</span>
+                    <span>{src.active ? relativeTime(src.last_ingested_at) : src.mode || '—'}</span>
                   </div>
+                  {!src.active && src.notes && (
+                    <div style={{ marginTop: '0.2rem', fontSize: '0.7rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {src.notes}
+                    </div>
+                  )}
                   {src.active && (
                     <div style={{ marginTop: '0.3rem', height: 3, borderRadius: 2, background: 'var(--color-border)', overflow: 'hidden' }}>
                       <div style={{ height: '100%', width: `${Math.min(100, (src.count / Math.max(total, 1)) * 100)}%`, background: 'var(--color-accent)', borderRadius: 2 }} />
@@ -130,6 +234,184 @@ export function DataCollectionMonitor({ monitor }: Props) {
                 <span style={{ fontSize: '1rem' }}>{lang.flag}</span>
                 <span style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>{lang.code.toUpperCase()}</span>
               </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+        <div className="panel" style={{ padding: '1.25rem' }}>
+          <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
+            현재 수집 주제
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem', marginBottom: '0.9rem' }}>
+            {current_topics.map(item => (
+              <span
+                key={`${item.kind}-${item.topic}`}
+                title={item.sample_title || item.reason || item.topic}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  padding: '0.28rem 0.55rem',
+                  borderRadius: 6,
+                  border: '1px solid var(--color-border)',
+                  background: item.kind === 'auto' ? 'rgba(80,180,255,0.12)' : 'var(--color-surface-lighter)',
+                  fontSize: '0.78rem',
+                }}
+              >
+                <span style={{ fontWeight: 700 }}>{item.topic}</span>
+                <span style={{ color: 'var(--color-text-muted)' }}>{item.kind === 'auto' ? 'AUTO' : 'SEED'}</span>
+              </span>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gap: '0.45rem' }}>
+            {suggested_topics.slice(0, 6).map(item => (
+              <div key={item.topic} style={{ padding: '0.55rem 0.65rem', border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-surface-lighter)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.2rem' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.82rem' }}>{item.topic}</span>
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>
+                    근거 {item.evidence_count ?? 0}건
+                  </span>
+                </div>
+                <div style={{ color: 'var(--color-text-muted)', fontSize: '0.74rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {item.sample_title || item.reason}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="panel" style={{ padding: '1.25rem' }}>
+          <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
+            CAPA / 자동 확장
+          </p>
+          <div style={{ display: 'grid', gap: '0.6rem', marginBottom: '0.9rem' }}>
+            {[
+              { key: 'mini', label: 'Mac Mini', meta: workers?.mini },
+              { key: 'mbp', label: 'MBP', meta: workers?.mbp },
+            ].map(({ key, label, meta }) => (
+              <div key={key} style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.84rem' }}>{label}</div>
+                  <div style={{ fontSize: '0.73rem', color: 'var(--color-text-muted)' }}>{meta?.role || '—'}</div>
+                </div>
+                <span style={{ color: meta?.active ? 'var(--color-ok)' : 'var(--color-text-muted)', fontSize: '0.78rem', fontWeight: 700 }}>
+                  {meta?.active ? '활성' : '대기'}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div style={{ paddingTop: '0.75rem', borderTop: '1px solid var(--color-border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.35rem' }}>
+              <span style={{ color: 'var(--color-text-muted)' }}>자동 생성 RSS 쿼리</span>
+              <span style={{ fontWeight: 700 }}>{generated_query_sources.length}개</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '0.45rem', color: 'var(--color-text-muted)' }}>
+              <span>주제 자동 확장</span>
+              <span>{expansion_policy?.auto_topic_expansion ? 'ON' : 'OFF'}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '0.55rem', color: 'var(--color-text-muted)' }}>
+              <span>채널 자동 확장</span>
+              <span>{expansion_policy?.auto_channel_expansion ? 'ON' : 'OFF'}</span>
+            </div>
+            <div style={{ display: 'grid', gap: '0.35rem' }}>
+              {generated_query_sources.slice(0, 6).map(src => (
+                <div key={src.name} style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {src.topic || src.name}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="panel" style={{ padding: '1.25rem', marginBottom: '1rem' }}>
+        <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
+          채널 커버리지
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.7rem' }}>
+          {channel_coverage.map(item => (
+            <div key={item.channel} style={{ border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-surface-lighter)', padding: '0.75rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.35rem' }}>
+                <span style={{ fontWeight: 700, fontSize: '0.82rem' }}>{item.label}</span>
+                <span style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>{item.total_sources}개</span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', fontSize: '0.72rem', marginBottom: '0.35rem' }}>
+                <span style={{ color: 'var(--color-ok)' }}>활성 {item.active_sources}</span>
+                <span style={{ color: 'var(--color-warn)' }}>대기 {item.standby_sources}</span>
+                <span style={{ color: 'var(--color-danger)' }}>제한 {item.restricted_sources}</span>
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                {item.preferred_worker ? `${item.preferred_worker.toUpperCase()} 우선` : '—'}
+              </div>
+              {item.notes?.[0] && (
+                <div style={{ marginTop: '0.25rem', fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>
+                  {item.notes[0]}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="panel" style={{ padding: '1.25rem', marginBottom: '1rem' }}>
+        <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
+          Tier 2 분류 워커
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '0.75rem', marginBottom: '0.9rem' }}>
+          <div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Pending</div>
+            <div style={{ fontSize: '1.05rem', fontWeight: 800 }}>{tier2_worker?.pending_count?.toLocaleString('ko-KR') || 0}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>MBP 참여</div>
+            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: tier2_worker?.mbp_active ? 'var(--color-ok)' : 'var(--color-text-muted)' }}>
+              {tier2_worker?.mbp_active ? 'ON' : 'OFF'}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>메인 워커</div>
+            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: tier2_worker?.main?.running ? 'var(--color-ok)' : 'var(--color-text-muted)' }}>
+              {tier2_worker?.main?.running ? 'RUN' : 'IDLE'}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Fast lane</div>
+            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: tier2_worker?.fast_lane?.running ? 'var(--color-warn)' : 'var(--color-text-muted)' }}>
+              {tier2_worker?.fast_lane?.running ? 'RUN' : 'IDLE'}
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem' }}>
+          <div style={{ border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-surface-lighter)', padding: '0.75rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+              <span style={{ fontWeight: 700, fontSize: '0.8rem' }}>메인 워커</span>
+              <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>{tier2_worker?.main?.interval_seconds || 900}s</span>
+            </div>
+            <div style={{ fontSize: '0.73rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>
+              pid {tier2_worker?.main?.pid ?? '—'} · exit {tier2_worker?.main?.last_exit_code ?? '—'}
+            </div>
+            {(tier2_worker?.main?.log_tail || []).slice(-2).map((line, idx) => (
+              <div key={idx} style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {line}
+              </div>
+            ))}
+          </div>
+          <div style={{ border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-surface-lighter)', padding: '0.75rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+              <span style={{ fontWeight: 700, fontSize: '0.8rem' }}>Fast lane</span>
+              <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                {(tier2_worker?.fast_lane?.interval_seconds || 300)}s / {tier2_worker?.fast_lane?.active_threshold || 4000}+
+              </span>
+            </div>
+            <div style={{ fontSize: '0.73rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>
+              pid {tier2_worker?.fast_lane?.pid ?? '—'} · exit {tier2_worker?.fast_lane?.last_exit_code ?? '—'}
+            </div>
+            {(tier2_worker?.fast_lane?.log_tail || []).slice(-2).map((line, idx) => (
+              <div key={idx} style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {line}
+              </div>
             ))}
           </div>
         </div>

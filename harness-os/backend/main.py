@@ -1293,7 +1293,7 @@ def _tier2_worker_health(domain: str) -> dict[str, Any]:
             **fast_state,
             "label": "com.harness.tier2-filter-fast",
             "interval_seconds": 300,
-            "active_threshold": 4000,
+            "active_threshold": 0,
             "log_tail": _tail_log(PROJECT_ROOT / "logs" / "tier2-filter-fast.log"),
         },
     }
@@ -3796,6 +3796,71 @@ def stop_pipeline_job(job_id: str, _: None = Depends(_require_secret)) -> dict[s
         _PIPELINE_JOBS[job_id]["finished_at"] = datetime.utcnow().isoformat() + "Z"
         _PIPELINE_LOGS.setdefault(job_id, []).append("[중지] 사용자가 작업을 중단했습니다.")
     return {"ok": True}
+
+
+@app.get("/api/pipeline/schedule-status")
+def get_schedule_status(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    """Harness 자동 스케줄 서비스 현황 — launchctl 기반 live 상태"""
+    _SCHEDULE_DEFS = [
+        {
+            "label": "com.harness.pipeline",
+            "name": "전체 파이프라인",
+            "role": "Tier 1→2→3→QA→4 (Notion 발행)",
+            "schedule": "매일 06:00 KST",
+            "interval_type": "calendar",
+            "log_file": "pipeline.log",
+        },
+        {
+            "label": "com.harness.tier2-filter",
+            "name": "Tier 2 분류 (일반)",
+            "role": "pending 백로그 소화 · 15분 주기 · 최대 8배치",
+            "schedule": "15분마다",
+            "interval_type": "interval",
+            "interval_seconds": 900,
+            "log_file": "tier2-filter.log",
+        },
+        {
+            "label": "com.harness.tier2-filter-fast",
+            "name": "Tier 2 분류 (Fast lane)",
+            "role": "상시 추가 소화 · 5분 주기 · 최대 2배치",
+            "schedule": "5분마다",
+            "interval_type": "interval",
+            "interval_seconds": 300,
+            "log_file": "tier2-filter-fast.log",
+        },
+        {
+            "label": "com.harness.daily-news-pdf",
+            "name": "CEO 뉴스 PDF",
+            "role": "Slack PDF 자동 발송",
+            "schedule": "매일 06:00 KST",
+            "interval_type": "calendar",
+            "log_file": "daily-news-pdf.log",
+        },
+        {
+            "label": "com.harness.pipeline-watchdog",
+            "name": "파이프라인 와치독",
+            "role": "장애 감지 → CEO Slack 즉시 알림",
+            "schedule": "30분마다",
+            "interval_type": "interval",
+            "interval_seconds": 1800,
+            "log_file": "pipeline-watchdog.log",
+        },
+    ]
+
+    services = []
+    for defn in _SCHEDULE_DEFS:
+        state = _launchctl_label_state(defn["label"])
+        log_tail = _tail_log(_PROJECT_ROOT / "logs" / defn["log_file"], max_lines=3)
+        services.append({
+            **defn,
+            "loaded": state.get("loaded", False),
+            "running": state.get("running", False),
+            "pid": state.get("pid"),
+            "last_exit_code": state.get("last_exit_code"),
+            "log_tail": log_tail,
+        })
+
+    return {"services": services}
 
 
 @app.get("/api/pipeline/status")

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DataCollectionMonitor } from '../components/DataCollectionMonitor'
+import type { ScheduleService } from '../components/DataCollectionMonitor'
 import type { DashboardPayload } from '../components/types'
 
 type Props = {
@@ -34,6 +35,9 @@ type Signal = {
   title: string
   url: string | null
   query: string | null
+  tier2_score?: string | null
+  tier2_reason?: string | null
+  tier2_insight?: string | null
 }
 
 type SignalsResponse = {
@@ -166,6 +170,7 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
   }
   const [daemonStatus, setDaemonStatus] = useState<DaemonStatus | null>(null)
   const [daemonLoading, setDaemonLoading] = useState(false)
+  const [scheduleServices, setScheduleServices] = useState<ScheduleService[]>([])
 
   // 최근 실행 이력용 검색 및 지능형 필터 상태
   const [historySearch, setHistorySearch] = useState('')
@@ -253,6 +258,17 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
     }
   }, [apiBase, authHeaders])
 
+  const fetchScheduleStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiBase}/api/pipeline/schedule-status`, { headers: authHeaders() })
+      if (!res.ok) return
+      const data = await res.json()
+      setScheduleServices(data.services ?? [])
+    } catch (err) {
+      void err
+    }
+  }, [apiBase, authHeaders])
+
   // 폴링 설정 (stale closure 방지: jobsRef 사용)
   const resetPoll = useCallback((fast: boolean) => {
     if (pollRef.current) clearInterval(pollRef.current)
@@ -260,17 +276,19 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
     pollRef.current = setInterval(async () => {
       await fetchStatus()
       await fetchDaemonStatus()
+      await fetchScheduleStatus()
       const nowRunning = jobsRef.current.some(j => j.status === 'running')
       if (!nowRunning && fast) {
         if (pollRef.current) clearInterval(pollRef.current)
         pollRef.current = setInterval(async () => {
           await fetchStatus()
           await fetchDaemonStatus()
+          await fetchScheduleStatus()
         }, 15000)
         fetchSourceStats()
       }
     }, intervalMs)
-  }, [fetchStatus, fetchSourceStats, fetchDaemonStatus])
+  }, [fetchStatus, fetchSourceStats, fetchDaemonStatus, fetchScheduleStatus])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -278,6 +296,7 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
       void fetchSourceStats()
       void fetchQueries()
       void fetchDaemonStatus()
+      void fetchScheduleStatus()
       resetPoll(false)
     }, 0)
     return () => {
@@ -649,7 +668,7 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
             )}
           </div>
 
-          {monitor && <DataCollectionMonitor monitor={monitor} />}
+          {monitor && <DataCollectionMonitor monitor={monitor} scheduleServices={scheduleServices} />}
 
           {/* 1단계: 연구 주제 선택 */}
           <div className="panel" style={{ padding: '1.25rem' }}>
@@ -1413,13 +1432,43 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
                   const isLast = idx === signals.items.length - 1
                   const statusColor = item.status === 'filtered_pass' ? 'var(--color-ok)' : item.status === 'filtered_fail' ? 'var(--color-text-muted)' : 'var(--color-warn)'
                   const statusLabel = item.status === 'filtered_pass' ? '채택' : item.status === 'filtered_fail' ? '제외' : '분류 대기'
+                  
+                  // 필터 디테일 가독성 높은 UI 블록
+                  const hasTier2 = item.tier2_score !== undefined && item.tier2_score !== null
+                  
                   return [
-                    <div key={`src-${item.id}`} style={{ padding: '0.55rem 1rem', fontSize: '0.78rem', color: 'var(--color-text-muted)', borderBottom: isLast ? 'none' : '1px solid var(--color-border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.source}</div>,
-                    <div key={`ttl-${item.id}`} style={{ padding: '0.55rem 1rem', fontSize: '0.82rem', borderBottom: isLast ? 'none' : '1px solid var(--color-border)', overflow: 'hidden' }}>
-                      {item.url ? <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent)', textDecoration: 'none', fontWeight: 500 }}>{item.title || '(제목 없음)'}</a> : (item.title || '(제목 없음)')}
+                    <div key={`src-${item.id}`} style={{ padding: '0.8rem 1rem', fontSize: '0.78rem', color: 'var(--color-text-muted)', borderBottom: isLast ? 'none' : '1px solid var(--color-border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.source}</div>,
+                    <div key={`ttl-${item.id}`} style={{ padding: '0.8rem 1rem', fontSize: '0.82rem', borderBottom: isLast ? 'none' : '1px solid var(--color-border)', overflow: 'hidden' }}>
+                      <div style={{ marginBottom: hasTier2 ? '0.4rem' : 0 }}>
+                        {item.url ? <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent)', textDecoration: 'none', fontWeight: 600 }}>{item.title || '(제목 없음)'}</a> : (item.title || '(제목 없음)')}
+                      </div>
+                      {hasTier2 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', padding: '0.5rem 0.75rem', borderRadius: '6px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', fontSize: '0.75rem' }}>
+                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                            <span style={{ display: 'inline-flex', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'var(--color-surface-lighter)', color: 'var(--color-accent)', fontWeight: 700, fontSize: '0.7rem' }}>
+                              평가 점수: {item.tier2_score}/10
+                            </span>
+                            {item.tier2_insight && (
+                              <span style={{ color: 'var(--color-ok)', fontWeight: 600, fontSize: '0.7rem' }}>
+                                💡 마케팅 인사이트 포함됨
+                              </span>
+                            )}
+                          </div>
+                          {item.tier2_reason && (
+                            <div style={{ color: 'var(--color-text-muted)', marginTop: '0.15rem' }}>
+                              <strong>판단 근거:</strong> {item.tier2_reason}
+                            </div>
+                          )}
+                          {item.tier2_insight && (
+                            <div style={{ color: 'var(--color-text)', marginTop: '0.15rem', fontStyle: 'italic', borderLeft: '2px solid var(--color-ok)', paddingLeft: '0.4rem' }}>
+                              <strong>인사이트:</strong> {item.tier2_insight}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>,
-                    <div key={`st-${item.id}`} style={{ padding: '0.55rem 1rem', fontSize: '0.78rem', fontWeight: 700, color: statusColor, borderBottom: isLast ? 'none' : '1px solid var(--color-border)' }}>{statusLabel}</div>,
-                    <div key={`tm-${item.id}`} style={{ padding: '0.55rem 1rem', fontSize: '0.75rem', color: 'var(--color-text-muted)', borderBottom: isLast ? 'none' : '1px solid var(--color-border)' }}>{relTime(item.ingested_at)}</div>,
+                    <div key={`st-${item.id}`} style={{ padding: '0.8rem 1rem', fontSize: '0.78rem', fontWeight: 700, color: statusColor, borderBottom: isLast ? 'none' : '1px solid var(--color-border)' }}>{statusLabel}</div>,
+                    <div key={`tm-${item.id}`} style={{ padding: '0.8rem 1rem', fontSize: '0.75rem', color: 'var(--color-text-muted)', borderBottom: isLast ? 'none' : '1px solid var(--color-border)' }}>{relTime(item.ingested_at)}</div>,
                   ]
                 })}
               </div>
