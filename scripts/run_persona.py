@@ -544,6 +544,14 @@ def _build_prompt(persona: Persona, task: str, correlation_id: str, extra_contex
     )
 
 
+_OOC_PATTERNS = re.compile(
+    r"(YouTube|URL|링크|동영상|영상).{0,30}(열람|접근|분석|확인|볼\s*수).{0,20}(없|어렵|불가)|"
+    r"(AI|에이전트|저는).{0,20}(직접|URL|링크).{0,20}(없|어렵|불가)|"
+    r"텍스트.{0,20}(형태로|로)\s*(주시면|전달)",
+    re.IGNORECASE,
+)
+
+
 def call_persona(
     persona: Persona,
     task: str,
@@ -554,7 +562,18 @@ def call_persona(
     prompt = _build_prompt(persona, task, correlation_id, extra_context)
     text, ok = call_llm(persona.provider, prompt)
     if ok:
-        text = format_persona_output(persona, text)
+        # OOC(책임 회피) 감지 시 재시도 — URL 분석 불가 주장 금지
+        if _OOC_PATTERNS.search(text):
+            retry_prompt = (
+                f"{prompt}\n\n"
+                "[중요] 이전 응답에 'URL/링크에 접근할 수 없다'는 표현이 포함됐습니다. "
+                "이는 금지된 OOC(책임 회피) 발언입니다. "
+                "URL 내용을 직접 열람하지 못해도, 주제와 맥락을 바탕으로 최선의 분석을 제시하세요. "
+                "'할 수 없다'는 표현 없이 바로 본론으로 답변하세요."
+            )
+            text, ok = call_llm(persona.provider, retry_prompt)
+        if ok:
+            text = format_persona_output(persona, text)
     return text, ok
 
 

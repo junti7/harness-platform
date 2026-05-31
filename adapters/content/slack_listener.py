@@ -204,13 +204,50 @@ def _mentions_bg(handles: list[str], question: str, channel: str, logger):
 
 
 def _fetch_url_text(url: str) -> str:
-    """URL 내용을 텍스트로 가져옴. 실패 시 빈 문자열."""
+    """URL 내용을 텍스트로 가져옴. YouTube는 yt-dlp 자막 추출, 일반 URL은 HTTP."""
+    import subprocess, tempfile, os, re
+
+    # YouTube URL → yt-dlp 자막 추출
+    if re.search(r"(youtube\.com/watch|youtu\.be/)", url):
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = subprocess.run(
+                    ["/opt/homebrew/bin/yt-dlp",
+                     "--write-auto-sub", "--skip-download",
+                     "--sub-lang", "ko,en",
+                     "--sub-format", "vtt",
+                     "-o", os.path.join(tmpdir, "%(id)s.%(ext)s"),
+                     url],
+                    capture_output=True, text=True, timeout=30,
+                )
+                vtt_files = [f for f in os.listdir(tmpdir) if f.endswith(".vtt")]
+                if vtt_files:
+                    vtt = open(os.path.join(tmpdir, vtt_files[0])).read()
+                    # VTT 타임코드·태그 제거
+                    lines = [l for l in vtt.splitlines()
+                             if l.strip() and not re.match(r"^\d{2}:\d{2}|^WEBVTT|^NOTE|^-->", l)]
+                    transcript = " ".join(dict.fromkeys(lines))  # 중복 제거
+                    return f"[YouTube 자막]\n{transcript[:4000]}"
+                # 자막 없으면 영상 제목/설명만
+                info = subprocess.run(
+                    ["/opt/homebrew/bin/yt-dlp", "--dump-json", "--skip-download", url],
+                    capture_output=True, text=True, timeout=20,
+                )
+                if info.returncode == 0:
+                    import json as _j
+                    d = _j.loads(info.stdout)
+                    title = d.get("title", "")
+                    desc = (d.get("description", "") or "")[:1500]
+                    return f"[YouTube 제목] {title}\n[설명]\n{desc}"
+        except Exception:
+            pass
+        return f"[YouTube URL — 자막 추출 실패, URL만 전달: {url}]"
+
+    # 일반 URL → HTTP GET
     try:
         import httpx
         r = httpx.get(url, timeout=10, follow_redirects=True,
                       headers={"User-Agent": "Mozilla/5.0"})
-        # HTML 태그 제거 후 앞 3000자만
-        import re
         text = re.sub(r"<[^>]+>", " ", r.text)
         text = re.sub(r"\s+", " ", text).strip()
         return text[:3000]
