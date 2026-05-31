@@ -47,8 +47,8 @@ NOT relevant (strictly exclude):
 Paper title: {title}
 Abstract: {abstract}
 
-Respond in JSON only:
-{{"relevant": true/false, "score": 1-10, "reason": "one sentence", "key_insight": "one sentence for marketing use if relevant"}}"""
+Respond in JSON only. Write "reason" and "key_insight" in Korean (한국어):
+{{"relevant": true/false, "score": 1-10, "reason": "한 문장으로 판단 근거", "key_insight": "관련이 있을 경우 마케팅용 핵심 인사이트 한 문장"}}"""
 
 
 def fetch_pending(limit: int, logger: HarnessLogger):

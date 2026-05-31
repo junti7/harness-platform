@@ -3906,8 +3906,9 @@ def get_pipeline_signals(
         f"rs.raw_data->>'title' as title, "
         f"rs.raw_data->>'url' as url, "
         f"rs.raw_data->>'query' as query, "
-        f"fs.score as tier2_score, "
-        f"fs.summary as tier2_reason, "
+        f"COALESCE((rs.raw_data->>'tier2_score')::numeric, fs.score) as tier2_score, "
+        f"rs.raw_data->>'tier2_reason' as tier2_reason, "
+        f"rs.raw_data->>'tier2_insight' as tier2_insight, "
         f"fs.category as tier2_category "
         f"{join} WHERE {wc} "
         f"ORDER BY rs.ingested_at DESC LIMIT %s OFFSET %s",
@@ -3916,8 +3917,8 @@ def get_pipeline_signals(
     items = []
     for r in rows:
         d = dict(r)
-        if d.get("tier2_reason"):
-            d["tier2_reason"] = html.unescape(d["tier2_reason"])
+        if d.get("tier2_score") is not None:
+            d["tier2_score"] = float(d["tier2_score"])
         items.append(d)
     return {"total": total, "limit": limit, "offset": offset, "items": items}
 

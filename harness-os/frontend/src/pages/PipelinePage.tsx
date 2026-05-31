@@ -37,6 +37,7 @@ type Signal = {
   query: string | null
   tier2_score?: number | null
   tier2_reason?: string | null
+  tier2_insight?: string | null
   tier2_category?: string | null
 }
 
@@ -1434,16 +1435,18 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
                   const statusLabel = item.status === 'filtered_pass' ? '채택' : item.status === 'filtered_fail' ? '제외' : '분류 대기'
                   
                   const hasTier2 = item.tier2_score !== undefined && item.tier2_score !== null
-                  const scoreNum = hasTier2 ? Math.round((item.tier2_score as number) * 10) : null
-                  const scorePct = hasTier2 ? Math.round((item.tier2_score as number) * 100) : null
-                  const scoreColor = scorePct !== null
-                    ? scorePct >= 70 ? 'var(--color-ok)' : scorePct >= 50 ? 'var(--color-warn)' : 'var(--color-danger)'
+                  const rawScore = item.tier2_score as number
+                  // edu_consulting: score 1-10 정수 / physical_ai: 0-1 소수 — 둘 다 /10으로 통일
+                  const scoreNum = hasTier2 ? (rawScore > 1 ? Math.round(rawScore) : Math.round(rawScore * 10)) : null
+                  const scoreColor = scoreNum !== null
+                    ? scoreNum >= 7 ? 'var(--color-ok)' : scoreNum >= 5 ? 'var(--color-warn)' : 'var(--color-danger)'
                     : 'var(--color-text-muted)'
                   const categoryLabel: Record<string, string> = {
                     physical_ai: '🤖 Physical AI',
                     deep_scraped: '🔍 딥 스크랩',
                     keyword_pass: '🔑 키워드 통과',
                   }
+                  const stripHtml = (s: string) => s.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
 
                   return [
                     <div key={`src-${item.id}`} style={{ padding: '0.8rem 1rem', fontSize: '0.78rem', color: 'var(--color-text-muted)', borderBottom: isLast ? 'none' : '1px solid var(--color-border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.source}</div>,
@@ -1465,7 +1468,12 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
                           </div>
                           {item.tier2_reason && (
                             <div style={{ color: 'var(--color-text-muted)', lineHeight: 1.4 }}>
-                              <strong style={{ color: 'var(--color-text)' }}>분류 사유:</strong> {item.tier2_reason}
+                              <strong style={{ color: 'var(--color-text)' }}>판단 근거:</strong> {stripHtml(item.tier2_reason)}
+                            </div>
+                          )}
+                          {item.tier2_insight && (
+                            <div style={{ color: 'var(--color-text)', lineHeight: 1.4, borderLeft: '2px solid var(--color-ok)', paddingLeft: '0.4rem' }}>
+                              <strong>인사이트:</strong> {stripHtml(item.tier2_insight)}
                             </div>
                           )}
                         </div>
