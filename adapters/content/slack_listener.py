@@ -128,9 +128,14 @@ def handle_dm(event, say, logger):
     text = event.get("text", "")
     channel = event.get("channel", "")
 
+    # 모든 메시지 이벤트 즉시 로깅
+    logger.info(f"[event] channel={channel} user={user} text={text[:40]!r}")
+
     # 회의실/팀 채널 메시지 → orchestration 라우터
     if not channel.startswith("D"):
-        if channel in _orchestration_channels():
+        orch = _orchestration_channels()
+        logger.info(f"[event] non-DM: in_orch={channel in orch}")
+        if channel in orch:
             _handle_meeting_message(user, text, channel, say, logger)
         return
 
