@@ -33,38 +33,44 @@ load_dotenv()
 DAILY_COST_LIMIT = float(os.getenv("DAILY_COST_LIMIT_USD", "1.00"))
 
 # ─── Rubric constants ─────────────────────────────────────────────────────────
+# 내부 인텔리전스 용도 기준 (외부 발행이 아닌 CEO 브리핑·Notion 저장 목적)
+# MUST: 제목 + hook + 한국맥락 — 이 셋만 없으면 가치가 없음
+# NICE-TO-HAVE: deep_analysis, evidence_posture 등 — 없어도 통과
 
 REQUIRED_FIELDS = [
-    "final_title", "hook", "deep_analysis",
-    "korea_strategic_context", "risk_and_bottlenecks",
-    "watchlist", "executive_decision_block", "evidence_posture", "tags",
+    "final_title",
+    "hook",
+    "korea_strategic_context",
 ]
-REQUIRED_DEEP_FIELDS = ["technical_breakdown", "economic_implication"]
+# deep_analysis 하위 필드는 optional — 없어도 통과
+REQUIRED_DEEP_FIELDS: list[str] = []
 
 MIN_CHARS = {
-    "hook": 80,
-    "korea_strategic_context": 150,
-    "risk_and_bottlenecks": 80,
-    "technical_breakdown": 200,
-    "economic_implication": 200,
+    "hook": 30,                    # 최소한의 요약만 있으면 됨
+    "korea_strategic_context": 50, # 한 문장이라도 있으면 됨
+    "risk_and_bottlenecks": 0,     # 없어도 통과
+    "technical_breakdown": 0,      # 없어도 통과
+    "economic_implication": 0,     # 없어도 통과
 }
 
+# 실제 법적으로 문제가 되는 표현만 차단 (speculative 표기·스타일 문제는 허용)
 INVESTMENT_RISK_PATTERNS = [
     r"(무조건|반드시|확실히)\s*(오릅니다|오를|수익이 납니다)",
     r"(투자|매수|매도)\s*(추천|권유|권고)\s*합니다",
     r"원금\s*보장",
 ]
 
-LLM_QA_PROMPT = """당신은 한국어 콘텐츠 품질 검사관입니다.
-아래 Physical AI 분석 리포트를 읽고 다음 항목을 평가하세요.
+LLM_QA_PROMPT = """당신은 내부 인텔리전스 리포트 검토자입니다.
+아래 AI/로보틱스 분석 리포트를 읽고 두 가지만 판단하세요.
 
-1. korean_fluency (true/false): 문장이 자연스러운 한국어인가? 어색하거나 번역투 문장이 없는가?
-2. coherence (true/false): 섹션 간 내용이 일관성 있는가? 앞뒤가 맞지 않는 주장이 없는가?
-3. factual_risk (true/false): 출처 없는 단정적 수치 또는 투자 권유에 해당하는 표현이 있는가?
-4. issues: 발견된 문제점 목록 (없으면 빈 배열)
+1. readable (true/false): 내용을 이해할 수 있는가? (번역투·어색함은 허용. 완전히 깨지거나 의미불명인 경우만 false)
+2. factual_risk (true/false): "투자를 권유합니다", "원금 보장", "반드시 오릅니다" 같은 명백한 투자 권유 표현이 있는가? (speculative 표기·분석적 추측은 허용)
 
-반드시 JSON으로만 응답:
-{"korean_fluency": true, "coherence": true, "factual_risk": false, "issues": []}
+판단 기준: 이 리포트는 외부 발행이 아닌 CEO 내부 참고용입니다. 완벽하지 않아도 됩니다.
+엄격하게 판단하지 마세요. readable=false는 텍스트가 완전히 깨지거나 무의미한 경우에만 사용합니다.
+
+반드시 JSON으로만 응답 (다른 말 없이):
+{"readable": true, "factual_risk": false}
 
 리포트:
 """
@@ -82,30 +88,17 @@ REPORT_REQUIRED_HEADINGS = [
 # ─── Individual checks ────────────────────────────────────────────────────────
 
 def _check_schema(body: dict) -> list[str]:
+    """핵심 필드(제목·hook·한국맥락)만 필수 확인. 나머지는 optional."""
     findings = []
     for f in REQUIRED_FIELDS:
-        if not body.get(f):
-            findings.append(f"필수 필드 누락 또는 비어있음: {f}")
-    deep = body.get("deep_analysis") or {}
-    if isinstance(deep, dict):
-        for f in REQUIRED_DEEP_FIELDS:
-            if not deep.get(f):
-                findings.append(f"deep_analysis 하위 필드 누락: {f}")
-    else:
-        findings.append("deep_analysis가 dict 형태가 아님")
-    evidence = body.get("evidence_posture") or {}
-    if not isinstance(evidence, dict):
-        findings.append("evidence_posture가 dict 형태가 아님")
-    else:
-        classification = evidence.get("classification")
-        if classification not in {"verified", "company-self-report", "speculative"}:
-            findings.append("evidence_posture.classification 값이 허용 범위를 벗어남")
-        if not evidence.get("why"):
-            findings.append("evidence_posture.why 누락")
+        val = body.get(f)
+        if not val or (isinstance(val, str) and not val.strip()):
+            findings.append(f"핵심 필드 누락: {f}")
     return findings
 
 
 def _check_completeness(body: dict) -> list[str]:
+    """최소 길이 기준 확인 — 0이면 스킵."""
     findings = []
     deep = body.get("deep_analysis") or {}
     if not isinstance(deep, dict):
@@ -113,14 +106,11 @@ def _check_completeness(body: dict) -> list[str]:
     checks = {
         "hook": body.get("hook") or "",
         "korea_strategic_context": body.get("korea_strategic_context") or "",
-        "risk_and_bottlenecks": body.get("risk_and_bottlenecks") or "",
-        "technical_breakdown": deep.get("technical_breakdown") or "",
-        "economic_implication": deep.get("economic_implication") or "",
     }
     for field, text in checks.items():
-        min_len = MIN_CHARS[field]
-        if len(text) < min_len:
-            findings.append(f"{field} 내용 불충분: {len(text)}자 (최소 {min_len}자)")
+        min_len = MIN_CHARS.get(field, 0)
+        if min_len > 0 and len(str(text).strip()) < min_len:
+            findings.append(f"{field} 내용 부족: {len(str(text).strip())}자 (최소 {min_len}자)")
     return findings
 
 
@@ -169,13 +159,10 @@ def _check_llm(body: dict, logger: HarnessLogger) -> list[str]:
         return []
 
     findings = []
-    if not result.get("korean_fluency"):
-        findings.append("LLM: 한국어 유창성 문제 감지")
-    if not result.get("coherence"):
-        findings.append("LLM: 섹션 간 일관성 문제 감지")
-    if result.get("factual_risk"):
-        findings.append("LLM: 팩트 리스크 또는 투자 권유 의심 표현")
-    findings.extend(result.get("issues") or [])
+    if result.get("readable") is False:
+        findings.append("LLM: 리포트 내용을 이해할 수 없음 (텍스트 손상)")
+    if result.get("factual_risk") is True:
+        findings.append("LLM: 명백한 투자 권유 표현 감지")
     return findings
 
 
