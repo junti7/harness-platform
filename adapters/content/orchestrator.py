@@ -32,7 +32,7 @@ from dotenv import load_dotenv
 
 from adapters.content.slack_format import to_slack_mrkdwn
 from agents.registry import Persona, get_active_personas, get_persona
-from scripts.run_persona import append_diary, call_llm, call_persona, post_opinion
+from scripts.run_persona import append_diary, call_llm, call_persona, format_persona_output, post_opinion
 from scripts.notion_minutes import (
     build_minutes_blocks_from_decision_card as _build_minutes_blocks,
     save_minutes as _save_notion_minutes,
@@ -165,7 +165,9 @@ def _synthesize(order: str, transcript: list[dict], correlation_id: str, guard: 
     )
     guard.charge(JARVIS_REASONING_PROVIDER, force=True)  # 최종 정리는 cap 넘어도 보장
     out, ok = call_llm(JARVIS_REASONING_PROVIDER, prompt)
-    return out if ok else "(synthesis 실패 — 회의실 transcript 참조)"
+    if not ok:
+        return "(synthesis 실패 — 회의실 transcript 참조)"
+    return format_persona_output(get_persona("jarvis"), out)
 
 
 def _simplify_minutes(order: str, decision: str) -> str:

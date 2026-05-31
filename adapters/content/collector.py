@@ -2,13 +2,66 @@ import feedparser
 import hashlib
 import json
 import httpx
+import os
+import re
 from datetime import datetime
 from bs4 import BeautifulSoup
 from core.domain_config import load_default_sources
 from core.database import execute_query
 from core.logger import HarnessLogger
+from core.source_registry import ACTIVE_COLLECTION_MODES, merge_catalog_rows_with_defaults, parse_rate_limit_policy
+from core.topic_registry import merged_sources_with_generated
 
 DEFAULT_RSS_SOURCES = load_default_sources("physical_ai")
+
+
+def _slugify(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "source"
+
+
+def _substack_feed_urls() -> list[str]:
+    configured = os.getenv("SUBSTACK_SOURCE_FEEDS", "").strip()
+    urls: list[str] = []
+    if configured:
+        urls.extend([item.strip() for item in configured.split(",") if item.strip()])
+    publication = os.getenv("SUBSTACK_PUBLICATION_URL", "").strip().rstrip("/")
+    if publication:
+        urls.append(publication)
+
+    normalized: list[str] = []
+    seen = set()
+    for url in urls:
+        candidate = url.rstrip("/")
+        if "substack.com" not in candidate:
+            continue
+        if not candidate.endswith("/feed"):
+            candidate = f"{candidate}/feed"
+        if candidate not in seen:
+            seen.add(candidate)
+            normalized.append(candidate)
+    return normalized
+
+
+def _expand_special_sources(source: dict) -> list[dict]:
+    channel = str(source.get("channel") or "").strip().lower()
+    mode = str(source.get("collection_mode") or "").strip().lower()
+    if channel == "substack" and mode == "rss_search":
+        expanded = []
+        for url in _substack_feed_urls():
+            expanded.append(
+                {
+                    **source,
+                    "name": f"substack_feed_{_slugify(url)}",
+                    "url": url,
+                    "source_type": "rss",
+                    "channel": "substack",
+                    "collection_mode": "rss_pull",
+                    "expected_signal_type": "newsletter_post",
+                    "notes": "Substack publication feed",
+                }
+            )
+        return expanded
+    return [source]
 
 def deep_fetch_content(url: str, logger: HarnessLogger) -> str:
     """기사 URL로부터 본문 전문을 스크래핑한다."""
@@ -49,35 +102,46 @@ def check_liveness(url: str) -> bool:
 def get_active_sources(logger: HarnessLogger) -> list[dict]:
     rows = execute_query("""
         SELECT source_name, base_url, reliability_score, expected_signal_type, rate_limit_policy
-        FROM source_catalog WHERE enabled = TRUE AND source_type = 'rss'
+             , source_type, enabled
+        FROM source_catalog
     """, fetch=True)
-    if not rows:
+    merged_rows = merge_catalog_rows_with_defaults(rows or [], DEFAULT_RSS_SOURCES)
+    if not merged_rows:
         logger.info(f"source_catalog 비어 있음 — 기본 소스 {len(DEFAULT_RSS_SOURCES)}개 사용")
         return DEFAULT_RSS_SOURCES
 
     sources = []
-    for row in rows:
-        policy = row.get("rate_limit_policy") or {}
-        if isinstance(policy, str):
-            try:
-                policy = json.loads(policy)
-            except json.JSONDecodeError:
-                policy = {}
-        sources.append({
+    for row in merged_rows:
+        if not bool(row.get("enabled", True)):
+            continue
+        policy = parse_rate_limit_policy(row.get("rate_limit_policy"))
+        if str(policy.get("collection_mode") or "").strip().lower() not in ACTIVE_COLLECTION_MODES:
+            continue
+        candidate = {
             "name": row["source_name"],
             "url": row["base_url"],
             "stale_minutes": int(policy.get("stale_minutes", 0) or 0),
             "reliability_score": row.get("reliability_score"),
             "expected_signal_type": row.get("expected_signal_type"),
-        })
-    logger.info(f"source_catalog에서 활성 RSS 소스 {len(sources)}개 로드")
+            "source_type": row.get("source_type"),
+            "channel": policy.get("channel"),
+            "collection_mode": policy.get("collection_mode"),
+            "enabled": bool(row.get("enabled", True)),
+            "preferred_worker": policy.get("preferred_worker"),
+            "activation_policy": policy.get("activation_policy"),
+            "requires_login": bool(policy.get("requires_login", False)),
+            "notes": policy.get("notes", ""),
+        }
+        sources.extend(_expand_special_sources(candidate))
+    logger.info(f"source_catalog+config에서 활성 수집 소스 {len(sources)}개 로드")
     return sources
 
 def collect(correlation_id: str = None):
     logger = HarnessLogger(tier=1, correlation_id=correlation_id)
     logger.info("=== Tier 1 수집 시작 (Deep Scraping 활성화) ===")
     total_saved = 0
-    sources = get_active_sources(logger)
+    sources = merged_sources_with_generated("physical_ai", get_active_sources(logger))
+    logger.info(f"활성 소스 총 {len(sources)}개 (자동 주제 쿼리 포함)")
     for source in sources:
         if not check_liveness(source["url"]): continue
         feed = feedparser.parse(source["url"])
