@@ -91,3 +91,24 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-31 mention-a62c3a87 [TARS] 대표님 지시 — 정식 외부 발행이 아니라, 부대표(VP)가 '링크'를 통해 내용을 직접 확인하게 하는 것이 목적입니다. 발행 게이트
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-98109849 [대표님 지시] 학부모용 랜딩 시안 및 8주 커리큘럼(최근 커밋 1147200 반영분, agents/c3po·tars MEMORY 관련 산출물)
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-64bc69b0 Tailscale을 통해 외부에서 링크를 통해 해당 내용을 볼 수 있게 해주세요.
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium

@@ -63,3 +63,31 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-31 mention-c4c4188b file:///Users/juntae.park/projects/harness-platform/docs/education/edu_parents_f
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-8a2bee7e [TARS] 대표님 지시 — 정식 외부 발행이 아니라, 부대표(VP)가 '링크'를 통해 내용을 직접 확인하게 하는 것이 목적입니다. 발행 게이트
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: low
+
+## 2026-05-31 mention-c4f6618b Tailscale을 통해 외부에서 링크를 통해 해당 내용을 볼 수 있게 해주세요.
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 persona-0741be0a HTML 랜딩 페이지의 외부 웹 공개 배포가 가능한지 검토해 주세요.
+- what_i_did: run_persona 실행 → 채널 발언 (llm_ok_no_post)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium

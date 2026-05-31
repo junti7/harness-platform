@@ -49,3 +49,17 @@
 - what_failed: (자기평가 미작성)
 - lesson: (자기평가 미작성 — auto run-record)
 - confidence: medium
+
+## 2026-05-31 mention-e91e464b [대표님 지시] 학부모용 랜딩 시안 및 8주 커리큘럼(최근 커밋 1147200 반영분, agents/c3po·tars MEMORY 관련 산출물)
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
+
+## 2026-05-31 mention-82b11d7a Tailscale을 통해 외부에서 링크를 통해 해당 내용을 볼 수 있게 해주세요.
+- what_i_did: run_persona 실행 → 채널 발언 (posted)
+- what_worked: (자기평가 미작성)
+- what_failed: (자기평가 미작성)
+- lesson: (자기평가 미작성 — auto run-record)
+- confidence: medium
