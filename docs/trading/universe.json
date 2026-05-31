@@ -13,16 +13,12 @@
   {"region": "US", "symbol": "VST",    "exchange": "NYSE",  "currency": "USD", "name": "Vistra",                    "sector": "Power"},
   {"region": "US", "symbol": "GEV",    "exchange": "NYSE",  "currency": "USD", "name": "GE Vernova",                "sector": "Power Equip"},
   {"region": "US", "symbol": "PWR",    "exchange": "NYSE",  "currency": "USD", "name": "Quanta Services",           "sector": "Power Infra"},
+  {"region": "US", "symbol": "ASX",    "exchange": "NYSE",  "currency": "USD", "name": "ASE Technology ADR",        "sector": "Packaging"},
   {"region": "KR", "symbol": "000660", "exchange": "KRX",   "currency": "KRW", "name": "SK하이닉스",                  "sector": "HBM Memory"},
   {"region": "KR", "symbol": "005930", "exchange": "KRX",   "currency": "KRW", "name": "삼성전자",                    "sector": "Memory/Foundry"},
   {"region": "KR", "symbol": "042700", "exchange": "KRX",   "currency": "KRW", "name": "한미반도체",                  "sector": "Chip Equip"},
-  {"region": "TW", "symbol": "2330",   "exchange": "TSEA",  "currency": "TWD", "name": "TSMC",                      "sector": "Foundry"},
-  {"region": "TW", "symbol": "2454",   "exchange": "TSEA",  "currency": "TWD", "name": "MediaTek",                  "sector": "SoC"},
-  {"region": "TW", "symbol": "3711",   "exchange": "TSEA",  "currency": "TWD", "name": "ASE Technology",            "sector": "Packaging"},
-  {"region": "JP", "symbol": "8035",   "exchange": "TSE",   "currency": "JPY", "name": "Tokyo Electron",            "sector": "Chip Equip"},
-  {"region": "JP", "symbol": "6861",   "exchange": "TSE",   "currency": "JPY", "name": "Keyence",                   "sector": "Factory Auto"},
-  {"region": "JP", "symbol": "6954",   "exchange": "TSE",   "currency": "JPY", "name": "FANUC",                     "sector": "Robotics"},
-  {"region": "JP", "symbol": "6723",   "exchange": "TSE",   "currency": "JPY", "name": "Renesas Electronics",       "sector": "MCU/Auto Chip"},
-  {"region": "HK", "symbol": "0700",   "exchange": "SEHK",  "currency": "HKD", "name": "Tencent",                   "sector": "AI/Cloud"},
-  {"region": "HK", "symbol": "0981",   "exchange": "SEHK",  "currency": "HKD", "name": "SMIC",                      "sector": "Foundry"}
+  {"region": "JP", "symbol": "8035",   "exchange": "TSEJ",  "currency": "JPY", "name": "Tokyo Electron",            "sector": "Chip Equip"},
+  {"region": "JP", "symbol": "6861",   "exchange": "TSEJ",  "currency": "JPY", "name": "Keyence",                   "sector": "Factory Auto"},
+  {"region": "JP", "symbol": "6954",   "exchange": "TSEJ",  "currency": "JPY", "name": "FANUC",                     "sector": "Robotics"},
+  {"region": "JP", "symbol": "6723",   "exchange": "TSEJ",  "currency": "JPY", "name": "Renesas Electronics",       "sector": "MCU/Auto Chip"}
 ]
