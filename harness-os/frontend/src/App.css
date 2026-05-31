@@ -6788,3 +6788,43 @@ td.pnl-neg,
   .intl-symbol-cell { min-width: 7rem; }
   .sector-chip { display: none; }  /* 모바일에서 섹터 칩 숨김 */
 }
+
+/* ── 실시간 환율 표시 ────────────────────────────────────────────────────── */
+.forex-rates-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border, #e2e8f0);
+}
+.forex-rate-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem 0.45rem;
+  background: var(--surface-muted, #f8fafc);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 6px;
+  font-size: 0.7rem;
+  cursor: default;
+}
+.forex-cur {
+  font-weight: 700;
+  color: var(--text-muted, #475569);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+}
+.forex-val {
+  font-weight: 600;
+  color: var(--ink-strong, #0f172a);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+}
+.forex-src {
+  font-size: 0.6rem;
+  padding: 0.05rem 0.25rem;
+  border-radius: 3px;
+  font-weight: 600;
+}
+.forex-src.live     { background: rgba(5,150,105,0.1);  color: #059669; }
+.forex-src.ibkr     { background: rgba(14,165,233,0.1); color: #0ea5e9; }
+.forex-src.fallback { background: rgba(100,116,139,0.1); color: #64748b; }

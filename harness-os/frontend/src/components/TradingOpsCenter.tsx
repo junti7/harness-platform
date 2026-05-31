@@ -57,6 +57,12 @@ type IbkrCandidate = {
 
 type NavPoint = { date: string; value: number; pnl_pct: number }
 
+type ForexRateInfo = {
+  units_per_usd: number | null
+  source: 'open.er-api.com' | 'IBKR_historical' | 'hardcoded' | string
+  age_sec: number
+}
+
 type IbkrMonitorData = {
   ok: boolean
   ts: string
@@ -68,6 +74,7 @@ type IbkrMonitorData = {
   entry_candidates: IbkrCandidate[]
   universe_source: string
   nav_history: NavPoint[]
+  forex_rates: Record<string, ForexRateInfo>
   error: string | null
 }
 
@@ -854,6 +861,27 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                 <div className="alpaca-spark" style={{ marginTop: '0.75rem' }}>
                   <p className="data-label">포트폴리오 추이</p>
                   <PortfolioChart data={ibkrChartData} gradientId="ibkrGrad" />
+                </div>
+              )}
+
+              {/* 실시간 환율 */}
+              {ibkrData?.forex_rates && Object.keys(ibkrData.forex_rates).length > 0 && (
+                <div className="forex-rates-row">
+                  {Object.entries(ibkrData.forex_rates).map(([cur, info]) => (
+                    <span key={cur} className="forex-rate-chip" title={`출처: ${info.source} · ${info.age_sec}초 전`}>
+                      <span className="forex-cur">{cur}</span>
+                      <span className="forex-val">
+                        {info.units_per_usd != null
+                          ? cur === 'JPY' || cur === 'KRW'
+                            ? Math.round(info.units_per_usd).toLocaleString()
+                            : info.units_per_usd.toFixed(2)
+                          : '—'}
+                      </span>
+                      <span className={`forex-src ${info.source === 'open.er-api.com' ? 'live' : info.source === 'IBKR_historical' ? 'ibkr' : 'fallback'}`}>
+                        {info.source === 'open.er-api.com' ? '실시간' : info.source === 'IBKR_historical' ? 'IBKR' : '근사'}
+                      </span>
+                    </span>
+                  ))}
                 </div>
               )}
             </>

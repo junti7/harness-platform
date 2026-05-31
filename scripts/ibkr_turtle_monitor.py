@@ -82,24 +82,68 @@ TURTLE_RISK_PCT  = 0.01 # 계좌 리스크 1%
 
 # ── 외환 환율 (포지션 사이징 USD 환산용) ──────────────────────────────────────
 
-# 기본 환율 (USD 기준 1 로컬 통화 = ? USD) — 근사값
+import time as _time
+import urllib.request as _urllib_req
+
+# 하드코딩 fallback (API + IBKR 모두 실패 시)
 _FOREX_FALLBACK: dict[str, float] = {
-    "KRW": 1 / 1380,   # 1 KRW ≈ 0.000725 USD
-    "JPY": 1 / 155,    # 1 JPY ≈ 0.00645 USD
-    "TWD": 1 / 32,     # 1 TWD ≈ 0.03125 USD
-    "HKD": 1 / 7.8,    # 1 HKD ≈ 0.1282 USD
+    "KRW": 1 / 1380,
+    "JPY": 1 / 155,
+    "TWD": 1 / 32,
+    "HKD": 1 / 7.8,
     "USD": 1.0,
 }
-_forex_cache: dict[str, float] = {}
+# 캐시: currency → (usd_per_local, fetched_at_epoch)
+_forex_cache: dict[str, tuple[float, float]] = {}
+_FOREX_CACHE_TTL = 1800  # 30분 캐시 (실시간에 가깝게)
+
+# 실시간 환율 소스 추적
+_forex_source: dict[str, str] = {}
+
+
+def fetch_realtime_rates() -> dict[str, float]:
+    """open.er-api.com에서 USD 기준 실시간 환율 조회. {currency: units_per_usd}"""
+    url = "https://open.er-api.com/v6/latest/USD"
+    with _urllib_req.urlopen(url, timeout=5) as resp:
+        data = json.loads(resp.read())
+    if data.get("result") != "success":
+        raise ValueError(f"API error: {data.get('error-type', 'unknown')}")
+    return data["rates"]  # e.g. {"KRW": 1380.5, "JPY": 155.2, ...}
 
 
 def get_usd_rate(ib: "object | None", currency: str) -> float:
-    """로컬 통화 1단위 = ? USD 반환. IBKR 조회 실패 시 근사값 fallback. 절대 예외 없음."""
+    """
+    로컬 통화 1단위 → USD 환산 비율 반환. 절대 예외 없음.
+
+    우선순위:
+      1. open.er-api.com 실시간 환율 (30분 캐시)
+      2. IBKR 전일 종가 (위 실패 시)
+      3. 하드코딩 근사값 (최후 fallback)
+    """
     if currency == "USD":
         return 1.0
+
+    # 캐시 확인
     if currency in _forex_cache:
-        return _forex_cache[currency]
-    rate = _FOREX_FALLBACK.get(currency, 1.0)
+        rate, fetched_at = _forex_cache[currency]
+        if _time.time() - fetched_at < _FOREX_CACHE_TTL:
+            return rate
+
+    # 1순위: 실시간 API
+    try:
+        rates = fetch_realtime_rates()
+        # 모든 통화 한 번에 캐시
+        now = _time.time()
+        for cur, units_per_usd in rates.items():
+            if units_per_usd > 0:
+                _forex_cache[cur] = (1.0 / units_per_usd, now)
+                _forex_source[cur] = "open.er-api.com"
+        if currency in _forex_cache:
+            return _forex_cache[currency][0]
+    except Exception:
+        pass
+
+    # 2순위: IBKR 전일 종가
     if ib is not None:
         try:
             from ib_insync import Forex
@@ -111,13 +155,33 @@ def get_usd_rate(ib: "object | None", currency: str) -> float:
                 useRTH=True, formatDate=1,
             )
             if bars:
-                usd_per_local = 1.0 / bars[-1].close  # bars[-1].close = 1 USD당 로컬 통화 수
-                _forex_cache[currency] = usd_per_local
+                usd_per_local = 1.0 / bars[-1].close
+                _forex_cache[currency] = (usd_per_local, _time.time())
+                _forex_source[currency] = "IBKR_historical"
                 return usd_per_local
         except Exception:
             pass
-    _forex_cache[currency] = rate
+
+    # 3순위: 하드코딩 fallback
+    rate = _FOREX_FALLBACK.get(currency, 1.0)
+    _forex_cache[currency] = (rate, _time.time())
+    _forex_source[currency] = "hardcoded"
     return rate
+
+
+def get_forex_snapshot() -> dict:
+    """현재 캐시된 환율 스냅샷 반환 (프론트엔드 표시용)."""
+    snap = {}
+    for cur, (rate, fetched_at) in _forex_cache.items():
+        if cur == "USD":
+            continue
+        # rate = USD per 1 local → 역수 = local per 1 USD
+        snap[cur] = {
+            "units_per_usd": round(1.0 / rate, 4) if rate > 0 else None,
+            "source": _forex_source.get(cur, "unknown"),
+            "age_sec": int(_time.time() - fetched_at),
+        }
+    return snap
 
 
 # ── 유틸 ──────────────────────────────────────────────────────────────────────
@@ -610,6 +674,7 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
         "entry_candidates": entry_candidates,
         "universe_source":  universe_source,
         "nav_history":      chart_history,
+        "forex_rates":      get_forex_snapshot(),
         "error":            None,
     }
 

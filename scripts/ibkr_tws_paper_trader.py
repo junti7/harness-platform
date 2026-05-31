@@ -87,6 +87,9 @@ MAX_POSITIONS    = 6
 
 # ── 외환 환율 (포지션 사이징 USD 환산용) ──────────────────────────────────────
 
+import time as _time
+import urllib.request as _urllib_req
+
 _FOREX_FALLBACK: dict[str, float] = {
     "KRW": 1 / 1380,
     "JPY": 1 / 155,
@@ -94,16 +97,41 @@ _FOREX_FALLBACK: dict[str, float] = {
     "HKD": 1 / 7.8,
     "USD": 1.0,
 }
-_forex_cache: dict[str, float] = {}
+# 캐시: currency → (usd_per_local, fetched_at_epoch)
+_forex_cache: dict[str, tuple[float, float]] = {}
+_FOREX_CACHE_TTL = 1800  # 30분
 
 
 def get_usd_rate(ib: "IB | None", currency: str) -> float:
-    """로컬 통화 1단위 = ? USD 반환. IBKR 조회 실패 시 근사값 fallback. 절대 예외 없음."""
+    """
+    로컬 통화 1단위 → USD 반환. 절대 예외 없음.
+    우선순위: open.er-api.com 실시간 → IBKR 전일 종가 → 하드코딩 근사값
+    """
     if currency == "USD":
         return 1.0
+
+    # 캐시 확인 (30분 TTL)
     if currency in _forex_cache:
-        return _forex_cache[currency]
-    rate = _FOREX_FALLBACK.get(currency, 1.0)
+        rate, fetched_at = _forex_cache[currency]
+        if _time.time() - fetched_at < _FOREX_CACHE_TTL:
+            return rate
+
+    # 1순위: 실시간 환율 API (전체 통화 한 번에 캐시)
+    try:
+        url = "https://open.er-api.com/v6/latest/USD"
+        with _urllib_req.urlopen(url, timeout=5) as resp:
+            data = json.loads(resp.read())
+        if data.get("result") == "success":
+            now = _time.time()
+            for cur, units_per_usd in data.get("rates", {}).items():
+                if units_per_usd > 0:
+                    _forex_cache[cur] = (1.0 / units_per_usd, now)
+            if currency in _forex_cache:
+                return _forex_cache[currency][0]
+    except Exception:
+        pass
+
+    # 2순위: IBKR 전일 종가
     if ib is not None:
         try:
             from ib_insync import Forex
@@ -116,11 +144,14 @@ def get_usd_rate(ib: "IB | None", currency: str) -> float:
             )
             if bars:
                 usd_per_local = 1.0 / bars[-1].close
-                _forex_cache[currency] = usd_per_local
+                _forex_cache[currency] = (usd_per_local, _time.time())
                 return usd_per_local
         except Exception:
             pass
-    _forex_cache[currency] = rate
+
+    # 3순위: 하드코딩 fallback
+    rate = _FOREX_FALLBACK.get(currency, 1.0)
+    _forex_cache[currency] = (rate, _time.time())
     return rate
 
 
