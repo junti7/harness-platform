@@ -6657,3 +6657,134 @@ td.pnl-neg,
     font-size: 1.3rem;
   }
 }
+
+/* ── Gmail Tabs Custom Styling ───────────────────────────────────────────────── */
+.gmail-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.gmail-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.gmail-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  padding: 0.5rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.gmail-tab-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink-strong);
+}
+
+.gmail-tab-btn.active {
+  background: rgba(99, 102, 241, 0.1);
+  color: #818cf8;
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.gmail-tab-count {
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  color: var(--text-muted);
+  transition: all 0.2s ease;
+}
+
+.gmail-tab-btn.active .gmail-tab-count {
+  background: rgba(99, 102, 241, 0.25);
+  color: #a5b4fc;
+}
+
+/* ── 글로벌 유니버스 지역 필터 ───────────────────────────────────────── */
+.region-filter-bar {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+.region-filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 999px;
+  background: var(--surface, #fff);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted, #475569);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.region-filter-btn:hover { border-color: var(--accent, #2563eb); color: var(--accent, #2563eb); }
+.region-filter-btn.active {
+  background: var(--accent, #2563eb);
+  border-color: var(--accent, #2563eb);
+  color: #fff;
+}
+.region-count {
+  background: rgba(255,255,255,0.2);
+  border-radius: 999px;
+  padding: 0 0.3rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+.region-filter-btn:not(.active) .region-count {
+  background: var(--border, #e2e8f0);
+  color: var(--text-muted, #475569);
+}
+
+/* 국제 종목 심볼 셀 */
+.intl-symbol-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 10rem;
+}
+.region-flag { font-size: 0.9rem; flex-shrink: 0; }
+.intl-symbol-cell > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+.intl-symbol-cell strong { font-size: 0.85rem; font-weight: 700; color: var(--ink-strong, #0f172a); }
+.intl-symbol-cell small  { font-size: 0.65rem; color: var(--text-faint, #64748b); white-space: nowrap; }
+.sector-chip {
+  display: inline-block;
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  background: rgba(14, 165, 233, 0.08);
+  color: #0ea5e9;
+  border: 1px solid rgba(14, 165, 233, 0.2);
+  white-space: nowrap;
+  align-self: flex-start;
+  margin-left: auto;
+}
+
+@media (max-width: 700px) {
+  .region-filter-bar { gap: 0.25rem; }
+  .region-filter-btn { padding: 0.2rem 0.45rem; font-size: 0.7rem; }
+  .intl-symbol-cell { min-width: 7rem; }
+  .sector-chip { display: none; }  /* 모바일에서 섹터 칩 숨김 */
+}

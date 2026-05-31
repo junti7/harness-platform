@@ -39,27 +39,44 @@ IBKR_TRADING_MODE = _os.getenv("IBKR_TRADING_MODE", "paper").strip().lower()
 TWS_PORT = 4002 if IBKR_TRADING_MODE == "paper" else 4001
 TWS_CLIENT_ID = 10       # 임의 클라이언트 ID (충돌 방지)
 
-LOG_PATH  = ROOT / "docs/reports/ibkr_tws_paper_log.jsonl"
-STATE_PATH = ROOT / "docs/reports/ibkr_tws_positions.json"
+LOG_PATH       = ROOT / "docs/reports/ibkr_tws_paper_log.jsonl"
+STATE_PATH     = ROOT / "docs/reports/ibkr_tws_positions.json"
+UNIVERSE_PATH  = ROOT / "docs/trading/universe.json"
 
-# Harness 리서치 유니버스 (글로벌 포함)
-UNIVERSE = [
+# Harness 리서치 유니버스 fallback (universe.json 없을 때 사용)
+UNIVERSE_FALLBACK: list[dict] = [
     # Physical AI / AGI 인프라 (미국)
-    ("NVDA", "SMART", "USD"),
-    ("AVGO", "SMART", "USD"),
-    ("TSM",  "NYSE",  "USD"),   # ADR
-    ("MU",   "SMART", "USD"),
-    ("ANET", "SMART", "USD"),
-    ("VRT",  "NYSE",  "USD"),
-    ("TER",  "SMART", "USD"),
-    ("SYM",  "SMART", "USD"),
-    ("ISRG", "SMART", "USD"),
-    ("ROK",  "NYSE",  "USD"),
+    {"region": "US", "symbol": "NVDA", "exchange": "SMART", "currency": "USD", "name": "NVIDIA",             "sector": "AI Chip"},
+    {"region": "US", "symbol": "AVGO", "exchange": "SMART", "currency": "USD", "name": "Broadcom",           "sector": "AI Chip"},
+    {"region": "US", "symbol": "TSM",  "exchange": "NYSE",  "currency": "USD", "name": "TSMC ADR",           "sector": "Foundry"},
+    {"region": "US", "symbol": "MU",   "exchange": "SMART", "currency": "USD", "name": "Micron Technology",  "sector": "Memory"},
+    {"region": "US", "symbol": "ANET", "exchange": "SMART", "currency": "USD", "name": "Arista Networks",    "sector": "AI Network"},
+    {"region": "US", "symbol": "VRT",  "exchange": "NYSE",  "currency": "USD", "name": "Vertiv",             "sector": "Power Infra"},
+    {"region": "US", "symbol": "TER",  "exchange": "SMART", "currency": "USD", "name": "Teradyne",           "sector": "Test Equip"},
+    {"region": "US", "symbol": "SYM",  "exchange": "SMART", "currency": "USD", "name": "Symbotic",           "sector": "Robotics"},
+    {"region": "US", "symbol": "ISRG", "exchange": "SMART", "currency": "USD", "name": "Intuitive Surgical", "sector": "Medical Robot"},
+    {"region": "US", "symbol": "ROK",  "exchange": "NYSE",  "currency": "USD", "name": "Rockwell Automation","sector": "Industrial Auto"},
     # 전력 인프라
-    ("CEG",  "SMART", "USD"),
-    ("VST",  "NYSE",  "USD"),
-    ("GEV",  "NYSE",  "USD"),
-    ("PWR",  "NYSE",  "USD"),
+    {"region": "US", "symbol": "CEG",  "exchange": "SMART", "currency": "USD", "name": "Constellation Energy","sector": "Power"},
+    {"region": "US", "symbol": "VST",  "exchange": "NYSE",  "currency": "USD", "name": "Vistra",             "sector": "Power"},
+    {"region": "US", "symbol": "GEV",  "exchange": "NYSE",  "currency": "USD", "name": "GE Vernova",         "sector": "Power Equip"},
+    {"region": "US", "symbol": "PWR",  "exchange": "NYSE",  "currency": "USD", "name": "Quanta Services",    "sector": "Power Infra"},
+    # 한국
+    {"region": "KR", "symbol": "000660", "exchange": "KRX",  "currency": "KRW", "name": "SK하이닉스",   "sector": "HBM Memory"},
+    {"region": "KR", "symbol": "005930", "exchange": "KRX",  "currency": "KRW", "name": "삼성전자",     "sector": "Memory/Foundry"},
+    {"region": "KR", "symbol": "042700", "exchange": "KRX",  "currency": "KRW", "name": "한미반도체",   "sector": "Chip Equip"},
+    # 대만
+    {"region": "TW", "symbol": "2330", "exchange": "TSEA", "currency": "TWD", "name": "TSMC",          "sector": "Foundry"},
+    {"region": "TW", "symbol": "2454", "exchange": "TSEA", "currency": "TWD", "name": "MediaTek",      "sector": "SoC"},
+    {"region": "TW", "symbol": "3711", "exchange": "TSEA", "currency": "TWD", "name": "ASE Technology","sector": "Packaging"},
+    # 일본
+    {"region": "JP", "symbol": "8035", "exchange": "TSE",  "currency": "JPY", "name": "Tokyo Electron","sector": "Chip Equip"},
+    {"region": "JP", "symbol": "6861", "exchange": "TSE",  "currency": "JPY", "name": "Keyence",       "sector": "Factory Auto"},
+    {"region": "JP", "symbol": "6954", "exchange": "TSE",  "currency": "JPY", "name": "FANUC",         "sector": "Robotics"},
+    {"region": "JP", "symbol": "6723", "exchange": "TSE",  "currency": "JPY", "name": "Renesas Electronics","sector": "MCU/Auto Chip"},
+    # 홍콩
+    {"region": "HK", "symbol": "0700", "exchange": "SEHK", "currency": "HKD", "name": "Tencent",       "sector": "AI/Cloud"},
+    {"region": "HK", "symbol": "0981", "exchange": "SEHK", "currency": "HKD", "name": "SMIC",          "sector": "Foundry"},
 ]
 
 TURTLE_S2       = 55
@@ -68,8 +85,58 @@ TURTLE_STOP_MULT = 2.0
 TURTLE_RISK_PCT  = 0.01   # 계좌 1%
 MAX_POSITIONS    = 6
 
+# ── 외환 환율 (포지션 사이징 USD 환산용) ──────────────────────────────────────
+
+_FOREX_FALLBACK: dict[str, float] = {
+    "KRW": 1 / 1380,
+    "JPY": 1 / 155,
+    "TWD": 1 / 32,
+    "HKD": 1 / 7.8,
+    "USD": 1.0,
+}
+_forex_cache: dict[str, float] = {}
+
+
+def get_usd_rate(ib: "IB | None", currency: str) -> float:
+    """로컬 통화 1단위 = ? USD 반환. IBKR 조회 실패 시 근사값 fallback. 절대 예외 없음."""
+    if currency == "USD":
+        return 1.0
+    if currency in _forex_cache:
+        return _forex_cache[currency]
+    rate = _FOREX_FALLBACK.get(currency, 1.0)
+    if ib is not None:
+        try:
+            from ib_insync import Forex
+            pair = Forex(f"USD{currency}")
+            ib.qualifyContracts(pair)
+            bars = ib.reqHistoricalData(
+                pair, endDateTime="", durationStr="2 D",
+                barSizeSetting="1 day", whatToShow="MIDPOINT",
+                useRTH=True, formatDate=1,
+            )
+            if bars:
+                usd_per_local = 1.0 / bars[-1].close
+                _forex_cache[currency] = usd_per_local
+                return usd_per_local
+        except Exception:
+            pass
+    _forex_cache[currency] = rate
+    return rate
+
 
 # ── 유틸 ──────────────────────────────────────────────────────────────────────
+
+def load_universe() -> list[dict]:
+    """universe.json이 있으면 로드, 없으면 UNIVERSE_FALLBACK 사용."""
+    if UNIVERSE_PATH.exists():
+        try:
+            data = json.loads(UNIVERSE_PATH.read_text())
+            if isinstance(data, list) and len(data) > 0:
+                return data
+        except Exception:
+            pass
+    return UNIVERSE_FALLBACK
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -149,11 +216,13 @@ def calc_turtle_signal(ib: IB, contract: Stock) -> dict | None:
 
 def run(execute: bool = False) -> None:
     dry_run = not execute
+    universe = load_universe()
 
     print("=" * 62)
     print(f"IBKR TWS Paper Trader — {'DRY RUN' if dry_run else '*** EXECUTE ***'}")
     print(f"실행시각: {now_iso()}")
     print(f"포트: {TWS_PORT} (페이퍼 트레이딩)")
+    print(f"유니버스: {len(universe)}종목")
     print("=" * 62)
 
     ib = IB()
@@ -161,7 +230,7 @@ def run(execute: bool = False) -> None:
         ib.connect(TWS_HOST, TWS_PORT, clientId=TWS_CLIENT_ID, timeout=10)
     except Exception as e:
         print(f"[ERROR] TWS 연결 실패: {e}")
-        print("  → TWS가 실행 중인지, API 포트 7497이 활성화됐는지 확인하세요.")
+        print("  → IB Gateway가 실행 중인지, API 포트 4002가 활성화됐는지 확인하세요.")
         return
 
     # 계좌 확인
@@ -190,29 +259,40 @@ def run(execute: bool = False) -> None:
     print("\n── 신호 스캔 ──")
     entered = []
 
-    for sym, exchange, currency in UNIVERSE:
+    for u_item in universe:
+        sym      = u_item["symbol"]
+        exchange = u_item.get("exchange", "SMART")
+        currency = u_item.get("currency", "USD")
+        region   = u_item.get("region", "US")
+        name     = u_item.get("name", "")
+
         contract = Stock(sym, exchange, currency)
         ib.qualifyContracts(contract)
         sig = calc_turtle_signal(ib, contract)
 
         if sig is None:
-            print(f"  {sym}: 데이터 부족")
+            print(f"  [{region}] {sym}: 데이터 부족")
             continue
 
-        signal = sig["signal"]
-        price  = sig["current_price"]
-        atr    = sig["atr"]
+        signal  = sig["signal"]
+        price   = sig["current_price"]
+        atr     = sig["atr"]
         s2_high = sig["s2_high"]
-        dist   = (price - s2_high) / s2_high * 100
+        dist    = (price - s2_high) / s2_high * 100
 
         if signal == "breakout_long":
-            shares    = int((nav * TURTLE_RISK_PCT) / atr)
+            # 포지션 사이징: ATR을 USD로 환산 후 계좌 1% 리스크 기준
+            usd_rate = get_usd_rate(ib, currency)
+            atr_usd  = atr * usd_rate
+            shares   = int((nav * TURTLE_RISK_PCT) / atr_usd) if atr_usd > 0 else 0
             stop_loss = round(price - TURTLE_STOP_MULT * atr, 2)
-            pos_val   = round(shares * price, 2)
+            pos_val_local = round(shares * price, 2)
+            pos_val_usd   = round(shares * price * usd_rate, 2)
 
-            print(f"\n  🚀 {sym} S2 브레이크아웃 @ ${price:.2f}")
-            print(f"     S2고점={s2_high:.2f}({dist:+.1f}%) ATR={atr:.2f} 수량={shares}주")
-            print(f"     포지션=${pos_val:,.0f} 손절=${stop_loss:.2f}")
+            curr_sym = {"KRW": "₩", "JPY": "¥", "TWD": "NT$", "HKD": "HK$"}.get(currency, "$")
+            print(f"\n  [{region}] {sym}({name}) S2 브레이크아웃 @ {curr_sym}{price:.2f}")
+            print(f"     S2고점={curr_sym}{s2_high:.2f}({dist:+.1f}%) ATR={atr:.2f}{currency} (${atr_usd:.4f}) 수량={shares}주")
+            print(f"     포지션={curr_sym}{pos_val_local:,.0f} (≈${pos_val_usd:,.0f}) 손절={curr_sym}{stop_loss:.2f}")
 
             # 이미 보유 중이면 스킵
             if sym in pos_symbols or sym in state["positions"]:
@@ -240,26 +320,32 @@ def run(execute: bool = False) -> None:
                     "stop_loss":   stop_loss,
                     "qty":         shares,
                     "exchange":    exchange,
+                    "currency":    currency,
+                    "region":      region,
                 }
                 print(f"     → 주문 제출 (orderId={trade.order.orderId})")
                 log_entry({
                     "ts": now_iso(), "action": "enter", "symbol": sym,
-                    "exchange": exchange, "qty": shares, "price": price,
-                    "atr": atr, "stop_loss": stop_loss, "system": "S2",
+                    "region": region, "exchange": exchange, "currency": currency,
+                    "qty": shares, "price": price,
+                    "atr": atr, "atr_usd": round(atr_usd, 6),
+                    "usd_rate": round(usd_rate, 8),
+                    "stop_loss": stop_loss, "system": "S2",
                     "dry_run": False,
                 })
             else:
                 print(f"     → [DRY RUN] 매수 예정")
             entered.append(sym)
         else:
-            print(f"  {sym}: 중립 ${price:.2f} | S2고점 ${s2_high:.2f}({dist:+.1f}%)")
+            curr_sym = {"KRW": "₩", "JPY": "¥", "TWD": "NT$", "HKD": "HK$"}.get(currency, "$")
+            print(f"  [{region}] {sym}: 중립 {curr_sym}{price:.2f} | S2고점 {curr_sym}{s2_high:.2f}({dist:+.1f}%)")
 
     state["last_run"] = now_iso()
     save_state(state)
     ib.disconnect()
 
     print(f"\n{'=' * 62}")
-    print(f"완료 | 진입: {len(entered)}건 | 유니버스: {len(UNIVERSE)}종목")
+    print(f"완료 | 진입: {len(entered)}건 | 유니버스: {len(universe)}종목")
     print("=" * 62)
 
 

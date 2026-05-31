@@ -51,24 +51,24 @@ UNIVERSE_PATH = ROOT / "docs" / "trading" / "universe.json"
 
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "")
 
-# Harness 리서치 유니버스 (fallback: ibkr_tws_paper_trader.py 동일)
+# Harness 리서치 유니버스 (fallback: universe.json 없을 때 사용)
 UNIVERSE_FALLBACK: list[dict] = [
     # Physical AI / AGI 인프라 (미국)
-    {"symbol": "NVDA", "exchange": "SMART", "currency": "USD"},
-    {"symbol": "AVGO", "exchange": "SMART", "currency": "USD"},
-    {"symbol": "TSM",  "exchange": "NYSE",  "currency": "USD"},
-    {"symbol": "MU",   "exchange": "SMART", "currency": "USD"},
-    {"symbol": "ANET", "exchange": "SMART", "currency": "USD"},
-    {"symbol": "VRT",  "exchange": "NYSE",  "currency": "USD"},
-    {"symbol": "TER",  "exchange": "SMART", "currency": "USD"},
-    {"symbol": "SYM",  "exchange": "SMART", "currency": "USD"},
-    {"symbol": "ISRG", "exchange": "SMART", "currency": "USD"},
-    {"symbol": "ROK",  "exchange": "NYSE",  "currency": "USD"},
+    {"region": "US", "symbol": "NVDA", "exchange": "SMART", "currency": "USD", "name": "NVIDIA",             "sector": "AI Chip"},
+    {"region": "US", "symbol": "AVGO", "exchange": "SMART", "currency": "USD", "name": "Broadcom",           "sector": "AI Chip"},
+    {"region": "US", "symbol": "TSM",  "exchange": "NYSE",  "currency": "USD", "name": "TSMC ADR",           "sector": "Foundry"},
+    {"region": "US", "symbol": "MU",   "exchange": "SMART", "currency": "USD", "name": "Micron Technology",  "sector": "Memory"},
+    {"region": "US", "symbol": "ANET", "exchange": "SMART", "currency": "USD", "name": "Arista Networks",    "sector": "AI Network"},
+    {"region": "US", "symbol": "VRT",  "exchange": "NYSE",  "currency": "USD", "name": "Vertiv",             "sector": "Power Infra"},
+    {"region": "US", "symbol": "TER",  "exchange": "SMART", "currency": "USD", "name": "Teradyne",           "sector": "Test Equip"},
+    {"region": "US", "symbol": "SYM",  "exchange": "SMART", "currency": "USD", "name": "Symbotic",           "sector": "Robotics"},
+    {"region": "US", "symbol": "ISRG", "exchange": "SMART", "currency": "USD", "name": "Intuitive Surgical", "sector": "Medical Robot"},
+    {"region": "US", "symbol": "ROK",  "exchange": "NYSE",  "currency": "USD", "name": "Rockwell Automation","sector": "Industrial Auto"},
     # 전력 인프라
-    {"symbol": "CEG",  "exchange": "SMART", "currency": "USD"},
-    {"symbol": "VST",  "exchange": "NYSE",  "currency": "USD"},
-    {"symbol": "GEV",  "exchange": "NYSE",  "currency": "USD"},
-    {"symbol": "PWR",  "exchange": "NYSE",  "currency": "USD"},
+    {"region": "US", "symbol": "CEG",  "exchange": "SMART", "currency": "USD", "name": "Constellation Energy","sector": "Power"},
+    {"region": "US", "symbol": "VST",  "exchange": "NYSE",  "currency": "USD", "name": "Vistra",             "sector": "Power"},
+    {"region": "US", "symbol": "GEV",  "exchange": "NYSE",  "currency": "USD", "name": "GE Vernova",         "sector": "Power Equip"},
+    {"region": "US", "symbol": "PWR",  "exchange": "NYSE",  "currency": "USD", "name": "Quanta Services",    "sector": "Power Infra"},
 ]
 
 # Turtle 파라미터
@@ -78,6 +78,46 @@ TURTLE_S1_EXIT   = 10   # S1 청산: 10일 저가 하회
 TURTLE_S2_EXIT   = 20   # S2 청산: 20일 저가 하회 (주요 청산선)
 TURTLE_ATR_DAYS  = 20   # ATR 계산 기간
 TURTLE_STOP_MULT = 2.0  # 손절 = 진입가 - 2×ATR
+TURTLE_RISK_PCT  = 0.01 # 계좌 리스크 1%
+
+# ── 외환 환율 (포지션 사이징 USD 환산용) ──────────────────────────────────────
+
+# 기본 환율 (USD 기준 1 로컬 통화 = ? USD) — 근사값
+_FOREX_FALLBACK: dict[str, float] = {
+    "KRW": 1 / 1380,   # 1 KRW ≈ 0.000725 USD
+    "JPY": 1 / 155,    # 1 JPY ≈ 0.00645 USD
+    "TWD": 1 / 32,     # 1 TWD ≈ 0.03125 USD
+    "HKD": 1 / 7.8,    # 1 HKD ≈ 0.1282 USD
+    "USD": 1.0,
+}
+_forex_cache: dict[str, float] = {}
+
+
+def get_usd_rate(ib: "object | None", currency: str) -> float:
+    """로컬 통화 1단위 = ? USD 반환. IBKR 조회 실패 시 근사값 fallback. 절대 예외 없음."""
+    if currency == "USD":
+        return 1.0
+    if currency in _forex_cache:
+        return _forex_cache[currency]
+    rate = _FOREX_FALLBACK.get(currency, 1.0)
+    if ib is not None:
+        try:
+            from ib_insync import Forex
+            pair = Forex(f"USD{currency}")
+            ib.qualifyContracts(pair)
+            bars = ib.reqHistoricalData(
+                pair, endDateTime="", durationStr="2 D",
+                barSizeSetting="1 day", whatToShow="MIDPOINT",
+                useRTH=True, formatDate=1,
+            )
+            if bars:
+                usd_per_local = 1.0 / bars[-1].close  # bars[-1].close = 1 USD당 로컬 통화 수
+                _forex_cache[currency] = usd_per_local
+                return usd_per_local
+        except Exception:
+            pass
+    _forex_cache[currency] = rate
+    return rate
 
 
 # ── 유틸 ──────────────────────────────────────────────────────────────────────
@@ -214,6 +254,7 @@ def calc_full_signal(ib, contract, json_mode: bool) -> dict | None:
     except Exception as e:
         _p(f"  [{contract.symbol}] 신호 계산 실패: {e}", json_mode)
         return None
+
 
 
 def assess_position(pos_meta: dict, sig: dict | None) -> dict:
@@ -443,6 +484,9 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
             sym      = u_item["symbol"]
             exchange = u_item.get("exchange", "SMART")
             currency = u_item.get("currency", "USD")
+            region   = u_item.get("region", "US")
+            name     = u_item.get("name", "")
+            sector   = u_item.get("sector", "")
             in_pos   = sym in held_symbols
 
             try:
@@ -457,6 +501,10 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
             if sig:
                 cand = {
                     "symbol":        sym,
+                    "region":        region,
+                    "name":          name,
+                    "sector":        sector,
+                    "currency":      currency,
                     "current_price": sig["current_price"],
                     "s1_high":       sig["s1_high"],
                     "s2_high":       sig["s2_high"],
@@ -469,10 +517,14 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
                 entry_candidates.append(cand)
 
                 sig_str = f"*** {sig['signal'].upper()} ({sig['active_signal']}) ***" if sig["signal"] != "neutral" else "중립"
-                _p(f"  {sym}: ${sig['current_price']:.2f} | S1고점 ${sig['s1_high']:.2f} | S2고점 ${sig['s2_high']:.2f} | {sig_str}", json_mode)
+                _p(f"  [{region}] {sym}: {sig['current_price']:.4g} {currency} | S1고점 {sig['s1_high']:.4g} | S2고점 {sig['s2_high']:.4g} | {sig_str}", json_mode)
             else:
                 entry_candidates.append({
                     "symbol":        sym,
+                    "region":        region,
+                    "name":          name,
+                    "sector":        sector,
+                    "currency":      currency,
                     "current_price": None,
                     "s1_high":       None,
                     "s2_high":       None,
@@ -489,6 +541,10 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
             sym = u_item["symbol"]
             entry_candidates.append({
                 "symbol":        sym,
+                "region":        u_item.get("region", "US"),
+                "name":          u_item.get("name", ""),
+                "sector":        u_item.get("sector", ""),
+                "currency":      u_item.get("currency", "USD"),
                 "current_price": None,
                 "s1_high":       None,
                 "s2_high":       None,
@@ -568,10 +624,21 @@ def run_offline() -> dict:
         assessed = assess_position(meta, None)
         positions.append(assessed)
     candidates = [
-        {"symbol": u["symbol"], "current_price": None, "s1_high": None,
-         "s2_high": None, "atr": None, "signal": "no_connection",
-         "active_signal": None, "gap_pct": None,
-         "in_position": u["symbol"] in state.get("positions", {})}
+        {
+            "symbol":        u["symbol"],
+            "region":        u.get("region", "US"),
+            "name":          u.get("name", ""),
+            "sector":        u.get("sector", ""),
+            "currency":      u.get("currency", "USD"),
+            "current_price": None,
+            "s1_high":       None,
+            "s2_high":       None,
+            "atr":           None,
+            "signal":        "no_connection",
+            "active_signal": None,
+            "gap_pct":       None,
+            "in_position":   u["symbol"] in state.get("positions", {}),
+        }
         for u in universe
     ]
     return {

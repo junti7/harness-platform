@@ -41,6 +41,10 @@ type IbkrPosition = {
 
 type IbkrCandidate = {
   symbol: string
+  region: string        // "US" | "KR" | "TW" | "JP" | "HK"
+  name: string
+  sector: string
+  currency: string      // "USD" | "KRW" | "JPY" | "TWD" | "HKD"
   current_price: number | null
   s1_high: number | null
   s2_high: number | null
@@ -94,6 +98,23 @@ const IBKR_SYMBOL_NAMES: Record<string, string> = {
 }
 
 const ALL_SYMBOL_NAMES: Record<string, string> = { ...ALPACA_SYMBOL_NAMES, ...IBKR_SYMBOL_NAMES }
+
+// ── 글로벌 유니버스 지역/통화 헬퍼 ──────────────────────────────────────────
+
+const REGION_FLAG: Record<string, string> = {
+  US: '🇺🇸', KR: '🇰🇷', TW: '🇹🇼', JP: '🇯🇵', HK: '🇭🇰',
+}
+const CURRENCY_SYMBOL: Record<string, string> = {
+  USD: '$', KRW: '₩', JPY: '¥', TWD: 'NT$', HKD: 'HK$',
+}
+function fmtLocalPrice(price: number | null, currency: string): string {
+  if (price === null) return '—'
+  const sym = CURRENCY_SYMBOL[currency] ?? (currency + ' ')
+  if (currency === 'USD') return `${sym}${fmt(price)}`
+  if (currency === 'JPY') return `${sym}${Math.round(price).toLocaleString()}`
+  if (currency === 'KRW') return `${sym}${Math.round(price).toLocaleString()}`
+  return `${sym}${fmt(price, 2)}`
+}
 
 function symDisplay(symbol?: string | null, names = ALL_SYMBOL_NAMES) {
   const code = String(symbol || '').trim().toUpperCase()
@@ -417,6 +438,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
 
   // UI state
   const [activeSignalTab, setActiveSignalTab] = useState<'alpaca' | 'ibkr'>('ibkr')
+  const [regionFilter, setRegionFilter] = useState<string>('ALL')
 
   // ── Alpaca 데이터 로드 ──────────────────────────────────────────────────────
 
@@ -1022,6 +1044,31 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                 </span>
               )}
             </span>
+
+            {/* 지역 필터 */}
+            {ibkrCandidates.length > 0 && (() => {
+              const regions = ['ALL', 'US', 'KR', 'TW', 'JP', 'HK']
+              return (
+                <div className="region-filter-bar">
+                  {regions.map(r => (
+                    <button
+                      key={r}
+                      type="button"
+                      className={`region-filter-btn ${regionFilter === r ? 'active' : ''}`}
+                      onClick={() => setRegionFilter(r)}
+                    >
+                      {r === 'ALL' ? '전체' : `${REGION_FLAG[r] ?? ''} ${r}`}
+                      <span className="region-count">
+                        {r === 'ALL'
+                          ? ibkrCandidates.length
+                          : ibkrCandidates.filter(c => (c.region ?? 'US') === r).length}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )
+            })()}
+
             {ibkrLoading ? (
               <p className="data-meta loading-pulse">IBKR 신호 로드 중…</p>
             ) : ibkrCandidates.length === 0 ? (
@@ -1033,6 +1080,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                     <span className="data-label-inline">활성 신호:</span>
                     {ibkrCandidates.filter(c => c.signal === 'breakout_long').map(c => (
                       <span key={c.symbol} className="active-signal-chip">
+                        <span className="region-flag">{REGION_FLAG[c.region ?? 'US'] ?? '🌐'}</span>
                         <strong>{c.symbol}</strong>
                         <IbkrSignalBadge signal={c.signal} active={c.active_signal} />
                         {c.in_position && <span className="in-pos-chip">보유 중</span>}
@@ -1055,20 +1103,38 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                       </tr>
                     </thead>
                     <tbody>
-                      {[...ibkrCandidates.filter(c => c.signal === 'breakout_long'), ...ibkrCandidates.filter(c => c.signal !== 'breakout_long')].map(c => (
-                        <tr key={c.symbol} className={c.signal === 'breakout_long' ? 'row-highlight' : c.in_position ? 'row-in-position' : ''}>
-                          <td><SymbolCell symbol={c.symbol} names={IBKR_SYMBOL_NAMES} /></td>
-                          <td className="num">{c.current_price !== null ? `$${fmt(c.current_price)}` : '—'}</td>
-                          <td className="num">{c.s1_high !== null ? `$${fmt(c.s1_high)}` : '—'}</td>
-                          <td className="num">{c.s2_high !== null ? `$${fmt(c.s2_high)}` : '—'}</td>
-                          <td className={`num ${c.gap_pct !== null && c.gap_pct > 0 ? 'pnl-pos' : c.gap_pct !== null && c.gap_pct < 0 ? 'pnl-neg' : ''}`}>
-                            {c.gap_pct !== null ? `${c.gap_pct >= 0 ? '+' : ''}${fmt(c.gap_pct, 1)}%` : '—'}
-                          </td>
-                          <td className="num">{c.atr !== null ? fmt(c.atr, 2) : '—'}</td>
-                          <td><IbkrSignalBadge signal={c.signal} active={c.active_signal} /></td>
-                          <td>{c.in_position ? <span className="in-pos-chip">보유 중</span> : <span className="data-meta">—</span>}</td>
-                        </tr>
-                      ))}
+                      {(() => {
+                        const filtered = regionFilter === 'ALL'
+                          ? ibkrCandidates
+                          : ibkrCandidates.filter(c => (c.region ?? 'US') === regionFilter)
+                        const sorted = [
+                          ...filtered.filter(c => c.signal === 'breakout_long'),
+                          ...filtered.filter(c => c.signal !== 'breakout_long'),
+                        ]
+                        return sorted.map(c => (
+                          <tr key={c.symbol} className={c.signal === 'breakout_long' ? 'row-highlight' : c.in_position ? 'row-in-position' : ''}>
+                            <td>
+                              <div className="intl-symbol-cell">
+                                <span className="region-flag">{REGION_FLAG[c.region ?? 'US'] ?? '🌐'}</span>
+                                <div>
+                                  <strong>{c.symbol}</strong>
+                                  <small>{c.name || IBKR_SYMBOL_NAMES[c.symbol] || ''}</small>
+                                </div>
+                                {c.sector && <span className="sector-chip">{c.sector}</span>}
+                              </div>
+                            </td>
+                            <td className="num">{fmtLocalPrice(c.current_price, c.currency ?? 'USD')}</td>
+                            <td className="num">{c.s1_high !== null ? fmtLocalPrice(c.s1_high, c.currency ?? 'USD') : '—'}</td>
+                            <td className="num">{c.s2_high !== null ? fmtLocalPrice(c.s2_high, c.currency ?? 'USD') : '—'}</td>
+                            <td className={`num ${c.gap_pct !== null && c.gap_pct > 0 ? 'pnl-pos' : c.gap_pct !== null && c.gap_pct < 0 ? 'pnl-neg' : ''}`}>
+                              {c.gap_pct !== null ? `${c.gap_pct >= 0 ? '+' : ''}${fmt(c.gap_pct, 1)}%` : '—'}
+                            </td>
+                            <td className="num">{c.atr !== null ? fmt(c.atr, 2) : '—'}</td>
+                            <td><IbkrSignalBadge signal={c.signal} active={c.active_signal} /></td>
+                            <td>{c.in_position ? <span className="in-pos-chip">보유 중</span> : <span className="data-meta">—</span>}</td>
+                          </tr>
+                        ))
+                      })()}
                     </tbody>
                   </table>
                 </div>
