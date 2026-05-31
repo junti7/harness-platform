@@ -6,7 +6,7 @@
 PROJ="/Users/juntaepark/projects/harness-platform"
 LOG="$PROJ/docs/reports/ibgateway_ibc.log"
 ENV_FILE="$PROJ/.env"
-GW_APP="/Users/juntaepark/Applications/IB Gateway 10.45/IB Gateway 10.45.app"
+GW_APP="/Users/juntaepark/Applications/IB Gateway 10.45/IB Gateway 10.45-1.app"
 
 mkdir -p "$(dirname "$LOG")"
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" | tee -a "$LOG"; }
