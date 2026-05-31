@@ -3886,8 +3886,18 @@ def get_pipeline_signals(
     where: list[str] = []
     params: list[Any] = []
     if source:
-        where.append("rs.source ILIKE %s")
-        params.append(f"%{source}%")
+        # 프론트 드롭다운 별칭 → 실제 DB source 패턴으로 매핑
+        if source in ("rss", "news"):
+            where.append("rs.source NOT ILIKE '%youtube%' AND rs.source NOT ILIKE '%arxiv%' AND rs.source NOT ILIKE '%scholar%'")
+        elif source in ("arxiv", "arxiv_api"):
+            where.append("rs.source ILIKE %s")
+            params.append("%arxiv%")
+        elif source in ("scholar", "semantic_scholar"):
+            where.append("rs.source ILIKE %s")
+            params.append("%scholar%")
+        else:
+            where.append("rs.source ILIKE %s")
+            params.append(f"%{source}%")
     if status:
         where.append("rs.status = %s")
         params.append(status)
