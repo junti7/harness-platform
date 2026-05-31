@@ -23,13 +23,6 @@ type NavGroup = {
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    id: 'news',
-    label: '뉴스',
-    items: [
-      { view: 'news-center', label: '뉴스 센터' },
-    ],
-  },
-  {
     id: 'trading',
     label: '투자',
     items: [
@@ -159,6 +152,14 @@ export function TopBar({
           onClick={() => onChangeView('pipeline')}
         >
           <span>자료수집</span>
+        </button>
+
+        <button
+          type="button"
+          className={`nav-trigger nav-trigger-standalone ${activeView === 'news-center' ? 'active' : ''}`}
+          onClick={() => onChangeView('news-center')}
+        >
+          <span>뉴스</span>
         </button>
 
         {NAV_GROUPS.map(group => {

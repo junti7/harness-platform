@@ -4193,12 +4193,28 @@ def trading_diary_add_note(
 # ── News Center API ──────────────────────────────────────────────────────────
 
 _NEWS_CHANNELS = [
-    {"id": "all",           "label": "전체",        "icon": "🌐", "description": "모든 채널"},
-    {"id": "tech_ai",       "label": "AI·테크",      "icon": "🤖", "description": "AI·반도체·Physical AI 연구"},
-    {"id": "edu_business",  "label": "교육·사업",    "icon": "📚", "description": "교육 컨설팅·시장 동향"},
-    {"id": "market_invest", "label": "시장·투자",    "icon": "📈", "description": "투자 thesis·거시경제"},
-    {"id": "policy_reg",    "label": "정책·규제",    "icon": "⚖️",  "description": "규제·법률·정책 변화"},
+    {"id": "all",           "label": "전체",     "icon": "🌐", "description": "모든 채널"},
+    {"id": "tech_ai",       "label": "AI·테크",  "icon": "🤖", "description": "AI·반도체·Physical AI 연구"},
+    {"id": "edu_business",  "label": "교육·사업","icon": "📚", "description": "교육 컨설팅·시장 동향"},
+    {"id": "market_invest", "label": "시장·투자","icon": "📈", "description": "투자 thesis·거시경제"},
+    {"id": "policy_reg",    "label": "정책·규제","icon": "⚖️",  "description": "규제·법률·정책 변화"},
 ]
+
+# refined_outputs.final_body 태그 → 채널 매핑
+_TAG_CHANNEL_MAP = {
+    "AI Safety": "policy_reg", "Regulation": "policy_reg", "Policy": "policy_reg",
+    "Education": "edu_business", "EdTech": "edu_business", "Learning": "edu_business",
+    "Investment": "market_invest", "Market": "market_invest", "Economics": "market_invest",
+}
+
+
+def _infer_channel(tags: Any) -> str:
+    if isinstance(tags, list):
+        for tag in tags:
+            mapped = _TAG_CHANNEL_MAP.get(str(tag))
+            if mapped:
+                return mapped
+    return "tech_ai"
 
 
 @app.get("/api/news-center/channels")
@@ -4214,57 +4230,58 @@ def news_center_feed(
     offset: int = 0,
     _: None = Depends(_require_secret),
 ) -> dict[str, Any]:
+    import json as _json
     from datetime import datetime, timezone as _tz
     today = datetime.now(_tz.utc).strftime("%Y-%m-%d")
     selected = date if date else today
 
-    # 날짜 선택 시: 해당 날짜 포함 최근 30일. 데이터가 없으면 전체 최신 순으로 fallback.
     rows = _execute_query(
         f"""
-        SELECT id,
-               coalesce(raw_data->>'title', '(제목 없음)') AS title,
-               coalesce(raw_data->>'source_name', source) AS source,
-               coalesce(raw_data->>'url', '') AS url,
-               coalesce(domain, 'physical_ai') AS channel,
-               (raw_data->>'score')::float AS tier2_score,
-               raw_data->>'insight' AS tier2_insight,
-               raw_data->>'reason' AS tier2_reason,
-               ingested_at,
-               coalesce(raw_data->>'summary', raw_data->>'abstract') AS abstract
-        FROM raw_signals
-        WHERE status = 'filtered_pass'
-        ORDER BY ingested_at DESC
+        SELECT ro.id, ro.final_title, ro.final_body, ro.tags,
+               ro.created_at, ro.published,
+               fs.source, fs.category,
+               rs.raw_data->>'url' AS url
+        FROM refined_outputs ro
+        LEFT JOIN filtered_signals fs ON fs.id = ro.filtered_signal_id
+        LEFT JOIN raw_signals rs ON rs.id = fs.raw_signal_id
+        ORDER BY ro.created_at DESC
         LIMIT {min(limit, 200)} OFFSET {offset}
         """,
         (),
     ) or []
 
-    # channel counts
-    count_rows = _execute_query(
-        "SELECT coalesce(domain, 'physical_ai') AS ch, count(*) AS cnt "
-        "FROM raw_signals WHERE status = 'filtered_pass' GROUP BY ch",
-        (),
-    ) or []
-    channel_counts: dict[str, int] = {r["ch"]: int(r["cnt"]) for r in count_rows}
-
-    # channel 필터 (메모리에서 처리)
     items = []
     for r in rows:
-        ch = r.get("channel") or "physical_ai"
+        raw_body = r.get("final_body") or {}
+        if isinstance(raw_body, str):
+            try:
+                raw_body = _json.loads(raw_body)
+            except Exception:
+                raw_body = {}
+        tags = r.get("tags") or []
+        ch = _infer_channel(tags)
         if channel and channel != "all" and ch != channel:
             continue
+        hook = raw_body.get("hook") or ""
+        deep = raw_body.get("deep_analysis") or ""
+        abstract = hook or (deep[:200] if deep else "")
         items.append({
             "id": r.get("id") or 0,
-            "title": r.get("title") or "(제목 없음)",
-            "source": r.get("source") or "",
+            "title": r.get("final_title") or "(제목 없음)",
+            "source": r.get("source") or "Harness Research",
             "url": r.get("url") or "",
             "channel": ch,
-            "tier2_score": r.get("tier2_score"),
-            "tier2_insight": r.get("tier2_insight"),
-            "tier2_reason": r.get("tier2_reason"),
-            "ingested_at": str(r.get("ingested_at") or ""),
-            "abstract": r.get("abstract"),
+            "tier2_score": None,
+            "tier2_insight": raw_body.get("korea_strategic_context") or raw_body.get("executive_decision_block"),
+            "tier2_reason": None,
+            "ingested_at": str(r.get("created_at") or ""),
+            "abstract": abstract,
         })
+
+    channel_counts: dict[str, int] = {}
+    for it in items:
+        ch = it["channel"]
+        channel_counts[ch] = channel_counts.get(ch, 0) + 1
 
     return {
         "total": len(items),
@@ -4285,20 +4302,13 @@ def news_center_daily_digest(
     selected = date if date else today
 
     total_row = _execute_query(
-        "SELECT count(*) AS cnt FROM raw_signals WHERE status = 'filtered_pass'",
-        (),
+        "SELECT count(*) AS cnt FROM refined_outputs", ()
     ) or [{"cnt": 0}]
 
-    channel_rows = _execute_query(
-        "SELECT coalesce(domain, 'physical_ai') AS ch, count(*) AS cnt "
-        "FROM raw_signals WHERE status = 'filtered_pass' "
-        "GROUP BY ch ORDER BY cnt DESC",
-        (),
-    ) or []
-
     source_rows = _execute_query(
-        "SELECT coalesce(raw_data->>'source_name', source) AS src, count(*) AS cnt "
-        "FROM raw_signals WHERE status = 'filtered_pass' "
+        "SELECT coalesce(fs.source, 'Harness Research') AS src, count(*) AS cnt "
+        "FROM refined_outputs ro "
+        "LEFT JOIN filtered_signals fs ON fs.id = ro.filtered_signal_id "
         "GROUP BY src ORDER BY cnt DESC LIMIT 5",
         (),
     ) or []
@@ -4306,7 +4316,7 @@ def news_center_daily_digest(
     return {
         "date": selected,
         "total_signals": int((total_row[0] or {}).get("cnt") or 0),
-        "channels": {r["ch"]: int(r["cnt"]) for r in channel_rows},
+        "channels": {"tech_ai": int((total_row[0] or {}).get("cnt") or 0)},
         "top_sources": [r["src"] for r in source_rows if r.get("src")],
         "generated_at": datetime.now(_tz.utc).isoformat(timespec="seconds"),
     }
