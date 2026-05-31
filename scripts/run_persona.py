@@ -481,6 +481,17 @@ def _build_command(provider: str, prompt: str) -> list[str]:
 def call_llm(provider: str, prompt: str) -> tuple[str, bool]:
     """Run a provider CLI with a fully-formed prompt. Returns (text, ok)."""
     command = _build_command(provider, prompt)
+    # .env의 ANTHROPIC_API_KEY를 환경변수로 명시 전달 (SSH 세션에서 Keychain 미접근 대비)
+    from dotenv import dotenv_values
+    env_file_vals = dotenv_values(ROOT / ".env")
+    run_env = {
+        **os.environ,
+        "PATH": f"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:{os.environ.get('PATH', '')}",
+    }
+    for key in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY"):
+        val = env_file_vals.get(key) or os.environ.get(key, "")
+        if val:
+            run_env[key] = val
     try:
         completed = subprocess.run(
             command,
@@ -488,10 +499,7 @@ def call_llm(provider: str, prompt: str) -> tuple[str, bool]:
             text=True,
             timeout=PROVIDER_TIMEOUT,
             check=False,
-            env={
-                **os.environ,
-                "PATH": f"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:{os.environ.get('PATH', '')}",
-            },
+            env=run_env,
         )
     except Exception as exc:  # noqa: BLE001
         return f"({provider} 호출 실패: {exc})", False
