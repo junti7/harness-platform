@@ -221,7 +221,7 @@ def _build_pdf(articles: list[dict], insights: dict, date_str: str) -> bytes:
     title_s  = ps("dt",  fontSize=22, leading=28, textColor=C_NAVY,   spaceAfter=2)
     sub_s    = ps("ds",  fontSize=9,  textColor=C_MUTED,              spaceAfter=10)
     box_label= ps("bl",  fontSize=8,  textColor=C_BLUE,               spaceAfter=3,  leading=12)
-    flow_s   = ps("fl",  fontSize=11, leading=17, textColor=C_INDIGO, spaceAfter=0,  fontName=font)
+    flow_s   = ps("fl",  fontSize=11, leading=17, textColor=C_INDIGO, spaceAfter=0)
     ins_s    = ps("ins", fontSize=10, leading=16, textColor=C_NAVY,   spaceAfter=2)
     top_s    = ps("top", fontSize=10, leading=16, textColor=C_AMBER,  spaceAfter=0)
     ch_s     = ps("dc",  fontSize=12, leading=16, textColor=C_BLUE_L, spaceBefore=16, spaceAfter=4)
