@@ -77,56 +77,98 @@ def _infer_channel(tags) -> str:
     return best if scores[best] > 0 else "tech_ai"
 
 
-# ── Claude로 핵심 인사이트 생성 ───────────────────────────────────────────────
+# ── Claude로 핵심 인사이트 생성 (구조화) ────────────────────────────────────
 
-def _generate_insights(articles: list[dict]) -> str:
-    """최신 기사 기반으로 오늘의 핵심 인사이트 3-5개를 Claude로 생성."""
+def _generate_insights(articles: list[dict]) -> dict:
+    """Claude로 오늘의 흐름·인사이트·주목 기사를 구조화해 반환.
+
+    Returns:
+        {"flow": str, "insights": [str], "top_story": str}
+    """
     if not articles:
-        return "오늘은 신규 분석 기사가 없습니다."
+        return {"flow": "오늘은 신규 기사가 없습니다.", "insights": [], "top_story": ""}
+
     summaries = []
-    for a in articles[:15]:
+    for a in articles[:20]:
         body = a.get("final_body") or {}
         if isinstance(body, str):
             try:
                 body = json.loads(body)
             except Exception:
                 body = {}
-        hook = (body.get("hook") or "")[:150]
+        hook  = (body.get("hook") or "")[:200]
+        korea = (body.get("korea_strategic_context") or "")[:100]
         title = a.get("final_title") or ""
-        summaries.append(f"- {title}: {hook}")
+        summaries.append(f"[{a.get('id')}] {title}\n  요약: {hook}\n  한국 맥락: {korea}")
 
     prompt = (
-        "당신은 Harness의 최고 인텔리전스 분석가입니다.\n"
-        "아래는 오늘 수집된 주요 기사 목록입니다.\n\n"
-        + "\n".join(summaries) +
+        "당신은 Harness의 최고 인텔리전스 분석가입니다. "
+        "CEO가 오늘 아침 30초 만에 핵심을 파악할 수 있게 분석하세요.\n\n"
+        "=== 오늘 수집된 기사 ===\n"
+        + "\n\n".join(summaries) +
         "\n\n"
-        "CEO가 오늘 아침 30초 안에 핵심을 파악할 수 있도록, "
-        "가장 중요한 인사이트 3~5개를 한국어로 작성하세요.\n"
-        "각 인사이트는 '• '으로 시작하고, 1~2문장 이내로 간결하게 씁니다.\n"
-        "전문용어에는 반드시 괄호로 쉬운 설명을 붙이세요.\n"
-        "결론만 씁니다. 서론이나 인사말 없이 바로 bullet으로 시작합니다."
+        "아래 형식으로 정확히 출력하세요. 다른 말은 쓰지 마세요.\n\n"
+        "FLOW: (오늘 기사들을 관통하는 핵심 흐름을 1문장으로. 예: 'AI 규제와 교육 혁신이 교차하는 변곡점')\n\n"
+        "INSIGHTS:\n"
+        "• (인사이트 1 — 1~2문장, 전문용어엔 괄호 설명)\n"
+        "• (인사이트 2)\n"
+        "• (인사이트 3)\n"
+        "• (인사이트 4, 있으면)\n"
+        "• (인사이트 5, 있으면)\n\n"
+        "TOP: (오늘 CEO가 가장 먼저 읽어야 할 기사 제목 — 한 줄로 왜 중요한지 설명)\n"
     )
     try:
         result = subprocess.run(
             ["/opt/homebrew/bin/claude", "-p", prompt],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=90,
             env={**os.environ,
                  "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
                  "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY", "")},
         )
-        text = (result.stdout or "").strip()
-        if text and result.returncode == 0:
-            return text
+        raw = (result.stdout or "").strip()
+        if raw and result.returncode == 0:
+            return _parse_insights(raw)
     except Exception:
         pass
-    # fallback: 상위 기사 제목 나열
-    lines = [f"• {a.get('final_title','')[:80]}" for a in articles[:5] if a.get("final_title")]
-    return "\n".join(lines) if lines else "오늘의 신규 기사를 확인하세요."
+
+    # fallback
+    return {
+        "flow": "오늘 수집된 주요 기사를 확인하세요.",
+        "insights": [f"• {a.get('final_title','')[:80]}" for a in articles[:5] if a.get("final_title")],
+        "top_story": articles[0].get("final_title", "") if articles else "",
+    }
+
+
+def _parse_insights(raw: str) -> dict:
+    """Claude 출력에서 FLOW / INSIGHTS / TOP 파싱."""
+    flow = ""
+    insights = []
+    top_story = ""
+
+    section = None
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("FLOW:"):
+            flow = stripped[5:].strip()
+            section = None
+        elif stripped.startswith("INSIGHTS:"):
+            section = "insights"
+        elif stripped.startswith("TOP:"):
+            top_story = stripped[4:].strip()
+            section = None
+        elif section == "insights" and stripped.startswith("•"):
+            insights.append(stripped)
+
+    return {
+        "flow": flow or "오늘 수집된 기사를 확인하세요.",
+        "insights": insights,
+        "top_story": top_story,
+    }
 
 
 # ── PDF 생성 ──────────────────────────────────────────────────────────────────
 
-def _build_pdf(articles: list[dict], insights: str, date_str: str) -> bytes:
+def _build_pdf(articles: list[dict], insights: dict, date_str: str) -> bytes:
     import io
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -162,13 +204,30 @@ def _build_pdf(articles: list[dict], insights: str, date_str: str) -> bytes:
     def ps(name, **kw):
         return ParagraphStyle(name, parent=styles["Normal"], fontName=font, **kw)
 
-    title_s  = ps("dt", fontSize=20, leading=26, textColor=colors.HexColor("#0f172a"), spaceAfter=2)
-    sub_s    = ps("ds", fontSize=9,  textColor=colors.HexColor("#94a3b8"), spaceAfter=12)
-    box_s    = ps("db", fontSize=10, leading=16, textColor=colors.HexColor("#1e3a5f"), spaceAfter=4)
-    ch_s     = ps("dc", fontSize=12, leading=16, textColor=colors.HexColor("#1e40af"), spaceBefore=16, spaceAfter=4)
-    art_h_s  = ps("dah", fontSize=11, leading=15, textColor=colors.HexColor("#1e293b"), spaceBefore=8, spaceAfter=3)
-    art_b_s  = ps("dab", fontSize=9,  leading=14, textColor=colors.HexColor("#475569"), spaceAfter=3)
-    art_k_s  = ps("dak", fontSize=9,  leading=14, textColor=colors.HexColor("#7c3aed"), spaceAfter=2)
+    # ── 색상 팔레트 ──
+    C_NAVY   = colors.HexColor("#0f172a")
+    C_BLUE   = colors.HexColor("#2563eb")
+    C_BLUE_L = colors.HexColor("#1e40af")
+    C_INDIGO = colors.HexColor("#1e3a5f")
+    C_SLATE  = colors.HexColor("#475569")
+    C_MUTED  = colors.HexColor("#94a3b8")
+    C_PURPLE = colors.HexColor("#7c3aed")
+    C_BG     = colors.HexColor("#eff6ff")
+    C_BG2    = colors.HexColor("#f8fafc")
+    C_AMBER  = colors.HexColor("#d97706")
+    C_GREEN  = colors.HexColor("#059669")
+    C_DIVIDER= colors.HexColor("#bfdbfe")
+
+    title_s  = ps("dt",  fontSize=22, leading=28, textColor=C_NAVY,   spaceAfter=2)
+    sub_s    = ps("ds",  fontSize=9,  textColor=C_MUTED,              spaceAfter=10)
+    box_label= ps("bl",  fontSize=8,  textColor=C_BLUE,               spaceAfter=3,  leading=12)
+    flow_s   = ps("fl",  fontSize=11, leading=17, textColor=C_INDIGO, spaceAfter=0,  fontName=font)
+    ins_s    = ps("ins", fontSize=10, leading=16, textColor=C_NAVY,   spaceAfter=2)
+    top_s    = ps("top", fontSize=10, leading=16, textColor=C_AMBER,  spaceAfter=0)
+    ch_s     = ps("dc",  fontSize=12, leading=16, textColor=C_BLUE_L, spaceBefore=16, spaceAfter=4)
+    art_h_s  = ps("dah", fontSize=11, leading=15, textColor=C_NAVY,   spaceBefore=8,  spaceAfter=3)
+    art_b_s  = ps("dab", fontSize=9,  leading=14, textColor=C_SLATE,  spaceAfter=3)
+    art_k_s  = ps("dak", fontSize=9,  leading=14, textColor=C_PURPLE, spaceAfter=2)
 
     def esc(s):
         return (str(s) or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -178,43 +237,93 @@ def _build_pdf(articles: list[dict], insights: str, date_str: str) -> bytes:
     # ── 헤더 ──
     story += [
         Paragraph("Harness News Center", title_s),
-        Paragraph(f"CEO Daily Intelligence Brief · {date_str}  |  신규 기사 {len(articles)}건", sub_s),
-        HRFlowable(width="100%", thickness=2, color=colors.HexColor("#2563eb")),
-        Spacer(1, 0.3*cm),
+        Paragraph(f"CEO Daily Intelligence Brief · {date_str}", sub_s),
+        HRFlowable(width="100%", thickness=2, color=C_BLUE),
+        Spacer(1, 0.35*cm),
     ]
 
-    # ── 핵심 인사이트 박스 ──
-    insight_lines = [Paragraph(esc(line), box_s)
-                     for line in insights.splitlines() if line.strip()]
-    if not insight_lines:
-        insight_lines = [Paragraph("신규 분석 기사를 확인하세요.", box_s)]
-
-    box_header = Paragraph("📌  오늘의 핵심 인사이트", ps("bh", fontSize=11,
-                           textColor=colors.HexColor("#1e3a5f"), spaceAfter=6))
-    box_content = [box_header] + insight_lines
-    box_table = Table(
-        [[box_content]],
-        colWidths=[doc.width],
-    )
-    box_table.setStyle(TableStyle([
-        ("BACKGROUND",   (0,0), (-1,-1), colors.HexColor("#eff6ff")),
-        ("LEFTPADDING",  (0,0), (-1,-1), 16),
-        ("RIGHTPADDING", (0,0), (-1,-1), 16),
-        ("TOPPADDING",   (0,0), (-1,-1), 12),
-        ("BOTTOMPADDING",(0,0), (-1,-1), 12),
-        ("BOX",          (0,0), (-1,-1), 1.5, colors.HexColor("#2563eb")),
-        ("ROUNDEDCORNERS", [4]),
-    ]))
-    story += [box_table, Spacer(1, 0.5*cm)]
-
-    # ── 채널별 기사 ──
-    from itertools import groupby
-    articles_with_ch = [(a, _infer_channel(a.get("tags"))) for a in articles]
+    # ── 채널별 기사 수 미리 집계 ──
     ch_order = ["tech_ai", "market_invest", "policy_reg", "edu_business"]
     ch_groups: dict[str, list] = {ch: [] for ch in ch_order}
+    articles_with_ch = [(a, _infer_channel(a.get("tags"))) for a in articles]
     for a, ch in articles_with_ch:
         ch_groups.setdefault(ch, []).append(a)
 
+    # ── 채널 분포 요약 행 ──
+    dist_parts = []
+    for ch in ch_order:
+        cnt = len(ch_groups.get(ch, []))
+        if cnt:
+            label = _CHANNEL_LABELS.get(ch, ch)
+            dist_parts.append(f"{label} {cnt}건")
+    dist_text = "  ·  ".join(dist_parts) if dist_parts else f"총 {len(articles)}건"
+
+    dist_row = Table(
+        [[Paragraph(f"신규 기사 <b>{len(articles)}건</b>  |  {esc(dist_text)}", ps("dist", fontSize=9, textColor=C_INDIGO))]],
+        colWidths=[doc.width],
+    )
+    dist_row.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,-1), colors.HexColor("#dbeafe")),
+        ("LEFTPADDING",   (0,0), (-1,-1), 14),
+        ("RIGHTPADDING",  (0,0), (-1,-1), 14),
+        ("TOPPADDING",    (0,0), (-1,-1), 7),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 7),
+    ]))
+
+    # ── 3단 브리핑 박스 ──
+    def _divider_row():
+        t = Table([[""]], colWidths=[doc.width - 28])
+        t.setStyle(TableStyle([
+            ("LINEABOVE",     (0,0), (-1,-1), 0.5, C_DIVIDER),
+            ("LEFTPADDING",   (0,0), (-1,-1), 0),
+            ("RIGHTPADDING",  (0,0), (-1,-1), 0),
+            ("TOPPADDING",    (0,0), (-1,-1), 4),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+        ]))
+        return t
+
+    # 섹션 1 — 오늘의 흐름
+    flow_text = insights.get("flow") or "오늘 수집된 기사를 확인하세요."
+    sec1 = [
+        Paragraph("오늘의 흐름", ps("sl1", fontSize=8, textColor=C_BLUE, spaceAfter=3)),
+        Paragraph(f"→  {esc(flow_text)}", flow_s),
+    ]
+
+    # 섹션 2 — 핵심 인사이트
+    raw_insights = insights.get("insights") or []
+    insight_paras = [Paragraph(esc(i), ins_s) for i in raw_insights if i.strip()]
+    if not insight_paras:
+        insight_paras = [Paragraph("• 신규 분석 기사를 확인하세요.", ins_s)]
+    sec2 = [Paragraph("핵심 인사이트", ps("sl2", fontSize=8, textColor=C_BLUE, spaceAfter=3))] + insight_paras
+
+    # 섹션 3 — 오늘 가장 주목할 뉴스
+    top_text = insights.get("top_story") or ""
+    sec3 = [
+        Paragraph("오늘 가장 주목할 뉴스", ps("sl3", fontSize=8, textColor=C_AMBER, spaceAfter=3)),
+        Paragraph(f"★  {esc(top_text)}" if top_text else "★  PDF 본문을 확인하세요.", top_s),
+    ]
+
+    box_inner = (
+        [dist_row, Spacer(1, 0.2*cm)]
+        + sec1
+        + [_divider_row()]
+        + sec2
+        + [_divider_row()]
+        + sec3
+    )
+
+    box_table = Table([[box_inner]], colWidths=[doc.width])
+    box_table.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,-1), C_BG),
+        ("LEFTPADDING",   (0,0), (-1,-1), 14),
+        ("RIGHTPADDING",  (0,0), (-1,-1), 14),
+        ("TOPPADDING",    (0,0), (-1,-1), 0),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 14),
+        ("BOX",           (0,0), (-1,-1), 2, C_BLUE),
+    ]))
+    story += [box_table, Spacer(1, 0.5*cm)]
+
+    # ── 채널별 기사 (박스에서 집계한 ch_groups 재사용) ──
     for ch in ch_order:
         group = ch_groups.get(ch, [])
         if not group:
@@ -347,14 +456,16 @@ def main() -> None:
     for a in articles:
         ch = _infer_channel(a.get("tags"))
         ch_counts[ch] = ch_counts.get(ch, 0) + 1
-    ch_summary = " · ".join(
-        f"{_CHANNEL_LABELS.get(ch, ch).split(' ')[1]} {cnt}건"
+    ch_summary = "  ·  ".join(
+        f"{_CHANNEL_LABELS.get(ch, ch)} {cnt}건"
         for ch, cnt in sorted(ch_counts.items(), key=lambda x: -x[1])
     )
+    flow_line = insights.get("flow", "")
     message = (
         f"📰 *Harness News Center* — {date_str} CEO 데일리 브리프\n"
-        f"신규 기사 *{article_count}건* | {ch_summary}\n"
-        f"_📌 핵심 인사이트 및 채널별 분석이 PDF에 포함되어 있습니다._"
+        f"신규 기사 *{article_count}건*  |  {ch_summary}\n"
+        + (f"_→ {flow_line}_\n" if flow_line else "")
+        + "_PDF에서 핵심 인사이트·주목 기사·채널별 분석을 확인하세요._"
     )
 
     print("[INFO] Slack 발송 중...")
