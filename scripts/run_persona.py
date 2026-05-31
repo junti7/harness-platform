@@ -147,11 +147,19 @@ def _enforce_persona_shape(persona: Persona, text: str) -> str:
         if len(compact) >= (4 if persona.handle in {"vision", "friday"} else 3):
             break
 
+    # 기존 레이블 제거 후 재부착 (LLM이 이미 "패키지: ..." 형식으로 쓸 경우 중복 방지)
+    _all_labels = {"핵심 판단", "근거", "다음 액션", "패키지", "리스크", "상태", "병목", "수정"}
+    def _strip_existing_label(line: str) -> str:
+        m = re.match(r"^([\w ]+):\s*", line)
+        if m and m.group(1).strip() in _all_labels:
+            return line[m.end():].strip()
+        return line
+
     if persona.handle == "jarvis":
         labels = ("핵심 판단", "근거", "다음 액션")
         compact = compact[:3]
         compact = [
-            f"{labels[idx]}: {_clip_line(line, 110)}"
+            f"{labels[idx]}: {_clip_line(_strip_existing_label(line), 110)}"
             for idx, line in enumerate(compact)
             if line
         ]
@@ -159,7 +167,7 @@ def _enforce_persona_shape(persona: Persona, text: str) -> str:
         labels = ("패키지", "근거", "리스크", "다음 액션")
         compact = compact[:4]
         compact = [
-            f"{labels[idx]}: {_clip_line(line, 108)}"
+            f"{labels[idx]}: {_clip_line(_strip_existing_label(line), 108)}"
             for idx, line in enumerate(compact)
             if line
         ]
@@ -167,7 +175,7 @@ def _enforce_persona_shape(persona: Persona, text: str) -> str:
         labels = ("상태", "병목", "수정", "다음 액션")
         compact = compact[:4]
         compact = [
-            f"{labels[idx]}: {_clip_line(line, 108)}"
+            f"{labels[idx]}: {_clip_line(_strip_existing_label(line), 108)}"
             for idx, line in enumerate(compact)
             if line
         ]
@@ -512,17 +520,24 @@ def _build_prompt(persona: Persona, task: str, correlation_id: str, extra_contex
         f"{live_company_context}\n"
         "─────────────────────────────────────\n"
         f"[correlation_id: {correlation_id}]\n"
-        f"이건 #{persona.team_short} / #회의실 에 올라갈 발언입니다. Charter §4.3대로 **공손한 존댓말 구어체**로만 답하세요. "
+        f"이건 #{persona.team_short} / #회의실 에 올라갈 발언입니다. "
+        "【절대 규칙 — 위반 시 발언 무효】 전문용어·영어 약어를 쓸 때는 반드시 바로 뒤에 괄호로 쉬운 설명을 붙이세요. "
+        "예) BEP(손익분기점 — 수익과 비용이 딱 같아지는 지점), "
+        "CTR(클릭률 — 광고 100번 노출 중 몇 번 클릭했는지), "
+        "CAC(고객 획득 비용 — 고객 1명 데려오는 데 드는 총 비용), "
+        "ARR(연간 반복 매출 — 1년간 꾸준히 들어오는 구독 수익), "
+        "MDD(최대 낙폭 — 고점 대비 가장 많이 떨어진 비율), "
+        "LTV(고객 생애 가치 — 고객 1명이 평생 가져다주는 총 수익), "
+        "KPI(핵심 성과 지표 — 목표 달성을 측정하는 숫자), "
+        "WTP(지불 의향 — 고객이 실제로 돈을 낼 의향이 있는지). "
+        "대표님·부대표님은 마케팅/투자 비전문가이므로 모든 용어를 초등학생도 이해할 수 있게 설명하세요. "
+        "Charter §4.3대로 **공손한 존댓말 구어체**로만 답하세요. "
         "**반말 금지**, **보고서 문체 금지**, **인사말/감탄사/감사 멘트 금지**, **메타 설명 금지**, **자기소개 금지**. "
         "다른 팀을 언급할 때는 'Friday님', 'KITT님'처럼 반드시 '님'을 붙입니다. "
         "반드시 **새로운 정보만** 말하세요. 이미 나온 말을 반복하지 마세요. "
         "형식은 최대 5개 bullet, bullet당 최대 2문장, 전체 600자 안쪽을 목표로 하세요. "
         "가능하면 `핵심 판단 -> 근거 -> 다음 액션` 순서로 짧게 말하세요. "
-        "근거(지표/법령 등)는 대화 속에 짧게 녹이고, 추정이면 confidence만 짧게 붙이세요. "
-        "**[필수] 전문용어·영어 약어를 쓸 때는 반드시 괄호로 쉬운 설명을 붙이세요.** "
-        "예) CTR(클릭률 — 100명이 보면 몇 명이 클릭하는지), CAC(고객 획득 비용 — 고객 1명을 데려오는 데 드는 돈), "
-        "ARR(연간 반복 매출), MoM(전월 대비), KPI(핵심 성과 지표). "
-        "대표님·부대표님이 마케팅/투자 비전문가임을 항상 염두에 두고, 초등학생도 이해할 수 있는 수준으로 설명하세요."
+        "근거(지표/법령 등)는 대화 속에 짧게 녹이고, 추정이면 confidence만 짧게 붙이세요."
         f"{_persona_style_instruction(persona)}"
         f"{context_block}\n"
         f"[TASK]\n{task}\n"
