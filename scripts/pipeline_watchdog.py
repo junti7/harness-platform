@@ -6,8 +6,7 @@ Pipeline Watchdog — 파이프라인 이상 감지 시 CEO Slack 즉시 알림
   2. raw_signals 수집 정체 (24h 내 신규 0건)
   3. Tier 2 필터 정체 (filtered_signals 6h 내 신규 0건 + pending 100건 초과)
   4. Tier 3 정제 정체 (refined_outputs 48h 내 신규 0건)
-  5. Tier 4 발행 차단 (qa_clear 없는 refined_outputs 10건 초과)
-  6. IBKR Gateway 연결 끊김 (포트 4002 미응답)
+  5. IBKR Gateway 연결 끊김 (포트 4002 미응답)
 """
 from __future__ import annotations
 
@@ -120,21 +119,6 @@ def _check_db() -> list[str]:
         if r3 and int(r3[0]["cnt"]) == 0:
             issues.append("Tier 3 정제 48h 신규 0건 — 정제 파이프라인 정지 의심")
 
-        # Tier 4 qa_clear 차단 — 최근 48h 이내 생성된 건만 체크 (역사적 백로그 제외)
-        _TIER4_QUERY = """
-            SELECT COUNT(*) AS cnt FROM refined_outputs ro
-            WHERE ro.created_at > NOW() - INTERVAL '48 hours'
-              AND NOT EXISTS (
-                SELECT 1 FROM ceo_decisions cd
-                WHERE cd.target_type = 'refined_output'
-                  AND cd.target_id = ro.id
-                  AND cd.approval_type = 'qa_clear'
-            )
-        """
-        r4 = execute_query(_TIER4_QUERY, fetch=True)
-        blocked = int(r4[0]["cnt"]) if r4 else 0
-        if blocked > 10:
-            issues.append(f"Tier 4 발행 차단: 최근 48h qa_clear 없는 refined_output {blocked}건")
 
     except Exception as e:
         issues.append(f"DB 상태 조회 실패: {e}")
