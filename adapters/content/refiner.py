@@ -167,7 +167,7 @@ def _extract_json_candidate(raw_text: str) -> str:
 
 
 def _fix_invalid_json_escapes(s: str) -> str:
-    """JSON 문자열 내 무효 이스케이프 시퀀스(예: \D, \e) → \\X 로 치환."""
+    r"""JSON 문자열 내 무효 이스케이프 시퀀스(예: \D, \e) → \\X 로 치환."""
     valid_esc = set('"\\' + "/" + "bfnrtu")
     result: list[str] = []
     i = 0
