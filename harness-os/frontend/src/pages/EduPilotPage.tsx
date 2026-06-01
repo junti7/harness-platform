@@ -62,13 +62,26 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
     }
   }
 
+  // 첫 인사는 시간차 없이 즉시 — 고정 오프너(관찰+구체질문). 이후 턴부터 LLM.
+  const OPENERS: Record<'parent' | 'worker', { text: string; quick: string[] }> = {
+    parent: {
+      text: '안녕하세요, 어머님·아버님. 요즘 "AI 때문에 우리 아이 공부를 어떻게 시켜야 하나" 고민하시는 분들이 정말 많으세요. 혹시 자녀분은 나이가 어떻게 되나요?',
+      quick: ['초등학생이에요', '중학생이에요', '고등학생이에요'],
+    },
+    worker: {
+      text: '안녕하세요. 요즘 회사에서 "AI 못 쓰면 도태된다"는 얘기, 한 번쯤 들어보셨죠? 비슷한 고민으로 오시는 분들이 많은데요. 혹시 어떤 일 하고 계세요?',
+      quick: ['사무직이에요', '기획/마케팅이에요', '딱히 정해진 게 없어요'],
+    },
+  }
+
   function start(seg: 'parent' | 'worker') {
     setSegment(seg)
     setStarted(true)
-    setMsgs([])
     setShowOffer(false)
     setTurn(0)
-    void callDiagnose('', [], 0)
+    const op = OPENERS[seg]
+    setMsgs([{ role: 'ai', text: op.text, toneLevel: 0, phase: 'opening' }])
+    setQuickReplies(op.quick)
   }
 
   function send(text: string) {
