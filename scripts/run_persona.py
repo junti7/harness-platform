@@ -35,11 +35,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from adapters.content.slack_format import to_slack_mrkdwn  # noqa: E402
 from agents.registry import Persona, get_persona  # noqa: E402
-from scripts.llm_fallback_manager import get_current_provider, record_fallback  # noqa: E402
+from core.gemini_sdk import generate_text, gemini_model_name  # noqa: E402
+from core.lane_router import Lane, is_lane_b_available, log_routing  # noqa: E402
+from scripts.llm_fallback_manager import get_current_provider, record_fallback, _is_provider_available  # noqa: E402
 
 load_dotenv(override=True)
 
-PROVIDER_TIMEOUT = int(os.getenv("PERSONA_PROVIDER_TIMEOUT_SEC", "90"))
+PROVIDER_TIMEOUT = int(os.getenv("PERSONA_PROVIDER_TIMEOUT_SEC", "20"))
+SDK_TIMEOUT = float(os.getenv("PERSONA_PROVIDER_SDK_TIMEOUT_SEC", "12"))
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OPENCLAW_STATUS_PATH = PROJECT_ROOT / "runtime/openclaw_status.json"
 AR_TRACKER_PATH = PROJECT_ROOT / "docs/reports/ar_tracker.jsonl"
@@ -188,18 +191,18 @@ def _enforce_persona_shape(persona: Persona, text: str) -> str:
 
 def _persona_max_chars(persona: Persona) -> int:
     if persona.handle == "tars":
-        return 2000
+        return 500
     if persona.handle in {"c3po", "coach"}:
-        return 2000
+        return 320
     if persona.handle in {"kitt", "ledger", "watchman"}:
-        return 2000
+        return 360
     if persona.handle in {"vision", "friday"}:
-        return 3000
+        return 420
     if persona.handle == "scribe":
-        return 2500
+        return 420
     if persona.handle == "jarvis":
-        return 3000
-    return 4000
+        return 420
+    return 600
 
 
 def _persona_style_instruction(persona: Persona) -> str:
@@ -480,22 +483,8 @@ def _build_command(provider: str) -> list[str]:
     raise ValueError(f"Unknown provider: {provider}")
 
 
-def call_llm(provider: str, prompt: str, persona_handle: str | None = None, persona_obj: Persona | None = None) -> tuple[str, bool]:
-    """Run a provider CLI with a fully-formed prompt via stdin. Returns (text, ok).
-    
-    If persona_handle and persona_obj are provided, will attempt fallback on failure.
-    """
-    # Attempt primary provider
-    command = _build_command(provider)
-    output, ok = _run_llm_command(command, provider, prompt)
-    
-    if ok:
-        return output, True
-    
-    fallback = persona_obj.fallback_provider if persona_obj else None
-    can_fallback = bool(persona_handle and fallback and fallback != provider)
-    
-    low = output.lower()
+def _infer_failure_reason(output: str) -> tuple[str, str]:
+    low = (output or "").lower()
     if (
         "usage_limit_exceeded" in low
         or "usage limit" in low
@@ -504,52 +493,64 @@ def call_llm(provider: str, prompt: str, persona_handle: str | None = None, pers
         or "rate limit" in low
         or "quota" in low
     ):
-        reason = "usage_limit_exceeded"
-        reason_text = "크레딧/쿼터 문제"
-    elif "timeout" in low or "timed out" in low or "타임아웃" in low:
-        reason = "timeout"
-        reason_text = "응답 지연(타임아웃)"
-    else:
-        reason = "provider_failure"
-        reason_text = "호출 실패"
+        return "usage_limit_exceeded", "크레딧/쿼터 문제"
+    if "timeout" in low or "timed out" in low or "타임아웃" in low:
+        return "timeout", "응답 지연(타임아웃)"
+    return "provider_failure", "호출 실패"
 
-    if can_fallback:
-        record_fallback(persona_handle, provider, fallback, reason)
 
-        # Retry with fallback provider
-        fallback_command = _build_command(fallback)
-        fallback_output, fallback_ok = _run_llm_command(fallback_command, fallback, prompt)
-        if fallback_ok:
-            return f"[⚠️ {provider} {reason_text} → {fallback} 사용] {fallback_output}", True
-        
-        # If configured fallback also failed, try the ultimate backup provider (Gemini or Claude)
-        backup = "gemini" if (provider != "gemini" and fallback != "gemini") else "claude"
-        record_fallback(persona_handle, fallback, backup, "fallback_failed")
-        backup_command = _build_command(backup)
-        backup_output, backup_ok = _run_llm_command(backup_command, backup, prompt)
-        if backup_ok:
-            return f"[⚠️ {provider} 및 {fallback} 모두 실패 → {backup} 사용] {backup_output}", True
-    else:
-        # If no fallback is configured, try the backup provider
-        backup = "gemini" if provider != "gemini" else "claude"
-        if persona_handle:
-            record_fallback(persona_handle, provider, backup, "no_fallback_configured")
-        backup_command = _build_command(backup)
-        backup_output, backup_ok = _run_llm_command(backup_command, backup, prompt)
-        if backup_ok:
-            return f"[⚠️ {provider} 호출 실패 → {backup} 사용] {backup_output}", True
+def _provider_attempt_order(provider: str, persona_obj: Persona | None = None) -> list[str]:
+    ordered: list[str] = []
+    candidates = [
+        provider,
+        getattr(persona_obj, "fallback_provider", None),
+        getattr(persona_obj, "escalation", None),
+        "gemini",
+        "claude",
+        "codex",
+        "copilot",
+    ]
+    for candidate in candidates:
+        if not candidate or candidate in ordered:
+            continue
+        ordered.append(candidate)
+    return ordered
+
+
+def call_llm(provider: str, prompt: str, persona_handle: str | None = None, persona_obj: Persona | None = None) -> tuple[str, bool]:
+    """Run a provider CLI with a fully-formed prompt via stdin. Returns (text, ok).
+    
+    If persona_handle and persona_obj are provided, will attempt fallback on failure.
+    """
+    attempts = _provider_attempt_order(provider, persona_obj)
+    tried: list[tuple[str, str]] = []
+    initial_reason = "provider_failure"
+
+    for idx, candidate in enumerate(attempts):
+        if idx > 0 and candidate in {"claude", "gemini", "codex"} and not _is_provider_available(candidate, timeout=3):
+            tried.append((candidate, "unavailable"))
+            continue
+        command = _build_command(candidate)
+        output, ok = _run_llm_command(command, candidate, prompt)
+        if ok:
+            if idx > 0 and persona_handle:
+                record_fallback(persona_handle, provider, candidate, initial_reason)
+            return output, True
+        reason, _ = _infer_failure_reason(output)
+        if idx == 0:
+            initial_reason = reason
+        tried.append((candidate, reason))
 
     # If absolutely everything fails, return a graceful, polite, compliant Korean colloquial persona fallback message
     # rather than leaking raw python or subprocess execution traces to Slack.
     p_name = persona_obj.name if persona_obj else "TARS"
     team_ko = persona_obj.team_short if persona_obj else "엔지니어링팀"
     
+    tried_summary = ", ".join(f"{name}:{reason}" for name, reason in tried[:4])
     fallback_message = (
-        f"대표님, 부대표님, 현재 전사적인 API(Application Programming Interface, 응용 프로그램 인터페이스 — 소프트웨어 간의 통신 규칙) "
-        f"및 LLM(Large Language Model, 거대 언어 모델 — 사람처럼 말하고 이해하는 인공지능) 연동에 일시적인 장애가 발생했습니다.\n"
-        f"- 핵심 판단: 일시적인 네트워크 지연 또는 플랫폼 장애로 판단됩니다.\n"
-        f"- 근거: 외부 AI(Artificial Intelligence, 인공지능 — 컴퓨터가 사람처럼 학습하고 판단하는 기술) 서버 통신 오류가 감지되었습니다.\n"
-        f"- 다음 액션: 내부 시스템을 모니터링하며 연동을 긴급 복구하고 있습니다. 잠시 후 다시 지시해 주시면 즉시 검토하겠습니다. confidence는 low입니다."
+        f"핵심 판단: {p_name} 응답 경로가 일시적으로 불안정합니다.\n"
+        f"근거: {team_ko} 모델 호출이 연속 실패했습니다({tried_summary}).\n"
+        f"다음 액션: 회의실 라우팅과 모델 상태를 바로 복구하겠습니다. confidence는 low입니다."
     )
     return fallback_message, True
 
@@ -565,9 +566,9 @@ def _run_llm_command(command: list[str], provider: str, prompt: str) -> tuple[st
         if api_key:
             try:
                 import anthropic
-                client = anthropic.Anthropic(api_key=api_key)
+                client = anthropic.Anthropic(api_key=api_key, timeout=SDK_TIMEOUT)
                 resp = client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
+                    model=os.getenv("LANE_B_CLAUDE_MODEL", "claude-sonnet-4-5"),
                     max_tokens=4096,
                     messages=[{"role": "user", "content": prompt}],
                 )
@@ -588,17 +589,19 @@ def _run_llm_command(command: list[str], provider: str, prompt: str) -> tuple[st
         )
         if api_key:
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=api_key)
                 model_name = (
                     os.environ.get("GEMINI_MODEL")
                     or env_file_vals.get("GEMINI_MODEL")
-                    or "gemini-1.5-flash"
+                    or gemini_model_name()
                 )
-                model = genai.GenerativeModel(model_name)
-                resp = model.generate_content(prompt)
-                if resp.text:
-                    stdout = resp.text.strip()
+                text, _usage = generate_text(
+                    prompt,
+                    model=model_name,
+                    timeout_seconds=SDK_TIMEOUT,
+                    max_output_tokens=2048,
+                )
+                if text:
+                    stdout = text.strip()
                     stdout = _compress_persona_output(_strip_internal_messages(stdout))
                     return stdout, True
             except Exception:
@@ -693,10 +696,22 @@ def call_persona(
     task: str,
     correlation_id: str,
     extra_context: str = "",
+    *,
+    check_lane_b_budget: bool = False,
 ) -> tuple[str, bool]:
-    """Build the persona prompt and call its primary LLM (or fallback). Returns (text, ok)."""
+    """Build the persona prompt and call its primary LLM (or fallback). Returns (text, ok).
+
+    check_lane_b_budget: True면 일일 비용 임계값 초과 시 Lane B 차단 (자동 회의에서 사용).
+    CEO 명시적 지시 호출은 False로 예산 제한 우회.
+    """
+    if check_lane_b_budget and not is_lane_b_available():
+        msg = "(Lane B 일시 정지 — 일일 비용 임계값 도달. CEO 직접 호출 시 예산 제한 없음)"
+        log_routing("persona_opinion", Lane.B, "suspended", escalated=False)
+        return msg, False
+
     # Determine which provider to use (may be fallback)
     effective_provider = get_current_provider(persona.handle, persona.provider, persona.fallback_provider)
+    log_routing("persona_opinion", Lane.B, effective_provider)
     
     prompt = _build_prompt(persona, task, correlation_id, extra_context)
     text, ok = call_llm(effective_provider, prompt, persona.handle, persona)
@@ -792,8 +807,9 @@ def main() -> int:
         print(f"BLOCKED: '{persona.handle}'는 아직 inactive. registry에서 active=True + 채널 생성 후 실행.")
         return 2
 
+    effective_provider = get_current_provider(persona.handle, persona.provider, persona.fallback_provider)
     output, ok = call_persona(persona, args.task, correlation_id)
-    print(f"[{persona.display}] provider={persona.provider} ok={ok} cid={correlation_id}")
+    print(f"[{persona.display}] provider={effective_provider} primary={persona.provider} ok={ok} cid={correlation_id}")
 
     posted = False
     if ok and not args.no_post:

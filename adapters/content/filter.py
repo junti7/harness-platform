@@ -1,19 +1,17 @@
 import json
 import logging
-import google.generativeai as genai
 import os
 import re
 import httpx
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dotenv import load_dotenv
 from core.database import execute_query
+from core.gemini_sdk import generate_text
+from core.lane_router import log_lane_a_escalation, validate_lane_a_json
 from core.logger import HarnessLogger
 from core.topic_registry import load_active_topics
 
 load_dotenv()
-
-# --- Gemini Configuration for Tier 2 ---
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 TIER2_LLM_MODEL = os.getenv("TIER2_LLM_MODEL", os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
 GEMINI_TIMEOUT_SECONDS = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "45"))
@@ -69,18 +67,23 @@ def log_api_cost(model: str, input_tokens: int, output_tokens: int, provider: st
         _logger.warning(f"API 비용 로그 저장 실패 — 응답은 계속 진행: {exc}")
 
 
-def _gemini_call(model: genai.GenerativeModel, text: str) -> dict:
+def _gemini_call(model_name: str, text: str) -> dict:
     full_prompt = FACT_EXTRACTION_PROMPT + text[:4000] #
-    response = model.generate_content(full_prompt)
+    raw_text, usage = generate_text(
+        full_prompt,
+        model=model_name,
+        timeout_seconds=GEMINI_TIMEOUT_SECONDS,
+        max_output_tokens=2048,
+    )
 
     # Log API cost
     log_api_cost(
-        model.model_name.split('/')[-1],
-        response.usage_metadata.prompt_token_count,
-        response.usage_metadata.candidates_token_count,
+        model_name,
+        usage["prompt_token_count"],
+        usage["candidates_token_count"],
     )
     
-    raw_content = response.text.strip().replace("```json", "").replace("```", "").strip()
+    raw_content = raw_text.strip().replace("```json", "").replace("```", "").strip()
     return json.loads(raw_content)
 
 
@@ -101,19 +104,48 @@ def _ollama_call(host: str, text: str) -> dict:
     return json.loads(content)
 
 
-def extract_facts(model: genai.GenerativeModel, text: str, logger: HarnessLogger) -> dict:
+_FACT_REQUIRED_KEYS = ["costs", "performance", "market_size", "key_players"]
+
+# Lane A Sonnet 재실행용 모델 (schema 검증 실패 시)
+_LANE_A_ESCALATION_MODEL = os.getenv("LANE_A_ESCALATION_MODEL", "gemini-2.5-pro")
+
+
+def extract_facts(model_name: str, text: str, logger: HarnessLogger) -> dict:
     if not text or len(text) < 100:
         return {}
 
+    raw_output: str | None = None
     try:
         if TIER2_USE_REMOTE_OLLAMA and probe_ollama_host(OLLAMA_REMOTE_HOST):
             try:
-                return _ollama_call(OLLAMA_REMOTE_HOST, text)
+                result = _ollama_call(OLLAMA_REMOTE_HOST, text)
+                # Lane A 검증 게이트: Ollama 출력도 schema 검증
+                if isinstance(result, dict) and all(k in result for k in _FACT_REQUIRED_KEYS):
+                    return result
+                log_lane_a_escalation("extract_facts", "ollama_schema_fail")
+                logger.warning("Ollama 팩트 schema 검증 실패 — Gemini 재실행")
             except Exception as exc:
                 logger.warning(f"MBP Ollama 팩트 추출 실패 — Gemini fallback: {type(exc).__name__}: {exc}")
+
         with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_gemini_call, model, text)
-            return future.result(timeout=GEMINI_TIMEOUT_SECONDS)
+            future = executor.submit(_gemini_call, model_name, text)
+            result = future.result(timeout=GEMINI_TIMEOUT_SECONDS)
+
+        # Lane A 검증 게이트: required_keys 확인
+        if isinstance(result, dict) and all(k in result for k in _FACT_REQUIRED_KEYS):
+            return result
+
+        # 검증 실패 → 프리미엄 모델로 자동 승급
+        log_lane_a_escalation("extract_facts", "gemini_schema_fail")
+        logger.warning(f"Gemini 팩트 schema 검증 실패 — {_LANE_A_ESCALATION_MODEL} 재실행")
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_gemini_call, _LANE_A_ESCALATION_MODEL, text)
+                return future.result(timeout=GEMINI_TIMEOUT_SECONDS)
+        except Exception as exc:
+            logger.warning(f"승급 모델 팩트 추출 실패: {type(exc).__name__}: {exc}")
+            return {}
+
     except FuturesTimeoutError:
         logger.warning(f"Gemini timeout ({GEMINI_TIMEOUT_SECONDS}s) — 팩트 추출 건너뜀")
         return {}
@@ -182,7 +214,6 @@ def filter_signals(correlation_id: str = None, limit: int | None = None):
         return 0
 
     logger.info(f"처리 대상: {len(rows)}개")
-    model = genai.GenerativeModel(TIER2_LLM_MODEL)
     passed = 0
     failed = 0
     facts_extracted = 0
@@ -206,7 +237,7 @@ def filter_signals(correlation_id: str = None, limit: int | None = None):
         facts = {}
         if score >= 0.4 and facts_extracted < fact_budget:
             logger.info(f"  [{facts_extracted+1}/{fact_budget}] 팩트 추출 중 (score={score:.2f}): {title[:50]}...")
-            facts = extract_facts(model, full_content if full_content else summary, logger)
+            facts = extract_facts(TIER2_LLM_MODEL, full_content if full_content else summary, logger)
             facts_extracted += 1
         elif score >= 0.4:
             logger.info(f"  팩트 추출 스킵 (backlog/배치 정책, score={score:.2f}): {title[:50]}...")

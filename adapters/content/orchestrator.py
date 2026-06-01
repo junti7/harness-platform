@@ -33,6 +33,7 @@ from dotenv import load_dotenv
 from adapters.content.slack_format import to_slack_mrkdwn
 from agents.registry import Persona, get_active_personas, get_persona
 from scripts.run_persona import append_diary, call_llm, call_persona, format_persona_output, post_opinion
+from scripts.llm_fallback_manager import get_current_provider, get_fallback_info
 from scripts.notion_minutes import (
     build_minutes_blocks_from_decision_card as _build_minutes_blocks,
     save_minutes as _save_notion_minutes,
@@ -47,7 +48,6 @@ NOTION_MINUTES_RUN_LOG_PATH = PROJECT_ROOT / "docs/reports/notion_minutes_runs.j
 # Deterministic .env loading: Slack/launchd/CLI entrypoints may have varying CWD/call stacks.
 load_dotenv(dotenv_path=str(PROJECT_ROOT / ".env"), override=True)
 
-JARVIS_REASONING_PROVIDER = "claude"  # Jarvis escalation LLM for decompose/synthesis
 MAX_CC_HOPS = int(os.getenv("ORCHESTRATION_MAX_CC_HOPS", "2"))
 MAX_CC_HOPS = max(1, min(MAX_CC_HOPS, 2))  # Strict ceiling of 2 hops
 DEFAULT_ROUNDS = min(int(os.getenv("ORCHESTRATION_DEFAULT_ROUNDS", "2")), MAX_CC_HOPS)
@@ -55,6 +55,24 @@ DEFAULT_ROUNDS = min(int(os.getenv("ORCHESTRATION_DEFAULT_ROUNDS", "2")), MAX_CC
 
 # Rough per-call cost estimates (CLIs don't report tokens). USD.
 _PROVIDER_COST = {"claude": 0.12, "gemini": 0.05, "codex": 0.10, "copilot": 0.02}
+
+
+def _orchestration_provider_mode() -> str:
+    return (os.getenv("ORCHESTRATION_PROVIDER_MODE", "auto") or "auto").strip().lower()
+
+
+def _jarvis_reasoning_persona() -> Persona:
+    return get_persona("jarvis")
+
+
+def _jarvis_reasoning_provider() -> str:
+    jarvis = _jarvis_reasoning_persona()
+    mode = _orchestration_provider_mode()
+    if mode == "force_gemini":
+        return "gemini"
+    if mode == "force_primary":
+        return jarvis.provider
+    return get_current_provider(jarvis.handle, jarvis.provider, jarvis.fallback_provider)
 
 
 class CostStop(Exception):
@@ -135,8 +153,10 @@ def _decompose(order: str, correlation_id: str, guard: CostGuard) -> list[tuple[
         '{"assignments": [{"persona": "<handle>", "task": "<그 팀에게 줄 구체 sub-task>"}], '
         '"rationale": "<왜 이렇게 나눴는지 한 줄>"}'
     )
-    guard.charge(JARVIS_REASONING_PROVIDER)
-    out, ok = call_llm(JARVIS_REASONING_PROVIDER, prompt)
+    reasoning_provider = _jarvis_reasoning_provider()
+    jarvis = _jarvis_reasoning_persona()
+    guard.charge(reasoning_provider)
+    out, ok = call_llm(reasoning_provider, prompt, jarvis.handle, jarvis)
     parsed = _extract_json(out) if ok else None
 
     if parsed and isinstance(parsed.get("assignments"), list):
@@ -163,8 +183,10 @@ def _synthesize(order: str, transcript: list[dict], correlation_id: str, guard: 
         "4) 권고 액션\n5) 막힌 게이트(있으면). Persona 의견은 게이트 충족이 아님을 명심.\n\n"
         f"[CEO ORDER]\n{order}\n\n[회의실 토론]\n{convo}\n"
     )
-    guard.charge(JARVIS_REASONING_PROVIDER, force=True)  # 최종 정리는 cap 넘어도 보장
-    out, ok = call_llm(JARVIS_REASONING_PROVIDER, prompt)
+    reasoning_provider = _jarvis_reasoning_provider()
+    jarvis = _jarvis_reasoning_persona()
+    guard.charge(reasoning_provider, force=True)  # 최종 정리는 cap 넘어도 보장
+    out, ok = call_llm(reasoning_provider, prompt, jarvis.handle, jarvis)
     if not ok:
         return "(synthesis 실패 — 회의실 transcript 참조)"
     return format_persona_output(get_persona("jarvis"), out)
@@ -180,7 +202,9 @@ def _simplify_minutes(order: str, decision: str) -> str:
         "존댓말 구어체. 전문 용어는 괄호 안에 쉬운 말 병기.\n\n"
         f"[회의 주제]\n{order}\n\n[회의 결과]\n{decision}\n"
     )
-    out, ok = call_llm(JARVIS_REASONING_PROVIDER, prompt)
+    reasoning_provider = _jarvis_reasoning_provider()
+    jarvis = _jarvis_reasoning_persona()
+    out, ok = call_llm(reasoning_provider, prompt, jarvis.handle, jarvis)
     return out if ok else decision
 
 
@@ -264,7 +288,11 @@ def orchestrate(
         # 2. round 0 — each persona's initial opinion to home channel + 회의실
         for persona, subtask in assignments:
             guard.charge(persona.provider)
-            text, ok = call_persona(persona, subtask, correlation_id)
+            text, ok = call_persona(persona, subtask, correlation_id, check_lane_b_budget=True)
+            if not ok and "Lane B 일시 정지" in text:
+                if post and room:
+                    _post_raw(room, f"*Jarvis(비서실장)*: ⚠️ Lane B 예산 임계값 도달 — {persona.display}님 의견 생략됩니다.")
+                continue
             if post:
                 post_opinion(persona, text)  # home channel
                 if room:
@@ -283,7 +311,9 @@ def orchestrate(
                     "다른 팀을 언급할 때는 'OO님'으로 호칭합니다. 반말 금지. 이미 한 말 반복 금지, 새로운 포인트만."
                 )
                 guard.charge(persona.provider)
-                text, ok = call_persona(persona, react_task, correlation_id, extra_context=others)
+                text, ok = call_persona(persona, react_task, correlation_id, extra_context=others, check_lane_b_budget=True)
+                if not ok and "Lane B 일시 정지" in text:
+                    continue
                 if post and room:
                     post_opinion(persona, text, channel_id=room)
                 transcript.append({"persona": persona.display, "round": rnd, "text": text, "ok": ok})
@@ -308,6 +338,8 @@ def orchestrate(
         "ts": datetime.now().isoformat(timespec="seconds"),
         "order": order,
         "personas": persona_names,
+        "jarvis_reasoning_provider": _jarvis_reasoning_provider(),
+        "jarvis_fallback_state": get_fallback_info("jarvis"),
         "rounds": rounds,
         "turns": len(transcript),
         "estimated_cost_usd": round(guard.spent, 3),
