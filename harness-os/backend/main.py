@@ -1612,7 +1612,7 @@ def _today_llm_cost() -> float:
         SELECT COALESCE(SUM(
             CASE provider
                 WHEN 'anthropic' THEN (input_tokens::float/1000000*3.0) + (output_tokens::float/1000000*15.0)
-                WHEN 'google'    THEN (input_tokens::float/1000000*3.5) + (output_tokens::float/1000000*10.5)
+                WHEN 'google'    THEN (input_tokens::float/1000000*0.3) + (output_tokens::float/1000000*2.5)
                 WHEN 'openai'    THEN (input_tokens::float/1000000*5.0) + (output_tokens::float/1000000*15.0)
                 ELSE 0
             END
@@ -2671,7 +2671,7 @@ def _cost_history(days: int = 14) -> list[dict[str, Any]]:
             provider,
             CASE provider
                 WHEN 'anthropic' THEN (input_tokens::float/1000000*3.0) + (output_tokens::float/1000000*15.0)
-                WHEN 'google'    THEN (input_tokens::float/1000000*3.5) + (output_tokens::float/1000000*10.5)
+                WHEN 'google'    THEN (input_tokens::float/1000000*0.3) + (output_tokens::float/1000000*2.5)
                 WHEN 'openai'    THEN (input_tokens::float/1000000*5.0) + (output_tokens::float/1000000*15.0)
                 ELSE 0
             END as cost
@@ -3073,7 +3073,7 @@ def get_costs_summary(_: None = Depends(_require_secret)) -> dict[str, Any]:
             output_tokens,
             CASE provider
                 WHEN 'anthropic' THEN (input_tokens::float/1000000*3.0) + (output_tokens::float/1000000*15.0)
-                WHEN 'google'    THEN (input_tokens::float/1000000*3.5) + (output_tokens::float/1000000*10.5)
+                WHEN 'google'    THEN (input_tokens::float/1000000*0.3) + (output_tokens::float/1000000*2.5)
                 WHEN 'openai'    THEN (input_tokens::float/1000000*5.0) + (output_tokens::float/1000000*15.0)
                 ELSE 0
             END as cost
