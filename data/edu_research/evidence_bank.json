@@ -1,0 +1,94 @@
+{
+  "_meta": {
+    "purpose": "AI 부모/직장인 진단 상담사가 대화 중 인용하는 실제 근거 뱅크. 절대 이 목록 밖의 출처를 지어내지 않는다.",
+    "built_from": "data/edu_research/2026-05-25/ (ERIC, Semantic Scholar, RSS, Reddit, Google Play)",
+    "built_at": "2026-06-01",
+    "rule": "각 cite는 실제 수집 항목에 근거. 상담사는 cite를 자연스럽게 한 문장으로 흘리되, 통계 수치를 새로 지어내지 않는다."
+  },
+  "items": [
+    {
+      "id": "anx-dependent",
+      "type": "연구",
+      "segment": "parent",
+      "cite": "작년에 나온 한 연구를 보면, 불안이 큰 아이일수록 오히려 AI에 더 기대게 된다고 해요. 마음이 급하니까 자꾸 답부터 찾는 거죠.",
+      "source": "ERIC, 'The More Anxious, the More Dependent? Math Anxiety on AI-Assisted Problem-Solving' (2025)"
+    },
+    {
+      "id": "ai-anxiety-behavior",
+      "type": "연구",
+      "segment": "parent",
+      "cite": "아이들이 AI를 쓰는 방식 자체가 'AI에 대한 불안'에서 나온다는 연구도 있어요. 잘 모르니까 더 매달리는 거예요.",
+      "source": "ERIC, 'What Drives Students' AI Learning Behavior: A Perspective of AI Anxiety' (2024)"
+    },
+    {
+      "id": "parental-anxiety-scale",
+      "type": "연구",
+      "segment": "parent",
+      "cite": "부모의 교육 불안을 따로 측정하는 척도를 만든 연구가 있을 정도예요. 어머님만 그런 게 아니라, 그만큼 흔하고 당연한 마음이라는 뜻이죠.",
+      "source": "Semantic Scholar, 'Development and validation of the sources of parental anxiety in children's education' (2023)"
+    },
+    {
+      "id": "mothers-opinion",
+      "type": "연구",
+      "segment": "parent",
+      "cite": "엄마들 의견만 따로 모아 본 연구도 있는데, 다들 '내가 잘 모르는 게 제일 걱정'이라고 하시더라고요.",
+      "source": "ERIC, 'Investigation of Preschool Teachers, Children and Mothers' Opinions' (2024)"
+    },
+    {
+      "id": "community-whatworks",
+      "type": "커뮤니티",
+      "segment": "parent",
+      "cite": "부모 커뮤니티에도 '아이 교육에 AI, 대체 뭐가 진짜 효과 있냐'고 서로 묻는 글이 끊이질 않아요.",
+      "source": "Reddit r/AsianParents, 'People using AI in education, what's actually working for you?'"
+    },
+    {
+      "id": "community-cautious",
+      "type": "커뮤니티",
+      "segment": "parent",
+      "cite": "학교에 AI를 도입한다니까, 전문가들이 오히려 '조심하라'고 한다는 글도 부모들 사이에 많이 돌아요.",
+      "source": "Reddit r/Parenting, 'SA to roll out ChatGPT-style AI app in all high schools as experts urge caution'"
+    },
+    {
+      "id": "quanda-review",
+      "type": "이용후기",
+      "segment": "parent",
+      "cite": "AI 학습앱 후기를 보면 '기본 연산도 당당하게 틀리게 알려준다'는 학부모 불만도 적지 않아요. 그대로 믿으면 안 되는 이유죠.",
+      "source": "Google Play, 콴다 앱 사용자 리뷰 (2026-05)"
+    },
+    {
+      "id": "highschooler-voice",
+      "type": "커뮤니티",
+      "segment": "parent",
+      "cite": "어떤 고등학생은 직접 'AI가 내 공부를 망치고 있다'고 글을 올렸어요. 아이들도 사실은 느끼고 있는 거예요.",
+      "source": "Reddit r/AsianParents, 'I'm a High Schooler. AI Is Demolishing My Education.'"
+    },
+    {
+      "id": "screen-advisory",
+      "type": "기사",
+      "segment": "parent",
+      "cite": "최근엔 '아이들을 화면 밖에서 더 살게 하자'는 권고까지 나왔어요. 그만큼 다들 같은 고민을 하고 있다는 거죠.",
+      "source": "EdSurge, 'Surgeon General Advisory Wants Kids to Live Beyond the Confines of Screens'"
+    },
+    {
+      "id": "ai-anxiety-career",
+      "type": "기사",
+      "segment": "worker",
+      "cite": "AI 불안 때문에 아예 전공이나 진로를 바꾸는 사람들이 늘고 있다는 보도가 있어요. 막연한 불안이 진짜 결정을 바꾸는 거죠.",
+      "source": "Reddit r/EdTech, 'How AI anxiety is upending career ambitions'"
+    },
+    {
+      "id": "ai-self-efficacy",
+      "type": "연구",
+      "segment": "worker",
+      "cite": "AI에 대한 불안이 클수록 'AI를 잘 다룰 수 있다'는 자신감이 떨어진다는 연구가 있어요. 그래서 시작이 제일 중요해요.",
+      "source": "ERIC, 'Influence of AI Anxiety on AI Self-Efficacy among College Students' (2025)"
+    },
+    {
+      "id": "ai-literacy-gap",
+      "type": "연구",
+      "segment": "worker",
+      "cite": "생성형 AI가 퍼지면서 'AI 문해력' 격차를 다룬 연구가 쏟아지고 있어요. 아는 사람과 모르는 사람의 차이가 그만큼 벌어지고 있다는 뜻이죠.",
+      "source": "Semantic Scholar, 'AI Literacy in K-12 and Higher Education in the Wake of Generative AI' (2025)"
+    }
+  ]
+}
