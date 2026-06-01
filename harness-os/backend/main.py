@@ -4573,29 +4573,20 @@ def _pdf_is_fallback(a: dict) -> bool:
     return bool(body.get("fallback_used")) or "hook" not in body
 
 
-def _pdf_extract_bullets(text: str, max_items: int = 3) -> list[str]:
-    """마크다운 텍스트에서 핵심 포인트를 개조식 리스트로 추출."""
-    import re as _re
-    if not text or not isinstance(text, str):
-        return []
-    results = []
-    for m in _re.finditer(r'\*\*([^*\n]{2,30})\*\*[:\s]+([^\n*]{15,})', text):
-        item = f"{m.group(1).strip()}: {m.group(2).strip()[:80]}"
-        results.append(item)
-        if len(results) >= max_items:
-            break
-    if not results:
-        for line in text.splitlines():
-            clean = line.strip().replace('**', '').replace('*', '').replace('#', '').strip()
-            if len(clean) >= 20:
-                results.append(clean[:90])
-                if len(results) >= max_items:
-                    break
-    return results
+def _pdf_first_sentence(text: str, max_len: int = 80) -> str:
+    """산문 텍스트에서 첫 문장만 추출, max_len 이내로 자름."""
+    if not text:
+        return ""
+    text = text.strip().replace("\n", " ")
+    for sep in ["。", ". ", ".\n"]:
+        idx = text.find(sep)
+        if 10 < idx < max_len:
+            return text[:idx + (1 if sep == "。" else 0)].strip()
+    return text[:max_len].rstrip(".,;") + ("…" if len(text) > max_len else "")
 
 
 def _pdf_extract_quant(snapshot) -> list[str]:
-    """quantitative_snapshot에서 핵심 지표 bullet 추출."""
+    """quantitative_snapshot에서 핵심 지표 추출 (최대 2개)."""
     if isinstance(snapshot, str):
         try:
             snapshot = json.loads(snapshot)
@@ -4603,92 +4594,96 @@ def _pdf_extract_quant(snapshot) -> list[str]:
             return []
     if not isinstance(snapshot, dict):
         return []
-    rows = snapshot.get("rows") or []
     result = []
-    for row in rows[:3]:
+    for row in (snapshot.get("rows") or [])[:2]:
         if isinstance(row, (list, tuple)) and len(row) >= 2:
-            metric = str(row[0]).replace("**", "").strip()[:35]
-            value = str(row[1]).replace("**", "").strip()[:50]
+            metric = str(row[0]).replace("**", "").strip()[:30]
+            value  = str(row[1]).replace("**", "").strip()[:40]
             result.append(f"{metric}: {value}")
     return result
 
 
 def _pdf_generate_insights(articles: list[dict]) -> dict:
-    """Claude CLI로 오늘의 흐름·인사이트·주목 기사 생성. 실패 시 fallback."""
+    """오늘의 흐름·인사이트 생성. LLM 실패 시 구조 데이터 직접 추출."""
     if not articles:
         return {"flow": "오늘은 기사가 없습니다.", "insights": [], "top_story": ""}
 
     non_fallback = [a for a in articles if not _pdf_is_fallback(a)]
-    source = non_fallback[:15] or articles[:15]
+    source = non_fallback[:12] or []
 
-    summaries = []
-    for a in source:
-        body = _pdf_parse_body(a.get("final_body") or {})
-        title = a.get("final_title") or ""
-        hook = (body.get("hook") or body.get("summary") or "")[:160]
-        korea = (body.get("korea_strategic_context") or "")[:100]
-        quant_items = _pdf_extract_quant(body.get("quantitative_snapshot") or {})
-        quant_str = f" [지표: {quant_items[0]}]" if quant_items else ""
-        summaries.append(f"- {title}: {hook}{quant_str} [한국함의: {korea[:80]}]")
+    # LLM 인사이트 생성 시도
+    if source:
+        summaries = []
+        for a in source:
+            body = _pdf_parse_body(a.get("final_body") or {})
+            title = a.get("final_title") or ""
+            hook  = _pdf_first_sentence(body.get("hook") or "", 120)
+            quant = _pdf_extract_quant(body.get("quantitative_snapshot") or {})
+            qstr  = f" [지표: {quant[0]}]" if quant else ""
+            summaries.append(f"- {title}: {hook}{qstr}")
 
-    prompt = (
-        "당신은 Harness의 최고 인텔리전스 분석가입니다.\n"
-        "CEO가 30초 만에 파악할 수 있도록 아래 기사들의 핵심만 추출하세요.\n"
-        "반드시 한국어로만 작성하세요. 영어 기사 제목을 그대로 나열하지 마세요.\n"
-        "각 인사이트에는 구체적 숫자·지표·변화·한국 산업 연결을 반드시 포함하세요.\n\n"
-        "=== 오늘 수집 기사 ===\n" + "\n".join(summaries) + "\n\n"
-        "아래 형식으로 정확히 출력하세요. 다른 말은 쓰지 마세요.\n\n"
-        "FLOW: (오늘 기사 전체를 관통하는 단 하나의 흐름 — 반드시 한국어 1문장)\n\n"
-        "INSIGHTS:\n"
-        "• (인사이트 1 — 구체 지표·수치·변화 포함, 한국 산업/투자 영향 연결, 한국어 1~2문장)\n"
-        "• (인사이트 2)\n"
-        "• (인사이트 3)\n"
-        "• (인사이트 4, 있으면)\n\n"
-        "TOP: (CEO가 가장 먼저 읽어야 할 이유 — 기사 제목 말고 왜 중요한지, 한국어 1문장)\n"
-    )
-    try:
-        raw = ""
+        prompt = (
+            "당신은 Harness의 최고 인텔리전스 분석가입니다.\n"
+            "CEO가 30초 만에 파악할 수 있도록 핵심만 추출하세요.\n"
+            "반드시 한국어로만 작성하세요. 영어 제목을 그대로 옮기지 마세요.\n"
+            "각 인사이트는 구체 수치·한국 산업 연결·변화 방향을 포함해 15~25자로 작성하세요.\n\n"
+            "=== 오늘 수집 기사 ===\n" + "\n".join(summaries) + "\n\n"
+            "형식 (이것만 출력):\n"
+            "FLOW: 한국어 1문장\n"
+            "• 인사이트1 (15~25자, 수치 포함)\n"
+            "• 인사이트2\n"
+            "• 인사이트3\n"
+            "• 인사이트4 (있으면)\n"
+            "TOP: 가장 중요한 이유 한국어 1문장\n"
+        )
         try:
-            import subprocess as _sp
-            r = _sp.run(
-                ["/opt/homebrew/bin/claude", "-p", prompt],
-                capture_output=True, text=True, timeout=60,
-                env={**os.environ,
-                     "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
-                     "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY", "")},
-            )
-            raw = (r.stdout or "").strip() if r.returncode == 0 else ""
-        except Exception:
             raw = ""
-        if not raw:
-            raw, _usage = generate_text(
-                prompt,
-                model=gemini_model_name(),
-                max_output_tokens=1000,
-            )
-        if raw:
-            flow, insights, top_story = "", [], ""
-            section = None
-            for line in raw.splitlines():
-                s = line.strip()
-                if s.startswith("FLOW:"):
-                    flow = s[5:].strip(); section = None
-                elif s.startswith("INSIGHTS:"):
-                    section = "insights"
-                elif s.startswith("TOP:"):
-                    top_story = s[4:].strip(); section = None
-                elif section == "insights" and s.startswith("•"):
-                    insights.append(s)
-            if flow or insights:
-                return {"flow": flow, "insights": insights, "top_story": top_story}
-    except Exception:
-        pass
-    # fallback: 한국어 제목이 있는 기사만 발췌
-    korean_titles = [a.get("final_title", "") for a in non_fallback[:5] if a.get("final_title")]
+            try:
+                import subprocess as _sp
+                r = _sp.run(
+                    ["/opt/homebrew/bin/claude", "-p", prompt],
+                    capture_output=True, text=True, timeout=45,
+                    env={**os.environ,
+                         "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+                         "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY", "")},
+                )
+                raw = (r.stdout or "").strip() if r.returncode == 0 else ""
+            except Exception:
+                raw = ""
+            if not raw:
+                raw, _ = generate_text(prompt, model=gemini_model_name(), max_output_tokens=500)
+            if raw:
+                flow, insights, top_story, section = "", [], "", None
+                for line in raw.splitlines():
+                    s = line.strip()
+                    if s.startswith("FLOW:"):
+                        flow = s[5:].strip(); section = None
+                    elif s.startswith("TOP:"):
+                        top_story = s[4:].strip(); section = None
+                    elif s.startswith("•"):
+                        insights.append(s)
+                if flow or insights:
+                    return {"flow": flow, "insights": insights[:4], "top_story": top_story}
+        except Exception:
+            pass
+
+    # 구조 데이터 직접 추출 (LLM 실패 또는 비용 초과 시)
+    insights = []
+    for a in source[:4]:
+        body  = _pdf_parse_body(a.get("final_body") or {})
+        quant = _pdf_extract_quant(body.get("quantitative_snapshot") or {})
+        title = (a.get("final_title") or "")[:35]
+        if quant:
+            insights.append(f"• {title} — {quant[0]}")
+        else:
+            hook = _pdf_first_sentence(body.get("hook") or "", 50)
+            if hook:
+                insights.append(f"• {title}: {hook}")
+    top = source[0].get("final_title", "") if source else ""
     return {
         "flow": "오늘 수집된 주요 기사를 확인하세요.",
-        "insights": [f"• {t[:80]}" for t in korean_titles],
-        "top_story": korean_titles[0] if korean_titles else (articles[0].get("final_title", "") if articles else ""),
+        "insights": insights,
+        "top_story": top,
     }
 
 
@@ -4790,10 +4785,11 @@ def _build_news_pdf(date: str) -> bytes:
         Spacer(1, 0.35*cm),
     ]
 
-    # 채널별 집계
+    # 정상 기사만 채널별 집계 (fallback 제외)
     ch_groups: dict[str, list] = {ch: [] for ch in _PDF_CH_ORDER}
     for a in articles:
-        ch_groups.setdefault(_pdf_infer_channel(a.get("tags")), []).append(a)
+        if not _pdf_is_fallback(a):
+            ch_groups.setdefault(_pdf_infer_channel(a.get("tags")), []).append(a)
 
     # 채널 분포 바
     dist_parts = [
@@ -4908,83 +4904,47 @@ def _build_news_pdf(date: str) -> bytes:
         is_fb = _pdf_is_fallback(a)
         title = esc(a.get("final_title") or "(제목 없음)")
         block = []
-
         if is_fb:
-            # 폴백 기사: 제목 + 요약 2문장
-            block.append(Paragraph(title, art_fb_h_s))
-            summary = body.get("summary") or ""
-            if summary:
-                sents = [s.strip() for s in summary.split(". ") if s.strip()][:2]
-                brief = ". ".join(sents)
-                if len(brief) > 200:
-                    brief = brief[:197] + "..."
-                block.append(Paragraph(esc(brief), art_fb_b_s))
-            return block
+            return block  # fallback 기사는 PDF 본문에서 제외
 
-        # 정상 기사: 개조식 전체 구조
+        # ── 기사당 최대 4줄 ───────────────────────────────────────
+        # 1) 제목
         block.append(Paragraph(title, art_h_s))
 
-        # 핵심 한 줄 (hook 첫 1-2문장)
-        hook = body.get("hook") or ""
+        # 2) 핵심 한 줄 — hook 첫 문장만 (80자 이내)
+        hook = _pdf_first_sentence(body.get("hook") or "", 90)
         if hook:
-            sents = [s.strip() for s in hook.split(". ") if s.strip()][:2]
-            hook_brief = ". ".join(sents)
-            if len(hook_brief) > 200:
-                hook_brief = hook_brief[:197] + "..."
-            block.append(Paragraph(esc(hook_brief), art_hook_s))
+            block.append(Paragraph(esc(hook), art_hook_s))
 
-        # 핵심 지표 (quantitative_snapshot)
-        quant = body.get("quantitative_snapshot") or {}
-        if isinstance(quant, str):
-            try:
-                quant = json.loads(quant)
-            except Exception:
-                quant = {}
-        quant_items = _pdf_extract_quant(quant)
-        for item in quant_items:
-            block.append(Paragraph(f"▪ {esc(item)}", art_blt_s))
+        # 3) 핵심 지표 — quantitative_snapshot 1개만
+        quant_items = _pdf_extract_quant(body.get("quantitative_snapshot") or {})
+        if quant_items:
+            block.append(Paragraph(f"▪ {esc(quant_items[0])}", art_blt_s))
 
-        # 한국 함의
-        korea = body.get("korea_strategic_context") or ""
-        korea_bullets = _pdf_extract_bullets(korea, max_items=2)
-        if korea_bullets:
-            block.append(Paragraph("▸ 한국 함의", art_lbl_s))
-            for b in korea_bullets:
-                block.append(Paragraph(f"▪ {esc(b)}", art_blt_k_s))
-
-        # 리스크 (1개)
-        risk = body.get("risk_and_bottlenecks") or ""
-        risk_bullets = _pdf_extract_bullets(risk, max_items=1)
-        if risk_bullets:
-            block.append(Paragraph(f"⚠ {esc(risk_bullets[0])}", art_risk_s))
-
-        # CEO 액션
+        # 4) CEO 액션 — 첫 조건만 (70자 이내)
         exec_b = body.get("executive_decision_block") or {}
         buy = _pdf_extract_buy(exec_b)
         if buy:
-            conds = [c.strip() for c in _re.split(r'[①②③④]', buy) if c.strip()][:2]
-            if conds:
-                buy_brief = "  /  ".join(
-                    (f"①{c[:60]}" if i == 0 else f"②{c[:60]}")
-                    for i, c in enumerate(conds)
-                )
-            else:
-                buy_brief = buy[:150]
-            block.append(Paragraph(f"→ CEO 액션: {esc(buy_brief)}", art_act_s))
+            conds = [c.strip() for c in _re.split(r'[①②③④]', buy) if c.strip()]
+            buy_brief = conds[0][:70] if conds else buy[:70]
+            block.append(Paragraph(f"→ {esc(buy_brief)}", art_act_s))
 
         return block
 
+    # 채널별 출력 — 정상 기사 채널당 최대 4건
+    MAX_PER_CH = 4
     for ch in _PDF_CH_ORDER:
         group = ch_groups.get(ch, [])
-        if not group:
+        non_fb = [a for a in group if not _pdf_is_fallback(a)][:MAX_PER_CH]
+        if not non_fb:
             continue
-        non_fb = [a for a in group if not _pdf_is_fallback(a)]
-        fb = [a for a in group if _pdf_is_fallback(a)]
-        label_cnt = f"{len(non_fb)}건" + (f" + 참고 {len(fb)}건" if fb else "")
-        story.append(Paragraph(f"{_PDF_CHANNEL_LABELS.get(ch, ch)}  ({label_cnt})", ch_s))
+        story.append(Paragraph(f"{_PDF_CHANNEL_LABELS.get(ch, ch)}  ({len(non_fb)}건)", ch_s))
         story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
-        for a in non_fb + fb:
-            story.append(KeepTogether(_render_article_card(a)))
+        for a in non_fb:
+            card = _render_article_card(a)
+            if card:
+                story.append(KeepTogether(card))
+                story.append(Spacer(1, 0.15 * cm))
 
     doc.build(story)
     return buf.getvalue()
