@@ -47,6 +47,9 @@ from core.source_registry import (
     source_status,
 )
 from core.topic_registry import ensure_fresh_topic_registry
+from agents.registry import get_active_personas, get_persona
+from scripts.llm_fallback_manager import get_fallback_info, load_recent_fallback_events
+from core.gemini_sdk import generate_text, gemini_model_name
 
 TARGET_FREE_SUBSCRIBERS = 50
 TARGET_PAID_SUBSCRIBERS = 1
@@ -1299,6 +1302,39 @@ def _tier2_worker_health(domain: str) -> dict[str, Any]:
     }
 
 
+def _persona_fallback_status() -> dict[str, Any]:
+    personas = []
+    for persona in get_active_personas():
+        info = get_fallback_info(persona.handle)
+        personas.append(
+            {
+                "handle": persona.handle,
+                "display": persona.display,
+                "primary_provider": persona.provider,
+                "fallback_provider": persona.fallback_provider,
+                "active_provider": info.get("current_provider") if info else persona.provider,
+                "fallback_active": bool(info),
+                "reason": info.get("reason") if info else "",
+                "switched_at": info.get("switched_at") if info else "",
+            }
+        )
+    jarvis = get_persona("jarvis")
+    jarvis_info = get_fallback_info("jarvis")
+    mode = (os.getenv("ORCHESTRATION_PROVIDER_MODE", "auto") or "auto").strip().lower()
+    active_provider = jarvis_info.get("current_provider") if jarvis_info else jarvis.provider
+    if mode == "force_gemini":
+        active_provider = "gemini"
+    elif mode == "force_primary":
+        active_provider = jarvis.provider
+    return {
+        "orchestration_provider_mode": mode,
+        "jarvis_reasoning_provider": active_provider,
+        "fallback_count": sum(1 for item in personas if item["fallback_active"]),
+        "personas": personas,
+        "recent_events": load_recent_fallback_events(limit=10),
+    }
+
+
 def _source_metrics_for_dashboard(source_name: str, source_row: dict[str, Any], source_map: dict[str, dict[str, Any]]) -> dict[str, Any]:
     direct = source_map.get(source_name)
     if direct:
@@ -1403,6 +1439,7 @@ def _data_collection_monitor() -> dict[str, Any]:
             "sources": sources_out,
             "channel_coverage": build_channel_coverage(source_rows),
             "tier2_worker": _tier2_worker_health(domain),
+            "persona_fallbacks": _persona_fallback_status(),
             "current_topics": active_topics,
             "suggested_topics": topic_registry.get("suggested_topics", []),
             "generated_query_sources": topic_registry.get("query_sources", []),
@@ -1445,6 +1482,12 @@ def _data_collection_monitor() -> dict[str, Any]:
                 "mbp_active": False,
                 "main": {"loaded": False, "running": False, "pid": None, "last_exit_code": None, "label": "com.harness.tier2-filter", "interval_seconds": 900, "log_tail": []},
                 "fast_lane": {"loaded": False, "running": False, "pid": None, "last_exit_code": None, "label": "com.harness.tier2-filter-fast", "interval_seconds": 300, "active_threshold": 4000, "log_tail": []},
+            },
+            "persona_fallbacks": {
+                "orchestration_provider_mode": "auto",
+                "jarvis_reasoning_provider": "claude",
+                "fallback_count": 0,
+                "personas": [],
             },
             "current_topics": [],
             "suggested_topics": [],
@@ -2942,15 +2985,23 @@ def _end_conference_room(item_id: str) -> dict[str, Any]:
 {aggregated}
 """
     
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
     try:
-        resp = client.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=300,
-            temperature=0.0,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        resp_text = resp.content[0].text.strip()
+        try:
+            client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+            resp = client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=300,
+                temperature=0.0,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            resp_text = resp.content[0].text.strip()
+        except Exception:
+            resp_text, _usage = generate_text(
+                prompt,
+                model=gemini_model_name(),
+                max_output_tokens=300,
+                response_mime_type="application/json",
+            )
         # Find JSON boundaries
         start_idx = resp_text.find("{")
         end_idx = resp_text.rfind("}")
@@ -4517,41 +4568,105 @@ def _pdf_extract_buy(exec_b) -> str:
     return ""
 
 
+def _pdf_is_fallback(a: dict) -> bool:
+    body = _pdf_parse_body(a.get("final_body") or {})
+    return bool(body.get("fallback_used")) or "hook" not in body
+
+
+def _pdf_extract_bullets(text: str, max_items: int = 3) -> list[str]:
+    """마크다운 텍스트에서 핵심 포인트를 개조식 리스트로 추출."""
+    import re as _re
+    if not text or not isinstance(text, str):
+        return []
+    results = []
+    for m in _re.finditer(r'\*\*([^*\n]{2,30})\*\*[:\s]+([^\n*]{15,})', text):
+        item = f"{m.group(1).strip()}: {m.group(2).strip()[:80]}"
+        results.append(item)
+        if len(results) >= max_items:
+            break
+    if not results:
+        for line in text.splitlines():
+            clean = line.strip().replace('**', '').replace('*', '').replace('#', '').strip()
+            if len(clean) >= 20:
+                results.append(clean[:90])
+                if len(results) >= max_items:
+                    break
+    return results
+
+
+def _pdf_extract_quant(snapshot) -> list[str]:
+    """quantitative_snapshot에서 핵심 지표 bullet 추출."""
+    if isinstance(snapshot, str):
+        try:
+            snapshot = json.loads(snapshot)
+        except Exception:
+            return []
+    if not isinstance(snapshot, dict):
+        return []
+    rows = snapshot.get("rows") or []
+    result = []
+    for row in rows[:3]:
+        if isinstance(row, (list, tuple)) and len(row) >= 2:
+            metric = str(row[0]).replace("**", "").strip()[:35]
+            value = str(row[1]).replace("**", "").strip()[:50]
+            result.append(f"{metric}: {value}")
+    return result
+
+
 def _pdf_generate_insights(articles: list[dict]) -> dict:
     """Claude CLI로 오늘의 흐름·인사이트·주목 기사 생성. 실패 시 fallback."""
     if not articles:
         return {"flow": "오늘은 기사가 없습니다.", "insights": [], "top_story": ""}
+
+    non_fallback = [a for a in articles if not _pdf_is_fallback(a)]
+    source = non_fallback[:15] or articles[:15]
+
     summaries = []
-    for a in articles[:20]:
+    for a in source:
         body = _pdf_parse_body(a.get("final_body") or {})
-        hook  = (body.get("hook") or "")[:180]
-        korea = (body.get("korea_strategic_context") or "")[:80]
         title = a.get("final_title") or ""
-        summaries.append(f"- {title}: {hook}  [한국맥락: {korea}]")
+        hook = (body.get("hook") or body.get("summary") or "")[:160]
+        korea = (body.get("korea_strategic_context") or "")[:100]
+        quant_items = _pdf_extract_quant(body.get("quantitative_snapshot") or {})
+        quant_str = f" [지표: {quant_items[0]}]" if quant_items else ""
+        summaries.append(f"- {title}: {hook}{quant_str} [한국함의: {korea[:80]}]")
+
     prompt = (
-        "당신은 Harness의 최고 인텔리전스 분석가입니다. "
-        "CEO가 30초 만에 핵심을 파악할 수 있게 분석하세요.\n\n"
-        "=== 오늘 수집된 기사 ===\n" + "\n".join(summaries) + "\n\n"
+        "당신은 Harness의 최고 인텔리전스 분석가입니다.\n"
+        "CEO가 30초 만에 파악할 수 있도록 아래 기사들의 핵심만 추출하세요.\n"
+        "반드시 한국어로만 작성하세요. 영어 기사 제목을 그대로 나열하지 마세요.\n"
+        "각 인사이트에는 구체적 숫자·지표·변화·한국 산업 연결을 반드시 포함하세요.\n\n"
+        "=== 오늘 수집 기사 ===\n" + "\n".join(summaries) + "\n\n"
         "아래 형식으로 정확히 출력하세요. 다른 말은 쓰지 마세요.\n\n"
-        "FLOW: (전체 기사를 관통하는 핵심 흐름 1문장)\n\n"
+        "FLOW: (오늘 기사 전체를 관통하는 단 하나의 흐름 — 반드시 한국어 1문장)\n\n"
         "INSIGHTS:\n"
-        "• (인사이트 1 — 1~2문장, 전문용어엔 괄호 설명)\n"
+        "• (인사이트 1 — 구체 지표·수치·변화 포함, 한국 산업/투자 영향 연결, 한국어 1~2문장)\n"
         "• (인사이트 2)\n"
         "• (인사이트 3)\n"
         "• (인사이트 4, 있으면)\n\n"
-        "TOP: (CEO가 가장 먼저 읽어야 할 기사 제목 — 한 줄로 왜 중요한지)\n"
+        "TOP: (CEO가 가장 먼저 읽어야 할 이유 — 기사 제목 말고 왜 중요한지, 한국어 1문장)\n"
     )
     try:
-        import subprocess as _sp
-        r = _sp.run(
-            ["/opt/homebrew/bin/claude", "-p", prompt],
-            capture_output=True, text=True, timeout=60,
-            env={**os.environ,
-                 "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
-                 "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY", "")},
-        )
-        raw = (r.stdout or "").strip()
-        if raw and r.returncode == 0:
+        raw = ""
+        try:
+            import subprocess as _sp
+            r = _sp.run(
+                ["/opt/homebrew/bin/claude", "-p", prompt],
+                capture_output=True, text=True, timeout=60,
+                env={**os.environ,
+                     "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+                     "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY", "")},
+            )
+            raw = (r.stdout or "").strip() if r.returncode == 0 else ""
+        except Exception:
+            raw = ""
+        if not raw:
+            raw, _usage = generate_text(
+                prompt,
+                model=gemini_model_name(),
+                max_output_tokens=1000,
+            )
+        if raw:
             flow, insights, top_story = "", [], ""
             section = None
             for line in raw.splitlines():
@@ -4564,13 +4679,16 @@ def _pdf_generate_insights(articles: list[dict]) -> dict:
                     top_story = s[4:].strip(); section = None
                 elif section == "insights" and s.startswith("•"):
                     insights.append(s)
-            return {"flow": flow, "insights": insights, "top_story": top_story}
+            if flow or insights:
+                return {"flow": flow, "insights": insights, "top_story": top_story}
     except Exception:
         pass
+    # fallback: 한국어 제목이 있는 기사만 발췌
+    korean_titles = [a.get("final_title", "") for a in non_fallback[:5] if a.get("final_title")]
     return {
         "flow": "오늘 수집된 주요 기사를 확인하세요.",
-        "insights": [f"• {a.get('final_title','')[:80]}" for a in articles[:5] if a.get("final_title")],
-        "top_story": articles[0].get("final_title", "") if articles else "",
+        "insights": [f"• {t[:80]}" for t in korean_titles],
+        "top_story": korean_titles[0] if korean_titles else (articles[0].get("final_title", "") if articles else ""),
     }
 
 
@@ -4588,11 +4706,23 @@ def _build_news_pdf(date: str) -> bytes:
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
 
+    # 해당 날짜(KST 기준 ≈ UTC +9h) 기사 우선, 없으면 최근 48h 폴백
     rows = _execute_query(
         """SELECT ro.id, ro.final_title, ro.final_body, ro.tags, ro.created_at
-           FROM refined_outputs ro ORDER BY ro.created_at DESC LIMIT 100""",
-        (),
+           FROM refined_outputs ro
+           WHERE ro.created_at >= (%s::date)::timestamp
+             AND ro.created_at <  (%s::date + 1)::timestamp
+           ORDER BY ro.created_at DESC LIMIT 200""",
+        (date, date),
     ) or []
+    if not rows:
+        rows = _execute_query(
+            """SELECT ro.id, ro.final_title, ro.final_body, ro.tags, ro.created_at
+               FROM refined_outputs ro
+               WHERE ro.created_at > NOW() - INTERVAL '48 hours'
+               ORDER BY ro.created_at DESC LIMIT 200""",
+            (),
+        ) or []
     articles = [dict(r) for r in rows]
 
     buf = io.BytesIO()
@@ -4633,18 +4763,25 @@ def _build_news_pdf(date: str) -> bytes:
     C_GREEN  = colors.HexColor("#059669")
     C_DIVIDER= colors.HexColor("#bfdbfe")
 
-    title_s  = ps("pt",   fontSize=22, leading=28, textColor=C_NAVY,   spaceAfter=2)
-    sub_s    = ps("ps",   fontSize=9,  textColor=C_MUTED,              spaceAfter=10)
-    flow_s   = ps("pfl",  fontSize=11, leading=17, textColor=C_INDIGO, spaceAfter=0)
-    ins_s    = ps("pins", fontSize=10, leading=16, textColor=C_NAVY,   spaceAfter=2)
-    top_s    = ps("ptop", fontSize=10, leading=16, textColor=C_AMBER,  spaceAfter=0)
-    ch_s     = ps("pch",  fontSize=12, leading=16, textColor=C_BLUE_L, spaceBefore=16, spaceAfter=4)
-    art_h_s  = ps("pah",  fontSize=11, leading=15, textColor=C_NAVY,   spaceBefore=8,  spaceAfter=3)
-    art_b_s  = ps("pab",  fontSize=9,  leading=14, textColor=C_SLATE,  spaceAfter=3)
-    art_k_s  = ps("pak",  fontSize=9,  leading=14, textColor=C_PURPLE, spaceAfter=2)
-    inv_h_s  = ps("pih",  fontSize=10, leading=14, textColor=C_GREEN,  spaceAfter=3)
-    inv_s    = ps("pi",   fontSize=9,  leading=14, textColor=colors.HexColor("#065f46"), spaceAfter=2)
-    inv_tag_s= ps("pit",  fontSize=8,  textColor=colors.HexColor("#047857"))
+    title_s     = ps("pt",    fontSize=22, leading=28, textColor=C_NAVY,   spaceAfter=2)
+    sub_s       = ps("ps",    fontSize=9,  textColor=C_MUTED,              spaceAfter=10)
+    flow_s      = ps("pfl",   fontSize=11, leading=17, textColor=C_INDIGO, spaceAfter=0)
+    ins_s       = ps("pins",  fontSize=10, leading=16, textColor=C_NAVY,   spaceAfter=2)
+    top_s       = ps("ptop",  fontSize=10, leading=16, textColor=C_AMBER,  spaceAfter=0)
+    ch_s        = ps("pch",   fontSize=12, leading=16, textColor=C_BLUE_L, spaceBefore=16, spaceAfter=4)
+    # 기사 카드 — 개조식 스타일
+    art_h_s     = ps("pah",   fontSize=10, leading=14, textColor=C_NAVY,   spaceBefore=8, spaceAfter=2, fontName=font)
+    art_hook_s  = ps("phook", fontSize=8.5,leading=13, textColor=C_SLATE,  spaceAfter=2)
+    art_blt_s   = ps("pblt",  fontSize=8,  leading=12, textColor=C_INDIGO, leftIndent=8,  spaceAfter=1)
+    art_blt_k_s = ps("pbltk", fontSize=8,  leading=12, textColor=C_PURPLE, leftIndent=8,  spaceAfter=1)
+    art_lbl_s   = ps("plbl",  fontSize=7.5,textColor=C_BLUE,               spaceAfter=1,  spaceBefore=3)
+    art_risk_s  = ps("prisk", fontSize=8,  leading=12, textColor=C_AMBER,  leftIndent=8,  spaceAfter=2)
+    art_act_s   = ps("pact",  fontSize=8,  leading=12, textColor=C_BLUE_L, leftIndent=8,  spaceAfter=2)
+    art_fb_h_s  = ps("pfbh",  fontSize=9,  leading=13, textColor=C_SLATE,  spaceBefore=6, spaceAfter=1)
+    art_fb_b_s  = ps("pfbb",  fontSize=7.5,leading=11, textColor=C_MUTED,  spaceAfter=2)
+    inv_h_s     = ps("pih",   fontSize=10, leading=14, textColor=C_GREEN,  spaceAfter=3)
+    inv_s       = ps("pi",    fontSize=9,  leading=14, textColor=colors.HexColor("#065f46"), spaceAfter=2)
+    inv_tag_s   = ps("pit",   fontSize=8,  textColor=colors.HexColor("#047857"))
 
     story: list = [
         Paragraph("Harness News Center", title_s),
@@ -4763,26 +4900,91 @@ def _build_news_pdf(date: str) -> bytes:
             story += [inner, Spacer(1, 0.2*cm)]
         story.append(Spacer(1, 0.3*cm))
 
-    # 채널별 기사
+    # 채널별 기사 — 개조식 렌더링
+    import re as _re
+
+    def _render_article_card(a: dict) -> list:
+        body = _pdf_parse_body(a.get("final_body") or {})
+        is_fb = _pdf_is_fallback(a)
+        title = esc(a.get("final_title") or "(제목 없음)")
+        block = []
+
+        if is_fb:
+            # 폴백 기사: 제목 + 요약 2문장
+            block.append(Paragraph(title, art_fb_h_s))
+            summary = body.get("summary") or ""
+            if summary:
+                sents = [s.strip() for s in summary.split(". ") if s.strip()][:2]
+                brief = ". ".join(sents)
+                if len(brief) > 200:
+                    brief = brief[:197] + "..."
+                block.append(Paragraph(esc(brief), art_fb_b_s))
+            return block
+
+        # 정상 기사: 개조식 전체 구조
+        block.append(Paragraph(title, art_h_s))
+
+        # 핵심 한 줄 (hook 첫 1-2문장)
+        hook = body.get("hook") or ""
+        if hook:
+            sents = [s.strip() for s in hook.split(". ") if s.strip()][:2]
+            hook_brief = ". ".join(sents)
+            if len(hook_brief) > 200:
+                hook_brief = hook_brief[:197] + "..."
+            block.append(Paragraph(esc(hook_brief), art_hook_s))
+
+        # 핵심 지표 (quantitative_snapshot)
+        quant = body.get("quantitative_snapshot") or {}
+        if isinstance(quant, str):
+            try:
+                quant = json.loads(quant)
+            except Exception:
+                quant = {}
+        quant_items = _pdf_extract_quant(quant)
+        for item in quant_items:
+            block.append(Paragraph(f"▪ {esc(item)}", art_blt_s))
+
+        # 한국 함의
+        korea = body.get("korea_strategic_context") or ""
+        korea_bullets = _pdf_extract_bullets(korea, max_items=2)
+        if korea_bullets:
+            block.append(Paragraph("▸ 한국 함의", art_lbl_s))
+            for b in korea_bullets:
+                block.append(Paragraph(f"▪ {esc(b)}", art_blt_k_s))
+
+        # 리스크 (1개)
+        risk = body.get("risk_and_bottlenecks") or ""
+        risk_bullets = _pdf_extract_bullets(risk, max_items=1)
+        if risk_bullets:
+            block.append(Paragraph(f"⚠ {esc(risk_bullets[0])}", art_risk_s))
+
+        # CEO 액션
+        exec_b = body.get("executive_decision_block") or {}
+        buy = _pdf_extract_buy(exec_b)
+        if buy:
+            conds = [c.strip() for c in _re.split(r'[①②③④]', buy) if c.strip()][:2]
+            if conds:
+                buy_brief = "  /  ".join(
+                    (f"①{c[:60]}" if i == 0 else f"②{c[:60]}")
+                    for i, c in enumerate(conds)
+                )
+            else:
+                buy_brief = buy[:150]
+            block.append(Paragraph(f"→ CEO 액션: {esc(buy_brief)}", art_act_s))
+
+        return block
+
     for ch in _PDF_CH_ORDER:
         group = ch_groups.get(ch, [])
         if not group:
             continue
-        story.append(Paragraph(f"{_PDF_CHANNEL_LABELS.get(ch, ch)}  ({len(group)}건)", ch_s))
+        non_fb = [a for a in group if not _pdf_is_fallback(a)]
+        fb = [a for a in group if _pdf_is_fallback(a)]
+        label_cnt = f"{len(non_fb)}건" + (f" + 참고 {len(fb)}건" if fb else "")
+        story.append(Paragraph(f"{_PDF_CHANNEL_LABELS.get(ch, ch)}  ({label_cnt})", ch_s))
         story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dbeafe")))
-        for a in group:
-            body = _pdf_parse_body(a.get("final_body") or {})
-            hook  = body.get("hook") or ""
-            korea = body.get("korea_strategic_context") or ""
-            buy   = _pdf_extract_buy(body.get("executive_decision_block") or {})
-            block = [Paragraph(esc(a.get("final_title") or "(제목 없음)"), art_h_s)]
-            if hook:
-                block.append(Paragraph(esc(hook[:400]), art_b_s))
-            if korea:
-                block.append(Paragraph(f"▸ {esc(korea[:300])}", art_k_s))
-            if buy:
-                block.append(Paragraph(f"→ CEO 액션: {esc(buy[:200])}", art_b_s))
-            story.append(KeepTogether(block))
+        for a in non_fb + fb:
+            story.append(KeepTogether(_render_article_card(a)))
 
     doc.build(story)
     return buf.getvalue()
