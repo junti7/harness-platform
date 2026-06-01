@@ -269,6 +269,62 @@ export function TopBar({
 
     </header>
 
+    {/* ── 모바일 하단 탭 바 ─────────────────────────────── */}
+    <nav className="mobile-bottom-nav" aria-label="하단 탭 바">
+      <button
+        type="button"
+        className={`mobile-bottom-tab ${activeView === 'dashboard' ? 'active' : ''}`}
+        onClick={() => onChangeView('dashboard')}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/>
+          <path d="M9 21V12h6v9"/>
+        </svg>
+        <span>Home</span>
+      </button>
+      <button
+        type="button"
+        className={`mobile-bottom-tab ${activeView === 'news-center' ? 'active' : ''}`}
+        onClick={() => onChangeView('news-center')}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/>
+          <path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6Z"/>
+        </svg>
+        <span>뉴스</span>
+      </button>
+      <button
+        type="button"
+        className={`mobile-bottom-tab ${activeView === 'approvals' ? 'active' : ''}`}
+        onClick={() => onChangeView('approvals')}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+        </svg>
+        <span>결재{pendingApprovals > 0 && <span className="mobile-bottom-badge">{pendingApprovals > 9 ? '9+' : pendingApprovals}</span>}</span>
+      </button>
+      <button
+        type="button"
+        className={`mobile-bottom-tab ${activeView === 'pipeline' ? 'active' : ''}`}
+        onClick={() => onChangeView('pipeline')}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>
+        </svg>
+        <span>자료수집</span>
+      </button>
+      <button
+        type="button"
+        className={`mobile-bottom-tab ${mobileMenuOpen ? 'active' : ''}`}
+        onClick={() => setMobileMenuOpen(current => !current)}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>
+        </svg>
+        <span>더보기</span>
+      </button>
+    </nav>
+
     {mobileMenuOpen && (
       <div className="mobile-nav-backdrop" onClick={() => setMobileMenuOpen(false)}>
         <div className="mobile-nav-sheet" onClick={event => event.stopPropagation()}>
@@ -297,6 +353,9 @@ export function TopBar({
                 </button>
                 <button type="button" className={`mobile-nav-item ${activeView === 'pipeline' ? 'active' : ''}`} onClick={() => onChangeView('pipeline')}>
                   <span>자료수집</span>
+                </button>
+                <button type="button" className={`mobile-nav-item ${activeView === 'news-center' ? 'active' : ''}`} onClick={() => onChangeView('news-center')}>
+                  <span>뉴스</span>
                 </button>
                 <button type="button" className={`mobile-nav-item ${activeView === 'settings' ? 'active' : ''}`} onClick={() => onChangeView('settings')}>
                   <span>설정</span>
