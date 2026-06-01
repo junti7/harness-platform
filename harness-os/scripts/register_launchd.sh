@@ -14,14 +14,23 @@ for name in \
   com.harness.maily-metrics-sync \
   com.harness.tier2-filter \
   com.harness.tier2-filter-fast \
+  com.harness.tier3-filter \
   com.harness.daily-news-pdf \
-  com.harness.pipeline-watchdog; do
+  com.harness.pipeline-watchdog \
+  com.harness.ibkr-watchdog; do
   src="$PLIST_DIR/$name.plist"
   dst="$AGENT_DIR/$name.plist"
-  cp "$src" "$dst"
+  sed "s|__ROOT__|$ROOT|g" "$src" >"$dst"
   launchctl unload "$dst" >/dev/null 2>&1 || true
   launchctl load "$dst"
   echo "loaded: $name"
 done
+
+legacy_backend="$AGENT_DIR/com.harness.backend.plist"
+if [ -f "$legacy_backend" ]; then
+  launchctl unload "$legacy_backend" >/dev/null 2>&1 || true
+  rm -f "$legacy_backend"
+  echo "removed: com.harness.backend (legacy)"
+fi
 
 echo "Harness-OS launchd services registered."

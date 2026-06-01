@@ -7,10 +7,12 @@ Pipeline Watchdog — 파이프라인 이상 감지 시 CEO Slack 즉시 알림
   3. Tier 2 필터 정체 (filtered_signals 6h 내 신규 0건 + pending 100건 초과)
   4. Tier 3 정제 정체 (refined_outputs 48h 내 신규 0건)
   5. Tier 4 발행 차단 (qa_clear 없는 refined_outputs 10건 초과)
+  6. IBKR Gateway 연결 끊김 (포트 4002 미응답)
 """
 from __future__ import annotations
 
 import os
+import socket
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -34,6 +36,9 @@ CRITICAL_SERVICES = [
     "com.harness.tier2-filter-fast",
     "com.harness.harness-os-backend",
 ]
+
+IBKR_HOST = "127.0.0.1"
+IBKR_PORT = 4002
 
 
 # ── Slack 알림 ──────────────────────────────────────────────────────────────
@@ -140,6 +145,17 @@ def _check_db() -> list[str]:
     return issues
 
 
+# ── IBKR Gateway 체크 ────────────────────────────────────────────────────────
+
+def _check_ibkr() -> list[str]:
+    try:
+        with socket.create_connection((IBKR_HOST, IBKR_PORT), timeout=5):
+            print(f"[OK] IBKR Gateway {IBKR_HOST}:{IBKR_PORT} 연결 정상")
+            return []
+    except OSError:
+        return [f"🚨 IBKR Gateway 연결 끊김 — {IBKR_HOST}:{IBKR_PORT} 미응답\n  → 수동 재로그인 필요 (Mac Mini 화면 공유 또는 VNC Viewer)"]
+
+
 # ── 메인 ─────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -148,6 +164,7 @@ def main() -> None:
     all_issues: list[str] = []
     all_issues.extend(_check_services())
     all_issues.extend(_check_db())
+    all_issues.extend(_check_ibkr())
 
     if all_issues:
         print(f"[ALERT] 이상 {len(all_issues)}건 감지")
@@ -159,4 +176,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if "--ibkr-only" in sys.argv:
+        print(f"[{datetime.now(timezone.utc).isoformat()}] IBKR Watchdog 실행")
+        issues = _check_ibkr()
+        if issues:
+            print(f"[ALERT] IBKR Gateway 연결 끊김")
+            _send_alert("IBKR Gateway 연결 끊김", issues)
+        else:
+            print("[OK] IBKR Gateway 정상")
+    else:
+        main()
