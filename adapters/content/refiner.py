@@ -166,6 +166,34 @@ def _extract_json_candidate(raw_text: str) -> str:
     raise ValueError("JSON 닫는 } 쌍이 맞지 않음")
 
 
+def _fix_invalid_json_escapes(s: str) -> str:
+    """JSON 문자열 내 무효 이스케이프 시퀀스(예: \D, \e) → \\X 로 치환."""
+    valid_esc = set('"\\' + "/" + "bfnrtu")
+    result: list[str] = []
+    i = 0
+    in_string = False
+    escape_next = False
+    while i < len(s):
+        ch = s[i]
+        if escape_next:
+            if in_string and ch not in valid_esc:
+                result.append("\\")  # 추가 백슬래시로 이스케이프
+            result.append(ch)
+            escape_next = False
+            i += 1
+            continue
+        if ch == "\\" and in_string:
+            result.append(ch)
+            escape_next = True
+            i += 1
+            continue
+        if ch == '"':
+            in_string = not in_string
+        result.append(ch)
+        i += 1
+    return "".join(result)
+
+
 def _parse_refiner_json(raw_text: str) -> dict:
     candidates: list[str] = []
     try:
@@ -173,13 +201,20 @@ def _parse_refiner_json(raw_text: str) -> dict:
     except Exception:
         candidates.append((raw_text or "").strip())
 
-    for candidate in list(candidates):
+    expanded: list[str] = []
+    for candidate in candidates:
+        expanded.append(candidate)
+        # 제어문자 제거
         sanitized = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", candidate)
         if sanitized != candidate:
-            candidates.append(sanitized)
+            expanded.append(sanitized)
+        # 무효 JSON 이스케이프 수정
+        fixed = _fix_invalid_json_escapes(sanitized)
+        if fixed != sanitized:
+            expanded.append(fixed)
 
     last_error: Exception | None = None
-    for candidate in candidates:
+    for candidate in expanded:
         if not candidate:
             continue
         try:
