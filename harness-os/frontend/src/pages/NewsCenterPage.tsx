@@ -416,24 +416,23 @@ export function NewsCenterPage({ apiBase, authHeaders }: Props) {
                 onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
                 onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
               />
-              {!isMobile && (
-                <button
-                  onClick={generatePdf}
-                  disabled={loadingAction === 'pdf'}
-                  style={{
-                    padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none',
-                    background: 'var(--accent)', color: '#fff', fontSize: 13, fontWeight: 600,
-                    cursor: loadingAction === 'pdf' ? 'wait' : 'pointer',
-                    opacity: loadingAction === 'pdf' ? 0.65 : 1,
-                    transition: 'all var(--dur) var(--ease)',
-                    boxShadow: '0 1px 4px rgba(37,99,235,0.18)',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent-hover)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'var(--accent)'; e.currentTarget.style.transform = 'translateY(0)' }}
-                >
-                  {loadingAction === 'pdf' ? '생성 중…' : '📄 PDF 리포트'}
-                </button>
-              )}
+              <button
+                onClick={generatePdf}
+                disabled={loadingAction === 'pdf'}
+                style={{
+                  padding: isMobile ? '8px 12px' : '8px 20px', borderRadius: 'var(--r-md)', border: 'none',
+                  background: 'var(--accent)', color: '#fff', fontSize: 13, fontWeight: 600,
+                  cursor: loadingAction === 'pdf' ? 'wait' : 'pointer',
+                  opacity: loadingAction === 'pdf' ? 0.65 : 1,
+                  transition: 'all var(--dur) var(--ease)',
+                  boxShadow: '0 1px 4px rgba(37,99,235,0.18)',
+                  flex: isMobile ? '1' : undefined,
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent-hover)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'var(--accent)'; e.currentTarget.style.transform = 'translateY(0)' }}
+              >
+                {loadingAction === 'pdf' ? '생성 중…' : isMobile ? '📄 PDF' : '📄 PDF 리포트'}
+              </button>
               <button
                 onClick={sendSlack}
                 disabled={loadingAction === 'slack'}
