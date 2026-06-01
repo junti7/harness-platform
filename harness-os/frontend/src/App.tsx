@@ -744,7 +744,7 @@ function App() {
       )}
 
       {activeView === 'edu-pilot' && (
-        <EduPilotPage />
+        <EduPilotPage apiBase={API_BASE} authHeaders={authHeaders} />
       )}
 
       {activeView === 'settings' && (

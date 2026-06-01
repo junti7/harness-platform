@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-ROOT="/Users/juntae.park/projects/harness-platform"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 VENV_PY="$ROOT/.venv/bin/python"
 SCRIPT="$ROOT/scripts/sync_maily_metrics.py"
 CSV_PATH="${MAILY_METRICS_CSV_PATH:-}"

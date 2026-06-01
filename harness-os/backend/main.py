@@ -4369,6 +4369,112 @@ class DiaryNoteRequest(BaseModel):
     tags: list[str] = []
 
 
+# ── 교육 파일럿: 적응형 AI 부모 진단 대화 엔진 ─────────────────────────────────
+# 설계 (CEO 2026-06-01): 세그먼트별 톤(부모=베테랑 보험설계사 / 직장인=MZ),
+# 톤 점진적 상승(zero-base 공손 → 역술인 단정), 실패 시 즉시 톤 후퇴,
+# "사람이 들어가 있나?" 수준의 완성도.
+
+class EduDiagnoseTurn(BaseModel):
+    role: str   # 'ai' | 'user'
+    text: str
+
+
+class EduDiagnoseRequest(BaseModel):
+    segment: str = "parent"           # 'parent' | 'worker'
+    turn: int = 0                     # 대화 턴 수 (톤 상승 신호)
+    history: list[EduDiagnoseTurn] = []
+    user_text: str = ""               # 사용자 최신 자유 입력
+
+
+_EDU_TONE_LADDER = """너는 'Harness AI 부모 진단'의 상담 AI다. 목표는 사용자가
+"어? 안에 진짜 사람이 있나?" 라고 느낄 만큼 자연스러운 대화로 신뢰를 쌓고,
+마지막에 맞춤 처방(유료 ₩9,900) 또는 부모 4주 과정(2주 무료)으로 자연스럽게 연결하는 것이다.
+
+[절대 원칙 — 톤의 점진적 상승]
+처음부터 친한 척하면 "왜 친한 척하지?" 반감이 생긴다. 톤은 반드시 서서히 높인다.
+- 톤레벨 0 (turn 0~1, zero-base): 완전히 공손하고 거리감 있게. 단정 금지. 모르는 척 정중히 묻는다.
+- 톤레벨 1 (turn 2~3, 경청): 따뜻하게 공감하되 아직 단정하지 않는다. 사용자 말을 되짚는다.
+- 톤레벨 2 (turn 4+, 역술인 단정): 사용자가 '직접 말하지 않은 것'을 조심스럽게 맞힌다.
+  "혹시… ~하지 않으셨어요?" / "이런 적 있으시죠?" 형태로. 맞으면 신뢰가 폭발한다.
+- 톤레벨 3 (신뢰 구축 후): 베테랑처럼 친근하게 처방을 제시하고 다음 단계로 연결한다.
+
+[세그먼트별 화법]
+- parent(부모/어머님·아버님): 베테랑 보험설계사가 단골을 대하듯. 직설적이지만 따뜻하고,
+  상대 입장을 먼저 알아주는 한국 부모의 언어. 과한 존칭 남발 금지, 진심 어린 직설.
+- worker(직장인): MZ 톤. 담백하게 시작해 점점 캐주얼하게. 공감 이모지·가벼운 구어체 허용.
+
+[실패 복구 — 매우 중요]
+사용자 반응이 차갑거나("글쎄요", "아닌데요", 짧은 부정), 내 단정이 빗나가면:
+즉시 톤레벨 1로 후퇴한다. 절대 우기지 않는다.
+"아이고, 제가 넘겨짚었네요. 그럼 실제로는 어떠세요?" 처럼 겸손하게 주도권을 돌려준다.
+역술인도 못 맞히면 빠르게 빠져나와 다시 듣는다. 빗나간 단정을 반복하지 않는다.
+
+[출력 형식 — JSON만, 다른 텍스트 금지]
+{
+  "message": "사용자에게 보낼 다음 한 마디 (2~4문장, 자연스러운 한국어 구어체)",
+  "tone_level": 0~3,
+  "phase": "opening|probing|reflecting|recovering|prescribing",
+  "quick_replies": ["사용자가 누를 1~3개의 짧은 응답 선택지 (없으면 빈 배열)"],
+  "show_offer": false
+}
+신뢰가 충분히 쌓여 처방으로 넘어갈 때만 show_offer=true, phase="prescribing".
+"""
+
+
+@app.post("/api/edu/diagnose")
+def edu_diagnose(
+    req: EduDiagnoseRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    """적응형 AI 부모 진단 — 톤 사다리 기반 대화 엔진 (Gemini)."""
+    seg_label = "부모(어머님·아버님)" if req.segment == "parent" else "직장인(MZ)"
+    convo = "\n".join(
+        f"{'AI' if t.role == 'ai' else '사용자'}: {t.text}" for t in req.history[-8:]
+    )
+    prompt = (
+        f"{_EDU_TONE_LADDER}\n\n"
+        f"[현재 세그먼트] {seg_label}\n"
+        f"[현재 턴 번호] {req.turn} (톤레벨 선택 기준)\n"
+        f"[지금까지 대화]\n{convo or '(아직 없음 — 첫 인사)'}\n\n"
+        f"[사용자 최신 입력] {req.user_text or '(첫 진입 — 사용자가 아직 말하지 않음)'}\n\n"
+        f"위 원칙에 따라 다음 한 마디를 JSON으로 생성하라."
+    )
+    try:
+        raw, _usage = generate_text(
+            prompt,
+            # gemini-2.5-pro는 thinking 토큰이 output budget을 소모 → flash로 충분한 품질·여유
+            model=os.getenv("EDU_DIAGNOSE_MODEL", "gemini-2.5-flash"),
+            max_output_tokens=2048,
+            timeout_seconds=25,
+        )
+        cleaned = re.sub(r"```(?:json)?", "", raw or "").strip().rstrip("`").strip()
+        # 관대한 JSON 추출: 본문 앞뒤에 텍스트가 섞여도 {...} 블록만 파싱
+        if not cleaned.startswith("{"):
+            m = re.search(r"\{.*\}", cleaned, re.DOTALL)
+            if m:
+                cleaned = m.group(0)
+        data = json.loads(cleaned)
+        return {
+            "ok": True,
+            "message": data.get("message", ""),
+            "tone_level": int(data.get("tone_level", 0)),
+            "phase": data.get("phase", "probing"),
+            "quick_replies": data.get("quick_replies", []) or [],
+            "show_offer": bool(data.get("show_offer", False)),
+        }
+    except Exception as exc:  # noqa: BLE001
+        print(f"[edu_diagnose] 실패 — fallback: {type(exc).__name__}: {exc}")
+        # LLM 실패 시에도 대화가 끊기지 않도록 안전한 공손 fallback
+        return {
+            "ok": False,
+            "message": "말씀 감사합니다. 조금만 더 들려주실 수 있을까요?",
+            "tone_level": 0,
+            "phase": "probing",
+            "quick_replies": [],
+            "show_offer": False,
+        }
+
+
 @app.post("/api/trading/diary/note")
 def trading_diary_add_note(
     req: DiaryNoteRequest,
