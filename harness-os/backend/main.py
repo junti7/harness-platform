@@ -4765,7 +4765,7 @@ def _build_news_pdf(date: str) -> bytes:
     top_s       = ps("ptop",  fontSize=10, leading=16, textColor=C_AMBER,  spaceAfter=0)
     ch_s        = ps("pch",   fontSize=12, leading=16, textColor=C_BLUE_L, spaceBefore=16, spaceAfter=4)
     # 기사 카드 — 개조식 스타일
-    art_h_s     = ps("pah",   fontSize=10, leading=14, textColor=C_NAVY,   spaceBefore=8, spaceAfter=2, fontName=font)
+    art_h_s     = ps("pah",   fontSize=10, leading=14, textColor=C_NAVY,   spaceBefore=8, spaceAfter=2)
     art_hook_s  = ps("phook", fontSize=8.5,leading=13, textColor=C_SLATE,  spaceAfter=2)
     art_blt_s   = ps("pblt",  fontSize=8,  leading=12, textColor=C_INDIGO, leftIndent=8,  spaceAfter=1)
     art_blt_k_s = ps("pbltk", fontSize=8,  leading=12, textColor=C_PURPLE, leftIndent=8,  spaceAfter=1)
