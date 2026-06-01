@@ -1,4 +1,3 @@
-import google.generativeai as genai
 import json
 import logging
 import os
@@ -6,22 +5,23 @@ import re
 from dotenv import load_dotenv
 from core.domain_config import load_prompt_text
 from core.database import execute_query
+from core.gemini_sdk import generate_text
 from core.logger import HarnessLogger
 from core.cost_alerts import check_and_alert
 
 load_dotenv()
 
-# --- Gemini Configuration ---
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-
 DAILY_COST_LIMIT = float(os.getenv("DAILY_COST_LIMIT_USD", "2.00"))
 TIER3_BATCH_LIMIT = int(os.getenv("TIER3_BATCH_LIMIT", "10"))
+DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
-# Gemini 1.5 Pro pricing (per 1k tokens) - Placeholder, verify before production
+# Per-1k token estimates used only for internal rough logs/guards.
 MODEL_PRICES_PER_1K = {
-    "gemini-1.5-pro": (0.0035, 0.0105), 
+    "gemini-1.5-pro": (0.0035, 0.0105),
+    "gemini-2.5-flash": (0.0003, 0.0025),
+    "gemini-2.0-flash": (0.0003, 0.0025),
 }
-INPUT_COST_PER_1K, OUTPUT_COST_PER_1K = MODEL_PRICES_PER_1K["gemini-1.5-pro"]
+INPUT_COST_PER_1K, OUTPUT_COST_PER_1K = MODEL_PRICES_PER_1K["gemini-2.5-flash"]
 
 SYSTEM_PROMPT = load_prompt_text("physical_ai_analyst")
 _logger = logging.getLogger(__name__)
@@ -32,10 +32,11 @@ def _price_for_model(model: str) -> tuple[float, float]:
     for key, price in MODEL_PRICES_PER_1K.items():
         if key in model_lower:
             return price
-    return MODEL_PRICES_PER_1K["gemini-1.5-pro"]
+    return MODEL_PRICES_PER_1K["gemini-2.5-flash"]
 
 
-def estimate_cost(input_tokens: int, output_tokens: int, model: str = "gemini-1.5-pro-latest") -> float:
+def estimate_cost(input_tokens: int, output_tokens: int, model: str | None = None) -> float:
+    model = model or DEFAULT_GEMINI_MODEL
     input_price, output_price = _price_for_model(model)
     return (input_tokens / 1000 * input_price +
             output_tokens / 1000 * output_price)
@@ -48,7 +49,7 @@ def get_today_cost(logger=None) -> float:
             SELECT COALESCE(SUM(
                 CASE provider
                     WHEN 'anthropic' THEN (input_tokens::float/1000000*3.0) + (output_tokens::float/1000000*15.0)
-                    WHEN 'google'    THEN (input_tokens::float/1000000*3.5) + (output_tokens::float/1000000*10.5)
+                    WHEN 'google'    THEN (input_tokens::float/1000000*0.3) + (output_tokens::float/1000000*2.5)
                     WHEN 'openai'    THEN (input_tokens::float/1000000*5.0) + (output_tokens::float/1000000*15.0)
                     ELSE 0
                 END
@@ -87,18 +88,20 @@ def save_to_dlq(row: dict, error: str, logger):
         logger.error(f"DLQ 저장 실패: {dlq_err}")
 
 
-def save_refined_output(filtered_id, result: dict, tier3_model: str):
-    execute_query("""
+def save_refined_output(filtered_id, result: dict, tier3_model: str) -> int | None:
+    rows = execute_query("""
         INSERT INTO refined_outputs
             (filtered_signal_id, final_title, final_body, tags, tier3_model)
         VALUES (%s, %s, %s, %s, %s)
+        RETURNING id
     """, (
         filtered_id,
         result["final_title"],
         json.dumps(result, ensure_ascii=False),  # 전체 구조화 결과를 final_body에 저장
         json.dumps(result.get("tags", []), ensure_ascii=False),
         tier3_model,
-    ))
+    ), fetch=True)
+    return rows[0]["id"] if rows else None
 
 
 def build_user_content(row: dict) -> str:
@@ -126,29 +129,93 @@ def build_user_content(row: dict) -> str:
 {facts_str}"""
 
 
-def refine_signal(model: genai.GenerativeModel, row: dict) -> dict:
+def _extract_json_candidate(raw_text: str) -> str:
+    text = (raw_text or "").strip()
+    if not text:
+        raise ValueError("빈 응답")
+
+    text = text.replace("```json", "").replace("```", "").strip()
+    if text.startswith("{") and text.endswith("}"):
+        return text
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError("JSON 객체 경계를 찾지 못함")
+    return text[start : end + 1]
+
+
+def _parse_refiner_json(raw_text: str) -> dict:
+    candidates: list[str] = []
+    try:
+        candidates.append(_extract_json_candidate(raw_text))
+    except Exception:
+        candidates.append((raw_text or "").strip())
+
+    for candidate in list(candidates):
+        sanitized = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", candidate)
+        if sanitized != candidate:
+            candidates.append(sanitized)
+
+    last_error: Exception | None = None
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            return json.loads(candidate)
+        except Exception as exc:
+            last_error = exc
+    raise last_error or ValueError("JSON 파싱 실패")
+
+
+def _fallback_refined_output(row: dict, error: Exception) -> dict | None:
+    score = float(row.get("score") or 0.0)
+    title = (row.get("title") or "").strip()
+    summary = (row.get("summary") or "").strip()
+    source = (row.get("source") or "").strip()
+    if score < 0.75 or not title or not summary:
+        return None
+
+    compact_summary = re.sub(r"\s+", " ", summary)[:600].strip()
+    compact_title = re.sub(r"\s+", " ", title)[:120].strip()
+    return {
+        "final_title": compact_title,
+        "is_relevant": True,
+        "evidence_posture": {
+            "classification": "speculative",
+            "why": f"Tier3 fallback used after malformed model JSON: {type(error).__name__}",
+        },
+        "summary": compact_summary,
+        "source": source,
+        "tags": ["tier3-fallback", "json-recovery"],
+        "fallback_used": True,
+    }
+
+
+def refine_signal(model_name: str, row: dict) -> dict:
     user_content = build_user_content(row)
 
     # Gemini's system prompt is handled via GenerationConfig or passed differently
     # For simplicity, we prepend it to the user message as per some tutorials.
     full_prompt = SYSTEM_PROMPT + "\n반드시 유효한 JSON 형식으로 응답을 마무리하세요. 중간에 끊기지 않도록 분량을 조절하되 깊이는 유지하세요.\n\n---\n\n" + user_content
     
-    response = model.generate_content(full_prompt)
-
-    # Log API cost using response metadata if available, otherwise estimate
-    input_tokens = response.usage_metadata.prompt_token_count
-    output_tokens = response.usage_metadata.candidates_token_count
+    raw_text, usage = generate_text(
+        full_prompt,
+        model=model_name,
+        timeout_seconds=float(os.getenv("GEMINI_TIMEOUT_SECONDS", "45")),
+        max_output_tokens=4096,
+        response_mime_type="application/json",
+    )
+    input_tokens = usage["prompt_token_count"]
+    output_tokens = usage["candidates_token_count"]
     
     log_api_cost(
-        "gemini-1.5-pro-latest", # Or get from model object if possible
+        model_name,
         input_tokens,
         output_tokens,
     )
 
-    raw = response.text.strip()
-    raw = raw.replace("```json", "").replace("```", "").strip()
-
-    parsed = json.loads(raw)
+    parsed = _parse_refiner_json(raw_text)
 
     required = ["final_title", "is_relevant", "evidence_posture"]
     for field in required:
@@ -197,8 +264,7 @@ def refine(correlation_id: str = None):
 
     logger.info(f"처리 대상: {len(rows)}개 (score >= 0.3 기준)")
 
-    _gemini_model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-    model = genai.GenerativeModel(_gemini_model_name)
+    _gemini_model_name = DEFAULT_GEMINI_MODEL
     refined = 0
     skipped = 0
     total_cost = 0.0
@@ -212,14 +278,26 @@ def refine(correlation_id: str = None):
         logger.info(f"[{i+1}/{len(rows)}] 처리 중: {row['title'][:50]}... (score={row['score']:.2f})")
 
         try:
-            result = refine_signal(model, dict(row))
+            result = refine_signal(_gemini_model_name, dict(row))
             check_and_alert(get_today_cost(logger), DAILY_COST_LIMIT, logger)
         except json.JSONDecodeError as e:
+            fallback = _fallback_refined_output(dict(row), e)
+            if fallback:
+                save_refined_output(row["id"], fallback, f"{_gemini_model_name}:fallback")
+                logger.warning("  JSON 파싱 실패 — fallback 정제로 저장")
+                refined += 1
+                continue
             logger.error(f"  JSON 파싱 실패: {e}")
             save_to_dlq(dict(row), f"json_decode:{e}", logger)
             skipped += 1
             continue
         except Exception as e:
+            fallback = _fallback_refined_output(dict(row), e)
+            if fallback:
+                save_refined_output(row["id"], fallback, f"{_gemini_model_name}:fallback")
+                logger.warning(f"  {type(e).__name__} — fallback 정제로 저장")
+                refined += 1
+                continue
             logger.error(f"  에러: {type(e).__name__}: {e}")
             save_to_dlq(dict(row), f"{type(e).__name__}:{e}", logger)
             skipped += 1
@@ -230,14 +308,22 @@ def refine(correlation_id: str = None):
             skipped += 1
             continue
 
-        save_refined_output(row["id"], result, _gemini_model_name)
-        
-        # Cost is now logged inside refine_signal, this is an estimate for the final log
-        # In a real scenario, we'd pull the exact cost from the log or response
-        cost = estimate_cost(1000, 1000) 
+        refined_output_id = save_refined_output(row["id"], result, _gemini_model_name)
+
+        # cost는 refine_signal 내부에서 이미 로그됨. 여기서는 rough estimate만 사용.
+        cost = estimate_cost(1000, 1000, _gemini_model_name)
         total_cost += cost
         logger.info(f"  → 완료: {result['final_title'][:50]}")
         refined += 1
+
+        # Tier 3 완료 즉시 QA Gate 실행 (qa_clear 누적 방지)
+        if refined_output_id:
+            try:
+                from adapters.content.qa_agent import qa_check_refined_output
+                qa_ok = qa_check_refined_output(refined_output_id, correlation_id=correlation_id)
+                logger.info(f"  → QA: {'✅ APPROVED' if qa_ok else '❌ REJECTED'} (id={refined_output_id})")
+            except Exception as qa_err:
+                logger.warning(f"  → QA 실행 실패 (비치명적): {qa_err}")
 
     logger.info("=" * 50)
     logger.info(f"Tier 3 완료: 정제 {refined}개 / 스킵 {skipped}개 / 예상비용 ${total_cost:.4f}")
