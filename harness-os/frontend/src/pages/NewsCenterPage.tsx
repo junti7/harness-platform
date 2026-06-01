@@ -99,6 +99,21 @@ function formatDateKR(iso: string): string {
   return `${y}년 ${parseInt(m, 10)}월 ${parseInt(d, 10)}일`
 }
 
+/* ── Mobile breakpoint hook ──────────────────────────────── */
+
+function useIsMobile(breakpoint = 768): boolean {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth <= breakpoint : false
+  )
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint}px)`)
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [breakpoint])
+  return isMobile
+}
+
 /* ── Animated counter hook ───────────────────────────────── */
 
 function useAnimatedCount(target: number, durationMs = 600): number {
@@ -214,6 +229,7 @@ function SourcePill({ source }: { source: string }) {
    ═══════════════════════════════════════════════════════════ */
 
 export function NewsCenterPage({ apiBase, authHeaders }: Props) {
+  const isMobile = useIsMobile()
 
   /* ── State ─────────────────────────────────────────────── */
   const [channels, setChannels] = useState<Channel[]>([])
@@ -346,7 +362,7 @@ export function NewsCenterPage({ apiBase, authHeaders }: Props) {
       {/* ═══ HERO HEADER ═══════════════════════════════════ */}
       <header style={{
         position: 'relative', overflow: 'hidden',
-        padding: '48px 40px 36px',
+        padding: isMobile ? '20px 16px 16px' : '48px 40px 36px',
         background: 'linear-gradient(135deg, var(--surface) 0%, var(--accent-soft) 40%, rgba(14,165,233,0.08) 100%)',
         backgroundSize: '200% 200%',
         animation: 'nc-heroGradient 12s ease infinite',
@@ -373,53 +389,56 @@ export function NewsCenterPage({ apiBase, authHeaders }: Props) {
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-md)' }}>
             <div>
               <h1 style={{
-                margin: 0, fontSize: 36, fontWeight: 800, letterSpacing: '-0.025em',
+                margin: 0, fontSize: isMobile ? 22 : 36, fontWeight: 800, letterSpacing: '-0.025em',
                 color: 'var(--ink-strong)',
                 background: 'linear-gradient(135deg, var(--ink-strong) 0%, var(--accent) 100%)',
                 WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
               }}>
                 뉴스 센터
               </h1>
-              <p style={{ margin: '6px 0 0', fontSize: 15, color: 'var(--text-muted)', fontWeight: 500 }}>
+              <p style={{ margin: '6px 0 0', fontSize: isMobile ? 12 : 15, color: 'var(--text-muted)', fontWeight: 500 }}>
                 {formatDateKR(selectedDate)} · <span style={{ color: 'var(--accent)', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{totalSignals}</span> 건의 시그널 수집
               </p>
             </div>
 
             {/* Actions cluster */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', width: isMobile ? '100%' : 'auto' }}>
               <input
                 type="date"
                 value={selectedDate}
                 onChange={e => setSelectedDate(e.target.value)}
                 style={{
-                  padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)',
+                  padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)',
                   background: 'var(--surface)', color: 'var(--ink)', fontSize: 13, fontFamily: 'var(--font-sans)',
                   cursor: 'pointer', outline: 'none', transition: 'border-color var(--dur) var(--ease)',
+                  flex: isMobile ? '1' : undefined,
                 }}
                 onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
                 onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
               />
-              <button
-                onClick={generatePdf}
-                disabled={loadingAction === 'pdf'}
-                style={{
-                  padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none',
-                  background: 'var(--accent)', color: '#fff', fontSize: 13, fontWeight: 600,
-                  cursor: loadingAction === 'pdf' ? 'wait' : 'pointer',
-                  opacity: loadingAction === 'pdf' ? 0.65 : 1,
-                  transition: 'all var(--dur) var(--ease)',
-                  boxShadow: '0 1px 4px rgba(37,99,235,0.18)',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent-hover)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'var(--accent)'; e.currentTarget.style.transform = 'translateY(0)' }}
-              >
-                {loadingAction === 'pdf' ? '생성 중…' : '📄 PDF 리포트'}
-              </button>
+              {!isMobile && (
+                <button
+                  onClick={generatePdf}
+                  disabled={loadingAction === 'pdf'}
+                  style={{
+                    padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none',
+                    background: 'var(--accent)', color: '#fff', fontSize: 13, fontWeight: 600,
+                    cursor: loadingAction === 'pdf' ? 'wait' : 'pointer',
+                    opacity: loadingAction === 'pdf' ? 0.65 : 1,
+                    transition: 'all var(--dur) var(--ease)',
+                    boxShadow: '0 1px 4px rgba(37,99,235,0.18)',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent-hover)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'var(--accent)'; e.currentTarget.style.transform = 'translateY(0)' }}
+                >
+                  {loadingAction === 'pdf' ? '생성 중…' : '📄 PDF 리포트'}
+                </button>
+              )}
               <button
                 onClick={sendSlack}
                 disabled={loadingAction === 'slack'}
                 style={{
-                  padding: '8px 20px', borderRadius: 'var(--r-md)',
+                  padding: '8px 16px', borderRadius: 'var(--r-md)',
                   border: '1px solid var(--border)', background: 'var(--surface)',
                   color: 'var(--ink)', fontSize: 13, fontWeight: 600,
                   cursor: loadingAction === 'slack' ? 'wait' : 'pointer',
@@ -429,7 +448,7 @@ export function NewsCenterPage({ apiBase, authHeaders }: Props) {
                 onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--ink)'; e.currentTarget.style.transform = 'translateY(0)' }}
               >
-                {loadingAction === 'slack' ? '발송 중…' : '💬 Slack 발송'}
+                {loadingAction === 'slack' ? '발송 중…' : '💬 Slack'}
               </button>
             </div>
           </div>
@@ -437,12 +456,12 @@ export function NewsCenterPage({ apiBase, authHeaders }: Props) {
       </header>
 
       {/* ═══ BODY ══════════════════════════════════════════ */}
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 40px 80px' }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: isMobile ? '0 0 60px' : '0 40px 80px' }}>
 
         {/* ── Quick Stats Bar ─────────────────────────────── */}
         <div style={{
           display: 'flex', gap: 'var(--sp-sm)', overflowX: 'auto',
-          padding: '24px 0 8px', scrollbarWidth: 'none',
+          padding: isMobile ? '16px 0 6px' : '24px 0 8px', scrollbarWidth: 'none',
         }}>
           {Object.keys(channelCounts).length > 0
             ? Object.entries(channelCounts).map(([chId, cnt]) => {
@@ -473,7 +492,7 @@ export function NewsCenterPage({ apiBase, authHeaders }: Props) {
 
         {/* ── Channel Filter Tabs ─────────────────────────── */}
         <nav style={{
-          display: 'flex', gap: 6, padding: '16px 0 24px',
+          display: 'flex', gap: 6, padding: isMobile ? '10px 0 16px' : '16px 0 24px',
           overflowX: 'auto', scrollbarWidth: 'none',
         }}>
           {tabItems.map(tab => {
@@ -559,7 +578,7 @@ export function NewsCenterPage({ apiBase, authHeaders }: Props) {
             style={{
               position: 'relative', borderRadius: 'var(--r-lg)', overflow: 'hidden',
               border: '1px solid var(--border)', background: 'var(--surface)',
-              padding: '36px 40px', marginBottom: 28, cursor: 'pointer',
+              padding: isMobile ? '20px 16px' : '36px 40px', marginBottom: isMobile ? 16 : 28, cursor: 'pointer',
               transition: 'all 240ms var(--ease)',
               boxShadow: 'var(--shadow-card)',
               animation: appeared ? undefined : 'nc-fadeUp 0.5s var(--ease) both',
@@ -595,7 +614,7 @@ export function NewsCenterPage({ apiBase, authHeaders }: Props) {
             </div>
 
             <h2 style={{
-              margin: 0, fontSize: 24, fontWeight: 800, lineHeight: 1.35,
+              margin: 0, fontSize: isMobile ? 17 : 24, fontWeight: 800, lineHeight: 1.35,
               color: 'var(--ink-strong)', letterSpacing: '-0.015em',
             }}>
               {featuredItem.title}
@@ -634,8 +653,8 @@ export function NewsCenterPage({ apiBase, authHeaders }: Props) {
         {!loading && gridItems.length > 0 && (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
-            gap: 20,
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(340px, 1fr))',
+            gap: isMobile ? 12 : 20,
           }}>
             {gridItems.map((item, idx) => (
               <ArticleCard
@@ -643,6 +662,7 @@ export function NewsCenterPage({ apiBase, authHeaders }: Props) {
                 item={item}
                 index={idx}
                 appeared={appeared}
+                compact={isMobile}
                 onClick={() => setDetailItem(item)}
               />
             ))}
@@ -663,8 +683,8 @@ export function NewsCenterPage({ apiBase, authHeaders }: Props) {
 
 /* ── Article Card ─────────────────────────────────────────── */
 
-function ArticleCard({ item, index, appeared, onClick }: {
-  item: FeedItem; index: number; appeared: boolean; onClick: () => void
+function ArticleCard({ item, index, appeared, onClick, compact = false }: {
+  item: FeedItem; index: number; appeared: boolean; onClick: () => void; compact?: boolean
 }) {
   const vis = channelVisual(item.channel)
   const score = scoreNum(item.tier2_score)
@@ -676,7 +696,7 @@ function ArticleCard({ item, index, appeared, onClick }: {
       style={{
         position: 'relative', borderRadius: 'var(--r-lg)',
         border: '1px solid var(--border)', background: 'var(--surface)',
-        padding: '22px 24px 20px 28px', cursor: 'pointer',
+        padding: compact ? '14px 14px 12px 18px' : '22px 24px 20px 28px', cursor: 'pointer',
         transition: 'all 220ms var(--ease)',
         animation: appeared ? undefined : `nc-fadeUp 0.45s var(--ease) ${80 + index * 50}ms both`,
       }}
@@ -776,7 +796,7 @@ function DetailPanel({ item, onClose }: { item: FeedItem; onClose: () => void })
       {/* Panel */}
       <aside style={{
         position: 'fixed', top: 0, right: 0, bottom: 0,
-        width: 'min(520px, 92vw)', zIndex: 1000,
+        width: 'min(520px, 100vw)', zIndex: 1000,
         background: 'var(--surface)', borderLeft: '1px solid var(--border)',
         boxShadow: '-8px 0 40px rgba(0,0,0,0.1)',
         display: 'flex', flexDirection: 'column',
