@@ -135,14 +135,35 @@ def _extract_json_candidate(raw_text: str) -> str:
         raise ValueError("빈 응답")
 
     text = text.replace("```json", "").replace("```", "").strip()
-    if text.startswith("{") and text.endswith("}"):
-        return text
 
     start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        raise ValueError("JSON 객체 경계를 찾지 못함")
-    return text[start : end + 1]
+    if start == -1:
+        raise ValueError("JSON 객체 시작점({)을 찾지 못함")
+
+    # brace depth 추적으로 정확한 닫는 } 위치 찾기
+    depth = 0
+    in_string = False
+    escape_next = False
+    for i, ch in enumerate(text[start:], start):
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == "\\" and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+
+    raise ValueError("JSON 닫는 } 쌍이 맞지 않음")
 
 
 def _parse_refiner_json(raw_text: str) -> dict:
@@ -199,11 +220,12 @@ def refine_signal(model_name: str, row: dict) -> dict:
     # For simplicity, we prepend it to the user message as per some tutorials.
     full_prompt = SYSTEM_PROMPT + "\n반드시 유효한 JSON 형식으로 응답을 마무리하세요. 중간에 끊기지 않도록 분량을 조절하되 깊이는 유지하세요.\n\n---\n\n" + user_content
     
+    # gemini-2.5-flash는 thinking 토큰이 output budget을 소모하므로 8192로 상향
     raw_text, usage = generate_text(
         full_prompt,
         model=model_name,
-        timeout_seconds=float(os.getenv("GEMINI_TIMEOUT_SECONDS", "45")),
-        max_output_tokens=4096,
+        timeout_seconds=float(os.getenv("GEMINI_TIMEOUT_SECONDS", "60")),
+        max_output_tokens=int(os.getenv("TIER3_MAX_OUTPUT_TOKENS", "8192")),
         response_mime_type="application/json",
     )
     input_tokens = usage["prompt_token_count"]
