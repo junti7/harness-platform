@@ -58,6 +58,7 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
     sources = [],
     channel_coverage = [],
     tier2_worker,
+    persona_fallbacks,
     current_topics = [],
     suggested_topics = [],
     generated_query_sources = [],
@@ -413,6 +414,64 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
                 {line}
               </div>
             ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="panel" style={{ padding: '1.25rem', marginBottom: '1rem' }}>
+        <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
+          Persona Fallback
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.75rem', marginBottom: '0.9rem' }}>
+          <div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Fallback 중</div>
+            <div style={{ fontSize: '1.05rem', fontWeight: 800 }}>{persona_fallbacks?.fallback_count ?? 0}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Orchestration mode</div>
+            <div style={{ fontSize: '1.05rem', fontWeight: 800 }}>{persona_fallbacks?.orchestration_provider_mode || 'auto'}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Jarvis reasoning</div>
+            <div style={{ fontSize: '1.05rem', fontWeight: 800 }}>{persona_fallbacks?.jarvis_reasoning_provider || 'claude'}</div>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.65rem' }}>
+          {(persona_fallbacks?.personas || []).filter(p => p.fallback_active).map(item => (
+            <div key={item.handle} style={{ border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-surface-lighter)', padding: '0.7rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.2rem' }}>
+                <span style={{ fontWeight: 700, fontSize: '0.8rem' }}>{item.display}</span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--color-warn)' }}>{item.primary_provider} → {item.active_provider}</span>
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>
+                {item.reason || 'fallback_active'}
+              </div>
+            </div>
+          ))}
+          {(persona_fallbacks?.personas || []).filter(p => p.fallback_active).length === 0 && (
+            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>현재 fallback 중인 persona 없음</div>
+          )}
+        </div>
+        <div style={{ marginTop: '0.9rem' }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginBottom: '0.45rem' }}>최근 10건</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+            {(persona_fallbacks?.recent_events || []).map((event, idx) => (
+              <div key={`${event.ts}-${idx}`} style={{ border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-surface-lighter)', padding: '0.6rem 0.7rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.15rem' }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 700 }}>{event.persona_display}</span>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>{event.event_type}</span>
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
+                  {event.primary_provider} → {event.active_provider} · {event.reason || '-'}
+                </div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', marginTop: '0.15rem' }}>
+                  {relativeTime(event.ts)}
+                </div>
+              </div>
+            ))}
+            {(persona_fallbacks?.recent_events || []).length === 0 && (
+              <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>최근 fallback 이벤트 없음</div>
+            )}
           </div>
         </div>
       </div>

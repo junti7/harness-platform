@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
-type AppView = 'dashboard' | 'approvals' | 'conference' | 'ars' | 'meetings' | 'costs' | 'tokens' | 'settings' | 'pipeline' | 'trading-diary' | 'openclaw' | 'news-center'
+type AppView = 'dashboard' | 'approvals' | 'conference' | 'ars' | 'meetings' | 'costs' | 'tokens' | 'settings' | 'pipeline' | 'trading-diary' | 'openclaw' | 'news-center' | 'edu-pilot'
 
 type Props = {
   theme: 'light' | 'dark'
@@ -22,6 +22,13 @@ type NavGroup = {
 }
 
 const NAV_GROUPS: NavGroup[] = [
+  {
+    id: 'education',
+    label: '교육',
+    items: [
+      { view: 'edu-pilot', label: '부모 AI 진단 (1호 파일럿)' },
+    ],
+  },
   {
     id: 'trading',
     label: '투자',

@@ -252,6 +252,30 @@ export type DashboardPayload = {
         log_tail?: string[]
       }
     }
+    persona_fallbacks?: {
+      orchestration_provider_mode?: string
+      jarvis_reasoning_provider?: string
+      fallback_count?: number
+      personas?: Array<{
+        handle: string
+        display: string
+        primary_provider: string
+        fallback_provider?: string | null
+        active_provider: string
+        fallback_active: boolean
+        reason?: string
+        switched_at?: string
+      }>
+      recent_events?: Array<{
+        ts: string
+        event_type: string
+        persona_handle: string
+        persona_display: string
+        primary_provider: string
+        active_provider: string
+        reason?: string
+      }>
+    }
     current_topics?: Array<{
       topic: string
       kind: string
