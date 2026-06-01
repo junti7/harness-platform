@@ -8,16 +8,16 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/juntae.park/projects/harness-platform/.venv/bin/uvicorn</string>
+    <string>__ROOT__/.venv/bin/uvicorn</string>
     <string>main:app</string>
     <string>--host</string>
-    <string>127.0.0.1</string>
+    <string>0.0.0.0</string>
     <string>--port</string>
     <string>8000</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/juntae.park/projects/harness-platform/harness-os/backend</string>
+  <string>__ROOT__/harness-os/backend</string>
 
   <key>RunAtLoad</key>
   <true/>
@@ -25,9 +25,9 @@
   <true/>
 
   <key>StandardOutPath</key>
-  <string>/Users/juntae.park/projects/harness-platform/logs/harness-os-backend.log</string>
+  <string>__ROOT__/logs/harness-os-backend.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/juntae.park/projects/harness-platform/logs/harness-os-backend.error.log</string>
+  <string>__ROOT__/logs/harness-os-backend.error.log</string>
 
   <key>EnvironmentVariables</key>
   <dict>

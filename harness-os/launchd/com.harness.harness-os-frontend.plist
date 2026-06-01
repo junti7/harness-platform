@@ -13,14 +13,14 @@
     <string>dev</string>
     <string>--</string>
     <string>--host</string>
-    <string>127.0.0.1</string>
+    <string>0.0.0.0</string>
     <string>--port</string>
     <string>5173</string>
     <string>--strictPort</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/juntae.park/projects/harness-platform/harness-os/frontend</string>
+  <string>__ROOT__/harness-os/frontend</string>
 
   <key>RunAtLoad</key>
   <true/>
@@ -28,9 +28,9 @@
   <true/>
 
   <key>StandardOutPath</key>
-  <string>/Users/juntae.park/projects/harness-platform/logs/harness-os-frontend.log</string>
+  <string>__ROOT__/logs/harness-os-frontend.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/juntae.park/projects/harness-platform/logs/harness-os-frontend.error.log</string>
+  <string>__ROOT__/logs/harness-os-frontend.error.log</string>
 
   <key>EnvironmentVariables</key>
   <dict>
