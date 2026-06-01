@@ -104,9 +104,24 @@ def save_refined_output(filtered_id, result: dict, tier3_model: str) -> int | No
     return rows[0]["id"] if rows else None
 
 
+def _sanitize_for_prompt(text: str) -> str:
+    """LaTeX 수식·특수 이스케이프 제거 — 모델에 전달 전 전처리."""
+    if not text:
+        return text
+    # LaTeX 수식 블록 제거 ($...$, \(...\), \[...\])
+    text = re.sub(r'\$\$[^$]*\$\$', '[수식]', text)
+    text = re.sub(r'\$[^$\n]{1,80}\$', '[수식]', text)
+    text = re.sub(r'\\[\(\[].*?\\[\)\]]', '[수식]', text, flags=re.DOTALL)
+    # LaTeX 명령어 (\Delta, \alpha 등) → 제거
+    text = re.sub(r'\\[A-Za-z]+\b', '', text)
+    # 연속 공백/줄바꿈 정리
+    text = re.sub(r'[ \t]{2,}', ' ', text)
+    return text.strip()
+
+
 def build_user_content(row: dict) -> str:
-    title = row.get("title") or ""
-    summary = row.get("summary") or ""
+    title = _sanitize_for_prompt(row.get("title") or "")
+    summary = _sanitize_for_prompt(row.get("summary") or "")
     source = row.get("source") or ""
     score = row.get("score") or 0
     facts_raw = row.get("extracted_facts")
