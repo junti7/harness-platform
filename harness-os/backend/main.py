@@ -141,6 +141,7 @@ _SOURCE_MAP: dict[str, str | None] = {
     "arxiv": "arxiv",
     "youtube": "youtube",
     "rss": "rss",
+    "naver": "naver",
     "all": "rss,scholar,arxiv,youtube",
     "filter": None,
 }
@@ -3827,6 +3828,10 @@ def run_pipeline_job(body: PipelineRunRequest, _: None = Depends(_require_secret
         cmd = [str(python), str(script)]
         if body.dry_run:
             cmd += ["--dry-run"]
+    elif body.source == "naver":
+        # 네이버 커뮤니티 수집 (공식 검색 API — 카페글·지식iN·블로그)
+        script = _PROJECT_ROOT / "scripts" / "collect_naver_community.py"
+        cmd = [str(python), str(script), "--segment", "both"]
     else:
         script = _PROJECT_ROOT / "scripts" / "run_edu_deep_research.py"
         src_str = _SOURCE_MAP[body.source] or "scholar"
@@ -3862,7 +3867,8 @@ def run_pipeline_job(body: PipelineRunRequest, _: None = Depends(_require_secret
             "source": body.source,
             "topic": body.topic or "기본 쿼리 수집",
             "label": {"scholar": "Semantic Scholar", "arxiv": "arXiv", "youtube": "YouTube",
-                      "rss": "RSS", "all": "전체 수집", "filter": "투자 신호 정제"}.get(body.source, body.source),
+                      "rss": "RSS", "naver": "네이버 커뮤니티", "all": "전체 수집",
+                      "filter": "투자 신호 정제"}.get(body.source, body.source),
             "started_at": datetime.utcnow().isoformat() + "Z",
             "status": "running",
             "pid": proc.pid,

@@ -102,7 +102,15 @@ const SOURCE_DEFS = [
     icon: '📡',
     type: 'NEWS',
     desc: 'EdSurge, IEEE 등 뉴스피드',
-    match: (s: string) => !s.toLowerCase().includes('scholar') && !s.toLowerCase().startsWith('arxiv') && !s.toLowerCase().startsWith('youtube'),
+    match: (s: string) => !s.toLowerCase().includes('scholar') && !s.toLowerCase().startsWith('arxiv') && !s.toLowerCase().startsWith('youtube') && !s.toLowerCase().startsWith('naver'),
+  },
+  {
+    id: 'naver',
+    label: '네이버 커뮤니티',
+    icon: '💬',
+    type: 'COMMUNITY',
+    desc: '맘카페·지식iN·블로그 (공식 검색 API)',
+    match: (s: string) => s.toLowerCase().startsWith('naver'),
   },
   {
     id: 'filter',
