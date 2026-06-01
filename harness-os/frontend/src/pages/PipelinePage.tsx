@@ -191,6 +191,14 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
   const [newQuery, setNewQuery] = useState('')
   const [addingQuery, setAddingQuery] = useState(false)
 
+  // 수동 관찰 등록 (Blind 등 무API 소스)
+  const [obsSource, setObsSource] = useState('Blind')
+  const [obsSegment, setObsSegment] = useState<'worker' | 'parent'>('worker')
+  const [obsQuote, setObsQuote] = useState('')
+  const [obsUrl, setObsUrl] = useState('')
+  const [obsSaving, setObsSaving] = useState(false)
+  const [obsCount, setObsCount] = useState<number | null>(null)
+
   // 수집 데이터 탭 상태
   const [signals, setSignals] = useState<SignalsResponse | null>(null)
   const [sigFilter, setSigFilter] = useState({ source: '', status: '', q: '' })
@@ -321,6 +329,8 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
     return () => window.clearTimeout(timer)
   }, [tab, sigFilter])
 
+  useEffect(() => { void fetchObsCount() }, [])
+
   const runJob = async (source: string) => {
     if (launching !== null) return
     const topic = topicMode === 'custom' ? customTopicInput.trim() : selectedTopic
@@ -350,6 +360,35 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
   const stopJob = async (jobId: string) => {
     await fetch(`${apiBase}/api/pipeline/stop/${jobId}`, { method: 'POST', headers: authHeaders() })
     await fetchStatus()
+  }
+
+  const fetchObsCount = async () => {
+    try {
+      const res = await fetch(`${apiBase}/api/edu/observations`, { headers: authHeaders() })
+      const data = await res.json()
+      setObsCount(data.count ?? 0)
+    } catch { /* noop */ }
+  }
+
+  const addObservation = async () => {
+    if (!obsQuote.trim() || obsSaving) return
+    setObsSaving(true)
+    try {
+      const res = await fetch(`${apiBase}/api/edu/observation`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: obsSource, segment: obsSegment, quote: obsQuote.trim(), url: obsUrl.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) { alert(data.detail ?? '등록 실패'); return }
+      setObsQuote(''); setObsUrl('')
+      await fetchObsCount()
+      alert('등록됐습니다. 상담사가 이 글을 근거로 인용합니다.')
+    } catch (e) {
+      alert(`등록 오류: ${e}`)
+    } finally {
+      setObsSaving(false)
+    }
   }
 
   const addQuery = async () => {
@@ -932,6 +971,38 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* 수동 관찰 등록 — Blind 등 공식 API가 없는 소스 */}
+          <div className="panel" style={{ padding: '1rem', marginTop: '1rem', border: '1px solid var(--color-border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>💬 수동 관찰 등록 <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 400 }}>(블라인드 등 API 없는 커뮤니티)</span></div>
+                <div style={{ fontSize: '0.76rem', color: 'var(--color-text-muted)', marginTop: '0.2rem' }}>
+                  블라인드는 공식 API가 없고 크롤링은 ToS 위반입니다. 실제 보신 글의 요지를 등록하면 상담사가 근거로 인용합니다.
+                </div>
+              </div>
+              {obsCount !== null && (
+                <span style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>등록 {obsCount}건</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+              <input value={obsSource} onChange={e => setObsSource(e.target.value)} placeholder="출처 (예: Blind)"
+                style={{ flex: '0 0 130px', padding: '0.5rem', borderRadius: 6, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: '0.82rem' }} />
+              <select value={obsSegment} onChange={e => setObsSegment(e.target.value as 'worker' | 'parent')}
+                style={{ flex: '0 0 110px', padding: '0.5rem', borderRadius: 6, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: '0.82rem' }}>
+                <option value="worker">직장인</option>
+                <option value="parent">부모</option>
+              </select>
+              <input value={obsUrl} onChange={e => setObsUrl(e.target.value)} placeholder="원문 URL (선택)"
+                style={{ flex: '1 1 160px', padding: '0.5rem', borderRadius: 6, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: '0.82rem' }} />
+            </div>
+            <textarea value={obsQuote} onChange={e => setObsQuote(e.target.value)} placeholder="실제 보신 글의 요지를 적어주세요. 예: '블라인드에 AI 못 쓰면 승진 누락된다는 글이 자주 올라온다'"
+              style={{ width: '100%', minHeight: 60, padding: '0.5rem', borderRadius: 6, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: '0.84rem', resize: 'vertical', marginBottom: '0.5rem', fontFamily: 'inherit' }} />
+            <button disabled={obsSaving || !obsQuote.trim()} onClick={addObservation}
+              style={{ padding: '0.5rem 1rem', borderRadius: 6, border: 'none', background: obsQuote.trim() && !obsSaving ? 'var(--color-accent)' : 'var(--color-border)', color: '#fff', fontWeight: 700, fontSize: '0.82rem', cursor: obsQuote.trim() && !obsSaving ? 'pointer' : 'not-allowed' }}>
+              {obsSaving ? '등록 중...' : '관찰 등록'}
+            </button>
           </div>
 
           {/* 지금 실행 중 — 로그 즉시 표시 */}

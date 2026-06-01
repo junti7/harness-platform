@@ -4463,21 +4463,87 @@ __EVIDENCE__
 
 
 _EVIDENCE_BANK_PATH = PROJECT_ROOT / "data" / "edu_research" / "evidence_bank.json"
+# Blind 등 공식 API가 없는 소스 — 대표/부대표가 실제 본 글을 수동 등록 (ToS 안전)
+_OBSERVATIONS_PATH = PROJECT_ROOT / "data" / "edu_research" / "manual_observations.jsonl"
 
 
 def _load_evidence(segment: str) -> str:
-    """세그먼트에 맞는 실제 인용 자료를 프롬프트용 텍스트로 반환."""
+    """세그먼트에 맞는 실제 인용 자료(수집 뱅크 + 수동 관찰)를 프롬프트용 텍스트로 반환."""
+    lines: list[str] = []
+    # 1) 자동 수집 근거 뱅크
     try:
         with open(_EVIDENCE_BANK_PATH, encoding="utf-8") as f:
             bank = json.load(f)
-        items = [
-            it for it in bank.get("items", [])
-            if it.get("segment") in (segment, "both")
-        ]
-        lines = [f"- ({it['type']}) {it['cite']}\n  └ 출처: {it['source']}" for it in items]
-        return "\n".join(lines) if lines else "(이번엔 마땅한 자료 없음 — 인용 없이 대화)"
+        for it in bank.get("items", []):
+            if it.get("segment") in (segment, "both"):
+                lines.append(f"- ({it['type']}) {it['cite']}\n  └ 출처: {it['source']}")
     except Exception:
-        return "(자료 로드 실패 — 인용 없이 대화)"
+        pass
+    # 2) 수동 관찰 (Blind 등)
+    try:
+        if _OBSERVATIONS_PATH.exists():
+            with open(_OBSERVATIONS_PATH, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    rec = json.loads(line)
+                    if rec.get("segment") in (segment, "both"):
+                        src = rec.get("source", "커뮤니티")
+                        lines.append(f"- (커뮤니티 관찰) {rec.get('quote','')}\n  └ 출처: {src} (수동 관찰)")
+    except Exception:
+        pass
+    return "\n".join(lines) if lines else "(이번엔 마땅한 자료 없음 — 인용 없이 대화)"
+
+
+class EduObservationRequest(BaseModel):
+    source: str = "Blind"        # 출처 (Blind, Instagram 등 API 없는 소스)
+    segment: str = "worker"      # parent | worker
+    quote: str                   # 실제 관찰한 글의 인용/요지
+    url: str = ""
+    note: str = ""
+
+
+@app.post("/api/edu/observation")
+def edu_add_observation(
+    req: EduObservationRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    """Blind 등 무API 소스의 실제 관찰 글을 공식 등록 (ToS 안전, 수동 관찰)."""
+    import uuid
+    from datetime import timezone
+    rec = {
+        "id": str(uuid.uuid4())[:8],
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "source": req.source.strip() or "커뮤니티",
+        "segment": req.segment if req.segment in ("parent", "worker") else "worker",
+        "quote": req.quote.strip(),
+        "url": req.url.strip(),
+        "note": req.note.strip(),
+    }
+    if not rec["quote"]:
+        raise HTTPException(400, "관찰한 글 내용(quote)이 필요합니다.")
+    _OBSERVATIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(_OBSERVATIONS_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return {"ok": True, "id": rec["id"]}
+
+
+@app.get("/api/edu/observations")
+def edu_list_observations(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    """등록된 수동 관찰 목록 (최신순)."""
+    items: list[dict[str, Any]] = []
+    try:
+        if _OBSERVATIONS_PATH.exists():
+            with open(_OBSERVATIONS_PATH, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        items.append(json.loads(line))
+    except Exception:
+        pass
+    items.reverse()
+    return {"items": items, "count": len(items)}
 
 
 @app.post("/api/edu/diagnose")
