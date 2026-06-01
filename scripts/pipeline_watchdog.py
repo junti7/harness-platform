@@ -120,10 +120,11 @@ def _check_db() -> list[str]:
         if r3 and int(r3[0]["cnt"]) == 0:
             issues.append("Tier 3 정제 48h 신규 0건 — 정제 파이프라인 정지 의심")
 
-        # Tier 4 qa_clear 차단 — 60초 후 재확인해서 여전히 초과일 때만 알림
+        # Tier 4 qa_clear 차단 — 최근 48h 이내 생성된 건만 체크 (역사적 백로그 제외)
         _TIER4_QUERY = """
             SELECT COUNT(*) AS cnt FROM refined_outputs ro
-            WHERE NOT EXISTS (
+            WHERE ro.created_at > NOW() - INTERVAL '48 hours'
+              AND NOT EXISTS (
                 SELECT 1 FROM ceo_decisions cd
                 WHERE cd.target_type = 'refined_output'
                   AND cd.target_id = ro.id
@@ -133,12 +134,7 @@ def _check_db() -> list[str]:
         r4 = execute_query(_TIER4_QUERY, fetch=True)
         blocked = int(r4[0]["cnt"]) if r4 else 0
         if blocked > 10:
-            import time as _time
-            _time.sleep(60)
-            r4b = execute_query(_TIER4_QUERY, fetch=True)
-            blocked = int(r4b[0]["cnt"]) if r4b else 0
-            if blocked > 10:
-                issues.append(f"Tier 4 발행 차단: qa_clear 없는 refined_output {blocked}건 누적")
+            issues.append(f"Tier 4 발행 차단: 최근 48h qa_clear 없는 refined_output {blocked}건")
 
     except Exception as e:
         issues.append(f"DB 상태 조회 실패: {e}")
