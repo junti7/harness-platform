@@ -32,7 +32,7 @@ CRITICAL_SERVICES = [
     "com.harness.pipeline",
     "com.harness.tier2-filter",
     "com.harness.tier2-filter-fast",
-    "com.harness.backend",
+    "com.harness.harness-os-backend",
 ]
 
 
@@ -115,8 +115,8 @@ def _check_db() -> list[str]:
         if r3 and int(r3[0]["cnt"]) == 0:
             issues.append("Tier 3 정제 48h 신규 0건 — 정제 파이프라인 정지 의심")
 
-        # Tier 4 qa_clear 차단
-        r4 = execute_query("""
+        # Tier 4 qa_clear 차단 — 60초 후 재확인해서 여전히 초과일 때만 알림
+        _TIER4_QUERY = """
             SELECT COUNT(*) AS cnt FROM refined_outputs ro
             WHERE NOT EXISTS (
                 SELECT 1 FROM ceo_decisions cd
@@ -124,10 +124,16 @@ def _check_db() -> list[str]:
                   AND cd.target_id = ro.id
                   AND cd.approval_type = 'qa_clear'
             )
-        """, fetch=True)
+        """
+        r4 = execute_query(_TIER4_QUERY, fetch=True)
         blocked = int(r4[0]["cnt"]) if r4 else 0
         if blocked > 10:
-            issues.append(f"Tier 4 발행 차단: qa_clear 없는 refined_output {blocked}건 누적")
+            import time as _time
+            _time.sleep(60)
+            r4b = execute_query(_TIER4_QUERY, fetch=True)
+            blocked = int(r4b[0]["cnt"]) if r4b else 0
+            if blocked > 10:
+                issues.append(f"Tier 4 발행 차단: qa_clear 없는 refined_output {blocked}건 누적")
 
     except Exception as e:
         issues.append(f"DB 상태 조회 실패: {e}")
