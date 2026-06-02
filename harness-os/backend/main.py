@@ -5097,10 +5097,10 @@ def _run_edu_diagnose(req: EduDiagnoseRequest) -> dict[str, Any]:
     try:
         raw, _usage = generate_text(
             prompt,
-            # gemini-2.5-pro는 thinking 토큰이 output budget을 소모 → flash로 충분한 품질·여유
             model=os.getenv("EDU_DIAGNOSE_MODEL", "gemini-2.5-flash"),
             max_output_tokens=2048,
             timeout_seconds=25,
+            response_mime_type="application/json",
         )
         cleaned = re.sub(r"```(?:json)?", "", raw or "").strip().rstrip("`").strip()
         # 관대한 JSON 추출: 본문 앞뒤에 텍스트가 섞여도 {...} 블록만 파싱
@@ -5118,7 +5118,8 @@ def _run_edu_diagnose(req: EduDiagnoseRequest) -> dict[str, Any]:
             "show_offer": bool(data.get("show_offer", False)),
         }
     except Exception as exc:  # noqa: BLE001
-        print(f"[edu_diagnose] 실패 — fallback: {type(exc).__name__}: {exc}")
+        import logging
+        logging.getLogger("uvicorn.error").error(f"[edu_diagnose] JSON 파싱 실패:\nRaw LLM output:\n{raw}\nError: {exc}")
         # LLM 실패 시에도 대화가 끊기지 않도록 안전한 공손 fallback
         return {
             "ok": False,
