@@ -1,35 +1,30 @@
 {
+  "baseline": {
+    "nav": 1000000.0,
+    "ts": "2026-04-01T00:00:00+00:00"
+  },
   "positions": {
-    "AVGO": {
-      "symbol": "AVGO",
-      "qty": 605,
-      "exchange": "SMART",
-      "currency": "USD",
-      "entry_price": 446.77,
-      "entry_ts": "2026-05-30T00:00:00+00:00",
-      "atr": 16.5085,
-      "stop_loss": 413.75
-    },
-    "MU": {
-      "symbol": "MU",
-      "qty": 158,
-      "exchange": "SMART",
-      "currency": "USD",
-      "entry_price": 971.0,
-      "entry_ts": "2026-05-30T00:00:00+00:00",
-      "atr": 62.93,
-      "stop_loss": 845.14
+    "005930": {
+      "symbol": "005930",
+      "qty": 733,
+      "exchange": "KRX",
+      "currency": "KRW",
+      "entry_price": 360500.0,
+      "entry_ts": "2026-06-02T12:18:50+00:00",
+      "atr": 21300.0,
+      "stop_loss": 317900.0
     }
   },
-  "last_run": "2026-05-31T13:06:56+00:00",
+  "last_run": "2026-06-02T12:18:50+00:00",
   "signal_alerts": {
-    "AVGO": {
+    "TSM": {
       "signal": "breakout_long",
-      "alerted_at": "2026-05-31T12:59:48+00:00"
+      "alerted_at": "2026-06-02T12:18:50+00:00"
     },
-    "MU": {
+    "005930": {
       "signal": "breakout_long",
-      "alerted_at": "2026-05-31T12:59:49+00:00"
+      "alerted_at": "2026-06-02T12:18:50+00:00"
     }
-  }
+  },
+  "nav_history": []
 }
