@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type {
   AlpacaPaperDashboard,
   AlpacaPosition,
@@ -79,6 +79,62 @@ type IbkrMonitorData = {
 }
 
 type RunResult = { ok: boolean; stdout: string; stderr: string }
+type PaperResetStatus = {
+  ok: boolean
+  exists: boolean
+  reset_pending: boolean
+  flat: boolean
+  checked_at?: string
+  next_action?: string
+  market_context?: { now_ny?: string; market_open?: boolean; session?: string }
+  alpaca?: { open_orders?: Array<[string, string, string, string]>; positions?: Array<[string, number]>; flat?: boolean }
+  ibkr?: { open_orders?: Array<[number, string, string, string, number]>; positions?: Array<[string, number, string, string]>; flat?: boolean }
+}
+
+type TradingSelectionFlow = {
+  ok: boolean
+  generated_at?: string
+  pipeline?: {
+    raw_total: number
+    filtered_pass: number
+    filtered_fail: number
+    filtered_total: number
+    signal_total: number
+    selected_universe_count: number
+  }
+  selection_universe?: Array<{
+    symbol: string
+    name?: string
+    region?: string
+    sector?: string
+    harness_score?: number
+    evidence_count?: number
+    evidence_score?: number
+    matched_sources?: string[]
+    selection_reason?: string
+    brokers?: string[]
+  }>
+  symbol_evidence?: Record<string, Array<{
+    title?: string
+    summary?: string
+    source?: string
+    score?: number
+    created_at?: string
+  }>>
+  trade_flow?: Array<{
+    ts?: string
+    kind?: string
+    symbol?: string
+    title?: string
+    source?: string
+    detail?: Record<string, unknown>
+  }>
+  runtime_state?: {
+    alpaca_tracked?: string[]
+    ibkr_positions?: string[]
+    ibkr_pending_orders?: string[]
+  }
+}
 
 type Props = {
   apiBase: string
@@ -172,6 +228,41 @@ function formatEntryDate(iso: string): string {
   }
 }
 
+function flowEventLabel(kind?: string): string {
+  const key = String(kind || '').toLowerCase()
+  if (key === 'trade_entry') return '매수 기록 (Trade Entry, 진입 거래 기록 — 실제로 사기로 결정한 내역)'
+  if (key === 'trade_exit') return '매도 기록 (Trade Exit, 청산 거래 기록 — 실제로 팔기로 결정한 내역)'
+  if (key === 'signal_scan') return '신호 점검 (Signal Scan, 매수·매도 조건 확인 — 오늘 어떤 종목을 볼지 검사)'
+  if (key === 'enter') return '매수 주문 시도 (Order Entry, 주문 넣기 — 실제 주문 제출 단계)'
+  if (key === 'exit') return '매도 주문 시도 (Order Exit, 청산 주문 넣기 — 실제 매도 제출 단계)'
+  if (key === 'enter_rejected') return '주문 거절 (Order Rejected, 주문 실패 — 거래소나 증권사에서 받지 않음)'
+  if (key === 'gate_blocked') return '안전장치 차단 (Gate Blocked, 규칙 위반 차단 — 그냥 사지 않음)'
+  if (key === 'ceo_note') return '대표 메모 (CEO Note, 운영 메모 — 사람이 남긴 판단 기록)'
+  if (key === 'research_update') return '리서치 갱신 (Research Update, 조사 결과 갱신 — 새로 수집된 판단 근거)'
+  return kind || '이벤트'
+}
+
+function flowEventTone(kind?: string): 'fresh' | 'aging' | 'stale' {
+  const key = String(kind || '').toLowerCase()
+  if (['trade_entry', 'enter', 'research_update'].includes(key)) return 'fresh'
+  if (['trade_exit', 'exit', 'signal_scan', 'ceo_note'].includes(key)) return 'aging'
+  return 'stale'
+}
+
+function flowEventShortLabel(kind?: string): string {
+  const key = String(kind || '').toLowerCase()
+  if (key === 'trade_entry') return '매수'
+  if (key === 'trade_exit') return '매도'
+  if (key === 'signal_scan') return '신호 점검'
+  if (key === 'enter') return '주문 진입'
+  if (key === 'exit') return '주문 청산'
+  if (key === 'enter_rejected') return '주문 거절'
+  if (key === 'gate_blocked') return '차단'
+  if (key === 'ceo_note') return 'CEO 메모'
+  if (key === 'research_update') return '리서치'
+  return kind || '이벤트'
+}
+
 // ── 공통 서브 컴포넌트 ────────────────────────────────────────────────────────
 
 function SymbolCell({ symbol, names = ALL_SYMBOL_NAMES }: { symbol?: string | null; names?: Record<string, string> }) {
@@ -232,6 +323,15 @@ function KpiRow({ label, value, pass, note }: { label: string; value: string; pa
       <span className="kpi-value">{value}</span>
       {note && <span className="kpi-note">{note}</span>}
     </li>
+  )
+}
+
+function MobileField({ label, value, tone = 'normal' }: { label: string; value: ReactNode; tone?: 'normal' | 'muted' }) {
+  return (
+    <div className="mobile-field">
+      <span className="mobile-field-label">{label}</span>
+      <span className={`mobile-field-value ${tone === 'muted' ? 'muted' : ''}`}>{value}</span>
+    </div>
   )
 }
 
@@ -433,6 +533,9 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
   const [alpacaRunning, setAlpacaRunning] = useState(false)
   const [alpacaRunResult, setAlpacaRunResult] = useState<RunResult | null>(null)
   const [dropAlerts, setDropAlerts] = useState<DropAlert[]>([])
+  const [resetStatus, setResetStatus] = useState<PaperResetStatus | null>(null)
+  const [selectionFlow, setSelectionFlow] = useState<TradingSelectionFlow | null>(null)
+  const [selectedFlowSymbol, setSelectedFlowSymbol] = useState<string | null>(null)
 
   // IBKR state
   const [ibkrData, setIbkrData] = useState<IbkrMonitorData | null>(null)
@@ -491,6 +594,24 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
       if (!res.ok) return
       const json = await res.json() as { ok: boolean; alerts: DropAlert[] }
       if (json.ok) setDropAlerts(json.alerts)
+    } catch { /* silent */ }
+  }, [apiBase, authHeaders])
+
+  const loadResetStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiBase}/api/paper-trading/reset-status`, { headers: authHeaders() })
+      if (!res.ok) return
+      const json = (await res.json()) as PaperResetStatus
+      setResetStatus(json)
+    } catch { /* silent */ }
+  }, [apiBase, authHeaders])
+
+  const loadSelectionFlow = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiBase}/api/trading/selection-flow`, { headers: authHeaders() })
+      if (!res.ok) return
+      const json = (await res.json()) as TradingSelectionFlow
+      setSelectionFlow(json)
     } catch { /* silent */ }
   }, [apiBase, authHeaders])
 
@@ -558,6 +679,18 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
   }, [loadDropAlerts])
 
   useEffect(() => {
+    void loadResetStatus()
+    const iv = setInterval(() => void loadResetStatus(), 60 * 1000)
+    return () => clearInterval(iv)
+  }, [loadResetStatus])
+
+  useEffect(() => {
+    void loadSelectionFlow()
+    const iv = setInterval(() => void loadSelectionFlow(), 60 * 1000)
+    return () => clearInterval(iv)
+  }, [loadSelectionFlow])
+
+  useEffect(() => {
     const t = setTimeout(() => void loadIbkr(), 0)
     const iv = setInterval(() => void loadIbkr(true), 5 * 60 * 1000)
     return () => { clearTimeout(t); clearInterval(iv) }
@@ -616,6 +749,16 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
       { date: today,   value: acct.nav, pnl_pct: acct.total_pnl_pct },
     ]
   })()
+
+  const selectedUniverseRow = selectedFlowSymbol
+    ? (selectionFlow?.selection_universe ?? []).find((row) => row.symbol === selectedFlowSymbol) ?? null
+    : null
+  const selectedEvidence = selectedFlowSymbol
+    ? selectionFlow?.symbol_evidence?.[selectedFlowSymbol] ?? []
+    : []
+  const selectedSymbolEvents = selectedFlowSymbol
+    ? (selectionFlow?.trade_flow ?? []).filter((event) => event.symbol === selectedFlowSymbol).slice(0, 8)
+    : []
 
   // ── 렌더 ──────────────────────────────────────────────────────────────────
 
@@ -702,6 +845,255 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
           )}
         </div>
       </div>
+
+      {resetStatus?.exists && (
+        <article className="panel alpaca-full" style={{ marginBottom: '1rem' }}>
+          <div className="panel-head">
+            <h3>Paper Reset 상태</h3>
+            <span className="data-meta">{resetStatus.checked_at ? `${relativeTime(resetStatus.checked_at)} 점검` : '상태 파일 기준'}</span>
+          </div>
+          <div className="alpaca-gate-status">
+            {resetStatus.reset_pending ? (
+              <span className="gate-chip blocked">청산 대기 중</span>
+            ) : resetStatus.flat ? (
+              <span className="gate-chip clear">Flat 완료</span>
+            ) : (
+              <span className="gate-chip aging">상태 확인 필요</span>
+            )}
+            <span className="data-meta">
+              Alpaca 주문 {resetStatus.alpaca?.open_orders?.length ?? 0}건 · 포지션 {resetStatus.alpaca?.positions?.length ?? 0}건 · IBKR 주문 {resetStatus.ibkr?.open_orders?.length ?? 0}건 · 포지션 {resetStatus.ibkr?.positions?.length ?? 0}건
+            </span>
+          </div>
+          <p className="term-note">청산이 끝나기 전에는 새 진입이 자동 차단됩니다.</p>
+          {resetStatus.next_action && <p className="term-note">{resetStatus.next_action}</p>}
+        </article>
+      )}
+
+      {selectionFlow?.ok && (
+        <div className="trading-accounts-grid" style={{ marginBottom: '1rem' }}>
+          <article className="panel">
+            <div className="panel-head">
+              <h3>종목 선정 흐름</h3>
+              <span className="data-meta">{selectionFlow.generated_at ? relativeTime(selectionFlow.generated_at) : '실시간'}</span>
+            </div>
+            <div className="sf-stats">
+              <div className="sf-stat" title="Raw Signals — 아직 걸러지지 않은 초안 데이터">
+                <span className="sf-stat-val">{selectionFlow.pipeline?.raw_total ?? 0}</span>
+                <span className="sf-stat-lbl">원천</span>
+              </div>
+              <span className="sf-arr">→</span>
+              <div className="sf-stat" title="Filtered Pass — 1차 필터를 통과한 데이터">
+                <span className="sf-stat-val">{selectionFlow.pipeline?.filtered_pass ?? 0}</span>
+                <span className="sf-stat-lbl">통과</span>
+              </div>
+              <span className="sf-arr">→</span>
+              <div className="sf-stat" title="Signals — 실제 투자 후보로 승격된 신호">
+                <span className="sf-stat-val">{selectionFlow.pipeline?.signal_total ?? 0}</span>
+                <span className="sf-stat-lbl">후보</span>
+              </div>
+              <span className="sf-arr">→</span>
+              <div className="sf-stat sf-stat-hi" title="Selected Universe — 실제로 감시하는 종목 목록">
+                <span className="sf-stat-val">{selectionFlow.pipeline?.selected_universe_count ?? 0}</span>
+                <span className="sf-stat-lbl">최종</span>
+              </div>
+              <span className="sf-sep" />
+              <div className="sf-stat sf-stat-dim" title="Filtered Fail — 버려진 데이터">
+                <span className="sf-stat-val">{selectionFlow.pipeline?.filtered_fail ?? 0}</span>
+                <span className="sf-stat-lbl">제외</span>
+              </div>
+              <div className="sf-stat sf-stat-dim" title="Pending Orders — 아직 체결되지 않은 IBKR 주문">
+                <span className="sf-stat-val">{selectionFlow.runtime_state?.ibkr_pending_orders?.length ?? 0}</span>
+                <span className="sf-stat-lbl">미체결</span>
+              </div>
+            </div>
+            <div className="mobile-card-list trading-mobile-only">
+              {(selectionFlow.selection_universe ?? []).map((row) => (
+                <button
+                  key={`mobile-${row.symbol}`}
+                  type="button"
+                  className={`mobile-detail-card mobile-symbol-card ${selectedFlowSymbol === row.symbol ? 'selected' : ''}`}
+                  onClick={() => setSelectedFlowSymbol(row.symbol)}
+                >
+                  <div className="mobile-card-head">
+                    <div>
+                      <strong>{row.symbol}</strong>
+                      <span>{row.name ?? '종목명 확인 필요'}</span>
+                    </div>
+                    <span className="freshness-chip fresh">선정됨</span>
+                  </div>
+                  <div className="mobile-field-grid">
+                    <MobileField label="시장" value={`${row.region ?? '—'} · ${row.sector ?? '—'}`} tone="muted" />
+                    <MobileField label="선정 점수" value={row.harness_score ?? '—'} />
+                    <MobileField label="근거 건수" value={row.evidence_count ?? '—'} />
+                    <MobileField label="주문 가능 증권사" value={(row.brokers ?? []).join(', ') || '—'} tone="muted" />
+                    <MobileField label="근거 출처" value={(row.matched_sources ?? []).slice(0, 3).join(', ') || '—'} tone="muted" />
+                  </div>
+                  <p className="mobile-card-note">{row.selection_reason || '선정 이유 정보가 없습니다.'}</p>
+                </button>
+              ))}
+            </div>
+            <div className="table-wrap trading-mobile-hide" style={{ marginTop: '0.75rem' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>종목</th>
+                    <th title="Harness Score — 얼마나 강하게 뽑혔는지">점수</th>
+                    <th title="Evidence Count — 판단 근거 개수">근거</th>
+                    <th title="Sources — 어디서 근거가 나왔는지">출처</th>
+                    <th title="Brokers — 어디서 실제 주문 가능한지">증권사</th>
+                    <th>선정 이유</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(selectionFlow.selection_universe ?? []).map((row) => (
+                    <tr
+                      key={row.symbol}
+                      onClick={() => setSelectedFlowSymbol(row.symbol)}
+                      style={{ cursor: 'pointer', background: selectedFlowSymbol === row.symbol ? 'var(--bg-elevated)' : undefined }}
+                    >
+                      <td><SymbolCell symbol={row.symbol} /><div className="data-meta">{row.region} · {row.sector ?? '—'}</div></td>
+                      <td className="num">{row.harness_score ?? '—'}</td>
+                      <td className="num">{row.evidence_count ?? '—'}</td>
+                      <td>{(row.matched_sources ?? []).slice(0, 3).join(', ') || '—'}</td>
+                      <td>{(row.brokers ?? []).join(', ') || '—'}</td>
+                      <td className="data-meta">{row.selection_reason || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {selectedUniverseRow && (
+              <div style={{ marginTop: '0.9rem', borderTop: '1px solid var(--gridline)', paddingTop: '0.9rem' }}>
+                <p className="data-label" style={{ marginBottom: '0.35rem' }}>
+                  선택 종목 상세: {selectedUniverseRow.symbol} ({selectedUniverseRow.name ?? '종목명 확인 필요'})
+                </p>
+                <p className="term-note">
+                  이 종목은 점수 {selectedUniverseRow.harness_score ?? '—'}점, 근거 {selectedUniverseRow.evidence_count ?? 0}건으로 선택됐습니다.
+                  아래는 실제로 이 종목을 뽑는 데 쓰인 최근 근거입니다.
+                </p>
+                <div className="mobile-card-list trading-mobile-only" style={{ marginTop: '0.5rem' }}>
+                  {selectedEvidence.length === 0 ? (
+                    <div className="mobile-detail-card">
+                      <p className="mobile-card-note">근거 원문 샘플이 없습니다.</p>
+                    </div>
+                  ) : selectedEvidence.map((row, idx) => (
+                    <article key={`${selectedFlowSymbol}-mobile-evidence-${idx}`} className="mobile-detail-card">
+                      <div className="mobile-card-head">
+                        <div>
+                          <strong>{row.source ?? '출처 미상'}</strong>
+                          <span>{row.created_at ? String(row.created_at).slice(5, 16).replace('T', ' ') : '—'}</span>
+                        </div>
+                        <span className="freshness-chip aging">근거</span>
+                      </div>
+                      <p className="mobile-card-title">{row.title ?? '제목 없음'}</p>
+                      <p className="mobile-card-note">{row.summary ?? '요약 없음'}</p>
+                    </article>
+                  ))}
+                </div>
+                <div className="table-wrap trading-mobile-hide" style={{ marginTop: '0.5rem' }}>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>근거 시각</th>
+                        <th>출처</th>
+                        <th>제목</th>
+                        <th>요약</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedEvidence.length === 0 ? (
+                        <tr><td colSpan={4} className="data-meta">근거 원문 샘플이 없습니다.</td></tr>
+                      ) : selectedEvidence.map((row, idx) => (
+                        <tr key={`${selectedFlowSymbol}-evidence-${idx}`}>
+                          <td className="data-meta">{row.created_at ? String(row.created_at).slice(5, 16).replace('T', ' ') : '—'}</td>
+                          <td>{row.source ?? '—'}</td>
+                          <td>{row.title ?? '—'}</td>
+                          <td className="data-meta">{row.summary ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {selectedSymbolEvents.length > 0 && (
+                  <div style={{ marginTop: '0.75rem' }}>
+                    <p className="data-label" style={{ marginBottom: '0.35rem' }}>이 종목의 최근 매수·매도 이벤트</p>
+                    <div className="mobile-card-list trading-mobile-only">
+                      {selectedSymbolEvents.map((event, idx) => (
+                        <article key={`${selectedFlowSymbol}-mobile-event-${idx}`} className="mobile-detail-card">
+                          <div className="mobile-card-head">
+                            <div>
+                              <strong>{event.ts ? event.ts.slice(5, 16).replace('T', ' ') : '—'}</strong>
+                              <span>{event.source ?? '출처 없음'}</span>
+                            </div>
+                            <span className={`freshness-chip ${flowEventTone(event.kind)}`} title={flowEventLabel(event.kind)}>{flowEventShortLabel(event.kind)}</span>
+                          </div>
+                          <p className="mobile-card-note">{event.title ?? '설명 없음'}</p>
+                        </article>
+                      ))}
+                    </div>
+                    <ul className="kpi-list">
+                      {selectedSymbolEvents.map((event, idx) => (
+                        <li key={`${selectedFlowSymbol}-event-${idx}`}>
+                          <strong>{event.ts ? event.ts.slice(5, 16).replace('T', ' ') : '—'}</strong> · {flowEventLabel(event.kind)} · {event.title ?? '—'}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </article>
+
+          <article className="panel">
+            <div className="panel-head">
+              <h3>매수·매도 흐름</h3>
+              <span className="data-meta">최근 80건</span>
+            </div>
+            <p className="term-note">이 표는 조사, 신호 점검, 매수 시도, 매도 시도, 주문 거절, 사람 메모까지 시간순으로 보여줍니다.</p>
+            <div className="mobile-card-list trading-mobile-only">
+              {(selectionFlow.trade_flow ?? []).slice(0, 20).map((event, idx) => (
+                <article key={`mobile-flow-${event.ts ?? 'na'}-${event.kind ?? 'na'}-${idx}`} className="mobile-detail-card">
+                  <div className="mobile-card-head">
+                    <div>
+                      <strong>{event.symbol ?? '공통 이벤트'}</strong>
+                      <span>{event.ts ? event.ts.slice(5, 16).replace('T', ' ') : '—'}</span>
+                    </div>
+                    <span className={`freshness-chip ${flowEventTone(event.kind)}`} title={flowEventLabel(event.kind)}>{flowEventShortLabel(event.kind)}</span>
+                  </div>
+                  <div className="mobile-field-grid">
+                    <MobileField label="출처" value={event.source ?? '—'} tone="muted" />
+                    <MobileField label="세부" value={event.title ?? '설명 없음'} tone="muted" />
+                  </div>
+                </article>
+              ))}
+            </div>
+            <div className="table-wrap trading-mobile-hide">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>시각</th>
+                    <th>종목</th>
+                    <th>이벤트</th>
+                    <th>출처</th>
+                    <th>세부</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(selectionFlow.trade_flow ?? []).slice(0, 30).map((event, idx) => (
+                    <tr key={`${event.ts ?? 'na'}-${event.kind ?? 'na'}-${idx}`}>
+                      <td className="data-meta">{event.ts ? event.ts.slice(5, 16).replace('T', ' ') : '—'}</td>
+                      <td>{event.symbol ? <SymbolCell symbol={event.symbol} /> : '—'}</td>
+                      <td><span className={`freshness-chip ${flowEventTone(event.kind)}`} title={flowEventLabel(event.kind)}>{flowEventShortLabel(event.kind)}</span></td>
+                      <td className="data-meta">{event.source ?? '—'}</td>
+                      <td className="data-meta">{event.title ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+      )}
 
       {/* ── ROW 1: 계좌 요약 (side-by-side) ── */}
       <div className="trading-accounts-grid">

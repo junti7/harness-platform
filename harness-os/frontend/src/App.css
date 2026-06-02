@@ -6527,6 +6527,107 @@ td.pnl-neg,
 .trading-ops-section .section-head h2 { margin: 0; }
 .trading-ops-section .section-head p  { margin: 0; color: var(--muted); font-size: 0.85rem; }
 
+.trading-mobile-only {
+  display: none;
+}
+
+.mobile-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.mobile-detail-card {
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.8rem;
+  color: var(--ink);
+}
+
+button.mobile-detail-card {
+  appearance: none;
+  cursor: pointer;
+}
+
+.mobile-symbol-card.selected,
+button.mobile-detail-card:hover {
+  border-color: var(--accent);
+  background: var(--bg-elevated);
+}
+
+.mobile-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.mobile-card-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.mobile-card-head strong {
+  font-size: 0.92rem;
+  color: var(--ink-strong, #0f172a);
+}
+
+.mobile-card-head span {
+  font-size: 0.74rem;
+  color: var(--text-muted, #64748b);
+}
+
+.mobile-field-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+}
+
+.mobile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.mobile-field-label {
+  font-size: 0.69rem;
+  color: var(--text-muted, #64748b);
+}
+
+.mobile-field-value {
+  font-size: 0.82rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.mobile-field-value.muted {
+  color: var(--text-muted, #64748b);
+}
+
+.mobile-card-title {
+  margin: 0.65rem 0 0;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--ink-strong, #0f172a);
+  overflow-wrap: anywhere;
+}
+
+.mobile-card-note {
+  margin: 0.55rem 0 0;
+  font-size: 0.79rem;
+  line-height: 1.45;
+  color: var(--text-muted, #64748b);
+  overflow-wrap: anywhere;
+}
+
 /* 두 계좌 카드 그리드 */
 .trading-accounts-grid {
   display: grid;
@@ -6745,6 +6846,39 @@ td.pnl-neg,
   }
 }
 
+@media (max-width: 760px) {
+  .trading-mobile-only {
+    display: flex;
+  }
+
+  .trading-ops-section .trading-mobile-hide {
+    display: none;
+  }
+
+  .trading-ops-section .alpaca-gate-status {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .trading-ops-section .split-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .trading-ops-section .panel-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
+
+  .trading-ops-section .kpi-list {
+    padding-left: 1rem;
+  }
+
+  .trading-ops-section .symbol-cell {
+    min-width: 0;
+  }
+}
+
 /* ── Gmail Tabs Custom Styling ───────────────────────────────────────────────── */
 .gmail-tabs {
   display: flex;
@@ -6915,3 +7049,84 @@ td.pnl-neg,
 .forex-src.live     { background: rgba(5,150,105,0.1);  color: #059669; }
 .forex-src.ibkr     { background: rgba(14,165,233,0.1); color: #0ea5e9; }
 .forex-src.fallback { background: rgba(100,116,139,0.1); color: #64748b; }
+
+/* ═══════════════════════════════════════════════════════════
+   SF (Selection Flow) — 종목 선정 흐름 Compact Stats Strip
+   ═══════════════════════════════════════════════════════════ */
+.sf-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--bg-elevated);
+  border-radius: var(--r-md);
+  margin: 0.5rem 0 0.75rem;
+  flex-wrap: wrap;
+}
+
+.sf-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.22rem 0.55rem;
+  min-width: 3.2rem;
+  cursor: default;
+}
+
+.sf-stat-hi {
+  background: rgba(37, 99, 235, 0.08);
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  border-radius: 6px;
+}
+
+.sf-stat-dim { opacity: 0.52; }
+
+.sf-stat-val {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink-strong);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  line-height: 1.15;
+}
+
+.sf-stat-lbl {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  margin-top: 0.08rem;
+}
+
+.sf-arr {
+  color: var(--text-faint);
+  font-size: 0.7rem;
+  flex-shrink: 0;
+  padding: 0 0.05rem;
+  line-height: 1;
+}
+
+.sf-sep {
+  display: block;
+  width: 1px;
+  height: 1.8rem;
+  background: var(--border-strong);
+  margin: 0 0.4rem;
+  flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+  .sf-stats {
+    gap: 0.1rem;
+    padding: 0.4rem 0.4rem;
+  }
+  .sf-stat {
+    min-width: 2.6rem;
+    padding: 0.15rem 0.3rem;
+  }
+  .sf-stat-val { font-size: 0.88rem; }
+  .sf-sep { display: none; }
+  .sf-stat-dim { display: none; }
+}
