@@ -10,6 +10,7 @@ from core.gemini_sdk import generate_text
 from core.lane_router import log_lane_a_escalation, validate_lane_a_json
 from core.logger import HarnessLogger
 from core.topic_registry import load_active_topics
+from core.trading_universe import ensure_trading_schema
 
 load_dotenv()
 
@@ -59,10 +60,16 @@ def probe_ollama_host(host: str) -> bool:
 # TODO: 이 비용 로깅 함수들은 refiner.py와 중복됩니다. 향후 core 유틸리티로 리팩토링해야 합니다.
 def log_api_cost(model: str, input_tokens: int, output_tokens: int, provider: str = "google"):
     try:
-        execute_query("""
-            INSERT INTO api_cost_log (model, input_tokens, output_tokens, provider)
-            VALUES (%s, %s, %s, %s)
-        """, (model, input_tokens, output_tokens, provider))
+        try:
+            execute_query("""
+                INSERT INTO api_cost_log (model, input_tokens, output_tokens, provider)
+                VALUES (%s, %s, %s, %s)
+            """, (model, input_tokens, output_tokens, provider))
+        except Exception:
+            execute_query("""
+                INSERT INTO api_cost_log (model, input_tokens, output_tokens)
+                VALUES (%s, %s, %s)
+            """, (model, input_tokens, output_tokens))
     except Exception as exc:
         _logger.warning(f"API 비용 로그 저장 실패 — 응답은 계속 진행: {exc}")
 
@@ -157,27 +164,40 @@ def extract_facts(model_name: str, text: str, logger: HarnessLogger) -> dict:
         return {}
 
 
-def compute_relevance_score(title: str, summary: str, full_content: str) -> float:
-    high_value_keywords = load_active_topics("physical_ai")
+def compute_relevance_score(title: str, summary: str, full_content: str, source: str = "", domain: str = "physical_ai") -> float:
+    high_value_keywords = load_active_topics(domain)
     text = f"{title} {summary} {full_content[:2000]}".lower()
 
+    # 숏폼/소셜 미디어 여부 판단
+    source_lower = source.lower()
+    is_short_form = any(s in source_lower for s in ["youtube", "instagram", "tiktok", "threads", "x", "twitter"])
+
+    # 숏폼 매체는 광고/스폰서 태그가 일상적이므로 LOW_VALUE_PATTERNS에서 즉각 탈락시키지 않고 패널티만 부여
+    penalty = 0.0
     for pattern in LOW_VALUE_PATTERNS:
         if re.search(pattern, text):
-            return 0.0
+            if is_short_form:
+                penalty += 0.05
+            else:
+                return 0.0
 
     hits = sum(1 for kw in high_value_keywords if kw in text)
-    score = min(1.0, hits * 0.08)
+    score = hits * 0.08 - penalty
+
+    # 숏폼 미디어는 텍스트 길이가 짧아 키워드가 1개만 등장해도 최소 0.2점을 부여하여 Tier2(LLM) 검증 기회를 줌
+    if is_short_form and hits >= 1:
+        score = max(score, 0.2)
 
     return max(0.1, score)
 
 
-def save_filtered_signal(raw_id, source, title, summary, score, category, content_hash, facts, model_name):
+def save_filtered_signal(raw_id, source, title, summary, score, category, content_hash, facts, model_name, domain="physical_ai"):
     execute_query("""
         INSERT INTO filtered_signals
-            (raw_signal_id, source, title, summary, score, category, content_hash, tier2_model, extracted_facts)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (raw_signal_id, source, title, summary, score, category, content_hash, tier2_model, extracted_facts, domain)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (content_hash) DO NOTHING
-    """, (raw_id, source, title, summary, score, category, content_hash, model_name, json.dumps(facts)))
+    """, (raw_id, source, title, summary, score, category, content_hash, model_name, json.dumps(facts), domain))
 
 
 def pending_backlog_count() -> int:
@@ -185,7 +205,7 @@ def pending_backlog_count() -> int:
     return int((rows or [{"cnt": 0}])[0]["cnt"])
 
 
-def filter_signals(correlation_id: str = None, limit: int | None = None):
+def filter_signals(correlation_id: str = None, limit: int | None = None, domain: str = "physical_ai"):
     logger = HarnessLogger(tier=2, correlation_id=correlation_id)
     remote_ollama_active = TIER2_USE_REMOTE_OLLAMA and probe_ollama_host(OLLAMA_REMOTE_HOST)
     backlog_count = pending_backlog_count()
@@ -204,8 +224,9 @@ def filter_signals(correlation_id: str = None, limit: int | None = None):
     rows = execute_query(
         "SELECT id, source, raw_data, content_hash, full_content FROM raw_signals "
         "WHERE status = 'pending' "
+        "AND COALESCE(domain, raw_data->>'domain', 'physical_ai') = %s "
         "ORDER BY ingested_at ASC LIMIT %s",
-        (batch_limit,),
+        (domain, batch_limit),
         fetch=True,
     )
 
@@ -227,7 +248,7 @@ def filter_signals(correlation_id: str = None, limit: int | None = None):
         title = raw_data.get("title", "")
         summary = raw_data.get("summary", "")
 
-        score = compute_relevance_score(title, summary, full_content)
+        score = compute_relevance_score(title, summary, full_content, source, domain=domain)
 
         if score < 0.15:
             execute_query("UPDATE raw_signals SET status = 'filtered_fail' WHERE id = %s", (raw_id,))
@@ -242,7 +263,7 @@ def filter_signals(correlation_id: str = None, limit: int | None = None):
         elif score >= 0.4:
             logger.info(f"  팩트 추출 스킵 (backlog/배치 정책, score={score:.2f}): {title[:50]}...")
 
-        save_filtered_signal(raw_id, source, title, summary, score, "physical_ai", content_hash, facts, TIER2_LLM_MODEL)
+        save_filtered_signal(raw_id, source, title, summary, score, "physical_ai", content_hash, facts, TIER2_LLM_MODEL, domain=domain)
         execute_query("UPDATE raw_signals SET status = 'filtered_pass' WHERE id = %s", (raw_id,))
         passed += 1
 

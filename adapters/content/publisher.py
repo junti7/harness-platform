@@ -103,6 +103,16 @@ def _historical_value(score) -> str:
     return "low"
 
 
+_DOMAIN_PROJECT: dict[str, str] = {
+    "physical_ai": "Physical AI Weekly",
+    "edu_consulting": "AI 교육 컨설팅",
+}
+_DOMAIN_TEAM: dict[str, list[str]] = {
+    "physical_ai": ["Engineering", "QA"],
+    "edu_consulting": ["교육컨설팅", "QA"],
+}
+
+
 def _build_notion_payload(row: dict, artifact_type: str = "refined_output") -> dict:
     tags = _parse_tags(row.get("tags") or [])
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -111,6 +121,9 @@ def _build_notion_payload(row: dict, artifact_type: str = "refined_output") -> d
     source = row.get("source") or artifact_type
     row_id = row.get("id")
     score = row.get("score")
+    domain = row.get("domain") or "physical_ai"
+    project_name = _DOMAIN_PROJECT.get(domain, "Physical AI Weekly")
+    team_names = _DOMAIN_TEAM.get(domain, ["Engineering", "QA"])
 
     properties = {
         "제목": {"title": [{"text": {"content": title[:2000]}}]},
@@ -119,13 +132,14 @@ def _build_notion_payload(row: dict, artifact_type: str = "refined_output") -> d
         "소스": {"rich_text": [{"text": {"content": source[:500]}}]},
         "발행일": {"date": {"start": today}},
         "Artifact Type": {"select": {"name": "issue_archive" if artifact_type == "refined_output" else "research_report"}},
-        "Team": {"multi_select": [{"name": "Engineering"}, {"name": "QA"}]},
+        "Team": {"multi_select": [{"name": t} for t in team_names]},
         "Source Channel": {"select": {"name": "db"}},
         "Event Date": {"date": {"start": today}},
         "LLM Ready": {"checkbox": True},
         "Historical Value": {"select": {"name": _historical_value(score)}},
         "Confidentiality": {"select": {"name": "internal"}},
-        "Project": {"rich_text": [{"text": {"content": "Physical AI Weekly"}}]},
+        "Project": {"rich_text": [{"text": {"content": project_name}}]},
+        "Domain": {"select": {"name": domain}},
         "Project Status": {"select": {"name": "done"}},
         "Outcome": {"select": {"name": "success"}},
     }
@@ -244,7 +258,8 @@ def get_unpublished() -> list:
         SELECT
             ro.id, ro.final_title, ro.final_body, ro.tags,
             ro.sensitivity_level, ro.requires_ceo_approval,
-            fs.content_hash, fs.source, fs.score, fs.category
+            fs.content_hash, fs.source, fs.score, fs.category,
+            COALESCE(fs.domain, 'physical_ai') AS domain
         FROM refined_outputs ro
         JOIN filtered_signals fs ON ro.filtered_signal_id = fs.id
         WHERE ro.published = FALSE

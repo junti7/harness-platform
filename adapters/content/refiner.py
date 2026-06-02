@@ -24,7 +24,13 @@ MODEL_PRICES_PER_1K = {
 INPUT_COST_PER_1K, OUTPUT_COST_PER_1K = MODEL_PRICES_PER_1K["gemini-2.5-flash"]
 
 SYSTEM_PROMPT = load_prompt_text("physical_ai_analyst")
+EDU_SYSTEM_PROMPT = load_prompt_text("edu_consulting_analyst")
 _logger = logging.getLogger(__name__)
+
+DOMAIN_PROMPTS: dict[str, str] = {
+    "physical_ai": SYSTEM_PROMPT,
+    "edu_consulting": EDU_SYSTEM_PROMPT,
+}
 
 
 def _price_for_model(model: str) -> tuple[float, float]:
@@ -265,10 +271,9 @@ def _fallback_refined_output(row: dict, error: Exception) -> dict | None:
 
 def refine_signal(model_name: str, row: dict) -> dict:
     user_content = build_user_content(row)
-
-    # Gemini's system prompt is handled via GenerationConfig or passed differently
-    # For simplicity, we prepend it to the user message as per some tutorials.
-    full_prompt = SYSTEM_PROMPT + "\n반드시 유효한 JSON 형식으로 응답을 마무리하세요. 중간에 끊기지 않도록 분량을 조절하되 깊이는 유지하세요.\n\n---\n\n" + user_content
+    domain = row.get("domain") or "physical_ai"
+    prompt = DOMAIN_PROMPTS.get(domain, SYSTEM_PROMPT)
+    full_prompt = prompt + "\n반드시 유효한 JSON 형식으로 응답을 마무리하세요. 중간에 끊기지 않도록 분량을 조절하되 깊이는 유지하세요.\n\n---\n\n" + user_content
     
     # gemini-2.5-flash는 thinking 토큰이 output budget을 소모하므로 8192로 상향
     raw_text, usage = generate_text(
@@ -321,7 +326,7 @@ def refine(correlation_id: str = None):
 
     rows = execute_query("""
         SELECT fs.id, fs.title, fs.summary, fs.content_hash, fs.source, fs.score,
-               fs.extracted_facts
+               fs.extracted_facts, COALESCE(fs.domain, 'physical_ai') AS domain
         FROM filtered_signals fs
         LEFT JOIN refined_outputs ro ON fs.id = ro.filtered_signal_id
         WHERE ro.id IS NULL

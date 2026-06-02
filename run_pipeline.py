@@ -139,8 +139,11 @@ def run():
     logger.info("[Tier 2] 필터링 시작")
     try:
         from adapters.content.filter import filter_signals
-        results["tier2"] = filter_signals(correlation_id=pipeline_cid)
-        logger.info(f"[Tier 2] 완료: {results['tier2']}건 통과")
+        t2_physical = filter_signals(correlation_id=pipeline_cid, domain="physical_ai")
+        logger.info(f"[Tier 2] physical_ai: {t2_physical}건 통과")
+        t2_edu = filter_signals(correlation_id=pipeline_cid, domain="edu_consulting")
+        logger.info(f"[Tier 2] edu_consulting: {t2_edu}건 통과")
+        results["tier2"] = t2_physical + t2_edu
 
         from adapters.content.signalizer import promote_signals
         results["signals"] = promote_signals(correlation_id=pipeline_cid)
