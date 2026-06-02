@@ -149,6 +149,10 @@ const INITIAL_CAPITAL = 100_000
 const ALPACA_SYMBOL_NAMES: Record<string, string> = {
   GOOG: 'Google', GOOGL: 'Google', GOOP: 'Google',
   NVDA: 'NVIDIA', TER: 'Teradyne', TSLA: 'Tesla',
+  TSM: 'TSMC (ADR)', MU: 'Micron', AVGO: 'Broadcom',
+  ANET: 'Arista Networks', VRT: 'Vertiv', SYM: 'Symbotic',
+  ISRG: 'Intuitive Surgical', ROK: 'Rockwell Auto.',
+  CRWV: 'CoreWeave', PWR: 'Quanta Services',
   SMH: '반도체 ETF', SOXX: '반도체 ETF', BOTZ: '로보틱스 ETF',
   PLTR: 'Palantir', ROBO: '로봇 ETF', SPY: 'S&P 500 ETF', QQQ: '나스닥 100 ETF',
 }
@@ -159,6 +163,8 @@ const IBKR_SYMBOL_NAMES: Record<string, string> = {
   TER: 'Teradyne', SYM: 'Symbotic', ISRG: 'Intuitive Surgical',
   ROK: 'Rockwell Auto.', CEG: 'Constellation Energy', VST: 'Vistra',
   GEV: 'GE Vernova', PWR: 'Quanta Services',
+  '005930': '삼성전자', '000660': 'SK하이닉스', '042700': '한미반도체',
+  '005380': '현대차',
 }
 
 const ALL_SYMBOL_NAMES: Record<string, string> = { ...ALPACA_SYMBOL_NAMES, ...IBKR_SYMBOL_NAMES }
