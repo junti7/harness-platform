@@ -204,7 +204,7 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
             <div style={{ marginTop: 8 }}>
               <div style={{ background: `linear-gradient(135deg,${C.accentSoft},#eff6ff)`, border: `1.5px solid ${C.accent}`, borderRadius: 16, padding: 18, marginBottom: 10 }}>
                 <span style={{ display: 'inline-block', background: C.danger, color: '#fff', fontSize: '.72rem', fontWeight: 700, padding: '3px 9px', borderRadius: 6, marginBottom: 8 }}>무료로 먼저 시작</span>
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: '4px 0 6px' }}>지금 바로 해볼 수 있는 무료 커리큘럼 3개</h3>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: '4px 0 6px', color: C.ink }}>지금 바로 해볼 수 있는 무료 커리큘럼 3개</h3>
                 <p style={{ fontSize: '.9rem', color: C.muted, marginBottom: 12 }}>아래 3개부터 해보시면 현재 상황이 훨씬 또렷해질 거예요.</p>
                 <div style={{ display: 'grid', gap: 8 }}>
                   {['1. 부모가 먼저 이해해야 할 AI 기초', '2. 아이의 현재 AI 사용 패턴 점검', '3. 오늘 저녁 바로 써볼 대화 문장'].map((t) => (
