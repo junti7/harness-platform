@@ -250,7 +250,9 @@ def filter_signals(correlation_id: str = None, limit: int | None = None, domain:
 
         score = compute_relevance_score(title, summary, full_content, source, domain=domain)
 
-        if score < 0.15:
+        # edu_consulting은 YouTube 제목만 있는 경우가 많아 임계값을 낮게 적용
+        score_threshold = 0.10 if domain == "edu_consulting" else 0.15
+        if score < score_threshold:
             execute_query("UPDATE raw_signals SET status = 'filtered_fail' WHERE id = %s", (raw_id,))
             failed += 1
             continue
