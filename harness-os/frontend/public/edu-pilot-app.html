@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Parents First · AI 자가점검</title>
+  <style>
+    :root{
+      --ink:#0f172a; --muted:#475569; --faint:#64748b; --accent:#2563eb;
+      --surface:#ffffff; --bg:#f8fafc; --border:#e2e8f0; --soft:#dbeafe;
+      --success:#059669; --success-soft:#d1fae5; --danger:#dc2626;
+      --bubble-ai:#f1f5f9; --bubble-user:#2563eb;
+      --font:'Pretendard','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{background:var(--bg);color:var(--ink);font-family:var(--font);height:100%}
+    .app{
+      max-width:520px;margin:0 auto;min-height:100vh;
+      display:flex;flex-direction:column;padding:20px 16px 28px;
+    }
+
+    /* ── Setup wizard ── */
+    .setup{flex:1;display:flex;flex-direction:column;justify-content:center}
+    .eyebrow{font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}
+    .title{font-size:1.55rem;font-weight:800;line-height:1.34;margin-bottom:10px}
+    .lead{font-size:.95rem;line-height:1.65;color:var(--muted);margin-bottom:24px}
+    .stack{display:flex;flex-direction:column;gap:12px}
+    .btn{display:block;width:100%;border:none;border-radius:14px;padding:15px 16px;font-size:1rem;font-weight:700;font-family:var(--font);background:var(--accent);color:#fff;cursor:pointer;box-shadow:0 4px 14px rgba(37,99,235,.22)}
+    .btn.secondary{background:var(--surface);color:var(--accent);border:1.5px solid var(--accent);box-shadow:none}
+    .btn.ghost{background:none;color:var(--faint);border:none;font-size:.88rem;cursor:pointer;font-family:var(--font);padding:10px 0}
+    .btn:disabled{background:#cbd5e1;box-shadow:none;cursor:not-allowed}
+    .field{border:1.5px solid var(--border);border-radius:12px;padding:13px 14px;font-size:.97rem;font-family:var(--font);width:100%;outline:none;background:var(--surface)}
+    .field:focus{border-color:var(--accent)}
+    .choice-btn{display:block;width:100%;padding:14px 16px;border-radius:14px;font-size:.95rem;font-weight:600;font-family:var(--font);text-align:left;cursor:pointer;transition:all .15s}
+
+    /* ── Chat screen ── */
+    .chat-wrap{flex:1;display:flex;flex-direction:column;min-height:0}
+    .topline{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:.72rem;color:var(--faint);padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:8px}
+    .topline b{color:var(--ink)}
+    .chat{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px 12px}
+    .row{display:flex}
+    .row.user{justify-content:flex-end}
+    .bubble{max-width:84%;padding:12px 15px;border-radius:16px;line-height:1.6;font-size:1rem;white-space:pre-wrap}
+    .bubble.ai{background:var(--bubble-ai);border-bottom-left-radius:4px}
+    .bubble.user{background:var(--bubble-user);color:#fff;border-bottom-right-radius:4px}
+    .chips{display:flex;flex-wrap:wrap;gap:8px;padding:6px 0}
+    .chip{border:1.5px solid var(--accent);background:var(--surface);color:var(--accent);border-radius:999px;padding:8px 14px;font-size:.88rem;font-weight:600;cursor:pointer;font-family:var(--font)}
+    .inputbar{display:flex;gap:8px;padding-top:8px}
+    .msg-input{flex:1;border:1.5px solid var(--border);border-radius:12px;padding:13px 14px;font-size:1rem;font-family:var(--font);outline:none}
+    .msg-input:focus{border-color:var(--accent)}
+    .send-btn{background:var(--accent);color:#fff;border:none;border-radius:12px;padding:0 20px;font-size:1rem;font-weight:700;cursor:pointer;font-family:var(--font)}
+    .send-btn:disabled{background:#cbd5e1;cursor:not-allowed}
+
+    /* ── Offer cards ── */
+    .offer{background:linear-gradient(135deg,var(--soft),#eff6ff);border:1.5px solid var(--accent);border-radius:16px;padding:18px;margin-top:10px}
+    .offer h3{font-size:1.05rem;font-weight:700;margin:4px 0 6px}
+    .offer-item{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px}
+    .tag{display:inline-block;background:var(--danger);color:#fff;font-size:.72rem;font-weight:700;padding:3px 8px;border-radius:6px;margin-bottom:8px}
+    .small{font-size:.82rem;color:var(--faint)}
+    .resume-note{font-size:.82rem;color:var(--muted);margin-top:4px}
+  </style>
+</head>
+<body>
+  <div id="app" class="app"></div>
+  <script>
+    const STORAGE_KEY = 'edu-pilot-standalone-v3'
+    const API_BOOTSTRAP = '/api/public/edu/bootstrap'
+    const API_DIAGNOSE  = '/api/public/edu/diagnose'
+    const API_MAGIC     = '/api/public/edu/magic-link/consume'
+
+    const PHASE_LABEL = { opening:'첫 인사', probing:'경청', reflecting:'단정', recovering:'복구', prescribing:'가이드 제안' }
+
+    const OPENERS = {
+      parent: {
+        text: '오셨군요. … 요즘 이 자리에 오시는 보호자분들, 열에 아홉은 같은 데서 막히세요. "우리 아이 AI를 어떻게 해야 하나." 우선 하나만 봅시다 — 자녀분, 몇 학년이죠?',
+        quick: ['초등학생이에요','중학생이에요','고등학생이에요'],
+      },
+      worker: {
+        text: '앉으세요. … 요즘 이쪽으로 오시는 분들, 대부분 같은 이유예요. "AI 못 따라가면 끝이다" 싶은 거죠. 우선 하나 봅시다 — 지금 무슨 일 하세요?',
+        quick: ['사무직이에요','기획/마케팅이에요','딱히 정해진 게 없어요'],
+      },
+    }
+
+    function loadState() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)||'null') } catch { return null } }
+    function saveState(s) { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)) }
+    function clearState() { localStorage.removeItem(STORAGE_KEY) }
+
+    let state = loadState() || {
+      step: 'segment',          // 'segment' | 'info' | 'salutation' | 'chat'
+      segment: 'parent',
+      name: '', email: '',
+      salutation: 'neutral',
+      locale: 'ko-KR',
+      customerId: null, caseId: null,
+      isReturning: false,
+      turn: 0, msgs: [],
+      quickReplies: [], showOffer: false,
+      input: '', loading: false,
+    }
+
+    function setState(patch) {
+      state = { ...state, ...patch }
+      saveState(state)
+      render()
+    }
+
+    function escapeHtml(s) {
+      return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')
+    }
+    function toTurnCount(msgs) { return msgs.filter(m=>m.role==='user').length }
+
+    // ── API: magic link ──
+    async function consumeMagicTokenIfPresent() {
+      const token = new URLSearchParams(location.search).get('token')
+      if (!token) return
+      setState({ loading: true })
+      try {
+        const res = await fetch(`${API_MAGIC}?token=${encodeURIComponent(token)}`)
+        if (!res.ok) throw new Error()
+        const data = await res.json()
+        const msgs = (data.messages||[]).map(m=>({ role:m.role, text:m.text, toneLevel:m.toneLevel||0, phase:m.phase||'opening' }))
+        setState({
+          step:'chat',
+          segment: data.customer?.segment||'parent',
+          name: data.customer?.name||'',
+          email: data.customer?.email||'',
+          salutation: data.customer?.preferred_salutation||'neutral',
+          locale: data.customer?.locale||'ko-KR',
+          customerId: data.customer?.id||null,
+          caseId: data.case?.id||null,
+          isReturning: true,
+          turn: toTurnCount(msgs), msgs,
+          quickReplies: data.quick_replies||[],
+          showOffer: !!data.show_offer,
+          input:'', loading:false,
+        })
+        history.replaceState({},'',' /edu-pilot-app.html')
+      } catch {
+        setState({ loading:false })
+        alert('매직 링크가 만료되었거나 유효하지 않습니다.')
+        history.replaceState({},'','/edu-pilot-app.html')
+      }
+    }
+
+    // ── API: bootstrap ──
+    async function bootstrapSession() {
+      setState({ loading:true })
+      try {
+        const res = await fetch(API_BOOTSTRAP, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            segment: state.segment,
+            name: state.name,
+            email: state.email,
+            preferred_salutation: state.salutation,
+            locale: state.locale,
+            force_new: true,
+          }),
+        })
+        const data = await res.json()
+        const msgs = (data.messages||[]).map(m=>({ role:m.role, text:m.text, toneLevel:m.toneLevel||0, phase:m.phase||'opening' }))
+        if (!msgs.length) {
+          const op = OPENERS[state.segment]
+          msgs.push({ role:'ai', text:op.text, toneLevel:0, phase:'opening' })
+        }
+        setState({
+          step:'chat',
+          customerId: data.customer?.id||null,
+          caseId: data.case?.id||null,
+          isReturning: !!data.is_returning,
+          turn: toTurnCount(msgs), msgs,
+          quickReplies: data.quick_replies||OPENERS[state.segment].quick,
+          showOffer: !!data.show_offer,
+          input:'', loading:false,
+        })
+      } catch {
+        setState({ loading:false })
+        alert('세션을 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.')
+      }
+    }
+
+    // ── API: diagnose ──
+    async function callDiagnose(userText, history, turnNo) {
+      setState({ loading:true, quickReplies:[] })
+      try {
+        const res = await fetch(API_DIAGNOSE, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            segment: state.segment,
+            turn: turnNo,
+            case_id: state.caseId,
+            preferred_salutation: state.salutation,
+            locale: state.locale,
+            history: history.map(m=>({ role:m.role, text:m.text })),
+            user_text: userText,
+          }),
+        })
+        const data = await res.json()
+        const msgs = [...history, { role:'ai', text:data.message||'…', toneLevel:data.tone_level||0, phase:data.phase||'probing' }]
+        setState({ msgs, turn:turnNo, quickReplies:data.quick_replies||[], showOffer:!!data.show_offer, loading:false })
+      } catch {
+        const msgs = [...history, { role:'ai', text:'연결이 잠깐 끊겼어요. 다시 말씀해 주시겠어요?', phase:'recovering', toneLevel:0 }]
+        setState({ msgs, turn:turnNo, quickReplies:[], loading:false })
+      }
+    }
+
+    function send(text) {
+      const t = (text||'').trim()
+      if (!t || state.loading) return
+      const history = [...state.msgs, { role:'user', text:t }]
+      setState({ msgs:history, input:'' })
+      callDiagnose(t, history, state.turn+1)
+    }
+
+    function resetAll() {
+      clearState()
+      state = { step:'segment', segment:'parent', name:'', email:'', salutation:'neutral', locale:'ko-KR', customerId:null, caseId:null, isReturning:false, turn:0, msgs:[], quickReplies:[], showOffer:false, input:'', loading:false }
+      render()
+    }
+
+    // ── Render: Setup Wizard ──
+    function renderSetup(root) {
+      const { step, segment, name, email, salutation } = state
+      let html = ''
+
+      if (step === 'segment') {
+        html = `
+          <div class="setup">
+            <div class="eyebrow">Parents First · AI 자가점검 — 1/3</div>
+            <h1 class="title">어느 쪽에 더 가까우세요?</h1>
+            <p class="lead">정해진 질문지가 없습니다. 대화가 자연스럽게 이어집니다.</p>
+            <div class="stack">
+              <button class="btn" id="btn-parent">👨‍👩‍👧 아이를 둔 부모예요</button>
+              <button class="btn secondary" id="btn-worker">💼 AI가 걱정되는 직장인이에요</button>
+            </div>
+          </div>
+        `
+        root.innerHTML = html
+        document.getElementById('btn-parent').onclick = () => setState({ segment:'parent', step:'info' })
+        document.getElementById('btn-worker').onclick = () => setState({ segment:'worker', step:'info' })
+
+      } else if (step === 'info') {
+        html = `
+          <div class="setup">
+            <div class="eyebrow">Parents First · AI 자가점검 — 2/3</div>
+            <h1 class="title">간단히 확인할게요</h1>
+            <p class="lead">대화를 이어보시려면 이메일이 필요합니다. 이름은 선택이에요.</p>
+            <div class="stack" style="margin-bottom:20px">
+              <input class="field" id="f-name" placeholder="이름 (선택)" value="${escapeHtml(name)}" />
+              <input class="field" id="f-email" placeholder="이메일 *" type="email" value="${escapeHtml(email)}" />
+            </div>
+            <button class="btn" id="btn-next" style="margin-bottom:10px">다음 →</button>
+            <button class="btn ghost" id="btn-back">← 이전</button>
+          </div>
+        `
+        root.innerHTML = html
+        document.getElementById('btn-next').onclick = () => {
+          const n = document.getElementById('f-name').value.trim()
+          const e = document.getElementById('f-email').value.trim().toLowerCase()
+          if (!e || !e.includes('@')) { alert('이메일을 올바르게 입력해 주세요.'); return }
+          setState({ name:n, email:e, step:'salutation' })
+        }
+        document.getElementById('btn-back').onclick = () => setState({ step:'segment' })
+
+      } else if (step === 'salutation') {
+        const opts = [
+          ['neutral', '보호자분 (중립)'],
+          ['father', '아버지'],
+          ['mother', '어머니'],
+          ['name', `${name||'이름'}으로 불러줘`],
+        ]
+        html = `
+          <div class="setup">
+            <div class="eyebrow">Parents First · AI 자가점검 — 3/3</div>
+            <h1 class="title">어떻게 불러드릴까요?</h1>
+            <p class="lead">AI가 대화 중 사용할 호칭을 고르세요.</p>
+            <div class="stack" style="margin-bottom:20px" id="choice-group">
+              ${opts.map(([val,label]) => `
+                <button class="choice-btn" data-val="${val}" style="
+                  border:1.5px solid ${salutation===val?'#2563eb':'#e2e8f0'};
+                  background:${salutation===val?'#dbeafe':'#fff'};
+                  color:${salutation===val?'#2563eb':'#0f172a'};
+                ">
+                  ${salutation===val?'✓ ':''}${escapeHtml(label)}
+                </button>
+              `).join('')}
+            </div>
+            <button class="btn" id="btn-start" style="margin-bottom:10px">대화 시작하기 →</button>
+            <button class="btn ghost" id="btn-back2">← 이전</button>
+          </div>
+        `
+        root.innerHTML = html
+        document.querySelectorAll('.choice-btn').forEach(b => {
+          b.onclick = () => setState({ salutation: b.dataset.val })
+        })
+        document.getElementById('btn-start').onclick = () => bootstrapSession()
+        document.getElementById('btn-back2').onclick = () => setState({ step:'info' })
+      }
+    }
+
+    // ── Render: Chat ──
+    function renderChat(root) {
+      const lastAi = [...state.msgs].reverse().find(m=>m.role==='ai') || { toneLevel:0, phase:'opening' }
+      const displayName = state.name || state.email || (state.segment==='parent'?'부모':'직장인')
+
+      root.innerHTML = `
+        <div class="chat-wrap">
+          <div class="topline">
+            <span><b>${escapeHtml(displayName)}</b> · ${state.isReturning?'이어서 보기':'새 케이스'}</span>
+            <span>턴 <b>${state.turn}</b> · 톤 <b>${lastAi.toneLevel||0}</b> · ${PHASE_LABEL[lastAi.phase]||'-'}</span>
+            <button id="reset-btn" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:.72rem;text-decoration:underline;font-family:inherit">처음</button>
+          </div>
+          <div class="chat" id="chatbox"></div>
+          ${state.quickReplies.length&&!state.loading ? '<div class="chips" id="chips"></div>' : ''}
+          <div class="inputbar">
+            <input class="msg-input" id="msg-input" placeholder="편하게 입력하세요…" value="${escapeHtml(state.input||'')}" ${state.loading?'disabled':''} />
+            <button class="send-btn" id="send-btn" ${state.loading?'disabled':''}>전송</button>
+          </div>
+        </div>
+      `
+
+      // messages
+      const chatbox = document.getElementById('chatbox')
+      state.msgs.forEach(m => {
+        const row = document.createElement('div')
+        row.className = `row ${m.role==='user'?'user':'ai'}`
+        row.innerHTML = `<div class="bubble ${m.role==='user'?'user':'ai'}">${escapeHtml(m.text)}</div>`
+        chatbox.appendChild(row)
+      })
+      if (state.loading) {
+        const row = document.createElement('div')
+        row.className = 'row ai'
+        row.innerHTML = `<div class="bubble ai" style="color:var(--faint);letter-spacing:3px">···</div>`
+        chatbox.appendChild(row)
+      }
+
+      // offer cards
+      if (state.showOffer) {
+        const box = document.createElement('div')
+        box.innerHTML = `
+          <div class="offer">
+            <span class="tag">무료로 먼저 시작</span>
+            <h3>지금 바로 해볼 수 있는 무료 커리큘럼 3개</h3>
+            <p class="resume-note" style="margin-bottom:12px">아래 3개부터 해보시면 현재 상황이 훨씬 또렷해질 거예요.</p>
+            <div class="offer-item"><strong>1. 부모가 먼저 이해해야 할 AI 기초</strong><div class="small" style="margin-top:4px">AI를 아이에게 설명할 때 꼭 필요한 핵심 개념만 빠르게 정리합니다.</div></div>
+            <div class="offer-item"><strong>2. 아이의 현재 AI 사용 패턴 점검</strong><div class="small" style="margin-top:4px">숙제, 검색, 요약, 글쓰기 중 어디서 의존이 생기는지 먼저 봅니다.</div></div>
+            <div class="offer-item"><strong>3. 오늘 저녁 바로 써볼 대화 문장</strong><div class="small" style="margin-top:4px">아이와 어색하지 않게 AI 이야기를 꺼내는 문장부터 제공합니다.</div></div>
+            <button class="btn" id="free-btn" style="margin-top:10px">무료 단계부터 이어서 보기 →</button>
+          </div>
+          <div class="offer" style="background:linear-gradient(135deg,var(--success-soft),#ecfdf5);border-color:var(--success);margin-top:10px">
+            <h3 style="color:var(--success)">다음 단계에서 받게 될 도움</h3>
+            <p class="resume-note" style="margin-bottom:12px">여기까지 해보신 뒤 원하시면, 보호자님 상황에 맞는 더 구체적인 가이드와 심화 커리큘럼도 이어서 받아보실 수 있을 거예요.</p>
+            <button class="btn" id="next-btn" style="background:var(--success);box-shadow:0 4px 14px rgba(5,150,105,.25)">다음 단계가 어떻게 이어지는지 보기 →</button>
+          </div>
+        `
+        chatbox.appendChild(box)
+        setTimeout(() => {
+          document.getElementById('free-btn')?.addEventListener('click', () => alert('PoC: 다음 버전에서 무료 커리큘럼 3개가 실제 콘텐츠로 연결됩니다.'))
+          document.getElementById('next-btn')?.addEventListener('click', () => alert('PoC: 다음 버전에서 단계형 가이드와 심화 과정을 자연스럽게 이어줍니다.'))
+        }, 0)
+      }
+
+      // quick reply chips
+      if (state.quickReplies.length && !state.loading) {
+        const chips = document.getElementById('chips')
+        state.quickReplies.forEach(q => {
+          const b = document.createElement('button')
+          b.className = 'chip'
+          b.textContent = q
+          b.onclick = () => send(q)
+          chips.appendChild(b)
+        })
+      }
+
+      // scroll to bottom
+      chatbox.scrollTop = chatbox.scrollHeight
+
+      // input binding
+      document.getElementById('reset-btn').onclick = resetAll
+      const inp = document.getElementById('msg-input')
+      inp.oninput = e => { state.input = e.target.value; saveState(state) }
+      inp.onkeydown = e => { if (e.key==='Enter') send(inp.value) }
+      document.getElementById('send-btn').onclick = () => send(inp.value)
+    }
+
+    function render() {
+      const root = document.getElementById('app')
+      if (state.step === 'chat') renderChat(root)
+      else renderSetup(root)
+    }
+
+    render()
+    consumeMagicTokenIfPresent()
+  </script>
+</body>
+</html>
