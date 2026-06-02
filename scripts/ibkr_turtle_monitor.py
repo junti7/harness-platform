@@ -46,6 +46,7 @@ sys.path.insert(0, str(ROOT))
 
 from dotenv import load_dotenv
 load_dotenv(ROOT / ".env", override=True)
+from core.trading_universe import build_trading_universe, load_trading_universe, write_trading_universe
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 
@@ -59,7 +60,9 @@ TWS_CLIENT_ID = 11       # paper_trader(10)와 충돌 방지
 
 LOG_PATH   = ROOT / "docs" / "reports" / "ibkr_turtle_monitor.jsonl"
 STATE_PATH = ROOT / "docs" / "reports" / "ibkr_tws_positions.json"
-UNIVERSE_PATH = ROOT / "docs" / "trading" / "universe.json"
+TRADING_UNIVERSE_LOOKBACK_DAYS = int(os.getenv("TRADING_UNIVERSE_LOOKBACK_DAYS", "45"))
+TRADING_UNIVERSE_MAX_SYMBOLS = int(os.getenv("TRADING_UNIVERSE_MAX_SYMBOLS", "24"))
+TRADING_UNIVERSE_REFRESH_ON_RUN = os.getenv("TRADING_UNIVERSE_REFRESH_ON_RUN", "true").lower() == "true"
 
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "")
 
@@ -342,15 +345,16 @@ def _fetch_yahoo_daily_bars_for_contract(contract) -> tuple[list[dict], str | No
 
 
 def load_universe() -> tuple[list[dict], str]:
-    """universe.json이 있으면 동적 로드, 없으면 fallback."""
-    if UNIVERSE_PATH.exists():
-        try:
-            data = json.loads(UNIVERSE_PATH.read_text())
-            if isinstance(data, list) and len(data) > 0:
-                return data, "universe.json"
-        except Exception:
-            pass
-    return UNIVERSE_FALLBACK, "hardcoded"
+    if TRADING_UNIVERSE_REFRESH_ON_RUN:
+        universe = build_trading_universe(
+            domain="physical_ai",
+            lookback_days=TRADING_UNIVERSE_LOOKBACK_DAYS,
+            max_symbols=TRADING_UNIVERSE_MAX_SYMBOLS,
+        )
+        if universe:
+            write_trading_universe(universe)
+    rows, source = load_trading_universe(broker="ibkr", fallback=UNIVERSE_FALLBACK)
+    return rows, source
 
 
 def load_state() -> dict:
@@ -624,6 +628,9 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
                 sig = calc_full_signal(ib, contract, json_mode)
             except Exception as e:
                 _p(f"  [{sym}] 신호 계산 중 오류: {e}", json_mode)
+            # Gateway 연결 성공이어도 sig=None이면 EXIT 보류 (비장중 데이터 미제공 등)
+            if sig is None:
+                _p(f"  [{sym}] Gateway 연결됐으나 가격 데이터 없음 — EXIT 체크 보류 (HOLD 유지)", json_mode)
         else:
             # Fallback to Yahoo Finance daily bars when Gateway is offline
             try:
@@ -646,28 +653,9 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
                 _p(f"  [{sym}] Yahoo Finance 포지션 신호 계산 실패: {e}", json_mode)
 
             if not sig:
-                # Mock simulation backup when both Gateway and Yahoo Finance fail
-                import random
-                entry_p = meta.get("entry_price", 100.0)
-                current_price = round(entry_p * random.uniform(0.96, 1.04), 2)
-                s1_low = round(entry_p * 0.92, 2)
-                s2_low = round(entry_p * 0.88, 2)
-                s1_high = round(entry_p * 1.05, 2)
-                s2_high = round(entry_p * 1.12, 2)
-                atr = round(entry_p * 0.04, 4)
-                
-                sig = {
-                    "symbol": sym,
-                    "current_price": current_price,
-                    "s1_high": s1_high,
-                    "s2_high": s2_high,
-                    "s1_low": s1_low,
-                    "s2_low": s2_low,
-                    "atr": atr,
-                    "signal": "neutral",
-                    "active_signal": None,
-                    "gap_pct": round((current_price - s2_high) / s2_high * 100, 2) if s2_high > 0 else 0.0,
-                }
+                # 가격 데이터 취득 실패 → EXIT 판단 보류 (HOLD 유지)
+                # 근거 없는 랜덤 시뮬레이션으로 stop-loss를 잘못 발동시키는 버그 방지
+                _p(f"  [{sym}] 가격 데이터 취득 불가 — EXIT 체크 보류 (HOLD 유지)", json_mode)
 
         assessed = assess_position(meta, sig)
         position_results.append(assessed)
