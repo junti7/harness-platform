@@ -303,7 +303,7 @@ def refine_signal(model_name: str, row: dict) -> dict:
     if not isinstance(evidence, dict):
         raise ValueError("evidence_posture가 dict 형태가 아님")
     # LLM이 "verified | speculative" 같이 복합값을 반환하는 경우 첫 번째 유효값으로 정규화
-    _VALID_CLASS = {"verified", "company-self-report", "speculative"}
+    _VALID_CLASS = {"verified", "company-self-report", "speculative", "report-based"}
     raw_class = str(evidence.get("classification", "")).strip()
     if raw_class not in _VALID_CLASS:
         for candidate in re.split(r"[|,/]", raw_class):
