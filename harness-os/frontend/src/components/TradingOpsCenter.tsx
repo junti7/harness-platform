@@ -112,6 +112,7 @@ type TradingSelectionFlow = {
     evidence_score?: number
     matched_sources?: string[]
     selection_reason?: string
+    selection_reason_ko?: string
     brokers?: string[]
   }>
   symbol_evidence?: Record<string, Array<{
@@ -870,7 +871,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
       )}
 
       {selectionFlow?.ok && (
-        <div className="trading-accounts-grid" style={{ marginBottom: '1rem' }}>
+        <div className="sf-flow-stack">
           <article className="panel">
             <div className="panel-head">
               <h3>종목 선정 흐름</h3>
@@ -933,13 +934,21 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
               ))}
             </div>
             <div className="table-wrap trading-mobile-hide" style={{ marginTop: '0.75rem' }}>
-              <table className="data-table">
+              <table className="data-table sf-universe-table">
+                <colgroup>
+                  <col style={{ width: '120px' }} />
+                  <col style={{ width: '48px' }} />
+                  <col style={{ width: '48px' }} />
+                  <col style={{ width: '150px' }} />
+                  <col style={{ width: '80px' }} />
+                  <col />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>종목</th>
-                    <th title="Harness Score — 얼마나 강하게 뽑혔는지">점수</th>
-                    <th title="Evidence Count — 판단 근거 개수">근거</th>
-                    <th title="Sources — 어디서 근거가 나왔는지">출처</th>
+                    <th title="Harness Score — 얼마나 강하게 뽑혔는지">선정 점수</th>
+                    <th title="Evidence Count — 판단 근거 개수">근거 건수</th>
+                    <th title="Sources — 어디서 근거가 나왔는지">근거 출처</th>
                     <th title="Brokers — 어디서 실제 주문 가능한지">증권사</th>
                     <th>선정 이유</th>
                   </tr>
@@ -954,9 +963,9 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                       <td><SymbolCell symbol={row.symbol} /><div className="data-meta">{row.region} · {row.sector ?? '—'}</div></td>
                       <td className="num">{row.harness_score ?? '—'}</td>
                       <td className="num">{row.evidence_count ?? '—'}</td>
-                      <td>{(row.matched_sources ?? []).slice(0, 3).join(', ') || '—'}</td>
-                      <td>{(row.brokers ?? []).join(', ') || '—'}</td>
-                      <td className="data-meta">{row.selection_reason || '—'}</td>
+                      <td className="sf-td-truncate" title={(row.matched_sources ?? []).join(', ')}>{(row.matched_sources ?? []).slice(0, 3).join(', ') || '—'}</td>
+                      <td className="sf-td-truncate" title={(row.brokers ?? []).join(', ')}>{(row.brokers ?? []).join(', ') || '—'}</td>
+                      <td className="sf-reason-cell">{row.selection_reason_ko || row.selection_reason || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1085,7 +1094,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                       <td>{event.symbol ? <SymbolCell symbol={event.symbol} /> : '—'}</td>
                       <td><span className={`freshness-chip ${flowEventTone(event.kind)}`} title={flowEventLabel(event.kind)}>{flowEventShortLabel(event.kind)}</span></td>
                       <td className="data-meta">{event.source ?? '—'}</td>
-                      <td className="data-meta">{event.title ?? '—'}</td>
+                      <td className="sf-td-truncate data-meta" title={event.title ?? ''}>{event.title ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>
