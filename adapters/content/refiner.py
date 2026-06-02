@@ -330,7 +330,11 @@ def refine(correlation_id: str = None):
         FROM filtered_signals fs
         LEFT JOIN refined_outputs ro ON fs.id = ro.filtered_signal_id
         WHERE ro.id IS NULL
-          AND fs.score >= 0.3
+          AND (
+            (COALESCE(fs.domain, 'physical_ai') = 'physical_ai' AND fs.score >= 0.3)
+            OR
+            (fs.domain = 'edu_consulting' AND fs.score >= 0.1)
+          )
         ORDER BY fs.score DESC
         LIMIT %s
     """, (TIER3_BATCH_LIMIT,), fetch=True)
