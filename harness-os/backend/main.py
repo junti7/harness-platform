@@ -5094,6 +5094,7 @@ def _run_edu_diagnose(req: EduDiagnoseRequest) -> dict[str, Any]:
         f"[사용자 최신 입력] {req.user_text or '(첫 진입 — 사용자가 아직 말하지 않음)'}\n\n"
         f"위 원칙에 따라 다음 한 마디를 JSON으로 생성하라."
     )
+    raw = None
     try:
         raw, _usage = generate_text(
             prompt,

@@ -116,3 +116,7 @@ AI Agent는 코드를 수정하거나 기능을 변경할 때, 예기치 않은 
 | 날짜 | 내용 |
 |------|------|
 | 2026-05-28 | 최초 작성. CEO 지시: "항상 Mac Mini가 최종이 되어야 한다" |
+
+## 5. Rollback Policy (Fast Recovery)
+- **Immediate Revert**: If any code change introduces a regression or visibility issue on production (e.g. `http://100.97.175.44:8000/`), the agent must prioritize reverting the problematic change using Git immediately before attempting deep debugging.
+- **Data Integrity**: Database schema or state modifications must always provide a safe rollback command or mechanism. For unrecoverable data modifications, always create a snapshot or dump beforehand.
