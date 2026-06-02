@@ -146,28 +146,13 @@ const INITIAL_CAPITAL = 100_000
 
 // ── 심볼 이름 맵 ─────────────────────────────────────────────────────────────
 
-const ALPACA_SYMBOL_NAMES: Record<string, string> = {
-  GOOG: 'Google', GOOGL: 'Google', GOOP: 'Google',
-  NVDA: 'NVIDIA', TER: 'Teradyne', TSLA: 'Tesla',
-  TSM: 'TSMC (ADR)', MU: 'Micron', AVGO: 'Broadcom',
-  ANET: 'Arista Networks', VRT: 'Vertiv', SYM: 'Symbotic',
-  ISRG: 'Intuitive Surgical', ROK: 'Rockwell Auto.',
-  CRWV: 'CoreWeave', PWR: 'Quanta Services',
+// symbol→name 맵은 /api/trading/symbol-names 에서 동적 로드 (하드코딩 금지)
+// ETF 등 파이프라인 외 종목은 여기서만 보완
+const ETF_NAMES: Record<string, string> = {
   SMH: '반도체 ETF', SOXX: '반도체 ETF', BOTZ: '로보틱스 ETF',
   PLTR: 'Palantir', ROBO: '로봇 ETF', SPY: 'S&P 500 ETF', QQQ: '나스닥 100 ETF',
+  GOOG: 'Google', GOOGL: 'Google', TSLA: 'Tesla', CRWV: 'CoreWeave',
 }
-
-const IBKR_SYMBOL_NAMES: Record<string, string> = {
-  NVDA: 'NVIDIA', AVGO: 'Broadcom', TSM: 'TSMC (ADR)',
-  MU: 'Micron', ANET: 'Arista Networks', VRT: 'Vertiv',
-  TER: 'Teradyne', SYM: 'Symbotic', ISRG: 'Intuitive Surgical',
-  ROK: 'Rockwell Auto.', CEG: 'Constellation Energy', VST: 'Vistra',
-  GEV: 'GE Vernova', PWR: 'Quanta Services',
-  '005930': '삼성전자', '000660': 'SK하이닉스', '042700': '한미반도체',
-  '005380': '현대차',
-}
-
-const ALL_SYMBOL_NAMES: Record<string, string> = { ...ALPACA_SYMBOL_NAMES, ...IBKR_SYMBOL_NAMES }
 
 // ── 글로벌 유니버스 지역/통화 헬퍼 ──────────────────────────────────────────
 
@@ -186,9 +171,9 @@ function fmtLocalPrice(price: number | null, currency: string): string {
   return `${sym}${fmt(price, 2)}`
 }
 
-function symDisplay(symbol?: string | null, names = ALL_SYMBOL_NAMES) {
+function symDisplay(symbol?: string | null, names: Record<string, string> = {}) {
   const code = String(symbol || '').trim().toUpperCase()
-  return { code: code || '—', name: names[code] || '종목명 확인 필요' }
+  return { code: code || '—', name: names[code] || '—' }
 }
 
 // ── 포맷 헬퍼 ─────────────────────────────────────────────────────────────────
@@ -272,7 +257,7 @@ function flowEventShortLabel(kind?: string): string {
 
 // ── 공통 서브 컴포넌트 ────────────────────────────────────────────────────────
 
-function SymbolCell({ symbol, names = ALL_SYMBOL_NAMES }: { symbol?: string | null; names?: Record<string, string> }) {
+function SymbolCell({ symbol, names = {} }: { symbol?: string | null; names?: Record<string, string> }) {
   const item = symDisplay(symbol, names)
   return (
     <span className="symbol-cell">
@@ -544,6 +529,9 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
   const [selectionFlow, setSelectionFlow] = useState<TradingSelectionFlow | null>(null)
   const [selectedFlowSymbol, setSelectedFlowSymbol] = useState<string | null>(null)
 
+  // symbol→name 맵 (API에서 로드, ETF 보완)
+  const [symbolNames, setSymbolNames] = useState<Record<string, string>>(ETF_NAMES)
+
   // IBKR state
   const [ibkrData, setIbkrData] = useState<IbkrMonitorData | null>(null)
   const [ibkrLoading, setIbkrLoading] = useState(true)
@@ -702,6 +690,15 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
     const iv = setInterval(() => void loadIbkr(true), 5 * 60 * 1000)
     return () => { clearTimeout(t); clearInterval(iv) }
   }, [loadIbkr])
+
+  // symbol-names는 최초 1회만 로드 (universe.json 단일 소스)
+  useEffect(() => {
+    fetch(`${apiBase}/api/trading/symbol-names`, { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : {})
+      .then((data: Record<string, string>) => setSymbolNames({ ...ETF_NAMES, ...data }))
+      .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiBase])
 
   // ── 파생 값 계산 ─────────────────────────────────────────────────────────
 
@@ -1252,7 +1249,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                     <div key={pos.symbol} className={`ibkr-pos-row ${pos.action !== 'HOLD' ? 'ibkr-pos-exit' : ''}`}>
                       <span className="ibkr-pos-symbol">
                         <strong>{pos.symbol}</strong>
-                        <small>{IBKR_SYMBOL_NAMES[pos.symbol] ?? ''}</small>
+                        <small>{symbolNames[pos.symbol] ?? ''}</small>
                       </span>
                       <span className={`ibkr-pos-pnl ${(pos.unrealized_pnl_pct ?? 0) >= 0 ? 'pnl-pos' : 'pnl-neg'}`}>
                         {fmtPct(pos.unrealized_pnl_pct)}
@@ -1363,7 +1360,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                 {alpacaPositions.map(p => (
                   <tr key={`alpaca-${p.symbol}`} className={p.near_stop ? 'row-warning' : ''}>
                     <td><span className="broker-tag alpaca">Alpaca</span></td>
-                    <td><SymbolCell symbol={p.symbol} names={ALPACA_SYMBOL_NAMES} /></td>
+                    <td><SymbolCell symbol={p.symbol} names={symbolNames} /></td>
                     <td className="num">{p.qty}</td>
                     <td className="num">${fmt(p.entry_price)}</td>
                     <td className="num">${fmt(p.current_price)}</td>
@@ -1382,7 +1379,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                 {ibkrPositions.map(pos => (
                   <tr key={`ibkr-${pos.symbol}`} className={pos.near_stop ? 'row-warning' : pos.action !== 'HOLD' ? 'row-highlight' : ''}>
                     <td><span className="broker-tag ibkr">IBKR</span></td>
-                    <td><SymbolCell symbol={pos.symbol} names={IBKR_SYMBOL_NAMES} /></td>
+                    <td><SymbolCell symbol={pos.symbol} names={symbolNames} /></td>
                     <td className="num">{pos.qty}</td>
                     <td className="num">${fmt(pos.entry_price)}</td>
                     <td className="num">{pos.current_price !== null ? `$${fmt(pos.current_price)}` : '—'}</td>
@@ -1408,7 +1405,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                     <div className="prcard-header">
                       <div className="prcard-symbol">
                         <strong>{pos.symbol}</strong>
-                        <small>{IBKR_SYMBOL_NAMES[pos.symbol] ?? '—'}</small>
+                        <small>{symbolNames[pos.symbol] ?? '—'}</small>
                       </div>
                       <ActionBadge action={pos.action} />
                     </div>
@@ -1553,7 +1550,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                                 <span className="region-flag">{REGION_FLAG[c.region ?? 'US'] ?? '🌐'}</span>
                                 <div>
                                   <strong>{c.symbol}</strong>
-                                  <small>{c.name || IBKR_SYMBOL_NAMES[c.symbol] || ''}</small>
+                                  <small>{c.name || symbolNames[c.symbol] || ''}</small>
                                 </div>
                                 {c.sector && <span className="sector-chip">{c.sector}</span>}
                               </div>
@@ -1583,7 +1580,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
           <>
             <span className="data-meta" style={{ display: 'block', marginBottom: '0.5rem' }}>
               관찰 종목: {(alpacaData?.universe ?? []).map(sym => {
-                const item = symDisplay(sym, ALPACA_SYMBOL_NAMES)
+                const item = symDisplay(sym, symbolNames)
                 return `${item.code}(${item.name})`
               }).join(', ') || '—'}
             </span>
@@ -1598,7 +1595,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                     <span className="data-label-inline">활성 신호:</span>
                     {alpacaActiveSignals.map(s => (
                       <span key={s.symbol} className="active-signal-chip">
-                        <SymbolCell symbol={s.symbol} names={ALPACA_SYMBOL_NAMES} />
+                        <SymbolCell symbol={s.symbol} names={symbolNames} />
                         <AlpacaSignalBadge signal={s.signal} />
                         {s.system}
                       </span>
@@ -1625,7 +1622,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                     <tbody>
                       {alpacaSignals.map(s => (
                         <tr key={s.symbol} className={s.signal !== 'neutral' ? 'row-highlight' : ''}>
-                          <td><SymbolCell symbol={s.symbol} names={ALPACA_SYMBOL_NAMES} /></td>
+                          <td><SymbolCell symbol={s.symbol} names={symbolNames} /></td>
                           <td><AlpacaSignalBadge signal={s.signal} /></td>
                           <td>{s.system ?? '—'}</td>
                           <td className="num">${fmt(s.current_price)}</td>
@@ -1756,7 +1753,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                 {(alpacaOrders as AlpacaOrder[]).map((o, i) => (
                   <tr key={`${o.id ?? ''}-${i}`}>
                     <td className="mono">{o.id}</td>
-                    <td><SymbolCell symbol={o.symbol} names={ALPACA_SYMBOL_NAMES} /></td>
+                    <td><SymbolCell symbol={o.symbol} names={symbolNames} /></td>
                     <td>
                       <span className={`signal-badge ${o.side === 'buy' ? 'signal-long' : 'signal-short'}`}>
                         {o.side === 'buy' ? '매수' : '매도'}

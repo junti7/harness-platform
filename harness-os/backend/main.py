@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import sys
 import shlex
 import threading
@@ -12,7 +13,7 @@ import html
 import subprocess
 import shutil
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -3258,6 +3259,16 @@ def get_costs_summary(_: None = Depends(_require_secret)) -> dict[str, Any]:
     }
 
 
+@app.get("/api/trading/symbol-names")
+def get_symbol_names(_: None = Depends(_require_secret)) -> dict[str, str]:
+    """universe.json + seed registry에서 symbol→name 맵 반환 (프론트엔드 단일 소스)."""
+    try:
+        from core.trading_universe import _load_seed_registry
+        return {row["symbol"]: row.get("name", row["symbol"]) for row in _load_seed_registry()}
+    except Exception:
+        return {}
+
+
 @app.get("/api/trading/monitor")
 def get_trading_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
     return _trading_api_overview()
@@ -3289,6 +3300,131 @@ def get_paper_trading_dashboard(_: None = Depends(_require_secret)) -> dict[str,
         return get_full_dashboard()
     except Exception as e:
         return {"ok": False, "error": str(e), "account": {"ok": False, "error": str(e)}}
+
+
+@app.get("/api/paper-trading/reset-status")
+def get_paper_trading_reset_status(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    path = PROJECT_ROOT / "docs" / "reports" / "paper_trading_reset_status.json"
+    if not path.exists():
+        return {"ok": True, "exists": False, "reset_pending": False, "flat": True}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return {"ok": True, "exists": True, **payload}
+    except Exception as e:
+        return {"ok": False, "exists": True, "error": str(e), "reset_pending": True, "flat": False}
+
+
+def _read_json_file(path: Path, default: Any) -> Any:
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+
+
+def _read_jsonl(path: Path, limit: int = 100) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except Exception:
+                continue
+    except Exception:
+        return []
+    return rows[-limit:]
+
+
+def _paper_trade_flow_payload() -> dict[str, Any]:
+    from core.trading_universe import explain_trading_symbol
+
+    universe = _read_json_file(PROJECT_ROOT / "docs" / "trading" / "universe.json", [])
+    alpaca_state = _read_json_file(PROJECT_ROOT / "docs" / "reports" / "paper_trading_positions.json", {})
+    ibkr_state = _read_json_file(PROJECT_ROOT / "docs" / "reports" / "ibkr_tws_positions.json", {})
+    reset_status = _read_json_file(PROJECT_ROOT / "docs" / "reports" / "paper_trading_reset_status.json", {})
+
+    raw_totals = _execute_query(
+        """
+        SELECT
+          COUNT(*) AS total,
+          SUM(CASE WHEN status = 'filtered_pass' THEN 1 ELSE 0 END) AS filtered_pass,
+          SUM(CASE WHEN status = 'filtered_fail' THEN 1 ELSE 0 END) AS filtered_fail
+        FROM raw_signals
+        WHERE COALESCE(domain, raw_data->>'domain', 'physical_ai') = %s
+        """,
+        ("physical_ai",),
+    )
+    filtered_totals = _execute_query(
+        "SELECT COUNT(*) AS total FROM filtered_signals WHERE COALESCE(domain, 'physical_ai') = %s",
+        ("physical_ai",),
+    )
+    signal_totals = _execute_query(
+        "SELECT COUNT(*) AS total FROM signals WHERE COALESCE(domain, 'physical_ai') = %s",
+        ("physical_ai",),
+    )
+
+    diary_rows = _read_jsonl(PROJECT_ROOT / "docs" / "trading" / "trading_diary.jsonl", limit=200)
+    log_rows = _read_jsonl(PROJECT_ROOT / "docs" / "reports" / "paper_trading_log.jsonl", limit=200)
+    events: list[dict[str, Any]] = []
+
+    for row in diary_rows:
+        events.append({
+            "ts": row.get("timestamp"),
+            "kind": row.get("type"),
+            "symbol": row.get("ticker"),
+            "title": row.get("company_name") or row.get("summary") or row.get("note") or row.get("exit_reason") or row.get("type"),
+            "detail": row,
+            "source": "trading_diary",
+        })
+    for row in log_rows:
+        events.append({
+            "ts": row.get("ts"),
+            "kind": row.get("action"),
+            "symbol": row.get("symbol"),
+            "title": row.get("status") or row.get("reason") or row.get("action"),
+            "detail": row,
+            "source": "paper_trading_log",
+        })
+    events.sort(key=lambda row: row.get("ts") or "", reverse=True)
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "pipeline": {
+            "raw_total": int((raw_totals[0].get("total") if raw_totals else 0) or 0),
+            "filtered_pass": int((raw_totals[0].get("filtered_pass") if raw_totals else 0) or 0),
+            "filtered_fail": int((raw_totals[0].get("filtered_fail") if raw_totals else 0) or 0),
+            "filtered_total": int((filtered_totals[0].get("total") if filtered_totals else 0) or 0),
+            "signal_total": int((signal_totals[0].get("total") if signal_totals else 0) or 0),
+            "selected_universe_count": len(universe),
+        },
+        "selection_universe": universe,
+        "symbol_evidence": {
+            row.get("symbol"): explain_trading_symbol(row.get("symbol"), domain="physical_ai", lookback_days=45, limit=5)
+            for row in universe
+            if row.get("symbol")
+        },
+        "trade_flow": events[:80],
+        "runtime_state": {
+            "alpaca_tracked": sorted((alpaca_state.get("turtle_positions") or {}).keys()),
+            "ibkr_positions": sorted((ibkr_state.get("positions") or {}).keys()),
+            "ibkr_pending_orders": sorted((ibkr_state.get("pending_orders") or {}).keys()),
+            "reset_status": reset_status,
+        },
+    }
+
+
+@app.get("/api/trading/selection-flow")
+def get_trading_selection_flow(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    try:
+        return {"ok": True, **_paper_trade_flow_payload()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @app.post("/api/paper-trading/run")
@@ -4390,11 +4526,389 @@ class EduDiagnoseRequest(BaseModel):
     turn: int = 0                     # 대화 턴 수 (톤 상승 신호)
     history: list[EduDiagnoseTurn] = []
     user_text: str = ""               # 사용자 최신 자유 입력
+    case_id: int | None = None        # 저장형 PoC용 케이스 식별자
+    preferred_salutation: str = "neutral"
+    locale: str = "ko-KR"
+
+
+class EduPublicBootstrapRequest(BaseModel):
+    segment: str = "parent"
+    name: str = ""
+    email: str = ""
+    preferred_salutation: str = "neutral"
+    locale: str = "ko-KR"
+    preferred_llm: str = "auto"
+    force_new: bool = False
+
+
+class EduMagicLinkRequest(BaseModel):
+    segment: str = "parent"
+    name: str = ""
+    email: str = ""
+    preferred_salutation: str = "neutral"
+    locale: str = "ko-KR"
+    preferred_llm: str = "auto"
+    force_new: bool = False
+
+
+def _edu_normalize_email(email: str) -> str:
+    return (email or "").strip().lower()
+
+
+def _edu_normalize_salutation(value: str) -> str:
+    v = (value or "").strip().lower()
+    return v if v in {"neutral", "father", "mother", "name"} else "neutral"
+
+
+def _edu_normalize_locale(value: str) -> str:
+    v = (value or "").strip()
+    return v if v in {"ko-KR", "en-US"} else "ko-KR"
+
+
+def _edu_normalize_llm(value: str) -> str:
+    v = (value or "").strip().lower()
+    return v if v in {"auto", "claude", "gemini", "gpt", "local"} else "auto"
+
+
+def _edu_base_url() -> str:
+    return os.getenv("EDU_PUBLIC_BASE_URL", "http://100.97.175.44:8000").rstrip("/")
+
+
+def _edu_execute(query: str, params: tuple[Any, ...] = (), fetch: bool = False) -> list[dict[str, Any]]:
+    from core.database import execute_query
+
+    return execute_query(query, params=params, fetch=fetch) or []
+
+
+_EDU_SCHEMA_READY = False
+_EDU_SCHEMA_LOCK = threading.Lock()
+
+
+def _ensure_edu_case_schema() -> None:
+    global _EDU_SCHEMA_READY
+    if _EDU_SCHEMA_READY:
+        return
+    with _EDU_SCHEMA_LOCK:
+        if _EDU_SCHEMA_READY:
+            return
+        sql_text = (PROJECT_ROOT / "infra" / "migrations" / "2026-06-02_edu_case_persistence.sql").read_text(encoding="utf-8")
+        from core.database import get_connection
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql_text)
+            conn.commit()
+            _EDU_SCHEMA_READY = True
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+
+def _edu_build_opener(segment: str) -> dict[str, Any]:
+    if segment == "worker":
+        return {
+            "role": "ai",
+            "text": "앉으세요. 요즘 이쪽으로 오시는 분들, 대부분 같은 이유예요. AI를 못 따라가면 뒤처질까 걱정되시는 거죠. 우선 지금 어떤 일을 하고 계신지부터 볼게요.",
+            "tone_level": 0,
+            "phase": "opening",
+            "quick_replies": ["사무직이에요", "기획/마케팅이에요", "딱히 정해진 게 없어요"],
+            "show_offer": False,
+        }
+    return {
+        "role": "ai",
+        "text": "요즘 보호자분들이 아이 AI 사용 때문에 많이 막히세요. 먼저 가장 기본부터 볼게요. 자녀분은 몇 학년쯤 되나요?",
+        "tone_level": 0,
+        "phase": "opening",
+        "quick_replies": ["초등학생이에요", "중학생이에요", "고등학생이에요"],
+        "show_offer": False,
+    }
+
+
+def _edu_create_case(customer_id: int, segment: str) -> int:
+    row = _edu_execute(
+        """
+        INSERT INTO edu_cases (customer_id, status, current_phase, current_tone_level, last_turn_at)
+        VALUES (%s, 'intake', 'opening', 0, NOW())
+        RETURNING id
+        """,
+        (customer_id,),
+        fetch=True,
+    )[0]
+    case_id = int(row["id"])
+    opener = _edu_build_opener(segment)
+    _edu_execute(
+        """
+        INSERT INTO edu_case_turns (case_id, turn_no, role, text, phase, tone_level, quick_replies_json, show_offer)
+        VALUES (%s, 0, %s, %s, %s, %s, %s::jsonb, %s)
+        """,
+        (
+            case_id,
+            opener["role"],
+            opener["text"],
+            opener["phase"],
+            opener["tone_level"],
+            json.dumps(opener["quick_replies"], ensure_ascii=False),
+            opener["show_offer"],
+        ),
+        fetch=False,
+    )
+    return case_id
+
+
+def _edu_load_case_payload(case_id: int) -> dict[str, Any]:
+    case_rows = _edu_execute(
+        """
+        SELECT c.id, c.customer_id, c.current_phase, c.current_tone_level, c.updated_at, c.last_turn_at,
+               cu.segment, cu.name, cu.email, cu.preferred_salutation, cu.locale, cu.preferred_llm
+        FROM edu_cases c
+        JOIN edu_customers cu ON cu.id = c.customer_id
+        WHERE c.id = %s
+        LIMIT 1
+        """,
+        (case_id,),
+        fetch=True,
+    )
+    if not case_rows:
+        raise HTTPException(404, "case not found")
+    turn_rows = _edu_execute(
+        """
+        SELECT turn_no, role, text, phase, tone_level, quick_replies_json, show_offer, created_at
+        FROM edu_case_turns
+        WHERE case_id = %s
+        ORDER BY turn_no ASC, id ASC
+        """,
+        (case_id,),
+        fetch=True,
+    )
+    quick_replies: list[str] = []
+    show_offer = False
+    for row in reversed(turn_rows):
+        if row["role"] == "ai":
+            quick_replies = row.get("quick_replies_json") or []
+            show_offer = bool(row.get("show_offer"))
+            break
+    return {
+        "customer": {
+            "id": int(case_rows[0]["customer_id"]),
+            "segment": case_rows[0]["segment"],
+            "name": case_rows[0]["name"] or "",
+            "email": case_rows[0]["email"] or "",
+            "preferred_salutation": case_rows[0].get("preferred_salutation") or "neutral",
+            "locale": case_rows[0].get("locale") or "ko-KR",
+            "preferred_llm": case_rows[0].get("preferred_llm") or "auto",
+        },
+        "case": {
+            "id": int(case_rows[0]["id"]),
+            "phase": case_rows[0]["current_phase"] or "opening",
+            "tone_level": int(case_rows[0]["current_tone_level"] or 0),
+            "updated_at": case_rows[0]["updated_at"].isoformat() if case_rows[0].get("updated_at") else None,
+            "last_turn_at": case_rows[0]["last_turn_at"].isoformat() if case_rows[0].get("last_turn_at") else None,
+        },
+        "messages": [
+            {
+                "role": row["role"],
+                "text": row["text"],
+                "phase": row.get("phase") or "",
+                "toneLevel": int(row.get("tone_level") or 0),
+                "turnNo": int(row.get("turn_no") or 0),
+            }
+            for row in turn_rows
+        ],
+        "quick_replies": quick_replies,
+        "show_offer": show_offer,
+    }
+
+
+def _edu_bootstrap_customer_case(req: EduPublicBootstrapRequest) -> dict[str, Any]:
+    _ensure_edu_case_schema()
+    email = _edu_normalize_email(req.email)
+    if not email:
+        raise HTTPException(400, "email is required")
+    segment = req.segment if req.segment in {"parent", "worker"} else "parent"
+    preferred_salutation = _edu_normalize_salutation(req.preferred_salutation)
+    locale = _edu_normalize_locale(req.locale)
+    preferred_llm = _edu_normalize_llm(req.preferred_llm)
+    force_new = bool(req.force_new)
+    rows = _edu_execute(
+        """
+        SELECT id, segment, name, email, preferred_salutation, locale, preferred_llm
+        FROM edu_customers
+        WHERE lower(email) = %s
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (email,),
+        fetch=True,
+    )
+    has_prior_customer = bool(rows)
+    if rows:
+        customer_id = int(rows[0]["id"])
+        _edu_execute(
+            """
+            UPDATE edu_customers
+            SET segment = %s,
+                name = CASE WHEN %s <> '' THEN %s ELSE name END,
+                preferred_salutation = %s,
+                locale = %s,
+                preferred_llm = %s,
+                last_active_at = NOW()
+            WHERE id = %s
+            """,
+            (
+                segment,
+                (req.name or "").strip(),
+                (req.name or "").strip(),
+                preferred_salutation,
+                locale,
+                preferred_llm,
+                customer_id,
+            ),
+            fetch=False,
+        )
+        if force_new:
+            case_id = _edu_create_case(customer_id, segment)
+        else:
+            case_rows = _edu_execute(
+                """
+                SELECT id
+                FROM edu_cases
+                WHERE customer_id = %s
+                ORDER BY updated_at DESC, id DESC
+                LIMIT 1
+                """,
+                (customer_id,),
+                fetch=True,
+            )
+            case_id = int(case_rows[0]["id"]) if case_rows else _edu_create_case(customer_id, segment)
+    else:
+        inserted = _edu_execute(
+            """
+            INSERT INTO edu_customers (segment, name, email, preferred_salutation, locale, preferred_llm, login_channel, consent_version, last_active_at)
+            VALUES (%s, %s, %s, %s, %s, %s, 'email_link', 'poc-v1', NOW())
+            RETURNING id
+            """,
+            (segment, (req.name or "").strip(), email, preferred_salutation, locale, preferred_llm),
+            fetch=True,
+        )[0]
+        customer_id = int(inserted["id"])
+        case_id = _edu_create_case(customer_id, segment)
+
+    payload = _edu_load_case_payload(case_id)
+    payload["is_returning"] = has_prior_customer and not force_new
+    payload["has_prior_customer"] = has_prior_customer
+    payload["started_fresh"] = force_new or not has_prior_customer
+    return payload
+
+
+def _edu_issue_magic_link(req: EduMagicLinkRequest) -> dict[str, Any]:
+    _ensure_edu_case_schema()
+    email = _edu_normalize_email(req.email)
+    if not email:
+        raise HTTPException(400, "email is required")
+    segment = req.segment if req.segment in {"parent", "worker"} else "parent"
+    preferred_salutation = _edu_normalize_salutation(req.preferred_salutation)
+    locale = _edu_normalize_locale(req.locale)
+    preferred_llm = _edu_normalize_llm(req.preferred_llm)
+    force_new = bool(req.force_new)
+    bootstrap = _edu_bootstrap_customer_case(
+        EduPublicBootstrapRequest(
+            segment=segment,
+            name=req.name,
+            email=email,
+            preferred_salutation=preferred_salutation,
+            locale=locale,
+            preferred_llm=preferred_llm,
+            force_new=force_new,
+        )
+    )
+    token = secrets.token_urlsafe(24)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    expires_minutes = int(os.getenv("EDU_MAGIC_LINK_EXPIRES_MINUTES", "30"))
+    customer_id = int(bootstrap["customer"]["id"])
+    case_id = int(bootstrap["case"]["id"])
+    _edu_execute(
+        """
+        INSERT INTO edu_magic_links (customer_id, case_id, email, token_hash, segment, name, preferred_salutation, locale, expires_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW() + (%s || ' minutes')::interval)
+        """,
+        (
+            customer_id,
+            case_id,
+            email,
+            token_hash,
+            segment,
+            (req.name or "").strip(),
+            preferred_salutation,
+            locale,
+            str(expires_minutes),
+        ),
+        fetch=False,
+    )
+    link = f"{_edu_base_url()}/edu-pilot-app.html?token={token}"
+    return {
+        "ok": True,
+        "email": email,
+        "expires_minutes": expires_minutes,
+        "magic_link": link,
+        "case_id": case_id,
+        "customer_id": customer_id,
+        "force_new": force_new,
+    }
+
+
+def _edu_consume_magic_link(token: str) -> dict[str, Any]:
+    _ensure_edu_case_schema()
+    if not token:
+        raise HTTPException(400, "token is required")
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    rows = _edu_execute(
+        """
+        SELECT id, customer_id, case_id, email, segment, name, preferred_salutation, locale, expires_at, used_at
+        FROM edu_magic_links
+        WHERE token_hash = %s
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (token_hash,),
+        fetch=True,
+    )
+    if not rows:
+        raise HTTPException(404, "magic link not found")
+    row = rows[0]
+    expires_at = row["expires_at"]
+    if row.get("used_at") is not None:
+        raise HTTPException(410, "magic link already used")
+    if expires_at is None or expires_at <= datetime.now(timezone.utc):
+        raise HTTPException(410, "magic link expired")
+    _edu_execute(
+        "UPDATE edu_magic_links SET used_at = NOW() WHERE id = %s",
+        (int(row["id"]),),
+        fetch=False,
+    )
+    if row.get("case_id"):
+        payload = _edu_load_case_payload(int(row["case_id"]))
+        payload["is_returning"] = True
+        payload["has_prior_customer"] = True
+        payload["started_fresh"] = False
+    else:
+        payload = _edu_bootstrap_customer_case(
+            EduPublicBootstrapRequest(
+                segment=row.get("segment") or "parent",
+                name=row.get("name") or "",
+                email=row.get("email") or "",
+                preferred_salutation=row.get("preferred_salutation") or "neutral",
+                locale=row.get("locale") or "ko-KR",
+            )
+        )
+    payload["auth_method"] = "magic_link"
+    return payload
 
 
 _EDU_TONE_LADDER = """너는 베테랑 교육 상담사다. 목표는 사용자가
 "어? 안에 진짜 사람이 있나?" 라고 느낄 만큼 자연스러운 대화로 신뢰를 쌓고,
-마지막에 맞춤 처방(유료 ₩9,900) 또는 부모 4주 과정(2주 무료)으로 자연스럽게 연결하는 것이다.
+무료로 바로 해볼 수 있는 출발 과제 2~3개와 다음 단계에서 받을 수 있는 도움을 자연스럽게 안내하는 것이다.
 
 [페르소나 — 권위 있는 '선생님' 보이스 (매우 중요)]
 너의 화법은 손님을 앉혀놓고 읽어주는 권위 있는 타로·사주 선생님의 그것이다.
@@ -4418,6 +4932,14 @@ _EDU_TONE_LADDER = """너는 베테랑 교육 상담사다. 목표는 사용자�
 예: "요즘 부모님들이 아이 AI 사용 때문에 고민이 많으시더라고요. 혹시 자녀분은 나이가 어떻게 되나요?"
 초반일수록 답하기 쉬운 사실 질문(연령, 학년, 구체 상황)부터 던진다.
 
+[호칭/정체성 추정 금지 — 매우 중요]
+- 이메일 주소, 이름, 문장 말투만 보고 성별을 추정하지 않는다.
+- '어머님', '아버님', '엄마', '아빠' 같은 역할 호칭을 추정해서 먼저 쓰지 않는다.
+- 사용자가 직접 밝히지 않은 한 기본 호칭은 중립적으로 유지한다.
+- 직접 부를 필요가 있으면 '보호자님' 또는 호칭 생략을 기본값으로 사용한다.
+- [선호 호칭]이 father/mother/name으로 주어지면 그 값만 따른다. neutral이면 계속 중립 호칭을 사용한다.
+- [언어/지역]이 en-US이면 영어로 답하고, 호칭도 parent/caregiver 또는 이름 중심으로 유지한다.
+
 [절대 원칙 — 톤의 점진적 상승]
 처음부터 친한 척하면 "왜 친한 척하지?" 반감이 생긴다. 톤은 반드시 서서히 높인다.
 - 톤레벨 0 (turn 0~1, zero-base): 완전히 공손하고 거리감 있게. 단정 금지. 모르는 척 정중히 묻는다.
@@ -4427,7 +4949,7 @@ _EDU_TONE_LADDER = """너는 베테랑 교육 상담사다. 목표는 사용자�
 - 톤레벨 3 (신뢰 구축 후): 베테랑처럼 친근하게 처방을 제시하고 다음 단계로 연결한다.
 
 [세그먼트별 화법] — 위 '선생님 보이스'를 기본으로 깔되 결만 다르게
-- parent(부모/어머님·아버님): 오래 봐 온 선생님이 단골 어머님을 앉혀놓고 읽어주듯.
+- parent(보호자/부모): 오래 봐 온 선생님이 보호자를 앉혀놓고 읽어주듯.
   직설적이지만 따뜻하고, 상대 입장을 먼저 알아주는 한국 부모의 언어. 권위는 있되 점잖다.
 - worker(직장인): 같은 권위를 유지하되 결을 조금 가볍게. 단, 들뜬 MZ 말투로 권위를 깨지 않는다.
   여전히 '읽어주는' 사람이다. 이모지는 최소화.
@@ -4447,6 +4969,13 @@ _EDU_TONE_LADDER = """너는 베테랑 교육 상담사다. 목표는 사용자�
 구체적 숫자(%, 명수)를 새로 만들어 말하지 않는다. 제공된 cite 문장의 취지를 벗어나지 않는다.
 인용할 자료가 마땅치 않으면 인용 없이 대화한다. 날조는 신뢰를 영구히 파괴한다.
 
+[전환 원칙 — 매우 중요]
+- 가격을 먼저 노출하거나 결제를 재촉하지 않는다.
+- 먼저 현재 상황 요약, 무료로 바로 해볼 수 있는 과제, 다음 단계에서 받을 수 있는 도움을 제시한다.
+- 사용자가 충분히 공감하고 흥미를 느낀 뒤에만 다음 단계 제안을 암시할 수 있다.
+- "받을 수 있을 거예요", "이어가 보실 수 있어요" 같은 가능성 제시형 문장을 선호한다.
+- 강매, 마감 압박, 할인 압박, 오늘만 표현 금지.
+
 [인용 가능한 실제 자료]
 __EVIDENCE__
 
@@ -4458,7 +4987,7 @@ __EVIDENCE__
   "quick_replies": ["사용자가 누를 1~3개의 짧은 응답 선택지 (없으면 빈 배열)"],
   "show_offer": false
 }
-신뢰가 충분히 쌓여 처방으로 넘어갈 때만 show_offer=true, phase="prescribing".
+신뢰가 충분히 쌓여 무료 커리큘럼과 다음 단계 안내로 넘어갈 때만 show_offer=true, phase="prescribing".
 """
 
 
@@ -4546,13 +5075,11 @@ def edu_list_observations(_: None = Depends(_require_secret)) -> dict[str, Any]:
     return {"items": items, "count": len(items)}
 
 
-@app.post("/api/edu/diagnose")
-def edu_diagnose(
-    req: EduDiagnoseRequest,
-    _: None = Depends(_require_secret),
-) -> dict[str, Any]:
-    """적응형 AI 부모 진단 — 톤 사다리 + 실제 근거 인용 대화 엔진 (Gemini)."""
-    seg_label = "부모(어머님·아버님)" if req.segment == "parent" else "직장인(MZ)"
+def _run_edu_diagnose(req: EduDiagnoseRequest) -> dict[str, Any]:
+    """적응형 AI 부모 자가점검 — 톤 사다리 + 실제 근거 인용 대화 엔진 (Gemini)."""
+    seg_label = "보호자/부모" if req.segment == "parent" else "직장인(MZ)"
+    preferred_salutation = _edu_normalize_salutation(req.preferred_salutation)
+    locale = _edu_normalize_locale(req.locale)
     convo = "\n".join(
         f"{'AI' if t.role == 'ai' else '사용자'}: {t.text}" for t in req.history[-8:]
     )
@@ -4560,6 +5087,8 @@ def edu_diagnose(
     prompt = (
         f"{ladder}\n\n"
         f"[현재 세그먼트] {seg_label}\n"
+        f"[선호 호칭] {preferred_salutation}\n"
+        f"[언어/지역] {locale}\n"
         f"[현재 턴 번호] {req.turn} (톤레벨 선택 기준)\n"
         f"[지금까지 대화]\n{convo or '(아직 없음 — 첫 인사)'}\n\n"
         f"[사용자 최신 입력] {req.user_text or '(첫 진입 — 사용자가 아직 말하지 않음)'}\n\n"
@@ -4599,6 +5128,130 @@ def edu_diagnose(
             "quick_replies": [],
             "show_offer": False,
         }
+
+
+def _persist_edu_case_turns(req: EduDiagnoseRequest, result: dict[str, Any]) -> None:
+    if not req.case_id:
+        return
+    _ensure_edu_case_schema()
+    case_id = int(req.case_id)
+    user_text = (req.user_text or "").strip()
+    if not user_text:
+        return
+    _edu_execute(
+        """
+        INSERT INTO edu_case_turns (case_id, turn_no, role, text, phase, tone_level, quick_replies_json, show_offer)
+        VALUES (%s, %s, 'user', %s, '', 0, '[]'::jsonb, false)
+        """,
+        (case_id, int(req.turn), user_text),
+        fetch=False,
+    )
+    _edu_execute(
+        """
+        INSERT INTO edu_case_turns (case_id, turn_no, role, text, phase, tone_level, quick_replies_json, show_offer)
+        VALUES (%s, %s, 'ai', %s, %s, %s, %s::jsonb, %s)
+        """,
+        (
+            case_id,
+            int(req.turn),
+            result.get("message", ""),
+            result.get("phase", "probing"),
+            int(result.get("tone_level", 0)),
+            json.dumps(result.get("quick_replies", []) or [], ensure_ascii=False),
+            bool(result.get("show_offer", False)),
+        ),
+        fetch=False,
+    )
+    _edu_execute(
+        """
+        UPDATE edu_cases
+        SET current_phase = %s,
+            current_tone_level = %s,
+            status = CASE WHEN %s THEN 'offer_ready' ELSE 'intake' END,
+            last_turn_at = NOW(),
+            updated_at = NOW()
+        WHERE id = %s
+        """,
+        (
+            result.get("phase", "probing"),
+            int(result.get("tone_level", 0)),
+            bool(result.get("show_offer", False)),
+            case_id,
+        ),
+        fetch=False,
+    )
+    _edu_execute(
+        """
+        UPDATE edu_customers
+        SET last_active_at = NOW()
+        WHERE id = (SELECT customer_id FROM edu_cases WHERE id = %s)
+        """,
+        (case_id,),
+        fetch=False,
+    )
+
+
+@app.post("/api/edu/diagnose")
+def edu_diagnose(
+    req: EduDiagnoseRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    result = _run_edu_diagnose(req)
+    _persist_edu_case_turns(req, result)
+    return result
+
+
+@app.post("/api/public/edu/diagnose")
+def edu_public_diagnose(req: EduDiagnoseRequest) -> dict[str, Any]:
+    """독립형 PoC용 공개 진입점. case_id가 오면 서버에도 저장한다."""
+    result = _run_edu_diagnose(req)
+    _persist_edu_case_turns(req, result)
+    return result
+
+
+@app.post("/api/public/edu/bootstrap")
+def edu_public_bootstrap(req: EduPublicBootstrapRequest) -> dict[str, Any]:
+    """이메일 기준으로 고객을 식별하고, 이어보기 또는 새 케이스 시작을 지원한다."""
+    return _edu_bootstrap_customer_case(req)
+
+
+@app.get("/api/public/edu/resume")
+def edu_public_resume(email: str) -> dict[str, Any]:
+    """같은 이메일로 마지막 케이스를 다시 연다."""
+    payload = _edu_bootstrap_customer_case(EduPublicBootstrapRequest(email=email, force_new=False))
+    payload["is_returning"] = True
+    return payload
+
+
+@app.post("/api/public/edu/magic-link/request")
+def edu_public_magic_link_request(req: EduMagicLinkRequest) -> dict[str, Any]:
+    """
+    실제 외부 고객용으로는 메일 발송기가 붙어야 한다.
+    현재는 내부 테스트/운영 준비용으로 발급 사실만 반환한다.
+    """
+    issued = _edu_issue_magic_link(req)
+    return {
+        "ok": True,
+        "email": issued["email"],
+        "expires_minutes": issued["expires_minutes"],
+        "delivery": "pending_mailer",
+        "message": "매직 링크 발송 기능은 다음 단계입니다. 현재는 내부 테스트 링크 생성 경로를 사용합니다.",
+    }
+
+
+@app.get("/api/public/edu/magic-link/consume")
+def edu_public_magic_link_consume(token: str) -> dict[str, Any]:
+    return _edu_consume_magic_link(token)
+
+
+@app.post("/api/edu/magic-link/test-create")
+def edu_internal_magic_link_test_create(
+    req: EduMagicLinkRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    """CEO/VP가 Harness OS 내부에서 바로 테스트 링크를 생성하는 용도."""
+    issued = _edu_issue_magic_link(req)
+    return issued
 
 
 @app.post("/api/trading/diary/note")

@@ -35,6 +35,7 @@ from dotenv import load_dotenv
 load_dotenv(ROOT / ".env", override=True)
 
 from ib_insync import IB, Stock, MarketOrder, util
+from core.trading_universe import build_trading_universe, load_trading_universe, write_trading_universe
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 
@@ -48,43 +49,10 @@ TWS_CLIENT_ID = 10       # 임의 클라이언트 ID (충돌 방지)
 
 LOG_PATH       = ROOT / "docs/reports/ibkr_tws_paper_log.jsonl"
 STATE_PATH     = ROOT / "docs/reports/ibkr_tws_positions.json"
-UNIVERSE_PATH  = ROOT / "docs/trading/universe.json"
-
-# Harness 리서치 유니버스 fallback (universe.json 없을 때 사용)
-UNIVERSE_FALLBACK: list[dict] = [
-    # Physical AI / AGI 인프라 (미국)
-    {"region": "US", "symbol": "NVDA", "exchange": "SMART", "currency": "USD", "name": "NVIDIA",             "sector": "AI Chip"},
-    {"region": "US", "symbol": "AVGO", "exchange": "SMART", "currency": "USD", "name": "Broadcom",           "sector": "AI Chip"},
-    {"region": "US", "symbol": "TSM",  "exchange": "NYSE",  "currency": "USD", "name": "TSMC ADR",           "sector": "Foundry"},
-    {"region": "US", "symbol": "MU",   "exchange": "SMART", "currency": "USD", "name": "Micron Technology",  "sector": "Memory"},
-    {"region": "US", "symbol": "ANET", "exchange": "SMART", "currency": "USD", "name": "Arista Networks",    "sector": "AI Network"},
-    {"region": "US", "symbol": "VRT",  "exchange": "NYSE",  "currency": "USD", "name": "Vertiv",             "sector": "Power Infra"},
-    {"region": "US", "symbol": "TER",  "exchange": "SMART", "currency": "USD", "name": "Teradyne",           "sector": "Test Equip"},
-    {"region": "US", "symbol": "SYM",  "exchange": "SMART", "currency": "USD", "name": "Symbotic",           "sector": "Robotics"},
-    {"region": "US", "symbol": "ISRG", "exchange": "SMART", "currency": "USD", "name": "Intuitive Surgical", "sector": "Medical Robot"},
-    {"region": "US", "symbol": "ROK",  "exchange": "NYSE",  "currency": "USD", "name": "Rockwell Automation","sector": "Industrial Auto"},
-    # 전력 인프라
-    {"region": "US", "symbol": "CEG",  "exchange": "SMART", "currency": "USD", "name": "Constellation Energy","sector": "Power"},
-    {"region": "US", "symbol": "VST",  "exchange": "NYSE",  "currency": "USD", "name": "Vistra",             "sector": "Power"},
-    {"region": "US", "symbol": "GEV",  "exchange": "NYSE",  "currency": "USD", "name": "GE Vernova",         "sector": "Power Equip"},
-    {"region": "US", "symbol": "PWR",  "exchange": "NYSE",  "currency": "USD", "name": "Quanta Services",    "sector": "Power Infra"},
-    # 한국
-    {"region": "KR", "symbol": "000660", "exchange": "KRX",  "currency": "KRW", "name": "SK하이닉스",   "sector": "HBM Memory"},
-    {"region": "KR", "symbol": "005930", "exchange": "KRX",  "currency": "KRW", "name": "삼성전자",     "sector": "Memory/Foundry"},
-    {"region": "KR", "symbol": "042700", "exchange": "KRX",  "currency": "KRW", "name": "한미반도체",   "sector": "Chip Equip"},
-    # 대만
-    {"region": "TW", "symbol": "2330", "exchange": "TSEA", "currency": "TWD", "name": "TSMC",          "sector": "Foundry"},
-    {"region": "TW", "symbol": "2454", "exchange": "TSEA", "currency": "TWD", "name": "MediaTek",      "sector": "SoC"},
-    {"region": "TW", "symbol": "3711", "exchange": "TSEA", "currency": "TWD", "name": "ASE Technology","sector": "Packaging"},
-    # 일본
-    {"region": "JP", "symbol": "8035", "exchange": "TSE",  "currency": "JPY", "name": "Tokyo Electron","sector": "Chip Equip"},
-    {"region": "JP", "symbol": "6861", "exchange": "TSE",  "currency": "JPY", "name": "Keyence",       "sector": "Factory Auto"},
-    {"region": "JP", "symbol": "6954", "exchange": "TSE",  "currency": "JPY", "name": "FANUC",         "sector": "Robotics"},
-    {"region": "JP", "symbol": "6723", "exchange": "TSE",  "currency": "JPY", "name": "Renesas Electronics","sector": "MCU/Auto Chip"},
-    # 홍콩
-    {"region": "HK", "symbol": "0700", "exchange": "SEHK", "currency": "HKD", "name": "Tencent",       "sector": "AI/Cloud"},
-    {"region": "HK", "symbol": "0981", "exchange": "SEHK", "currency": "HKD", "name": "SMIC",          "sector": "Foundry"},
-]
+TRADING_UNIVERSE_LOOKBACK_DAYS = int(_os.getenv("TRADING_UNIVERSE_LOOKBACK_DAYS", "45"))
+TRADING_UNIVERSE_MAX_SYMBOLS = int(_os.getenv("TRADING_UNIVERSE_MAX_SYMBOLS", "24"))
+TRADING_UNIVERSE_REFRESH_ON_RUN = _os.getenv("TRADING_UNIVERSE_REFRESH_ON_RUN", "true").lower() == "true"
+# UNIVERSE_FALLBACK 제거 — core/trading_universe.py의 _load_seed_registry()가 단일 소스
 
 TURTLE_S2       = 55
 TURTLE_ATR_DAYS = 20
@@ -165,15 +133,23 @@ def get_usd_rate(ib: "IB | None", currency: str) -> float:
 # ── 유틸 ──────────────────────────────────────────────────────────────────────
 
 def load_universe() -> list[dict]:
-    """universe.json이 있으면 로드, 없으면 UNIVERSE_FALLBACK 사용."""
-    if UNIVERSE_PATH.exists():
-        try:
-            data = json.loads(UNIVERSE_PATH.read_text())
-            if isinstance(data, list) and len(data) > 0:
-                return data
-        except Exception:
-            pass
-    return UNIVERSE_FALLBACK
+    if TRADING_UNIVERSE_REFRESH_ON_RUN:
+        universe = build_trading_universe(
+            domain="physical_ai",
+            lookback_days=TRADING_UNIVERSE_LOOKBACK_DAYS,
+            max_symbols=TRADING_UNIVERSE_MAX_SYMBOLS,
+        )
+        if universe:
+            write_trading_universe(universe)
+    rows, _ = load_trading_universe(broker="ibkr")
+    return rows
+
+
+def summarize_universe_drift(existing_symbols: set[str], tracked_symbols: set[str], universe_symbols: set[str]) -> dict[str, list[str]]:
+    return {
+        "broker_positions_outside_universe": sorted(existing_symbols - universe_symbols),
+        "tracked_positions_outside_universe": sorted(tracked_symbols - universe_symbols),
+    }
 
 
 def now_iso() -> str:
@@ -189,10 +165,13 @@ def log_entry(entry: dict) -> None:
 def load_state() -> dict:
     if STATE_PATH.exists():
         try:
-            return json.loads(STATE_PATH.read_text())
+            state = json.loads(STATE_PATH.read_text())
+            state.setdefault("positions", {})
+            state.setdefault("pending_orders", {})
+            return state
         except Exception:
             pass
-    return {"positions": {}, "last_run": None}
+    return {"positions": {}, "pending_orders": {}, "last_run": None}
 
 
 def save_state(s: dict) -> None:
@@ -283,6 +262,7 @@ def run(execute: bool = False) -> None:
 
     state = load_state()
     state.setdefault("positions", {})
+    state.setdefault("pending_orders", {})
 
     if not state.get("baseline"):
         state["baseline"] = {"nav": nav, "set_at": now_iso()}
@@ -291,7 +271,11 @@ def run(execute: bool = False) -> None:
     # 현재 포지션
     positions = ib.positions(account=paper_account)
     pos_symbols = {p.contract.symbol for p in positions}
+    managed_symbols = set(state["positions"].keys()) | set(state["pending_orders"].keys())
+    drift = summarize_universe_drift(pos_symbols, managed_symbols, {row["symbol"] for row in universe})
     print(f"\n현재 포지션: {pos_symbols or '없음'}")
+    if drift["broker_positions_outside_universe"] or drift["tracked_positions_outside_universe"]:
+        print(f"레거시 포지션 불일치: broker={drift['broker_positions_outside_universe'] or '-'} | tracked={drift['tracked_positions_outside_universe'] or '-'}")
 
     # 신호 스캔
     print("\n── 신호 스캔 ──")
@@ -304,7 +288,9 @@ def run(execute: bool = False) -> None:
         region   = u_item.get("region", "US")
         name     = u_item.get("name", "")
 
-        contract = Stock(sym, exchange, currency)
+        routing_exchange = "SMART" if currency == "USD" else exchange
+        primary_exchange = exchange if routing_exchange != exchange else ""
+        contract = Stock(sym, routing_exchange, currency, primaryExchange=primary_exchange)
         ib.qualifyContracts(contract)
         sig = calc_turtle_signal(ib, contract)
 
@@ -333,12 +319,12 @@ def run(execute: bool = False) -> None:
             print(f"     포지션={curr_sym}{pos_val_local:,.0f} (≈${pos_val_usd:,.0f}) 손절={curr_sym}{stop_loss:.2f}")
 
             # 이미 보유 중이면 스킵
-            if sym in pos_symbols or sym in state["positions"]:
+            if sym in pos_symbols or sym in state["positions"] or sym in state["pending_orders"]:
                 print(f"     → 이미 보유 중 — 스킵")
                 continue
 
             # 최대 포지션 수 초과
-            if len(state["positions"]) >= MAX_POSITIONS:
+            if len(state["positions"]) + len(state["pending_orders"]) >= MAX_POSITIONS:
                 print(f"     → MAX_POSITIONS({MAX_POSITIONS}) 도달 — 대기")
                 continue
 
@@ -351,25 +337,39 @@ def run(execute: bool = False) -> None:
                 order.tif = "GTC"  # 장 마감 후에도 유효 (DAY 자동설정 방지)
                 trade = ib.placeOrder(contract, order)
                 ib.sleep(2)
-                state["positions"][sym] = {
-                    "entry_ts":    now_iso(),
+                status = (trade.orderStatus.status or "").lower()
+                if status in {"cancelled", "inactive", "apicancelled"}:
+                    print(f"     → 주문 거절/취소 ({trade.order.orderId}, status={trade.orderStatus.status})")
+                    log_entry({
+                        "ts": now_iso(), "action": "enter_rejected", "symbol": sym,
+                        "region": region, "exchange": exchange, "currency": currency,
+                        "qty": shares, "price": price, "status": trade.orderStatus.status,
+                        "atr": atr, "atr_usd": round(atr_usd, 6), "usd_rate": round(usd_rate, 8),
+                        "stop_loss": stop_loss, "system": "S2", "dry_run": False,
+                    })
+                    continue
+                target_bucket = "positions" if status == "filled" else "pending_orders"
+                state[target_bucket][sym] = {
+                    "entry_ts": now_iso(),
                     "entry_price": price,
-                    "atr":         atr,
-                    "stop_loss":   stop_loss,
-                    "qty":         shares,
-                    "exchange":    exchange,
-                    "currency":    currency,
-                    "region":      region,
+                    "atr": atr,
+                    "stop_loss": stop_loss,
+                    "qty": shares,
+                    "exchange": routing_exchange,
+                    "currency": currency,
+                    "region": region,
+                    "order_id": trade.order.orderId,
+                    "status": trade.orderStatus.status,
                 }
-                print(f"     → 주문 제출 (orderId={trade.order.orderId})")
+                print(f"     → 주문 제출 (orderId={trade.order.orderId}, status={trade.orderStatus.status}, bucket={target_bucket})")
                 log_entry({
                     "ts": now_iso(), "action": "enter", "symbol": sym,
-                    "region": region, "exchange": exchange, "currency": currency,
+                    "region": region, "exchange": routing_exchange, "currency": currency,
                     "qty": shares, "price": price,
                     "atr": atr, "atr_usd": round(atr_usd, 6),
                     "usd_rate": round(usd_rate, 8),
                     "stop_loss": stop_loss, "system": "S2",
-                    "dry_run": False,
+                    "dry_run": False, "status": trade.orderStatus.status, "bucket": target_bucket,
                 })
             else:
                 print(f"     → [DRY RUN] 매수 예정")
