@@ -262,7 +262,7 @@ function SymbolCell({ symbol, names = {} }: { symbol?: string | null; names?: Re
   return (
     <span className="symbol-cell">
       <strong>{item.code}</strong>
-      <small>{item.name}</small>
+      {item.name && item.name !== '—' && <small>{item.name}</small>}
     </span>
   )
 }
@@ -921,7 +921,9 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                   <div className="mobile-card-head">
                     <div>
                       <strong>{row.symbol}</strong>
-                      <span>{row.name ?? '종목명 확인 필요'}</span>
+                      {(row.name || symbolNames[row.symbol]) && (
+                        <span>{row.name || symbolNames[row.symbol]}</span>
+                      )}
                     </div>
                     <span className="freshness-chip fresh">선정됨</span>
                   </div>
@@ -1249,7 +1251,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                     <div key={pos.symbol} className={`ibkr-pos-row ${pos.action !== 'HOLD' ? 'ibkr-pos-exit' : ''}`}>
                       <span className="ibkr-pos-symbol">
                         <strong>{pos.symbol}</strong>
-                        <small>{symbolNames[pos.symbol] ?? ''}</small>
+                        {symbolNames[pos.symbol] && <small>{symbolNames[pos.symbol]}</small>}
                       </span>
                       <span className={`ibkr-pos-pnl ${(pos.unrealized_pnl_pct ?? 0) >= 0 ? 'pnl-pos' : 'pnl-neg'}`}>
                         {fmtPct(pos.unrealized_pnl_pct)}
@@ -1405,7 +1407,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                     <div className="prcard-header">
                       <div className="prcard-symbol">
                         <strong>{pos.symbol}</strong>
-                        <small>{symbolNames[pos.symbol] ?? '—'}</small>
+                        {symbolNames[pos.symbol] && <small>{symbolNames[pos.symbol]}</small>}
                       </div>
                       <ActionBadge action={pos.action} />
                     </div>
@@ -1514,6 +1516,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                       <span key={c.symbol} className="active-signal-chip">
                         <span className="region-flag">{REGION_FLAG[c.region ?? 'US'] ?? '🌐'}</span>
                         <strong>{c.symbol}</strong>
+                        {(c.name || symbolNames[c.symbol]) && <small>{c.name || symbolNames[c.symbol]}</small>}
                         <IbkrSignalBadge signal={c.signal} active={c.active_signal} />
                         {c.in_position && <span className="in-pos-chip">보유 중</span>}
                       </span>
