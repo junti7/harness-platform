@@ -2124,6 +2124,30 @@ def _run_openai_chat(user_message: str, history: list[dict[str, str]] | None = N
     resp.raise_for_status()
     return resp.json()["choices"][0]["message"]["content"]
 
+def _is_response_truncated(text: str) -> bool:
+    """응답이 도중에 잘렸는지 휴리스틱으로 감지한다."""
+    text = text.rstrip()
+    if not text:
+        return False
+    # 마지막 줄이 문장 종결 없이 끝나면 잘린 것
+    last_line = text.split('\n')[-1].strip()
+    # 정상 종결 패턴: 마침표, 느낌표, 물음표, 닫는 괄호/따옴표, 이모지, 코드블록 끝
+    normal_endings = ('.', '!', '?', ')', ']', '」', '"', "'", '```', '~', '…')
+    if last_line and not any(last_line.endswith(e) for e in normal_endings):
+        # 마지막 글자가 한글 종성이면 정상 종결일 수 있음 (예: "입니다", "합니다")
+        last_char = last_line[-1]
+        if '\uAC00' <= last_char <= '\uD7A3':  # 한글 완성형
+            return False
+        return True
+    # 번호 리스트에서 약속한 개수를 다 못 채운 경우
+    # 예: "3가지"라고 했는데 1, 2만 있음
+    return False
+
+
+_ELASTIC_BASE_TOKENS = 4096
+_ELASTIC_MAX_TOKENS = 16384
+
+
 def _run_chat_with_handoff(
     user_message: str,
     session_id: str,
@@ -2148,16 +2172,30 @@ def _run_chat_with_handoff(
 
     for llm in llms_to_try:
         try:
-            logger.info(f"[handoff-router] 시도 중인 LLM: {llm} (Session: {session_id})")
-            if llm == "claude":
-                resp = _run_anthropic_chat(user_message, model=OPENCLAW_CHAT_MODEL, history=history, max_tokens=max_tokens)
-            elif llm == "gemini":
-                resp = _run_gemini_chat(user_message, history=history, max_tokens=max_tokens)
-            elif llm == "openai":
-                resp = _run_openai_chat(user_message, history=history, max_tokens=max_tokens)
-            else:
-                continue
+            # 탄력적 토큰 할당: base → 2x → cap
+            current_max = max_tokens or _ELASTIC_BASE_TOKENS
+            attempt = 0
+            while current_max <= _ELASTIC_MAX_TOKENS:
+                attempt += 1
+                logger.info(f"[handoff-router] LLM: {llm} | 시도 #{attempt} | max_tokens={current_max} (Session: {session_id})")
+                if llm == "claude":
+                    resp = _run_anthropic_chat(user_message, model=OPENCLAW_CHAT_MODEL, history=history, max_tokens=current_max)
+                elif llm == "gemini":
+                    resp = _run_gemini_chat(user_message, history=history, max_tokens=current_max)
+                elif llm == "openai":
+                    resp = _run_openai_chat(user_message, history=history, max_tokens=current_max)
+                else:
+                    break
+
+                if _is_response_truncated(resp) and current_max < _ELASTIC_MAX_TOKENS:
+                    logger.warning(f"[elastic-tokens] 응답 잘림 감지 → max_tokens {current_max} → {current_max * 2}")
+                    current_max = min(current_max * 2, _ELASTIC_MAX_TOKENS)
+                    continue
+                else:
+                    _SESSION_LLM_MAP[session_id] = llm
+                    return _postprocess_list_format(resp)
             
+            # while 정상 종료 (cap 도달)
             _SESSION_LLM_MAP[session_id] = llm
             return _postprocess_list_format(resp)
             
