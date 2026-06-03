@@ -48,6 +48,7 @@ def generate_text(
     timeout_seconds: float | None = None,
     max_output_tokens: int | None = None,
     response_mime_type: str | None = None,
+    meta: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, int]]:
     client = build_client(timeout_seconds=timeout_seconds)
     config: dict[str, Any] = {}
@@ -60,6 +61,17 @@ def generate_text(
         contents=prompt,
         config=config or None,
     )
+    if meta is not None:
+        try:
+            finish_reason = None
+            if response.candidates and len(response.candidates) > 0:
+                finish_reason = response.candidates[0].finish_reason
+            meta["finish_reason"] = str(finish_reason) if finish_reason else "UNKNOWN"
+            meta["is_truncated"] = finish_reason is not None and "MAX_TOKENS" in str(finish_reason).upper()
+        except Exception as e:
+            meta["is_truncated"] = False
+            meta["error"] = str(e)
+            
     usage = getattr(response, "usage_metadata", None)
     prompt_tokens = int(getattr(usage, "prompt_token_count", 0) or 0)
     candidate_tokens = int(getattr(usage, "candidates_token_count", 0) or 0)

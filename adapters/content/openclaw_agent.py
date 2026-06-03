@@ -2029,6 +2029,7 @@ def _run_anthropic_chat(
     model: str,
     history: list[dict[str, str]] | None = None,
     max_tokens: int = 4096,
+    meta: dict[str, Any] | None = None,
 ) -> str:
     """Anthropic chat path with prior conversation turns."""
     if _cost_limit_reached():
@@ -2046,10 +2047,13 @@ def _run_anthropic_chat(
         system=_build_chat_system_prompt(user_message),
         messages=messages,
     )
+    if meta is not None:
+        meta["stop_reason"] = resp.stop_reason
+        meta["is_truncated"] = resp.stop_reason == "max_tokens"
     log_api_cost(model, resp.usage.input_tokens, resp.usage.output_tokens, provider="anthropic")
     check_and_alert(get_today_cost(), DAILY_COST_LIMIT, logger)
     logger.info(
-        f"[router] Anthropic({model}) 응답 tokens=in:{resp.usage.input_tokens}/out:{resp.usage.output_tokens}"
+        f"[router] Anthropic({model}) 응답 tokens=in:{resp.usage.input_tokens}/out:{resp.usage.output_tokens} stop_reason={resp.stop_reason}"
     )
     return resp.content[0].text if resp.content else "응답 없음"
 
@@ -2073,6 +2077,7 @@ def _run_gemini_chat(
     *,
     history: list[dict[str, str]] | None = None,
     max_tokens: int | None = None,
+    meta: dict[str, Any] | None = None,
 ) -> str:
     transcript: list[str] = []
     for turn in history or []:
@@ -2092,6 +2097,7 @@ def _run_gemini_chat(
         model=gemini_model_name(),
         timeout_seconds=30,
         max_output_tokens=max_tokens or OPENCLAW_CHAT_MAX_TOKENS,
+        meta=meta,
     )
     log_api_cost(gemini_model_name(), usage["prompt_token_count"], usage["candidates_token_count"], provider="google")
     return text.strip() or "응답 없음"
@@ -2099,7 +2105,12 @@ def _run_gemini_chat(
 
 _SESSION_LLM_MAP: dict[str, str] = {}
 
-def _run_openai_chat(user_message: str, history: list[dict[str, str]] | None = None, max_tokens: int | None = None) -> str:
+def _run_openai_chat(
+    user_message: str,
+    history: list[dict[str, str]] | None = None,
+    max_tokens: int | None = None,
+    meta: dict[str, Any] | None = None,
+) -> str:
     api_key = os.environ.get("OPENAI_API_KEY", "")
     if not api_key:
         raise ValueError("OPENAI_API_KEY is missing")
@@ -2122,7 +2133,15 @@ def _run_openai_chat(user_message: str, history: list[dict[str, str]] | None = N
         timeout=30.0,
     )
     resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
+    resp_json = resp.json()
+    if meta is not None:
+        try:
+            finish_reason = resp_json["choices"][0]["finish_reason"]
+            meta["finish_reason"] = finish_reason
+            meta["is_truncated"] = finish_reason == "length"
+        except Exception:
+            meta["is_truncated"] = False
+    return resp_json["choices"][0]["message"]["content"]
 
 def _is_response_truncated(text: str) -> bool:
     """응답이 도중에 잘렸는지 휴리스틱으로 감지한다."""
@@ -2204,18 +2223,20 @@ def _run_chat_with_handoff(
             attempt = 0
             while current_max <= _ELASTIC_MAX_TOKENS:
                 attempt += 1
+                meta = {}
                 logger.info(f"[handoff-router] LLM: {llm} | 시도 #{attempt} | max_tokens={current_max} (Session: {session_id})")
                 if llm == "claude":
-                    resp = _run_anthropic_chat(user_message, model=OPENCLAW_CHAT_MODEL, history=history, max_tokens=current_max)
+                    resp = _run_anthropic_chat(user_message, model=OPENCLAW_CHAT_MODEL, history=history, max_tokens=current_max, meta=meta)
                 elif llm == "gemini":
-                    resp = _run_gemini_chat(user_message, history=history, max_tokens=current_max)
+                    resp = _run_gemini_chat(user_message, history=history, max_tokens=current_max, meta=meta)
                 elif llm == "openai":
-                    resp = _run_openai_chat(user_message, history=history, max_tokens=current_max)
+                    resp = _run_openai_chat(user_message, history=history, max_tokens=current_max, meta=meta)
                 else:
                     break
 
-                if _is_response_truncated(resp) and current_max < _ELASTIC_MAX_TOKENS:
-                    logger.warning(f"[elastic-tokens] 응답 잘림 감지 → max_tokens {current_max} → {current_max * 2}")
+                is_truncated = meta.get("is_truncated", False) or _is_response_truncated(resp)
+                if is_truncated and current_max < _ELASTIC_MAX_TOKENS:
+                    logger.warning(f"[elastic-tokens] 응답 잘림 감지 (API={meta.get('is_truncated')}, Heuristic={_is_response_truncated(resp)}) → max_tokens {current_max} → {current_max * 2}")
                     current_max = min(current_max * 2, _ELASTIC_MAX_TOKENS)
                     continue
                 else:
