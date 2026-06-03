@@ -5127,42 +5127,76 @@ def _run_edu_diagnose(req: EduDiagnoseRequest) -> dict[str, Any]:
         f"[사용자 최신 입력] {req.user_text or '(첫 진입 — 사용자가 아직 말하지 않음)'}\n\n"
         f"위 원칙에 따라 다음 한 마디를 JSON으로 생성하라."
     )
-    raw = None
-    try:
-        raw, _usage = generate_text(
-            prompt,
-            model=os.getenv("EDU_DIAGNOSE_MODEL", "gemini-2.5-flash"),
-            max_output_tokens=2048,
-            timeout_seconds=25,
-            response_mime_type="application/json",
-        )
-        cleaned = re.sub(r"```(?:json)?", "", raw or "").strip().rstrip("`").strip()
-        # 관대한 JSON 추출: 본문 앞뒤에 텍스트가 섞여도 {...} 블록만 파싱
-        if not cleaned.startswith("{"):
-            m = re.search(r"\{.*\}", cleaned, re.DOTALL)
-            if m:
-                cleaned = m.group(0)
-        data = json.loads(cleaned)
-        return {
-            "ok": True,
-            "message": data.get("message", ""),
-            "tone_level": int(data.get("tone_level", 0)),
-            "phase": data.get("phase", "probing"),
-            "quick_replies": data.get("quick_replies", []) or [],
-            "show_offer": bool(data.get("show_offer", False)),
-        }
-    except Exception as exc:  # noqa: BLE001
-        import logging
-        logging.getLogger("uvicorn.error").error(f"[edu_diagnose] JSON 파싱 실패:\nRaw LLM output:\n{raw}\nError: {exc}")
-        # LLM 실패 시에도 대화가 끊기지 않도록 안전한 공손 fallback
-        return {
-            "ok": False,
-            "message": "말씀 감사합니다. 조금만 더 들려주실 수 있을까요?",
-            "tone_level": 0,
-            "phase": "probing",
-            "quick_replies": [],
-            "show_offer": False,
-        }
+    # 일시적 API 포화(동시 호출 rate-limit)·thinking 토큰으로 인한 빈 응답/절단 JSON은
+    # 짧은 재시도로 대부분 회복된다. 고객 대화가 끊기지 않도록 최대 2회까지 시도한다.
+    import logging
+    _log = logging.getLogger("uvicorn.error")
+    last_exc: Exception | None = None
+    last_raw: str | None = None
+    for attempt in range(2):
+        raw = None
+        try:
+            raw, _usage = generate_text(
+                prompt,
+                model=os.getenv("EDU_DIAGNOSE_MODEL", "gemini-2.5-flash"),
+                max_output_tokens=2048,
+                timeout_seconds=25,
+                response_mime_type="application/json",
+            )
+            last_raw = raw
+            cleaned = re.sub(r"```(?:json)?", "", raw or "").strip().rstrip("`").strip()
+            # 관대한 JSON 추출: 본문 앞뒤에 텍스트가 섞여도 {...} 블록만 파싱
+            if not cleaned.startswith("{"):
+                m = re.search(r"\{.*\}", cleaned, re.DOTALL)
+                if m:
+                    cleaned = m.group(0)
+            if not cleaned:
+                raise ValueError("빈 LLM 응답 (thinking 토큰 소진 추정)")
+            data = json.loads(cleaned)
+            message = (data.get("message") or "").strip()
+            if not message:
+                raise ValueError("message 필드 비어 있음")
+            return {
+                "ok": True,
+                "message": message,
+                "tone_level": int(data.get("tone_level", 0)),
+                "phase": data.get("phase", "probing"),
+                "quick_replies": data.get("quick_replies", []) or [],
+                "show_offer": bool(data.get("show_offer", False)),
+            }
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            _log.warning(f"[edu_diagnose] 시도 {attempt + 1}/2 실패: {type(exc).__name__}: {exc}")
+
+    _log.error(
+        f"[edu_diagnose] 2회 시도 모두 실패 — fallback.\nRaw LLM output:\n{last_raw}\nError: {last_exc}"
+    )
+    # LLM 일시 실패 시에도 페르소나가 무너지지 않도록, 사용자 발화를 받아 안고
+    # 한 발 더 들어가는 상담사 톤의 fallback (밋밋한 일반 응답 회피).
+    return {
+        "ok": False,
+        "message": _edu_persona_fallback(req),
+        "tone_level": 0,
+        "phase": "probing",
+        "quick_replies": [],
+        "show_offer": False,
+    }
+
+
+def _edu_persona_fallback(req: EduDiagnoseRequest) -> str:
+    """LLM 일시 실패 시에도 상담사 페르소나를 유지하는 fallback 한 마디.
+    사용자의 마지막 발화를 짧게 되받아 '듣고 있다'는 신호를 주고 한 걸음 더 들어간다."""
+    said = (req.user_text or "").strip().replace("\n", " ")
+    if len(said) > 24:
+        said = said[:24] + "…"
+    if req.segment == "worker":
+        if said:
+            return f"'{said}' — 그 지점 충분히 이해됩니다. 어떤 상황에서 그게 가장 크게 느껴지시는지 조금만 더 들려주시겠어요?"
+        return "편하게 지금 가장 마음 쓰이는 부분부터 말씀해 주세요. 제가 차근히 같이 짚어 드릴게요."
+    # parent (기본)
+    if said:
+        return f"'{said}' 말씀이시군요. 그 마음 충분히 이해됩니다. 자녀분 이야기를 조금만 더 구체적으로 들려주시면 같이 짚어 드릴게요."
+    return "어떤 점이 가장 마음에 걸리시는지, 자녀분 이야기부터 편하게 들려주세요. 제가 차근히 같이 봐 드릴게요."
 
 
 def _persist_edu_case_turns(req: EduDiagnoseRequest, result: dict[str, Any]) -> None:
