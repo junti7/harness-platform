@@ -3572,8 +3572,43 @@ def execute_paper_trading(_: None = Depends(_require_secret)) -> dict[str, Any]:
 
 
 _IBKR_CACHE_PATH = PROJECT_ROOT / "docs" / "reports" / "ibkr_monitor_cache.json"
+_IBKR_GATEWAY_STATUS_PATH = PROJECT_ROOT / "docs" / "reports" / "ibkr_gateway_runtime_status.json"
 _IBKR_LOCK = threading.Lock()
 _IBKR_LAST_RUN = 0.0
+
+
+def _load_ibkr_gateway_runtime_status() -> dict[str, Any]:
+    payload = {
+        "status": "offline",
+        "message": "IB Gateway가 실행되지 않았습니다.",
+        "source": "backend_default",
+        "updated_at": None,
+        "port_open": False,
+        "wait_timeout_sec": 120,
+    }
+    if not _IBKR_GATEWAY_STATUS_PATH.exists():
+        return payload
+    try:
+        raw = json.loads(_IBKR_GATEWAY_STATUS_PATH.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            payload.update({k: raw.get(k, v) for k, v in payload.items()})
+            if "details" in raw:
+                payload["details"] = raw.get("details")
+    except Exception:
+        payload["message"] = "IB Gateway 상태 파일을 읽지 못했습니다."
+    return payload
+
+
+def _merge_ibkr_gateway_status(payload: dict[str, Any]) -> dict[str, Any]:
+    runtime_status = _load_ibkr_gateway_runtime_status()
+    gateway_connected = bool(payload.get("gateway_connected"))
+    if gateway_connected:
+        runtime_status["status"] = "ready"
+        runtime_status["message"] = "IB Gateway 연결이 완료되어 신호 스캔이 가능합니다."
+        runtime_status["port_open"] = True
+    payload["gateway_connected"] = gateway_connected
+    payload["gateway_status"] = runtime_status
+    return payload
 
 def _run_ibkr_monitor_background():
     global _IBKR_LAST_RUN
@@ -3630,7 +3665,7 @@ def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
         threading.Thread(target=_run_ibkr_monitor_background, daemon=True).start()
         
     if cache_data:
-        return cache_data
+        return _merge_ibkr_gateway_status(cache_data)
         
     # 3. 최초 진입 시 빈 캐시 일 때만 즉각적인 Offline 구조체 리턴하여 화면 락 방지
     try:
@@ -3678,7 +3713,7 @@ def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
             
         import datetime
         ts = datetime.datetime.utcnow().isoformat() + "Z"
-        return {
+        return _merge_ibkr_gateway_status({
             "ok": True,
             "ts": ts,
             "mode": "paper",
@@ -3690,13 +3725,13 @@ def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
             "universe_source": "universe.json",
             "orders": [],
             "error": "Initializing background cache... showing offline state",
-        }
+        })
     except Exception as fallback_err:
         pass
 
     import datetime
     ts = datetime.datetime.utcnow().isoformat() + "Z"
-    return {
+    return _merge_ibkr_gateway_status({
         "ok": True,
         "ts": ts,
         "mode": "paper",
@@ -3708,7 +3743,7 @@ def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
         "universe_source": "universe.json",
         "orders": [],
         "error": "Initializing background cache... please wait 1-2 minutes",
-    }
+    })
 
 
 @app.post("/api/ibkr/monitor/scan")

@@ -6194,15 +6194,22 @@ td.pnl-neg,
   flex-shrink: 0;
 }
 .gateway-dot.online  { background: var(--success, #059669); }
+.gateway-dot.warn    { background: var(--warning, #d97706); }
 .gateway-dot.offline { background: #94a3b8; }
 
 .ibkr-status-item {
   display: flex;
   align-items: center;
   gap: 0.3rem;
+  min-width: 0;
 }
 .ibkr-status-label { color: var(--text-faint, #64748b); }
-.ibkr-status-value { color: var(--ink-strong, #0f172a); font-weight: 600; }
+.ibkr-status-value {
+  color: var(--ink-strong, #0f172a);
+  font-weight: 600;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .ibkr-status-sep   { color: var(--text-faint, #64748b); }
 .ibkr-status-spacer { flex: 1; }
 .ibkr-status-meta  { color: var(--text-faint, #64748b); font-size: 0.72rem; margin-left: auto; }

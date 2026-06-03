@@ -49,6 +49,14 @@ type IbkrMonitorData = {
   ok: boolean
   ts: string
   gateway_connected: boolean
+  gateway_status?: {
+    status: 'offline' | 'launching' | 'waiting_for_2fa' | 'ready'
+    message: string
+    source?: string
+    updated_at?: string | null
+    port_open?: boolean
+    wait_timeout_sec?: number
+  }
   account: IbkrAccount | null
   positions: IbkrPosition[]
   exit_signals: string[]
@@ -134,6 +142,26 @@ const SYMBOL_NAMES: Record<string, string> = {
 
 function symName(symbol: string) {
   return SYMBOL_NAMES[symbol.toUpperCase()] || '—'
+}
+
+function gatewayStatusLabel(status: IbkrMonitorData['gateway_status'] | undefined, connected: boolean): string {
+  if (connected) return '준비 완료'
+  switch (status?.status) {
+    case 'launching':
+      return '실행 중'
+    case 'waiting_for_2fa':
+      return '2FA 대기'
+    case 'ready':
+      return '준비 완료'
+    default:
+      return '오프라인'
+  }
+}
+
+function gatewayDotClass(status: IbkrMonitorData['gateway_status'] | undefined, connected: boolean): string {
+  if (connected || status?.status === 'ready') return 'online'
+  if (status?.status === 'launching' || status?.status === 'waiting_for_2fa') return 'warn'
+  return 'offline'
 }
 
 // ── 위험 바 ───────────────────────────────────────────────────────────────────
@@ -291,17 +319,29 @@ function SystemStatusRow({
   lastFetch: string | null
 }) {
   const connected = data?.gateway_connected ?? false
+  const gatewayStatus = data?.gateway_status
   const acct      = data?.account
   const exitCnt   = data?.exit_signals?.length ?? 0
   const posCnt    = data?.positions?.length ?? 0
+  const statusLabel = gatewayStatusLabel(gatewayStatus, connected)
+  const dotClass = gatewayDotClass(gatewayStatus, connected)
 
   return (
     <div className={`ibkr-status-row ${exitCnt > 0 ? 'has-exit' : ''}`}>
-      <span className={`gateway-dot ${connected ? 'online' : 'offline'}`} title={connected ? 'IB Gateway 연결됨' : '게이트웨이 오프라인'} />
+      <span className={`gateway-dot ${dotClass}`} title={gatewayStatus?.message || (connected ? 'IB Gateway 연결됨' : '게이트웨이 오프라인')} />
       <span className="ibkr-status-item">
         <span className="ibkr-status-label">Gateway</span>
-        <span className="ibkr-status-value">{connected ? '연결됨' : '오프라인'}</span>
+        <span className="ibkr-status-value">{statusLabel}</span>
       </span>
+      {gatewayStatus?.message && (
+        <>
+          <span className="ibkr-status-sep">·</span>
+          <span className="ibkr-status-item">
+            <span className="ibkr-status-label">상태</span>
+            <span className="ibkr-status-value">{gatewayStatus.message}</span>
+          </span>
+        </>
+      )}
       {acct && (
         <>
           <span className="ibkr-status-sep">·</span>
@@ -604,6 +644,8 @@ export function IbkrTurtleMonitor({ apiBase, authHeaders }: Props) {
   const exitSignals      = data?.exit_signals ?? []
   const hasExitSignals   = exitSignals.length > 0
   const gatewayConnected = data?.gateway_connected ?? false
+  const gatewayStatus = data?.gateway_status
+  const gatewayStatusCode = gatewayStatus?.status ?? (gatewayConnected ? 'ready' : 'offline')
 
   return (
     <section className="ibkr-section">
@@ -703,8 +745,11 @@ export function IbkrTurtleMonitor({ apiBase, authHeaders }: Props) {
       {/* ── 오프라인 경고 ── */}
       {!gatewayConnected && (
         <div className="ibkr-offline-banner">
-          <span className="gateway-dot offline" />
-          IB Gateway 오프라인 — 포지션은 상태 파일 기준으로 표시됩니다. 현재가 및 신호는 연결 후 갱신됩니다.
+          <span className={`gateway-dot ${gatewayDotClass(gatewayStatus, gatewayConnected)}`} />
+          {gatewayStatusCode === 'launching' && 'IB Gateway 실행 중 — Mac Mini에서 앱이 뜨는지 확인하세요. 포트가 열리면 자동으로 다음 스캔이 진행됩니다.'}
+          {gatewayStatusCode === 'waiting_for_2fa' && 'IB Gateway 2FA 승인 대기 중 — Mac Mini 로그인 창 비밀번호 입력 후 IBKR Mobile 2FA 승인을 완료하면 자동 재시도됩니다.'}
+          {gatewayStatusCode === 'offline' && 'IB Gateway 오프라인 — 포지션은 상태 파일 기준으로 표시됩니다. 현재가 및 신호는 연결 후 갱신됩니다.'}
+          {gatewayStatusCode === 'ready' && 'IB Gateway 상태는 준비 완료로 기록됐지만 현재 모니터 캐시 연결은 아직 갱신 전입니다. 잠시 후 다시 새로고침하세요.'}
         </div>
       )}
 
