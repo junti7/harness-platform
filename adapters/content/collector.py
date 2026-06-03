@@ -144,6 +144,30 @@ def collect(correlation_id: str = None):
     logger.info(f"활성 소스 총 {len(sources)}개 (자동 주제 쿼리 포함)")
     for source in sources:
         if not check_liveness(source["url"]): continue
+
+        if source.get("source_type") == "open_api" and source.get("channel") == "data_go_kr":
+            api_key = os.getenv("DATA_GO_KR_API_KEY", "data-portal-test-key")
+            headers = {"Authorization": f"Infuser {api_key}"}
+            try:
+                resp = httpx.get(source["url"], headers=headers, timeout=15)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    items = data.get("data", [])
+                    for item in items:
+                        title = item.get("title", "")
+                        url = item.get("page_url", "")
+                        if not url:
+                            url = f"{source['url']}#{item.get('id', '')}"
+                        content_hash = hashlib.sha256(f"{title}{url}".encode()).hexdigest()[:64]
+                        desc = item.get("desc", "")
+                        raw_data = {"title": title, "url": url, "summary": desc, "source_name": source["name"]}
+                        save_raw_signal(source["name"], raw_data, content_hash, desc)
+                        total_saved += 1
+            except Exception as e:
+                logger.warning(f"data_go_kr API 수집 실패: {e}")
+            continue
+
+        # Default RSS fallback
         feed = feedparser.parse(source["url"])
         for entry in feed.entries:
             title = entry.get("title", "")
