@@ -2134,6 +2134,10 @@ def _run_chat_with_handoff(
     if not target_models:
         target_models = ["claude", "gemini", "openai"]
         
+    # 강력한 마크다운 포맷팅 지시어 주입 (사용자의 질문 끝에 숨겨서 전달)
+    formatting_hint = "\n\n[시스템 강제 지시: 답변에 목록(List)이 포함될 경우, 반드시 대제목에만 '1. 2. 3.' 같은 숫자를 사용하고, 하위 세부 항목들은 절대로 숫자를 이어 쓰지 말고 무조건 '-' (하이픈) 글머리 기호를 사용하여 들여쓰기 하세요.]"
+    if "[시스템 강제 지시" not in user_message:
+        user_message += formatting_hint
     current_llm = _SESSION_LLM_MAP.get(session_id, target_models[0])
     llms_to_try = target_models[:]
     if current_llm in llms_to_try:
