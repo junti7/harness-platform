@@ -188,6 +188,10 @@ def compute_relevance_score(title: str, summary: str, full_content: str, source:
     if is_short_form and hits >= 1:
         score = max(score, 0.2)
 
+    # 공공데이터포털은 이미 수집기(Tier 1)에서 타겟 키워드 필터링을 거쳤으므로 강제 패스 (최소 0.2 부여)
+    if "공공데이터포털" in source:
+        score = max(score, 0.2)
+
     return max(0.1, score)
 
 
