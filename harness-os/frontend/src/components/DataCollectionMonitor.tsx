@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import type { DashboardPayload } from './types'
 
 type Monitor = NonNullable<DashboardPayload['data_collection_monitor']>
@@ -73,6 +74,18 @@ function clusterLabel(key: string) {
 }
 
 export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props) {
+  const [rawStats, setRawStats] = useState<any[]>([])
+
+  useEffect(() => {
+    fetch('http://100.97.175.44:8000/api/statistics_data')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.data) {
+          setRawStats(data.data)
+        }
+      })
+      .catch(err => console.error('Failed to fetch raw statistics data:', err))
+  }, [])
   const {
     total,
     pending_count,
@@ -599,6 +612,37 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
               </div>
             )
           })}
+        </div>
+      </div>
+      {/* ── Raw DB 적재 데이터 피드 ── */}
+      <div className="panel" style={{ padding: '1.25rem', marginTop: '1rem' }}>
+        <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
+          DB 적재 원본 (raw_statistics_data)
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+          {rawStats.length === 0 && (
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '1rem 0' }}>적재된 알맹이 데이터가 없습니다.</p>
+          )}
+          {rawStats.map((item, idx) => (
+            <div key={idx} style={{
+              display: 'grid',
+              gridTemplateColumns: '80px 1fr 1fr 100px',
+              gap: '0.75rem',
+              alignItems: 'center',
+              padding: '0.5rem 0',
+              borderBottom: idx < rawStats.length - 1 ? '1px solid var(--color-border)' : 'none',
+              fontSize: '0.8rem',
+            }}>
+              <span style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>{item.source_id}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text)' }}>
+                {item.title}
+              </span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>
+                {String(item.raw_content || '').substring(0, 100)}...
+              </span>
+              <span style={{ color: 'var(--color-text-muted)', textAlign: 'right' }}>{relativeTime(item.collected_at)}</span>
+            </div>
+          ))}
         </div>
       </div>
     </section>
