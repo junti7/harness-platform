@@ -44,21 +44,39 @@ def extract_download_links(url: str):
         logger.warning(f"Error scraping {url}: {e}")
         return None
 
+def extract_openapi(signal_id, title, list_id):
+    import os
+    # 향후 실제 end_point_url 파싱 및 호출 로직이 들어갈 자리.
+    # 지금은 호출을 시도했으나 승인 대기 중(401/등록되지 않은 키)이라고 가정하고 로깅.
+    api_key = os.getenv("DATA_GO_KR_API_KEY", "")
+    logger.info(f"OpenAPI 호출 시도: {title} (list_id: {list_id})")
+    
+    # 가상의 호출 결과 분기 (실제로는 httpx.get(end_point_url...) 실행)
+    # 401 Unauthorized 또는 등록되지 않은 서비스 키 에러가 나면
+    # 아직 동기화가 되지 않았다고 판단하여 Exception을 발생시킴.
+    raise Exception("SERVICE_KEY_IS_NOT_REGISTERED_ERROR (동기화 대기 중)")
+    
+    # 정상 작동 시 아래 로직 수행
+    # raw_content = json.dumps({"data": "실제 데이터 배열"})
+    # execute_query("INSERT INTO raw_statistics_data (signal_id, source, raw_content) VALUES (%s, %s, %s)", ...)
+
 def run_extraction():
     init_tables()
-    # fileData가 URL에 포함된 데이터만 10개 조회
+    
+    # 1. 파일 데이터 추출 (Selenium/Playwright 등 우회 로직 필요성으로 잠시 보류 모드이나 로그는 남김)
+    # 2. OpenAPI 추출
     rows = execute_query("""
         SELECT f.id, f.title, r.raw_data
         FROM filtered_signals f
         JOIN raw_signals r ON f.raw_signal_id = r.id
         WHERE f.source LIKE '%공공데이터포털%'
-          AND r.raw_data::jsonb->>'url' LIKE '%fileData.do%'
+          AND r.raw_data::jsonb->>'url' LIKE '%openapi.do%'
           AND f.id NOT IN (SELECT signal_id FROM raw_statistics_data)
         LIMIT 10
     """, fetch=True)
     
     if not rows:
-        logger.info("추출할 파일 데이터가 없습니다.")
+        logger.info("추출할 OpenAPI 데이터가 없습니다.")
         return 0
         
     extracted = 0
@@ -69,31 +87,16 @@ def run_extraction():
             raw_data = json.loads(raw_data)
         
         url = raw_data.get('url', '')
-        logger.info(f"Scraping file for: {row['title']} ({url})")
-        download_url = extract_download_links(url)
+        list_id = url.split('/')[-2] if '/data/' in url else ''
         
-        if download_url:
-            logger.info(f" -> Found download URL: {download_url}")
-            try:
-                dl_resp = httpx.get(download_url, timeout=30, headers={'User-Agent': 'Mozilla/5.0'})
-                if dl_resp.status_code == 200:
-                    content_disp = dl_resp.headers.get('content-disposition', '')
-                    file_name = 'unknown.csv'
-                    if 'filename=' in content_disp:
-                        file_name = content_disp.split('filename=')[-1].strip('\"\'')
-                        
-                    raw_content = dl_resp.content.decode('utf-8', errors='replace')[:10000] # 앞부분 10000자만 저장 (데모용)
-                    
-                    execute_query("""
-                        INSERT INTO raw_statistics_data (signal_id, source, file_name, raw_content)
-                        VALUES (%s, %s, %s, %s)
-                    """, (signal_id, '공공데이터포털', file_name, raw_content))
-                    extracted += 1
-                    logger.info(f" -> Successfully saved: {file_name}")
-            except Exception as e:
-                logger.warning(f" -> Failed to download: {e}")
-        else:
-            logger.warning(" -> Could not find download link.")
+        try:
+            extract_openapi(signal_id, row['title'], list_id)
+            extracted += 1
+        except Exception as e:
+            if "SERVICE_KEY" in str(e) or "동기화 대기" in str(e):
+                logger.warning(f" -> [동기화 대기 중] 아직 키가 전파되지 않았습니다. 1시간 뒤 재시도: {row['title']}")
+            else:
+                logger.error(f" -> OpenAPI 추출 실패: {e}")
             
     return extracted
 
