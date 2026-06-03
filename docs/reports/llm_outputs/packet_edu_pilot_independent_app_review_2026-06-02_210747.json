@@ -1,0 +1,26 @@
+{
+  "generated_at": "2026-06-02T21:07:47",
+  "owner": "Codex Chief of Staff",
+  "task_kind": "red_team",
+  "title": "edu_pilot_independent_app_review",
+  "objective": "Review the current '부모 AI 진단 (1호 파일럿)' implementation as a potential standalone product. Focus on product risk, legal/copy risk, state persistence, structured case management, and whether the current PoC is ready for external pilot exposure. Return a verdict and concrete next actions.",
+  "input_artifacts": [
+    "harness-os/frontend/src/pages/EduPilotPage.tsx",
+    "harness-os/backend/main.py",
+    "docs/education/EDU_CONSULTING_MASTER_PLAN.md",
+    "docs/reports/llm_outputs/legal_review_ar039_edu_ad_copy_2026-05-25.md",
+    "docs/governance/PRE_MORTEM_2026-05-24_edu_consulting_main_elevation.md"
+  ],
+  "output_artifacts": [],
+  "checks": [
+    "Is the current copy legally/operationally consistent with approved wording?",
+    "Does the current implementation support persistent customer journeys?",
+    "Is the current LLM-only dialogue loop robust enough for paid pilot exposure?",
+    "What should be changed before launching as a standalone app?"
+  ],
+  "notes": [
+    "Codex already found that the current PoC uses in-memory chat state, file-based evidence injection, and direct Gemini generation with no persisted customer/case model.",
+    "Please explicitly call out any mismatch between current UI copy and documented legal guidance."
+  ],
+  "callback_route": "agent_openclaw_routing"
+}
