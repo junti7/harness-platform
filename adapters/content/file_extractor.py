@@ -41,24 +41,58 @@ def extract_download_links(url: str):
         
         return None
     except Exception as e:
-        logger.warning(f"Error scraping {url}: {e}")
-        return None
-
 def extract_openapi(signal_id, title, list_id):
     import os
-    # 향후 실제 end_point_url 파싱 및 호출 로직이 들어갈 자리.
-    # 지금은 호출을 시도했으나 승인 대기 중(401/등록되지 않은 키)이라고 가정하고 로깅.
+    from core.llm_orchestrator import LLMOrchestrator
+    
     api_key = os.getenv("DATA_GO_KR_API_KEY", "")
-    logger.info(f"OpenAPI 호출 시도: {title} (list_id: {list_id})")
+    logger.info(f"OpenAPI 동적 파서 가동: {title} (list_id: {list_id})")
     
-    # 가상의 호출 결과 분기 (실제로는 httpx.get(end_point_url...) 실행)
-    # 401 Unauthorized 또는 등록되지 않은 서비스 키 에러가 나면
-    # 아직 동기화가 되지 않았다고 판단하여 Exception을 발생시킴.
-    raise Exception("SERVICE_KEY_IS_NOT_REGISTERED_ERROR (동기화 대기 중)")
+    # 1. API 메타데이터 카탈로그 조회
+    catalog_url = f"https://www.data.go.kr/catalog/{list_id}/openapi.json"
+    try:
+        cat_resp = httpx.get(catalog_url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
+        cat_data = cat_resp.text
+    except Exception as e:
+        cat_data = str(e)
+
+    # 2. LLM Orchestrator를 통해 엔드포인트 및 파라미터 추론 (Dynamic Parsing)
+    orchestrator = LLMOrchestrator(logger=logger)
+    system_prompt = "주어진 공공데이터 OpenAPI 메타데이터를 분석하여, 데이터를 가져올 수 있는 가장 유력한 REST GET Endpoint URL(단일 문자열)만 응답하세요. 모를 경우 'UNKNOWN'을 반환하세요. 공공데이터포털은 보통 https://api.odcloud.kr/api/{list_id}/v1/uddi:... 형태를 가집니다."
+    user_prompt = f"Title: {title}\nList ID: {list_id}\nCatalog Info:\n{cat_data[:1500]}"
     
-    # 정상 작동 시 아래 로직 수행
-    # raw_content = json.dumps({"data": "실제 데이터 배열"})
-    # execute_query("INSERT INTO raw_statistics_data (signal_id, source, raw_content) VALUES (%s, %s, %s)", ...)
+    try:
+        llm_res = orchestrator.claude_primary(system_prompt, user_prompt, max_tokens=100)
+        endpoint = llm_res.get("output", "").strip()
+    except Exception as e:
+        logger.warning(f"LLM 동적 파싱 실패: {e}")
+        endpoint = "UNKNOWN"
+
+    if endpoint == "UNKNOWN" or not endpoint.startswith("http"):
+        # 표준 odcloud 방식 Fallback 시도
+        endpoint = f"https://api.odcloud.kr/api/{list_id}/v1/data?page=1&perPage=100"
+        
+    logger.info(f" -> 추론된 Endpoint: {endpoint}")
+    
+    # 3. 실제 API 호출 타격
+    headers = {"Authorization": f"Infuser {api_key}"}
+    try:
+        api_resp = httpx.get(endpoint, headers=headers, timeout=20)
+    except Exception as e:
+        raise Exception(f"API 네트워크 에러: {e}")
+
+    # 4. 상태 코드에 따른 지연/성공 처리
+    if api_resp.status_code in [401, 403]:
+        raise Exception("SERVICE_KEY_IS_NOT_REGISTERED_ERROR (동기화 대기 중)")
+    elif api_resp.status_code == 200:
+        raw_content = api_resp.content.decode('utf-8', errors='replace')[:10000]
+        execute_query("""
+            INSERT INTO raw_statistics_data (signal_id, source, file_name, raw_content)
+            VALUES (%s, %s, %s, %s)
+        """, (signal_id, '공공데이터포털_OpenAPI', f"openapi_{list_id}.json", raw_content))
+        logger.info(f" -> OpenAPI 데이터 적재 성공! (list_id: {list_id})")
+    else:
+        logger.warning(f" -> API 응답 에러: {api_resp.status_code} - {api_resp.text[:200]}")
 
 def run_extraction():
     init_tables()
