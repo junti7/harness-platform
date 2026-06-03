@@ -2159,7 +2159,7 @@ def _run_chat_with_handoff(
                 continue
             
             _SESSION_LLM_MAP[session_id] = llm
-            return resp
+            return _postprocess_list_format(resp)
             
         except Exception as e:
             err_str = str(e).lower()
@@ -2174,6 +2174,53 @@ def _run_chat_with_handoff(
                 continue
                 
     return "🚨 모든 가용 LLM(Claude, Gemini, OpenAI)의 토큰/잔액이 소진되었거나 응답에 실패했습니다."
+
+
+def _postprocess_list_format(text: str) -> str:
+    """LLM 응답의 평면 번호 리스트를 대제목(숫자) + 하위항목(bullet) 계층 구조로 강제 변환한다.
+
+    대제목 판별 기준 (하나라도 해당하면 대제목):
+      - 줄 끝이 ':'으로 끝남
+      - **굵은** 마크다운 텍스트가 포함됨
+      - 줄 전체 길이가 50자 이하이면서 하위 설명이 아닌 제목성 문구
+    """
+    lines = text.split('\n')
+    # 번호 리스트가 4개 이상인 블록만 대상
+    numbered_lines = [i for i, l in enumerate(lines) if re.match(r'^\s*\d+[\.\)]\s+', l)]
+    if len(numbered_lines) < 4:
+        return text
+
+    # 대제목인지 하위항목인지 판별
+    def _is_heading(line: str) -> bool:
+        content = re.sub(r'^\s*\d+[\.\)]\s+', '', line).strip()
+        # **bold** 패턴이 있으면 대제목
+        if re.search(r'\*\*[^*]+\*\*', content):
+            return True
+        # 콜론(:)으로 끝나면 대제목
+        if content.rstrip().endswith(':'):
+            return True
+        # 콜론 뒤에 내용이 이어지는 대제목 패턴 (예: "1. 대제목: 설명...")
+        if re.match(r'^[^:]{3,40}:\s+.+', content):
+            return True
+        return False
+
+    heading_number = 0
+    result_lines = []
+    for i, line in enumerate(lines):
+        if i in numbered_lines:
+            if _is_heading(line):
+                heading_number += 1
+                # 원래 번호를 heading_number로 교체
+                content = re.sub(r'^\s*\d+[\.\)]\s+', '', line)
+                result_lines.append(f"{heading_number}. {content}")
+            else:
+                # 하위 항목 → bullet으로 변환
+                content = re.sub(r'^\s*\d+[\.\)]\s+', '', line)
+                result_lines.append(f"   - {content}")
+        else:
+            result_lines.append(line)
+
+    return '\n'.join(result_lines)
 
 
 
