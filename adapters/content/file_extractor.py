@@ -101,12 +101,22 @@ def extract_file_data(signal_id, title, url):
             
             # 페이지에 다운로드 버튼이 로드될 때까지 대기
             # 공공데이터포털은 주로 <a> 태그나 <button>에 fn_fileDataDown(...)를 연결함
-            page.wait_for_selector(".btn-download, a:has-text('다운로드'), a:has-text('CSV'), a:has-text('파일')", timeout=10000)
+            # 더 넓은 범위의 다운로드 버튼을 커버하도록 CSS/XPath 다중 타겟팅
+            selectors = [
+                ".btn-download", 
+                "a[href*='fn_fileDataDown']", 
+                "a:has-text('다운로드')", 
+                "a:has-text('파일')", 
+                "button:has-text('다운로드')"
+            ]
+            selector_str = ", ".join(selectors)
+            
+            page.wait_for_selector(selector_str, timeout=15000)
             
             # 다운로드 이벤트 대기 상태 진입
             with page.expect_download(timeout=30000) as download_info:
                 # 찾은 첫 번째 다운로드 버튼 클릭
-                page.locator(".btn-download, a:has-text('다운로드'), a:has-text('CSV'), a:has-text('파일')").first.click()
+                page.locator(selector_str).first.click()
             
             download = download_info.value
             file_name = download.suggested_filename
