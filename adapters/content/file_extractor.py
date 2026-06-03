@@ -94,10 +94,79 @@ def extract_openapi(signal_id, title, list_id):
     else:
         logger.warning(f" -> API 응답 에러: {api_resp.status_code} - {api_resp.text[:200]}")
 
+def extract_file_data(signal_id, title, url):
+    from playwright.sync_api import sync_playwright
+    import tempfile
+    
+    logger.info(f"Playwright 파일 다운로드 봇 가동: {title} ({url})")
+    
+    with sync_playwright() as p:
+        # headless=True 로 백그라운드 브라우저 실행
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(accept_downloads=True)
+        page = context.new_page()
+        
+        try:
+            page.goto(url, timeout=30000)
+            
+            # 페이지에 다운로드 버튼이 로드될 때까지 대기
+            # 공공데이터포털은 주로 <a> 태그나 <button>에 fn_fileDataDown(...)를 연결함
+            page.wait_for_selector(".btn-download, a:has-text('다운로드'), a:has-text('CSV'), a:has-text('파일')", timeout=10000)
+            
+            # 다운로드 이벤트 대기 상태 진입
+            with page.expect_download(timeout=30000) as download_info:
+                # 찾은 첫 번째 다운로드 버튼 클릭
+                page.locator(".btn-download, a:has-text('다운로드'), a:has-text('CSV'), a:has-text('파일')").first.click()
+            
+            download = download_info.value
+            file_name = download.suggested_filename
+            logger.info(f" -> 파일 가로채기 성공: {file_name}")
+            
+            # 임시 파일로 저장 후 읽기
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                download.save_as(tmp.name)
+                with open(tmp.name, 'r', encoding='utf-8', errors='replace') as f:
+                    raw_content = f.read()[:10000] # 앞부분 10000자만 저장
+            
+            import os
+            os.remove(tmp.name)
+            
+            execute_query("""
+                INSERT INTO raw_statistics_data (signal_id, source, file_name, raw_content)
+                VALUES (%s, %s, %s, %s)
+            """, (signal_id, '공공데이터포털_FileData', file_name, raw_content))
+            
+            logger.info(f" -> DB 적재 완료! (signal_id: {signal_id})")
+            return True
+            
+        except Exception as e:
+            logger.warning(f" -> 다운로드 우회 실패: {e}")
+            return False
+        finally:
+            browser.close()
+
 def run_extraction():
     init_tables()
     
-    # 1. 파일 데이터 추출 (Selenium/Playwright 등 우회 로직 필요성으로 잠시 보류 모드이나 로그는 남김)
+    # 1. 파일 데이터 추출 (Selenium/Playwright 우회 로직 가동)
+    file_rows = execute_query("""
+        SELECT f.id, f.title, r.raw_data
+        FROM filtered_signals f
+        JOIN raw_signals r ON f.raw_signal_id = r.id
+        WHERE f.source LIKE '%공공데이터포털%'
+          AND r.raw_data::jsonb->>'url' LIKE '%fileData.do%'
+          AND f.id NOT IN (SELECT signal_id FROM raw_statistics_data)
+        LIMIT 5
+    """, fetch=True)
+    
+    if file_rows:
+        logger.info(f"파일 데이터 추출 타겟 {len(file_rows)}건 발견, 봇 가동 시작.")
+        for row in file_rows:
+            raw_data = row['raw_data']
+            if isinstance(raw_data, str):
+                raw_data = json.loads(raw_data)
+            extract_file_data(row['id'], row['title'], raw_data.get('url', ''))
+    
     # 2. OpenAPI 추출
     rows = execute_query("""
         SELECT f.id, f.title, r.raw_data
