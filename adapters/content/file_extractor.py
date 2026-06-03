@@ -20,27 +20,7 @@ def init_tables():
         )
     """)
 
-def extract_download_links(url: str):
-    try:
-        resp = httpx.get(url, timeout=15, headers={'User-Agent': 'Mozilla/5.0'})
-        if resp.status_code != 200:
-            return None
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        
-        # 1. fn_fileDataDown 패턴 탐색
-        for elem in soup.find_all(['a', 'button']):
-            click = elem.get('onclick', '')
-            if 'fileDetailObj.fn_fileDataDown' in click:
-                # onclick="fileDetailObj.fn_fileDataDown('15014075', 'uddi:b913b394-ef8c-4a9b-b35f-e7a1072dfdd0', '','1', '1')"
-                m = re.search(r"fn_fileDataDown\('([^']+)',\s*'([^']+)'", click)
-                if m:
-                    pk = m.group(1)
-                    dpk = m.group(2)
-                    download_url = f"https://www.data.go.kr/download/{pk}/fileData.do?detailPk={dpk}"
-                    return download_url
-        
-        return None
-    except Exception as e:
+
 def extract_openapi(signal_id, title, list_id):
     import os
     from core.llm_orchestrator import LLMOrchestrator
