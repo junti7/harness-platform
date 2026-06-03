@@ -670,7 +670,7 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
               padding: '1rem', borderRadius: '6px', fontSize: '0.85rem', color: 'var(--color-text)',
               whiteSpace: 'pre-wrap', border: '1px solid var(--color-border)', fontFamily: 'monospace'
             }}>
-              {selectedRawStat.raw_content || '내용 없음'}
+              {(selectedRawStat.raw_content || '내용 없음').replace(/\\n/g, '\n')}
             </div>
           </div>
         </div>
