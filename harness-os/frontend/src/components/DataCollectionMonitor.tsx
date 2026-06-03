@@ -71,6 +71,8 @@ const CLUSTER_LABELS: Record<string, string> = {
 
 function clusterLabel(key: string) {
   return CLUSTER_LABELS[key] || key.replaceAll('_', ' ')
+}
+
 export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props) {
   const [rawStats, setRawStats] = useState<any[]>([])
   const [selectedRawStat, setSelectedRawStat] = useState<any | null>(null)
