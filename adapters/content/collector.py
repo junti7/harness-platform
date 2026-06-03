@@ -14,6 +14,17 @@ from core.topic_registry import merged_sources_with_generated
 
 DEFAULT_RSS_SOURCES = load_default_sources("physical_ai")
 
+_PHYSICAL_AI_CLUSTER_RULES: list[tuple[str, tuple[str, ...]]] = [
+    ("power_cooling", ("power", "grid", "cooling", "liquid cooling", "thermal", "datacenter", "data center", "rack scale")),
+    ("networking_optics", ("ethernet", "infiniband", "optical", "switch", "networking", "co-packaged optics", "optical interconnect")),
+    ("memory_packaging", ("hbm", "hbm3e", "hbm4", "memory", "advanced packaging", "packaging", "chiplet", "interposer", "substrate")),
+    ("simulation_software", ("digital twin", "simulation", "world model", "mes", "plm", "scada", "industrial software")),
+    ("warehouse_deployment", ("warehouse", "logistics", "fulfillment", "deployment", "fleet")),
+    ("edge_realtime", ("edge ai", "on-device", "real-time inference", "realtime inference", "embedded ai")),
+    ("embodiment_robotics", ("robot", "robotics", "humanoid", "manipulation", "locomotion", "actuator", "sensor", "factory", "automation")),
+    ("compute_models", ("gpu", "semiconductor", "wafer", "foundry", "tsmc", "nvidia", "asic", "accelerator")),
+]
+
 
 def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "source"
@@ -62,6 +73,14 @@ def _expand_special_sources(source: dict) -> list[dict]:
             )
         return expanded
     return [source]
+
+
+def infer_physical_ai_topic_cluster(*parts: str) -> str:
+    haystack = " ".join(part for part in parts if part).lower()
+    for cluster, keywords in _PHYSICAL_AI_CLUSTER_RULES:
+        if any(keyword in haystack for keyword in keywords):
+            return cluster
+    return "general_physical_ai"
 
 def deep_fetch_content(url: str, logger: HarnessLogger) -> str:
     """기사 URL로부터 본문 전문을 스크래핑한다."""
@@ -182,6 +201,10 @@ def collect(correlation_id: str = None):
                                 break
 
                             for item in items:
+                                if ep == "/open-data-list":
+                                    if str(item.get("api_type", "")).upper() != "REST":
+                                        continue
+
                                 title = item.get("title", "")
                                 desc = item.get("desc", "")
                                 
@@ -198,7 +221,14 @@ def collect(correlation_id: str = None):
                                         url = f"https://www.data.go.kr/data/{data_id}/fileData.do"
                                         
                                 content_hash = hashlib.sha256(f"{title}{url}".encode()).hexdigest()[:64]
-                                raw_data = {"title": title, "url": url, "summary": desc, "source_name": source["name"]}
+                                raw_data = {
+                                    "title": title,
+                                    "url": url,
+                                    "summary": desc,
+                                    "source_name": source["name"],
+                                    "domain": "physical_ai",
+                                    "topic_cluster": infer_physical_ai_topic_cluster(title, desc, source["name"], url),
+                                }
                                 save_raw_signal(source["name"], raw_data, content_hash, desc)
                                 total_saved += 1
             except Exception as e:
@@ -212,7 +242,15 @@ def collect(correlation_id: str = None):
             url = entry.get("link", "")
             content_hash = hashlib.sha256(f"{title}{url}".encode()).hexdigest()[:64]
             full_text = deep_fetch_content(url, logger)
-            raw_data = {"title": title, "url": url, "summary": entry.get("summary", ""), "source_name": source["name"]}
+            summary = entry.get("summary", "")
+            raw_data = {
+                "title": title,
+                "url": url,
+                "summary": summary,
+                "source_name": source["name"],
+                "domain": "physical_ai",
+                "topic_cluster": infer_physical_ai_topic_cluster(title, summary, source["name"], url),
+            }
             save_raw_signal(source["name"], raw_data, content_hash, full_text)
             total_saved += 1
     logger.info(f"=== Tier 1 완료: {total_saved}개 저장 ===")
