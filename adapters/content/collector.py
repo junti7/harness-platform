@@ -85,6 +85,20 @@ def deep_fetch_content(url: str, logger: HarnessLogger) -> str:
         return ""
 
 def save_raw_signal(source: str, entry: dict, content_hash: str, full_content: str = ""):
+    title = entry.get("title", "")
+    if title:
+        import re
+        normalized_title = re.sub(r'\s+', '', title).lower()
+        # 이미 동일한 제목(공백/대소문자 무시)이 수집되었는지 체크하여 절대 중복 방지
+        check_query = """
+            SELECT 1 FROM raw_signals 
+            WHERE REPLACE(LOWER(raw_data::jsonb->>'title'), ' ', '') = %s
+            LIMIT 1
+        """
+        rows = execute_query(check_query, (normalized_title,), fetch=True)
+        if rows:
+            return  # 완벽히 동일한 제목의 데이터가 존재하면 중복 수집 안 함
+
     query = """
         INSERT INTO raw_signals (source, raw_data, content_hash, full_content, status)
         VALUES (%s, %s, %s, %s, 'pending')
