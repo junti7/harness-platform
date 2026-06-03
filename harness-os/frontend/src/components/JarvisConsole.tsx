@@ -249,7 +249,14 @@ const JarvisLogFeed = memo(function JarvisLogFeed({ invoking, logs }: LogFeedPro
                 })}
               </div>
             )}
-            <small className="jarvis-timestamp">{entry.generated_at}</small>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+              <small className="jarvis-timestamp">{entry.generated_at}</small>
+              {entry.active_llm && entry.active_llm !== 'unknown' && entry.active_llm !== 'auto' && (
+                <span style={{ fontSize: '0.65em', padding: '2px 6px', backgroundColor: 'var(--brand-accent-faded, #f0f4ff)', color: 'var(--brand-accent, #3b82f6)', borderRadius: '12px', fontWeight: 600 }}>
+                  {entry.active_llm === 'claude' ? 'Claude-3.5' : entry.active_llm === 'gemini' ? 'Gemini-1.5' : entry.active_llm === 'openai' ? 'GPT-4o' : entry.active_llm.toUpperCase()}
+                </span>
+              )}
+            </div>
           </article>
         )
       })}
@@ -314,22 +321,11 @@ export function JarvisConsole({ apiBase, authHeaders, templateCommands = [], vie
   ]
   const templates = viewRole === 'ceo' ? templateCommands : vpTemplates.map(t => ({ label: '애널리스트', command: t }))
   const leadingMention = detectLeadingMention(command)
-  const activeLlm = logs[0]?.active_llm || 'auto'
-  
-  const renderLlmBadge = () => {
-    if (activeLlm === 'unknown' || activeLlm === 'auto') return null;
-    let label = activeLlm.toUpperCase();
-    if (activeLlm === 'claude') label = 'Claude-3.5';
-    if (activeLlm === 'gemini') label = 'Gemini-1.5';
-    if (activeLlm === 'openai') label = 'GPT-4o';
-    
-    return <span style={{ fontSize: '0.65em', marginLeft: '8px', padding: '2px 6px', backgroundColor: 'var(--brand-accent-faded, #f0f4ff)', color: 'var(--brand-accent, #3b82f6)', borderRadius: '12px', verticalAlign: 'middle', fontWeight: 600 }}>{label}</span>
-  }
 
   return (
     <section className="panel jarvis-panel">
       <div className="panel-head">
-        <h3>운영 도우미 {renderLlmBadge()}</h3>
+        <h3>운영 도우미</h3>
         <p className="panel-desc">팀별 자동화에게 질문하고 실행 결과를 확인합니다. 예: @Friday 오늘 핵심 지표 이상징후 3개와 대응 우선순위 정리</p>
       </div>
       {error && <div className="section-error" role="alert">운영 도우미: {error}</div>}
