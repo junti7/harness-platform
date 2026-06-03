@@ -35,8 +35,14 @@ CONFERENCE_AUDIT_MESSAGE='Run exactly this command from /Users/juntaepark/projec
 ROUTE_AUDIT_NAME="harness-weekly-route-audit"
 ROUTE_AUDIT_MESSAGE='Run exactly this command from /Users/juntaepark/projects/harness-platform: /Users/juntaepark/projects/harness-platform/.venv/bin/python /Users/juntaepark/projects/harness-platform/scripts/summarize_openclaw_route_audit.py --limit 500 --change-date 2026-05-31 --to-slack --route exec_president_decisions . After the command completes, reply with exactly OK.'
 
+WEEKLY_OPS_CARD_NAME="harness-weekly-ceo-ops-card"
+WEEKLY_OPS_CARD_MESSAGE='Run exactly this command from /Users/juntaepark/projects/harness-platform: /Users/juntaepark/projects/harness-platform/.venv/bin/python /Users/juntaepark/projects/harness-platform/scripts/summarize_weekly_ops_card.py --route-limit 500 --conference-limit 500 --to-slack --route exec_president_decisions . After the command completes, reply with exactly OK.'
+
 TOPIC_REFRESH_NAME="harness-topic-registry-refresh"
 TOPIC_REFRESH_MESSAGE='Run exactly this command from /Users/juntaepark/projects/harness-platform: /Users/juntaepark/projects/harness-platform/.venv/bin/python /Users/juntaepark/projects/harness-platform/scripts/refresh_topic_registry.py . After the command completes, reply with exactly OK.'
+
+TOPIC_PUSH_NAME="harness-daily-topic-push-brief"
+TOPIC_PUSH_MESSAGE='Run exactly this command from /Users/juntaepark/projects/harness-platform: /Users/juntaepark/projects/harness-platform/.venv/bin/python /Users/juntaepark/projects/harness-platform/scripts/summarize_topic_push_brief.py --to-slack --route exec_president_decisions . After the command completes, reply with exactly OK.'
 
 
 register_if_missing() {
@@ -227,6 +233,24 @@ ensure_cron_schedule "$TOPIC_REFRESH_NAME" "0 */6 * * *" "Asia/Seoul"
 sync_agent_payload "$TOPIC_REFRESH_NAME" "$TOPIC_REFRESH_MESSAGE" "240" "$OPENCLAW_CRON_MODEL" "exec" "true"
 
 register_if_missing \
+  "$TOPIC_PUSH_NAME" \
+  --name "$TOPIC_PUSH_NAME" \
+  --description "Send daily cluster-based topic push candidates for education and physical AI." \
+  --cron "10 6 * * *" \
+  --tz "Asia/Seoul" \
+  --agent main \
+  --session isolated \
+  --model "$OPENCLAW_CRON_MODEL" \
+  --tools exec \
+  --light-context \
+  --message "$TOPIC_PUSH_MESSAGE" \
+  --timeout-seconds 240 \
+  --no-deliver
+
+ensure_cron_schedule "$TOPIC_PUSH_NAME" "10 6 * * *" "Asia/Seoul"
+sync_agent_payload "$TOPIC_PUSH_NAME" "$TOPIC_PUSH_MESSAGE" "240" "$OPENCLAW_CRON_MODEL" "exec" "true"
+
+register_if_missing \
   "$CONFERENCE_AUDIT_NAME" \
   --name "$CONFERENCE_AUDIT_NAME" \
   --description "Generate the weekly conference-room chatter audit summary for persona length and noise review." \
@@ -261,5 +285,23 @@ register_if_missing \
 
 ensure_cron_schedule "$ROUTE_AUDIT_NAME" "50 3 * * 1" "Asia/Seoul"
 sync_agent_payload "$ROUTE_AUDIT_NAME" "$ROUTE_AUDIT_MESSAGE" "300" "$OPENCLAW_CRON_MODEL" "exec" "true"
+
+register_if_missing \
+  "$WEEKLY_OPS_CARD_NAME" \
+  --name "$WEEKLY_OPS_CARD_NAME" \
+  --description "Generate and send the weekly CEO operating card combining route, conference-room, and fallback incident signals." \
+  --cron "55 3 * * 1" \
+  --tz "Asia/Seoul" \
+  --agent main \
+  --session isolated \
+  --model "$OPENCLAW_CRON_MODEL" \
+  --tools exec \
+  --light-context \
+  --message "$WEEKLY_OPS_CARD_MESSAGE" \
+  --timeout-seconds 300 \
+  --no-deliver
+
+ensure_cron_schedule "$WEEKLY_OPS_CARD_NAME" "55 3 * * 1" "Asia/Seoul"
+sync_agent_payload "$WEEKLY_OPS_CARD_NAME" "$WEEKLY_OPS_CARD_MESSAGE" "300" "$OPENCLAW_CRON_MODEL" "exec" "true"
 
 "$OPENCLAW_BIN" cron list --json

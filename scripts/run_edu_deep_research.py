@@ -163,13 +163,20 @@ def collect_rss(sources: list[dict], logger: HarnessLogger,
             entries = feed.entries[:cap]
             src_new = 0
             for entry in entries:
+                title = entry.get("title", "")
+                summary = entry.get("summary", "")[:2000]
                 raw = {
-                    "title": entry.get("title", ""),
+                    "title": title,
                     "url": entry.get("link", ""),
-                    "summary": entry.get("summary", "")[:2000],
+                    "summary": summary,
                     "source_name": name,
                     "signal_class": src.get("signal_class", "unknown"),
                     "rq_tags": src.get("rq_tags", []),
+                    "topic_cluster": infer_edu_topic_cluster(
+                        query=str(src.get("query") or src.get("expected_signal_type") or ""),
+                        title=title,
+                        channel=name,
+                    ),
                 }
                 if dry_run:
                     logger.info(f"  [dry-run] {raw['title'][:80]}")
@@ -460,6 +467,65 @@ MULTILINGUAL_QUERIES: list[str] = [
     "AI shiksha mata-pita chinta",
 ]
 
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def should_use_youtube_api(args: argparse.Namespace) -> bool:
+    if getattr(args, "enable_youtube_api", False):
+        return True
+    return _env_flag("ENABLE_YOUTUBE_DATA_API", default=False)
+
+
+def get_youtube_api_query_budget(args: argparse.Namespace) -> int:
+    cli_value = getattr(args, "max_yt_api_queries", None)
+    if cli_value is not None:
+        return max(0, int(cli_value))
+    return max(0, int(os.getenv("YOUTUBE_API_QUERY_LIMIT", "0")))
+
+
+def get_youtube_api_channel_budget(args: argparse.Namespace) -> int:
+    cli_value = getattr(args, "max_yt_api_channels", None)
+    if cli_value is not None:
+        return max(0, int(cli_value))
+    return max(0, int(os.getenv("YOUTUBE_API_CHANNEL_LIMIT", "0")))
+
+
+def get_youtube_topic_query_budget(args: argparse.Namespace) -> int:
+    cli_value = getattr(args, "max_yt_topic_queries", None)
+    if cli_value is not None:
+        return max(0, int(cli_value))
+    return max(0, int(os.getenv("YOUTUBE_TOPIC_QUERY_LIMIT", "12")))
+
+
+def get_youtube_channel_crawl_budget(args: argparse.Namespace) -> int:
+    cli_value = getattr(args, "max_yt_channel_crawls", None)
+    if cli_value is not None:
+        return max(0, int(cli_value))
+    return max(0, int(os.getenv("YOUTUBE_CHANNEL_CRAWL_LIMIT", "0")))
+
+
+_EDU_TOPIC_CLUSTER_RULES = [
+    ("military_ai", ["군대", "군 복무", "입대", "military", "defense", "soldier"]),
+    ("digital_dependence", ["스마트폰", "휴대폰", "screen time", "digital dependence", "중독", "의존"]),
+    ("job_seeker_ai", ["취준", "취준생", "취업 준비", "job seeker", "job search", "채용", "면접", "resume", "career starter"]),
+    ("career_major", ["진로", "전공", "future jobs", "major", "career guidance", "직업 전망", "대입", "대학", "학과", "취업", "미래 직업", "엔지니어링", "직무 선택", "커리어", "job outlook"]),
+    ("worker_ai", ["직장인", "직무", "업무", "workers", "workplace", "job", "office", "생존 전략", "자동화", "업무 자동화", "생산성", "실무", "white collar"]),
+    ("parenting_ai", ["학부모", "부모", "보호자", "자녀", "kids", "children", "parent", "parenting", "k-12", "초등", "중등", "고등", "교육법"]),
+]
+
+
+def infer_edu_topic_cluster(query: str = "", title: str = "", channel: str = "") -> str:
+    text = f"{query} {title} {channel}".lower()
+    for cluster, terms in _EDU_TOPIC_CLUSTER_RULES:
+        if any(term.lower() in text for term in terms):
+            return cluster
+    return "general_ai_education"
+
 ACADEMIC_EN_QUERIES: list[str] = [
     "AI literacy cognitive offloading K-12 education",
     "generative AI student learning outcomes critical thinking",
@@ -688,6 +754,112 @@ def collect_youtube(yt_targets: list[dict], logger: HarnessLogger,
     return stats
 
 
+def collect_youtube_discovery_via_ytdlp(
+    search_queries: list[str],
+    logger: HarnessLogger,
+    tracker: SaturationTracker,
+    dry_run: bool,
+    max_results: int = 5,
+    max_query_count: int = 12,
+) -> dict:
+    """주제 기반 YouTube discovery.
+    채널 화이트리스트가 아니라 검색 질의로 영상 메타데이터를 넓게 수집하고,
+    Tier 2~4에서 후속 필터링한다. 비용 보호를 위해 이 단계는 transcript가 아니라 metadata만 저장한다.
+    """
+    if not Path(YT_DLP_BIN).exists():
+        logger.warning(f"yt-dlp 없음: {YT_DLP_BIN}. YouTube topic discovery 건너뜀.")
+        return {"attempted": 0, "new": 0, "duplicate": 0, "error": 1}
+
+    ordered_queries = [q.strip() for q in search_queries if q and q.strip()]
+    if max_query_count >= 0:
+        ordered_queries = ordered_queries[:max_query_count]
+
+    stats = {"attempted": len(ordered_queries), "new": 0, "duplicate": 0, "error": 0}
+
+    for query in ordered_queries:
+        logger.info(f"YouTube 주제 검색(yt-dlp): {query}")
+        if dry_run:
+            logger.info(f"  [dry-run] ytsearch{max_results}:{query}")
+            stats["new"] += max_results
+            tracker.record(f"yt_topic_{query[:30]}", max_results, max_results)
+            continue
+
+        cmd_base = [
+            YT_DLP_BIN,
+            f"ytsearch{max_results}:{query}",
+            "--flat-playlist",
+            "--playlist-end", str(max_results),
+            "--print", "%(id)s\t%(channel)s\t%(uploader_id)s\t%(upload_date)s\t%(title)s\t%(webpage_url)s",
+            "--no-playlist",
+            "--ignore-errors",
+            "--quiet",
+            "--no-warnings",
+        ]
+
+        success = False
+        lines: list[str] = []
+        use_impersonate = False
+        for attempt in range(1, 3):
+            try:
+                cmd = cmd_base.copy()
+                if use_impersonate:
+                    cmd.extend(["--impersonate", "Chrome-131"])
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                if result.returncode != 0:
+                    err_msg = result.stderr or ""
+                    if attempt == 1 and ("Sign in to confirm" in err_msg or "429" in err_msg or "bot" in err_msg.lower()):
+                        logger.warning("  topic discovery: 검색 보호에 걸려 impersonate 재시도합니다.")
+                        use_impersonate = True
+                        continue
+                    logger.warning(f"  topic discovery 오류 ({query[:40]}): {err_msg[:200]}")
+                    stats["error"] += 1
+                    break
+                lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+                success = True
+                break
+            except subprocess.TimeoutExpired:
+                logger.warning(f"  topic discovery 타임아웃 ({query[:40]})")
+                stats["error"] += 1
+                break
+
+        if not success:
+            time.sleep(3)
+            continue
+
+        query_new = 0
+        for line in lines:
+            parts = line.split("\t")
+            if len(parts) < 6:
+                continue
+            video_id, channel, uploader_id, upload_date, title, webpage_url = parts[:6]
+            raw = {
+                "title": title.strip(),
+                "url": (webpage_url or f"https://www.youtube.com/watch?v={video_id}").strip(),
+                "channel": (channel or "").strip(),
+                "uploader_id": (uploader_id or "").strip(),
+                "upload_date": (upload_date or "").strip(),
+                "source_name": "youtube_topic_search",
+                "signal_class": "youtube",
+                "rq_tags": ["RQ1", "RQ3", "RQ4", "RQ5", "RQ6"],
+                "query": query,
+                "topic_cluster": infer_edu_topic_cluster(query=query, title=title, channel=channel),
+                "discovery_reason": "topic_search_primary",
+                "evidence_posture": "media",
+            }
+            saved = save_signal("youtube_topic_search", raw, DOMAIN, logger)
+            if saved:
+                query_new += 1
+                stats["new"] += 1
+            else:
+                stats["duplicate"] += 1
+
+        tracker.record(f"yt_topic_{query[:30]}", query_new, len(lines))
+        logger.info(f"  topic discovery 완료: {query_new}개 신규 / {len(lines)}개 후보")
+        time.sleep(2)
+
+    return stats
+
+
 # ---------------------------------------------------------------------------
 # YouTube Data API v3 수집 (공식 API — 429 없음, 1만 유닛/일 무료)
 # ---------------------------------------------------------------------------
@@ -712,18 +884,34 @@ def _yt_api_get(path: str, params: dict, logger: HarnessLogger) -> dict | None:
         return None
 
 
-def collect_youtube_via_api(yt_targets: list[dict], search_queries: list[str],
-                            extra_query: str, logger: HarnessLogger,
-                            tracker: SaturationTracker, dry_run: bool, max_results: int = 5) -> dict | None:
+def collect_youtube_via_api(
+    yt_targets: list[dict],
+    search_queries: list[str],
+    extra_query: str,
+    logger: HarnessLogger,
+    tracker: SaturationTracker,
+    dry_run: bool,
+    max_results: int = 5,
+    max_query_count: int = 0,
+    max_channel_count: int = 0,
+) -> dict | None:
     """YouTube Data API v3로 채널 영상 메타데이터 수집.
     YOUTUBE_API_KEY 미설정 시 None 반환 → yt-dlp fallback."""
     api_key = os.getenv("YOUTUBE_API_KEY", "")
     if not api_key:
         return None
 
-    stats = {"attempted": len(yt_targets), "new": 0, "duplicate": 0, "error": 0}
+    limited_targets = yt_targets[:max_channel_count] if max_channel_count > 0 else []
+    stats = {
+        "attempted": len(limited_targets),
+        "new": 0,
+        "duplicate": 0,
+        "error": 0,
+        "api_search_queries": 0,
+        "api_channels": len(limited_targets),
+    }
 
-    for ch in yt_targets:
+    for ch in limited_targets:
         name = ch["name"]
         url = ch["url"]
 
@@ -740,7 +928,7 @@ def collect_youtube_via_api(yt_targets: list[dict], search_queries: list[str],
             stats["new"] += 3
             continue
 
-        # 채널 ID 조회 (100 유닛)
+        # 채널 ID 조회 (channels.list, 낮은 quota)
         data = _yt_api_get("channels", {"part": "id", "forHandle": f"@{handle}"}, logger)
         if not data or not data.get("items"):
             logger.warning(f"  채널 없음: @{handle} (삭제/URL 변경 확인 필요)")
@@ -749,7 +937,7 @@ def collect_youtube_via_api(yt_targets: list[dict], search_queries: list[str],
         channel_id = data["items"][0]["id"]
         time.sleep(1)
 
-        # 최근 영상 목록 (100 유닛/검색)
+        # 최근 영상 목록 (search.list, 고비용 quota)
         data = _yt_api_get("search", {
             "part": "snippet",
             "channelId": channel_id,
@@ -793,8 +981,11 @@ def collect_youtube_via_api(yt_targets: list[dict], search_queries: list[str],
     if extra_query:
         ordered_queries.append(extra_query)
     ordered_queries.extend(search_queries)
+    if max_query_count >= 0:
+        ordered_queries = ordered_queries[:max_query_count]
 
     for query in ordered_queries:
+        stats["api_search_queries"] += 1
         logger.info(f"YouTube API 검색: {query}")
         if dry_run:
             logger.info(f"  [dry-run] search?q={query}")
@@ -1287,6 +1478,16 @@ def main():
                         help="Scholar 쿼리 모드: en_only(영어 20개, 빠름) / multilingual(60개+, 느림)")
     parser.add_argument("--max-yt-results", type=int, default=5,
                         help="유튜브 채널 및 검색어당 최대 수집 수 (기본: 5)")
+    parser.add_argument("--enable-youtube-api", action="store_true",
+                        help="고비용 YouTube Data API v3 보조 수집을 명시적으로 활성화")
+    parser.add_argument("--max-yt-api-queries", type=int, default=None,
+                        help="YouTube Data API 검색 쿼리 최대 개수 (기본: 0)")
+    parser.add_argument("--max-yt-api-channels", type=int, default=None,
+                        help="YouTube Data API 채널 보조 조회 최대 개수 (기본: 0)")
+    parser.add_argument("--max-yt-topic-queries", type=int, default=None,
+                        help="yt-dlp topic discovery 검색 쿼리 최대 개수 (기본: 12)")
+    parser.add_argument("--max-yt-channel-crawls", type=int, default=None,
+                        help="yt-dlp 채널 크롤링 최대 개수 (기본: 0, topic-first)")
     args = parser.parse_args()
 
     enabled = {s.strip() for s in args.sources.split(",")}
@@ -1314,9 +1515,25 @@ def main():
             NAVER_QUERIES.insert(0, args.extra_query)
 
     logger = HarnessLogger(tier=1, correlation_id=CORRELATION_ID)
+    youtube_api_enabled = should_use_youtube_api(args)
+    youtube_api_query_budget = get_youtube_api_query_budget(args)
+    youtube_api_channel_budget = get_youtube_api_channel_budget(args)
+    youtube_topic_query_budget = get_youtube_topic_query_budget(args)
+    youtube_channel_crawl_budget = get_youtube_channel_crawl_budget(args)
     logger.info(
         f"=== 교육 DEEP RESEARCH 수집 시작 | domain={domain} | sources={args.sources} "
         f"| dry_run={dry_run} | extra_query={args.extra_query!r} | topic_only={args.topic_only} ==="
+    )
+    logger.info(
+        "YouTube API guard"
+        f" | enabled={youtube_api_enabled}"
+        f" | max_api_queries={youtube_api_query_budget}"
+        f" | max_api_channels={youtube_api_channel_budget}"
+    )
+    logger.info(
+        "YouTube topic discovery"
+        f" | max_topic_queries={youtube_topic_query_budget}"
+        f" | max_channel_crawls={youtube_channel_crawl_budget}"
     )
 
     if not dry_run:
@@ -1395,24 +1612,55 @@ def main():
         total_new += r["new"]
 
     if "youtube" in enabled or "all" in enabled:
-        logger.info("--- [YouTube yt-dlp (Primary Method)] ---")
-        # 1. yt-dlp 수집을 최우선으로 먼저 시도 (Primary)
-        r = collect_youtube(yt_targets, logger, tracker, dry_run, max_results=args.max_yt_results)
-        results["youtube"] = r
+        logger.info("--- [YouTube Topic Discovery (Primary Method)] ---")
+        r = collect_youtube_discovery_via_ytdlp(
+            yt_search_queries,
+            logger,
+            tracker,
+            dry_run,
+            max_results=args.max_yt_results,
+            max_query_count=youtube_topic_query_budget,
+        )
+        results["youtube_topic_search"] = r
         total_new += r["new"]
-        
-        # 2. YOUTUBE_API_KEY가 있는 경우에 한하여 보조(Secondary) 수단으로 API를 활용하여 검색 결과 등 추가 데이터 보충
-        if os.getenv("YOUTUBE_API_KEY"):
+
+        if youtube_channel_crawl_budget > 0:
+            logger.info("--- [YouTube Channel Crawl (Secondary Method)] ---")
+            ch_result = collect_youtube(
+                yt_targets[:youtube_channel_crawl_budget],
+                logger,
+                tracker,
+                dry_run,
+                max_results=args.max_yt_results,
+            )
+            results["youtube_channels"] = ch_result
+            total_new += ch_result["new"]
+            logger.info(f"  YouTube 병합 완료 (topic 신규: {r['new']}개, channel 신규: {ch_result['new']}개)")
+        else:
+            logger.info("  YouTube 채널 크롤링은 비활성화 상태 — topic discovery만 사용")
+
+        # 2. 명시적으로 활성화된 경우에만 YouTube Data API 보조 수집 사용
+        if youtube_api_enabled and os.getenv("YOUTUBE_API_KEY"):
             logger.info("--- [YouTube Data API v3 (Secondary Method)] ---")
             api_result = collect_youtube_via_api(
-                yt_targets, yt_search_queries, args.extra_query, logger, tracker, dry_run, max_results=args.max_yt_results
+                yt_targets,
+                yt_search_queries,
+                args.extra_query,
+                logger,
+                tracker,
+                dry_run,
+                max_results=args.max_yt_results,
+                max_query_count=youtube_api_query_budget,
+                max_channel_count=youtube_api_channel_budget,
             )
             if api_result:
                 results["youtube_api"] = api_result
                 total_new += api_result["new"]
-                logger.info(f"  YouTube 수집 병합 완료 (yt-dlp 신규: {r['new']}개, API 신규: {api_result['new']}개)")
+                logger.info(f"  YouTube 수집 병합 완료 (topic 신규: {r['new']}개, API 신규: {api_result['new']}개)")
+        elif os.getenv("YOUTUBE_API_KEY"):
+            logger.info("  YouTube Data API 보조 수집 비활성화 상태 — yt-dlp topic discovery 경로만 사용")
         else:
-            logger.info(f"  YouTube 수집 완료 (yt-dlp 단독 수집, 신규: {r['new']}개)")
+            logger.info(f"  YouTube 수집 완료 (topic discovery 단독 수집, 신규: {r['new']}개)")
 
     # 포화도 리포트
     saturation = tracker.summary()

@@ -3,6 +3,7 @@ import re
 
 from core.database import execute_query
 from core.logger import HarnessLogger
+from core.trading_universe import ensure_trading_schema
 
 
 SIGNAL_TYPE_KEYWORDS = {
@@ -19,6 +20,10 @@ MONETIZATION_KEYWORDS = [
     "humanoid", "robot", "robotics", "physical ai", "agi", "semiconductor",
     "gpu", "inference", "factory", "automation", "defense", "space",
     "manufacturing", "chip", "nvidia", "tesla", "figure ai",
+    "hbm", "memory", "packaging", "chiplet", "networking", "ethernet",
+    "infiniband", "optical", "cooling", "liquid cooling", "power", "grid",
+    "data center", "datacenter", "digital twin", "simulation", "warehouse",
+    "logistics", "industrial software", "mes", "plm",
 ]
 
 NOVELTY_KEYWORDS = [
@@ -76,7 +81,7 @@ def compute_scores(row: dict) -> dict:
     }
 
 
-def get_unpromoted_filtered_signals() -> list[dict]:
+def get_unpromoted_filtered_signals(domain: str = "physical_ai") -> list[dict]:
     return execute_query("""
         SELECT
             fs.id,
@@ -103,11 +108,13 @@ def get_unpromoted_filtered_signals() -> list[dict]:
         LEFT JOIN source_catalog sc ON sc.source_name = fs.source
         LEFT JOIN signals s ON s.filtered_signal_id = fs.id
         WHERE s.id IS NULL
+          AND COALESCE(fs.domain, %s) = %s
+          AND COALESCE(rs.domain, rs.raw_data->>'domain', %s) = %s
         ORDER BY fs.score DESC, fs.created_at DESC
-    """, fetch=True)
+    """, (domain, domain, domain, domain), fetch=True)
 
 
-def save_signal_candidate(row: dict, scores: dict, signal_type: str):
+def save_signal_candidate(row: dict, scores: dict, signal_type: str, domain: str = "physical_ai"):
     title = row.get("title") or ""
     summary = row.get("summary") or ""
     source_url = row.get("source_url") or ""
@@ -129,9 +136,10 @@ def save_signal_candidate(row: dict, scores: dict, signal_type: str):
             source_confidence,
             monetization_potential,
             preliminary_score,
-            status
+            status,
+            domain
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'candidate')
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'candidate', %s)
         ON CONFLICT (content_hash) DO NOTHING
     """, (
         row["raw_signal_id"],
@@ -147,14 +155,16 @@ def save_signal_candidate(row: dict, scores: dict, signal_type: str):
         scores["source_confidence"],
         scores["monetization_potential"],
         scores["preliminary_score"],
+        domain,
     ))
 
 
-def promote_signals(correlation_id: str = None) -> int:
+def promote_signals(correlation_id: str = None, domain: str = "physical_ai") -> int:
+    ensure_trading_schema()
     logger = HarnessLogger(tier=2, correlation_id=correlation_id)
     logger.info("=== Tier 2 Signal 승격 시작 ===")
 
-    rows = get_unpromoted_filtered_signals()
+    rows = get_unpromoted_filtered_signals(domain=domain)
     if not rows:
         logger.info("승격할 filtered signal 없음")
         return 0
@@ -168,7 +178,7 @@ def promote_signals(correlation_id: str = None) -> int:
             row.get("expected_signal_type") or row.get("category") or "",
         )
         scores = compute_scores(row)
-        save_signal_candidate(row, scores, signal_type)
+        save_signal_candidate(row, scores, signal_type, domain=domain)
         promoted += 1
 
         if promoted % 20 == 0:

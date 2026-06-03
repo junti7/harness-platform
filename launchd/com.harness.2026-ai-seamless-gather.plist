@@ -13,18 +13,20 @@
     <string>/Users/juntae.park/projects/harness-platform/scripts/run_edu_deep_research.py</string>
     <string>--sources</string>
     <string>youtube</string>
-    <string>--extra-query</string>
-    <string>AI 2026 trends, artificial intelligence 2026, generative AI education 2026, 2026 에듀테크 AI, 인공지능 교육 2026</string>
+    <string>--max-yt-topic-queries</string>
+    <string>18</string>
+    <string>--max-yt-channel-crawls</string>
+    <string>0</string>
     <string>--max-yt-results</string>
-    <string>15</string>
+    <string>5</string>
   </array>
 
   <key>WorkingDirectory</key>
   <string>/Users/juntae.park/projects/harness-platform</string>
 
-  <!-- 6시간마다 실행 (21600초)로 429 차단 만료를 회피하며 Seamless 순환 축적 -->
+  <!-- 일 1회 실행으로 축소: YouTube API/수집 비용 억제 우선 -->
   <key>StartInterval</key>
-  <integer>21600</integer>
+  <integer>86400</integer>
 
   <!-- 로그 파일 기록 -->
   <key>StandardOutPath</key>
@@ -36,6 +38,16 @@
   <dict>
     <key>PATH</key>
     <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    <key>ENABLE_YOUTUBE_DATA_API</key>
+    <string>false</string>
+    <key>YOUTUBE_API_QUERY_LIMIT</key>
+    <string>0</string>
+    <key>YOUTUBE_API_CHANNEL_LIMIT</key>
+    <string>0</string>
+    <key>YOUTUBE_TOPIC_QUERY_LIMIT</key>
+    <string>18</string>
+    <key>YOUTUBE_CHANNEL_CRAWL_LIMIT</key>
+    <string>0</string>
   </dict>
 </dict>
 </plist>

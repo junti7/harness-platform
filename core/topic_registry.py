@@ -12,6 +12,8 @@ from urllib.parse import quote_plus
 import httpx
 
 from core.domain_config import load_default_sources, load_keyword_list
+from core.gemini_sdk import generate_text, gemini_model_name
+from scripts.llm_fallback_manager import _is_provider_available
 
 try:
     import anthropic
@@ -46,6 +48,10 @@ _STOPWORDS = {
 _DOMAIN_ANCHORS = {
     "robot", "robots", "robotics", "humanoid", "warehouse", "factory", "manufacturing",
     "automation", "industrial", "semiconductor", "chip", "chips", "gpu", "wafer", "foundry",
+    "hbm", "memory", "packaging", "chiplet", "interposer", "substrate",
+    "networking", "ethernet", "infiniband", "optical", "switch",
+    "power", "grid", "cooling", "thermal", "datacenter", "data center",
+    "simulation", "digital twin", "world model", "edge ai", "on-device", "inference",
     "hynix", "samsung", "nvidia", "tsmc", "atlas", "spot", "stretch", "optimus",
     "actuator", "sensor", "lidar", "manipulation", "grasping", "locomotion",
     "fleet", "deployment", "production",
@@ -180,10 +186,6 @@ def _llm_topic_candidates(domain: str, current_topics: list[str], recent_titles:
     if ollama_topics:
         return ollama_topics
 
-    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
-    if not api_key or anthropic is None:
-        return []
-
     prompt = (
         "You maintain a 24/7 topic collection system.\n"
         "Task: propose only NEW collection topics not already covered.\n"
@@ -201,16 +203,24 @@ def _llm_topic_candidates(domain: str, current_topics: list[str], recent_titles:
         "{\"topics\": [{\"topic\": \"...\", \"reason\": \"...\", \"sample_title\": \"...\", \"confidence\": 0.0}]}"
     )
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-        resp = client.messages.create(
-            model=TOPIC_LLM_MODEL,
-            max_tokens=800,
-            temperature=0,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = "".join(
-            part.text for part in resp.content if getattr(part, "type", "") == "text"
-        ).strip()
+        if anthropic is not None and os.getenv("ANTHROPIC_API_KEY", "").strip() and _is_provider_available("claude", timeout=3):
+            client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", "").strip())
+            resp = client.messages.create(
+                model=TOPIC_LLM_MODEL,
+                max_tokens=800,
+                temperature=0,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            text = "".join(
+                part.text for part in resp.content if getattr(part, "type", "") == "text"
+            ).strip()
+        else:
+            text, _usage = generate_text(
+                prompt,
+                model=gemini_model_name(),
+                max_output_tokens=800,
+                response_mime_type="application/json",
+            )
         payload = json.loads(text)
         out = []
         seen = set()

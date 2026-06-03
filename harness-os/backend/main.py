@@ -1239,6 +1239,61 @@ def _topic_cluster_rows(domain: str, limit: int = 8) -> list[dict[str, Any]]:
     )
 
 
+def _cluster_push_candidates(domain: str, limit: int = 6) -> list[dict[str, Any]]:
+    if domain == "physical_ai":
+        where = "coalesce(raw_data->>'domain', 'physical_ai') = %s"
+    else:
+        where = "coalesce(domain, raw_data->>'domain', '') = %s"
+    rows = _execute_query(
+        "SELECT raw_data->>'topic_cluster' AS cluster, raw_data->>'title' AS title, "
+        "raw_data->>'url' AS url, raw_data->>'query' AS query, ingested_at "
+        "FROM raw_signals "
+        f"WHERE {where} AND coalesce(raw_data->>'topic_cluster', '') <> '' "
+        "ORDER BY ingested_at DESC LIMIT %s",
+        (domain, limit * 5),
+    )
+    seen_clusters: set[str] = set()
+    picks: list[dict[str, Any]] = []
+    general_cluster = "general_physical_ai" if domain == "physical_ai" else "general_ai_education"
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            1 if str(row.get("cluster") or "") == general_cluster else 0,
+            str(row.get("ingested_at") or ""),
+        ),
+        reverse=False,
+    )
+    for row in rows:
+        cluster = str(row.get("cluster") or "")
+        title = str(row.get("title") or "")
+        if not title:
+            continue
+        if domain == "edu_consulting" and not _is_kr_or_en(title):
+            continue
+        if domain == "edu_consulting" and cluster == "general_ai_education":
+            continue
+        if domain == "physical_ai" and cluster == "general_physical_ai":
+            continue
+        if domain == "physical_ai" and any(term in title for term in ["공원현황", "시설현황", "민원", "행정", "통계연보"]):
+            continue
+        if not cluster or cluster in seen_clusters:
+            continue
+        seen_clusters.add(cluster)
+        picks.append(
+            {
+                "cluster": cluster,
+                "title": title,
+                "url": str(row.get("url") or ""),
+                "query": str(row.get("query") or ""),
+                "ingested_at": str(row.get("ingested_at") or ""),
+                "domain": domain,
+            }
+        )
+        if len(picks) >= limit:
+            break
+    return picks
+
+
 def _physical_ai_source_rows() -> list[dict[str, Any]]:
     rows = _execute_query(
         "SELECT source_name, base_url, source_type, enabled, expected_signal_type, reliability_score, rate_limit_policy "
@@ -1477,6 +1532,10 @@ def _data_collection_monitor() -> dict[str, Any]:
             "persona_fallbacks": _persona_fallback_status(),
             "topic_clusters": physical_ai_clusters,
             "edu_topic_clusters": edu_clusters,
+            "push_candidates": {
+                "physical_ai": _cluster_push_candidates("physical_ai", limit=6),
+                "edu_consulting": _cluster_push_candidates("edu_consulting", limit=6),
+            },
             "current_topics": active_topics,
             "suggested_topics": topic_registry.get("suggested_topics", []),
             "generated_query_sources": topic_registry.get("query_sources", []),
@@ -1528,6 +1587,7 @@ def _data_collection_monitor() -> dict[str, Any]:
             },
             "topic_clusters": [],
             "edu_topic_clusters": [],
+            "push_candidates": {"physical_ai": [], "edu_consulting": []},
             "current_topics": [],
             "suggested_topics": [],
             "generated_query_sources": [],
@@ -6249,3 +6309,5 @@ if _FRONTEND_DIST.exists():
         if candidate.exists() and candidate.is_file():
             return _FileResponse(str(candidate))
         return _FileResponse(str(_FRONTEND_DIST / "index.html"))
+    def _is_kr_or_en(title: str) -> bool:
+        return bool(re.search(r"[가-힣]{2,}", title) or re.search(r"[A-Za-z]{4,}", title))

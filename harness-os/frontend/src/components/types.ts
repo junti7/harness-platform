@@ -293,6 +293,36 @@ export type DashboardPayload = {
       sample_title?: string
       active?: boolean
     }>
+    topic_clusters?: Array<{
+      cluster: string
+      count: number
+      last_at?: string
+      domain?: string
+    }>
+    edu_topic_clusters?: Array<{
+      cluster: string
+      count: number
+      last_at?: string
+      domain?: string
+    }>
+    push_candidates?: {
+      physical_ai?: Array<{
+        cluster: string
+        title: string
+        url?: string
+        query?: string
+        ingested_at?: string
+        domain?: string
+      }>
+      edu_consulting?: Array<{
+        cluster: string
+        title: string
+        url?: string
+        query?: string
+        ingested_at?: string
+        domain?: string
+      }>
+    }
     generated_query_sources?: Array<{
       name: string
       url: string

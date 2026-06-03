@@ -49,6 +49,29 @@ function relativeTime(iso: string) {
   }
 }
 
+const CLUSTER_LABELS: Record<string, string> = {
+  parenting_ai: '보호자 · 자녀 AI',
+  worker_ai: '직장인 AI',
+  job_seeker_ai: '취준생 · 취업 준비',
+  military_ai: '군 복무 · 입대 준비',
+  career_major: '진로 · 전공 선택',
+  digital_dependence: '디지털 의존 · 스마트폰 갈등',
+  general_ai_education: '일반 AI 교육',
+  embodiment_robotics: '로봇 본체 · 자동화',
+  compute_models: '반도체 · 연산 칩',
+  memory_packaging: '메모리 · 패키징',
+  networking_optics: '네트워킹 · 광통신',
+  power_cooling: '전력 · 냉각',
+  simulation_software: '시뮬레이션 · 산업 소프트웨어',
+  warehouse_deployment: '물류 · 배포',
+  edge_realtime: '엣지 · 실시간 추론',
+  general_physical_ai: '일반 Physical AI',
+}
+
+function clusterLabel(key: string) {
+  return CLUSTER_LABELS[key] || key.replaceAll('_', ' ')
+}
+
 export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props) {
   const {
     total,
@@ -59,6 +82,9 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
     channel_coverage = [],
     tier2_worker,
     persona_fallbacks,
+    topic_clusters = [],
+    edu_topic_clusters = [],
+    push_candidates,
     current_topics = [],
     suggested_topics = [],
     generated_query_sources = [],
@@ -235,6 +261,71 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
                 <span style={{ fontSize: '1rem' }}>{lang.flag}</span>
                 <span style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>{lang.code.toUpperCase()}</span>
               </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+        <div className="panel" style={{ padding: '1.25rem' }}>
+          <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
+            기술 테마 클러스터
+          </p>
+          <div style={{ display: 'grid', gap: '0.45rem' }}>
+            {topic_clusters.length === 0 ? (
+              <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>아직 cluster 태깅 데이터가 없습니다.</div>
+            ) : topic_clusters.map(item => (
+              <div key={`physical-${item.cluster}`} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '0.5rem', alignItems: 'center', padding: '0.5rem 0.6rem', border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-surface-lighter)' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{clusterLabel(item.cluster)}</span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>{relativeTime(item.last_at || '')}</span>
+                <span style={{ fontSize: '0.78rem', fontWeight: 700 }}>{item.count.toLocaleString('ko-KR')}건</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="panel" style={{ padding: '1.25rem' }}>
+          <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
+            교육 테마 클러스터
+          </p>
+          <div style={{ display: 'grid', gap: '0.45rem' }}>
+            {edu_topic_clusters.length === 0 ? (
+              <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>아직 cluster 태깅 데이터가 없습니다.</div>
+            ) : edu_topic_clusters.map(item => (
+              <div key={`edu-${item.cluster}`} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '0.5rem', alignItems: 'center', padding: '0.5rem 0.6rem', border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-surface-lighter)' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{clusterLabel(item.cluster)}</span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>{relativeTime(item.last_at || '')}</span>
+                <span style={{ fontSize: '0.78rem', fontWeight: 700 }}>{item.count.toLocaleString('ko-KR')}건</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+        <div className="panel" style={{ padding: '1.25rem' }}>
+          <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
+            기술 Push 후보
+          </p>
+          <div style={{ display: 'grid', gap: '0.45rem' }}>
+            {(push_candidates?.physical_ai || []).slice(0, 5).map(item => (
+              <div key={`push-tech-${item.cluster}-${item.title}`} style={{ padding: '0.55rem 0.65rem', border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-surface-lighter)' }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginBottom: '0.15rem' }}>{clusterLabel(item.cluster)}</div>
+                <div style={{ fontWeight: 700, fontSize: '0.8rem', lineHeight: 1.35 }}>{item.title}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="panel" style={{ padding: '1.25rem' }}>
+          <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
+            교육 Push 후보
+          </p>
+          <div style={{ display: 'grid', gap: '0.45rem' }}>
+            {(push_candidates?.edu_consulting || []).slice(0, 5).map(item => (
+              <div key={`push-edu-${item.cluster}-${item.title}`} style={{ padding: '0.55rem 0.65rem', border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-surface-lighter)' }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginBottom: '0.15rem' }}>{clusterLabel(item.cluster)}</div>
+                <div style={{ fontWeight: 700, fontSize: '0.8rem', lineHeight: 1.35 }}>{item.title}</div>
+              </div>
             ))}
           </div>
         </div>

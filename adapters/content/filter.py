@@ -195,6 +195,25 @@ def compute_relevance_score(title: str, summary: str, full_content: str, source:
     return max(0.1, score)
 
 
+def compute_cluster_bonus(raw_data: dict, domain: str = "physical_ai") -> float:
+    cluster = str(raw_data.get("topic_cluster") or "").strip().lower()
+    source_name = str(raw_data.get("source_name") or "").strip().lower()
+    title = str(raw_data.get("title") or "").strip().lower()
+    if not cluster:
+        return 0.0
+    if domain == "edu_consulting":
+        if cluster in {"worker_ai", "career_major", "job_seeker_ai", "military_ai", "digital_dependence", "parenting_ai"}:
+            return 0.18
+        if cluster == "general_ai_education" and any(term in f"{title} {source_name}" for term in ["진로", "전공", "직장인", "부모", "스마트폰", "군대"]):
+            return 0.08
+        return 0.03
+    if cluster in {"power_cooling", "networking_optics", "memory_packaging", "simulation_software", "warehouse_deployment", "edge_realtime", "embodiment_robotics", "compute_models"}:
+        return 0.14
+    if cluster == "general_physical_ai" and any(term in f"{title} {source_name}" for term in ["hbm", "packaging", "cooling", "digital twin", "warehouse", "logistics"]):
+        return 0.07
+    return 0.02
+
+
 def determine_category(text: str) -> str:
     categories = []
     text_lower = text.lower()
@@ -271,6 +290,7 @@ def filter_signals(correlation_id: str = None, limit: int | None = None, domain:
         summary = raw_data.get("summary", "")
 
         score = compute_relevance_score(title, summary, full_content, source, domain=domain)
+        score = min(1.0, score + compute_cluster_bonus(raw_data, domain=domain))
 
         # edu_consulting은 YouTube 제목만 있는 경우가 많아 임계값을 낮게 적용
         score_threshold = 0.10 if domain == "edu_consulting" else 0.15

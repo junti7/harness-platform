@@ -77,6 +77,16 @@ def _expand_special_sources(source: dict) -> list[dict]:
 
 def infer_physical_ai_topic_cluster(*parts: str) -> str:
     haystack = " ".join(part for part in parts if part).lower()
+    source_based_rules = [
+        ("memory_packaging", ("google_news_hbm_packaging", "packaging", "hbm")),
+        ("networking_optics", ("google_news_ai_networking", "networking", "optical")),
+        ("power_cooling", ("google_news_power_cooling", "cooling", "power")),
+        ("simulation_software", ("google_news_digital_twin_simulation", "digital_twin", "simulation")),
+        ("warehouse_deployment", ("google_news_warehouse_logistics_robotics", "warehouse", "logistics")),
+    ]
+    for cluster, keywords in source_based_rules:
+        if any(keyword in haystack for keyword in keywords):
+            return cluster
     for cluster, keywords in _PHYSICAL_AI_CLUSTER_RULES:
         if any(keyword in haystack for keyword in keywords):
             return cluster
@@ -183,9 +193,12 @@ def collect(correlation_id: str = None):
             headers = {"Authorization": f"Infuser {api_key}"}
             target_keywords = [
                 "ai", "인공지능", "로봇", "robot", "로보틱스", "agi", "자율주행", "자율비행",
-                "교육", "에듀테크", "학습", "커리큘럼",
-                "부동산", "경매", "투자", "상권", "주택", "토지", "공매", "재건축", "재개발"
+                "반도체", "gpu", "hbm", "패키징", "네트워킹", "광통신",
+                "전력", "냉각", "데이터센터", "디지털트윈", "시뮬레이션",
+                "물류", "창고", "자동화", "제조", "factory", "warehouse", "logistics",
+                "부동산", "경매", "재건축", "재개발", "공매", "상권", "토지", "주택"
             ]
+            low_signal_terms = ["민원", "공원", "관광", "복지"]
             try:
                 base_host = "https://api.odcloud.kr/api/15077093/v1"
                 endpoints = ["/dataset", "/open-data-list"]
@@ -210,6 +223,8 @@ def collect(correlation_id: str = None):
                                 
                                 text_to_check = f"{title} {desc}".lower()
                                 if not any(kw in text_to_check for kw in target_keywords):
+                                    continue
+                                if any(term in text_to_check for term in low_signal_terms):
                                     continue
 
                                 url = item.get("page_url", "")
