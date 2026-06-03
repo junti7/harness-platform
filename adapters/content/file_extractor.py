@@ -114,8 +114,18 @@ def extract_file_data(signal_id, title, url):
             # 임시 파일로 저장 후 읽기
             with tempfile.NamedTemporaryFile(delete=False) as tmp:
                 download.save_as(tmp.name)
-                with open(tmp.name, 'r', encoding='utf-8', errors='replace') as f:
-                    raw_content = f.read()[:10000] # 앞부분 10000자만 저장
+                
+                # NUL 바이트 에러(PostgreSQL 한계) 방지 및 바이너리 판별
+                file_ext = file_name.split('.')[-1].lower() if '.' in file_name else ''
+                binary_exts = ['hwpx', 'hwp', 'pdf', 'zip', 'xls', 'xlsx', 'png', 'jpg', 'jpeg']
+                
+                if file_ext in binary_exts:
+                    raw_content = f"[바이너리 파일 다운로드 성공: {file_name}]\\n데이터 크기: {os.path.getsize(tmp.name)} bytes\\n(실제 서비스 시 AWS S3 등 오브젝트 스토리지에 저장 후 URL 연동 요망)"
+                else:
+                    with open(tmp.name, 'r', encoding='utf-8', errors='replace') as f:
+                        content = f.read()[:10000] # 앞부분 10000자만 저장
+                        # PostgreSQL NUL 바이트(\x00) 에러 완벽 차단
+                        raw_content = content.replace('\\x00', '')
             
             import os
             os.remove(tmp.name)
