@@ -95,13 +95,15 @@ TOOL_KEYWORDS = [
     "상품", "최저가", "가격비교", "가격 비교",
     "검색", "찾아줘", "최신", "페이지", "substack.com", "봐줘", "검토", "status", "상태", "헬스",
     "health", "decision card", "승인", "approve", "hold", "reject", "pipeline",
+    "종목", "매수", "매입", "매도", "매매", "투자", "포지션", "포트폴리오", "alpaca", "ibkr", "트레이딩", "주식",
 ]
 _EXPLICIT_TOOL_NEED_RE = re.compile(
     r"(파일|pdf|실행|스크립트|수정|저장|삭제|보내|전송|작성|만들어|읽어|목록|"
     r"채널|슬랙|생성|업로드|코드|수집|뉴스레터|이슈|배포|구독자|"
     r"링크|url|http://|https://|웹검색|웹 검색|브라우저|browser|"
     r"쿠팡|파트너스 api|상품|최저가|가격비교|가격 비교|검색|찾아줘|최신|페이지|substack\.com|"
-    r"봐줘|검토|decision card|승인|approve|hold|reject|pipeline)",
+    r"봐줘|검토|decision card|승인|approve|hold|reject|pipeline|"
+    r"종목|매수|매입|매도|매매|투자|포지션|포트폴리오|alpaca|ibkr|트레이딩|주식)",
     re.IGNORECASE,
 )
 _HARD_TOOL_NEED_RE = re.compile(
@@ -109,7 +111,8 @@ _HARD_TOOL_NEED_RE = re.compile(
     r"채널|슬랙|생성|업로드|코드|수집|뉴스레터|이슈|배포|구독자|"
     r"링크|url|http://|https://|웹검색|웹 검색|브라우저|browser|"
     r"쿠팡|파트너스 api|상품|최저가|가격비교|가격 비교|검색|찾아줘|최신|페이지|substack\.com|"
-    r"decision card|승인|approve|hold|reject|pipeline)",
+    r"decision card|승인|approve|hold|reject|pipeline|"
+    r"종목|매수|매입|매도|매매|투자|포지션|포트폴리오|alpaca|ibkr|트레이딩|주식)",
     re.IGNORECASE,
 )
 _ANALYSIS_CHAT_RE = re.compile(
