@@ -5127,8 +5127,8 @@ _OBSERVATIONS_PATH = PROJECT_ROOT / "data" / "edu_research" / "manual_observatio
 _EVIDENCE_MAX_LINES = 8  # 한 대화에 주입하는 cite 상한 — 매번 다른 조합으로 회전
 
 
-def _load_evidence(segment: str) -> str:
-    """세그먼트에 맞는 실제 인용 자료를 프롬프트용 텍스트로 반환.
+def _select_evidence_lines(segment: str) -> list[str]:
+    """세그먼트에 맞는 실제 인용 자료를 회전 샘플링해 라인 리스트로 반환.
 
     '같은 말만 반복'을 막기 위해, 매 호출마다 최신 항목(파이프라인 수집분)을
     우선 가중치로 두고 무작위 회전 샘플링한다. evidence_bank.json은
@@ -5179,8 +5179,110 @@ def _load_evidence(segment: str) -> str:
     random.shuffle(pool)
     selected += pool[: max(0, _EVIDENCE_MAX_LINES - len(selected))]
     random.shuffle(selected)  # 최신/앵커 순서까지 섞어 첫 인용이 고정되지 않게
+    return selected
 
+
+def _load_evidence(segment: str) -> str:
+    """diagnose용 — id 없이 프롬프트 텍스트로 반환 (인용은 LLM 자율 추임새)."""
+    selected = _select_evidence_lines(segment)
     return "\n".join(selected) if selected else "(이번엔 마땅한 자료 없음 — 인용 없이 대화)"
+
+
+def _load_evidence_indexed(segment: str) -> tuple[str, set[str]]:
+    """curriculum용 — 각 항목에 [E1],[E2]… id를 붙여 텍스트와 유효 id 집합을 반환.
+
+    LLM이 seasoning에서 인용한 근거를 evidence_id로 참조하게 하고, 서버는 그 id가
+    실재하는지만 검증한다(텍스트를 regex로 잘라내지 않음 = LLM-native 사실성 보증).
+    """
+    selected = _select_evidence_lines(segment)
+    return _format_indexed(selected, "(이번엔 마땅한 자료 없음 — 인용 없이 처방)")
+
+
+def _format_indexed(lines: list[str], empty_msg: str) -> tuple[str, set[str]]:
+    if not lines:
+        return empty_msg, set()
+    ids: set[str] = set()
+    out: list[str] = []
+    for i, line in enumerate(lines, start=1):
+        eid = f"E{i}"
+        ids.add(eid)
+        out.append(f"[{eid}] {line}")
+    return "\n".join(out), ids
+
+
+# ── 의향기반 RAG 검색 (gemini-embedding-001 인덱스) ─────────────────────────────
+# Deep Research 전체 코퍼스에서 '고객 대화의 의향'에 가장 가까운 근거를 검색해 주입한다.
+# 미리 정한 segment/랜덤이 아니라, 누가 무엇을 묻든 의미 유사도로 최적 근거를 고른다.
+_EDU_INDEX_PATH = PROJECT_ROOT / "data" / "edu_research" / "evidence_index.json"
+_edu_index_cache: dict[str, Any] = {"mtime": None, "items": []}
+_edu_index_lock = threading.Lock()
+
+
+def _load_rag_index() -> list[dict]:
+    """RAG 인덱스를 캐시하고, 파일이 갱신되면(mtime 변경) 자동 재로딩한다."""
+    try:
+        mtime = _EDU_INDEX_PATH.stat().st_mtime
+    except OSError:
+        return []
+    with _edu_index_lock:
+        if _edu_index_cache["mtime"] != mtime:
+            try:
+                data = json.loads(_EDU_INDEX_PATH.read_text(encoding="utf-8"))
+                _edu_index_cache["items"] = [it for it in data.get("items", []) if it.get("emb")]
+                _edu_index_cache["mtime"] = mtime
+            except Exception:
+                return _edu_index_cache.get("items", [])
+        return _edu_index_cache["items"]
+
+
+def _edu_query_text(history: list, user_text: str = "") -> str:
+    """검색 질의 = 고객의 의향이 담긴 발화(최근 사용자 턴 + 최신 입력). 캡 적용."""
+    parts: list[str] = []
+    for t in list(history or [])[-6:]:
+        role = getattr(t, "role", None) or (t.get("role") if isinstance(t, dict) else "user")
+        text = getattr(t, "text", None) or (t.get("text") if isinstance(t, dict) else "") or ""
+        if role != "ai" and text.strip():
+            parts.append(text.strip())
+    if user_text and user_text.strip():
+        parts.append(user_text.strip())
+    q = " ".join(parts)[-1200:]
+    return q.strip()
+
+
+def _retrieve_lines(query: str, k: int) -> list[str] | None:
+    """질의에 의미상 가장 가까운 근거 라인 top-k. 인덱스/임베딩 실패 시 None(→랜덤 폴백)."""
+    items = _load_rag_index()
+    if not items or not query:
+        return None
+    try:
+        from core.embeddings import embed_query, cosine_topk
+        qv = embed_query(query)
+    except Exception:
+        return None
+    by_id = {it["id"]: it for it in items}
+    top = cosine_topk(qv, [(it["id"], it["emb"]) for it in items], k)
+    lines: list[str] = []
+    for cid, _score in top:
+        it = by_id.get(cid)
+        if it:
+            lines.append(f"- ({it.get('type','근거')}) {it['cite']}\n  └ 출처: {it.get('source','')}")
+    return lines or None
+
+
+def _retrieve_evidence(query: str, segment: str, k: int = 8) -> str:
+    """diagnose용 — 의향기반 검색 텍스트. 실패 시 기존 랜덤 회전으로 graceful fallback."""
+    lines = _retrieve_lines(query, k)
+    if lines is None:
+        return _load_evidence(segment)
+    return "\n".join(lines)
+
+
+def _retrieve_evidence_indexed(query: str, segment: str, k: int = 8) -> tuple[str, set[str]]:
+    """curriculum용 — 의향기반 검색 + [E1].. id. 실패 시 랜덤 회전으로 fallback."""
+    lines = _retrieve_lines(query, k)
+    if lines is None:
+        return _load_evidence_indexed(segment)
+    return _format_indexed(lines, "(이번엔 마땅한 자료 없음 — 인용 없이 처방)")
 
 
 # ── Red Team 보강: 인젝션 경계 · 입력 캡 · rate-limit · budget · 날조/상업 필터 · disclaimer ──
@@ -5238,32 +5340,26 @@ def _edu_sanitize_history(history: list, ai_label: str = "선생님", user_label
     return f"<<대화_데이터>>\n{body}\n<<대화_데이터_끝>>"
 
 
-# 상업/가격 노출 금칙어 — 전환 원칙(가격 비노출) 후처리 강제
+# 상업/가격 노출 '감지'용 — 전환 원칙(가격 비노출). 텍스트를 자르지 않고 재생성 트리거로만 쓴다.
 _EDU_COMMERCIAL_RE = re.compile(
     r"(₩|\bKRW\b|결제|구독료|구독\s*권|유료|할인|환불|입금|청구|"
     r"\d[\d,]*\s*원|\d+\s*만\s*원|월\s*\d[\d,]*\s*원|마감|오늘만|선착순)"
 )
 
 
-def _edu_strip_commercial(text: str) -> str:
-    """가격·결제·할인·마감 등 상업 표현이 든 문장을 제거 (문장 단위)."""
-    if not text:
-        return text
-    parts = re.split(r"(?<=[.!?。…])\s+", text)
-    kept = [p for p in parts if not _EDU_COMMERCIAL_RE.search(p)]
-    return " ".join(kept).strip() or ""
+def _edu_has_commercial(text: str) -> bool:
+    """가격·결제 등 상업 표현이 들어있는지 '감지'만 한다(LLM 재생성 트리거용)."""
+    return bool(text) and bool(_EDU_COMMERCIAL_RE.search(text))
 
 
-# 날조 가드 — evidence 풀에 없는 '구체 수치/퍼센트/연도' 또는 '특정 기관·연구' 인용을 제거
+# 날조 '감지'용 — evidence에 없는 구체 수치·특정 기관 인용을 탐지(텍스트를 자르지 않고 재생성 트리거).
 _EDU_NUM_RE = re.compile(r"(\d[\d,\.]*)\s*(%|퍼센트|명|배|년|개월|주|시간|만\s*명|억|천)")
-# 특정 연구/기관을 콕 집어 인용하는 패턴 — (1) 알려진 고유명 allowlist (2) 일반형 '○○대학교/연구소/연구진'
 _EDU_INST_NAMED_RE = re.compile(
-    r"(하버드|스탠퍼드|MIT|옥스퍼드|케임브리지|예일|버클리|프린스턴|스탠포드|"
+    r"(하버드|스탠퍼드|스탠포드|MIT|옥스퍼드|케임브리지|예일|버클리|프린스턴|"
     r"서울대|카이스트|KAIST|연세대|고려대|포스텍|성균관|한양대|"
-    r"OECD|유네스코|UNESCO|WHO|퓨리서치|Pew|구글|마이크로소프트|애플|메타|OpenAI|딥마인드|MS)"
+    r"OECD|유네스코|UNESCO|WHO|퓨리서치|Pew|구글|마이크로소프트|애플|메타|OpenAI|딥마인드)"
     r"[^.!?。…\n]{0,20}(연구|논문|조사|보고서|발표|실험|설문|통계)"
 )
-# 일반형: '한 단어' + 대학교/연구소/연구진/연구팀/학회 (+ 인용 동사) — 기관 머리말 캡처
 _EDU_INST_GENERIC_RE = re.compile(
     r"([가-힣A-Za-z]{2,12})\s*(대학교|대학원|연구소|연구원|연구진|연구팀|학회|재단)"
     r"[^.!?。…\n]{0,15}(연구|논문|조사|보고서|발표|실험|설문|에 따르면)"
@@ -5272,49 +5368,29 @@ _EDU_INST_GENERIC_RE = re.compile(
 
 def _edu_numeric_tokens(text: str) -> set[str]:
     """텍스트 안의 '수치+단위' 토큰 집합 (예: '40%', '3시간')."""
-    return {f"{m.group(1).replace(',', '')}{m.group(2).replace(' ', '')}" for m in _EDU_NUM_RE.finditer(text)}
+    return {f"{m.group(1).replace(',', '')}{m.group(2).replace(' ', '')}" for m in _EDU_NUM_RE.finditer(text or "")}
 
 
-def _edu_sentence_has_fake_institution(sentence: str, evidence_text: str) -> bool:
-    """문장이 evidence에 없는 특정 기관 인용을 담고 있으면 True."""
-    mn = _EDU_INST_NAMED_RE.search(sentence)
+def _edu_has_fabrication(text: str, evidence_text: str, evidence_nums: set[str], check_numeric: bool = True) -> bool:
+    """evidence에 없는 구체 수치·특정 기관 인용이 있으면 True (감지만, 텍스트 미변형).
+
+    텍스트를 자르지 않는다 — 감지되면 LLM에 '재생성'을 요구하는 트리거로만 쓴다.
+    do_now(실습)처럼 수치가 정상인 필드는 check_numeric=False로 기관 날조만 본다.
+    """
+    if not text:
+        return False
+    if check_numeric:
+        for mt in _EDU_NUM_RE.finditer(text):
+            tok = f"{mt.group(1).replace(',', '')}{mt.group(2).replace(' ', '')}"
+            if tok not in evidence_nums:          # evidence에 없는 수치 → 날조 의심
+                return True
+    mn = _EDU_INST_NAMED_RE.search(text)
     if mn and mn.group(1) not in evidence_text:
         return True
-    mg = _EDU_INST_GENERIC_RE.search(sentence)
+    mg = _EDU_INST_GENERIC_RE.search(text)
     if mg and mg.group(1) not in evidence_text:
         return True
     return False
-
-
-def _edu_guard_text(text: str, evidence_text: str, evidence_nums: set[str], check_numeric: bool = True) -> str:
-    """evidence 풀에 없는 구체 수치·특정 기관 인용을 '문장 단위'로 제거.
-
-    가장 치명적인 날조(없는 통계·수치·연구기관 인용)를 서버에서 차단한다.
-    evidence에 실제 존재하는 수치/기관은 통과. 수치 없는 일반 추임새는 유지.
-    do_now(실습 지시)처럼 수치가 정상인 필드는 check_numeric=False로 기관 날조만 검사.
-    """
-    if not text:
-        return ""
-    parts = re.split(r"(?<=[.!?。…])\s+|\n+", text)
-    kept: list[str] = []
-    for p in parts:
-        bad = False
-        if check_numeric:
-            for m in _EDU_NUM_RE.finditer(p):
-                tok = f"{m.group(1).replace(',', '')}{m.group(2).replace(' ', '')}"
-                if tok not in evidence_nums:      # evidence에 없는 수치 → 날조 의심
-                    bad = True
-                    break
-        if not bad and _edu_sentence_has_fake_institution(p, evidence_text):
-            bad = True
-        if not bad:
-            kept.append(p)
-    return " ".join(kept).strip()
-
-
-def _edu_guard_seasoning(seasoning: str, evidence_text: str) -> str:
-    """하위호환 래퍼."""
-    return _edu_guard_text(seasoning, evidence_text, _edu_numeric_tokens(evidence_text))
 
 
 # ── 공개 엔드포인트 rate-limit + 일일 budget gate (in-memory) ──
@@ -5421,7 +5497,10 @@ def _run_edu_diagnose(req: EduDiagnoseRequest) -> dict[str, Any]:
     user_text = _edu_neutralize(req.user_text)
     user_block = (f"<<대화_데이터>>\n{user_text}\n<<대화_데이터_끝>>"
                   if user_text else "(첫 진입 — 사용자가 아직 말하지 않음)")
-    ladder = _EDU_TONE_LADDER.replace("__EVIDENCE__", _load_evidence(req.segment))
+    # 의향기반 RAG: 고객 발화에 가장 가까운 근거를 전체 코퍼스에서 검색 (실패 시 랜덤 폴백)
+    evidence_txt = _retrieve_evidence(_edu_query_text(req.history, req.user_text), req.segment)
+    ev_nums = _edu_numeric_tokens(evidence_txt)
+    ladder = _EDU_TONE_LADDER.replace("__EVIDENCE__", evidence_txt)
     prompt = (
         f"{ladder}\n\n"
         f"{_EDU_INJECTION_GUARD}\n\n"
@@ -5462,11 +5541,14 @@ def _run_edu_diagnose(req: EduDiagnoseRequest) -> dict[str, Any]:
             message = (data.get("message") or "").strip()
             if not message:
                 raise ValueError("message 필드 비어 있음")
-            # 가격 노출 후처리 차단 (대화 표면에도 적용). 필터가 통째로 비우면
-            # 원문 복원이 아니라 안전한 중립 문구로 대체(상업표현만으로 된 답변 차단).
-            stripped = _edu_strip_commercial(message)
-            message = stripped if stripped else "조금만 더 말씀해 주시겠어요? 같이 차근히 보겠습니다."
-            quick = [q for q in (data.get("quick_replies", []) or []) if not _EDU_COMMERCIAL_RE.search(str(q))]
+            # 가격·날조는 텍스트를 자르지 않고 '재생성'으로 푼다(LLM-native).
+            violation = _edu_has_commercial(message) or _edu_has_fabrication(message, evidence_txt, ev_nums)
+            if violation and attempt == 0:
+                raise ValueError("가격/날조 감지 — 재생성")
+            if violation:
+                # 끝까지 남으면 텍스트를 자르지 않고 안전한 중립 문구로 대체
+                message = "조금만 더 말씀해 주시겠어요? 같이 차근히 보겠습니다."
+            quick = [q for q in (data.get("quick_replies", []) or []) if not _edu_has_commercial(str(q))]
             return {
                 "ok": True,
                 "message": message,
@@ -5533,11 +5615,12 @@ _EDU_CURRICULUM_PROMPT = """너는 앞서 손님과 충분히 대화를 나눈, 
 일반론으로 빠지면 실패다. "아까 ~라고 하셨죠" 처럼 손님이 한 말을 되짚어 처방에 연결한다.
 손님이 말한 자녀 학년/직무, 막힌 지점, 감정을 모듈마다 다르게 반영한다.
 
-[근거 양념 — '진짜 전문가' 신빙성]
+[근거 양념 — '진짜 전문가' 신빙성 (반드시 출처 id 명시)]
 각 모듈에 아래 [인용 가능한 실제 자료] 중 하나를 추임새로 자연스럽게 녹인다("요즘 연구를 보면…").
-한 모듈에 하나씩, 흐름에 맞을 때만. 목록에 없는 연구·통계·수치·기관명·고유명사는 절대 지어내지 않는다.
-특히 새로운 퍼센트·인원수·연도 같은 구체 수치를 만들어내지 않는다(목록에 있는 수치만 사용).
-인용할 자료가 마땅치 않은 모듈은 seasoning을 빈 문자열로 둔다. 날조는 신뢰를 영구히 파괴한다.
+**seasoning을 쓰면, 그 근거가 된 자료의 id([E1] 같은)를 반드시 evidence_id에 적는다.**
+목록에 없는 연구·통계·수치·기관명·고유명사는 절대 지어내지 않는다. 목록에 있는 수치만 사용한다.
+인용할 자료가 마땅치 않으면 seasoning을 빈 문자열로, evidence_id도 빈 문자열로 둔다.
+**목록에 없는 내용을 seasoning에 쓰면서 evidence_id를 지어내면 그 모듈은 통째로 폐기된다.** 날조는 신뢰를 영구히 파괴한다.
 
 [효과 표현 — 법적 안전]
 효과를 단정·보장하지 않는다. "분명히 ~된다"가 아니라 "한결 또렷해지실 수 있어요", "도움이 될 거예요"
@@ -5569,6 +5652,7 @@ __EVIDENCE__
       "why_you": "왜 당신에게 이게 필요한가 — 대화에서 손님이 한 말을 되짚어 연결 (1~2문장)",
       "do_now": "오늘 바로 해볼 아주 구체적인 행동/문장 (1~2문장)",
       "seasoning": "근거 양념 한 줄 (연구·사례 추임새, 없으면 빈 문자열)",
+      "evidence_id": "seasoning의 근거가 된 자료 id (예: E1). seasoning이 비면 빈 문자열",
       "minutes": 10
     }
   ],
@@ -5586,7 +5670,8 @@ def _run_edu_curriculum(req: EduCurriculumRequest) -> dict[str, Any]:
     preferred_salutation = _edu_normalize_salutation(req.preferred_salutation)
     locale = _edu_normalize_locale(req.locale)
     convo = _edu_sanitize_history(req.history, ai_label="선생님", user_label="손님")
-    evidence = _load_evidence(req.segment)   # 날조 가드용으로 evidence 풀 보관
+    # 의향기반 RAG: 대화 전체에서 손님 상황에 가장 가까운 근거를 검색 (실패 시 랜덤 폴백)
+    evidence, valid_ids = _retrieve_evidence_indexed(_edu_query_text(req.history), req.segment)
     base = _EDU_CURRICULUM_PROMPT.replace("__EVIDENCE__", evidence)
     prompt = (
         f"{base}\n\n"
@@ -5625,38 +5710,63 @@ def _run_edu_curriculum(req: EduCurriculumRequest) -> dict[str, Any]:
             modules = data.get("modules") or []
             if not isinstance(modules, list) or not modules:
                 raise ValueError("modules 비어 있음")
-            ev_nums = _edu_numeric_tokens(evidence)
 
-            def _clean_claim(s: str) -> str:
-                # 날조 가드(수치·기관) + 상업 표현 제거를 claim/서술 필드에 모두 적용
-                return _edu_strip_commercial(_edu_guard_text((s or "").strip(), evidence, ev_nums))
-
-            def _clean_instruction(s: str) -> str:
-                # do_now(실습)는 수치가 정상이므로 기관 날조 + 상업 표현만 제거
-                return _edu_strip_commercial(_edu_guard_text((s or "").strip(), evidence, ev_nums, check_numeric=False))
-
+            # 구조 정규화만 한다(텍스트는 LLM 결과 그대로 — regex로 잘라내지 않음).
             norm_modules = []
             for i, mod in enumerate(modules[:max_mods], start=1):  # 트랙별 모듈 수 상한
                 if not isinstance(mod, dict):
                     continue
                 norm_modules.append({
                     "step": int(mod.get("step", i)),
-                    "title": _edu_strip_commercial((mod.get("title") or "").strip()),
-                    "why_you": _clean_claim(mod.get("why_you")),
-                    "do_now": _clean_instruction(mod.get("do_now")),
-                    "seasoning": _clean_claim(mod.get("seasoning")),
+                    "title": (mod.get("title") or "").strip(),
+                    "why_you": (mod.get("why_you") or "").strip(),
+                    "do_now": (mod.get("do_now") or "").strip(),
+                    "seasoning": (mod.get("seasoning") or "").strip(),
+                    "evidence_id": (mod.get("evidence_id") or "").strip(),
                     "minutes": max(0, min(180, int(mod.get("minutes", 10) or 10))),
                 })
             norm_modules = [m for m in norm_modules if m["title"]]  # 제목 없는 모듈 탈락
             if not norm_modules:
                 raise ValueError("정규화 후 modules 비어 있음")
+
+            reading = (data.get("reading") or "").strip()
+            intro = (data.get("intro") or "").strip()
+            closing = (data.get("closing") or "").strip()
+
+            # LLM-native 검증: 위반이면 텍스트를 '자르지 않고' 재생성/안전 fallback으로 푼다.
+            ev_nums = _edu_numeric_tokens(evidence)
+            claim_text = " ".join([reading, intro, closing] +
+                                   [f"{m['why_you']} {m['seasoning']}" for m in norm_modules])
+            instr_text = " ".join(f"{m['title']} {m['do_now']}" for m in norm_modules)
+            commercial = _edu_has_commercial(claim_text + " " + instr_text)
+            # 날조: 서술필드는 수치+기관, 지시필드는 기관만(수치는 실습상 정상)
+            fabrication = (_edu_has_fabrication(claim_text, evidence, ev_nums, check_numeric=True)
+                           or _edu_has_fabrication(instr_text, evidence, ev_nums, check_numeric=False))
+            # seasoning이 있는데 근거 id가 유효 집합에 없으면 = 출처 날조 의심
+            bad_cite = any(m["seasoning"] and m["evidence_id"] not in valid_ids for m in norm_modules)
+
+            if (commercial or fabrication or bad_cite) and attempt == 0:
+                # 마지막 시도가 아니면 다시 생성하게 한다 (대화 내용은 절대 손대지 않음)
+                raise ValueError(f"검증 위반 재생성 (commercial={commercial}, fabrication={fabrication}, bad_cite={bad_cite})")
+
+            if commercial or fabrication:
+                # 끝까지 가격/날조가 남으면 텍스트를 자르지 않고 안전한 fallback으로 대체
+                _log.warning(f"[edu_curriculum] 잔존 위반 — fallback (commercial={commercial}, fabrication={fabrication})")
+                return _edu_curriculum_fallback(req, track)
+
+            # 출처 id만 무효인 경우: 본문은 그대로 두고, 근거 없는 '추임새'만 비운다(선택적 인용 제거).
+            for m in norm_modules:
+                if m["seasoning"] and m["evidence_id"] not in valid_ids:
+                    m["seasoning"] = ""
+                m.pop("evidence_id", None)  # 내부용 필드는 응답에서 제거
+
             return {
                 "ok": True,
                 "track": track,
-                "reading": _clean_claim(data.get("reading")),
-                "intro": _clean_claim(data.get("intro")),
+                "reading": reading,
+                "intro": intro,
                 "modules": norm_modules,
-                "closing": _clean_claim(data.get("closing")),
+                "closing": closing,
                 "disclaimer": _EDU_DISCLAIMER,
             }
         except Exception as exc:  # noqa: BLE001

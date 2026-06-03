@@ -31,3 +31,4 @@ harness-os/backend/passwords.json
 # Local workspace temporary files
 .antigravitycli/
 scratch/
+data/edu_research/evidence_index.json

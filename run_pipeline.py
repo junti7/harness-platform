@@ -225,6 +225,17 @@ def run():
     except Exception as e:
         logger.warning(f"[근거 뱅크] 갱신 실패 (비치명적): {e}")
 
+    # 교육 RAG 인덱스 증분 갱신 — 오늘 새로 정제된 항목만 임베딩해 검색 코퍼스에 stack.
+    # 매일 누적되어 RAG가 갈수록 두꺼워진다(상담 근거 품질 상승). 비치명적.
+    try:
+        from scripts.build_edu_evidence_index import build, INDEX_PATH
+        import json as _json
+        index = build(rebuild=False)
+        INDEX_PATH.write_text(_json.dumps(index, ensure_ascii=False), encoding="utf-8")
+        logger.info(f"[RAG 인덱스] 증분 갱신 완료: 총 {index['count']}건")
+    except Exception as e:
+        logger.warning(f"[RAG 인덱스] 갱신 실패 (비치명적): {e}")
+
     elapsed = time.time() - start
     logger.info("=" * 60)
     logger.info(
