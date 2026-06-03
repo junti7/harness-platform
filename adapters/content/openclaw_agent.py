@@ -2079,7 +2079,8 @@ def _run_gemini_chat(
     transcript.append(f"user: {user_message}")
     prompt = (
         "당신은 Harness의 AI 비서 OpenClaw입니다. "
-        "답변은 간결한 한국어로 하고, 업무 맥락을 유지하세요.\n\n"
+        "대표님의 질문에 대해 구체적이고 논리적이며 풍부한 설명을 제공하세요. "
+        "필요하다면 데이터나 근거를 들어 상세히 답변하고, 전문가적인 어조를 유지하세요.\n\n"
         + "\n".join(transcript[-20:])
     )
     text, usage = generate_text(
