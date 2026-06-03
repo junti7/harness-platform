@@ -116,17 +116,53 @@ def extract_file_data(signal_id, title, url):
             with tempfile.NamedTemporaryFile(delete=False) as tmp:
                 download.save_as(tmp.name)
                 
-                # NUL 바이트 에러(PostgreSQL 한계) 방지 및 바이너리 판별
+                # NUL 바이트 에러(PostgreSQL 한계) 방지 및 바이너리 텍스트 파싱
                 file_ext = file_name.split('.')[-1].lower() if '.' in file_name else ''
-                binary_exts = ['hwpx', 'hwp', 'pdf', 'zip', 'xls', 'xlsx', 'png', 'jpg', 'jpeg']
+                binary_exts = ['hwp', 'zip', 'xls', 'xlsx', 'png', 'jpg', 'jpeg']
                 
-                if file_ext in binary_exts:
-                    raw_content = f"[바이너리 파일 다운로드 성공: {file_name}]\\n데이터 크기: {os.path.getsize(tmp.name)} bytes\\n(실제 서비스 시 AWS S3 등 오브젝트 스토리지에 저장 후 URL 연동 요망)"
+                raw_content = ""
+                if file_ext == 'hwpx':
+                    # HWPX는 zip 압축된 XML 파일 묶음이므로 파싱 시도
+                    try:
+                        import zipfile, xml.etree.ElementTree as ET
+                        with zipfile.ZipFile(tmp.name, 'r') as zf:
+                            xml_texts = []
+                            for name in zf.namelist():
+                                if name.startswith('Contents/section') and name.endswith('.xml'):
+                                    xml_data = zf.read(name)
+                                    root = ET.fromstring(xml_data)
+                                    # 모든 텍스트 노드 추출 (네임스페이스 무시하고 단순 텍스트 결합)
+                                    texts = "".join(root.itertext())
+                                    if texts:
+                                        xml_texts.append(texts.strip())
+                            if xml_texts:
+                                parsed = "\n".join(xml_texts)[:10000]
+                                raw_content = f"[HWPX 파싱 결과 요약]\n{parsed}".replace('\x00', '')
+                            else:
+                                raw_content = "[HWPX 파싱 실패: 텍스트 노드를 찾을 수 없습니다]"
+                    except Exception as e:
+                        raw_content = f"[HWPX 파싱 실패: {e}]"
+                        
+                elif file_ext == 'pdf':
+                    # PDF는 PyMuPDF(fitz)로 텍스트 추출
+                    try:
+                        import fitz
+                        doc = fitz.open(tmp.name)
+                        pdf_texts = []
+                        for page in doc:
+                            pdf_texts.append(page.get_text())
+                        parsed = "\n".join(pdf_texts)[:10000]
+                        raw_content = f"[PDF 파싱 결과 요약]\n{parsed}".replace('\x00', '')
+                    except Exception as e:
+                        raw_content = f"[PDF 파싱 실패: {e}]"
+                
+                elif file_ext in binary_exts:
+                    raw_content = f"[지원하지 않는 바이너리 형식: {file_name}]\n데이터 크기: {os.path.getsize(tmp.name)} bytes\n(HWPX 및 PDF만 본문 파싱을 지원합니다)"
                 else:
                     with open(tmp.name, 'r', encoding='utf-8', errors='replace') as f:
                         content = f.read()[:10000] # 앞부분 10000자만 저장
                         # PostgreSQL NUL 바이트(\x00) 에러 완벽 차단
-                        raw_content = content.replace('\\x00', '')
+                        raw_content = content.replace('\x00', '')
             
             os.remove(tmp.name)
             

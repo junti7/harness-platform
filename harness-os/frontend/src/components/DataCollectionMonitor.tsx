@@ -71,10 +71,9 @@ const CLUSTER_LABELS: Record<string, string> = {
 
 function clusterLabel(key: string) {
   return CLUSTER_LABELS[key] || key.replaceAll('_', ' ')
-}
-
 export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props) {
   const [rawStats, setRawStats] = useState<any[]>([])
+  const [selectedRawStat, setSelectedRawStat] = useState<any | null>(null)
 
   useEffect(() => {
     fetch('http://100.97.175.44:8000/api/statistics_data')
@@ -624,17 +623,20 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
             <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '1rem 0' }}>적재된 알맹이 데이터가 없습니다.</p>
           )}
           {rawStats.map((item, idx) => (
-            <div key={idx} style={{
-              display: 'grid',
-              gridTemplateColumns: '80px 1fr 1fr 100px',
-              gap: '0.75rem',
-              alignItems: 'center',
-              padding: '0.5rem 0',
-              borderBottom: idx < rawStats.length - 1 ? '1px solid var(--color-border)' : 'none',
-              fontSize: '0.8rem',
-            }}>
+            <div key={idx} 
+              onClick={() => setSelectedRawStat(item)}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '80px 1fr 1fr 100px',
+                gap: '0.75rem',
+                alignItems: 'center',
+                padding: '0.5rem 0',
+                borderBottom: idx < rawStats.length - 1 ? '1px solid var(--color-border)' : 'none',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+              }}>
               <span style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>{item.source}</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text)' }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-accent)', fontWeight: 600 }}>
                 {item.file_name}
               </span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>
@@ -645,6 +647,32 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
           ))}
         </div>
       </div>
+
+      {selectedRawStat && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+          background: 'rgba(0,0,0,0.5)', zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }} onClick={() => setSelectedRawStat(null)}>
+          <div style={{
+            background: 'var(--color-surface)', width: '80%', maxWidth: '800px', maxHeight: '80vh',
+            borderRadius: '8px', padding: '1.5rem', display: 'flex', flexDirection: 'column',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--color-text)' }}>{selectedRawStat.file_name}</h3>
+              <button onClick={() => setSelectedRawStat(null)} style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+            <div style={{
+              flex: 1, overflowY: 'auto', background: 'var(--color-surface-lighter)',
+              padding: '1rem', borderRadius: '6px', fontSize: '0.85rem', color: 'var(--color-text)',
+              whiteSpace: 'pre-wrap', border: '1px solid var(--color-border)', fontFamily: 'monospace'
+            }}>
+              {selectedRawStat.raw_content || '내용 없음'}
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
