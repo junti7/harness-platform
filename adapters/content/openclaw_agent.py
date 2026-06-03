@@ -2129,18 +2129,45 @@ def _is_response_truncated(text: str) -> bool:
     text = text.rstrip()
     if not text:
         return False
-    # 마지막 줄이 문장 종결 없이 끝나면 잘린 것
+    if len(text) < 80:
+        return False  # 아주 짧은 응답은 잘린 게 아니라 원래 짧은 것
+
     last_line = text.split('\n')[-1].strip()
-    # 정상 종결 패턴: 마침표, 느낌표, 물음표, 닫는 괄호/따옴표, 이모지, 코드블록 끝
-    normal_endings = ('.', '!', '?', ')', ']', '」', '"', "'", '```', '~', '…')
-    if last_line and not any(last_line.endswith(e) for e in normal_endings):
-        # 마지막 글자가 한글 종성이면 정상 종결일 수 있음 (예: "입니다", "합니다")
-        last_char = last_line[-1]
-        if '\uAC00' <= last_char <= '\uD7A3':  # 한글 완성형
+    if not last_line:
+        return False
+
+    # 정상 종결 패턴: 마침표, 느낌표, 물음표, 닫는 괄호/따옴표, 코드블록 끝
+    normal_endings = ('.', '!', '?', ')', ']', '」', '"', "'", '```', '~', '…', '—')
+    if any(last_line.endswith(e) for e in normal_endings):
+        return False
+
+    # 한글로 끝나는 경우: 종결어미인지 확인
+    last_char = last_line[-1]
+    if '\uAC00' <= last_char <= '\uD7A3':
+        # 한국어 종결어미 패턴 (다, 요, 죠, 음, 임, 함, 됨, 세요, 니다, 까요 등)
+        terminal_suffixes = (
+            '다', '요', '죠', '죠', '음', '임', '함', '됨', '럼', '것',
+            '세', '네', '지', '해', '줘', '봐', '라', '자', '만',
+        )
+        # 마지막 2글자까지 종결어미 확인
+        tail2 = last_line[-2:] if len(last_line) >= 2 else last_line
+        tail3 = last_line[-3:] if len(last_line) >= 3 else last_line
+        compound_terminals = (
+            '니다', '세요', '까요', '어요', '아요', '지요', '나요',
+            '해요', '네요', '군요', '는데', '겠다', '었다', '였다',
+            '합니', '입니', '줍니', '됩니', '습니',
+        )
+        if any(tail3.endswith(ct) for ct in compound_terminals):
             return False
+        if any(tail2.endswith(ts) for ts in terminal_suffixes):
+            return False
+        # 종결어미가 아닌 한글로 끝남 → 잘린 것
         return True
-    # 번호 리스트에서 약속한 개수를 다 못 채운 경우
-    # 예: "3가지"라고 했는데 1, 2만 있음
+
+    # 영문 알파벳이나 숫자로 끝나면 → 잘린 것
+    if last_char.isalnum():
+        return True
+
     return False
 
 
@@ -2808,7 +2835,6 @@ def run(
             user_message,
             session_id=effective_session_id,
             history=history,
-            max_tokens=effective_chat_max_tokens,
             target_models=["claude", "gemini", "openai"]
         )
         return _finish(route_label, response)
