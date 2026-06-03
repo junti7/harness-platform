@@ -212,6 +212,19 @@ def run():
         _save_run_end(run_id, results, "failed", f"tier4:{e}")
         sys.exit(1)
 
+    # 교육 상담사 근거 뱅크 갱신 — 최신 edu_consulting 정제 결과를 상담 대화에 반영
+    # (실패해도 파이프라인 성공에 영향 주지 않음 — 비치명적)
+    try:
+        from scripts.refresh_edu_evidence_bank import build_bank, BANK_PATH
+        import json as _json
+        bank = build_bank(window_days=45, max_fresh=25)
+        if bank["_meta"]["counts"]["total"] > 0:
+            BANK_PATH.write_text(_json.dumps(bank, ensure_ascii=False, indent=2), encoding="utf-8")
+            c = bank["_meta"]["counts"]
+            logger.info(f"[근거 뱅크] 갱신 완료: 총 {c['total']} (앵커 {c['evergreen_anchors']} + 최신 {c['fresh_pipeline']})")
+    except Exception as e:
+        logger.warning(f"[근거 뱅크] 갱신 실패 (비치명적): {e}")
+
     elapsed = time.time() - start
     logger.info("=" * 60)
     logger.info(
