@@ -2093,6 +2093,82 @@ def _run_gemini_chat(
     return text.strip() or "응답 없음"
 
 
+_SESSION_LLM_MAP: dict[str, str] = {}
+
+def _run_openai_chat(user_message: str, history: list[dict[str, str]] | None = None, max_tokens: int | None = None) -> str:
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY is missing")
+    
+    messages = []
+    for turn in history or []:
+        role = "assistant" if turn.get("role") == "assistant" else "user"
+        messages.append({"role": role, "content": turn.get("content", "")})
+    messages.append({"role": "user", "content": user_message})
+    
+    import httpx
+    resp = httpx.post(
+        "https://api.openai.com/v1/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={
+            "model": "gpt-4o",
+            "messages": messages,
+            "max_tokens": max_tokens or 4096,
+        },
+        timeout=30.0,
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"]
+
+def _run_chat_with_handoff(
+    user_message: str,
+    session_id: str,
+    history: list[dict[str, str]] | None = None,
+    max_tokens: int | None = None,
+    target_models: list[str] | None = None
+) -> str:
+    if not target_models:
+        target_models = ["claude", "gemini", "openai"]
+        
+    current_llm = _SESSION_LLM_MAP.get(session_id, target_models[0])
+    llms_to_try = target_models[:]
+    if current_llm in llms_to_try:
+        llms_to_try.remove(current_llm)
+    llms_to_try.insert(0, current_llm)
+
+    handoff_message_appended = False
+
+    for llm in llms_to_try:
+        try:
+            logger.info(f"[handoff-router] 시도 중인 LLM: {llm} (Session: {session_id})")
+            if llm == "claude":
+                resp = _run_anthropic_chat(user_message, model=OPENCLAW_CHAT_MODEL, history=history, max_tokens=max_tokens)
+            elif llm == "gemini":
+                resp = _run_gemini_chat(user_message, history=history, max_tokens=max_tokens)
+            elif llm == "openai":
+                resp = _run_openai_chat(user_message, history=history, max_tokens=max_tokens)
+            else:
+                continue
+            
+            _SESSION_LLM_MAP[session_id] = llm
+            return resp
+            
+        except Exception as e:
+            err_str = str(e).lower()
+            if "credit" in err_str or "quota" in err_str or "balance" in err_str or "400" in err_str or "429" in err_str or "timeout" in err_str or "resource exhausted" in err_str:
+                logger.warning(f"[handoff-router] {llm} 실패(토큰/잔고 부족 등): {e}")
+                if not handoff_message_appended:
+                    user_message = f"[시스템 알림: 이전 AI 담당자의 API 할당량이 만료되어 귀하가 대화를 이어받았습니다. 이전 맥락을 완벽히 숙지하고 질문에 답변을 이어가세요.]\n\n{user_message}"
+                    handoff_message_appended = True
+                continue
+            else:
+                logger.error(f"[handoff-router] {llm} 알 수 없는 에러: {e}")
+                continue
+                
+    return "🚨 모든 가용 LLM(Claude, Gemini, OpenAI)의 토큰/잔액이 소진되었거나 응답에 실패했습니다."
+
+
+
 # ── Haiku intent classifier ──────────────────────────────────────────────────
 
 def _classify_intent_with_haiku(user_message: str) -> dict[str, Any] | None:
@@ -2627,49 +2703,21 @@ def run(
             chat_backend_mode=chat_backend_mode,
             effective_chat_model=effective_chat_model,
         )
-        if model_label == "local":
-            logger.info("[router] 일반 대화 → Tier0/Ollama")
-            _log_route_audit(
-                session_id=effective_session_id,
-                requester_user_id=requester_user_id,
-                user_message=user_message,
-                route=route_label,
-                risk_scan=risk_scan,
-                model=OLLAMA_CHAT_MODEL,
-            )
-            response = _run_ollama_chat(
-                user_message,
-                history=history,
-                fallback_model=effective_chat_model,
-                fallback_max_tokens=effective_chat_max_tokens,
-            )
-        else:
-            selected_model = OPENCLAW_INTENT_MODEL if model_label == "haiku" else effective_chat_model
-            target_provider = "Gemini" if _prefer_gemini_openclaw() else "Anthropic"
-            logger.info(f"[router] 일반 대화 → {target_provider}({selected_model})")
-            _log_route_audit(
-                session_id=effective_session_id,
-                requester_user_id=requester_user_id,
-                user_message=user_message,
-                route=route_label,
-                risk_scan=risk_scan,
-                model=gemini_model_name() if _prefer_gemini_openclaw() else selected_model,
-            )
-            if _prefer_gemini_openclaw():
-                response = _run_gemini_chat(
-                    user_message,
-                    history=history,
-                    max_tokens=effective_chat_max_tokens,
-                )
-            elif model_label == "haiku":
-                response = _run_haiku_chat(user_message, history=history)
-            else:
-                response = _run_anthropic_chat(
-                    user_message,
-                    model=effective_chat_model,
-                    history=history,
-                    max_tokens=effective_chat_max_tokens,
-                )
+        _log_route_audit(
+            session_id=effective_session_id,
+            requester_user_id=requester_user_id,
+            user_message=user_message,
+            route=route_label,
+            risk_scan=risk_scan,
+            model="handoff_router",
+        )
+        response = _run_chat_with_handoff(
+            user_message,
+            session_id=effective_session_id,
+            history=history,
+            max_tokens=effective_chat_max_tokens,
+            target_models=["claude", "gemini", "openai"]
+        )
         return _finish(route_label, response)
 
     logger.info(f"[router] 도구 사용 감지 → Tier2/Sonnet")
