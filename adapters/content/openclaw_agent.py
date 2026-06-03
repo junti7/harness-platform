@@ -2006,7 +2006,6 @@ def _run_ollama_chat(
     if "gemini" in resolved_fallback_model.lower() or os.getenv("HARNESS_OS_JARVIS_CHAT_BACKEND") == "gemini":
         return _run_gemini_chat(
             user_message,
-            model=resolved_fallback_model,
             history=history,
         )
     return _run_anthropic_chat(
