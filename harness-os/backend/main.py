@@ -6463,7 +6463,7 @@ def news_center_send_slack(
 def get_raw_statistics_data(_: None = Depends(_require_secret)):
     try:
         rows = execute_query(
-            "SELECT id, signal_id, source, raw_content, title, collected_at FROM raw_statistics_data ORDER BY collected_at DESC LIMIT 100",
+            "SELECT id, signal_id, source, raw_content, file_name, collected_at FROM raw_statistics_data ORDER BY collected_at DESC LIMIT 100",
             fetch=True
         )
         return {"data": rows}

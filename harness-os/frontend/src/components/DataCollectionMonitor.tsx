@@ -635,7 +635,7 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
             }}>
               <span style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>{item.source}</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text)' }}>
-                {item.title}
+                {item.file_name}
               </span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>
                 {String(item.raw_content || '').substring(0, 100)}...
