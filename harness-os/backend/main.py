@@ -1224,6 +1224,21 @@ def _physical_ai_recent_rows(limit: int = 120) -> list[dict[str, Any]]:
     )
 
 
+def _topic_cluster_rows(domain: str, limit: int = 8) -> list[dict[str, Any]]:
+    if domain == "physical_ai":
+        where = "coalesce(raw_data->>'domain', 'physical_ai') = %s"
+    else:
+        where = "coalesce(domain, raw_data->>'domain', '') = %s"
+    return _execute_query(
+        "SELECT raw_data->>'topic_cluster' AS cluster, count(*) AS cnt, max(ingested_at) AS last_at "
+        "FROM raw_signals "
+        f"WHERE {where} AND coalesce(raw_data->>'topic_cluster', '') <> '' "
+        "GROUP BY raw_data->>'topic_cluster' "
+        "ORDER BY cnt DESC, max(ingested_at) DESC LIMIT %s",
+        (domain, limit),
+    )
+
+
 def _physical_ai_source_rows() -> list[dict[str, Any]]:
     rows = _execute_query(
         "SELECT source_name, base_url, source_type, enabled, expected_signal_type, reliability_score, rate_limit_policy "
@@ -1405,6 +1420,24 @@ def _data_collection_monitor() -> dict[str, Any]:
 
         recent = _physical_ai_recent_rows(limit=12)
         topic_registry = ensure_fresh_topic_registry(domain, recent)
+        physical_ai_clusters = [
+            {
+                "cluster": str(row.get("cluster") or ""),
+                "count": int(row.get("cnt") or 0),
+                "last_at": str(row.get("last_at") or ""),
+                "domain": "physical_ai",
+            }
+            for row in _topic_cluster_rows("physical_ai", limit=8)
+        ]
+        edu_clusters = [
+            {
+                "cluster": str(row.get("cluster") or ""),
+                "count": int(row.get("cnt") or 0),
+                "last_at": str(row.get("last_at") or ""),
+                "domain": "edu_consulting",
+            }
+            for row in _topic_cluster_rows("edu_consulting", limit=8)
+        ]
         seed_topics = load_keyword_list(domain)
         active_topics = [
             {
@@ -1442,6 +1475,8 @@ def _data_collection_monitor() -> dict[str, Any]:
             "channel_coverage": build_channel_coverage(source_rows),
             "tier2_worker": _tier2_worker_health(domain),
             "persona_fallbacks": _persona_fallback_status(),
+            "topic_clusters": physical_ai_clusters,
+            "edu_topic_clusters": edu_clusters,
             "current_topics": active_topics,
             "suggested_topics": topic_registry.get("suggested_topics", []),
             "generated_query_sources": topic_registry.get("query_sources", []),
@@ -1491,6 +1526,8 @@ def _data_collection_monitor() -> dict[str, Any]:
                 "fallback_count": 0,
                 "personas": [],
             },
+            "topic_clusters": [],
+            "edu_topic_clusters": [],
             "current_topics": [],
             "suggested_topics": [],
             "generated_query_sources": [],
@@ -4142,6 +4179,7 @@ def get_pipeline_signals(
 ) -> dict[str, Any]:
     where: list[str] = []
     params: list[Any] = []
+    where.append("coalesce(rs.domain, rs.raw_data->>'domain', '') = 'edu_consulting'")
     if source:
         # 프론트 드롭다운 별칭 → 실제 DB source 패턴으로 매핑
         if source in ("rss", "news"):
@@ -4177,6 +4215,7 @@ def get_pipeline_signals(
         f"rs.raw_data->>'title' as title, "
         f"rs.raw_data->>'url' as url, "
         f"rs.raw_data->>'query' as query, "
+        f"rs.raw_data->>'topic_cluster' as topic_cluster, "
         f"COALESCE((rs.raw_data->>'tier2_score')::numeric, fs.score) as tier2_score, "
         f"rs.raw_data->>'tier2_reason' as tier2_reason, "
         f"rs.raw_data->>'tier2_insight' as tier2_insight, "
@@ -4530,6 +4569,16 @@ class EduDiagnoseRequest(BaseModel):
     history: list[EduDiagnoseTurn] = []
     user_text: str = ""               # 사용자 최신 자유 입력
     case_id: int | None = None        # 저장형 PoC용 케이스 식별자
+    preferred_salutation: str = "neutral"
+    locale: str = "ko-KR"
+
+
+class EduCurriculumRequest(BaseModel):
+    segment: str = "parent"               # 'parent' | 'worker'
+    track: str = "free_start"             # 'free_start'(무료 3단계) | 'next_steps'(심화 로드맵)
+    turn: int = 0
+    history: list[EduDiagnoseTurn] = []   # 지금까지의 대화 (needs/패턴 추출 근거)
+    case_id: int | None = None
     preferred_salutation: str = "neutral"
     locale: str = "ko-KR"
 
@@ -5199,6 +5248,178 @@ def _edu_persona_fallback(req: EduDiagnoseRequest) -> str:
     return "어떤 점이 가장 마음에 걸리시는지, 자녀분 이야기부터 편하게 들려주세요. 제가 차근히 같이 봐 드릴게요."
 
 
+# ── 단계형 처방(Staged Prescription) — 오퍼 화면 '이어서 보기' 시나리오 ──────────────
+# 대화에서 끝나던 근거·페르소나를 '처방' 단계까지 흘려보내는 핵심 경쟁력 지점.
+# 11턴 대화에서 읽은 needs/패턴을 근거로, 개인화된 단계형 콘텐츠를 선생님 보이스로 생성한다.
+_EDU_CURRICULUM_PROMPT = """너는 앞서 손님과 충분히 대화를 나눈 베테랑 교육 상담사다.
+이제 손님이 '이어서 보기'를 눌렀다. 지금까지 읽어낸 것을 바탕으로 '처방'을 내릴 차례다.
+역술인이 손님을 다 보고 나서 풀이를 내주듯, 단정적이고 권위 있게, 그러나 따뜻하게.
+
+[페르소나 — 선생님/역술인 보이스 (반드시 유지)]
+- 자신을 'AI'·'챗봇'이라 말하지 않는다. '오래 봐 온 선생님'이다.
+- "이맘때 아이들이 다 그래요", "원래 이런 경우엔…" 식 패턴 단정.
+- 들뜬 고객센터 말투·느낌표 남발·이모지 금지. 차분한 권위.
+- 점·운세·예언을 직접 말하지 않는다. 근거는 '오래 본 경험'과 '연구·사례'.
+  ("사주상" 대신 "이 나이대를 오래 봐 왔는데", "요즘 연구를 보면" 식으로 권위를 만든다.)
+
+[가장 중요 — 개인화]
+아래 [지금까지 대화]에서 이 손님만의 '구체적 상황·고민·말'을 반드시 집어내 인용하라.
+일반론으로 빠지면 실패다. "아까 ~라고 하셨죠" 처럼 손님이 한 말을 되짚어 처방에 연결한다.
+손님이 말한 자녀 학년/직무, 막힌 지점, 감정을 모듈마다 다르게 반영한다.
+
+[근거 양념 — '진짜 전문가' 신빙성]
+각 모듈에 아래 [인용 가능한 실제 자료] 중 하나를 추임새로 자연스럽게 녹인다("요즘 연구를 보면…").
+한 모듈에 하나씩, 흐름에 맞을 때만. 목록에 없는 연구·통계·수치·기관명은 절대 지어내지 않는다.
+인용할 자료가 마땅치 않은 모듈은 인용 없이 둔다. 날조는 신뢰를 영구히 파괴한다.
+
+[트랙별 내용]
+- track=free_start (무료 3단계): 지금 당장 무료로 해볼 출발 과제 3개.
+  1) 부모/본인이 먼저 이해할 것  2) 현재 사용 패턴 점검  3) 오늘 바로 써볼 구체 실습.
+  각 모듈은 '왜 당신에게 이게 필요한가(대화 근거)' + '오늘 해볼 것(아주 구체적)' + '근거 양념'.
+- track=next_steps (심화 로드맵): 무료 단계 이후 이어지는 단계형 길을 보여준다.
+  손님의 경우에 맞춘 '순서'를 단정한다("보호자님은 이 순서로 가야 합니다").
+  3~4단계로, 뒤로 갈수록 깊어진다. 가격·결제·금액은 절대 언급하지 않는다.
+  "여기까지 하시면 다음엔 ~로 이어집니다" 같은 가능성 제시형으로 자연스럽게 다음을 암시한다.
+
+[전환 원칙]
+가격·결제·할인·마감을 말하지 않는다. 강매 금지. 손님이 "이 사람 진짜 전문가다" 느끼게 하는 게 목적이다.
+
+[인용 가능한 실제 자료]
+__EVIDENCE__
+
+[출력 형식 — JSON만, 다른 텍스트 금지]
+{
+  "reading": "지금까지 대화에서 읽어낸 이 손님의 핵심 패턴 1~2문장 (단정적, 손님 말 인용)",
+  "intro": "그래서 이 순서를 권한다는 선생님 톤 한 마디",
+  "modules": [
+    {
+      "step": 1,
+      "title": "모듈 제목 (짧고 분명하게)",
+      "why_you": "왜 당신에게 이게 필요한가 — 대화에서 손님이 한 말을 되짚어 연결 (1~2문장)",
+      "do_now": "오늘 바로 해볼 아주 구체적인 행동/문장 (1~2문장)",
+      "seasoning": "근거 양념 한 줄 (연구·사례 추임새, 없으면 빈 문자열)",
+      "minutes": 10
+    }
+  ],
+  "closing": "여기까지 하면 무엇이 달라지는지 + 다음으로 어떻게 이어지는지 (가격 비노출, 가능성 제시형 1~2문장)"
+}
+modules는 free_start면 3개, next_steps면 3~4개."""
+
+
+def _run_edu_curriculum(req: EduCurriculumRequest) -> dict[str, Any]:
+    """오퍼 화면 '이어서 보기' — 대화 기반 개인화 단계형 처방 생성 (Gemini)."""
+    import logging
+
+    seg_label = "보호자/부모" if req.segment == "parent" else "직장인(MZ)"
+    track = req.track if req.track in {"free_start", "next_steps"} else "free_start"
+    preferred_salutation = _edu_normalize_salutation(req.preferred_salutation)
+    locale = _edu_normalize_locale(req.locale)
+    convo = "\n".join(
+        f"{'선생님' if t.role == 'ai' else '손님'}: {t.text}" for t in req.history[-12:]
+    )
+    base = _EDU_CURRICULUM_PROMPT.replace("__EVIDENCE__", _load_evidence(req.segment))
+    prompt = (
+        f"{base}\n\n"
+        f"[현재 세그먼트] {seg_label}\n"
+        f"[선호 호칭] {preferred_salutation}\n"
+        f"[언어/지역] {locale}\n"
+        f"[트랙] {track}\n"
+        f"[지금까지 대화]\n{convo or '(대화 기록이 짧음 — 일반적 출발 과제로 구성하되 톤은 유지)'}\n\n"
+        f"위 원칙에 따라 처방을 JSON으로 생성하라."
+    )
+    _log = logging.getLogger("uvicorn.error")
+    last_exc: Exception | None = None
+    last_raw: str | None = None
+    for attempt in range(2):
+        raw = None
+        try:
+            raw, _usage = generate_text(
+                prompt,
+                model=os.getenv("EDU_DIAGNOSE_MODEL", "gemini-2.5-flash"),
+                max_output_tokens=4096,
+                timeout_seconds=30,
+                response_mime_type="application/json",
+            )
+            last_raw = raw
+            cleaned = re.sub(r"```(?:json)?", "", raw or "").strip().rstrip("`").strip()
+            if not cleaned.startswith("{"):
+                m = re.search(r"\{.*\}", cleaned, re.DOTALL)
+                if m:
+                    cleaned = m.group(0)
+            if not cleaned:
+                raise ValueError("빈 LLM 응답")
+            data = json.loads(cleaned)
+            modules = data.get("modules") or []
+            if not isinstance(modules, list) or not modules:
+                raise ValueError("modules 비어 있음")
+            norm_modules = []
+            for i, mod in enumerate(modules, start=1):
+                if not isinstance(mod, dict):
+                    continue
+                norm_modules.append({
+                    "step": int(mod.get("step", i)),
+                    "title": (mod.get("title") or "").strip(),
+                    "why_you": (mod.get("why_you") or "").strip(),
+                    "do_now": (mod.get("do_now") or "").strip(),
+                    "seasoning": (mod.get("seasoning") or "").strip(),
+                    "minutes": int(mod.get("minutes", 10) or 10),
+                })
+            if not norm_modules:
+                raise ValueError("정규화 후 modules 비어 있음")
+            return {
+                "ok": True,
+                "track": track,
+                "reading": (data.get("reading") or "").strip(),
+                "intro": (data.get("intro") or "").strip(),
+                "modules": norm_modules,
+                "closing": (data.get("closing") or "").strip(),
+            }
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            _log.warning(f"[edu_curriculum] 시도 {attempt + 1}/2 실패: {type(exc).__name__}: {exc}")
+
+    _log.error(f"[edu_curriculum] 2회 실패 — fallback.\nRaw:\n{last_raw}\nError: {last_exc}")
+    return _edu_curriculum_fallback(req, track)
+
+
+def _edu_curriculum_fallback(req: EduCurriculumRequest, track: str) -> dict[str, Any]:
+    """LLM 일시 실패 시에도 페르소나·단계 구조를 유지하는 처방 fallback."""
+    is_parent = req.segment == "parent"
+    who = "자녀분" if is_parent else "본인"
+    if track == "next_steps":
+        modules = [
+            {"step": 1, "title": "현재 위치 점검", "why_you": f"먼저 {who}이 지금 어디서 막히는지부터 분명히 해야 다음이 보입니다.",
+             "do_now": "오늘 나눈 이야기를 한 줄로 정리해 보세요. '우리 집 AI 고민은 ___이다.'", "seasoning": "", "minutes": 10},
+            {"step": 2, "title": "맞춤 가이드", "why_you": "위치가 잡히면, 상황에 맞는 구체적인 길을 짚어 드립니다.",
+             "do_now": "정리한 한 줄을 들고 다시 오시면, 그 지점부터 이어서 봐 드릴게요.", "seasoning": "", "minutes": 15},
+            {"step": 3, "title": "심화 동행", "why_you": "한 번으로 끝나지 않습니다. 변화는 꾸준히 곁에서 봐 줄 때 자리잡습니다.",
+             "do_now": "여기까지 해보시면, 다음엔 더 깊은 단계로 자연스럽게 이어집니다.", "seasoning": "", "minutes": 0},
+        ]
+        closing = "한 단계씩 같이 가 보시죠. 급할 것 없습니다. 순서대로면 분명히 또렷해집니다."
+    else:
+        modules = [
+            {"step": 1, "title": f"{'부모' if is_parent else '나'}가 먼저 이해해야 할 AI 기초",
+             "why_you": f"{who}에게 설명하려면, {'보호자님' if is_parent else '본인'}이 먼저 큰 그림을 쥐고 있어야 합니다.",
+             "do_now": "AI를 '답을 주는 기계'가 아니라 '같이 생각하는 도구'로 한 문장 정의해 보세요.", "seasoning": "", "minutes": 10},
+            {"step": 2, "title": f"{who}의 현재 AI 사용 패턴 점검",
+             "why_you": "막연한 걱정보다, 어디서 의존이 생기는지부터 보는 게 빠릅니다.",
+             "do_now": "숙제·검색·요약·글쓰기 중 어디서 AI에 가장 기대는지 오늘 한 번 관찰해 보세요.", "seasoning": "", "minutes": 10},
+            {"step": 3, "title": "오늘 저녁 바로 써볼 대화 문장",
+             "why_you": "어색하게 꺼내면 대화가 막힙니다. 첫 문장이 가장 중요합니다.",
+             "do_now": f"\"{'그거 AI한테 시켜봤어? 어디까지 맞던?' if is_parent else '이 일, AI한테 먼저 시켜보면 어디까지 될까?'}\" 한마디로 시작해 보세요.",
+             "seasoning": "", "minutes": 5},
+        ]
+        closing = "이 3개만 해보셔도 현재 상황이 훨씬 또렷해질 거예요. 해보시고 다시 오시면 다음을 이어 드릴게요."
+    return {
+        "ok": False,
+        "track": track,
+        "reading": "지금까지 말씀 잘 들었습니다. 큰 틀은 충분히 잡혔어요.",
+        "intro": "그럼 이 순서로 가 보시죠.",
+        "modules": modules,
+        "closing": closing,
+    }
+
+
 def _persist_edu_case_turns(req: EduDiagnoseRequest, result: dict[str, Any]) -> None:
     if not req.case_id:
         return
@@ -5276,6 +5497,21 @@ def edu_public_diagnose(req: EduDiagnoseRequest) -> dict[str, Any]:
     result = _run_edu_diagnose(req)
     _persist_edu_case_turns(req, result)
     return result
+
+
+@app.post("/api/edu/curriculum")
+def edu_curriculum(
+    req: EduCurriculumRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    """오퍼 화면 '이어서 보기' — 대화 기반 개인화 단계형 처방 (내부/인증)."""
+    return _run_edu_curriculum(req)
+
+
+@app.post("/api/public/edu/curriculum")
+def edu_public_curriculum(req: EduCurriculumRequest) -> dict[str, Any]:
+    """오퍼 화면 '이어서 보기' — 대화 기반 개인화 단계형 처방 (공개 PoC)."""
+    return _run_edu_curriculum(req)
 
 
 @app.post("/api/public/edu/bootstrap")

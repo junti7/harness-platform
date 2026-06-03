@@ -58,15 +58,33 @@
     .tag{display:inline-block;background:var(--danger);color:#fff;font-size:.72rem;font-weight:700;padding:3px 8px;border-radius:6px;margin-bottom:8px}
     .small{font-size:.82rem;color:var(--faint)}
     .resume-note{font-size:.82rem;color:var(--muted);margin-top:4px}
+
+    /* ── Prescription (단계형 처방) ── */
+    .rx{border:1.5px solid var(--accent);border-radius:16px;padding:18px;margin-top:10px}
+    .rx-eyebrow{font-size:.72rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;margin-bottom:8px}
+    .rx-reading{font-size:.98rem;line-height:1.65;color:var(--ink);font-weight:600;margin:0 0 8px}
+    .rx-intro{font-size:.9rem;line-height:1.6;color:var(--muted);margin:0 0 14px}
+    .rx-mod{background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:13px 14px;margin-bottom:10px}
+    .rx-mod-head{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+    .rx-step{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;border-radius:999px;color:#fff;font-size:.78rem;font-weight:800;flex:none}
+    .rx-title{font-size:.98rem;color:var(--ink);line-height:1.35;flex:1}
+    .rx-min{font-size:.72rem;color:var(--faint);background:var(--soft);padding:2px 8px;border-radius:999px;flex:none}
+    .rx-why{font-size:.88rem;line-height:1.6;color:var(--muted);margin:0 0 8px}
+    .rx-do{font-size:.9rem;line-height:1.6;color:var(--ink);background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:9px 11px}
+    .rx-do-label{display:block;font-size:.7rem;font-weight:800;color:var(--warning);letter-spacing:.03em;margin-bottom:3px}
+    .rx-season{font-size:.84rem;line-height:1.55;color:var(--faint);font-style:italic;margin:8px 0 0;padding-left:10px;border-left:2px solid var(--border)}
+    .rx-closing{font-size:.9rem;line-height:1.65;color:var(--ink);margin:12px 0 0;font-weight:600}
+    .btn.loading{opacity:.6;cursor:wait}
   </style>
 </head>
 <body>
   <div id="app" class="app"></div>
   <script>
     const STORAGE_KEY = 'edu-pilot-standalone-v3'
-    const API_BOOTSTRAP = '/api/public/edu/bootstrap'
-    const API_DIAGNOSE  = '/api/public/edu/diagnose'
-    const API_MAGIC     = '/api/public/edu/magic-link/consume'
+    const API_BOOTSTRAP  = '/api/public/edu/bootstrap'
+    const API_DIAGNOSE   = '/api/public/edu/diagnose'
+    const API_CURRICULUM = '/api/public/edu/curriculum'
+    const API_MAGIC      = '/api/public/edu/magic-link/consume'
 
     const PHASE_LABEL = { opening:'첫 인사', probing:'경청', reflecting:'단정', recovering:'복구', prescribing:'가이드 제안' }
 
@@ -96,6 +114,7 @@
       turn: 0, msgs: [],
       quickReplies: [], showOffer: false,
       input: '', loading: false,
+      prescription: null, prescriptionLoading: false, prescriptionTrack: null,
     }
 
     function setState(patch) {
@@ -214,10 +233,62 @@
       callDiagnose(t, history, state.turn+1)
     }
 
+    // 오퍼 화면 '이어서 보기' — 대화 기반 개인화 단계형 처방을 불러온다
+    async function loadCurriculum(track) {
+      if (state.prescriptionLoading) return
+      setState({ prescriptionLoading:true, prescriptionTrack:track, prescription:null })
+      try {
+        const res = await fetch(API_CURRICULUM, {
+          method:'POST', headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({
+            segment: state.segment, track, turn: state.turn,
+            history: state.msgs.map(m => ({ role:m.role, text:m.text })),
+            case_id: state.caseId || null,
+            preferred_salutation: state.salutation, locale: state.locale,
+          }),
+        })
+        const data = await res.json()
+        if (!data || !data.modules) throw new Error('no modules')
+        setState({ prescription:data, prescriptionLoading:false })
+      } catch {
+        setState({ prescriptionLoading:false, prescription:{
+          track, reading:'연결이 잠깐 끊겼네요.', intro:'', modules:[], closing:'잠시 후 버튼을 다시 눌러 주시겠어요?'
+        } })
+      }
+    }
+
     function resetAll() {
       clearState()
-      state = { step:'segment', segment:'parent', name:'', email:'', salutation:'neutral', locale:'ko-KR', customerId:null, caseId:null, isReturning:false, turn:0, msgs:[], quickReplies:[], showOffer:false, input:'', loading:false }
+      state = { step:'segment', segment:'parent', name:'', email:'', salutation:'neutral', locale:'ko-KR', customerId:null, caseId:null, isReturning:false, turn:0, msgs:[], quickReplies:[], showOffer:false, input:'', loading:false, prescription:null, prescriptionLoading:false, prescriptionTrack:null }
       render()
+    }
+
+    // 처방 카드 HTML 생성 (선생님 보이스 — reading/intro/modules/closing)
+    function prescriptionHtml(p) {
+      if (!p) return ''
+      const isNext = p.track === 'next_steps'
+      const accent = isNext ? 'var(--success)' : 'var(--accent)'
+      const soft = isNext ? 'linear-gradient(135deg,var(--success-soft),#ecfdf5)' : 'linear-gradient(135deg,var(--soft),#eff6ff)'
+      const head = isNext ? '보호자님께 권하는 다음 단계' : '오늘 바로 시작할 처방'
+      const mods = (p.modules||[]).map(m => `
+        <div class="rx-mod">
+          <div class="rx-mod-head">
+            <span class="rx-step" style="background:${accent}">${m.step}</span>
+            <strong class="rx-title">${escapeHtml(m.title||'')}</strong>
+            ${m.minutes ? `<span class="rx-min">${m.minutes}분</span>` : ''}
+          </div>
+          ${m.why_you ? `<p class="rx-why">${escapeHtml(m.why_you)}</p>` : ''}
+          ${m.do_now ? `<div class="rx-do"><span class="rx-do-label">오늘 해볼 것</span>${escapeHtml(m.do_now)}</div>` : ''}
+          ${m.seasoning ? `<p class="rx-season">“${escapeHtml(m.seasoning)}”</p>` : ''}
+        </div>`).join('')
+      return `
+        <div class="rx" style="background:${soft};border-color:${accent}">
+          <div class="rx-eyebrow" style="color:${accent}">${head}</div>
+          ${p.reading ? `<p class="rx-reading">${escapeHtml(p.reading)}</p>` : ''}
+          ${p.intro ? `<p class="rx-intro">${escapeHtml(p.intro)}</p>` : ''}
+          ${mods}
+          ${p.closing ? `<p class="rx-closing">${escapeHtml(p.closing)}</p>` : ''}
+        </div>`
     }
 
     // ── Render: Setup Wizard ──
@@ -347,18 +418,21 @@
             <div class="offer-item"><strong>1. 부모가 먼저 이해해야 할 AI 기초</strong><div class="small" style="margin-top:4px">AI를 아이에게 설명할 때 꼭 필요한 핵심 개념만 빠르게 정리합니다.</div></div>
             <div class="offer-item"><strong>2. 아이의 현재 AI 사용 패턴 점검</strong><div class="small" style="margin-top:4px">숙제, 검색, 요약, 글쓰기 중 어디서 의존이 생기는지 먼저 봅니다.</div></div>
             <div class="offer-item"><strong>3. 오늘 저녁 바로 써볼 대화 문장</strong><div class="small" style="margin-top:4px">아이와 어색하지 않게 AI 이야기를 꺼내는 문장부터 제공합니다.</div></div>
-            <button class="btn" id="free-btn" style="margin-top:10px">무료 단계부터 이어서 보기 →</button>
+            <button class="btn ${state.prescriptionLoading && state.prescriptionTrack==='free_start' ? 'loading' : ''}" id="free-btn" style="margin-top:10px">${state.prescriptionLoading && state.prescriptionTrack==='free_start' ? '선생님이 처방을 짜는 중…' : '무료 단계부터 이어서 보기 →'}</button>
           </div>
           <div class="offer" style="background:linear-gradient(135deg,var(--success-soft),#ecfdf5);border-color:var(--success);margin-top:10px">
             <h3 style="color:var(--success)">다음 단계에서 받게 될 도움</h3>
             <p class="resume-note" style="margin-bottom:12px">여기까지 해보신 뒤 원하시면, 보호자님 상황에 맞는 더 구체적인 가이드와 심화 커리큘럼도 이어서 받아보실 수 있을 거예요.</p>
-            <button class="btn" id="next-btn" style="background:var(--success);box-shadow:0 4px 14px rgba(5,150,105,.25)">다음 단계가 어떻게 이어지는지 보기 →</button>
+            <button class="btn ${state.prescriptionLoading && state.prescriptionTrack==='next_steps' ? 'loading' : ''}" id="next-btn" style="background:var(--success);box-shadow:0 4px 14px rgba(5,150,105,.25)">${state.prescriptionLoading && state.prescriptionTrack==='next_steps' ? '선생님이 길을 짚는 중…' : '다음 단계가 어떻게 이어지는지 보기 →'}</button>
           </div>
+          ${prescriptionHtml(state.prescription)}
         `
         chatbox.appendChild(box)
         setTimeout(() => {
-          document.getElementById('free-btn')?.addEventListener('click', () => alert('PoC: 다음 버전에서 무료 커리큘럼 3개가 실제 콘텐츠로 연결됩니다.'))
-          document.getElementById('next-btn')?.addEventListener('click', () => alert('PoC: 다음 버전에서 단계형 가이드와 심화 과정을 자연스럽게 이어줍니다.'))
+          const fb = document.getElementById('free-btn')
+          const nb = document.getElementById('next-btn')
+          if (fb) { fb.disabled = state.prescriptionLoading; fb.onclick = () => loadCurriculum('free_start') }
+          if (nb) { nb.disabled = state.prescriptionLoading; nb.onclick = () => loadCurriculum('next_steps') }
         }, 0)
       }
 

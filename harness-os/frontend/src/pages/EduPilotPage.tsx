@@ -11,6 +11,8 @@ type Props = {
 
 type Msg = { role: 'ai' | 'user'; text: string; toneLevel?: number; phase?: string }
 type SetupStep = 'segment' | 'info' | 'salutation'
+type RxModule = { step: number; title: string; why_you: string; do_now: string; seasoning: string; minutes: number }
+type Prescription = { track: string; reading: string; intro: string; modules: RxModule[]; closing: string }
 
 const C = {
   ink: '#0f172a', muted: '#475569', faint: '#64748b', accent: '#2563eb',
@@ -34,6 +36,39 @@ const OPENERS: Record<'parent' | 'worker', { text: string; quick: string[] }> = 
   },
 }
 
+function PrescriptionCard({ p, C }: { p: Prescription; C: Record<string, string> }) {
+  const isNext = p.track === 'next_steps'
+  const accent = isNext ? C.success : C.accent
+  const soft = isNext ? `linear-gradient(135deg,${C.successSoft},#ecfdf5)` : `linear-gradient(135deg,${C.accentSoft},#eff6ff)`
+  return (
+    <div style={{ background: soft, border: `1.5px solid ${accent}`, borderRadius: 16, padding: 18, marginTop: 10 }}>
+      <div style={{ fontSize: '.72rem', fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: accent, marginBottom: 8 }}>
+        {isNext ? '권하는 다음 단계' : '오늘 바로 시작할 처방'}
+      </div>
+      {p.reading && <p style={{ fontSize: '.98rem', lineHeight: 1.65, color: C.ink, fontWeight: 600, margin: '0 0 8px' }}>{p.reading}</p>}
+      {p.intro && <p style={{ fontSize: '.9rem', lineHeight: 1.6, color: C.muted, margin: '0 0 14px' }}>{p.intro}</p>}
+      {p.modules.map((m) => (
+        <div key={m.step} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 13, padding: '13px 14px', marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 22, height: 22, borderRadius: 999, background: accent, color: '#fff', fontSize: '.78rem', fontWeight: 800, flex: 'none' }}>{m.step}</span>
+            <strong style={{ fontSize: '.98rem', color: C.ink, lineHeight: 1.35, flex: 1 }}>{m.title}</strong>
+            {m.minutes > 0 && <span style={{ fontSize: '.72rem', color: C.faint, background: C.accentSoft, padding: '2px 8px', borderRadius: 999, flex: 'none' }}>{m.minutes}분</span>}
+          </div>
+          {m.why_you && <p style={{ fontSize: '.88rem', lineHeight: 1.6, color: C.muted, margin: '0 0 8px' }}>{m.why_you}</p>}
+          {m.do_now && (
+            <div style={{ fontSize: '.9rem', lineHeight: 1.6, color: C.ink, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '9px 11px' }}>
+              <span style={{ display: 'block', fontSize: '.7rem', fontWeight: 800, color: C.warning, letterSpacing: '.03em', marginBottom: 3 }}>오늘 해볼 것</span>
+              {m.do_now}
+            </div>
+          )}
+          {m.seasoning && <p style={{ fontSize: '.84rem', lineHeight: 1.55, color: C.faint, fontStyle: 'italic', margin: '8px 0 0', paddingLeft: 10, borderLeft: `2px solid ${C.border}` }}>“{m.seasoning}”</p>}
+        </div>
+      ))}
+      {p.closing && <p style={{ fontSize: '.9rem', lineHeight: 1.65, color: C.ink, margin: '12px 0 0', fontWeight: 600 }}>{p.closing}</p>}
+    </div>
+  )
+}
+
 export function EduPilotPage({ apiBase, authHeaders }: Props) {
   // ── setup state ──
   const [setupStep, setSetupStep] = useState<SetupStep>('segment')
@@ -50,6 +85,9 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
   const [loading, setLoading] = useState(false)
   const [showOffer, setShowOffer] = useState(false)
   const [turn, setTurn] = useState(0)
+  const [prescription, setPrescription] = useState<Prescription | null>(null)
+  const [rxLoading, setRxLoading] = useState(false)
+  const [rxTrack, setRxTrack] = useState<'free_start' | 'next_steps' | null>(null)
 
   // ── tester panel (CEO/VP 전용, started=false 일 때만) ──
   const [testerName, setTesterName] = useState('')
@@ -91,6 +129,30 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
       setMsgs((prev) => [...prev, { role: 'ai', text: '(연결이 잠깐 끊겼어요. 다시 말씀해 주시겠어요?)', phase: 'recovering' }])
     } finally {
       setLoading(false)
+    }
+  }
+
+  // 오퍼 화면 '이어서 보기' — 대화 기반 개인화 단계형 처방
+  async function loadCurriculum(track: 'free_start' | 'next_steps') {
+    if (rxLoading) return
+    setRxTrack(track); setRxLoading(true); setPrescription(null)
+    try {
+      const res = await fetch(`${apiBase}/api/edu/curriculum`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          segment, track, turn,
+          history: msgs.map((m) => ({ role: m.role, text: m.text })),
+          preferred_salutation: salutation, locale: 'ko-KR',
+        }),
+      })
+      const data = await res.json()
+      if (!data || !data.modules) throw new Error('no modules')
+      setPrescription(data as Prescription)
+    } catch {
+      setPrescription({ track, reading: '연결이 잠깐 끊겼네요.', intro: '', modules: [], closing: '잠시 후 버튼을 다시 눌러 주시겠어요?' })
+    } finally {
+      setRxLoading(false)
     }
   }
 
@@ -213,13 +275,14 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
                     </div>
                   ))}
                 </div>
-                <button style={{ ...btn, marginTop: 12 }} onClick={() => alert('파일럿: 다음 버전에서 무료 커리큘럼 3개가 실제 콘텐츠로 연결됩니다.')}>무료 단계부터 이어서 보기 →</button>
+                <button disabled={rxLoading} style={{ ...btn, marginTop: 12, opacity: rxLoading && rxTrack === 'free_start' ? 0.6 : 1 }} onClick={() => loadCurriculum('free_start')}>{rxLoading && rxTrack === 'free_start' ? '선생님이 처방을 짜는 중…' : '무료 단계부터 이어서 보기 →'}</button>
               </div>
               <div style={{ background: `linear-gradient(135deg,${C.successSoft},#ecfdf5)`, border: `1.5px solid ${C.success}`, borderRadius: 16, padding: 18 }}>
                 <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: C.success, margin: '0 0 6px' }}>다음 단계에서 받게 될 도움</h3>
                 <p style={{ fontSize: '.9rem', color: C.muted, marginBottom: 12 }}>여기까지 해보신 뒤 원하시면, 보호자님 상황에 맞는 더 구체적인 가이드와 심화 커리큘럼도 이어서 받아보실 수 있을 거예요.</p>
-                <button style={{ ...btn, background: C.success, boxShadow: '0 4px 14px rgba(5,150,105,.25)' }} onClick={() => alert('파일럿: 다음 버전에서 단계형 가이드와 심화 과정을 자연스럽게 이어줍니다.')}>다음 단계가 어떻게 이어지는지 보기 →</button>
+                <button disabled={rxLoading} style={{ ...btn, background: C.success, boxShadow: '0 4px 14px rgba(5,150,105,.25)', opacity: rxLoading && rxTrack === 'next_steps' ? 0.6 : 1 }} onClick={() => loadCurriculum('next_steps')}>{rxLoading && rxTrack === 'next_steps' ? '선생님이 길을 짚는 중…' : '다음 단계가 어떻게 이어지는지 보기 →'}</button>
               </div>
+              {prescription && <PrescriptionCard p={prescription} C={C} />}
             </div>
           )}
         </div>
