@@ -94,7 +94,8 @@ function parseBlocks(text: string): ParsedBlock[] {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     const normalized = line.replaceAll('│', '|')
-    const isTableRow = normalized.includes('|') && !isDecorationLine(normalized)
+    const pipeCount = (normalized.match(/\|/g) || []).length
+    const isTableRow = pipeCount >= 2 && !isDecorationLine(normalized)
 
     if (isTableRow) {
       if (!inTable) {
