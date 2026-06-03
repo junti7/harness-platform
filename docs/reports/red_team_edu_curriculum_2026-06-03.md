@@ -12,7 +12,25 @@
 | 1차 | block | block | block | **red_team_block** (3-of-3) |
 | 2차 | block | clear | block | block |
 | 3차 | block | (실패) | block | block |
-| 4차 | **clear** | **clear** | **clear** | **red_team_clear (3-of-3)** ✅ |
+| 4차 | **clear** | **clear** | **clear** | **red_team_clear (3-of-3)** ✅ (단계형 처방 기본) |
+
+## 후속: 페르소나 정직화 + LLM-native + RAG (2026-06-03~04)
+
+CEO 지시로 두 차례 추가 변경 후 각각 재검증:
+- **페르소나 정직화**(AI 부인 제거): round5 block → round6 **clear(3-of-3)**.
+- **LLM-native 안전**(regex 텍스트 절단 제거 → 감지·재생성·안전 fallback): round7 block(날조 회귀) → round8에서 날조 detect 복원.
+- **의향기반 Deep Research RAG**(gemini-embedding-001, 전체 코퍼스 의미검색, 매일 증분 stack): round9 block(코퍼스 인젝션·수치 오탐·차원·핫패스) → round10 **2-of-3 clear**(Gemini+Claude clear, Codex는 기관-주장 결속/quick_replies 날조 medium만).
+
+RAG round10 후속 보강: [인용 자료] '인용 전용' 명시 + `_edu_clean_cite` 경계토큰 무력화, 수치 가드 통계형(%·배·만명)만으로 축소(일상 수치 오탐 제거), cosine 차원 스킵, embed_query retries=1(빠른 폴백), `_retrieve_lines` 전체 try/except, quick_replies 날조 필터.
+
+### RAG 잔여 위험 (수용, low~medium)
+- 기관-주장 의미결속은 정규식 수준(특정 기관이 evidence에 아예 없으면 재생성, 그러나 '유효 기관+틀린 주장'은 미검출). medium→ 향후 evidence_id 의미일치 검증으로 강화 가능.
+- 임베딩 PIPA: 고객 발화를 Gemini 임베딩 API로 전송하나 **generate_text가 이미 동일 대화를 같은 벤더(Gemini)로 처리** → 신규 처리자 없음. 사용자 턴만/1200자 캡. 정식 고지는 `legal_review_approve` 게이트.
+- in-memory rate-limit = 단일 uvicorn 워커 전제(주석화).
+
+### ⚠️ 운영 발견 — dev/prod DB 분리
+- MBP `harness_dev`: edu 정제 **597건**. Mac Mini `harness_prod`: **80건**(RAG 코퍼스 99).
+- 2026-06-03 밤 대량 정제는 전부 **dev**에 기록됨(프로덕션 미반영). 프로덕션 RAG는 일일 파이프라인으로 증분 성장하나 현재 코퍼스가 얇음. → 프로덕션 코퍼스 부트스트랩(prod에서 edu 정제 실행) 여부는 CEO 결정 대기.
 
 ## 1차 non-negotiable 지적 → 최종 조치
 
