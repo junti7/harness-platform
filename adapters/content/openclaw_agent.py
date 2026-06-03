@@ -1805,6 +1805,9 @@ def _select_chat_route(
     Returns (route_label, model_label).
     model_label is one of: local, haiku, sonnet.
     """
+    if chat_backend_mode in ("gemini", "openai"):
+        return (f"{chat_backend_mode}_chat", "sonnet")
+
     allow_local = not (_ANALYSIS_CHAT_RE.search(user_message) or _VP_REVIEW_CHAT_RE.search(user_message))
     if allow_local and risk_scan["risk_level"] == "low" and (
         chat_backend_mode == "ollama" or (
