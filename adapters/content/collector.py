@@ -191,10 +191,11 @@ def collect(correlation_id: str = None):
 
                                 url = item.get("page_url", "")
                                 if not url:
+                                    data_id = item.get("list_id") or item.get("id", "")
                                     if ep == "/open-data-list":
-                                        url = f"https://www.data.go.kr/data/{item.get('id', '')}/openapi.do"
+                                        url = f"https://www.data.go.kr/data/{data_id}/openapi.do"
                                     else:
-                                        url = f"https://www.data.go.kr/data/{item.get('id', '')}/fileData.do"
+                                        url = f"https://www.data.go.kr/data/{data_id}/fileData.do"
                                         
                                 content_hash = hashlib.sha256(f"{title}{url}".encode()).hexdigest()[:64]
                                 raw_data = {"title": title, "url": url, "summary": desc, "source_name": source["name"]}
