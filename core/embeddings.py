@@ -20,34 +20,35 @@ EMBED_DIM = 768
 _BATCH = 64
 
 
-def _embed(texts: list[str], task_type: str) -> list[list[float]]:
+def _embed(texts: list[str], task_type: str, retries: int = 3) -> list[list[float]]:
     client = build_client()
     cfg = types.EmbedContentConfig(output_dimensionality=EMBED_DIM, task_type=task_type)
     out: list[list[float]] = []
     for i in range(0, len(texts), _BATCH):
         chunk = texts[i : i + _BATCH]
         last_exc: Exception | None = None
-        for attempt in range(3):
+        for attempt in range(retries):
             try:
                 resp = client.models.embed_content(model=EMBED_MODEL, contents=chunk, config=cfg)
                 out.extend([list(e.values) for e in resp.embeddings])
                 break
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
-                time.sleep(1.5 * (attempt + 1))
+                if attempt < retries - 1:
+                    time.sleep(1.0 * (attempt + 1))
         else:
             raise RuntimeError(f"임베딩 실패(batch {i}): {last_exc}")
     return out
 
 
 def embed_documents(texts: list[str]) -> list[list[float]]:
-    """코퍼스(근거 자료) 임베딩."""
-    return _embed(list(texts), "RETRIEVAL_DOCUMENT")
+    """코퍼스(근거 자료) 임베딩 — 오프라인 빌드라 재시도 넉넉히."""
+    return _embed(list(texts), "RETRIEVAL_DOCUMENT", retries=3)
 
 
 def embed_query(text: str) -> list[float]:
-    """고객 질의/대화 임베딩 (단건)."""
-    return _embed([text], "RETRIEVAL_QUERY")[0]
+    """고객 질의/대화 임베딩 (단건) — 핫패스라 빠르게 실패해 랜덤 폴백으로 degrade."""
+    return _embed([text], "RETRIEVAL_QUERY", retries=1)[0]
 
 
 def _norm(v: list[float]) -> float:
@@ -62,11 +63,15 @@ def cosine(a: list[float], b: list[float]) -> float:
 
 
 def cosine_topk(query: list[float], corpus: Iterable[tuple[str, list[float]]], k: int) -> list[tuple[str, float]]:
-    """corpus=[(id, vector)...] 중 query와 코사인 유사도 top-k (id, score) 반환."""
+    """corpus=[(id, vector)...] 중 query와 코사인 유사도 top-k (id, score) 반환.
+
+    차원이 다른 벡터는 건너뛴다(zip 조용한 절단으로 잘못된 유사도 산출 방지).
+    """
     qn = _norm(query)
+    qdim = len(query)
     scored: list[tuple[str, float]] = []
     for cid, vec in corpus:
-        if not vec:
+        if not vec or len(vec) != qdim:   # 차원 불일치 → 스킵 (인덱스 모델 변경 등)
             continue
         dot = sum(x * y for x, y in zip(query, vec))
         scored.append((cid, dot / (qn * _norm(vec))))
