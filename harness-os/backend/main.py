@@ -4145,8 +4145,11 @@ def get_pipeline_signals(
     if source:
         # 프론트 드롭다운 별칭 → 실제 DB source 패턴으로 매핑
         if source in ("rss", "news"):
-            where.append("rs.source NOT ILIKE %s AND rs.source NOT ILIKE %s AND rs.source NOT ILIKE %s")
-            params.extend(["%youtube%", "%arxiv%", "%scholar%"])
+            where.append("rs.source NOT ILIKE %s AND rs.source NOT ILIKE %s AND rs.source NOT ILIKE %s AND rs.source NOT ILIKE %s")
+            params.extend(["%youtube%", "%arxiv%", "%scholar%", "%공공데이터포털%"])
+        elif source == "data_go_kr":
+            where.append("rs.source ILIKE %s")
+            params.append("%공공데이터포털%")
         elif source in ("arxiv", "arxiv_api"):
             where.append("rs.source ILIKE %s")
             params.append("%arxiv%")
@@ -4996,18 +4999,37 @@ _EVIDENCE_BANK_PATH = PROJECT_ROOT / "data" / "edu_research" / "evidence_bank.js
 _OBSERVATIONS_PATH = PROJECT_ROOT / "data" / "edu_research" / "manual_observations.jsonl"
 
 
+_EVIDENCE_MAX_LINES = 8  # 한 대화에 주입하는 cite 상한 — 매번 다른 조합으로 회전
+
+
 def _load_evidence(segment: str) -> str:
-    """세그먼트에 맞는 실제 인용 자료(수집 뱅크 + 수동 관찰)를 프롬프트용 텍스트로 반환."""
-    lines: list[str] = []
-    # 1) 자동 수집 근거 뱅크
+    """세그먼트에 맞는 실제 인용 자료를 프롬프트용 텍스트로 반환.
+
+    '같은 말만 반복'을 막기 위해, 매 호출마다 최신 항목(파이프라인 수집분)을
+    우선 가중치로 두고 무작위 회전 샘플링한다. evidence_bank.json은
+    scripts/refresh_edu_evidence_bank.py가 매일 최신 파이프라인 자료로 재생성한다.
+    """
+    import random
+
+    fresh: list[str] = []      # 파이프라인 최신 동향 (우선 노출)
+    evergreen: list[str] = []  # 에버그린 앵커 + 기존 항목
+    observed: list[str] = []   # 수동 관찰
+
+    # 1) 자동 수집 근거 뱅크 (refresh_edu_evidence_bank.py 산출물)
     try:
         with open(_EVIDENCE_BANK_PATH, encoding="utf-8") as f:
             bank = json.load(f)
         for it in bank.get("items", []):
-            if it.get("segment") in (segment, "both"):
-                lines.append(f"- ({it['type']}) {it['cite']}\n  └ 출처: {it['source']}")
+            if it.get("segment") not in (segment, "both"):
+                continue
+            line = f"- ({it['type']}) {it['cite']}\n  └ 출처: {it['source']}"
+            if it.get("provenance") == "pipeline":
+                fresh.append(line)
+            else:
+                evergreen.append(line)
     except Exception:
         pass
+
     # 2) 수동 관찰 (Blind 등)
     try:
         if _OBSERVATIONS_PATH.exists():
@@ -5019,10 +5041,21 @@ def _load_evidence(segment: str) -> str:
                     rec = json.loads(line)
                     if rec.get("segment") in (segment, "both"):
                         src = rec.get("source", "커뮤니티")
-                        lines.append(f"- (커뮤니티 관찰) {rec.get('quote','')}\n  └ 출처: {src} (수동 관찰)")
+                        observed.append(f"- (커뮤니티 관찰) {rec.get('quote','')}\n  └ 출처: {src} (수동 관찰)")
     except Exception:
         pass
-    return "\n".join(lines) if lines else "(이번엔 마땅한 자료 없음 — 인용 없이 대화)"
+
+    # 회전 샘플링: 최신 동향을 먼저 채우고, 남는 자리에 앵커/관찰을 섞어 매번 다른 조합
+    random.shuffle(fresh)
+    random.shuffle(evergreen)
+    random.shuffle(observed)
+    selected = fresh[:_EVIDENCE_MAX_LINES]
+    pool = evergreen + observed
+    random.shuffle(pool)
+    selected += pool[: max(0, _EVIDENCE_MAX_LINES - len(selected))]
+    random.shuffle(selected)  # 최신/앵커 순서까지 섞어 첫 인용이 고정되지 않게
+
+    return "\n".join(selected) if selected else "(이번엔 마땅한 자료 없음 — 인용 없이 대화)"
 
 
 class EduObservationRequest(BaseModel):

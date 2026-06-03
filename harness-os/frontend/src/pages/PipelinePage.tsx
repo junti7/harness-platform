@@ -1468,6 +1468,7 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
               style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface-lighter)', color: 'var(--color-text)', fontSize: '0.85rem' }}
             >
               <option value="">전체 소스</option>
+              <option value="data_go_kr">공공데이터포털</option>
               <option value="arxiv">arXiv (ML · AI · Robotics)</option>
               <option value="youtube">YouTube</option>
               <option value="rss">RSS / 뉴스 (IEEE · MIT · TechCrunch 등)</option>
