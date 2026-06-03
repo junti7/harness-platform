@@ -2378,7 +2378,7 @@ def run(
     history = _get_conversation_history(effective_session_id)
     risk_scan = _scan_rolling_risk(user_message, history)
     chat_backend_mode = (chat_backend or OPENCLAW_CHAT_BACKEND or "auto").strip().lower()
-    if chat_backend_mode not in {"auto", "ollama", "anthropic"}:
+    if chat_backend_mode not in {"auto", "ollama", "anthropic", "gemini", "openai"}:
         chat_backend_mode = "auto"
     effective_chat_model = (chat_model or OPENCLAW_CHAT_MODEL).strip() or OPENCLAW_CHAT_MODEL
     effective_chat_max_tokens = (
