@@ -36,17 +36,26 @@ def extract_openapi(signal_id, title, list_id):
     except Exception as e:
         cat_data = str(e)
 
-    # 2. LLM Orchestrator를 통해 엔드포인트 및 파라미터 추론 (Dynamic Parsing)
-    orchestrator = LLMOrchestrator(logger=logger)
+    # 2. 로컬 LLM (Ollama)을 통해 엔드포인트 및 파라미터 추론 (Dynamic Parsing)
     system_prompt = "주어진 공공데이터 OpenAPI 메타데이터를 분석하여, 데이터를 가져올 수 있는 가장 유력한 REST GET Endpoint URL(단일 문자열)만 응답하세요. 모를 경우 'UNKNOWN'을 반환하세요. 공공데이터포털은 보통 https://api.odcloud.kr/api/{list_id}/v1/uddi:... 형태를 가집니다."
     user_prompt = f"Title: {title}\nList ID: {list_id}\nCatalog Info:\n{cat_data[:1500]}"
     
+    endpoint = "UNKNOWN"
     try:
-        llm_res = orchestrator.claude_primary(system_prompt, user_prompt, max_tokens=100)
-        endpoint = llm_res.get("output", "").strip()
+        ollama_payload = {
+            "model": "gemma4:latest",
+            "system": system_prompt,
+            "prompt": user_prompt,
+            "stream": False,
+            "options": {"temperature": 0.0}
+        }
+        ollama_resp = httpx.post("http://localhost:11434/api/generate", json=ollama_payload, timeout=30)
+        if ollama_resp.status_code == 200:
+            endpoint = ollama_resp.json().get("response", "").strip()
+        else:
+            logger.warning(f"Ollama 에러: {ollama_resp.status_code} - {ollama_resp.text}")
     except Exception as e:
-        logger.warning(f"LLM 동적 파싱 실패: {e}")
-        endpoint = "UNKNOWN"
+        logger.warning(f"로컬 LLM 동적 파싱 실패: {e}")
 
     if endpoint == "UNKNOWN" or not endpoint.startswith("http"):
         # 표준 odcloud 방식 Fallback 시도
