@@ -91,9 +91,16 @@ def extract_file_data(signal_id, title, url):
     logger.info(f"Playwright 파일 다운로드 봇 가동: {title} ({url})")
     
     with sync_playwright() as p:
-        # headless=True 로 백그라운드 브라우저 실행
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(accept_downloads=True)
+        # headless=True 로 백그라운드 브라우저 실행. 봇 탐지 우회를 위한 아규먼트 추가
+        browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
+        context = browser.new_context(
+            accept_downloads=True,
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+        
+        # 추가적인 navigator.webdriver 우회 스크립트 주입
+        context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        
         page = context.new_page()
         
         try:
