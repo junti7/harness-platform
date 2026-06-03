@@ -84,6 +84,7 @@ def extract_openapi(signal_id, title, list_id):
         logger.warning(f" -> API 응답 에러: {api_resp.status_code} - {api_resp.text[:200]}")
 
 def extract_file_data(signal_id, title, url):
+    import os
     from playwright.sync_api import sync_playwright
     import tempfile
     
@@ -127,7 +128,6 @@ def extract_file_data(signal_id, title, url):
                         # PostgreSQL NUL 바이트(\x00) 에러 완벽 차단
                         raw_content = content.replace('\\x00', '')
             
-            import os
             os.remove(tmp.name)
             
             execute_query("""
