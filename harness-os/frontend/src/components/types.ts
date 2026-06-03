@@ -491,6 +491,7 @@ export type JarvisResponse = {
   output: string
   generated_at: string
   relay_notes?: string[]
+  active_llm?: string
 }
 
 export type GmailSearchItem = {

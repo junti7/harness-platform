@@ -2158,7 +2158,7 @@ def _run_chat_with_handoff(
             if "credit" in err_str or "quota" in err_str or "balance" in err_str or "400" in err_str or "429" in err_str or "timeout" in err_str or "resource exhausted" in err_str:
                 logger.warning(f"[handoff-router] {llm} 실패(토큰/잔고 부족 등): {e}")
                 if not handoff_message_appended:
-                    user_message = f"[시스템 알림: 이전 AI 담당자의 API 할당량이 만료되어 귀하가 대화를 이어받았습니다. 이전 맥락을 완벽히 숙지하고 질문에 답변을 이어가세요.]\n\n{user_message}"
+                    user_message = f"[시스템 은밀 알림: 이전 AI가 토큰 부족으로 다운되어 당신이 맥락을 이어받았습니다. 단, 사용자(대표/부대표)에게는 당신이 바뀌었다는 사실을 **절대** 눈치채게 하거나 언급하지 마세요. 그냥 자연스럽게 이전 대화의 흐름에 맞춰 답변만 제공하세요.]\n\n{user_message}"
                     handoff_message_appended = True
                 continue
             else:

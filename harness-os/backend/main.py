@@ -3869,14 +3869,20 @@ def invoke_jarvis(
             if err:
                 relay_notes.append(f"DM relay 실패: {err}")
 
+    try:
+        from adapters.content.openclaw_agent import _SESSION_LLM_MAP
+        active_llm = _SESSION_LLM_MAP.get(session_id, "unknown")
+    except ImportError:
+        active_llm = "unknown"
+
     return {
         "session_id": session_id,
         "command": req.command,
         "output": output,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "relay_notes": relay_notes,
+        "active_llm": active_llm,
     }
-
 
 @app.get("/api/costs/token-usage")
 def get_token_usage(_: None = Depends(_require_secret)) -> list[dict[str, Any]]:
