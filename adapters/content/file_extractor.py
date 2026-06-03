@@ -23,39 +23,56 @@ def init_tables():
 
 def extract_openapi(signal_id, title, list_id):
     import os
+    import re
     from core.llm_orchestrator import LLMOrchestrator
     
     api_key = os.getenv("DATA_GO_KR_API_KEY", "")
-    logger.info(f"OpenAPI 동적 파서 가동: {title} (list_id: {list_id})")
+    logger.info(f"OpenAPI 고도화 파서 가동: {title} (list_id: {list_id})")
     
-    # 1. API 메타데이터 카탈로그 조회
-    catalog_url = f"https://www.data.go.kr/catalog/{list_id}/openapi.json"
-    try:
-        cat_resp = httpx.get(catalog_url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
-        cat_data = cat_resp.text
-    except Exception as e:
-        cat_data = str(e)
-
-    # 2. 로컬 LLM (Ollama)을 통해 엔드포인트 및 파라미터 추론 (Dynamic Parsing)
-    system_prompt = "주어진 공공데이터 OpenAPI 메타데이터를 분석하여, 데이터를 가져올 수 있는 가장 유력한 REST GET Endpoint URL(단일 문자열)만 응답하세요. 모를 경우 'UNKNOWN'을 반환하세요. 공공데이터포털은 보통 https://api.odcloud.kr/api/{list_id}/v1/uddi:... 형태를 가집니다."
-    user_prompt = f"Title: {title}\nList ID: {list_id}\nCatalog Info:\n{cat_data[:1500]}"
-    
+    # 1. 상세 페이지 스크래핑을 통한 실제 엔드포인트 파싱
+    page_url = f"https://www.data.go.kr/data/{list_id}/openapi.do"
     endpoint = "UNKNOWN"
     try:
-        ollama_payload = {
-            "model": "gemma4:latest",
-            "system": system_prompt,
-            "prompt": user_prompt,
-            "stream": False,
-            "options": {"temperature": 0.0}
-        }
-        ollama_resp = httpx.post("http://localhost:11434/api/generate", json=ollama_payload, timeout=30)
-        if ollama_resp.status_code == 200:
-            endpoint = ollama_resp.json().get("response", "").strip()
-        else:
-            logger.warning(f"Ollama 에러: {ollama_resp.status_code} - {ollama_resp.text}")
+        page_resp = httpx.get(page_url, verify=False, timeout=10)
+        text = page_resp.text
+        # apis.data.go.kr 또는 api.odcloud.kr 형태의 주소를 추출
+        matches = re.findall(r'https?://apis\.data\.go\.kr[a-zA-Z0-9./_:-]+', text)
+        matches.extend(re.findall(r'https?://api\.odcloud\.kr[a-zA-Z0-9./_:-]+', text))
+        
+        # 중복 제거 및 가장 긴 URL(보통 파라미터 없는 순수 엔드포인트 경로 중 가장 구체적인 것) 선택
+        unique_urls = list(set(matches))
+        if unique_urls:
+            endpoint = max(unique_urls, key=len)
     except Exception as e:
-        logger.warning(f"로컬 LLM 동적 파싱 실패: {e}")
+        logger.warning(f"페이지 스크래핑 실패: {e}")
+
+    # 2. 로컬 LLM (Ollama) Fallback (스크래핑 실패 시)
+    if endpoint == "UNKNOWN" or not endpoint.startswith("http"):
+        catalog_url = f"https://www.data.go.kr/catalog/{list_id}/openapi.json"
+        try:
+            cat_resp = httpx.get(catalog_url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
+            cat_data = cat_resp.text
+        except Exception as e:
+            cat_data = str(e)
+
+        system_prompt = "주어진 공공데이터 OpenAPI 메타데이터를 분석하여, 데이터를 가져올 수 있는 가장 유력한 REST GET Endpoint URL(단일 문자열)만 응답하세요. 모를 경우 'UNKNOWN'을 반환하세요. 공공데이터포털은 보통 https://api.odcloud.kr/api/{list_id}/v1/uddi:... 형태를 가집니다."
+        user_prompt = f"Title: {title}\nList ID: {list_id}\nCatalog Info:\n{cat_data[:1500]}"
+        
+        try:
+            ollama_payload = {
+                "model": "gemma4:latest",
+                "system": system_prompt,
+                "prompt": user_prompt,
+                "stream": False,
+                "options": {"temperature": 0.0}
+            }
+            ollama_resp = httpx.post("http://localhost:11434/api/generate", json=ollama_payload, timeout=30)
+            if ollama_resp.status_code == 200:
+                endpoint = ollama_resp.json().get("response", "").strip()
+            else:
+                logger.warning(f"Ollama 에러: {ollama_resp.status_code} - {ollama_resp.text}")
+        except Exception as e:
+            logger.warning(f"로컬 LLM 동적 파싱 실패: {e}")
 
     if endpoint == "UNKNOWN" or not endpoint.startswith("http"):
         # 표준 odcloud 방식 Fallback 시도
@@ -64,9 +81,16 @@ def extract_openapi(signal_id, title, list_id):
     logger.info(f" -> 추론된 Endpoint: {endpoint}")
     
     # 3. 실제 API 호출 타격
-    headers = {"Authorization": f"Infuser {api_key}"}
+    if "apis.data.go.kr" in endpoint:
+        # ServiceKey 파라미터가 필수적으로 필요함
+        join_char = "&" if "?" in endpoint else "?"
+        endpoint = f"{endpoint}{join_char}serviceKey={api_key}&pageNo=1&numOfRows=10&returnType=json"
+        headers = {}
+    else:
+        headers = {"Authorization": f"Infuser {api_key}"}
+
     try:
-        api_resp = httpx.get(endpoint, headers=headers, timeout=20)
+        api_resp = httpx.get(endpoint, headers=headers, timeout=20, verify=False)
     except Exception as e:
         raise Exception(f"API 네트워크 에러: {e}")
 
@@ -106,24 +130,25 @@ def extract_file_data(signal_id, title, url):
         try:
             page.goto(url, timeout=30000)
             
-            # 페이지에 다운로드 버튼이 로드될 때까지 대기
-            # 공공데이터포털은 주로 <a> 태그나 <button>에 fn_fileDataDown(...)를 연결함
-            # 더 넓은 범위의 다운로드 버튼을 커버하도록 CSS/XPath 다중 타겟팅
-            selectors = [
-                ".btn-download", 
-                "a[href*='fn_fileDataDown']", 
-                "a:has-text('다운로드')", 
-                "a:has-text('파일')", 
-                "button:has-text('다운로드')"
-            ]
-            selector_str = ", ".join(selectors)
+            # 페이지 내 모든 a 태그 중 다운로드 관련이고 javascript:void가 아닌 진짜 href를 가진 링크를 찾음
+            download_links = page.evaluate('''() => Array.from(document.querySelectorAll('a'))
+                .filter(a => (a.innerText.includes('다운로드') || a.innerText.includes('파일')) && a.href && !a.href.includes('javascript') && !a.href.includes('#'))
+                .map(a => a.href)''')
             
-            page.wait_for_selector(selector_str, timeout=15000)
-            
-            # 다운로드 이벤트 대기 상태 진입
             with page.expect_download(timeout=30000) as download_info:
-                # 찾은 첫 번째 다운로드 버튼 클릭
-                page.locator(selector_str).first.click()
+                if download_links:
+                    logger.info(f" -> 실제 다운로드 링크 직접 타격: {download_links[0][:50]}...")
+                    # 타임아웃을 방지하기 위해 빈 페이지에서 다운로드 URL을 바로 접속
+                    page.goto(download_links[0], timeout=30000)
+                else:
+                    logger.info(" -> 실제 링크가 없어 버튼 JS 클릭 시도")
+                    selectors = [
+                        ".button.just-pc:has-text('다운로드')",
+                        ".button.mr-2.ml-2.just-pc",
+                        "a.btn-download"
+                    ]
+                    selector_str = ", ".join(selectors)
+                    page.evaluate(f"document.querySelector(\"{selector_str}\").click()")
             
             download = download_info.value
             file_name = download.suggested_filename
