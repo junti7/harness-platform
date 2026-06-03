@@ -191,10 +191,10 @@ def collect(correlation_id: str = None):
 
                                 url = item.get("page_url", "")
                                 if not url:
-                                    url = f"{base_host}{ep}#{item.get('id', '')}"
-                                    # 만약 open-data-list 라면 임의로 openapi.do 식별자를 붙여 알림 봇이 인식하도록 함
                                     if ep == "/open-data-list":
                                         url = f"https://www.data.go.kr/data/{item.get('id', '')}/openapi.do"
+                                    else:
+                                        url = f"https://www.data.go.kr/data/{item.get('id', '')}/fileData.do"
                                         
                                 content_hash = hashlib.sha256(f"{title}{url}".encode()).hexdigest()[:64]
                                 raw_data = {"title": title, "url": url, "summary": desc, "source_name": source["name"]}
