@@ -633,7 +633,7 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
               borderBottom: idx < rawStats.length - 1 ? '1px solid var(--color-border)' : 'none',
               fontSize: '0.8rem',
             }}>
-              <span style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>{item.source_id}</span>
+              <span style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>{item.source}</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text)' }}>
                 {item.title}
               </span>
