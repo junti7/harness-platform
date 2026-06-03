@@ -149,6 +149,15 @@ def run(workers: int, min_score: float, shard: str, limit: int | None, cost_ever
     except Exception as e:
         logger.warning(f"[근거 뱅크] 갱신 실패: {e}")
 
+    # RAG 인덱스 증분 갱신 — 방금 정제된 edu 항목을 같은 실행에서 임베딩해 검색 코퍼스에 반영
+    try:
+        from scripts.build_edu_evidence_index import build as build_index, INDEX_PATH
+        index = build_index(rebuild=False)
+        INDEX_PATH.write_text(json.dumps(index, ensure_ascii=False), encoding="utf-8")
+        logger.info(f"[RAG 인덱스] 증분 갱신: 총 {index['count']}건")
+    except Exception as e:
+        logger.warning(f"[RAG 인덱스] 갱신 실패: {e}")
+
     return _counters["refined"]
 
 
