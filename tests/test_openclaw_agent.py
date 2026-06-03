@@ -215,7 +215,7 @@ class OpenClawAgentTests(unittest.TestCase):
     def test_finalize_response_applies_route_length_cap(self):
         text = "안녕하세요. " + ("가" * 900)
 
-        finalized = openclaw_agent._finalize_response(text, "premium_chat")
+        finalized = openclaw_agent._finalize_response(text, "unknown_route")
 
         self.assertLessEqual(len(finalized), 700)
         self.assertNotIn("안녕하세요", finalized)

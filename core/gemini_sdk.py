@@ -45,6 +45,7 @@ def generate_text(
     prompt: str,
     *,
     model: str | None = None,
+    system_instruction: str | None = None,
     timeout_seconds: float | None = None,
     max_output_tokens: int | None = None,
     response_mime_type: str | None = None,
@@ -56,6 +57,8 @@ def generate_text(
         config["max_output_tokens"] = max_output_tokens
     if response_mime_type:
         config["response_mime_type"] = response_mime_type
+    if system_instruction:
+        config["system_instruction"] = system_instruction
     response = client.models.generate_content(
         model=model or gemini_model_name(),
         contents=prompt,

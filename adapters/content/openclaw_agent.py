@@ -1532,6 +1532,16 @@ def _maybe_inject_trading_context(user_message: str) -> str:
     if not context_parts:
         return ""
 
+    instructions = (
+        "[시스템 중요 지시: 사용자가 오늘 저녁 매수/매입/매도할 종목이나 수량(계획)에 대해 묻는다면, "
+        "반드시 위에 제공된 '현재 보유 중인 포지션' 및 '오늘의 매매 스캔 후보군' 실제 데이터를 바탕으로 답변해야 합니다. "
+        "데이터에 없는 가상의 종목(예: 스타벅스, 일라이릴리 등)을 임의로 추천하거나 매매 계획을 지어내지 말고, "
+        "현재 포지션 현황(종목명, 보유 수량, 진입가, ATR, 손절가)과 스캔 결과 매매 신호(추천 액션)를 정확히 출력하세요. "
+        "만약 오늘 신규 진입이나 청산 신호가 없다면, '오늘 신규 매수/매도 신호는 발생하지 않았습니다'라고 명시하고, "
+        "대신 현재 보유 중인 포지션의 현황과 관리 계획(손절선 준수 등)을 구체적인 수치(수량, 손절가 등)와 함께 설명하세요.]"
+    )
+    context_parts.append(instructions)
+
     return "\n\n[실시간 트레이딩 정보 컨텍스트 (실제 데이터)]\n" + "\n\n".join(context_parts)
 
 
@@ -2148,15 +2158,14 @@ def _run_gemini_chat(
         if content:
             transcript.append(f"{role}: {content}")
     transcript.append(f"user: {user_message}")
-    prompt = (
-        "당신은 Harness의 AI 비서 OpenClaw입니다. "
-        "대표님의 질문에 대해 구체적이고 논리적이며 풍부한 설명을 제공하세요. "
-        "필요하다면 데이터나 근거를 들어 상세히 답변하고, 전문가적인 어조를 유지하세요.\n\n"
-        + "\n".join(transcript[-20:])
-    )
+    
+    system_prompt = _build_chat_system_prompt(user_message)
+    prompt = "\n".join(transcript[-20:])
+    
     text, usage = generate_text(
         prompt,
         model=gemini_model_name(),
+        system_instruction=system_prompt,
         timeout_seconds=30,
         max_output_tokens=max_tokens or OPENCLAW_CHAT_MAX_TOKENS,
         meta=meta,
@@ -2177,7 +2186,7 @@ def _run_openai_chat(
     if not api_key:
         raise ValueError("OPENAI_API_KEY is missing")
     
-    messages = []
+    messages = [{"role": "system", "content": _build_chat_system_prompt(user_message)}]
     for turn in history or []:
         role = "assistant" if turn.get("role") == "assistant" else "user"
         messages.append({"role": role, "content": turn.get("content", "")})
@@ -2261,7 +2270,8 @@ def _run_chat_with_handoff(
     session_id: str,
     history: list[dict[str, str]] | None = None,
     max_tokens: int | None = None,
-    target_models: list[str] | None = None
+    target_models: list[str] | None = None,
+    chat_model: str | None = None,
 ) -> str:
     if not target_models:
         target_models = ["claude", "gemini", "openai"]
@@ -2288,7 +2298,12 @@ def _run_chat_with_handoff(
                 meta = {}
                 logger.info(f"[handoff-router] LLM: {llm} | 시도 #{attempt} | max_tokens={current_max} (Session: {session_id})")
                 if llm == "claude":
-                    resp = _run_anthropic_chat(user_message, model=OPENCLAW_CHAT_MODEL, history=history, max_tokens=current_max, meta=meta)
+                    if chat_model == OPENCLAW_INTENT_MODEL:
+                        resp = _run_haiku_chat(user_message, history=history)
+                    else:
+                        resp = _run_anthropic_chat(user_message, model=chat_model or OPENCLAW_CHAT_MODEL, history=history, max_tokens=current_max, meta=meta)
+                    if "비용 한도에 도달" in resp:
+                        raise ValueError("Claude API budget limit reached")
                 elif llm == "gemini":
                     resp = _run_gemini_chat(user_message, history=history, max_tokens=current_max, meta=meta)
                 elif llm == "openai":
@@ -2590,13 +2605,25 @@ def _sanitize_response(text: str) -> str:
     ]
     if any(re.search(pat, cleaned, re.IGNORECASE) for pat in ooc_patterns):
         logger.warning("[ooc-guard] 에이전트의 책임 회피성 헛소리 감지 -> 비서실장 지능형 정화 가드 작동")
-        return (
-            "대표님, 죄송합니다. 비서실장으로서 본분을 잠시 잊은 기계적 답변이었습니다.\n\n"
-            "Harness의 '회의'는 슬랙 `#회의실` 채널에서 에이전트 페르소나들이 텍스트로 토론하는 "
-            "가상 오케스트레이션 루프입니다. 저는 이 가상 토론을 소집·중재·수렴하는 비서실장으로서 "
-            "진행 상황을 끝까지 추적하고 보고드려야 합니다. "
-            "오케스트레이션 로그를 확인하여 현재 상태를 즉시 파악하겠습니다."
-        )
+        msg_clean = cleaned.lower()
+        if any(kw in msg_clean for kw in ["회의", "소집", "토론", "오케스트레이션", "페르소나", "진행"]):
+            return (
+                "대표님, 죄송합니다. 비서실장으로서 본분을 잠시 잊은 기계적 답변이었습니다.\n\n"
+                "Harness의 '회의'는 슬랙 `#회의실` 채널에서 에이전트 페르소나들이 텍스트로 토론하는 "
+                "가상 오케스트레이션 루프입니다. 저는 이 가상 토론을 소집·중재·수렴하는 비서실장으로서 "
+                "진행 상황을 끝까지 추적하고 보고드려야 합니다. "
+                "오케스트레이션 로그를 확인하여 현재 상태를 즉시 파악하겠습니다."
+            )
+        
+        # 회의 관련 질문이 아닌 경우, OOC 관련 문장을 최대한 지우고 본문만 반환
+        lines = cleaned.split("\n")
+        filtered_lines = []
+        for line in lines:
+            if not any(re.search(pat, line, re.IGNORECASE) for pat in ooc_patterns):
+                filtered_lines.append(line)
+        reconstructed = "\n".join(filtered_lines).strip()
+        if len(reconstructed) > 50:
+            return reconstructed
         
     return cleaned or text
 
@@ -2914,12 +2941,24 @@ def run(
             risk_scan=risk_scan,
             model="handoff_router",
         )
-        response = _run_chat_with_handoff(
-            user_message,
-            session_id=effective_session_id,
-            history=history,
-            target_models=["claude", "gemini", "openai"]
-        )
+        if model_label == "local":
+            logger.info("[router] 일반 대화 → Tier0/Ollama")
+            response = _run_ollama_chat(
+                user_message,
+                history=history,
+                fallback_model=effective_chat_model,
+                fallback_max_tokens=effective_chat_max_tokens,
+            )
+        else:
+            selected_model = OPENCLAW_INTENT_MODEL if model_label == "haiku" else effective_chat_model
+            response = _run_chat_with_handoff(
+                user_message,
+                session_id=effective_session_id,
+                history=history,
+                max_tokens=effective_chat_max_tokens,
+                target_models=["claude", "gemini", "openai"],
+                chat_model=selected_model,
+            )
         return _finish(route_label, response)
 
     logger.info(f"[router] 도구 사용 감지 → Tier2/Sonnet")
