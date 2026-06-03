@@ -1240,6 +1240,11 @@ def _topic_cluster_rows(domain: str, limit: int = 8) -> list[dict[str, Any]]:
     )
 
 
+def _is_kr_or_en(title: str) -> bool:
+    """제목이 한글(2자+) 또는 영문(4자+)을 포함하는지 — edu 클러스터 후보 언어 필터."""
+    return bool(re.search(r"[가-힣]{2,}", title) or re.search(r"[A-Za-z]{4,}", title))
+
+
 def _cluster_push_candidates(domain: str, limit: int = 6) -> list[dict[str, Any]]:
     if domain == "physical_ai":
         where = "coalesce(raw_data->>'domain', 'physical_ai') = %s"
@@ -5198,9 +5203,13 @@ _EDU_TOTAL_CHARS = 4000       # 전체 대화 글자 상한
 
 
 def _edu_neutralize(text: str, cap: int = _EDU_PER_TURN_CHARS) -> str:
-    """사용자 텍스트의 경계 토큰 위조를 무력화하고 길이를 제한한다."""
+    """사용자 텍스트의 경계 토큰 위조를 무력화하고 길이를 제한한다.
+
+    중첩 입력(`<<<대화_데이터>>`)으로 토큰을 재구성하지 못하도록, 괄호 제거가 아니라
+    키워드 자체를 깨뜨린다('대화_데이터' → '대화·데이터'). 키워드가 없으면 경계 위조 불가.
+    """
     text = str(text or "").replace("\x00", "").strip()
-    text = text.replace("<<대화_데이터", "<대화_데이터").replace("대화_데이터_끝>>", "대화_데이터_끝>")
+    text = text.replace("대화_데이터", "대화·데이터")
     if len(text) > cap:
         text = text[:cap] + "…"
     return text
@@ -5227,8 +5236,8 @@ def _edu_sanitize_history(history: list, ai_label: str = "선생님", user_label
 
 # 상업/가격 노출 금칙어 — 전환 원칙(가격 비노출) 후처리 강제
 _EDU_COMMERCIAL_RE = re.compile(
-    r"(₩|\bKRW\b|결제|구독료|유료|할인|환불|카드|계좌|입금|청구|"
-    r"\d[\d,]*\s*원|\d+\s*만\s*원|월\s*\d|마감|오늘만|선착순)"
+    r"(₩|\bKRW\b|결제|구독료|구독\s*권|유료|할인|환불|입금|청구|"
+    r"\d[\d,]*\s*원|\d+\s*만\s*원|월\s*\d[\d,]*\s*원|마감|오늘만|선착순)"
 )
 
 
@@ -5243,11 +5252,17 @@ def _edu_strip_commercial(text: str) -> str:
 
 # 날조 가드 — evidence 풀에 없는 '구체 수치/퍼센트/연도' 또는 '특정 기관·연구' 인용을 제거
 _EDU_NUM_RE = re.compile(r"(\d[\d,\.]*)\s*(%|퍼센트|명|배|년|개월|주|시간|만\s*명|억|천)")
-# 특정 연구/기관을 콕 집어 인용하는 패턴(고유명사 + 연구/논문/조사/발표)
-_EDU_INST_RE = re.compile(
-    r"(하버드|스탠퍼드|MIT|옥스퍼드|케임브리지|예일|버클리|서울대|카이스트|KAIST|연세대|고려대|"
-    r"OECD|유네스코|UNESCO|WHO|구글|마이크로소프트|애플|메타|OpenAI|딥마인드)"
-    r"[^.!?。…\n]{0,20}(연구|논문|조사|보고서|발표|실험)"
+# 특정 연구/기관을 콕 집어 인용하는 패턴 — (1) 알려진 고유명 allowlist (2) 일반형 '○○대학교/연구소/연구진'
+_EDU_INST_NAMED_RE = re.compile(
+    r"(하버드|스탠퍼드|MIT|옥스퍼드|케임브리지|예일|버클리|프린스턴|스탠포드|"
+    r"서울대|카이스트|KAIST|연세대|고려대|포스텍|성균관|한양대|"
+    r"OECD|유네스코|UNESCO|WHO|퓨리서치|Pew|구글|마이크로소프트|애플|메타|OpenAI|딥마인드|MS)"
+    r"[^.!?。…\n]{0,20}(연구|논문|조사|보고서|발표|실험|설문|통계)"
+)
+# 일반형: '한 단어' + 대학교/연구소/연구진/연구팀/학회 (+ 인용 동사) — 기관 머리말 캡처
+_EDU_INST_GENERIC_RE = re.compile(
+    r"([가-힣A-Za-z]{2,12})\s*(대학교|대학원|연구소|연구원|연구진|연구팀|학회|재단)"
+    r"[^.!?。…\n]{0,15}(연구|논문|조사|보고서|발표|실험|설문|에 따르면)"
 )
 
 
@@ -5256,11 +5271,23 @@ def _edu_numeric_tokens(text: str) -> set[str]:
     return {f"{m.group(1).replace(',', '')}{m.group(2).replace(' ', '')}" for m in _EDU_NUM_RE.finditer(text)}
 
 
-def _edu_guard_text(text: str, evidence_text: str, evidence_nums: set[str]) -> str:
+def _edu_sentence_has_fake_institution(sentence: str, evidence_text: str) -> bool:
+    """문장이 evidence에 없는 특정 기관 인용을 담고 있으면 True."""
+    mn = _EDU_INST_NAMED_RE.search(sentence)
+    if mn and mn.group(1) not in evidence_text:
+        return True
+    mg = _EDU_INST_GENERIC_RE.search(sentence)
+    if mg and mg.group(1) not in evidence_text:
+        return True
+    return False
+
+
+def _edu_guard_text(text: str, evidence_text: str, evidence_nums: set[str], check_numeric: bool = True) -> str:
     """evidence 풀에 없는 구체 수치·특정 기관 인용을 '문장 단위'로 제거.
 
     가장 치명적인 날조(없는 통계·수치·연구기관 인용)를 서버에서 차단한다.
     evidence에 실제 존재하는 수치/기관은 통과. 수치 없는 일반 추임새는 유지.
+    do_now(실습 지시)처럼 수치가 정상인 필드는 check_numeric=False로 기관 날조만 검사.
     """
     if not text:
         return ""
@@ -5268,16 +5295,14 @@ def _edu_guard_text(text: str, evidence_text: str, evidence_nums: set[str]) -> s
     kept: list[str] = []
     for p in parts:
         bad = False
-        for m in _EDU_NUM_RE.finditer(p):
-            tok = f"{m.group(1).replace(',', '')}{m.group(2).replace(' ', '')}"
-            if tok not in evidence_nums:          # evidence에 없는 수치 → 날조 의심
-                bad = True
-                break
-        if not bad and _EDU_INST_RE.search(p):
-            # 특정 기관 연구를 집어 인용 → evidence에 그 기관명이 없으면 제거
-            inst = _EDU_INST_RE.search(p).group(1)
-            if inst not in evidence_text:
-                bad = True
+        if check_numeric:
+            for m in _EDU_NUM_RE.finditer(p):
+                tok = f"{m.group(1).replace(',', '')}{m.group(2).replace(' ', '')}"
+                if tok not in evidence_nums:      # evidence에 없는 수치 → 날조 의심
+                    bad = True
+                    break
+        if not bad and _edu_sentence_has_fake_institution(p, evidence_text):
+            bad = True
         if not bad:
             kept.append(p)
     return " ".join(kept).strip()
@@ -5298,7 +5323,11 @@ _EDU_DAILY_PUBLIC_CALLS = 600  # 공개 LLM 호출 일일 상한 (비용 폭탄 
 
 
 def _edu_public_gate(request: Request | None) -> None:
-    """공개 LLM 엔드포인트 남용 차단: IP rate-limit + 전역 일일 호출 상한."""
+    """공개 LLM 엔드포인트 남용 차단: IP rate-limit + 전역 일일 호출 상한.
+
+    NOTE: in-memory 카운터다. 현 배포는 단일 uvicorn 워커(launchd, --workers 미지정)라
+    유효하다. 멀티워커/멀티인스턴스로 확장하면 Redis 등 공유 저장소 기반으로 옮겨야 한다.
+    """
     now = time.time()
     ip = "unknown"
     if request is not None:
@@ -5429,8 +5458,10 @@ def _run_edu_diagnose(req: EduDiagnoseRequest) -> dict[str, Any]:
             message = (data.get("message") or "").strip()
             if not message:
                 raise ValueError("message 필드 비어 있음")
-            # 가격 노출 후처리 차단 (대화 표면에도 적용)
-            message = _edu_strip_commercial(message) or message
+            # 가격 노출 후처리 차단 (대화 표면에도 적용). 필터가 통째로 비우면
+            # 원문 복원이 아니라 안전한 중립 문구로 대체(상업표현만으로 된 답변 차단).
+            stripped = _edu_strip_commercial(message)
+            message = stripped if stripped else "조금만 더 말씀해 주시겠어요? 같이 차근히 보겠습니다."
             quick = [q for q in (data.get("quick_replies", []) or []) if not _EDU_COMMERCIAL_RE.search(str(q))]
             return {
                 "ok": True,
@@ -5594,6 +5625,10 @@ def _run_edu_curriculum(req: EduCurriculumRequest) -> dict[str, Any]:
                 # 날조 가드(수치·기관) + 상업 표현 제거를 claim/서술 필드에 모두 적용
                 return _edu_strip_commercial(_edu_guard_text((s or "").strip(), evidence, ev_nums))
 
+            def _clean_instruction(s: str) -> str:
+                # do_now(실습)는 수치가 정상이므로 기관 날조 + 상업 표현만 제거
+                return _edu_strip_commercial(_edu_guard_text((s or "").strip(), evidence, ev_nums, check_numeric=False))
+
             norm_modules = []
             for i, mod in enumerate(modules[:max_mods], start=1):  # 트랙별 모듈 수 상한
                 if not isinstance(mod, dict):
@@ -5602,7 +5637,7 @@ def _run_edu_curriculum(req: EduCurriculumRequest) -> dict[str, Any]:
                     "step": int(mod.get("step", i)),
                     "title": _edu_strip_commercial((mod.get("title") or "").strip()),
                     "why_you": _clean_claim(mod.get("why_you")),
-                    "do_now": _edu_strip_commercial((mod.get("do_now") or "").strip()),
+                    "do_now": _clean_instruction(mod.get("do_now")),
                     "seasoning": _clean_claim(mod.get("seasoning")),
                     "minutes": max(0, min(180, int(mod.get("minutes", 10) or 10))),
                 })
@@ -6506,5 +6541,3 @@ if _FRONTEND_DIST.exists():
         if candidate.exists() and candidate.is_file():
             return _FileResponse(str(candidate))
         return _FileResponse(str(_FRONTEND_DIST / "index.html"))
-    def _is_kr_or_en(title: str) -> bool:
-        return bool(re.search(r"[가-힣]{2,}", title) or re.search(r"[A-Za-z]{4,}", title))

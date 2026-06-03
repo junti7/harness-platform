@@ -12,7 +12,7 @@ type Props = {
 type Msg = { role: 'ai' | 'user'; text: string; toneLevel?: number; phase?: string }
 type SetupStep = 'segment' | 'info' | 'salutation'
 type RxModule = { step: number; title: string; why_you: string; do_now: string; seasoning: string; minutes: number }
-type Prescription = { track: string; reading: string; intro: string; modules: RxModule[]; closing: string }
+type Prescription = { track: string; reading: string; intro: string; modules: RxModule[]; closing: string; disclaimer?: string }
 
 const C = {
   ink: '#0f172a', muted: '#475569', faint: '#64748b', accent: '#2563eb',
@@ -65,6 +65,7 @@ function PrescriptionCard({ p, C }: { p: Prescription; C: Record<string, string>
         </div>
       ))}
       {p.closing && <p style={{ fontSize: '.9rem', lineHeight: 1.65, color: C.ink, margin: '12px 0 0', fontWeight: 600 }}>{p.closing}</p>}
+      {p.disclaimer && <p style={{ fontSize: '.72rem', lineHeight: 1.5, color: C.faint, margin: '12px 0 0', paddingTop: 10, borderTop: `1px solid ${C.border}` }}>{p.disclaimer}</p>}
     </div>
   )
 }
@@ -150,7 +151,7 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
       if (!data || !data.modules) throw new Error('no modules')
       setPrescription(data as Prescription)
     } catch {
-      setPrescription({ track, reading: '연결이 잠깐 끊겼네요.', intro: '', modules: [], closing: '잠시 후 버튼을 다시 눌러 주시겠어요?' })
+      setPrescription({ track, reading: '연결이 잠깐 끊겼네요.', intro: '', modules: [], closing: '잠시 후 버튼을 다시 눌러 주시겠어요?', disclaimer: 'AI가 정리한 일반 교육 정보입니다. 개별 진단·효과를 보장하지 않습니다.' })
     } finally {
       setRxLoading(false)
     }
@@ -308,6 +309,7 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
           />
           <button onClick={() => send(input)} disabled={loading || !input.trim()} style={{ background: input.trim() && !loading ? C.accent : C.border, color: '#fff', border: 'none', borderRadius: 12, padding: '0 20px', fontSize: '1rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>전송</button>
         </div>
+        <div style={{ fontSize: '.68rem', lineHeight: 1.45, color: C.faint, textAlign: 'center', padding: '6px 4px 2px' }}>AI가 정리한 일반 교육 정보입니다. 개별 진단·효과를 보장하지 않으며 전문 상담을 대체하지 않습니다.</div>
       </div>
     )
   }

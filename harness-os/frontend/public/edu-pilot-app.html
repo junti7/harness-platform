@@ -74,7 +74,9 @@
     .rx-do-label{display:block;font-size:.7rem;font-weight:800;color:var(--warning);letter-spacing:.03em;margin-bottom:3px}
     .rx-season{font-size:.84rem;line-height:1.55;color:var(--faint);font-style:italic;margin:8px 0 0;padding-left:10px;border-left:2px solid var(--border)}
     .rx-closing{font-size:.9rem;line-height:1.65;color:var(--ink);margin:12px 0 0;font-weight:600}
+    .rx-disclaimer{font-size:.72rem;line-height:1.5;color:var(--faint);margin:12px 0 0;padding-top:10px;border-top:1px solid var(--border)}
     .btn.loading{opacity:.6;cursor:wait}
+    .ai-note{font-size:.68rem;line-height:1.45;color:var(--faint);text-align:center;padding:6px 4px 2px}
   </style>
 </head>
 <body>
@@ -252,7 +254,8 @@
         setState({ prescription:data, prescriptionLoading:false })
       } catch {
         setState({ prescriptionLoading:false, prescription:{
-          track, reading:'연결이 잠깐 끊겼네요.', intro:'', modules:[], closing:'잠시 후 버튼을 다시 눌러 주시겠어요?'
+          track, reading:'연결이 잠깐 끊겼네요.', intro:'', modules:[], closing:'잠시 후 버튼을 다시 눌러 주시겠어요?',
+          disclaimer:'본 안내는 AI가 정리한 일반 교육 정보예요. 개별 진단이나 효과를 보장하지 않습니다.'
         } })
       }
     }
@@ -288,6 +291,7 @@
           ${p.intro ? `<p class="rx-intro">${escapeHtml(p.intro)}</p>` : ''}
           ${mods}
           ${p.closing ? `<p class="rx-closing">${escapeHtml(p.closing)}</p>` : ''}
+          ${p.disclaimer ? `<p class="rx-disclaimer">${escapeHtml(p.disclaimer)}</p>` : ''}
         </div>`
     }
 
@@ -389,6 +393,7 @@
             <input class="msg-input" id="msg-input" placeholder="편하게 입력하세요…" value="${escapeHtml(state.input||'')}" ${state.loading?'disabled':''} />
             <button class="send-btn" id="send-btn" ${state.loading?'disabled':''}>전송</button>
           </div>
+          <div class="ai-note">AI가 정리한 일반 교육 정보입니다. 개별 진단·효과를 보장하지 않으며 전문 상담을 대체하지 않습니다.</div>
         </div>
       `
 
