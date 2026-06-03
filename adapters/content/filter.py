@@ -195,6 +195,24 @@ def compute_relevance_score(title: str, summary: str, full_content: str, source:
     return max(0.1, score)
 
 
+def determine_category(text: str) -> str:
+    categories = []
+    text_lower = text.lower()
+    
+    if any(k in text_lower for k in ["ai", "인공지능", "agi"]):
+        categories.append("AI")
+    if any(k in text_lower for k in ["로봇", "robot", "로보틱스", "자율주행", "자율비행", "드론"]):
+        categories.append("Robotics")
+    if any(k in text_lower for k in ["교육", "에듀테크", "학습", "커리큘럼", "학교", "학생", "교사"]):
+        categories.append("Education")
+    if any(k in text_lower for k in ["부동산", "경매", "투자", "상권", "주택", "토지", "공매", "재건축", "재개발"]):
+        categories.append("RealEstate")
+        
+    if not categories:
+        return "physical_ai" # 기본값
+    return ", ".join(categories)
+
+
 def save_filtered_signal(raw_id, source, title, summary, score, category, content_hash, facts, model_name, domain="physical_ai"):
     execute_query("""
         INSERT INTO filtered_signals
@@ -269,7 +287,10 @@ def filter_signals(correlation_id: str = None, limit: int | None = None, domain:
         elif score >= 0.4:
             logger.info(f"  팩트 추출 스킵 (backlog/배치 정책, score={score:.2f}): {title[:50]}...")
 
-        save_filtered_signal(raw_id, source, title, summary, score, "physical_ai", content_hash, facts, TIER2_LLM_MODEL, domain=domain)
+        # 카테고리 동적 분류
+        category = determine_category(f"{title} {summary} {full_content}")
+
+        save_filtered_signal(raw_id, source, title, summary, score, category, content_hash, facts, TIER2_LLM_MODEL, domain=domain)
         execute_query("UPDATE raw_signals SET status = 'filtered_pass' WHERE id = %s", (raw_id,))
         passed += 1
 
