@@ -153,13 +153,23 @@ def collect(correlation_id: str = None):
                 if resp.status_code == 200:
                     data = resp.json()
                     items = data.get("data", [])
+                    target_keywords = [
+                        "ai", "인공지능", "로봇", "robot", "로보틱스", "agi", "자율주행", "자율비행",
+                        "교육", "에듀테크", "학습", "커리큘럼",
+                        "부동산", "경매", "투자", "상권", "주택", "토지", "공매", "재건축", "재개발"
+                    ]
                     for item in items:
                         title = item.get("title", "")
+                        desc = item.get("desc", "")
+                        
+                        text_to_check = f"{title} {desc}".lower()
+                        if not any(kw in text_to_check for kw in target_keywords):
+                            continue
+
                         url = item.get("page_url", "")
                         if not url:
                             url = f"{source['url']}#{item.get('id', '')}"
                         content_hash = hashlib.sha256(f"{title}{url}".encode()).hexdigest()[:64]
-                        desc = item.get("desc", "")
                         raw_data = {"title": title, "url": url, "summary": desc, "source_name": source["name"]}
                         save_raw_signal(source["name"], raw_data, content_hash, desc)
                         total_saved += 1
