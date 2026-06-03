@@ -409,6 +409,8 @@ _ROUTE_RESPONSE_LIMITS = {
     "local_chat": 4096,
     "economy_chat": 8192,
     "premium_chat": 8192,
+    "gemini_chat": 8192,
+    "openai_chat": 8192,
     "premium_tool_agent": 16384,
     "contextual_risk_block": 1000,
     "structured_command_auth_block": 1000,
