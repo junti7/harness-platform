@@ -1095,6 +1095,9 @@ def _build_chat_system_prompt(user_message: str) -> str:
     status_context = _maybe_inject_status_context(user_message)
     if status_context:
         parts.append(status_context)
+    trading_context = _maybe_inject_trading_context(user_message)
+    if trading_context:
+        parts.append(trading_context)
     shorthand_context = _build_workplace_shorthand_context(user_message)
     if shorthand_context:
         parts.append("\n" + shorthand_context)
@@ -1116,6 +1119,9 @@ def _build_tool_system_prompt(user_message: str, dm_channel_id: str | None = Non
     status_context = _maybe_inject_status_context(user_message)
     if status_context:
         parts.append(status_context)
+    trading_context = _maybe_inject_trading_context(user_message)
+    if trading_context:
+        parts.append(trading_context)
     shorthand_context = _build_workplace_shorthand_context(user_message)
     if shorthand_context:
         parts.append("\n" + shorthand_context)
@@ -1476,6 +1482,60 @@ def _maybe_inject_status_context(user_message: str) -> str:
     if not snapshot:
         return ""
     return f"\nCurrent Harness status snapshot (realtime):\n{snapshot[:3000]}"
+
+
+def _maybe_inject_trading_context(user_message: str) -> str:
+    """주식/투자 관련 질문에 실시간 트레이딩 후보군 및 보유 포지션 정보를 주입."""
+    msg_lower = user_message.lower()
+    trading_keywords = ["종목", "매수", "매입", "매도", "매매", "투자", "포지션", "포트폴리오", "alpaca", "ibkr", "트레이딩", "주식"]
+    if not any(kw in msg_lower for kw in trading_keywords):
+        return ""
+
+    context_parts = []
+    
+    # 1. 보유 포지션 정보 로드
+    positions_path = PROJECT_ROOT / "docs/reports/paper_trading_positions.json"
+    if positions_path.exists():
+        try:
+            with open(positions_path, "r", encoding="utf-8") as f:
+                pos_data = json.load(f)
+            pos_list = []
+            for sym, details in pos_data.get("turtle_positions", {}).items():
+                pos_list.append(
+                    f"- {sym}: {details.get('qty')}주 (진입가: ${details.get('entry_price')}, "
+                    f"ATR: {details.get('atr')}, 손절가: ${details.get('stop_loss')}, 시스템: {details.get('system')})"
+                )
+            if pos_list:
+                context_parts.append("현재 보유 중인 포지션:\n" + "\n".join(pos_list))
+            else:
+                context_parts.append("현재 보유 중인 포지션: 없음")
+        except Exception as e:
+            logger.error(f"[trading-context] 포지션 파일 로드 실패: {e}")
+
+    # 2. 투자 후보군 정보 로드
+    candidates_path = PROJECT_ROOT / "docs/reports/investment_signal_candidates.json"
+    if candidates_path.exists():
+        try:
+            with open(candidates_path, "r", encoding="utf-8") as f:
+                cand_data = json.load(f)
+            cand_list = []
+            for item in cand_data.get("items", []):
+                signal = item.get("signal")
+                action = item.get("action")
+                reason = item.get("reason_label") or item.get("reason")
+                cand_list.append(
+                    f"- {item.get('symbol')} ({item.get('name')}): 현재가 ${item.get('current_price')}, "
+                    f"ATR: {item.get('atr')}, 신호: {signal}, 추천액션: {action} ({reason})"
+                )
+            if cand_list:
+                context_parts.append("오늘의 매매 스캔 후보군:\n" + "\n".join(cand_list))
+        except Exception as e:
+            logger.error(f"[trading-context] 후보군 파일 로드 실패: {e}")
+
+    if not context_parts:
+        return ""
+
+    return "\n\n[실시간 트레이딩 정보 컨텍스트 (실제 데이터)]\n" + "\n\n".join(context_parts)
 
 
 def _is_mutating_intent(intent: str) -> bool:
