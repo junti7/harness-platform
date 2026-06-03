@@ -154,30 +154,38 @@ def collect(correlation_id: str = None):
                 "부동산", "경매", "투자", "상권", "주택", "토지", "공매", "재건축", "재개발"
             ]
             try:
-                for page in range(1, 11):
-                    url_with_page = f"{source['url']}?page={page}&perPage=100"
-                    resp = httpx.get(url_with_page, headers=headers, timeout=15)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        items = data.get("data", [])
-                        if not items:
-                            break
+                base_host = "https://api.odcloud.kr/api/15077093/v1"
+                endpoints = ["/dataset", "/open-data-list"]
+                
+                for ep in endpoints:
+                    for page in range(1, 11):
+                        url_with_page = f"{base_host}{ep}?page={page}&perPage=100"
+                        resp = httpx.get(url_with_page, headers=headers, timeout=15)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            items = data.get("data", [])
+                            if not items:
+                                break
 
-                        for item in items:
-                            title = item.get("title", "")
-                            desc = item.get("desc", "")
-                            
-                            text_to_check = f"{title} {desc}".lower()
-                            if not any(kw in text_to_check for kw in target_keywords):
-                                continue
+                            for item in items:
+                                title = item.get("title", "")
+                                desc = item.get("desc", "")
+                                
+                                text_to_check = f"{title} {desc}".lower()
+                                if not any(kw in text_to_check for kw in target_keywords):
+                                    continue
 
-                            url = item.get("page_url", "")
-                            if not url:
-                                url = f"{source['url']}#{item.get('id', '')}"
-                            content_hash = hashlib.sha256(f"{title}{url}".encode()).hexdigest()[:64]
-                            raw_data = {"title": title, "url": url, "summary": desc, "source_name": source["name"]}
-                            save_raw_signal(source["name"], raw_data, content_hash, desc)
-                            total_saved += 1
+                                url = item.get("page_url", "")
+                                if not url:
+                                    url = f"{base_host}{ep}#{item.get('id', '')}"
+                                    # 만약 open-data-list 라면 임의로 openapi.do 식별자를 붙여 알림 봇이 인식하도록 함
+                                    if ep == "/open-data-list":
+                                        url = f"https://www.data.go.kr/data/{item.get('id', '')}/openapi.do"
+                                        
+                                content_hash = hashlib.sha256(f"{title}{url}".encode()).hexdigest()[:64]
+                                raw_data = {"title": title, "url": url, "summary": desc, "source_name": source["name"]}
+                                save_raw_signal(source["name"], raw_data, content_hash, desc)
+                                total_saved += 1
             except Exception as e:
                 logger.warning(f"data_go_kr API 수집 실패: {e}")
             continue
