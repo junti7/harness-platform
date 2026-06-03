@@ -47,6 +47,8 @@ from core.logger import HarnessLogger
 from adapters.content.substack_publisher import fetch_draft_as_text
 from adapters.content.refiner import log_api_cost, get_today_cost, DAILY_COST_LIMIT
 from core.cost_alerts import check_and_alert
+from core.gemini_sdk import generate_text, gemini_model_name
+from scripts.llm_fallback_manager import _is_provider_available
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +77,7 @@ OPENCLAW_CHAT_MODEL = os.environ.get("OPENCLAW_CHAT_MODEL", "claude-sonnet-4-5")
 OPENCLAW_TOOL_MODEL = os.environ.get("OPENCLAW_TOOL_MODEL", OPENCLAW_CHAT_MODEL)
 OPENCLAW_FORMATTER_MODEL = os.environ.get("OPENCLAW_FORMATTER_MODEL", OPENCLAW_CHAT_MODEL)
 OPENCLAW_CHAT_BACKEND = os.environ.get("OPENCLAW_CHAT_BACKEND", "auto").strip().lower()
+OPENCLAW_PROVIDER_MODE = os.environ.get("OPENCLAW_PROVIDER_MODE", "auto").strip().lower()
 OPENCLAW_HISTORY_TURNS = int(os.environ.get("OPENCLAW_HISTORY_TURNS", "40"))
 OPENCLAW_MAX_HISTORY_CHARS = int(os.environ.get("OPENCLAW_MAX_HISTORY_CHARS", "12000"))
 OPENCLAW_CHAT_MAX_TOKENS = int(os.environ.get("OPENCLAW_CHAT_MAX_TOKENS", "4096"))
@@ -1998,8 +2001,14 @@ def _run_ollama_chat(
 
     resolved_fallback_model = fallback_model or OPENCLAW_CHAT_MODEL
     logger.info(
-        f"[router] Ollama 불가 또는 언어 품질 불량 → Anthropic({resolved_fallback_model}) fallback"
+        f"[router] Ollama 불가 또는 언어 품질 불량 → Fallback({resolved_fallback_model})"
     )
+    if "gemini" in resolved_fallback_model.lower() or os.getenv("HARNESS_OS_JARVIS_CHAT_BACKEND") == "gemini":
+        return _run_gemini_chat(
+            user_message,
+            model=resolved_fallback_model,
+            history=history,
+        )
     return _run_anthropic_chat(
         user_message,
         model=resolved_fallback_model,
@@ -2049,6 +2058,38 @@ def _run_haiku_chat(user_message: str, history: list[dict[str, str]] | None = No
     )
 
 
+def _prefer_gemini_openclaw() -> bool:
+    return OPENCLAW_PROVIDER_MODE == "force_gemini" or not _is_provider_available("claude", timeout=3)
+
+
+def _run_gemini_chat(
+    user_message: str,
+    *,
+    history: list[dict[str, str]] | None = None,
+    max_tokens: int | None = None,
+) -> str:
+    transcript: list[str] = []
+    for turn in history or []:
+        role = str(turn.get("role") or "user")
+        content = str(turn.get("content") or "")
+        if content:
+            transcript.append(f"{role}: {content}")
+    transcript.append(f"user: {user_message}")
+    prompt = (
+        "당신은 Harness의 AI 비서 OpenClaw입니다. "
+        "답변은 간결한 한국어로 하고, 업무 맥락을 유지하세요.\n\n"
+        + "\n".join(transcript[-20:])
+    )
+    text, usage = generate_text(
+        prompt,
+        model=gemini_model_name(),
+        timeout_seconds=30,
+        max_output_tokens=max_tokens or OPENCLAW_CHAT_MAX_TOKENS,
+    )
+    log_api_cost(gemini_model_name(), usage["prompt_token_count"], usage["candidates_token_count"], provider="google")
+    return text.strip() or "응답 없음"
+
+
 # ── Haiku intent classifier ──────────────────────────────────────────────────
 
 def _classify_intent_with_haiku(user_message: str) -> dict[str, Any] | None:
@@ -2059,6 +2100,8 @@ def _classify_intent_with_haiku(user_message: str) -> dict[str, Any] | None:
     through to explicit-command / chat routing.
     """
     if not OPENCLAW_INTENT_ENABLED or _cost_limit_reached():
+        return None
+    if _prefer_gemini_openclaw():
         return None
     if _BRIEFING_RE.search(user_message):
         return None
@@ -2122,6 +2165,8 @@ def _intent_to_bridge_args(intent: dict) -> list[str] | None:
 def _format_with_haiku(user_message: str, raw_output: str) -> str:
     """Bridge raw output -> natural Korean via configured formatter model."""
     if _cost_limit_reached():
+        return raw_output
+    if _prefer_gemini_openclaw():
         return raw_output
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
@@ -2597,16 +2642,23 @@ def run(
             )
         else:
             selected_model = OPENCLAW_INTENT_MODEL if model_label == "haiku" else effective_chat_model
-            logger.info(f"[router] 일반 대화 → Anthropic({selected_model})")
+            target_provider = "Gemini" if _prefer_gemini_openclaw() else "Anthropic"
+            logger.info(f"[router] 일반 대화 → {target_provider}({selected_model})")
             _log_route_audit(
                 session_id=effective_session_id,
                 requester_user_id=requester_user_id,
                 user_message=user_message,
                 route=route_label,
                 risk_scan=risk_scan,
-                model=selected_model,
+                model=gemini_model_name() if _prefer_gemini_openclaw() else selected_model,
             )
-            if model_label == "haiku":
+            if _prefer_gemini_openclaw():
+                response = _run_gemini_chat(
+                    user_message,
+                    history=history,
+                    max_tokens=effective_chat_max_tokens,
+                )
+            elif model_label == "haiku":
                 response = _run_haiku_chat(user_message, history=history)
             else:
                 response = _run_anthropic_chat(
@@ -2670,6 +2722,12 @@ def _run_tool_agent(
     """Tier 2: Claude Sonnet 4.5 + Tool Calling"""
     if _cost_limit_reached():
         return _budget_block_message()
+    if _prefer_gemini_openclaw():
+        return (
+            "핵심 판단: Claude tool-agent가 현재 비활성입니다.\n"
+            "근거: Anthropic 크레딧 소진으로 도구 경로를 잠시 내렸습니다.\n"
+            "다음 액션: status, mail, calendar, goal, decision-card 같은 구조화 명령으로 요청해 주세요."
+        )
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return "❌ ANTHROPIC_API_KEY가 설정되지 않았습니다."
