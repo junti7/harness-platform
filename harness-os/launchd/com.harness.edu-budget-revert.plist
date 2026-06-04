@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.harness.edu-budget-revert</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/juntaepark/projects/harness-platform/scripts/edu_budget_revert.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/juntaepark/projects/harness-platform</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    <key>DATABASE_URL</key>
+    <string>postgresql://localhost/harness_prod</string>
+  </dict>
+
+  <!-- 2026-06-07 09:00 KST 1회 — 실행 후 스크립트가 자기 자신을 정리(bootout+rm)해 재실행 안 됨 -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Month</key>
+    <integer>6</integer>
+    <key>Day</key>
+    <integer>7</integer>
+    <key>Hour</key>
+    <integer>9</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/juntaepark/projects/harness-platform/logs/edu-budget-revert.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/juntaepark/projects/harness-platform/logs/edu-budget-revert.error.log</string>
+</dict>
+</plist>
