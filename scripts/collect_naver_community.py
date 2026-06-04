@@ -44,15 +44,30 @@ CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET", "").strip()
 API = "https://openapi.naver.com/v1/search"
 
 # 세그먼트별 검색어 (부모 = 학부모 AI 불안·의존 / 직장인 = 커리어 AI 압박)
+# 맘카페 담론을 넓게 긁기 위해 키워드를 대폭 확장. 노이즈는 Tier2 필터가 제거.
 QUERIES = {
     "parent": [
-        "아이 AI 의존 걱정", "챗GPT 숙제 베끼기", "초등 AI 교육 고민",
-        "중학생 챗GPT 사용", "아이 AI 너무 많이", "AI 시대 자녀 교육 불안",
-        "아이 스스로 생각 안해", "숙제 AI 그대로",
+        # AI 의존·숙제
+        "아이 AI 의존 걱정", "챗GPT 숙제 베끼기", "아이 챗GPT 숙제", "숙제 AI 그대로",
+        "아이 AI 너무 많이", "아이 스스로 생각 안해", "AI 베껴쓰기 아이",
+        # 학년별
+        "초등 AI 교육 고민", "초등학생 챗GPT", "중학생 챗GPT 사용", "고등학생 AI 공부",
+        "유아 AI 교육", "초등 코딩 학원 고민",
+        # 부모 불안·태도
+        "AI 시대 자녀 교육 불안", "AI 시대 아이 키우기", "우리 아이 미래 직업 AI",
+        "AI 시대 공부 의미", "아이 AI 어떻게 가르쳐", "엄마표 AI 교육",
+        "챗GPT 아이에게 도움", "AI 교육 어떻게 시작",
+        # 디지털·스크린
+        "아이 유튜브 중독", "아이 스마트폰 게임 공부 안해", "아이 영상만 봐 걱정",
+        # 학습·진로
+        "AI 시대 독서 중요", "아이 문해력 걱정", "AI 시대 사고력 교육",
+        "코딩 교육 필요할까", "AI 진로 자녀",
     ],
     "worker": [
         "직장인 AI 불안", "회사 AI 못쓰면 도태", "AI 때문에 이직 고민",
         "AI 공부 어디서 시작", "AI 못따라가 불안", "직장 생성형 AI 압박",
+        "30대 AI 공부", "챗GPT 업무 활용", "AI 자기계발 직장인",
+        "AI 시대 커리어 불안", "프롬프트 공부", "사무직 AI 대체 불안",
     ],
 }
 
@@ -69,12 +84,18 @@ def _clean(text: str) -> str:
     return html.unescape(text).strip()
 
 
-def _search(endpoint: str, query: str, display: int = 20) -> list[dict]:
+# 네이버 검색 API: display 최대 100, start 최대 1000 (start+display ≤ 1000).
+# 일 25,000 요청 한도 — 페이지를 늘려도 여유 충분.
+DISPLAY = 100        # 요청당 100건
+PAGES = 3            # 쿼리당 페이지 수 (start=1,101,201 → 최대 300건/쿼리/소스)
+
+
+def _search(endpoint: str, query: str, display: int = DISPLAY, start: int = 1) -> list[dict]:
     headers = {
         "X-Naver-Client-Id": CLIENT_ID,
         "X-Naver-Client-Secret": CLIENT_SECRET,
     }
-    params = {"query": query, "display": display, "sort": "sim"}
+    params = {"query": query, "display": display, "start": start, "sort": "sim"}
     resp = httpx.get(f"{API}/{endpoint}.json", headers=headers, params=params, timeout=15)
     resp.raise_for_status()
     return resp.json().get("items", [])
@@ -85,14 +106,25 @@ def collect(segment: str) -> list[dict]:
     seen: set[str] = set()
     for endpoint, label in TARGETS:
         for q in QUERIES[segment]:
-            try:
-                items = _search(endpoint, q)
-            except httpx.HTTPStatusError as e:
-                print(f"  [WARN] {label}/{q}: HTTP {e.response.status_code} {e.response.text[:120]}")
-                continue
-            except Exception as e:
-                print(f"  [WARN] {label}/{q}: {type(e).__name__}: {e}")
-                continue
+            items: list[dict] = []
+            for page in range(PAGES):
+                start = 1 + page * DISPLAY
+                if start > 1000:
+                    break
+                try:
+                    batch = _search(endpoint, q, start=start)
+                except httpx.HTTPStatusError as e:
+                    print(f"  [WARN] {label}/{q} p{page}: HTTP {e.response.status_code} {e.response.text[:100]}")
+                    break
+                except Exception as e:
+                    print(f"  [WARN] {label}/{q} p{page}: {type(e).__name__}: {e}")
+                    break
+                if not batch:
+                    break
+                items.extend(batch)
+                time.sleep(0.25)  # rate limit 예의
+                if len(batch) < DISPLAY:
+                    break  # 마지막 페이지
             for it in items:
                 title = _clean(it.get("title", ""))
                 desc = _clean(it.get("description", ""))
