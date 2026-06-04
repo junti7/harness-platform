@@ -64,11 +64,15 @@ def _fetch_candidates(min_score: float, shard_i: int, shard_n: int, limit: int |
                fs.extracted_facts, 'edu_consulting' AS domain
         FROM filtered_signals fs
         LEFT JOIN refined_outputs ro ON fs.id = ro.filtered_signal_id
+        LEFT JOIN raw_signals rs ON rs.id = fs.raw_signal_id
         WHERE ro.id IS NULL
           AND fs.domain = 'edu_consulting'
           AND fs.score >= %s
           AND (MOD(fs.id, %s) = %s)
-        ORDER BY fs.score DESC, fs.id
+        -- 최신 날짜 우선: 글 작성일(postdate, 네이버) → 없으면 수집일(ingested_at)
+        ORDER BY COALESCE(NULLIF(rs.raw_data->>'postdate', ''),
+                          to_char(rs.ingested_at, 'YYYYMMDD')) DESC,
+                 fs.score DESC, fs.id DESC
         """,
         (min_score, shard_n, shard_i),
         fetch=True,

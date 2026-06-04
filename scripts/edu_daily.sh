@@ -17,8 +17,8 @@ echo "[edu_daily] $(date '+%F %T') 시작"
 echo "[edu_daily] 1/3 네이버 커뮤니티(맘카페) 수집"
 $PY scripts/collect_naver_community.py --segment both 2>&1 | grep -E "✅|📥|총" || true
 
-echo "[edu_daily] 2/3 Tier2 필터"
-$PY scripts/run_edu_filter.py 2>&1 | tail -3 || true
+echo "[edu_daily] 2/3 Tier2 필터 (한도 2000 — 무료 Ollama, 백로그 소화)"
+$PY scripts/run_edu_filter.py --limit 2000 2>&1 | tail -3 || true
 
 echo "[edu_daily] 3/3 Tier3 정제 + RAG 인덱스"
 $PY scripts/run_edu_tier3_parallel.py --workers 4 --shard 0/1 --min-score 0.1 --cost-every 20 2>&1 \
