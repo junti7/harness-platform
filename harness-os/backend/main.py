@@ -1526,6 +1526,37 @@ def _data_collection_monitor() -> dict[str, Any]:
             if item.get("active")
         )
 
+        # 교육(edu_consulting) 수집 소스 실적 — 맘카페 등, 공공데이터포털처럼 노출
+        edu_sources = []
+        try:
+            edu_rows = _execute_query(
+                "SELECT source, count(*) AS cnt, "
+                "count(*) FILTER (WHERE status='filtered_pass') AS passed, "
+                "count(*) FILTER (WHERE status='pending') AS pend, "
+                "max(ingested_at) AS last_at "
+                "FROM raw_signals "
+                "WHERE coalesce(domain, raw_data->>'domain', '') = 'edu_consulting' "
+                "GROUP BY source ORDER BY cnt DESC"
+            )
+            _edu_ch = lambda s: ("네이버 검색 API" if s.startswith("Naver") else
+                                 "YouTube API" if s.startswith("youtube") else
+                                 "RSS/논문" if any(k in s for k in ("rss", "scholar", "arxiv", "eric")) else "기타")
+            _edu_lbl = lambda s: (s.replace("Naver_", "네이버 ").replace("카페글", "카페(맘카페)")
+                                  if s.startswith("Naver") else s.replace("youtube_", "YouTube ").replace("_", " "))
+            for r in edu_rows:
+                src = str(r["source"] or "")
+                edu_sources.append({
+                    "id": src,
+                    "label": _edu_lbl(src),
+                    "channel": _edu_ch(src),
+                    "count": int(r["cnt"]),
+                    "pass_count": int(r["passed"] or 0),
+                    "pending_count": int(r["pend"] or 0),
+                    "last_ingested_at": str(r["last_at"] or ""),
+                })
+        except Exception:
+            pass
+
         return {
             "domain": domain,
             "total": total,
@@ -1533,6 +1564,7 @@ def _data_collection_monitor() -> dict[str, Any]:
             "pass_count": counts.get("filtered_pass", 0),
             "fail_count": counts.get("filtered_fail", 0),
             "sources": sources_out,
+            "edu_sources": edu_sources,
             "channel_coverage": build_channel_coverage(source_rows),
             "tier2_worker": _tier2_worker_health(domain),
             "persona_fallbacks": _persona_fallback_status(),

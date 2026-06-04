@@ -217,6 +217,11 @@ export type DashboardPayload = {
       notes?: string
       activation_policy?: string
     }>
+    edu_sources?: Array<{
+      id: string; label: string; channel: string
+      count: number; pass_count: number; pending_count: number
+      last_ingested_at: string
+    }>
     channel_coverage?: Array<{
       channel: string
       label: string

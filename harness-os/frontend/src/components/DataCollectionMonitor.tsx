@@ -93,6 +93,7 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
     pass_count,
     fail_count,
     sources = [],
+    edu_sources = [],
     channel_coverage = [],
     tier2_worker,
     persona_fallbacks,
@@ -251,6 +252,38 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
             ))}
           </div>
         </div>
+
+        {/* EDU 수집 소스 (맘카페 등) */}
+        {edu_sources.length > 0 && (
+          <div className="panel" style={{ padding: '1.25rem' }}>
+            <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
+              교육 수집 소스 (맘카페·커뮤니티)
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+              {edu_sources.map(src => {
+                const eduTotal = edu_sources.reduce((a, s) => a + (s.count || 0), 0)
+                return (
+                  <div key={src.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: 'var(--color-ok)', boxShadow: '0 0 5px var(--color-ok)' }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{src.label}</span>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text)' }}>{(src.count || 0).toLocaleString('ko-KR')}건</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', color: 'var(--color-text-muted)', marginTop: '0.1rem' }}>
+                        <span style={{ textTransform: 'uppercase', letterSpacing: '0.03em' }}>{src.channel}</span>
+                        <span>통과 {(src.pass_count || 0).toLocaleString('ko-KR')} · 대기 {(src.pending_count || 0).toLocaleString('ko-KR')} · {relativeTime(src.last_ingested_at)}</span>
+                      </div>
+                      <div style={{ marginTop: '0.3rem', height: 3, borderRadius: 2, background: 'var(--color-border)', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${Math.min(100, ((src.count || 0) / Math.max(eduTotal, 1)) * 100)}%`, background: 'var(--color-accent)', borderRadius: 2 }} />
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* LANGUAGES */}
         <div className="panel" style={{ padding: '1.25rem' }}>
