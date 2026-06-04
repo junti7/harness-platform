@@ -256,9 +256,19 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
         {/* EDU 수집 소스 (맘카페 등) */}
         {edu_sources.length > 0 && (
           <div className="panel" style={{ padding: '1.25rem' }}>
-            <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
+            <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
               교육 수집 소스 (맘카페·커뮤니티)
             </p>
+            {(() => {
+              const t = edu_sources.reduce((a, s) => ({ c: a.c + (s.count || 0), p: a.p + (s.pass_count || 0), w: a.w + (s.pending_count || 0) }), { c: 0, p: 0, w: 0 })
+              return (
+                <div style={{ display: 'flex', gap: '1.25rem', margin: '0 0 1rem 0', fontSize: '0.78rem' }}>
+                  <span>총 수집 <b style={{ color: 'var(--color-text)' }}>{t.c.toLocaleString('ko-KR')}</b></span>
+                  <span style={{ color: 'var(--color-ok)' }}>분류통과 <b>{t.p.toLocaleString('ko-KR')}</b></span>
+                  <span style={{ color: 'var(--color-warn, #d97706)' }}>분류대기 <b>{t.w.toLocaleString('ko-KR')}</b></span>
+                </div>
+              )
+            })()}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
               {edu_sources.map(src => {
                 const eduTotal = edu_sources.reduce((a, s) => a + (s.count || 0), 0)
