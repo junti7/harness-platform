@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import json
 import os
@@ -32,7 +33,10 @@ import httpx
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env", override=True)
+
+from core.database import execute_query  # noqa: E402
 
 CLIENT_ID = os.getenv("NAVER_CLIENT_ID", "").strip()
 CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET", "").strip()
@@ -111,6 +115,47 @@ def collect(segment: str) -> list[dict]:
     return out
 
 
+def ingest_raw_signals(items: list[dict]) -> int:
+    """수집 항목을 raw_signals(domain=edu_consulting)에 적재 → 파이프라인(필터·정제·RAG)으로 흐름.
+
+    네이버 검색 API는 제목+요약 스니펫만 제공(본문 전체 아님, ToS 한계)하므로
+    full_content = 제목+요약으로 구성한다. content_hash로 중복 제거(pending 상태).
+    """
+    new = 0
+    for it in items:
+        title = it.get("title", "")
+        link = it.get("link", "")
+        desc = it.get("description", "")
+        key = f"{title}{link}"
+        content_hash = hashlib.sha256(key.encode()).hexdigest()[:64]
+        raw_data = {
+            "title": title,
+            "url": link,
+            "description": desc,
+            "full_content": f"{title}\n\n{desc}".strip(),
+            "source_detail": it.get("cafe_or_blog", ""),
+            "query": it.get("query", ""),
+            "postdate": it.get("postdate", ""),
+            "segment": it.get("segment", "parent"),
+            "domain": "edu_consulting",
+            "collected_at": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            execute_query(
+                """
+                INSERT INTO raw_signals (source, raw_data, content_hash, full_content, status, domain)
+                VALUES (%s, %s, %s, %s, 'pending', 'edu_consulting')
+                ON CONFLICT (content_hash) DO NOTHING
+                """,
+                (it.get("source", "Naver"), json.dumps(raw_data, ensure_ascii=False),
+                 content_hash, raw_data["full_content"]),
+            )
+            new += 1
+        except Exception as e:
+            print(f"  [WARN] 적재 실패: {type(e).__name__}: {e}")
+    return new
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--segment", choices=["parent", "worker", "both"], default="both")
@@ -149,6 +194,10 @@ def main() -> None:
     by_src = Counter(f"{i['segment']}/{i['source']}" for i in all_items)
     for k, v in sorted(by_src.items()):
         print(f"   {k}: {v}건")
+
+    # raw_signals 적재 (edu 파이프라인 진입)
+    ingested = ingest_raw_signals(all_items)
+    print(f"📥 raw_signals(edu_consulting) 적재 시도 {ingested}건 (중복은 자동 스킵)")
 
 
 if __name__ == "__main__":
