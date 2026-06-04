@@ -191,8 +191,8 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
         </div>
       </div>
 
-      {/* ── 상단 3개 패널: 파이프라인 / 소스 / 언어 ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+      {/* ── 상단 패널: 파이프라인 / 소스 / 교육수집 / 언어 (모바일=1열 자동접힘) ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: '1rem', marginBottom: '1rem' }}>
 
         {/* FUNNEL */}
         <div className="panel" style={{ padding: '1.25rem' }}>
@@ -262,7 +262,7 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
             {(() => {
               const t = edu_sources.reduce((a, s) => ({ c: a.c + (s.count || 0), p: a.p + (s.pass_count || 0), w: a.w + (s.pending_count || 0) }), { c: 0, p: 0, w: 0 })
               return (
-                <div style={{ display: 'flex', gap: '1.25rem', margin: '0 0 1rem 0', fontSize: '0.78rem' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem 1rem', margin: '0 0 1rem 0', fontSize: '0.78rem' }}>
                   <span>총 수집 <b style={{ color: 'var(--color-text)' }}>{t.c.toLocaleString('ko-KR')}</b></span>
                   <span style={{ color: 'var(--color-ok)' }}>분류통과 <b>{t.p.toLocaleString('ko-KR')}</b></span>
                   <span style={{ color: 'var(--color-warn, #d97706)' }}>분류대기 <b>{t.w.toLocaleString('ko-KR')}</b></span>
@@ -280,7 +280,7 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
                         <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{src.label}</span>
                         <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-text)' }}>{(src.count || 0).toLocaleString('ko-KR')}건</span>
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', color: 'var(--color-text-muted)', marginTop: '0.1rem' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: '0.1rem 0.5rem', fontSize: '0.73rem', color: 'var(--color-text-muted)', marginTop: '0.1rem' }}>
                         <span style={{ textTransform: 'uppercase', letterSpacing: '0.03em' }}>{src.channel}</span>
                         <span>통과 {(src.pass_count || 0).toLocaleString('ko-KR')} · 대기 {(src.pending_count || 0).toLocaleString('ko-KR')} · {relativeTime(src.last_ingested_at)}</span>
                       </div>
@@ -323,7 +323,7 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '1rem', marginBottom: '1rem' }}>
         <div className="panel" style={{ padding: '1.25rem' }}>
           <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
             기술 테마 클러스터
@@ -388,7 +388,7 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '1rem', marginBottom: '1rem' }}>
         <div className="panel" style={{ padding: '1.25rem' }}>
           <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
             현재 수집 주제
