@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.harness.edu-daily</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/juntaepark/projects/harness-platform/scripts/edu_daily.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/juntaepark/projects/harness-platform</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    <key>DATABASE_URL</key>
+    <string>postgresql://localhost/harness_prod</string>
+  </dict>
+
+  <!-- 매일 10:30 — 맘카페 등 수집 → 필터 → 정제 → RAG 인덱스(자족형 edu 일일 파이프라인) -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>10</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/juntaepark/projects/harness-platform/logs/edu-daily.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/juntaepark/projects/harness-platform/logs/edu-daily.error.log</string>
+</dict>
+</plist>
