@@ -17,8 +17,10 @@ echo "[edu_daily] $(date '+%F %T') 시작"
 echo "[edu_daily] 1/3 네이버 커뮤니티(맘카페) 수집"
 $PY scripts/collect_naver_community.py --segment both 2>&1 | grep -E "✅|📥|총" || true
 
-echo "[edu_daily] 2/3 Tier2 필터 (한도 2000 — 무료 Ollama, 백로그 소화)"
-$PY scripts/run_edu_filter.py --limit 2000 2>&1 | tail -3 || true
+echo "[edu_daily] 2/3 Tier2 필터 (filtered_signals 생성 — 한도 2000)"
+# 메인 파이프라인과 동일한 진짜 필터: relevance 점수 + filtered_signals 적재.
+# (run_edu_filter.py는 상태만 마킹하고 filtered_signals를 안 만들어 정제로 안 흘렀음)
+$PY -c "from adapters.content.filter import filter_signals; n=filter_signals(limit=2000, domain='edu_consulting'); print(f'[필터] filtered_signals 생성 {n}건')" 2>&1 | tail -3 || true
 
 echo "[edu_daily] 3/3 Tier3 정제 + RAG 인덱스"
 $PY scripts/run_edu_tier3_parallel.py --workers 4 --shard 0/1 --min-score 0.1 --cost-every 20 2>&1 \
