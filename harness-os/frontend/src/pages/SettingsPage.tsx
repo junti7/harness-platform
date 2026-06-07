@@ -50,6 +50,22 @@ type Props = {
   authHeaders: () => Record<string, string>
 }
 
+function formatRuntimeHealthError(error?: string | null): string {
+  const text = String(error || '').trim()
+  if (!text) return '대표 메일 연결 점검이 필요합니다.'
+  const lowered = text.toLowerCase()
+  if (lowered.includes('invalid_grant') || lowered.includes('expired or revoked')) {
+    return '대표 Gmail OAuth 토큰이 만료되었거나 철회되었습니다. Mac Mini에서 Gmail 재인증이 필요합니다.'
+  }
+  if (lowered.includes('no tty available for keyring file backend password prompt') || lowered.includes('gog_keyring_password')) {
+    return '자동화 서버의 Gmail keyring 비밀번호 전달이 누락됐습니다. 비대화형 실행용 keyring 설정을 점검해야 합니다.'
+  }
+  if (lowered.includes('gmail runtime not ready')) {
+    return '자동화 서버의 Gmail runtime 설정이 완전하지 않습니다. 계정 또는 runtime 환경변수를 점검해야 합니다.'
+  }
+  return text
+}
+
 export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase, authHeaders }: Props) {
   const [runtimeHealth, setRuntimeHealth] = useState<{
     ok: boolean
@@ -334,7 +350,7 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase,
               </div>
               {runtimeHealth?.error && (
                 <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-danger)', fontWeight: 600 }}>
-                  {runtimeHealth.error}
+                  {formatRuntimeHealthError(runtimeHealth.error)}
                 </p>
               )}
             </div>
