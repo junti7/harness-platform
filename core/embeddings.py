@@ -20,6 +20,16 @@ EMBED_DIM = 768
 _BATCH = 64
 
 
+def _log_embed_cost(chunk: list[str]) -> None:
+    """임베딩 토큰(입력 전용)을 추정해 api_cost_log에 기록 — 비용 가시성 확보."""
+    try:
+        from adapters.content.refiner import log_api_cost
+        est_tokens = sum(len(t) for t in chunk) // 4  # 대략 4자=1토큰
+        log_api_cost(EMBED_MODEL, est_tokens, 0, provider="google")
+    except Exception:
+        pass
+
+
 def _embed(texts: list[str], task_type: str, retries: int = 3) -> list[list[float]]:
     client = build_client()
     cfg = types.EmbedContentConfig(output_dimensionality=EMBED_DIM, task_type=task_type)
@@ -31,6 +41,7 @@ def _embed(texts: list[str], task_type: str, retries: int = 3) -> list[list[floa
             try:
                 resp = client.models.embed_content(model=EMBED_MODEL, contents=chunk, config=cfg)
                 out.extend([list(e.values) for e in resp.embeddings])
+                _log_embed_cost(chunk)  # 비용 추적 사각지대 제거(임베딩도 기록)
                 break
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc

@@ -156,9 +156,16 @@ def run():
     # Tier 3
     logger.info("[Tier 3] 정제 시작")
     try:
-        from adapters.content.refiner import refine
-        results["tier3"] = refine(correlation_id=pipeline_cid)
-        logger.info(f"[Tier 3] 완료: {results['tier3']}건 정제")
+        from adapters.content.refiner import refine, get_today_cost, DAILY_COST_LIMIT
+        # 실질 일일 budget gate: 오늘 누적 비용(정제+필터+diagnose+임베딩 모두 포함)이
+        # 한도를 넘으면 정제를 아예 건너뛴다. 비용 폭주 하드캡.
+        _today = get_today_cost(logger)
+        if _today >= DAILY_COST_LIMIT:
+            logger.warning(f"[Tier 3] 일일 비용 한도 초과로 정제 건너뜀: ${_today:.2f} / ${DAILY_COST_LIMIT}")
+            results["tier3"] = 0
+        else:
+            results["tier3"] = refine(correlation_id=pipeline_cid)
+            logger.info(f"[Tier 3] 완료: {results['tier3']}건 정제")
     except Exception as e:
         logger.error(f"[Tier 3] 실패: {e}")
         _save_run_end(run_id, results, "failed", f"tier3:{e}")

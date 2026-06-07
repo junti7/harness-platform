@@ -3440,13 +3440,20 @@ def get_paper_trading_dashboard(_: None = Depends(_require_secret)) -> dict[str,
 @app.get("/api/paper-trading/reset-status")
 def get_paper_trading_reset_status(_: None = Depends(_require_secret)) -> dict[str, Any]:
     path = PROJECT_ROOT / "docs" / "reports" / "paper_trading_reset_status.json"
+    post_open_path = PROJECT_ROOT / "docs" / "reports" / "post_open_verification.json"
+    post_open_payload: dict[str, Any] = {}
+    if post_open_path.exists():
+        try:
+            post_open_payload = json.loads(post_open_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            post_open_payload = {"ok": False, "error": str(e)}
     if not path.exists():
-        return {"ok": True, "exists": False, "reset_pending": False, "flat": True}
+        return {"ok": True, "exists": False, "reset_pending": False, "flat": True, "post_open_verification": post_open_payload}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-        return {"ok": True, "exists": True, **payload}
+        return {"ok": True, "exists": True, **payload, "post_open_verification": post_open_payload}
     except Exception as e:
-        return {"ok": False, "exists": True, "error": str(e), "reset_pending": True, "flat": False}
+        return {"ok": False, "exists": True, "error": str(e), "reset_pending": True, "flat": False, "post_open_verification": post_open_payload}
 
 
 def _read_json_file(path: Path, default: Any) -> Any:
@@ -5376,6 +5383,20 @@ _EDU_DISCLAIMER = (
     "그 효과를 보장하지 않으며, 전문적인 상담·진단을 대체하지 않습니다."
 )
 
+
+def _edu_log_llm_cost(usage: dict, model: str | None = None) -> None:
+    """diagnose/curriculum의 Gemini 사용량을 api_cost_log에 기록(비용 추적 사각지대 제거)."""
+    try:
+        from adapters.content.refiner import log_api_cost
+        log_api_cost(
+            model or os.getenv("EDU_DIAGNOSE_MODEL", "gemini-2.5-flash"),
+            int((usage or {}).get("prompt_token_count", 0) or 0),
+            int((usage or {}).get("candidates_token_count", 0) or 0),
+            provider="google",
+        )
+    except Exception:
+        pass  # 비용 로깅 실패가 고객 응답을 막지 않도록
+
 # 프롬프트 인젝션 경계 — 사용자 대화는 '데이터'일 뿐 지시가 아님을 시스템 레벨로 못박는다
 _EDU_INJECTION_GUARD = (
     "[입력 신뢰 경계 — 매우 중요]\n"
@@ -5605,7 +5626,7 @@ def _run_edu_diagnose(req: EduDiagnoseRequest) -> dict[str, Any]:
     for attempt in range(2):
         raw = None
         try:
-            raw, _usage = generate_text(
+            raw, usage = generate_text(
                 prompt,
                 model=os.getenv("EDU_DIAGNOSE_MODEL", "gemini-2.5-flash"),
                 max_output_tokens=2048,
@@ -5613,6 +5634,7 @@ def _run_edu_diagnose(req: EduDiagnoseRequest) -> dict[str, Any]:
                 response_mime_type="application/json",
             )
             last_raw = raw
+            _edu_log_llm_cost(usage)
             cleaned = re.sub(r"```(?:json)?", "", raw or "").strip().rstrip("`").strip()
             # 관대한 JSON 추출: 본문 앞뒤에 텍스트가 섞여도 {...} 블록만 파싱
             if not cleaned.startswith("{"):
@@ -5777,7 +5799,7 @@ def _run_edu_curriculum(req: EduCurriculumRequest) -> dict[str, Any]:
     for attempt in range(2):
         raw = None
         try:
-            raw, _usage = generate_text(
+            raw, usage = generate_text(
                 prompt,
                 model=os.getenv("EDU_DIAGNOSE_MODEL", "gemini-2.5-flash"),
                 max_output_tokens=4096,
@@ -5785,6 +5807,7 @@ def _run_edu_curriculum(req: EduCurriculumRequest) -> dict[str, Any]:
                 response_mime_type="application/json",
             )
             last_raw = raw
+            _edu_log_llm_cost(usage)
             cleaned = re.sub(r"```(?:json)?", "", raw or "").strip().rstrip("`").strip()
             if not cleaned.startswith("{"):
                 m = re.search(r"\{.*\}", cleaned, re.DOTALL)
