@@ -33,6 +33,7 @@ from core.embeddings import embed_documents, EMBED_MODEL, EMBED_DIM  # noqa: E40
 from scripts.refresh_edu_evidence_bank import (  # noqa: E402
     _load_anchors,
     _cite_from_refined,
+    _cites_from_refined,
     _source_label,
     EDU_DIR,
 )
@@ -54,7 +55,7 @@ def _fetch_all_refined() -> list[dict]:
         fetch=True,
     ) or []
     items: list[dict] = []
-    seen_cites: set[str] = set()
+    seen_prefix: set[str] = set()  # 첫머리 16자 기준 전역 중복 제거(다양성 보존)
     for r in rows:
         body = r["final_body"]
         try:
@@ -63,20 +64,23 @@ def _fetch_all_refined() -> list[dict]:
             continue
         if body.get("is_relevant") is False:
             continue
-        cite = _cite_from_refined(body)
-        if not cite or cite in seen_cites:
-            continue
-        seen_cites.add(cite)
         created = r["created_at"]
-        items.append({
-            "id": f"fresh-{r['id']}",
-            "type": "최신 동향",
-            "segment": "parent",
-            "provenance": "pipeline",
-            "cite": cite,
-            "source": _source_label(r["source"], r["raw_data"]),
-            "collected_at": created.isoformat() if hasattr(created, "isoformat") else str(created),
-        })
+        src = _source_label(r["source"], r["raw_data"])
+        # 항목당 여러 개의 다양한 cite 추출
+        for n, cite in enumerate(_cites_from_refined(body)):
+            prefix = cite[:16]
+            if prefix in seen_prefix:
+                continue  # 전역 중복(다른 항목과도) 제거
+            seen_prefix.add(prefix)
+            items.append({
+                "id": f"fresh-{r['id']}-{n}",
+                "type": "최신 동향",
+                "segment": "parent",
+                "provenance": "pipeline",
+                "cite": cite,
+                "source": src,
+                "collected_at": created.isoformat() if hasattr(created, "isoformat") else str(created),
+            })
     return items
 
 

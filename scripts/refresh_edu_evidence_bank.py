@@ -141,6 +141,63 @@ def _cite_from_refined(body: dict) -> str | None:
     return fallback
 
 
+def _strip_trailing_source(text: str) -> str:
+    """문장 끝의 '(근거: …)', '(출처: …)' 등 괄호 메타를 제거."""
+    import re
+    return re.sub(r"\s*[\(（](근거|출처|참고|예)\s*[:：].*$", "", (text or "").strip())
+
+
+_MAX_CITES_PER_ITEM = 4  # 항목당 추출 cite 상한 (다양성↑, 코퍼스 비대화 방지)
+
+
+def _cites_from_refined(body: dict) -> list[str]:
+    """refined_output에서 '서로 다른' 알맹이 cite를 여러 개 추출(다양성 강화).
+
+    기존 _cite_from_refined는 항목당 what_changed 1개만 뽑아 일반론이 반복됐다.
+    여기서는 구체 행동(action_now 각 항목)·한국 맥락(korea_context)·주의점(wait_and_see)·
+    관찰 포인트(watchlist)까지 폭넓게 끌어와, 일반/메타/중복을 걸러 다양한 cite 집합을 만든다.
+    """
+    pi = body.get("parent_insight") if isinstance(body.get("parent_insight"), dict) else {}
+    raw: list = []
+    an = pi.get("action_now")
+    if isinstance(an, list):
+        raw.extend(an)            # 구체 행동들 — 가장 다양함
+    elif isinstance(an, str):
+        raw.append(an)
+    raw.append(pi.get("korea_context"))   # 한국 입시·정책 맥락
+    raw.append(pi.get("what_changed"))    # 큰 변화(반복되기 쉬움 → 뒤로)
+    raw.append(pi.get("wait_and_see"))    # 보류·주의 신호
+    wl = body.get("watchlist")
+    if isinstance(wl, list):
+        raw.extend(wl)
+    raw.append(body.get("hook"))
+
+    cites: list[str] = []
+    seen_prefix: set[str] = set()
+    for c in raw:
+        if not isinstance(c, str):
+            continue
+        s = _first_sentence(_strip_trailing_source(c))
+        if len(s) < 15:
+            continue
+        if any(m in s for m in _META_MARKERS):
+            continue
+        if _is_generic(s):
+            continue
+        prefix = s[:16]
+        if prefix in seen_prefix:
+            continue
+        seen_prefix.add(prefix)
+        cites.append(s)
+        if len(cites) >= _MAX_CITES_PER_ITEM:
+            break
+    if not cites:  # 다 걸러지면 기존 단일 로직으로 최소 1개 확보
+        one = _cite_from_refined(body)
+        if one:
+            cites.append(one)
+    return cites
+
+
 def _fetch_fresh_items(window_days: int, max_fresh: int) -> list[dict]:
     """최근 window_days 이내 edu_consulting refined_outputs를 cite 항목으로 변환."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
