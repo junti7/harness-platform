@@ -288,7 +288,7 @@ def run(execute: bool = False) -> None:
         region   = u_item.get("region", "US")
         name     = u_item.get("name", "")
 
-        routing_exchange = "SMART" if currency == "USD" else exchange
+        routing_exchange = "SMART"
         primary_exchange = exchange if routing_exchange != exchange else ""
         contract = Stock(sym, routing_exchange, currency, primaryExchange=primary_exchange)
         ib.qualifyContracts(contract)

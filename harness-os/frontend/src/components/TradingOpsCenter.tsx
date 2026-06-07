@@ -89,6 +89,13 @@ type PaperResetStatus = {
   market_context?: { now_ny?: string; market_open?: boolean; session?: string }
   alpaca?: { open_orders?: Array<[string, string, string, string]>; positions?: Array<[string, number]>; flat?: boolean }
   ibkr?: { open_orders?: Array<[number, string, string, string, number]>; positions?: Array<[string, number, string, string]>; flat?: boolean }
+  post_open_verification?: {
+    checked_at?: string
+    ready_for_execute?: boolean
+    next_action?: string[]
+    alpaca_dry_run?: { status?: string; reason?: string; returncode?: number }
+    ibkr_dry_run?: { status?: string; reason?: string; returncode?: number }
+  }
 }
 
 type TradingSelectionFlow = {
@@ -868,8 +875,29 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
               Alpaca 주문 {resetStatus.alpaca?.open_orders?.length ?? 0}건 · 포지션 {resetStatus.alpaca?.positions?.length ?? 0}건 · IBKR 주문 {resetStatus.ibkr?.open_orders?.length ?? 0}건 · 포지션 {resetStatus.ibkr?.positions?.length ?? 0}건
             </span>
           </div>
+          {resetStatus.post_open_verification && (
+            <div className="alpaca-gate-status" style={{ marginTop: '0.6rem' }}>
+              {resetStatus.post_open_verification.ready_for_execute ? (
+                <span className="gate-chip clear">재개 준비 완료</span>
+              ) : (
+                <span className="gate-chip aging">재개 준비 미완료</span>
+              )}
+              <span className="data-meta">
+                {resetStatus.post_open_verification.checked_at
+                  ? `${relativeTime(resetStatus.post_open_verification.checked_at)} 점검`
+                  : '장 개장 후 점검 전'}
+                {' · '}
+                Alpaca dry-run {resetStatus.post_open_verification.alpaca_dry_run?.status ?? '대기'}
+                {' · '}
+                IBKR dry-run {resetStatus.post_open_verification.ibkr_dry_run?.status ?? '대기'}
+              </span>
+            </div>
+          )}
           <p className="term-note">청산이 끝나기 전에는 새 진입이 자동 차단됩니다.</p>
           {resetStatus.next_action && <p className="term-note">{resetStatus.next_action}</p>}
+          {resetStatus.post_open_verification?.next_action?.map((item, idx) => (
+            <p key={`post-open-${idx}`} className="term-note">{item}</p>
+          ))}
         </article>
       )}
 

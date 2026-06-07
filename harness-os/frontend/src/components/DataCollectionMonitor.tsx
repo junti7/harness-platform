@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react'
 import type { DashboardPayload } from './types'
 
 type Monitor = NonNullable<DashboardPayload['data_collection_monitor']>
@@ -74,19 +73,6 @@ function clusterLabel(key: string) {
 }
 
 export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props) {
-  const [rawStats, setRawStats] = useState<any[]>([])
-  const [selectedRawStat, setSelectedRawStat] = useState<any | null>(null)
-
-  useEffect(() => {
-    fetch('http://100.97.175.44:8000/api/statistics_data')
-      .then(res => res.json())
-      .then(data => {
-        if (data && data.data) {
-          setRawStats(data.data)
-        }
-      })
-      .catch(err => console.error('Failed to fetch raw statistics data:', err))
-  }, [])
   const {
     total,
     pending_count,
@@ -105,7 +91,6 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
     generated_query_sources = [],
     expansion_policy,
     workers,
-    configured_languages = [],
     recent_activity = [],
   } = monitor
   const passRate = total ? (pass_count / total) * 100 : 0
@@ -113,17 +98,22 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
   const healthVariant = passRate >= 15 ? 'ok' : passRate >= 5 ? 'warn' : 'danger'
   const healthColor = healthVariant === 'ok' ? 'var(--color-ok)' : healthVariant === 'warn' ? 'var(--color-warn)' : 'var(--color-danger)'
   const healthLabel = healthVariant === 'ok' ? '정상' : healthVariant === 'warn' ? '주의' : '저품질'
+  const visibleScheduleServices = scheduleServices.filter((svc) => {
+    const failed = svc.loaded && svc.last_exit_code !== null && svc.last_exit_code !== '0'
+    const importantRole = /트레이딩|수집|분류|watchdog|guard/i.test(`${svc.role} ${svc.name} ${svc.label}`)
+    return svc.running || failed || !svc.loaded || importantRole
+  })
 
   return (
     <section className="ops-section" style={{ marginTop: '1.5rem' }}>
       {/* ── 자동 스케줄 현황 ── */}
-      {scheduleServices.length > 0 && (
+      {visibleScheduleServices.length > 0 && (
         <div className="panel" style={{ padding: '1.25rem', marginBottom: '1rem' }}>
           <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
-            자동 스케줄 현황
+            자동 스케줄 현황 (핵심 · 이상 상태)
           </p>
           <div style={{ display: 'grid', gap: '0.5rem' }}>
-            {scheduleServices.map(svc => {
+            {visibleScheduleServices.map(svc => {
               const statusColor = svc.running
                 ? 'var(--color-ok)'
                 : svc.loaded && svc.last_exit_code !== null && svc.last_exit_code !== '0'
@@ -160,7 +150,7 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
                       <span style={{ fontWeight: 700, fontSize: '0.83rem' }}>{svc.name}</span>
                       <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>{svc.role}</span>
                     </div>
-                    {svc.log_tail.length > 0 && (
+                    {svc.log_tail.length > 0 && statusLabel !== '대기' && (
                       <div style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', marginTop: '0.15rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {svc.log_tail[svc.log_tail.length - 1]}
                       </div>
@@ -295,32 +285,6 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
           </div>
         )}
 
-        {/* LANGUAGES */}
-        <div className="panel" style={{ padding: '1.25rem' }}>
-          <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
-            설정 언어 ({configured_languages.length}개)
-          </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-            {configured_languages.map(lang => (
-              <span
-                key={lang.code}
-                title={lang.label}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
-                  padding: '0.2rem 0.5rem',
-                  borderRadius: '6px',
-                  background: 'var(--color-surface-lighter)',
-                  border: '1px solid var(--color-border)',
-                  fontSize: '0.78rem',
-                  cursor: 'default',
-                }}
-              >
-                <span style={{ fontSize: '1rem' }}>{lang.flag}</span>
-                <span style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>{lang.code.toUpperCase()}</span>
-              </span>
-            ))}
-          </div>
-        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '1rem', marginBottom: '1rem' }}>
@@ -365,12 +329,18 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
             기술 Push 후보
           </p>
           <div style={{ display: 'grid', gap: '0.45rem' }}>
-            {(push_candidates?.physical_ai || []).slice(0, 5).map(item => (
-              <div key={`push-tech-${item.cluster}-${item.title}`} style={{ padding: '0.55rem 0.65rem', border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-surface-lighter)' }}>
-                <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginBottom: '0.15rem' }}>{clusterLabel(item.cluster)}</div>
-                <div style={{ fontWeight: 700, fontSize: '0.8rem', lineHeight: 1.35 }}>{item.title}</div>
+            {(push_candidates?.physical_ai || []).length === 0 ? (
+              <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                아직 노출할 기술 push 후보가 없습니다. 현재 필터 기준을 통과한 최신 핵심 후보가 없거나, 다음 수집 배치를 기다리는 상태입니다.
               </div>
-            ))}
+            ) : (
+              (push_candidates?.physical_ai || []).slice(0, 5).map(item => (
+                <div key={`push-tech-${item.cluster}-${item.title}`} style={{ padding: '0.55rem 0.65rem', border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-surface-lighter)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginBottom: '0.15rem' }}>{clusterLabel(item.cluster)}</div>
+                  <div style={{ fontWeight: 700, fontSize: '0.8rem', lineHeight: 1.35 }}>{item.title}</div>
+                </div>
+              ))
+            )}
           </div>
         </div>
         <div className="panel" style={{ padding: '1.25rem' }}>
@@ -378,12 +348,18 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
             교육 Push 후보
           </p>
           <div style={{ display: 'grid', gap: '0.45rem' }}>
-            {(push_candidates?.edu_consulting || []).slice(0, 5).map(item => (
-              <div key={`push-edu-${item.cluster}-${item.title}`} style={{ padding: '0.55rem 0.65rem', border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-surface-lighter)' }}>
-                <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginBottom: '0.15rem' }}>{clusterLabel(item.cluster)}</div>
-                <div style={{ fontWeight: 700, fontSize: '0.8rem', lineHeight: 1.35 }}>{item.title}</div>
+            {(push_candidates?.edu_consulting || []).length === 0 ? (
+              <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                아직 노출할 교육 push 후보가 없습니다. 현재 필터 기준을 통과한 최신 핵심 후보가 없거나, 다음 수집 배치를 기다리는 상태입니다.
               </div>
-            ))}
+            ) : (
+              (push_candidates?.edu_consulting || []).slice(0, 5).map(item => (
+                <div key={`push-edu-${item.cluster}-${item.title}`} style={{ padding: '0.55rem 0.65rem', border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-surface-lighter)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginBottom: '0.15rem' }}>{clusterLabel(item.cluster)}</div>
+                  <div style={{ fontWeight: 700, fontSize: '0.8rem', lineHeight: 1.35 }}>{item.title}</div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -566,6 +542,7 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
         </div>
       </div>
 
+      {(persona_fallbacks?.fallback_count ?? 0) > 0 || (persona_fallbacks?.recent_events || []).length > 0 ? (
       <div className="panel" style={{ padding: '1.25rem', marginBottom: '1rem' }}>
         <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
           Persona Fallback
@@ -623,6 +600,7 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
           </div>
         </div>
       </div>
+      ) : null}
 
       {/* ── 최근 활동 피드 ── */}
       <div className="panel" style={{ padding: '1.25rem' }}>
@@ -658,66 +636,6 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
           })}
         </div>
       </div>
-      {/* ── Raw DB 적재 데이터 피드 ── */}
-      <div className="panel" style={{ padding: '1.25rem', marginTop: '1rem' }}>
-        <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
-          DB 적재 원본 (raw_statistics_data)
-        </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-          {rawStats.length === 0 && (
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '1rem 0' }}>적재된 알맹이 데이터가 없습니다.</p>
-          )}
-          {rawStats.map((item, idx) => (
-            <div key={idx} 
-              onClick={() => setSelectedRawStat(item)}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '80px 1fr 1fr 100px',
-                gap: '0.75rem',
-                alignItems: 'center',
-                padding: '0.5rem 0',
-                borderBottom: idx < rawStats.length - 1 ? '1px solid var(--color-border)' : 'none',
-                fontSize: '0.8rem',
-                cursor: 'pointer',
-              }}>
-              <span style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>{item.source}</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-accent)', fontWeight: 600 }}>
-                {item.file_name}
-              </span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>
-                {String(item.raw_content || '').substring(0, 100)}...
-              </span>
-              <span style={{ color: 'var(--color-text-muted)', textAlign: 'right' }}>{relativeTime(item.created_at)}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {selectedRawStat && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-          background: 'rgba(0,0,0,0.5)', zIndex: 9999,
-          display: 'flex', alignItems: 'center', justifyContent: 'center'
-        }} onClick={() => setSelectedRawStat(null)}>
-          <div style={{
-            background: 'var(--color-surface)', width: '80%', maxWidth: '800px', maxHeight: '80vh',
-            borderRadius: '8px', padding: '1.5rem', display: 'flex', flexDirection: 'column',
-            boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
-          }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--color-text)' }}>{selectedRawStat.file_name}</h3>
-              <button onClick={() => setSelectedRawStat(null)} style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
-            </div>
-            <div style={{
-              flex: 1, overflowY: 'auto', background: 'var(--color-surface-lighter)',
-              padding: '1rem', borderRadius: '6px', fontSize: '0.85rem', color: 'var(--color-text)',
-              whiteSpace: 'pre-wrap', border: '1px solid var(--color-border)', fontFamily: 'monospace'
-            }}>
-              {(selectedRawStat.raw_content || '내용 없음').replace(/\\n/g, '\n')}
-            </div>
-          </div>
-        </div>
-      )}
     </section>
   )
 }

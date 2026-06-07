@@ -17,7 +17,12 @@ for name in \
   com.harness.tier3-filter \
   com.harness.daily-news-pdf \
   com.harness.pipeline-watchdog \
-  com.harness.ibkr-watchdog; do
+  com.harness.ibkr-watchdog \
+  com.harness.turtle-auto-trader \
+  com.harness.ibkr-auto-trader \
+  com.harness.paper-reset-watch \
+  com.harness.trading-runtime-guard \
+  com.harness.post-open-verification; do
   src="$PLIST_DIR/$name.plist"
   dst="$AGENT_DIR/$name.plist"
   sed "s|__ROOT__|$ROOT|g" "$src" >"$dst"

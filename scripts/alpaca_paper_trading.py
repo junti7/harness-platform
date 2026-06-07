@@ -12,7 +12,10 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
+from dotenv import load_dotenv
 import requests
+
+load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 ALPACA_KEY = os.getenv("ALPACA_API_KEY", "")
 ALPACA_SECRET = os.getenv("ALPACA_SECRET_KEY", "")

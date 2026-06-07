@@ -132,7 +132,7 @@ def turtle_gate_check(signal: dict, account_value: float) -> dict:
     atr = signal["atr"]
 
     # 1. 진입 신호
-    checks["signal"] = signal["signal"] in ("breakout_long", "breakout_short")
+    checks["signal"] = signal["signal"] == "breakout_long"
 
     # 2. ATR 계산
     checks["atr"] = atr > 0
@@ -147,10 +147,7 @@ def turtle_gate_check(signal: dict, account_value: float) -> dict:
         checks["risk_pct"] = False
 
     # 4. 손절가
-    if signal["signal"] == "breakout_long":
-        stop_loss = round(cp - TURTLE_STOP_MULT * atr, 2)
-    else:
-        stop_loss = round(cp + TURTLE_STOP_MULT * atr, 2)
+    stop_loss = round(cp - TURTLE_STOP_MULT * atr, 2)
     checks["stop_loss"] = stop_loss > 0
 
     # 5. 청산 시스템
@@ -175,7 +172,7 @@ def turtle_gate_check(signal: dict, account_value: float) -> dict:
 
 def should_enter(symbol: str, signal: dict, existing_symbols: set, state: dict) -> tuple[bool, str]:
     """진입 여부 결정."""
-    if signal["signal"] not in ("breakout_long", "breakout_short"):
+    if signal["signal"] != "breakout_long":
         return False, "no_signal"
     if symbol in state.get("turtle_positions", {}):
         return False, "already_tracked"
@@ -230,7 +227,7 @@ def enter_position(symbol: str, gate: dict, signal: dict, dry_run: bool, state: 
                 "atr": signal["atr"],
                 "stop_loss": gate["stop_loss"],
                 "qty": qty,
-                "side": entry["side"],
+                "side": "buy",
             }
             # 거래 일기 기록 (기업명·섹터·선정 사유 포함)
             _info = _UNIVERSE_INFO.get(symbol, {})

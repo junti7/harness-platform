@@ -25,6 +25,7 @@ load_dotenv(ROOT / ".env", override=True)
 
 import httpx
 from core.database import execute_query
+from scripts.alpaca_paper_trading import get_account_summary
 
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
 SLACK_CHANNEL   = os.getenv("SLACK_CHANNEL_EXEC_PRESIDENT_DECISIONS", "")
@@ -38,6 +39,13 @@ CRITICAL_SERVICES = [
 
 IBKR_HOST = "127.0.0.1"
 IBKR_PORT = 4002
+
+TRADING_REQUIRED_FILES = [
+    ROOT / "scripts" / "run_trading_cycle.py",
+    ROOT / "scripts" / "build_trading_universe.py",
+    ROOT / "scripts" / "check_paper_books_flat.py",
+    ROOT / "scripts" / "ibkr_tws_paper_trader.py",
+]
 
 
 # ── Slack 알림 ──────────────────────────────────────────────────────────────
@@ -136,6 +144,20 @@ def _check_ibkr() -> list[str]:
         return [f"🚨 IBKR Gateway 연결 끊김 — {IBKR_HOST}:{IBKR_PORT} 미응답\n  → 수동 재로그인 필요 (Mac Mini 화면 공유 또는 VNC Viewer)"]
 
 
+def _check_trading_runtime() -> list[str]:
+    issues = []
+    for path in TRADING_REQUIRED_FILES:
+        if not path.exists():
+            issues.append(f"트레이딩 런타임 파일 누락: {path.name}")
+    try:
+        alpaca = get_account_summary()
+        if not alpaca.get("ok"):
+            issues.append(f"Alpaca 인증/계좌 조회 실패: {alpaca.get('error')}")
+    except Exception as e:
+        issues.append(f"Alpaca 런타임 점검 실패: {e}")
+    return issues
+
+
 # ── 메인 ─────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -145,6 +167,7 @@ def main() -> None:
     all_issues.extend(_check_services())
     all_issues.extend(_check_db())
     all_issues.extend(_check_ibkr())
+    all_issues.extend(_check_trading_runtime())
 
     if all_issues:
         print(f"[ALERT] 이상 {len(all_issues)}건 감지")
