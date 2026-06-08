@@ -56,6 +56,17 @@ MIN_CHARS = {
     "economic_implication": 0,     # 없어도 통과
 }
 
+# 도메인별 스키마는 다르다. physical_ai는 korea_strategic_context를, edu_consulting은
+# parent_insight(dict) 구조를 쓴다. 단일 기준으로 검사하면 한쪽이 전부 탈락한다.
+REQUIRED_FIELDS_BY_DOMAIN = {
+    "physical_ai": REQUIRED_FIELDS,
+    "edu_consulting": ["final_title", "hook", "parent_insight"],
+}
+MIN_CHARS_BY_DOMAIN = {
+    "physical_ai": MIN_CHARS,
+    "edu_consulting": {"hook": 20},  # parent_insight는 dict라 스키마 검사로 비어있음만 확인
+}
+
 # 실제 법적으로 문제가 되는 표현만 차단 (speculative 표기·스타일 문제는 허용)
 INVESTMENT_RISK_PATTERNS = [
     r"(무조건|반드시|확실히)\s*(오릅니다|오를|수익이 납니다)",
@@ -90,30 +101,29 @@ REPORT_REQUIRED_HEADINGS = [
 
 # ─── Individual checks ────────────────────────────────────────────────────────
 
-def _check_schema(body: dict) -> list[str]:
-    """핵심 필드(제목·hook·한국맥락)만 필수 확인. 나머지는 optional."""
+def _check_schema(body: dict, domain: str = "physical_ai") -> list[str]:
+    """핵심 필드만 필수 확인(도메인별). 나머지는 optional."""
     findings = []
-    for f in REQUIRED_FIELDS:
+    for f in REQUIRED_FIELDS_BY_DOMAIN.get(domain, REQUIRED_FIELDS):
         val = body.get(f)
-        if not val or (isinstance(val, str) and not val.strip()):
+        empty = (
+            val is None
+            or (isinstance(val, str) and not val.strip())
+            or (isinstance(val, (dict, list)) and not val)
+        )
+        if empty:
             findings.append(f"핵심 필드 누락: {f}")
     return findings
 
 
-def _check_completeness(body: dict) -> list[str]:
-    """최소 길이 기준 확인 — 0이면 스킵."""
+def _check_completeness(body: dict, domain: str = "physical_ai") -> list[str]:
+    """최소 길이 기준 확인(도메인별) — 0이면 스킵."""
     findings = []
-    deep = body.get("deep_analysis") or {}
-    if not isinstance(deep, dict):
-        deep = {}
-    checks = {
-        "hook": body.get("hook") or "",
-        "korea_strategic_context": body.get("korea_strategic_context") or "",
-    }
-    for field, text in checks.items():
-        min_len = MIN_CHARS.get(field, 0)
-        if min_len > 0 and len(str(text).strip()) < min_len:
-            findings.append(f"{field} 내용 부족: {len(str(text).strip())}자 (최소 {min_len}자)")
+    for field, min_len in MIN_CHARS_BY_DOMAIN.get(domain, MIN_CHARS).items():
+        if min_len > 0:
+            text = body.get(field) or ""
+            if len(str(text).strip()) < min_len:
+                findings.append(f"{field} 내용 부족: {len(str(text).strip())}자 (최소 {min_len}자)")
     return findings
 
 
@@ -166,10 +176,10 @@ def _check_llm(body: dict, logger: HarnessLogger) -> list[str]:
 
 # ─── Core runner ─────────────────────────────────────────────────────────────
 
-def _run_checks(body: dict, logger: HarnessLogger) -> tuple[bool, list[str]]:
+def _run_checks(body: dict, logger: HarnessLogger, domain: str = "physical_ai") -> tuple[bool, list[str]]:
     findings = []
-    findings.extend(_check_schema(body))
-    findings.extend(_check_completeness(body))
+    findings.extend(_check_schema(body, domain))
+    findings.extend(_check_completeness(body, domain))
     findings.extend(_check_investment_risk(body))
     findings.extend(_check_llm(body, logger))
     return len(findings) == 0, findings
@@ -241,7 +251,10 @@ def qa_check_refined_output(refined_output_id: int,
     logger.info(f"[QA] refined_output id={refined_output_id} 검사 시작")
 
     row = execute_query(
-        "SELECT id, final_title, final_body FROM refined_outputs WHERE id = %s",
+        "SELECT ro.id, ro.final_title, ro.final_body, "
+        "COALESCE(fs.domain, 'physical_ai') AS domain "
+        "FROM refined_outputs ro JOIN filtered_signals fs ON fs.id = ro.filtered_signal_id "
+        "WHERE ro.id = %s",
         (refined_output_id,), fetch=True,
     )
     if not row:
@@ -249,6 +262,7 @@ def qa_check_refined_output(refined_output_id: int,
         return False
 
     row = dict(row[0])
+    domain = row.get("domain") or "physical_ai"
     title = row.get("final_title") or f"refined_output#{refined_output_id}"
     raw_body = row.get("final_body") or "{}"
     try:
@@ -258,7 +272,7 @@ def qa_check_refined_output(refined_output_id: int,
         logger.error(f"[QA] final_body JSON 파싱 실패: {e}")
         return False
 
-    approved, findings = _run_checks(body, logger)
+    approved, findings = _run_checks(body, logger, domain)
     reason = "; ".join(findings) if findings else "모든 검사 통과"
     memo_path = _save_memo(refined_output_id, "refined_output", approved, findings, title)
     _record_decision("refined_output", refined_output_id, approved, reason)
