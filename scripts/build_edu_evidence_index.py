@@ -35,6 +35,8 @@ from scripts.refresh_edu_evidence_bank import (  # noqa: E402
     _cite_from_refined,
     _cites_from_refined,
     _source_label,
+    infer_source_kind,
+    is_low_quality_evidence,
     EDU_DIR,
 )
 
@@ -66,8 +68,11 @@ def _fetch_all_refined() -> list[dict]:
             continue
         created = r["created_at"]
         src = _source_label(r["source"], r["raw_data"])
+        source_kind = infer_source_kind(src, r["raw_data"], r["source"])
         # 항목당 여러 개의 다양한 cite 추출
         for n, cite in enumerate(_cites_from_refined(body)):
+            if is_low_quality_evidence(cite, src, r["raw_data"], r["source"]):
+                continue
             prefix = cite[:16]
             if prefix in seen_prefix:
                 continue  # 전역 중복(다른 항목과도) 제거
@@ -79,6 +84,7 @@ def _fetch_all_refined() -> list[dict]:
                 "provenance": "pipeline",
                 "cite": cite,
                 "source": src,
+                "source_kind": source_kind,
                 "collected_at": created.isoformat() if hasattr(created, "isoformat") else str(created),
             })
     return items
@@ -89,6 +95,7 @@ def _corpus() -> list[dict]:
     anchors = [{
         "id": a["id"], "type": a.get("type", "근거"), "segment": a.get("segment", "both"),
         "provenance": "anchor", "cite": a["cite"], "source": a.get("source", ""),
+        "source_kind": a.get("source_kind") or infer_source_kind(a.get("source", "")),
     } for a in _load_anchors() if a.get("cite")]
     by_id = {a["id"]: a for a in anchors}
     for it in _fetch_all_refined():

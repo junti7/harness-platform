@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -44,6 +45,84 @@ logging.basicConfig(
     format="%(asctime)s | edu-evidence | %(levelname)s | %(message)s",
 )
 log = logging.getLogger("refresh_edu_evidence_bank")
+
+
+_COMMUNITY_SOURCE_MARKERS = (
+    "naver", "맘카페", "카페", "블로그", "blind", "reddit", "dcinside", "디시", "brunch", "maily",
+)
+_RESEARCH_POLICY_SOURCE_MARKERS = (
+    "eric", "semantic scholar", "oecd", "unesco", "common sense", "educationweek", "edsurge",
+    "world economic forum", "ted-ed", "ted education", "교육부", "교육청", "kedi", "nih", "who",
+    "pew", "report", "policy", "학회", "연구", "논문",
+)
+_MEDIA_CASE_SOURCE_MARKERS = (
+    "youtube", "기사", "news", "podcast", "방송", "kbs", "mbc", "sbs", "조선", "중앙", "한겨레",
+)
+_YOUTUBE_LOW_SIGNAL_TITLE_PATTERNS = (
+    "official video", "mv", "뮤직비디오", "직캠", "cover", "reaction", "trailer", "예고편",
+    "drama", "드라마", "ost", "fan cam", "lyrics",
+)
+
+
+def infer_source_kind(source_label: str, raw_data=None, source_name: str | None = None) -> str:
+    """상담 근거를 말투/용도 기준으로 거칠게 분류한다.
+
+    - community_voice: 맘카페, 블로그, 커뮤니티 관찰처럼 생활어/현장감이 강한 소스
+    - research_policy: 연구, 정책, 기관 보고서처럼 사실성/권위가 강한 소스
+    - media_case: 기사, 방송, 인터뷰, 유튜브 사례형
+    - general_reference: 그 외
+    """
+    rd = raw_data
+    if isinstance(rd, str):
+        try:
+            rd = json.loads(rd)
+        except Exception:
+            rd = {}
+    if not isinstance(rd, dict):
+        rd = {}
+    blob = " ".join(
+        part for part in [
+            str(source_label or ""),
+            str(source_name or ""),
+            str(rd.get("channel") or ""),
+            str(rd.get("source_name") or ""),
+            str(rd.get("url") or ""),
+        ] if part
+    ).lower()
+    if any(marker in blob for marker in _COMMUNITY_SOURCE_MARKERS):
+        return "community_voice"
+    if any(marker in blob for marker in _RESEARCH_POLICY_SOURCE_MARKERS):
+        return "research_policy"
+    if any(marker in blob for marker in _MEDIA_CASE_SOURCE_MARKERS):
+        return "media_case"
+    return "general_reference"
+
+
+def is_low_quality_evidence(cite: str, source_label: str, raw_data=None, source_name: str | None = None) -> bool:
+    """RAG 근거 레이어에서만 쓰는 저품질 판정.
+
+    수집 자체를 막지 않는다. 다만 상담 근거로 쓸 때 명백히 무관한 엔터테인먼트/홍보성
+    유튜브 조각이 섞이면 자연스러움이 크게 무너져서 evidence layer에서 제외한다.
+    """
+    rd = raw_data
+    if isinstance(rd, str):
+        try:
+            rd = json.loads(rd)
+        except Exception:
+            rd = {}
+    if not isinstance(rd, dict):
+        rd = {}
+    title = str(rd.get("title") or rd.get("video_title") or "").strip().lower()
+    cite_norm = str(cite or "").strip().lower()
+    source_norm = str(source_label or "").strip().lower()
+    blob = " ".join([title, cite_norm, source_norm, str(source_name or "").lower()])
+    if "youtube" in source_norm and any(pattern in title for pattern in _YOUTUBE_LOW_SIGNAL_TITLE_PATTERNS):
+        return True
+    if re.search(r"[一-龥]{4,}", title) and not any(token in blob for token in ("ai", "교육", "진로", "직장", "부모", "학생", "취업")):
+        return True
+    if len(cite_norm) < 18:
+        return True
+    return False
 
 
 def _load_anchors() -> list[dict]:
@@ -232,6 +311,9 @@ def _fetch_fresh_items(window_days: int, max_fresh: int) -> list[dict]:
         cite = _cite_from_refined(body)
         if not cite or cite in seen_cites:
             continue
+        src_label = _source_label(r["source"], r["raw_data"])
+        if is_low_quality_evidence(cite, src_label, r["raw_data"], r["source"]):
+            continue
         prefix = cite[:18]
         if prefix in seen_prefix:  # 첫머리가 같은 거의-동일 문구 제외
             continue
@@ -244,7 +326,8 @@ def _fetch_fresh_items(window_days: int, max_fresh: int) -> list[dict]:
             "segment": "parent",
             "evergreen": False,
             "cite": cite,
-            "source": _source_label(r["source"], r["raw_data"]),
+            "source": src_label,
+            "source_kind": infer_source_kind(src_label, r["raw_data"], r["source"]),
             "provenance": "pipeline",
             "refined_output_id": r["id"],
             "collected_at": created.isoformat() if hasattr(created, "isoformat") else str(created),
@@ -293,6 +376,8 @@ def _source_label(source: str | None, raw_data) -> str:
 
 def build_bank(window_days: int, max_fresh: int) -> dict:
     anchors = _load_anchors()
+    for it in anchors:
+        it.setdefault("source_kind", infer_source_kind(it.get("source", "")))
     fresh = _fetch_fresh_items(window_days, max_fresh)
 
     # dedup: 동일 cite 텍스트 제거 (앵커 우선)
@@ -317,6 +402,9 @@ def build_bank(window_days: int, max_fresh: int) -> dict:
                 "total": len(merged),
                 "evergreen_anchors": sum(1 for x in merged if x.get("evergreen")),
                 "fresh_pipeline": sum(1 for x in merged if x.get("provenance") == "pipeline"),
+                "community_voice": sum(1 for x in merged if x.get("source_kind") == "community_voice"),
+                "research_policy": sum(1 for x in merged if x.get("source_kind") == "research_policy"),
+                "media_case": sum(1 for x in merged if x.get("source_kind") == "media_case"),
             },
         },
         "items": merged,
