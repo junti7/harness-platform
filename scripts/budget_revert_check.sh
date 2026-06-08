@@ -7,6 +7,14 @@ cd "$HOME/projects/harness-platform" || exit 1
 export PATH="/opt/homebrew/bin:$PATH"
 source .venv/bin/activate 2>/dev/null
 
+# 아침 정상화: QA LLM 재활성. gemini-2.5-flash 일일쿼터 outage 동안 QA_LLM_ENABLED=false로
+# 둔 경우가 있으므로, 쿼터가 리셋된 시각(이 잡은 10:30 KST 실행) 이후 항상 true로 복원한다.
+# (예산 원복 조건과 무관하게 매일 수행 — early-exit 앞에 둔다.)
+if grep -q '^QA_LLM_ENABLED=' .env && ! grep -q '^QA_LLM_ENABLED=true' .env; then
+  sed -i '' 's/^QA_LLM_ENABLED=.*/QA_LLM_ENABLED=true/' .env
+  echo "[budget-revert-check] QA_LLM_ENABLED=true 복원"
+fi
+
 CUR=$(grep -E '^DAILY_COST_LIMIT_USD=' .env | cut -d= -f2)
 if [ "$CUR" = "1.00" ]; then
   echo "[budget-revert-check] 이미 원복됨(한도=1.00) — no-op"
