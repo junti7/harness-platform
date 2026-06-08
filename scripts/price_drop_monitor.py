@@ -19,11 +19,37 @@ ALERTS_PATH = PROJECT_ROOT / "docs" / "reports" / "price_drop_alerts.jsonl"
 DROP_RAPID_THRESHOLD = float(os.getenv("PRICE_DROP_RAPID_PCT", "-3.0"))   # 단기 -3%
 DROP_DAY_THRESHOLD = float(os.getenv("PRICE_DROP_DAY_PCT", "-5.0"))       # 진입가 대비 -5%
 MONITOR_INTERVAL_SEC = int(os.getenv("PRICE_DROP_INTERVAL_SEC", "60"))    # 폴링 주기
-COOLDOWN_SEC = int(os.getenv("PRICE_DROP_COOLDOWN_SEC", "1800"))          # 알림 쿨다운 30분
+COOLDOWN_SEC = int(os.getenv("PRICE_DROP_COOLDOWN_SEC", "3600"))          # 급속(rapid) 알림 쿨다운 1h
+# 누적 낙폭(진입가 대비)은 손실 포지션이 계속 떠 있는 한 매 쿨다운마다 영구 재알림되어
+# Slack 폭주의 주원인이다. 별도로 대폭 긴 쿨다운(기본 24h)을 적용한다.
+DAY_COOLDOWN_SEC = int(os.getenv("PRICE_DROP_DAY_COOLDOWN_SEC", "86400")) # 누적 낙폭 알림 쿨다운 24h
+# 쿨다운 타임스탬프를 파일로 영속화 — 백엔드(KeepAlive) 재시작 시 in-memory 초기화로
+# 인한 재폭주를 방지한다.
+_ALERT_STATE_PATH = PROJECT_ROOT / "runtime" / "price_drop_alert_state.json"
 
 _prev_prices: dict[str, float] = {}
 _last_alert_ts: dict[str, float] = {}  # key = "symbol:trigger_type"
 _lock = threading.Lock()
+
+
+def _load_alert_state() -> None:
+    try:
+        data = json.loads(_ALERT_STATE_PATH.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            with _lock:
+                _last_alert_ts.update({str(k): float(v) for k, v in data.items()})
+    except Exception:
+        pass
+
+
+def _save_alert_state() -> None:
+    try:
+        _ALERT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with _lock:
+            snap = dict(_last_alert_ts)
+        _ALERT_STATE_PATH.write_text(json.dumps(snap, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
 _monitor_thread: threading.Thread | None = None
 
 
@@ -197,7 +223,7 @@ def check_once() -> list[dict[str, Any]]:
             ck = f"{symbol}:day"
             with _lock:
                 last = _last_alert_ts.get(ck, 0)
-            if now_ts - last >= COOLDOWN_SEC:
+            if now_ts - last >= DAY_COOLDOWN_SEC:
                 fires.append({"trigger": "day", "drop_pct": round(day_drop, 2), "ref_price": entry})
 
         for f in fires:
@@ -222,6 +248,7 @@ def check_once() -> list[dict[str, Any]]:
             ck = f"{symbol}:{f['trigger']}"
             with _lock:
                 _last_alert_ts[ck] = now_ts
+            _save_alert_state()  # 영속화 — 재시작에도 쿨다운 유지
 
         with _lock:
             _prev_prices[symbol] = current
@@ -283,6 +310,7 @@ def _monitor_loop() -> None:
 
 def start_monitor() -> threading.Thread:
     global _monitor_thread
+    _load_alert_state()  # 재시작에도 쿨다운 유지 — 영속 상태 복원
     with _lock:
         if _monitor_thread and _monitor_thread.is_alive():
             return _monitor_thread
