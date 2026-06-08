@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.harness.collection-health</string>
+
+  <!-- 자료 수집 성능검사 + 자동복구 + (복구 실패 시) Slack 보고 -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PROJECT_ROOT__/.venv/bin/python3</string>
+    <string>__PROJECT_ROOT__/scripts/collection_health_check.py</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__PROJECT_ROOT__</string>
+
+  <!-- 6시간마다 실행 -->
+  <key>StartInterval</key>
+  <integer>21600</integer>
+
+  <!-- 부팅/로드 직후 1회 점검 -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>__PROJECT_ROOT__/logs/collection-health.log</string>
+  <key>StandardErrorPath</key>
+  <string>__PROJECT_ROOT__/logs/collection-health.error.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>
