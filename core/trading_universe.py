@@ -163,6 +163,59 @@ def _load_candidate_rows(domain: str, lookback_days: int) -> list[EvidenceRow]:
     ]
 
 
+_RELIABILITY_CACHE: dict[str, float] | None = None
+
+
+def _reliability_map() -> dict[str, float]:
+    """source_catalog의 소스별 신뢰도(1회 캐시)."""
+    global _RELIABILITY_CACHE
+    if _RELIABILITY_CACHE is not None:
+        return _RELIABILITY_CACHE
+    out: dict[str, float] = {}
+    try:
+        for r in execute_query("SELECT source_name, reliability_score FROM source_catalog", fetch=True) or []:
+            if r.get("reliability_score") is not None:
+                out[str(r["source_name"])] = float(r["reliability_score"])
+    except Exception:
+        pass
+    _RELIABILITY_CACHE = out
+    return out
+
+
+def _reliability_for(source: str) -> float:
+    """소스 신뢰도(0~1). 카탈로그에 없으면 prefix 휴리스틱 → 기본 0.55."""
+    src = source or ""
+    m = _reliability_map()
+    if src in m:
+        return m[src]
+    low = src.lower()
+    if low.startswith("arxiv"):
+        return 0.85
+    if "ieee" in low or "mit" in low:
+        return 0.8
+    if low.startswith("google_news") or "news" in low:
+        return 0.6
+    if low.startswith("youtube"):
+        return 0.5
+    if low.startswith("naver"):
+        return 0.45
+    return 0.55
+
+
+def _recency_factor(created_at: str, lookback_days: int) -> float:
+    """최신 evidence 우대(오늘=1.0 → 윈도우 끝=0.4)."""
+    try:
+        ts = datetime.fromisoformat((created_at or "").replace("Z", "+00:00")) if created_at else None
+    except Exception:
+        ts = None
+    if ts is None:
+        return 0.7
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    age_days = max(0.0, (datetime.now(timezone.utc) - ts).total_seconds() / 86400.0)
+    return 0.4 + 0.6 * max(0.0, 1.0 - age_days / max(1, lookback_days))
+
+
 def build_trading_universe(domain: str = "physical_ai", lookback_days: int = 45, max_symbols: int = 24) -> list[dict[str, Any]]:
     ensure_trading_db_url()
     ensure_trading_schema()
@@ -178,10 +231,18 @@ def build_trading_universe(domain: str = "physical_ai", lookback_days: int = 45,
         total = 0.0
         matched_titles: list[str] = []
         matched_sources: set[str] = set()
+        seen_titles: set[str] = set()
         evidence_count = 0
         for row in evidence_rows:
             if any(pattern.search(row.text) for pattern in alias_patterns):
-                weight = max(0.2, row.score)
+                # 교차게재/중복 제목(같은 논문 cs.AI+cs.LG 등)은 1회만 카운트 — 인플레 방지
+                tkey = _normalize(row.title)[:80]
+                if tkey and tkey in seen_titles:
+                    continue
+                if tkey:
+                    seen_titles.add(tkey)
+                # 품질 가중치: 관련도(score) × 소스 신뢰도 × 최신성
+                weight = max(0.2, row.score) * _reliability_for(row.source) * _recency_factor(row.created_at, lookback_days)
                 total += weight
                 evidence_count += 1
                 matched_sources.add(row.source)
@@ -189,13 +250,17 @@ def build_trading_universe(domain: str = "physical_ai", lookback_days: int = 45,
                     matched_titles.append(row.title)
         if evidence_count == 0:
             continue
-        harness_score = min(10, max(1, round(total * 2.2 + evidence_count * 0.4)))
+        distinct_sources = len(matched_sources)
+        # 양(volume)보다 서로 다른 소스의 교차 확인(diversity)을 우대 →
+        # 한 소스 대량 멘션보다 여러 채널 동시 포착이 강한 신호
+        harness_score = min(10, max(1, round(total * 3.0 + distinct_sources * 0.6)))
         selection_reason = "; ".join(matched_titles[:3])[:500]
         scores[symbol] = {
             **item,
             "harness_score": harness_score,
             "evidence_count": evidence_count,
             "evidence_score": round(total, 3),
+            "distinct_sources": distinct_sources,
             "selection_reason": selection_reason,
             "matched_sources": sorted(matched_sources),
             "brokers": ["alpaca", "ibkr"] if item.get("region") == "US" else ["ibkr"],
@@ -203,7 +268,7 @@ def build_trading_universe(domain: str = "physical_ai", lookback_days: int = 45,
 
     ranked = sorted(
         scores.values(),
-        key=lambda row: (row["harness_score"], row["evidence_score"], row["evidence_count"]),
+        key=lambda row: (row["harness_score"], row["evidence_score"], row.get("distinct_sources", 0), row["evidence_count"]),
         reverse=True,
     )[:max_symbols]
     ranked = _translate_reasons_ko(ranked)
