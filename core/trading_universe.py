@@ -228,9 +228,8 @@ def build_trading_universe(domain: str = "physical_ai", lookback_days: int = 45,
     for item in registry:
         symbol = item["symbol"]
         alias_patterns = _alias_patterns(symbol, item.get("name", ""))
-        total = 0.0
+        per_source: dict[str, float] = {}
         matched_titles: list[str] = []
-        matched_sources: set[str] = set()
         seen_titles: set[str] = set()
         evidence_count = 0
         for row in evidence_rows:
@@ -243,16 +242,17 @@ def build_trading_universe(domain: str = "physical_ai", lookback_days: int = 45,
                     seen_titles.add(tkey)
                 # 품질 가중치: 관련도(score) × 소스 신뢰도 × 최신성
                 weight = max(0.2, row.score) * _reliability_for(row.source) * _recency_factor(row.created_at, lookback_days)
-                total += weight
+                per_source[row.source] = per_source.get(row.source, 0.0) + weight
                 evidence_count += 1
-                matched_sources.add(row.source)
                 if row.title and row.title not in matched_titles:
                     matched_titles.append(row.title)
         if evidence_count == 0:
             continue
+        matched_sources = set(per_source)
         distinct_sources = len(matched_sources)
-        # 양(volume)보다 서로 다른 소스의 교차 확인(diversity)을 우대 →
-        # 한 소스 대량 멘션보다 여러 채널 동시 포착이 강한 신호
+        # 소스별 수확체감(power 0.75): 한 소스 대량 멘션은 포화시키고, 여러 소스의
+        # 교차 확인(diversity)을 우대 → 단일 소스 스팸이 만점을 못 받게 한다.
+        total = sum(sw ** 0.75 for sw in per_source.values())
         harness_score = min(10, max(1, round(total * 3.0 + distinct_sources * 0.6)))
         selection_reason = "; ".join(matched_titles[:3])[:500]
         scores[symbol] = {
