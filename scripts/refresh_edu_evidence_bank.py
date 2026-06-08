@@ -98,6 +98,24 @@ def infer_source_kind(source_label: str, raw_data=None, source_name: str | None 
     return "general_reference"
 
 
+def infer_segment(raw_data=None, source_name: str | None = None) -> str:
+    rd = raw_data
+    if isinstance(rd, str):
+        try:
+            rd = json.loads(rd)
+        except Exception:
+            rd = {}
+    if not isinstance(rd, dict):
+        rd = {}
+    cluster = str(rd.get("topic_cluster") or "").strip().lower()
+    src = str(source_name or "").strip().lower()
+    if cluster in {"worker_ai", "job_seeker_ai"}:
+        return "worker"
+    if "worker" in src or "job_seeker" in src:
+        return "worker"
+    return "parent"
+
+
 def is_low_quality_evidence(cite: str, source_label: str, raw_data=None, source_name: str | None = None) -> bool:
     """RAG 근거 레이어에서만 쓰는 저품질 판정.
 
@@ -296,7 +314,7 @@ def _fetch_fresh_items(window_days: int, max_fresh: int) -> list[dict]:
         fetch=True,
     ) or []
 
-    items: list[dict] = []
+    candidates: list[dict] = []
     seen_cites: set[str] = set()
     seen_prefix: set[str] = set()  # 첫머리 유사 cite 중복 방지
     for r in rows:
@@ -320,20 +338,38 @@ def _fetch_fresh_items(window_days: int, max_fresh: int) -> list[dict]:
         seen_cites.add(cite)
         seen_prefix.add(prefix)
         created = r["created_at"]
-        items.append({
+        candidates.append({
             "id": f"fresh-{r['id']}",
             "type": "최신 동향",
-            "segment": "parent",
+            "segment": infer_segment(r["raw_data"], r["source"]),
             "evergreen": False,
             "cite": cite,
             "source": src_label,
+            "source_name": r["source"],
             "source_kind": infer_source_kind(src_label, r["raw_data"], r["source"]),
             "provenance": "pipeline",
             "refined_output_id": r["id"],
             "collected_at": created.isoformat() if hasattr(created, "isoformat") else str(created),
         })
-        if len(items) >= max_fresh:
-            break
+    # community > research > media > general 순서로 quota를 배분해 맘카페/지식iN/블로그의 생활어를 더 살린다.
+    quotas = {
+        "community_voice": max(1, int(max_fresh * 0.5)),
+        "research_policy": max(1, int(max_fresh * 0.25)),
+        "media_case": max(1, int(max_fresh * 0.15)),
+        "general_reference": max(1, int(max_fresh * 0.10)),
+    }
+    buckets: dict[str, list[dict]] = {key: [] for key in quotas}
+    for item in candidates:
+        buckets.setdefault(item["source_kind"], []).append(item)
+    items: list[dict] = []
+    for kind, limit in quotas.items():
+        items.extend(buckets.get(kind, [])[:limit])
+    if len(items) < max_fresh:
+        leftovers: list[dict] = []
+        for kind, bucket in buckets.items():
+            leftovers.extend(bucket[quotas.get(kind, 0):])
+        items.extend(leftovers[: max_fresh - len(items)])
+    items = items[:max_fresh]
     log.info("파이프라인 최신 항목 %d개 변환 (window=%d일, 조회 %d행)", len(items), window_days, len(rows))
     return items
 

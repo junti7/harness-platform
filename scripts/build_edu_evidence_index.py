@@ -35,6 +35,7 @@ from scripts.refresh_edu_evidence_bank import (  # noqa: E402
     _cite_from_refined,
     _cites_from_refined,
     _source_label,
+    infer_segment,
     infer_source_kind,
     is_low_quality_evidence,
     EDU_DIR,
@@ -80,10 +81,11 @@ def _fetch_all_refined() -> list[dict]:
             items.append({
                 "id": f"fresh-{r['id']}-{n}",
                 "type": "최신 동향",
-                "segment": "parent",
+                "segment": infer_segment(r["raw_data"], r["source"]),
                 "provenance": "pipeline",
                 "cite": cite,
                 "source": src,
+                "source_name": r["source"],
                 "source_kind": source_kind,
                 "collected_at": created.isoformat() if hasattr(created, "isoformat") else str(created),
             })
@@ -95,6 +97,7 @@ def _corpus() -> list[dict]:
     anchors = [{
         "id": a["id"], "type": a.get("type", "근거"), "segment": a.get("segment", "both"),
         "provenance": "anchor", "cite": a["cite"], "source": a.get("source", ""),
+        "source_name": a.get("source_name", ""),
         "source_kind": a.get("source_kind") or infer_source_kind(a.get("source", "")),
     } for a in _load_anchors() if a.get("cite")]
     by_id = {a["id"]: a for a in anchors}
@@ -125,6 +128,16 @@ def build(rebuild: bool = False) -> dict:
     corpus_ids = {c["id"] for c in corpus}
     # 코퍼스에서 사라진 항목은 인덱스에서도 제거 (정합 유지)
     existing = {cid: it for cid, it in existing.items() if cid in corpus_ids}
+
+    # 기존 임베딩은 유지하되, source_kind/segment/source 같은 메타는 최신 corpus로 backfill한다.
+    corpus_by_id = {c["id"]: c for c in corpus}
+    for cid, item in list(existing.items()):
+        meta = corpus_by_id.get(cid)
+        if not meta:
+            continue
+        for key in ("type", "segment", "provenance", "cite", "source", "source_name", "source_kind", "collected_at"):
+            if meta.get(key):
+                item[key] = meta[key]
 
     new_items = [c for c in corpus if c["id"] not in existing]
     log.info(f"기존 {len(existing)}건 / 신규 임베딩 대상 {len(new_items)}건")

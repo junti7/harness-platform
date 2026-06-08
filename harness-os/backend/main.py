@@ -12,6 +12,7 @@ import time
 import html
 import subprocess
 import shutil
+import base64
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -23,6 +24,10 @@ import anthropic
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+try:
+    from openai import OpenAI
+except ImportError:  # pragma: no cover - optional runtime dependency
+    OpenAI = None
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -1172,6 +1177,202 @@ def _gmail_message_runtime(message_id: str) -> dict[str, Any]:
         }
 
     return _cached(cache_key, producer)
+
+
+def _gmail_raw_runtime(message_id: str) -> dict[str, Any]:
+    ready, reason = _gmail_runtime_ready()
+    if not ready:
+        raise HTTPException(status_code=503, detail=f"Gmail runtime not ready: {reason}")
+
+    safe_id = message_id.strip()
+    if not safe_id or len(safe_id) > 64:
+        raise HTTPException(status_code=400, detail="Invalid message ID")
+
+    cache_key = f"gmail_raw:{safe_id}"
+
+    def producer() -> dict[str, Any]:
+        env = os.environ.copy()
+        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+        if GMAIL_RUNTIME_KEYRING_BACKEND:
+            env["GOG_KEYRING_BACKEND"] = GMAIL_RUNTIME_KEYRING_BACKEND
+        if GMAIL_RUNTIME_KEYRING_PASSWORD:
+            env["GOG_KEYRING_PASSWORD"] = GMAIL_RUNTIME_KEYRING_PASSWORD
+
+        if _gmail_local_mode():
+            cmd = [
+                GMAIL_RUNTIME_GOG_BIN,
+                "gmail",
+                "raw",
+                safe_id,
+                "-a",
+                GMAIL_RUNTIME_ACCOUNT,
+                "-j",
+                "--results-only",
+                "--gmail-no-send",
+            ]
+            proc = subprocess.run(
+                cmd,
+                cwd=str(PROJECT_ROOT),
+                capture_output=True,
+                text=True,
+                timeout=GMAIL_RUNTIME_TIMEOUT_S,
+                check=False,
+                env=env,
+            )
+        else:
+            target = _gmail_runtime_target()
+            assert target is not None
+            exports = ["export PATH=/opt/homebrew/bin:/usr/bin:/bin"]
+            if GMAIL_RUNTIME_KEYRING_BACKEND:
+                exports.append(f"export GOG_KEYRING_BACKEND={shlex.quote(GMAIL_RUNTIME_KEYRING_BACKEND)}")
+            if GMAIL_RUNTIME_KEYRING_PASSWORD:
+                exports.append(f"export GOG_KEYRING_PASSWORD={shlex.quote(GMAIL_RUNTIME_KEYRING_PASSWORD)}")
+            exports.append(
+                f"{shlex.quote(GMAIL_RUNTIME_GOG_BIN)} gmail raw {shlex.quote(safe_id)} "
+                f"-a {shlex.quote(GMAIL_RUNTIME_ACCOUNT)} -j --results-only --gmail-no-send"
+            )
+            proc = subprocess.run(
+                [GMAIL_RUNTIME_SSH_BIN, target, "; ".join(exports)],
+                cwd=str(PROJECT_ROOT),
+                capture_output=True,
+                text=True,
+                timeout=GMAIL_RUNTIME_TIMEOUT_S,
+                check=False,
+            )
+
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or "").strip()[:800]
+            raise HTTPException(status_code=502, detail=f"Gmail raw retrieve failed: {detail or 'unknown error'}")
+
+        raw = (proc.stdout or "").strip()
+        try:
+            return json.loads(raw) if raw else {}
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=502, detail=f"Gmail raw returned invalid JSON: {exc}") from exc
+
+    return _cached(cache_key, producer)
+
+
+def _gmail_plain_text_bodies(raw_message: dict[str, Any]) -> list[str]:
+    texts: list[str] = []
+    stack: list[dict[str, Any]] = []
+    payload = raw_message.get("payload")
+    if isinstance(payload, dict):
+        stack.append(payload)
+    while stack:
+        part = stack.pop()
+        nested = part.get("parts")
+        if isinstance(nested, list):
+            for child in nested:
+                if isinstance(child, dict):
+                    stack.append(child)
+        body = part.get("body")
+        mime_type = str(part.get("mimeType") or "")
+        data = body.get("data") if isinstance(body, dict) else None
+        if not data or not mime_type.startswith("text/plain"):
+            continue
+        try:
+            padding = "=" * (-len(data) % 4)
+            texts.append(base64.urlsafe_b64decode(data + padding).decode("utf-8", "ignore"))
+        except Exception:
+            continue
+    return texts
+
+
+def _collect_cost_receipts() -> dict[str, Any]:
+    cutoff = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    usd_per_krw = 1.0 / float(os.getenv("HARNESS_COST_KRW_PER_USD", "1400"))
+    specs = [
+        {
+            "provider": "anthropic",
+            "query": "from:invoice+statements@mail.anthropic.com newer_than:120d",
+            "limit": 30,
+        },
+        {
+            "provider": "google",
+            "query": 'from:payments-noreply@google.com subject:"Google Cloud Platform & APIs: 결제 완료" newer_than:120d',
+            "limit": 30,
+        },
+        {
+            "provider": "copilot",
+            "query": 'from:noreply@github.com subject:"Payment Receipt" newer_than:120d',
+            "limit": 20,
+        },
+    ]
+
+    provider_totals_usd: dict[str, float] = {}
+    provider_totals_krw: dict[str, float] = {}
+    receipts: list[dict[str, Any]] = []
+
+    for spec in specs:
+        try:
+            search = _gmail_search_runtime(spec["query"], spec["limit"])
+        except Exception:
+            continue
+        for item in search.get("items", []):
+            msg_id = str(item.get("id") or "").strip()
+            if not msg_id:
+                continue
+            try:
+                raw = _gmail_raw_runtime(msg_id)
+            except Exception:
+                continue
+            try:
+                internal_ms = int(raw.get("internalDate") or 0)
+            except Exception:
+                internal_ms = 0
+            if not internal_ms:
+                continue
+            receipt_dt = datetime.fromtimestamp(internal_ms / 1000.0, tz=timezone.utc)
+            if receipt_dt < cutoff:
+                continue
+
+            text = "\n".join(_gmail_plain_text_bodies(raw))
+            amount_usd = 0.0
+            amount_krw = 0.0
+            currency = "USD"
+            if spec["provider"] == "anthropic":
+                match = re.search(r"Amount paid\s*\$([0-9,]+(?:\.[0-9]{2})?)", text, re.IGNORECASE)
+                if not match:
+                    continue
+                amount_usd = float(match.group(1).replace(",", ""))
+            elif spec["provider"] == "copilot":
+                match = re.search(r"Total:\s*\$([0-9,]+(?:\.[0-9]{2})?)\s*USD", text, re.IGNORECASE)
+                if not match:
+                    continue
+                amount_usd = float(match.group(1).replace(",", ""))
+            elif spec["provider"] == "google":
+                match = re.search(r"₩\s*([0-9,]+)\s*의 결제 금액", text)
+                if not match:
+                    continue
+                amount_krw = float(match.group(1).replace(",", ""))
+                amount_usd = amount_krw * usd_per_krw
+                currency = "KRW"
+            else:
+                continue
+
+            provider_totals_usd[spec["provider"]] = provider_totals_usd.get(spec["provider"], 0.0) + amount_usd
+            if amount_krw > 0:
+                provider_totals_krw[spec["provider"]] = provider_totals_krw.get(spec["provider"], 0.0) + amount_krw
+            receipts.append(
+                {
+                    "provider": spec["provider"],
+                    "message_id": msg_id,
+                    "day": receipt_dt.date().isoformat(),
+                    "subject": str(item.get("subject") or ""),
+                    "currency": currency,
+                    "amount_usd": round(amount_usd, 4),
+                    "amount_krw": int(amount_krw) if amount_krw > 0 else None,
+                }
+            )
+
+    receipts.sort(key=lambda x: (x["day"], x["provider"], x["message_id"]))
+    return {
+        "provider_totals_usd": {k: round(v, 4) for k, v in provider_totals_usd.items()},
+        "provider_totals_krw": {k: int(v) for k, v in provider_totals_krw.items()},
+        "receipt_count": len(receipts),
+        "receipts": receipts,
+    }
 
 
 
@@ -3236,12 +3437,14 @@ def get_costs_summary(_: None = Depends(_require_secret)) -> dict[str, Any]:
         """
     )
     
-    # 5월 실제 고정 구독비
-    FIXED_SUBS = {
-        "anthropic": 20.0,
+    # 영수증이 있으면 영수증 금액을 최우선으로 사용한다.
+    # 영수증이 없는 provider만 api_cost_log 또는 미검증 추정치로 보완한다.
+    receipt_data = _cached("cost_receipts", _collect_cost_receipts)
+    receipt_provider_usd = receipt_data.get("provider_totals_usd", {}) if isinstance(receipt_data, dict) else {}
+    receipt_provider_krw = receipt_data.get("provider_totals_krw", {}) if isinstance(receipt_data, dict) else {}
+    receipt_items = receipt_data.get("receipts", []) if isinstance(receipt_data, dict) else []
+    ESTIMATED_SUBS = {
         "openai": 20.0,
-        "google": 20.0,
-        "copilot": 8.33
     }
     
     # 1. 일별 프로바이더 토큰 요금 집계
@@ -3277,13 +3480,25 @@ def get_costs_summary(_: None = Depends(_require_secret)) -> dict[str, Any]:
     goog_api_total = sum(item["google"] for item in daily_actual_costs.values())
     oai_api_total = sum(item["openai"] for item in daily_actual_costs.values())
     
-    # 4. 전체 누적 지출비 (API 사용 요금 + 고정 구독비)
-    total_fixed = sum(FIXED_SUBS.values())
-    total_spent = ant_api_total + goog_api_total + oai_api_total + total_fixed
-    
+    provider_spent = {
+        "anthropic": float(receipt_provider_usd.get("anthropic", 0.0) or ant_api_total),
+        "google": float(receipt_provider_usd.get("google", 0.0) or goog_api_total),
+        "openai": float(receipt_provider_usd.get("openai", 0.0) or oai_api_total),
+        "copilot": float(receipt_provider_usd.get("copilot", 0.0)),
+    }
+    provider_billing_basis = {
+        "anthropic": "gmail_receipt" if receipt_provider_usd.get("anthropic", 0.0) else "api_cost_log",
+        "google": "gmail_receipt" if receipt_provider_usd.get("google", 0.0) else "api_cost_log",
+        "openai": "gmail_receipt" if receipt_provider_usd.get("openai", 0.0) else "api_cost_log",
+        "copilot": "gmail_receipt" if receipt_provider_usd.get("copilot", 0.0) else "unverified",
+    }
+    verified_total_spent = sum(provider_spent.values())
+    estimated_fixed = sum(ESTIMATED_SUBS[p] for p, basis in provider_billing_basis.items() if basis != "gmail_receipt" and p in ESTIMATED_SUBS)
+    projected_total_spent = verified_total_spent + estimated_fixed
+
     initial_budget = 7000.0
-    remaining_budget = max(0.0, initial_budget - total_spent)
-    burn_rate_percent = (total_spent / initial_budget) * 100.0 if initial_budget > 0 else 0.0
+    remaining_budget = max(0.0, initial_budget - verified_total_spent)
+    burn_rate_percent = (verified_total_spent / initial_budget) * 100.0 if initial_budget > 0 else 0.0
     
     # LLM 구독 현황 정보 (Ollama 완전 제거, Copilot 신설)
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
@@ -3303,7 +3518,10 @@ def get_costs_summary(_: None = Depends(_require_secret)) -> dict[str, Any]:
             "provider": "anthropic",
             "status": "active" if anthropic_configured else "inactive",
             "key_configured": anthropic_configured,
-            "cost_spent_usd": round(FIXED_SUBS["anthropic"] + ant_api_total, 4),
+            "cost_spent_usd": round(provider_spent["anthropic"], 4),
+            "estimated_subscription_usd": 0.0,
+            "billing_basis": provider_billing_basis["anthropic"],
+            "receipt_total_krw": receipt_provider_krw.get("anthropic"),
             "models": ["claude-sonnet-4-6", "claude-haiku-4-5"]
         },
         {
@@ -3311,7 +3529,10 @@ def get_costs_summary(_: None = Depends(_require_secret)) -> dict[str, Any]:
             "provider": "google",
             "status": "active" if google_configured else "inactive",
             "key_configured": google_configured,
-            "cost_spent_usd": round(FIXED_SUBS["google"] + goog_api_total, 4),
+            "cost_spent_usd": round(provider_spent["google"], 4),
+            "estimated_subscription_usd": 0.0,
+            "billing_basis": provider_billing_basis["google"],
+            "receipt_total_krw": receipt_provider_krw.get("google"),
             "models": ["claude-sonnet-4-5", "claude-haiku-4-5", "gemini-2.5-flash"]
         },
         {
@@ -3319,7 +3540,10 @@ def get_costs_summary(_: None = Depends(_require_secret)) -> dict[str, Any]:
             "provider": "openai",
             "status": "active" if openai_configured else "inactive",
             "key_configured": openai_configured,
-            "cost_spent_usd": round(FIXED_SUBS["openai"] + oai_api_total, 4),
+            "cost_spent_usd": round(provider_spent["openai"], 4),
+            "estimated_subscription_usd": round(ESTIMATED_SUBS["openai"], 4),
+            "billing_basis": provider_billing_basis["openai"],
+            "receipt_total_krw": receipt_provider_krw.get("openai"),
             "models": ["gpt-4o", "gpt-4o-mini"]
         },
         {
@@ -3327,28 +3551,24 @@ def get_costs_summary(_: None = Depends(_require_secret)) -> dict[str, Any]:
             "provider": "copilot",
             "status": "active",
             "key_configured": copilot_configured,
-            "cost_spent_usd": round(FIXED_SUBS["copilot"], 4),
+            "cost_spent_usd": round(provider_spent["copilot"], 4),
+            "estimated_subscription_usd": 0.0,
+            "billing_basis": provider_billing_basis["copilot"],
+            "receipt_total_krw": receipt_provider_krw.get("copilot"),
             "models": ["copilot-chat", "copilot-agent"]
         }
     ]
     
     daily_costs_list = [{"day": d, "cost_usd": round(item["total_api"], 4)} for d, item in sorted(daily_actual_costs.items())]
     monthly_costs_list = [
-        {"month": "2026-05", "cost_usd": round(total_spent, 4)}
+        {"month": "verified_api_cost", "cost_usd": round(verified_total_spent, 4)}
     ]
-    
-    provider_spent = {
-        "anthropic": ant_api_total + FIXED_SUBS["anthropic"],
-        "google": goog_api_total + FIXED_SUBS["google"],
-        "openai": oai_api_total + FIXED_SUBS["openai"],
-        "copilot": FIXED_SUBS["copilot"]
-    }
-    
+
     breakdown_by_provider = [
         {
             "provider": p, 
             "cost_usd": round(c, 4), 
-            "percentage": round((c / total_spent * 100.0), 2) if total_spent > 0 else 0.0
+            "percentage": round((c / verified_total_spent * 100.0), 2) if verified_total_spent > 0 else 0.0
         } 
         for p, c in sorted(provider_spent.items(), key=lambda x: x[1], reverse=True)
     ]
@@ -3378,19 +3598,27 @@ def get_costs_summary(_: None = Depends(_require_secret)) -> dict[str, Any]:
             "model": model_name,
             "provider": prov,
             "cost_usd": round(actual_model_cost, 4),
-            "percentage": round((actual_model_cost / total_spent * 100.0), 2) if total_spent > 0 else 0.0
+            "percentage": round((actual_model_cost / verified_total_spent * 100.0), 2) if verified_total_spent > 0 else 0.0
         })
         
     return {
         "initial_budget_usd": initial_budget,
-        "total_spent_usd": round(total_spent, 4),
+        "total_spent_usd": round(verified_total_spent, 4),
+        "estimated_subscription_usd": round(estimated_fixed, 4),
+        "projected_total_spent_usd": round(projected_total_spent, 4),
         "remaining_budget_usd": round(remaining_budget, 4),
         "burn_rate_percent": round(burn_rate_percent, 4),
         "monthly_costs": monthly_costs_list,
         "daily_costs": daily_costs_list,
         "breakdown_by_provider": breakdown_by_provider,
         "breakdown_by_model": breakdown_by_model,
-        "llm_subscriptions": llm_subscriptions
+        "llm_subscriptions": llm_subscriptions,
+        "receipt_basis": {
+            "enabled": True,
+            "receipt_count": int(receipt_data.get("receipt_count", 0) or 0),
+            "providers": sorted(k for k, v in receipt_provider_usd.items() if v),
+            "items": receipt_items[-10:],
+        },
     }
 
 
@@ -4770,6 +4998,34 @@ def _edu_normalize_llm(value: str) -> str:
     return v if v in {"auto", "claude", "gemini", "gpt", "local"} else "auto"
 
 
+def _edu_prompt_salutation(value: str, segment: str, locale: str) -> str:
+    """프롬프트 주입용 호칭 힌트.
+
+    내부 enum(father/mother/neutral/name)이 그대로 모델 응답에 새는 문제를 막기 위해
+    자연어 설명만 넘긴다.
+    """
+    normalized = _edu_normalize_salutation(value)
+    if locale == "en-US":
+        if normalized == "father":
+            return "If directly addressing the user, use 'father' naturally. Do not mention internal labels."
+        if normalized == "mother":
+            return "If directly addressing the user, use 'mother' naturally. Do not mention internal labels."
+        if normalized == "name":
+            return "If directly addressing the user, use the user's name naturally. Do not mention internal labels."
+        return "Use neutral address such as parent/caregiver, or omit direct salutation."
+    if segment == "worker":
+        if normalized == "name":
+            return "이름으로 자연스럽게 부르되, 내부 코드나 영어 라벨은 절대 말하지 않는다."
+        return "직접 호칭이 꼭 필요하지 않으면 생략한다. 내부 코드나 영어 라벨은 절대 말하지 않는다."
+    if normalized == "father":
+        return "필요할 때만 '아버님'처럼 자연스럽게 부른다. father 같은 내부 코드는 절대 말하지 않는다."
+    if normalized == "mother":
+        return "필요할 때만 '어머님'처럼 자연스럽게 부른다. mother 같은 내부 코드는 절대 말하지 않는다."
+    if normalized == "name":
+        return "이름으로 자연스럽게 부르되, 내부 코드나 영어 라벨은 절대 말하지 않는다."
+    return "기본은 호칭을 생략하거나 '보호자님' 같은 중립 호칭을 쓴다. 내부 코드는 절대 말하지 않는다."
+
+
 def _edu_base_url() -> str:
     return os.getenv("EDU_PUBLIC_BASE_URL", "http://100.97.175.44:8000").rstrip("/")
 
@@ -5291,8 +5547,20 @@ def _format_indexed(lines: list[str], empty_msg: str) -> tuple[str, set[str]]:
 # Deep Research 전체 코퍼스에서 '고객 대화의 의향'에 가장 가까운 근거를 검색해 주입한다.
 # 미리 정한 segment/랜덤이 아니라, 누가 무엇을 묻든 의미 유사도로 최적 근거를 고른다.
 _EDU_INDEX_PATH = PROJECT_ROOT / "data" / "edu_research" / "evidence_index.json"
+_EDU_RUNTIME_EVENTS_PATH = PROJECT_ROOT / "runtime" / "edu_pilot_runtime_events.jsonl"
 _edu_index_cache: dict[str, Any] = {"mtime": None, "items": []}
 _edu_index_lock = threading.Lock()
+_EDU_COMMUNITY_SOURCE_MARKERS = ("naver", "맘카페", "카페", "블로그", "blind", "reddit", "dcinside", "디시", "brunch", "maily")
+_EDU_RESEARCH_POLICY_SOURCE_MARKERS = (
+    "eric", "semantic scholar", "oecd", "unesco", "common sense", "educationweek", "edsurge",
+    "world economic forum", "ted-ed", "ted education", "교육부", "교육청", "kedi", "nih", "who",
+    "pew", "report", "policy", "학회", "연구", "논문",
+)
+_EDU_MEDIA_CASE_SOURCE_MARKERS = ("youtube", "기사", "news", "podcast", "방송", "kbs", "mbc", "sbs", "조선", "중앙", "한겨레")
+_EDU_LOW_SIGNAL_TITLE_PATTERNS = (
+    "official video", "mv", "뮤직비디오", "직캠", "cover", "reaction", "trailer", "예고편",
+    "drama", "드라마", "ost", "fan cam", "lyrics",
+)
 
 
 def _load_rag_index() -> list[dict]:
@@ -5312,41 +5580,92 @@ def _load_rag_index() -> list[dict]:
         return _edu_index_cache["items"]
 
 
-def _edu_query_text(history: list, user_text: str = "") -> str:
+def _edu_runtime_event(event_type: str, **payload: Any) -> None:
+    """운영 중 fallback/품질 저하 원인을 남기는 경량 JSONL 로그."""
+    try:
+        _EDU_RUNTIME_EVENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        rec = {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "event_type": event_type,
+            **payload,
+        }
+        with open(_EDU_RUNTIME_EVENTS_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def _edu_infer_source_kind_from_item(item: dict[str, Any]) -> str:
+    blob = " ".join(
+        str(part or "") for part in [
+            item.get("source_kind"),
+            item.get("source"),
+            item.get("source_name"),
+            item.get("type"),
+            item.get("provenance"),
+        ]
+    ).lower()
+    if any(marker in blob for marker in _EDU_COMMUNITY_SOURCE_MARKERS):
+        return "community_voice"
+    if any(marker in blob for marker in _EDU_RESEARCH_POLICY_SOURCE_MARKERS):
+        return "research_policy"
+    if any(marker in blob for marker in _EDU_MEDIA_CASE_SOURCE_MARKERS):
+        return "media_case"
+    return "general_reference"
+
+
+def _edu_is_low_quality_item(item: dict[str, Any]) -> bool:
+    source = str(item.get("source") or "").lower()
+    cite = str(item.get("cite") or "").lower()
+    if len(cite.strip()) < 18:
+        return True
+    if "youtube" in source and any(pattern in source for pattern in _EDU_LOW_SIGNAL_TITLE_PATTERNS):
+        return True
+    if re.search(r"[一-龥]{4,}", source) and not any(token in (source + " " + cite) for token in ("ai", "교육", "진로", "직장", "부모", "학생", "취업")):
+        return True
+    return False
+
+
+def _edu_query_text(history: list, user_text: str = "", max_user_turns: int = 6, max_chars: int = 1200) -> str:
     """검색 질의 = 고객의 의향이 담긴 발화(최근 사용자 턴 + 최신 입력). 캡 적용."""
     parts: list[str] = []
-    for t in list(history or [])[-6:]:
+    for t in list(history or [])[-max_user_turns:]:
         role = getattr(t, "role", None) or (t.get("role") if isinstance(t, dict) else "user")
         text = getattr(t, "text", None) or (t.get("text") if isinstance(t, dict) else "") or ""
         if role != "ai" and text.strip():
             parts.append(text.strip())
     if user_text and user_text.strip():
         parts.append(user_text.strip())
-    q = " ".join(parts)[-1200:]
+    q = " ".join(parts)[-max_chars:]
     return q.strip()
 
 
-def _retrieve_lines(query: str, k: int) -> list[str] | None:
-    """질의에 의미상 가장 가까운 근거 라인 top-k. 인덱스/임베딩 실패 시 None(→랜덤 폴백)."""
+def _edu_format_evidence_line(item: dict[str, Any]) -> str:
+    cite = _edu_clean_cite(item.get("cite", ""))
+    src = _edu_clean_cite(item.get("source", ""))
+    return f"- ({item.get('type','근거')}) {cite}\n  └ 출처: {src}"
+
+
+def _edu_ranked_matches(query: str, limit: int) -> list[tuple[dict[str, Any], float]] | None:
+    """질의와 가장 가까운 인덱스 항목 후보를 점수와 함께 반환."""
     items = _load_rag_index()
     if not items or not query:
         return None
     try:
         from core.embeddings import embed_query, cosine_topk
         qv = embed_query(query)
-        # 인덱스 항목에 id/emb 누락 등 손상이 있어도 검색 전체가 죽지 않게 방어
         usable = [(it["id"], it["emb"]) for it in items if it.get("id") and it.get("emb")]
         by_id = {it["id"]: it for it in items if it.get("id")}
-        top = cosine_topk(qv, usable, k)
-        lines: list[str] = []
-        for cid, _score in top:
+        ranked: list[tuple[dict[str, Any], float]] = []
+        for cid, score in cosine_topk(qv, usable, limit):
             it = by_id.get(cid)
             if it:
-                # 코퍼스 오염(인젝션 토큰) 방어: 인용문에서 경계토큰·제어문자 무력화
-                cite = _edu_clean_cite(it.get("cite", ""))
-                src = _edu_clean_cite(it.get("source", ""))
-                lines.append(f"- ({it.get('type','근거')}) {cite}\n  └ 출처: {src}")
-        return lines or None
+                if _edu_is_low_quality_item(it):
+                    continue
+                shaped = dict(it)
+                shaped["source_kind"] = shaped.get("source_kind") or _edu_infer_source_kind_from_item(shaped)
+                ranked.append((shaped, score))
+        return ranked or None
     except Exception:
         return None  # 어떤 오류든 → 랜덤 회전 폴백으로 안전 degrade
 
@@ -5358,20 +5677,89 @@ def _edu_clean_cite(text: str) -> str:
     return text[:400]
 
 
-def _retrieve_evidence(query: str, segment: str, k: int = 8) -> str:
+def _edu_balance_matches(ranked: list[tuple[dict[str, Any], float]], segment: str, k: int) -> list[dict[str, Any]]:
+    """community_voice와 research_policy를 섞어 자연스러움과 사실성을 같이 확보한다."""
+    if not ranked:
+        return []
+    by_kind: dict[str, list[dict[str, Any]]] = {
+        "community_voice": [],
+        "research_policy": [],
+        "media_case": [],
+        "general_reference": [],
+    }
+    leftovers: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item, score in ranked:
+        cid = str(item.get("id") or "")
+        if not cid or cid in seen:
+            continue
+        seen.add(cid)
+        shaped = {**item, "_score": score}
+        kind = str(item.get("source_kind") or "general_reference")
+        if kind in by_kind:
+            by_kind[kind].append(shaped)
+        else:
+            leftovers.append(shaped)
+    pattern = (
+        ["community_voice", "research_policy", "community_voice", "research_policy", "media_case", "general_reference"]
+        if segment == "parent"
+        else ["research_policy", "community_voice", "research_policy", "media_case", "general_reference"]
+    )
+    selected: list[dict[str, Any]] = []
+    for kind in pattern:
+        if len(selected) >= k:
+            break
+        bucket = by_kind.get(kind) or []
+        if bucket:
+            selected.append(bucket.pop(0))
+    remaining: list[dict[str, Any]] = []
+    for bucket in by_kind.values():
+        remaining.extend(bucket)
+    remaining.extend(leftovers)
+    remaining.sort(key=lambda item: float(item.get("_score") or 0.0), reverse=True)
+    for item in remaining:
+        if len(selected) >= k:
+            break
+        selected.append(item)
+    return selected[:k]
+
+
+def _retrieve_evidence_bundle(query: str, segment: str, k: int = 8) -> dict[str, Any] | None:
+    ranked = _edu_ranked_matches(query, max(k * 4, 12))
+    if ranked is None:
+        return None
+    chosen = _edu_balance_matches(ranked, segment=segment, k=k)
+    if not chosen:
+        return None
+    return {
+        "items": chosen,
+        "lines": [_edu_format_evidence_line(item) for item in chosen],
+        "source_kinds": [str(item.get("source_kind") or "general_reference") for item in chosen],
+    }
+
+
+def _retrieve_evidence(query: str, segment: str, k: int = 8) -> tuple[str, dict[str, Any]]:
     """diagnose용 — 의향기반 검색 텍스트. 실패 시 기존 랜덤 회전으로 graceful fallback."""
-    lines = _retrieve_lines(query, k)
-    if lines is None:
-        return _load_evidence(segment)
-    return "\n".join(lines)
+    bundle = _retrieve_evidence_bundle(query, segment=segment, k=k)
+    if bundle is None:
+        return _load_evidence(segment), {"mode": "fallback", "source_kinds": []}
+    return "\n".join(bundle["lines"]), {
+        "mode": "indexed",
+        "source_kinds": bundle["source_kinds"],
+    }
 
 
-def _retrieve_evidence_indexed(query: str, segment: str, k: int = 8) -> tuple[str, set[str]]:
+def _retrieve_evidence_indexed(query: str, segment: str, k: int = 8) -> tuple[str, set[str], dict[str, Any]]:
     """curriculum용 — 의향기반 검색 + [E1].. id. 실패 시 랜덤 회전으로 fallback."""
-    lines = _retrieve_lines(query, k)
-    if lines is None:
-        return _load_evidence_indexed(segment)
-    return _format_indexed(lines, "(이번엔 마땅한 자료 없음 — 인용 없이 처방)")
+    bundle = _retrieve_evidence_bundle(query, segment=segment, k=k)
+    if bundle is None:
+        text, ids = _load_evidence_indexed(segment)
+        return text, ids, {"mode": "fallback", "source_kinds": []}
+    text, ids = _format_indexed(bundle["lines"], "(이번엔 마땅한 자료 없음 — 인용 없이 처방)")
+    return text, ids, {
+        "mode": "indexed",
+        "source_kinds": bundle["source_kinds"],
+    }
 
 
 # ── Red Team 보강: 인젝션 경계 · 입력 캡 · rate-limit · budget · 날조/상업 필터 · disclaimer ──
@@ -5388,14 +5776,113 @@ def _edu_log_llm_cost(usage: dict, model: str | None = None) -> None:
     """diagnose/curriculum의 Gemini 사용량을 api_cost_log에 기록(비용 추적 사각지대 제거)."""
     try:
         from adapters.content.refiner import log_api_cost
+        provider = "google"
+        name = model or os.getenv("EDU_DIAGNOSE_MODEL", "gemini-2.5-flash")
+        if str(name).startswith("gpt") or str(name).startswith("o"):
+            provider = "openai"
+        elif str(name).startswith("claude"):
+            provider = "anthropic"
         log_api_cost(
-            model or os.getenv("EDU_DIAGNOSE_MODEL", "gemini-2.5-flash"),
+            name,
             int((usage or {}).get("prompt_token_count", 0) or 0),
             int((usage or {}).get("candidates_token_count", 0) or 0),
-            provider="google",
+            provider=provider,
         )
     except Exception:
         pass  # 비용 로깅 실패가 고객 응답을 막지 않도록
+
+
+def _edu_model_ladder() -> list[str]:
+    primary = (os.getenv("EDU_DIAGNOSE_MODEL") or "gemini-2.5-flash").strip()
+    fallbacks = [x.strip() for x in (os.getenv("EDU_DIAGNOSE_MODEL_FALLBACKS") or "").split(",") if x.strip()]
+    ordered: list[str] = []
+    for candidate in [primary, *fallbacks]:
+        if candidate and candidate not in ordered:
+            ordered.append(candidate)
+    if os.getenv("OPENAI_API_KEY") and OpenAI is not None and "gpt-4o-mini" not in ordered:
+        ordered.append("gpt-4o-mini")
+    if os.getenv("ANTHROPIC_API_KEY") and "claude-haiku-4-5" not in ordered:
+        ordered.append("claude-haiku-4-5")
+    return ordered
+
+
+def _edu_generate_text(
+    prompt: str,
+    *,
+    max_output_tokens: int,
+    timeout_seconds: float,
+    response_mime_type: str = "application/json",
+    meta: dict[str, Any] | None = None,
+) -> tuple[str, dict[str, int], str]:
+    """Edu 상담 응답용 경량 provider fallback."""
+    last_exc: Exception | None = None
+    ladder = _edu_model_ladder()
+    for index, model_name in enumerate(ladder, start=1):
+        provider = "google"
+        try:
+            if model_name.startswith("gemini"):
+                raw, usage = generate_text(
+                    prompt,
+                    model=model_name,
+                    max_output_tokens=max_output_tokens,
+                    timeout_seconds=timeout_seconds,
+                    response_mime_type=response_mime_type,
+                    meta=meta,
+                )
+            elif model_name.startswith("gpt") or model_name.startswith("o"):
+                if OpenAI is None:
+                    raise RuntimeError("openai package not installed")
+                provider = "openai"
+                client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+                resp = client.responses.create(
+                    model=model_name,
+                    input=prompt,
+                    max_output_tokens=max_output_tokens,
+                )
+                raw = (getattr(resp, "output_text", None) or "").strip()
+                usage_obj = getattr(resp, "usage", None)
+                usage = {
+                    "prompt_token_count": int(getattr(usage_obj, "input_tokens", 0) or 0),
+                    "candidates_token_count": int(getattr(usage_obj, "output_tokens", 0) or 0),
+                }
+            elif model_name.startswith("claude"):
+                provider = "anthropic"
+                client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+                resp = client.messages.create(
+                    model=model_name,
+                    max_tokens=max_output_tokens,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                raw = "".join(
+                    block.text for block in (resp.content or []) if getattr(block, "text", None)
+                ).strip()
+                usage = {
+                    "prompt_token_count": int(getattr(resp.usage, "input_tokens", 0) or 0),
+                    "candidates_token_count": int(getattr(resp.usage, "output_tokens", 0) or 0),
+                }
+            else:
+                continue
+            if index > 1:
+                _edu_runtime_event(
+                    "edu_provider_fallback_success",
+                    selected_model=model_name,
+                    provider=provider,
+                    ladder=ladder,
+                )
+            return raw, usage, model_name
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            _edu_runtime_event(
+                "edu_provider_attempt_failure",
+                provider=provider,
+                model=model_name,
+                error_type=type(exc).__name__,
+                error=str(exc)[:240],
+            )
+            continue
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("No edu model available")
 
 # 프롬프트 인젝션 경계 — 사용자 대화는 '데이터'일 뿐 지시가 아님을 시스템 레벨로 못박는다
 _EDU_INJECTION_GUARD = (
@@ -5424,9 +5911,15 @@ def _edu_neutralize(text: str, cap: int = _EDU_PER_TURN_CHARS) -> str:
     return text
 
 
-def _edu_sanitize_history(history: list, ai_label: str = "선생님", user_label: str = "손님") -> str:
+def _edu_sanitize_history(
+    history: list,
+    ai_label: str = "선생님",
+    user_label: str = "손님",
+    max_turns: int = _EDU_MAX_TURNS,
+    total_chars: int = _EDU_TOTAL_CHARS,
+) -> str:
     """사용자 대화를 신뢰 경계로 감싸고 길이를 제한해 인젝션·비용 폭증을 막는다."""
-    turns = list(history or [])[-_EDU_MAX_TURNS:]
+    turns = list(history or [])[-max_turns:]
     lines: list[str] = []
     total = 0
     for t in turns:
@@ -5435,7 +5928,7 @@ def _edu_sanitize_history(history: list, ai_label: str = "선생님", user_label
         text = _edu_neutralize(text)
         label = ai_label if role == "ai" else user_label
         line = f"{label}: {text}"
-        if total + len(line) > _EDU_TOTAL_CHARS:
+        if total + len(line) > total_chars:
             break
         total += len(line)
         lines.append(line)
@@ -5598,19 +6091,36 @@ def _run_edu_diagnose(req: EduDiagnoseRequest) -> dict[str, Any]:
     seg_label = "보호자/부모" if req.segment == "parent" else "직장인(MZ)"
     preferred_salutation = _edu_normalize_salutation(req.preferred_salutation)
     locale = _edu_normalize_locale(req.locale)
-    convo = _edu_sanitize_history(req.history, ai_label="AI", user_label="사용자")
+    prompt_salutation = _edu_prompt_salutation(preferred_salutation, req.segment, locale)
+    convo = _edu_sanitize_history(
+        req.history,
+        ai_label="AI",
+        user_label="사용자",
+        max_turns=8 if req.segment == "worker" else 10,
+        total_chars=2600 if req.segment == "worker" else 3200,
+    )
     user_text = _edu_neutralize(req.user_text)
     user_block = (f"<<대화_데이터>>\n{user_text}\n<<대화_데이터_끝>>"
                   if user_text else "(첫 진입 — 사용자가 아직 말하지 않음)")
     # 의향기반 RAG: 고객 발화에 가장 가까운 근거를 전체 코퍼스에서 검색 (실패 시 랜덤 폴백)
-    evidence_txt = _retrieve_evidence(_edu_query_text(req.history, req.user_text), req.segment)
+    query_text = _edu_query_text(
+        req.history,
+        req.user_text,
+        max_user_turns=4 if req.segment == "worker" else 6,
+        max_chars=700 if req.segment == "worker" else 1000,
+    )
+    evidence_txt, evidence_meta = _retrieve_evidence(
+        query_text,
+        req.segment,
+        k=4 if req.segment == "worker" else 6,
+    )
     ev_nums = _edu_numeric_tokens(evidence_txt)
     ladder = _EDU_TONE_LADDER.replace("__EVIDENCE__", evidence_txt)
     prompt = (
         f"{ladder}\n\n"
         f"{_EDU_INJECTION_GUARD}\n\n"
         f"[현재 세그먼트] {seg_label}\n"
-        f"[선호 호칭] {preferred_salutation}\n"
+        f"[호칭 사용 힌트] {prompt_salutation}\n"
         f"[언어/지역] {locale}\n"
         f"[현재 턴 번호] {req.turn} (톤레벨 선택 기준)\n"
         f"[지금까지 대화]\n{convo}\n\n"
@@ -5626,15 +6136,14 @@ def _run_edu_diagnose(req: EduDiagnoseRequest) -> dict[str, Any]:
     for attempt in range(2):
         raw = None
         try:
-            raw, usage = generate_text(
+            raw, usage, used_model = _edu_generate_text(
                 prompt,
-                model=os.getenv("EDU_DIAGNOSE_MODEL", "gemini-2.5-flash"),
-                max_output_tokens=2048,
-                timeout_seconds=25,
+                max_output_tokens=1280 if req.segment == "worker" else 1536,
+                timeout_seconds=20,
                 response_mime_type="application/json",
             )
             last_raw = raw
-            _edu_log_llm_cost(usage)
+            _edu_log_llm_cost(usage, used_model)
             cleaned = re.sub(r"```(?:json)?", "", raw or "").strip().rstrip("`").strip()
             # 관대한 JSON 추출: 본문 앞뒤에 텍스트가 섞여도 {...} 블록만 파싱
             if not cleaned.startswith("{"):
@@ -5650,10 +6159,37 @@ def _run_edu_diagnose(req: EduDiagnoseRequest) -> dict[str, Any]:
             # 가격·날조는 텍스트를 자르지 않고 '재생성'으로 푼다(LLM-native).
             violation = _edu_has_commercial(message) or _edu_has_fabrication(message, evidence_txt, ev_nums)
             if violation and attempt == 0:
+                _edu_runtime_event(
+                    "edu_diagnose_validation_retry",
+                    segment=req.segment,
+                    attempt=attempt + 1,
+                    locale=locale,
+                    salutation=preferred_salutation,
+                    query_len=len(query_text),
+                    history_chars=len(convo),
+                    evidence_chars=len(evidence_txt),
+                    evidence_mode=evidence_meta.get("mode"),
+                    source_kinds=evidence_meta.get("source_kinds", []),
+                )
                 raise ValueError("가격/날조 감지 — 재생성")
             if violation:
                 # 끝까지 남으면 텍스트를 자르지 않고 안전한 중립 문구로 대체
                 message = "조금만 더 말씀해 주시겠어요? 같이 차근히 보겠습니다."
+            _edu_runtime_event(
+                "edu_diagnose_success",
+                segment=req.segment,
+                locale=locale,
+                salutation=preferred_salutation,
+                query_len=len(query_text),
+                history_chars=len(convo),
+                evidence_chars=len(evidence_txt),
+                evidence_mode=evidence_meta.get("mode"),
+                source_kinds=evidence_meta.get("source_kinds", []),
+                attempt=attempt + 1,
+                fallback_used=False,
+                commercial_detected=_edu_has_commercial(message),
+                model=used_model,
+            )
             quick = [q for q in (data.get("quick_replies", []) or [])
                      if not _edu_has_commercial(str(q)) and not _edu_has_fabrication(str(q), evidence_txt, ev_nums)]
             return {
@@ -5667,6 +6203,20 @@ def _run_edu_diagnose(req: EduDiagnoseRequest) -> dict[str, Any]:
             }
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
+            _edu_runtime_event(
+                "edu_diagnose_attempt_failure",
+                segment=req.segment,
+                attempt=attempt + 1,
+                locale=locale,
+                salutation=preferred_salutation,
+                query_len=len(query_text),
+                history_chars=len(convo),
+                evidence_chars=len(evidence_txt),
+                evidence_mode=evidence_meta.get("mode"),
+                source_kinds=evidence_meta.get("source_kinds", []),
+                error_type=type(exc).__name__,
+                error=str(exc)[:240],
+            )
             _log.warning(f"[edu_diagnose] 시도 {attempt + 1}/2 실패: {type(exc).__name__}: {exc}")
 
     _log.error(
@@ -5674,6 +6224,19 @@ def _run_edu_diagnose(req: EduDiagnoseRequest) -> dict[str, Any]:
     )
     # LLM 일시 실패 시에도 페르소나가 무너지지 않도록, 사용자 발화를 받아 안고
     # 한 발 더 들어가는 상담사 톤의 fallback (밋밋한 일반 응답 회피).
+    _edu_runtime_event(
+        "edu_diagnose_fallback",
+        segment=req.segment,
+        locale=locale,
+        salutation=preferred_salutation,
+        query_len=len(query_text),
+        history_chars=len(convo),
+        evidence_chars=len(evidence_txt),
+        evidence_mode=evidence_meta.get("mode"),
+        source_kinds=evidence_meta.get("source_kinds", []),
+        error_type=type(last_exc).__name__ if last_exc else "",
+        error=str(last_exc)[:240] if last_exc else "",
+    )
     return {
         "ok": False,
         "message": _edu_persona_fallback(req),
@@ -5777,15 +6340,31 @@ def _run_edu_curriculum(req: EduCurriculumRequest) -> dict[str, Any]:
     track = req.track if req.track in {"free_start", "next_steps"} else "free_start"
     preferred_salutation = _edu_normalize_salutation(req.preferred_salutation)
     locale = _edu_normalize_locale(req.locale)
-    convo = _edu_sanitize_history(req.history, ai_label="선생님", user_label="손님")
+    prompt_salutation = _edu_prompt_salutation(preferred_salutation, req.segment, locale)
+    convo = _edu_sanitize_history(
+        req.history,
+        ai_label="선생님",
+        user_label="손님",
+        max_turns=6 if track == "next_steps" else 8,
+        total_chars=1800 if track == "next_steps" else 2600,
+    )
     # 의향기반 RAG: 대화 전체에서 손님 상황에 가장 가까운 근거를 검색 (실패 시 랜덤 폴백)
-    evidence, valid_ids = _retrieve_evidence_indexed(_edu_query_text(req.history), req.segment)
+    query_text = _edu_query_text(
+        req.history,
+        max_user_turns=4 if track == "next_steps" else 5,
+        max_chars=650 if track == "next_steps" else 850,
+    )
+    evidence, valid_ids, evidence_meta = _retrieve_evidence_indexed(
+        query_text,
+        req.segment,
+        k=3 if track == "next_steps" else (4 if req.segment == "worker" else 5),
+    )
     base = _EDU_CURRICULUM_PROMPT.replace("__EVIDENCE__", evidence)
     prompt = (
         f"{base}\n\n"
         f"{_EDU_INJECTION_GUARD}\n\n"
         f"[현재 세그먼트] {seg_label}\n"
-        f"[선호 호칭] {preferred_salutation}\n"
+        f"[호칭 사용 힌트] {prompt_salutation}\n"
         f"[언어/지역] {locale}\n"
         f"[트랙] {track}\n"
         f"[지금까지 대화]\n{convo}\n\n"
@@ -5799,15 +6378,14 @@ def _run_edu_curriculum(req: EduCurriculumRequest) -> dict[str, Any]:
     for attempt in range(2):
         raw = None
         try:
-            raw, usage = generate_text(
+            raw, usage, used_model = _edu_generate_text(
                 prompt,
-                model=os.getenv("EDU_DIAGNOSE_MODEL", "gemini-2.5-flash"),
-                max_output_tokens=4096,
-                timeout_seconds=30,
+                max_output_tokens=1536 if track == "next_steps" else 2048,
+                timeout_seconds=20 if track == "next_steps" else 24,
                 response_mime_type="application/json",
             )
             last_raw = raw
-            _edu_log_llm_cost(usage)
+            _edu_log_llm_cost(usage, used_model)
             cleaned = re.sub(r"```(?:json)?", "", raw or "").strip().rstrip("`").strip()
             if not cleaned.startswith("{"):
                 m = re.search(r"\{.*\}", cleaned, re.DOTALL)
@@ -5856,11 +6434,43 @@ def _run_edu_curriculum(req: EduCurriculumRequest) -> dict[str, Any]:
 
             if (commercial or fabrication or bad_cite) and attempt == 0:
                 # 마지막 시도가 아니면 다시 생성하게 한다 (대화 내용은 절대 손대지 않음)
+                _edu_runtime_event(
+                    "edu_curriculum_validation_retry",
+                    segment=req.segment,
+                    track=track,
+                    attempt=attempt + 1,
+                    locale=locale,
+                    salutation=preferred_salutation,
+                    query_len=len(query_text),
+                    history_chars=len(convo),
+                    evidence_chars=len(evidence),
+                    evidence_mode=evidence_meta.get("mode"),
+                    source_kinds=evidence_meta.get("source_kinds", []),
+                    commercial=commercial,
+                    fabrication=fabrication,
+                    bad_cite=bad_cite,
+                )
                 raise ValueError(f"검증 위반 재생성 (commercial={commercial}, fabrication={fabrication}, bad_cite={bad_cite})")
 
             if commercial or fabrication:
                 # 끝까지 가격/날조가 남으면 텍스트를 자르지 않고 안전한 fallback으로 대체
                 _log.warning(f"[edu_curriculum] 잔존 위반 — fallback (commercial={commercial}, fabrication={fabrication})")
+                _edu_runtime_event(
+                    "edu_curriculum_fallback",
+                    segment=req.segment,
+                    track=track,
+                    locale=locale,
+                    salutation=preferred_salutation,
+                    query_len=len(query_text),
+                    history_chars=len(convo),
+                    evidence_chars=len(evidence),
+                    evidence_mode=evidence_meta.get("mode"),
+                    source_kinds=evidence_meta.get("source_kinds", []),
+                    commercial=commercial,
+                    fabrication=fabrication,
+                    bad_cite=bad_cite,
+                    reason="residual_validation_violation",
+                )
                 return _edu_curriculum_fallback(req, track)
 
             # 출처 id만 무효인 경우: 본문은 그대로 두고, 근거 없는 '추임새'만 비운다(선택적 인용 제거).
@@ -5869,6 +6479,22 @@ def _run_edu_curriculum(req: EduCurriculumRequest) -> dict[str, Any]:
                     m["seasoning"] = ""
                 m.pop("evidence_id", None)  # 내부용 필드는 응답에서 제거
 
+            _edu_runtime_event(
+                "edu_curriculum_success",
+                segment=req.segment,
+                track=track,
+                locale=locale,
+                salutation=preferred_salutation,
+                query_len=len(query_text),
+                history_chars=len(convo),
+                evidence_chars=len(evidence),
+                evidence_mode=evidence_meta.get("mode"),
+                source_kinds=evidence_meta.get("source_kinds", []),
+                attempt=attempt + 1,
+                modules=len(norm_modules),
+                fallback_used=False,
+                model=used_model,
+            )
             return {
                 "ok": True,
                 "track": track,
@@ -5880,9 +6506,39 @@ def _run_edu_curriculum(req: EduCurriculumRequest) -> dict[str, Any]:
             }
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
+            _edu_runtime_event(
+                "edu_curriculum_attempt_failure",
+                segment=req.segment,
+                track=track,
+                attempt=attempt + 1,
+                locale=locale,
+                salutation=preferred_salutation,
+                query_len=len(query_text),
+                history_chars=len(convo),
+                evidence_chars=len(evidence),
+                evidence_mode=evidence_meta.get("mode"),
+                source_kinds=evidence_meta.get("source_kinds", []),
+                error_type=type(exc).__name__,
+                error=str(exc)[:240],
+            )
             _log.warning(f"[edu_curriculum] 시도 {attempt + 1}/2 실패: {type(exc).__name__}: {exc}")
 
     _log.error(f"[edu_curriculum] 2회 실패 — fallback.\nRaw:\n{last_raw}\nError: {last_exc}")
+    _edu_runtime_event(
+        "edu_curriculum_fallback",
+        segment=req.segment,
+        track=track,
+        locale=locale,
+        salutation=preferred_salutation,
+        query_len=len(query_text),
+        history_chars=len(convo),
+        evidence_chars=len(evidence),
+        evidence_mode=evidence_meta.get("mode"),
+        source_kinds=evidence_meta.get("source_kinds", []),
+        error_type=type(last_exc).__name__ if last_exc else "",
+        error=str(last_exc)[:240] if last_exc else "",
+        reason="attempts_exhausted",
+    )
     return _edu_curriculum_fallback(req, track)
 
 
