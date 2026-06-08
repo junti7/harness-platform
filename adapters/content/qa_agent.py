@@ -34,6 +34,9 @@ load_dotenv()
 DAILY_COST_LIMIT = float(os.getenv("DAILY_COST_LIMIT_USD", "1.00"))
 # QA LLM 검토 모델 — Anthropic(크레딧 없음) 대신 Gemini로 전환
 QA_LLM_MODEL = os.getenv("QA_LLM_MODEL", "gemini-2.5-flash")
+# QA의 LLM 보조검사 on/off. LLM 쿼터 소진·장애 시 false로 두면 Gemini 호출 없이
+# 결정적 검사(스키마·완전성·투자위험)만으로 qa_clear를 진행한다(우아한 degrade).
+QA_LLM_ENABLED = os.getenv("QA_LLM_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
 
 # ─── Rubric constants ─────────────────────────────────────────────────────────
 # 내부 인텔리전스 용도 기준 (외부 발행이 아닌 CEO 브리핑·Notion 저장 목적)
@@ -138,6 +141,8 @@ def _check_investment_risk(body: dict) -> list[str]:
 
 
 def _check_llm(body: dict, logger: HarnessLogger) -> list[str]:
+    if not QA_LLM_ENABLED:
+        return []
     today_cost = get_today_cost(logger)
     if today_cost >= DAILY_COST_LIMIT * 0.9:
         logger.warning(f"QA LLM 검사 스킵 — 일일 비용 한도 90% 도달 (${today_cost:.3f})")
@@ -366,6 +371,8 @@ def _check_report_markdown(content: str) -> list[str]:
 
 
 def _check_llm_text(title: str, content: str, logger: HarnessLogger) -> list[str]:
+    if not QA_LLM_ENABLED:
+        return []
     today_cost = get_today_cost(logger)
     if today_cost >= DAILY_COST_LIMIT * 0.9:
         logger.warning(f"QA LLM 검사 스킵 — 일일 비용 한도 90% 도달 (${today_cost:.3f})")
