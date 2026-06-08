@@ -5,7 +5,7 @@ Checks:
   1. schema_valid   : required JSON fields present and non-empty
   2. completeness   : sections meet minimum length thresholds
   3. investment_risk: flags prohibited investment-advice language (자본시장법)
-  4. llm_review     : Claude Haiku checks Korean fluency + factual coherence
+  4. llm_review     : Gemini checks Korean fluency + factual coherence
                       (skipped if daily cost limit reached)
 
 Target types:
@@ -20,8 +20,9 @@ import re
 from datetime import date, datetime
 from pathlib import Path
 
-import anthropic
 from dotenv import load_dotenv
+
+from core.gemini_sdk import generate_text
 
 from core.approval import validate_approval
 from core.database import execute_query
@@ -31,6 +32,8 @@ from adapters.content.refiner import log_api_cost, get_today_cost
 load_dotenv()
 
 DAILY_COST_LIMIT = float(os.getenv("DAILY_COST_LIMIT_USD", "1.00"))
+# QA LLM 검토 모델 — Anthropic(크레딧 없음) 대신 Gemini로 전환
+QA_LLM_MODEL = os.getenv("QA_LLM_MODEL", "gemini-2.5-flash")
 
 # ─── Rubric constants ─────────────────────────────────────────────────────────
 # 내부 인텔리전스 용도 기준 (외부 발행이 아닌 CEO 브리핑·Notion 저장 목적)
@@ -130,11 +133,6 @@ def _check_llm(body: dict, logger: HarnessLogger) -> list[str]:
         logger.warning(f"QA LLM 검사 스킵 — 일일 비용 한도 90% 도달 (${today_cost:.3f})")
         return []
 
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        logger.warning("ANTHROPIC_API_KEY 미설정 — LLM QA 스킵")
-        return []
-
     excerpt = json.dumps({
         "final_title": body.get("final_title", ""),
         "hook": (body.get("hook") or "")[:500],
@@ -143,14 +141,14 @@ def _check_llm(body: dict, logger: HarnessLogger) -> list[str]:
     }, ensure_ascii=False)
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-        resp = client.messages.create(
-            model="claude-haiku-4-5",
-            max_tokens=512,
-            messages=[{"role": "user", "content": LLM_QA_PROMPT + excerpt}],
+        raw, usage = generate_text(
+            LLM_QA_PROMPT + excerpt,
+            model=QA_LLM_MODEL,
+            max_output_tokens=512,
+            response_mime_type="application/json",
         )
-        log_api_cost("claude-haiku-4-5", resp.usage.input_tokens, resp.usage.output_tokens)
-        raw = resp.content[0].text.strip().replace("```json", "").replace("```", "").strip()
+        log_api_cost(QA_LLM_MODEL, usage.get("prompt_token_count", 0), usage.get("candidates_token_count", 0))
+        raw = (raw or "").replace("```json", "").replace("```", "").strip()
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         raw = m.group(0) if m else raw
         result = json.loads(raw)
@@ -215,7 +213,7 @@ def _save_memo(target_id: int, target_label: str, approved: bool,
         f"| target | {target_label}#{target_id} |",
         f"| date | {today} |",
         f"| verdict | {'✅ ' if approved else '❌ '}{verdict} |",
-        f"| reviewer | QA Agent (claude-haiku-4-5) |",
+        f"| reviewer | QA Agent ({QA_LLM_MODEL}) |",
         f"| findings | {len(findings)}건 |",
         f"",
         f"## Findings",
@@ -359,25 +357,20 @@ def _check_llm_text(title: str, content: str, logger: HarnessLogger) -> list[str
         logger.warning(f"QA LLM 검사 스킵 — 일일 비용 한도 90% 도달 (${today_cost:.3f})")
         return []
 
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        logger.warning("ANTHROPIC_API_KEY 미설정 — LLM QA 스킵")
-        return []
-
     excerpt = json.dumps({
         "title": title,
         "excerpt": content[:1800],
     }, ensure_ascii=False)
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-        resp = client.messages.create(
-            model="claude-haiku-4-5",
-            max_tokens=512,
-            messages=[{"role": "user", "content": LLM_QA_PROMPT + excerpt}],
+        raw, usage = generate_text(
+            LLM_QA_PROMPT + excerpt,
+            model=QA_LLM_MODEL,
+            max_output_tokens=512,
+            response_mime_type="application/json",
         )
-        log_api_cost("claude-haiku-4-5", resp.usage.input_tokens, resp.usage.output_tokens)
-        raw = resp.content[0].text.strip().replace("```json", "").replace("```", "").strip()
+        log_api_cost(QA_LLM_MODEL, usage.get("prompt_token_count", 0), usage.get("candidates_token_count", 0))
+        raw = (raw or "").replace("```json", "").replace("```", "").strip()
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         raw = m.group(0) if m else raw
         result = json.loads(raw)
