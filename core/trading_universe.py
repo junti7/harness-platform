@@ -253,7 +253,8 @@ def build_trading_universe(domain: str = "physical_ai", lookback_days: int = 45,
         # 소스별 수확체감(power 0.75): 한 소스 대량 멘션은 포화시키고, 여러 소스의
         # 교차 확인(diversity)을 우대 → 단일 소스 스팸이 만점을 못 받게 한다.
         total = sum(sw ** 0.75 for sw in per_source.values())
-        harness_score = min(10, max(1, round(total * 3.0 + distinct_sources * 0.6)))
+        # 상위 포화를 줄여 gate(≥7)가 변별력을 갖도록 보정: 품질가중 합 + 소스 다양성.
+        harness_score = min(10, max(1, round(total * 1.0 + distinct_sources * 0.8)))
         selection_reason = "; ".join(matched_titles[:3])[:500]
         scores[symbol] = {
             **item,
