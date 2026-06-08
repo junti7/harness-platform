@@ -15,6 +15,32 @@ NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID", "").split("?")[0]
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "")
 NOTION_VERSION = "2022-06-28"
 MAX_RETRIES = 3
+# 한 번의 발행 실행에서 시도할 최대 건수(대량 백로그가 파이프라인을 막지 않도록)
+NOTION_PUBLISH_LIMIT = int(os.getenv("NOTION_PUBLISH_LIMIT", "1000"))
+# Notion이 체계적으로 실패할 때(스키마 오류 등) 연속 N회 실패 시 이번 실행 발행 중단
+NOTION_CIRCUIT_BREAKER = int(os.getenv("NOTION_CIRCUIT_BREAKER", "5"))
+
+_NOTION_VALID_PROPS_CACHE = None  # None=미조회 / set()=조회실패(필터 안 함) / set(...)=유효속성
+
+
+def _notion_valid_props():
+    """Notion DB의 실제 속성명 집합(1회 캐시).
+
+    페이로드를 DB 스키마에 맞게 필터링해 'X is not a property that exists' 류
+    400 validation_error를 원천 차단한다. 조회 실패 시 None(필터 미적용)."""
+    global _NOTION_VALID_PROPS_CACHE
+    if _NOTION_VALID_PROPS_CACHE is not None:
+        return _NOTION_VALID_PROPS_CACHE or None
+    try:
+        r = httpx.get(
+            f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}",
+            headers=_notion_headers(), timeout=10.0,
+        )
+        r.raise_for_status()
+        _NOTION_VALID_PROPS_CACHE = set(r.json().get("properties", {}).keys())
+    except Exception:
+        _NOTION_VALID_PROPS_CACHE = set()  # 빈 set = 조회 실패 표식 → 필터 미적용
+    return _NOTION_VALID_PROPS_CACHE or None
 
 
 def sanity_check(row: dict) -> bool:
@@ -152,6 +178,11 @@ def _build_notion_payload(row: dict, artifact_type: str = "refined_output") -> d
     if summary:
         properties["Summary"] = {"rich_text": [{"text": {"content": summary}}]}
 
+    # DB 스키마에 없는 속성은 제거(예: 'Domain' 미존재 → 400 방지). 스키마 조회 실패 시 전체 전송.
+    valid = _notion_valid_props()
+    if valid:
+        properties = {k: v for k, v in properties.items() if k in valid}
+
     return {
         "parent": {"database_id": NOTION_DATABASE_ID},
         "properties": properties,
@@ -171,6 +202,18 @@ def publish_notion(row: dict, logger: HarnessLogger, artifact_type: str = "refin
             )
             resp.raise_for_status()
             return resp.json()["id"]
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code
+            body = (e.response.text or "")[:300]
+            # 4xx는 결정적 오류(스키마/권한 등) — 재시도해도 동일 실패라 즉시 중단
+            if 400 <= status < 500:
+                raise RuntimeError(f"Notion {status} (재시도 무의미): {body}") from e
+            if attempt < MAX_RETRIES - 1:
+                wait = 2 ** attempt
+                logger.warning(f"  → Notion 재시도 {attempt + 1}/{MAX_RETRIES}: {status} ({wait}s 대기)")
+                time.sleep(wait)
+            else:
+                raise RuntimeError(f"Notion {status}: {body}") from e
         except Exception as e:
             if attempt < MAX_RETRIES - 1:
                 wait = 2 ** attempt
@@ -264,7 +307,8 @@ def get_unpublished() -> list:
         JOIN filtered_signals fs ON ro.filtered_signal_id = fs.id
         WHERE ro.published = FALSE
         ORDER BY fs.score DESC
-    """, fetch=True)
+        LIMIT %s
+    """, (NOTION_PUBLISH_LIMIT,), fetch=True)
 
 
 def get_unpublished_research_reports() -> list:
@@ -292,6 +336,7 @@ def _publish_refined_outputs(logger: HarnessLogger) -> tuple[int, int, int, list
     published = 0
     skipped = 0
     failed = 0
+    consecutive_fail = 0
 
     for i, row in enumerate(rows):
         row = dict(row)
@@ -323,10 +368,18 @@ def _publish_refined_outputs(logger: HarnessLogger) -> tuple[int, int, int, list
             published_items.append(row)
             logger.info(f"  → Notion 완료: page_id={page_id}")
             published += 1
+            consecutive_fail = 0
         except Exception as e:
-            logger.error(f"  → {MAX_RETRIES}회 재시도 후 최종 실패: {e}")
+            logger.error(f"  → 발행 실패: {e}")
             save_to_dlq(row, str(e), logger)
             failed += 1
+            consecutive_fail += 1
+            if consecutive_fail >= NOTION_CIRCUIT_BREAKER:
+                logger.error(
+                    f"  → Notion 연속 {consecutive_fail}회 실패 — 이번 실행 발행 중단(서킷). "
+                    f"스키마/권한 점검 필요. 남은 {len(rows) - i - 1}건 보류."
+                )
+                break
 
     return published, skipped, failed, published_items
 

@@ -13,7 +13,7 @@
   "sources": [
     {
       "name": "arXiv_computers_society",
-      "url": "https://rss.arxiv.org/rss/cs.CY",
+      "url": "https://export.arxiv.org/api/query?search_query=cat:cs.CY&sortBy=submittedDate&sortOrder=descending&max_results=50",
       "type": "rss_daily",
       "signal_class": "academic",
       "rq_tags": [
@@ -28,7 +28,7 @@
     },
     {
       "name": "arXiv_HCI",
-      "url": "https://rss.arxiv.org/rss/cs.HC",
+      "url": "https://export.arxiv.org/api/query?search_query=cat:cs.HC&sortBy=submittedDate&sortOrder=descending&max_results=50",
       "type": "rss_daily",
       "signal_class": "academic",
       "rq_tags": [
@@ -43,7 +43,7 @@
     },
     {
       "name": "arXiv_AI",
-      "url": "https://rss.arxiv.org/rss/cs.AI",
+      "url": "https://export.arxiv.org/api/query?search_query=cat:cs.AI&sortBy=submittedDate&sortOrder=descending&max_results=50",
       "type": "rss_daily",
       "signal_class": "academic",
       "rq_tags": [

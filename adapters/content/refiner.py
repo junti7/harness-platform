@@ -320,30 +320,57 @@ def refine_signal(model_name: str, row: dict) -> dict:
     return parsed
 
 
-def refine(correlation_id: str = None):
-    logger = HarnessLogger(tier=3, correlation_id=correlation_id)
-    logger.info("=== Tier 3 정제 시작 (Physical AI 한국 실익 프레임워크) ===")
+def _fetch_refine_batch(limit: int) -> list:
+    """도메인 공정 배치 선택.
 
-    rows = execute_query("""
+    기존엔 두 도메인을 단일 `score DESC` + LIMIT로 뽑아, 임계값이 낮은(0.1)
+    edu_consulting이 슬롯을 거의 독점하고 physical_ai(기술, 임계값 0.3)가 굶었다.
+    여기서는 도메인별로 각각 점수순으로 뽑은 뒤 보장 슬롯(physical_ai share)을
+    먼저 채우고, 한쪽이 부족하면 나머지로 백필해 예산 낭비 없이 공정하게 섞는다.
+    """
+    base = """
         SELECT fs.id, fs.title, fs.summary, fs.content_hash, fs.source, fs.score,
                fs.extracted_facts, COALESCE(fs.domain, 'physical_ai') AS domain
         FROM filtered_signals fs
         LEFT JOIN refined_outputs ro ON fs.id = ro.filtered_signal_id
-        WHERE ro.id IS NULL
-          AND (
-            (COALESCE(fs.domain, 'physical_ai') = 'physical_ai' AND fs.score >= 0.3)
-            OR
-            (fs.domain = 'edu_consulting' AND fs.score >= 0.1)
-          )
+        WHERE ro.id IS NULL AND ({cond})
         ORDER BY fs.score DESC
         LIMIT %s
-    """, (TIER3_BATCH_LIMIT,), fetch=True)
+    """
+    phys = execute_query(
+        base.format(cond="COALESCE(fs.domain,'physical_ai')='physical_ai' AND fs.score >= 0.3"),
+        (limit,), fetch=True) or []
+    edu = execute_query(
+        base.format(cond="fs.domain='edu_consulting' AND fs.score >= 0.1"),
+        (limit,), fetch=True) or []
+
+    phys_share = int(os.getenv("TIER3_PHYSICAL_SHARE", str(max(1, limit // 2))))
+    phys_share = max(0, min(phys_share, limit))
+
+    rows = phys[:phys_share] + edu[: limit - phys_share]
+    if len(rows) < limit:  # 한 도메인 물량 부족 시 다른 도메인으로 백필
+        chosen = {r["id"] for r in rows}
+        for r in phys[phys_share:] + edu[limit - phys_share:]:
+            if len(rows) >= limit:
+                break
+            if r["id"] not in chosen:
+                rows.append(r)
+                chosen.add(r["id"])
+    return rows
+
+
+def refine(correlation_id: str = None):
+    logger = HarnessLogger(tier=3, correlation_id=correlation_id)
+    logger.info("=== Tier 3 정제 시작 (Physical AI 한국 실익 프레임워크) ===")
+
+    rows = _fetch_refine_batch(TIER3_BATCH_LIMIT)
 
     if not rows:
         logger.info("처리할 데이터 없음")
         return 0
 
-    logger.info(f"처리 대상: {len(rows)}개 (score >= 0.3 기준)")
+    _phys_n = sum(1 for r in rows if (r.get("domain") or "physical_ai") == "physical_ai")
+    logger.info(f"처리 대상: {len(rows)}개 (physical_ai {_phys_n} / edu {len(rows) - _phys_n}, 도메인 공정 배분)")
 
     _gemini_model_name = DEFAULT_GEMINI_MODEL
     refined = 0
