@@ -116,10 +116,29 @@ def detect_drift() -> dict:
     }
 
 
-def _post_slack(text: str) -> None:
+def _resolve_webhook() -> str | None:
+    """SLACK_WEBHOOK_URL을 환경변수 → repo의 .env 순으로 해석.
+    launchd는 .env를 로드하지 않으므로 폴백이 필요하다."""
     url = os.environ.get("SLACK_WEBHOOK_URL")
+    if url:
+        return url
+    root = _git("rev-parse", "--show-toplevel")
+    if root and os.path.exists(os.path.join(root, ".env")):
+        try:
+            with open(os.path.join(root, ".env"), encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("SLACK_WEBHOOK_URL="):
+                        return line.split("=", 1)[1].strip().strip('"').strip("'")
+        except Exception:  # noqa: BLE001
+            pass
+    return None
+
+
+def _post_slack(text: str) -> None:
+    url = _resolve_webhook()
     if not url:
-        print("[slack] SLACK_WEBHOOK_URL 미설정 — 경보 생략", file=sys.stderr)
+        print("[slack] SLACK_WEBHOOK_URL 미설정(.env에도 없음) — 경보 생략", file=sys.stderr)
         return
     try:
         req = urllib.request.Request(
