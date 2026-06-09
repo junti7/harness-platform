@@ -1,0 +1,88 @@
+{
+  "generated_at": "2026-06-08T06:12:26+00:00",
+  "run_id": "20260608061149",
+  "base_url": "http://100.97.175.44:8000",
+  "config_version": "2026-06-08-v1",
+  "results": [
+    {
+      "scenario_id": "parent_father_middle_school_homework",
+      "label": "중학생 아들을 둔 아버지 · 숙제 정답 의존",
+      "segment": "parent",
+      "email": "edu-sim-parent-father-middle-school-homework-20260608061149@example.com",
+      "case_id": null,
+      "bootstrap": {
+        "started_fresh": false,
+        "is_returning": false,
+        "has_prior_customer": false
+      },
+      "resume_check": {
+        "ok": false,
+        "message_count": 0,
+        "is_returning": false,
+        "case_id": null,
+        "error": ""
+      },
+      "transcript": [],
+      "curriculum": {
+        "free_start": null,
+        "next_steps": null,
+        "free_start_error": "",
+        "next_steps_error": ""
+      },
+      "evaluation": {
+        "total_score": 0,
+        "subscores": {
+          "naturalness": 0,
+          "personalization": 0,
+          "grounding": 0,
+          "conversion_readiness": 0
+        },
+        "metrics": {
+          "ai_turn_count": 0,
+          "specificity_hits": 0,
+          "specificity_after_turn3": 0,
+          "personalization_ratio": 0,
+          "robotic_marker_count": 0,
+          "generic_marker_count": 0,
+          "evidence_marker_count": 0,
+          "action_marker_count": 0,
+          "show_offer_turn": null
+        },
+        "flags": {
+          "low_specificity": true,
+          "repeated_template": false,
+          "offer_too_early": false,
+          "wrong_salutation": false,
+          "weak_grounding": true,
+          "weak_actionability": true
+        },
+        "customer_complaints": [
+          "시나리오 자체가 실패했다: ReadTimeout: timed out"
+        ],
+        "runtime_issues": [
+          "scenario_failure: ReadTimeout: timed out"
+        ]
+      }
+    }
+  ],
+  "comparison": {
+    "has_previous": false,
+    "previous_generated_at": "2026-06-08T06:10:20+00:00",
+    "average_score_delta": null,
+    "scenario_deltas": []
+  },
+  "summary": {
+    "scenario_count": 1,
+    "average_score": 0.0,
+    "min_score": 0,
+    "max_score": 0,
+    "top_flags": {
+      "low_specificity": 1,
+      "weak_actionability": 1,
+      "weak_grounding": 1
+    },
+    "top_complaints": {
+      "시나리오 자체가 실패했다: ReadTimeout: timed out": 1
+    }
+  }
+}

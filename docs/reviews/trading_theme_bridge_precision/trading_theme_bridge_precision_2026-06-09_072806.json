@@ -1,0 +1,1117 @@
+{
+  "generated_at": "2026-06-09T07:28:06.075596+00:00",
+  "domain": "physical_ai",
+  "lookback_days": 45,
+  "summary": {
+    "candidate_rows": 431,
+    "matched_any_rows": 100,
+    "match_rate_pct": 23.2,
+    "theme_only_rows": 55,
+    "direct_hits": 89,
+    "theme_hits": 174,
+    "negative_hits": 0
+  },
+  "symbols": [
+    {
+      "symbol": "TSLA",
+      "name": "Tesla",
+      "harness_score": 10,
+      "direct_hits": 13,
+      "theme_hits": 27,
+      "negative_hits": 0,
+      "theme_share_pct": 67.5,
+      "top_sources": [
+        [
+          "arXiv_robotics",
+          13
+        ],
+        [
+          "TechCrunch_robotics",
+          9
+        ],
+        [
+          "IEEE_Spectrum",
+          7
+        ],
+        [
+          "arXiv_AI",
+          6
+        ],
+        [
+          "Boston_Dynamics",
+          5
+        ]
+      ],
+      "samples": [
+        {
+          "title": "The Beginning of Your Tomorrow I Boston Dynamics",
+          "source": "Boston_Dynamics",
+          "created_at": "2026-06-02 09:50:12.248395",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        },
+        {
+          "title": "ST Engineering MRAS | Boston Dynamics",
+          "source": "Boston_Dynamics",
+          "created_at": "2026-06-02 09:50:12.198617",
+          "match_kind": "theme",
+          "matched_theme": "sim-to-real|world model|digital twin|robot simulation",
+          "matched_negative": null
+        },
+        {
+          "title": "Form & Function of Enterprise Humanoid Design | Boston Dynamics Tech Talk | Atlas",
+          "source": "Boston_Dynamics",
+          "created_at": "2026-06-02 09:50:12.176733",
+          "match_kind": "theme",
+          "matched_theme": "humanoid|optimus|robotaxi|industrial robot",
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "NVDA",
+      "name": "NVIDIA",
+      "harness_score": 10,
+      "direct_hits": 16,
+      "theme_hits": 23,
+      "negative_hits": 0,
+      "theme_share_pct": 59.0,
+      "top_sources": [
+        [
+          "arXiv_robotics",
+          14
+        ],
+        [
+          "arXiv_AI",
+          11
+        ],
+        [
+          "IEEE_Spectrum",
+          6
+        ],
+        [
+          "TechCrunch_robotics",
+          4
+        ],
+        [
+          "Boston_Dynamics",
+          2
+        ]
+      ],
+      "samples": [
+        {
+          "title": "ST Engineering MRAS | Boston Dynamics",
+          "source": "Boston_Dynamics",
+          "created_at": "2026-06-02 09:50:12.198617",
+          "match_kind": "theme",
+          "matched_theme": "sim-to-real|world model|digital twin|robot simulation",
+          "matched_negative": null
+        },
+        {
+          "title": "How Does Stretch See? | Ask A Roboticist | Boston Dynamics",
+          "source": "Boston_Dynamics",
+          "created_at": "2026-06-02 09:50:12.132212",
+          "match_kind": "theme",
+          "matched_theme": "sim-to-real|world model|digital twin|robot simulation",
+          "matched_negative": null
+        },
+        {
+          "title": "Why Runway is eyeing the robotics industry for future revenue growth",
+          "source": "TechCrunch_robotics",
+          "created_at": "2026-06-02 09:50:12.087668",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "GOOG",
+      "name": "Alphabet",
+      "harness_score": 10,
+      "direct_hits": 16,
+      "theme_hits": 21,
+      "negative_hits": 0,
+      "theme_share_pct": 56.8,
+      "top_sources": [
+        [
+          "arXiv_robotics",
+          11
+        ],
+        [
+          "arXiv_AI",
+          10
+        ],
+        [
+          "IEEE_Spectrum",
+          7
+        ],
+        [
+          "Boston_Dynamics",
+          4
+        ],
+        [
+          "TechCrunch_robotics",
+          4
+        ]
+      ],
+      "samples": [
+        {
+          "title": "ST Engineering MRAS | Boston Dynamics",
+          "source": "Boston_Dynamics",
+          "created_at": "2026-06-02 09:50:12.198617",
+          "match_kind": "theme",
+          "matched_theme": "sim-to-real|world model|digital twin|robot simulation",
+          "matched_negative": null
+        },
+        {
+          "title": "The To Do List with Spot | Boston Dynamics",
+          "source": "Boston_Dynamics",
+          "created_at": "2026-06-02 09:50:12.160108",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        },
+        {
+          "title": "Smarter Inspections Powered by Google Gemini Robotics | Boston Dynamics",
+          "source": "Boston_Dynamics",
+          "created_at": "2026-06-02 09:50:12.149316",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "SYM",
+      "name": "Symbotic",
+      "harness_score": 6,
+      "direct_hits": 0,
+      "theme_hits": 18,
+      "negative_hits": 0,
+      "theme_share_pct": 100.0,
+      "top_sources": [
+        [
+          "arXiv_robotics",
+          7
+        ],
+        [
+          "TechCrunch_robotics",
+          6
+        ],
+        [
+          "Boston_Dynamics",
+          3
+        ],
+        [
+          "IEEE_Spectrum",
+          2
+        ]
+      ],
+      "samples": [
+        {
+          "title": "The Beginning of Your Tomorrow I Boston Dynamics",
+          "source": "Boston_Dynamics",
+          "created_at": "2026-06-02 09:50:12.248395",
+          "match_kind": "theme",
+          "matched_theme": "humanoid|optimus|robotaxi|industrial robot",
+          "matched_negative": null
+        },
+        {
+          "title": "Form & Function of Enterprise Humanoid Design | Boston Dynamics Tech Talk | Atlas",
+          "source": "Boston_Dynamics",
+          "created_at": "2026-06-02 09:50:12.176733",
+          "match_kind": "theme",
+          "matched_theme": "humanoid|optimus|robotaxi|industrial robot",
+          "matched_negative": null
+        },
+        {
+          "title": "The To Do List with Spot | Boston Dynamics",
+          "source": "Boston_Dynamics",
+          "created_at": "2026-06-02 09:50:12.160108",
+          "match_kind": "theme",
+          "matched_theme": "humanoid|optimus|robotaxi|industrial robot",
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "6954",
+      "name": "FANUC",
+      "harness_score": 6,
+      "direct_hits": 2,
+      "theme_hits": 16,
+      "negative_hits": 0,
+      "theme_share_pct": 88.9,
+      "top_sources": [
+        [
+          "arXiv_robotics",
+          7
+        ],
+        [
+          "TechCrunch_robotics",
+          6
+        ],
+        [
+          "Boston_Dynamics",
+          3
+        ],
+        [
+          "IEEE_Spectrum",
+          2
+        ]
+      ],
+      "samples": [
+        {
+          "title": "The Beginning of Your Tomorrow I Boston Dynamics",
+          "source": "Boston_Dynamics",
+          "created_at": "2026-06-02 09:50:12.248395",
+          "match_kind": "theme",
+          "matched_theme": "humanoid|optimus|robotaxi|industrial robot",
+          "matched_negative": null
+        },
+        {
+          "title": "Form & Function of Enterprise Humanoid Design | Boston Dynamics Tech Talk | Atlas",
+          "source": "Boston_Dynamics",
+          "created_at": "2026-06-02 09:50:12.176733",
+          "match_kind": "theme",
+          "matched_theme": "humanoid|optimus|robotaxi|industrial robot",
+          "matched_negative": null
+        },
+        {
+          "title": "The To Do List with Spot | Boston Dynamics",
+          "source": "Boston_Dynamics",
+          "created_at": "2026-06-02 09:50:12.160108",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "042700",
+      "name": "한미반도체",
+      "harness_score": 4,
+      "direct_hits": 0,
+      "theme_hits": 13,
+      "negative_hits": 0,
+      "theme_share_pct": 100.0,
+      "top_sources": [
+        [
+          "arXiv_AI",
+          9
+        ],
+        [
+          "arXiv_ML",
+          3
+        ],
+        [
+          "IEEE_Spectrum",
+          1
+        ]
+      ],
+      "samples": [
+        {
+          "title": "Atomically Thin Materials Significantly Shrink Qubits",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.817462",
+          "match_kind": "theme",
+          "matched_theme": "advanced packaging|\\bcowos\\b|chiplet|interposer|osat|substrate",
+          "matched_negative": null
+        },
+        {
+          "title": "Sparse Attention Remapping with Clustering for Efficient LLM Decoding on PIM",
+          "source": "arXiv_ML",
+          "created_at": "2026-06-02 09:50:11.247387",
+          "match_kind": "theme",
+          "matched_theme": "high bandwidth memory|\\bhbm\\b|hbm3e|hbm4",
+          "matched_negative": null
+        },
+        {
+          "title": "GeomHerd: A Forward-looking Herding Quantification via Ricci Flow Geometry on Agent Interactive Simulations",
+          "source": "arXiv_ML",
+          "created_at": "2026-06-02 09:50:10.368007",
+          "match_kind": "theme",
+          "matched_theme": "advanced packaging|\\bcowos\\b|chiplet|interposer|osat|substrate",
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "AVGO",
+      "name": "Broadcom",
+      "harness_score": 4,
+      "direct_hits": 0,
+      "theme_hits": 10,
+      "negative_hits": 0,
+      "theme_share_pct": 100.0,
+      "top_sources": [
+        [
+          "arXiv_AI",
+          7
+        ],
+        [
+          "arXiv_ML",
+          2
+        ],
+        [
+          "IEEE_Spectrum",
+          1
+        ]
+      ],
+      "samples": [
+        {
+          "title": "Atomically Thin Materials Significantly Shrink Qubits",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.817462",
+          "match_kind": "theme",
+          "matched_theme": "advanced packaging|\\bcowos\\b|chiplet|interposer|osat|substrate",
+          "matched_negative": null
+        },
+        {
+          "title": "GeomHerd: A Forward-looking Herding Quantification via Ricci Flow Geometry on Agent Interactive Simulations",
+          "source": "arXiv_ML",
+          "created_at": "2026-06-02 09:50:10.368007",
+          "match_kind": "theme",
+          "matched_theme": "advanced packaging|\\bcowos\\b|chiplet|interposer|osat|substrate",
+          "matched_negative": null
+        },
+        {
+          "title": "GRAFT-ATHENA: Self-Improving Agentic Teams for Autonomous Discovery and Evolutionary Numerical Algorithms",
+          "source": "arXiv_ML",
+          "created_at": "2026-06-02 09:50:09.145905",
+          "match_kind": "theme",
+          "matched_theme": "advanced packaging|\\bcowos\\b|chiplet|interposer|osat|substrate",
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "ASX",
+      "name": "ASE Technology ADR",
+      "harness_score": 4,
+      "direct_hits": 0,
+      "theme_hits": 10,
+      "negative_hits": 0,
+      "theme_share_pct": 100.0,
+      "top_sources": [
+        [
+          "arXiv_AI",
+          7
+        ],
+        [
+          "arXiv_ML",
+          2
+        ],
+        [
+          "IEEE_Spectrum",
+          1
+        ]
+      ],
+      "samples": [
+        {
+          "title": "Atomically Thin Materials Significantly Shrink Qubits",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.817462",
+          "match_kind": "theme",
+          "matched_theme": "advanced packaging|\\bcowos\\b|chiplet|interposer|osat|substrate",
+          "matched_negative": null
+        },
+        {
+          "title": "GeomHerd: A Forward-looking Herding Quantification via Ricci Flow Geometry on Agent Interactive Simulations",
+          "source": "arXiv_ML",
+          "created_at": "2026-06-02 09:50:10.368007",
+          "match_kind": "theme",
+          "matched_theme": "advanced packaging|\\bcowos\\b|chiplet|interposer|osat|substrate",
+          "matched_negative": null
+        },
+        {
+          "title": "GRAFT-ATHENA: Self-Improving Agentic Teams for Autonomous Discovery and Evolutionary Numerical Algorithms",
+          "source": "arXiv_ML",
+          "created_at": "2026-06-02 09:50:09.145905",
+          "match_kind": "theme",
+          "matched_theme": "advanced packaging|\\bcowos\\b|chiplet|interposer|osat|substrate",
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "TSM",
+      "name": "TSMC ADR",
+      "harness_score": 6,
+      "direct_hits": 5,
+      "theme_hits": 9,
+      "negative_hits": 0,
+      "theme_share_pct": 64.3,
+      "top_sources": [
+        [
+          "arXiv_AI",
+          8
+        ],
+        [
+          "IEEE_Spectrum",
+          4
+        ],
+        [
+          "arXiv_ML",
+          2
+        ]
+      ],
+      "samples": [
+        {
+          "title": "Atomically Thin Materials Significantly Shrink Qubits",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.817462",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        },
+        {
+          "title": "How AI Will Change Chip Design",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.802844",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        },
+        {
+          "title": "The Chip That Made Hardware Rewriteable",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.61816",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "005930",
+      "name": "삼성전자",
+      "harness_score": 4,
+      "direct_hits": 1,
+      "theme_hits": 5,
+      "negative_hits": 0,
+      "theme_share_pct": 83.3,
+      "top_sources": [
+        [
+          "IEEE_Spectrum",
+          2
+        ],
+        [
+          "arXiv_ML",
+          2
+        ],
+        [
+          "arXiv_AI",
+          2
+        ]
+      ],
+      "samples": [
+        {
+          "title": "How AI Will Change Chip Design",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.802844",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        },
+        {
+          "title": "GPU Renters Are Playing a Silicon Lottery",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.683471",
+          "match_kind": "theme",
+          "matched_theme": "memory bandwidth|dram scaling|memory bottleneck",
+          "matched_negative": null
+        },
+        {
+          "title": "Sparse Attention Remapping with Clustering for Efficient LLM Decoding on PIM",
+          "source": "arXiv_ML",
+          "created_at": "2026-06-02 09:50:11.247387",
+          "match_kind": "theme",
+          "matched_theme": "high bandwidth memory|\\bhbm\\b|hbm3e|hbm4",
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "000660",
+      "name": "SK하이닉스",
+      "harness_score": 3,
+      "direct_hits": 0,
+      "theme_hits": 5,
+      "negative_hits": 0,
+      "theme_share_pct": 100.0,
+      "top_sources": [
+        [
+          "arXiv_ML",
+          2
+        ],
+        [
+          "arXiv_AI",
+          2
+        ],
+        [
+          "IEEE_Spectrum",
+          1
+        ]
+      ],
+      "samples": [
+        {
+          "title": "GPU Renters Are Playing a Silicon Lottery",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.683471",
+          "match_kind": "theme",
+          "matched_theme": "memory bandwidth|dram scaling|memory bottleneck",
+          "matched_negative": null
+        },
+        {
+          "title": "Sparse Attention Remapping with Clustering for Efficient LLM Decoding on PIM",
+          "source": "arXiv_ML",
+          "created_at": "2026-06-02 09:50:11.247387",
+          "match_kind": "theme",
+          "matched_theme": "high bandwidth memory|\\bhbm\\b|hbm3e|hbm4",
+          "matched_negative": null
+        },
+        {
+          "title": "ROMER: Expert Replacement and Router Calibration for Robust MoE LLMs on Analog Compute-in-Memory Systems",
+          "source": "arXiv_ML",
+          "created_at": "2026-06-02 09:50:09.633225",
+          "match_kind": "theme",
+          "matched_theme": "memory bandwidth|dram scaling|memory bottleneck",
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "MU",
+      "name": "Micron Technology",
+      "harness_score": 5,
+      "direct_hits": 6,
+      "theme_hits": 2,
+      "negative_hits": 0,
+      "theme_share_pct": 25.0,
+      "top_sources": [
+        [
+          "IEEE_Spectrum",
+          3
+        ],
+        [
+          "arXiv_AI",
+          3
+        ],
+        [
+          "arXiv_ML",
+          2
+        ]
+      ],
+      "samples": [
+        {
+          "title": "How AI Will Change Chip Design",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.802844",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        },
+        {
+          "title": "GPU Renters Are Playing a Silicon Lottery",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.683471",
+          "match_kind": "theme",
+          "matched_theme": "memory bandwidth|dram scaling|memory bottleneck",
+          "matched_negative": null
+        },
+        {
+          "title": "The Chip That Made Hardware Rewriteable",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.61816",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "005380",
+      "name": "현대차",
+      "harness_score": 4,
+      "direct_hits": 2,
+      "theme_hits": 2,
+      "negative_hits": 0,
+      "theme_share_pct": 50.0,
+      "top_sources": [
+        [
+          "Boston_Dynamics",
+          1
+        ],
+        [
+          "TechCrunch_robotics",
+          1
+        ],
+        [
+          "arXiv_ML",
+          1
+        ],
+        [
+          "arXiv_AI",
+          1
+        ]
+      ],
+      "samples": [
+        {
+          "title": "The Beginning of Your Tomorrow I Boston Dynamics",
+          "source": "Boston_Dynamics",
+          "created_at": "2026-06-02 09:50:12.248395",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        },
+        {
+          "title": "How YC-backed Bucket Robotics survived its first CES",
+          "source": "TechCrunch_robotics",
+          "created_at": "2026-06-02 09:50:11.943863",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        },
+        {
+          "title": "A Fast and Energy-Efficient Latch-Based Memristive Analog Content-Addressable Memory",
+          "source": "arXiv_ML",
+          "created_at": "2026-06-02 09:50:10.438761",
+          "match_kind": "theme",
+          "matched_theme": "edge ai|automotive mcu|real-time inference|embedded ai",
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "PWR",
+      "name": "Quanta Services",
+      "harness_score": 2,
+      "direct_hits": 1,
+      "theme_hits": 2,
+      "negative_hits": 0,
+      "theme_share_pct": 66.7,
+      "top_sources": [
+        [
+          "IEEE_Spectrum",
+          2
+        ],
+        [
+          "Boston_Dynamics",
+          1
+        ]
+      ],
+      "samples": [
+        {
+          "title": "Form & Function of Enterprise Humanoid Design | Boston Dynamics Tech Talk | Atlas",
+          "source": "Boston_Dynamics",
+          "created_at": "2026-06-02 09:50:12.176733",
+          "match_kind": "theme",
+          "matched_theme": "liquid cooling|immersion cooling|thermal management|cooling loop",
+          "matched_negative": null
+        },
+        {
+          "title": "The Forgotten History of Hershey’s Electric Railway in Cuba",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.769028",
+          "match_kind": "theme",
+          "matched_theme": "grid bottleneck|power distribution|substation|grid infrastructure",
+          "matched_negative": null
+        },
+        {
+          "title": "Building an Interregional Transmission Overlay for a Resilient U.S. Grid",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.737549",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "CEG",
+      "name": "Constellation Energy",
+      "harness_score": 1,
+      "direct_hits": 0,
+      "theme_hits": 2,
+      "negative_hits": 0,
+      "theme_share_pct": 100.0,
+      "top_sources": [
+        [
+          "IEEE_Spectrum",
+          2
+        ]
+      ],
+      "samples": [
+        {
+          "title": "The Forgotten History of Hershey’s Electric Railway in Cuba",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.769028",
+          "match_kind": "theme",
+          "matched_theme": "grid bottleneck|power distribution|substation|grid infrastructure",
+          "matched_negative": null
+        },
+        {
+          "title": "Building an Interregional Transmission Overlay for a Resilient U.S. Grid",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.737549",
+          "match_kind": "theme",
+          "matched_theme": "grid bottleneck|power distribution|substation|grid infrastructure",
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "VST",
+      "name": "Vistra",
+      "harness_score": 1,
+      "direct_hits": 0,
+      "theme_hits": 2,
+      "negative_hits": 0,
+      "theme_share_pct": 100.0,
+      "top_sources": [
+        [
+          "IEEE_Spectrum",
+          2
+        ]
+      ],
+      "samples": [
+        {
+          "title": "The Forgotten History of Hershey’s Electric Railway in Cuba",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.769028",
+          "match_kind": "theme",
+          "matched_theme": "grid bottleneck|power distribution|substation|grid infrastructure",
+          "matched_negative": null
+        },
+        {
+          "title": "Building an Interregional Transmission Overlay for a Resilient U.S. Grid",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.737549",
+          "match_kind": "theme",
+          "matched_theme": "grid bottleneck|power distribution|substation|grid infrastructure",
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "GEV",
+      "name": "GE Vernova",
+      "harness_score": 1,
+      "direct_hits": 0,
+      "theme_hits": 2,
+      "negative_hits": 0,
+      "theme_share_pct": 100.0,
+      "top_sources": [
+        [
+          "IEEE_Spectrum",
+          2
+        ]
+      ],
+      "samples": [
+        {
+          "title": "The Forgotten History of Hershey’s Electric Railway in Cuba",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.769028",
+          "match_kind": "theme",
+          "matched_theme": "grid bottleneck|power distribution|substation|grid infrastructure",
+          "matched_negative": null
+        },
+        {
+          "title": "Building an Interregional Transmission Overlay for a Resilient U.S. Grid",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.737549",
+          "match_kind": "theme",
+          "matched_theme": "grid bottleneck|power distribution|substation|grid infrastructure",
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "6861",
+      "name": "Keyence",
+      "harness_score": 2,
+      "direct_hits": 0,
+      "theme_hits": 2,
+      "negative_hits": 0,
+      "theme_share_pct": 100.0,
+      "top_sources": [
+        [
+          "arXiv_ML",
+          1
+        ],
+        [
+          "arXiv_AI",
+          1
+        ]
+      ],
+      "samples": [
+        {
+          "title": "A Fast and Energy-Efficient Latch-Based Memristive Analog Content-Addressable Memory",
+          "source": "arXiv_ML",
+          "created_at": "2026-06-02 09:50:10.438761",
+          "match_kind": "theme",
+          "matched_theme": "edge ai|automotive mcu|real-time inference|embedded ai",
+          "matched_negative": null
+        },
+        {
+          "title": "A Lightweight Transformer for Pain Recognition from Brain Activity",
+          "source": "arXiv_AI",
+          "created_at": "2026-06-02 09:50:08.890089",
+          "match_kind": "theme",
+          "matched_theme": "edge ai|automotive mcu|real-time inference|embedded ai",
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "6723",
+      "name": "Renesas Electronics",
+      "harness_score": 2,
+      "direct_hits": 0,
+      "theme_hits": 2,
+      "negative_hits": 0,
+      "theme_share_pct": 100.0,
+      "top_sources": [
+        [
+          "arXiv_ML",
+          1
+        ],
+        [
+          "arXiv_AI",
+          1
+        ]
+      ],
+      "samples": [
+        {
+          "title": "A Fast and Energy-Efficient Latch-Based Memristive Analog Content-Addressable Memory",
+          "source": "arXiv_ML",
+          "created_at": "2026-06-02 09:50:10.438761",
+          "match_kind": "theme",
+          "matched_theme": "edge ai|automotive mcu|real-time inference|embedded ai",
+          "matched_negative": null
+        },
+        {
+          "title": "A Lightweight Transformer for Pain Recognition from Brain Activity",
+          "source": "arXiv_AI",
+          "created_at": "2026-06-02 09:50:08.890089",
+          "match_kind": "theme",
+          "matched_theme": "edge ai|automotive mcu|real-time inference|embedded ai",
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "XYL",
+      "name": "Xylem",
+      "harness_score": null,
+      "direct_hits": 0,
+      "theme_hits": 1,
+      "negative_hits": 0,
+      "theme_share_pct": 100.0,
+      "top_sources": [
+        [
+          "Boston_Dynamics",
+          1
+        ]
+      ],
+      "samples": [
+        {
+          "title": "Form & Function of Enterprise Humanoid Design | Boston Dynamics Tech Talk | Atlas",
+          "source": "Boston_Dynamics",
+          "created_at": "2026-06-02 09:50:12.176733",
+          "match_kind": "theme",
+          "matched_theme": "liquid cooling|immersion cooling|thermal management|cooling loop",
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "META",
+      "name": "Meta Platforms",
+      "harness_score": 7,
+      "direct_hits": 13,
+      "theme_hits": 0,
+      "negative_hits": 0,
+      "theme_share_pct": 0.0,
+      "top_sources": [
+        [
+          "arXiv_AI",
+          8
+        ],
+        [
+          "IEEE_Spectrum",
+          2
+        ],
+        [
+          "arXiv_ML",
+          2
+        ],
+        [
+          "TechCrunch_robotics",
+          1
+        ]
+      ],
+      "samples": [
+        {
+          "title": "AI researchers ’embodied’ an LLM into a robot – and it started channeling Robin Williams",
+          "source": "TechCrunch_robotics",
+          "created_at": "2026-06-02 09:50:12.023942",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        },
+        {
+          "title": "GPU Renters Are Playing a Silicon Lottery",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.683471",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        },
+        {
+          "title": "Better Hardware Could Turn Zeros into AI Heroes",
+          "source": "IEEE_Spectrum",
+          "created_at": "2026-06-02 09:50:11.603288",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "COHR",
+      "name": "Coherent",
+      "harness_score": 3,
+      "direct_hits": 10,
+      "theme_hits": 0,
+      "negative_hits": 0,
+      "theme_share_pct": 0.0,
+      "top_sources": [
+        [
+          "arXiv_AI",
+          8
+        ],
+        [
+          "arXiv_ML",
+          2
+        ]
+      ],
+      "samples": [
+        {
+          "title": "Testing General Relativity Through Gravitational Wave Classification: A Convolutional Neural Network Framework",
+          "source": "arXiv_ML",
+          "created_at": "2026-06-02 09:50:10.115373",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        },
+        {
+          "title": "Stop Marginalizing My Dreams: Model Inversion via Laplace Kernel for Continual Learning",
+          "source": "arXiv_ML",
+          "created_at": "2026-06-02 09:50:09.644687",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        },
+        {
+          "title": "Beyond RAG for Agent Memory: Retrieval by Decoupling and Aggregation",
+          "source": "arXiv_AI",
+          "created_at": "2026-06-02 09:50:08.596786",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "LITE",
+      "name": "Lumentum",
+      "harness_score": 2,
+      "direct_hits": 2,
+      "theme_hits": 0,
+      "negative_hits": 0,
+      "theme_share_pct": 0.0,
+      "top_sources": [
+        [
+          "arXiv_ML",
+          1
+        ],
+        [
+          "arXiv_AI",
+          1
+        ]
+      ],
+      "samples": [
+        {
+          "title": "Measuring Five-Nines Reliability: Sample-Efficient LLM Evaluation in Saturated Benchmarks",
+          "source": "arXiv_ML",
+          "created_at": "2026-06-02 09:50:09.224778",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        },
+        {
+          "title": "Workspace-Bench 1.0: Benchmarking AI Agents on Workspace Tasks with Large-Scale File Dependencies",
+          "source": "arXiv_AI",
+          "created_at": "2026-06-02 09:50:08.002155",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "VRT",
+      "name": "Vertiv",
+      "harness_score": 1,
+      "direct_hits": 1,
+      "theme_hits": 0,
+      "negative_hits": 0,
+      "theme_share_pct": 0.0,
+      "top_sources": [
+        [
+          "Boston_Dynamics",
+          1
+        ]
+      ],
+      "samples": [
+        {
+          "title": "Form & Function of Enterprise Humanoid Design | Boston Dynamics Tech Talk | Atlas",
+          "source": "Boston_Dynamics",
+          "created_at": "2026-06-02 09:50:12.176733",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        }
+      ]
+    },
+    {
+      "symbol": "ISRG",
+      "name": "Intuitive Surgical",
+      "harness_score": 1,
+      "direct_hits": 1,
+      "theme_hits": 0,
+      "negative_hits": 0,
+      "theme_share_pct": 0.0,
+      "top_sources": [
+        [
+          "arXiv_AI",
+          1
+        ]
+      ],
+      "samples": [
+        {
+          "title": "DenseTRF: Texture-Aware Unsupervised Representation Adaptation for Surgical Scene Dense Prediction",
+          "source": "arXiv_AI",
+          "created_at": "2026-06-02 09:50:06.514509",
+          "match_kind": "direct",
+          "matched_theme": null,
+          "matched_negative": null
+        }
+      ]
+    }
+  ]
+}
