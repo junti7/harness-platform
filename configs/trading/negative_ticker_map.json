@@ -1,0 +1,38 @@
+{
+  "export restriction|trade restriction|sanction risk|geopolitical escalation|taiwan contingency": {
+    "tickers": ["NVDA", "TSM", "005930", "000660", "AVGO"],
+    "weight": 0.62
+  },
+  "margin pressure|pricing pressure|oversupply|inventory correction|demand correction": {
+    "tickers": ["MU", "000660", "005930", "AVGO", "MRVL"],
+    "weight": 0.55
+  },
+  "power bottleneck|grid delay|interconnection queue|utility delay": {
+    "tickers": ["NVDA", "VRT", "PWR", "CEG", "VST", "GEV"],
+    "weight": 0.57
+  },
+  "cooling bottleneck|thermal constraint|water shortage|water stress": {
+    "tickers": ["VRT", "XYL", "PWR"],
+    "weight": 0.52
+  },
+  "customer concentration|hyperscaler concentration|single customer dependence": {
+    "tickers": ["AVGO", "MRVL", "SYM", "COHR", "LITE"],
+    "weight": 0.5
+  },
+  "capex slowdown|spending slowdown|order pushout|procurement delay": {
+    "tickers": ["ANET", "VRT", "PWR", "ROK", "8035", "042700"],
+    "weight": 0.54
+  },
+  "regulatory scrutiny|antitrust|privacy enforcement|copyright lawsuit": {
+    "tickers": ["GOOG", "META"],
+    "weight": 0.48
+  },
+  "autonomy recall|robot safety incident|factory accident|deployment pause": {
+    "tickers": ["TSLA", "6954", "SYM", "ROK", "ISRG"],
+    "weight": 0.53
+  },
+  "supply chain bottleneck|substrate shortage|yield issue|packaging shortage": {
+    "tickers": ["TSM", "ASX", "042700", "8035", "AVGO"],
+    "weight": 0.56
+  }
+}

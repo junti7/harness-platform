@@ -104,6 +104,44 @@ class TradingUniverseTests(unittest.TestCase):
         self.assertEqual(rows[0]["match_kind"], "theme")
         self.assertIn("substation", rows[0]["matched_theme"])
 
+    @patch("core.trading_universe._load_seed_registry")
+    @patch("core.trading_universe.execute_query")
+    def test_negative_evidence_reduces_score_and_records_hits(self, mock_execute, mock_registry):
+        mock_registry.return_value = [
+            {"region": "US", "symbol": "VRT", "exchange": "SMART", "currency": "USD", "name": "Vertiv", "sector": "Power Infra"},
+        ]
+
+        def side_effect(query, params=None, fetch=False):
+            if "ALTER TABLE" in query or "CREATE INDEX" in query:
+                return None
+            if "FROM filtered_signals fs" in query:
+                return [
+                    {
+                        "title": "Liquid cooling demand accelerates for AI clusters",
+                        "summary": "Cooling demand rises across hyperscale deployments.",
+                        "full_content": "Liquid cooling and immersion cooling demand are accelerating.",
+                        "score": 0.9,
+                        "source": "google_news_power_cooling",
+                        "created_at": "2026-06-09",
+                    },
+                    {
+                        "title": "Utility delay creates power bottleneck for new AI site",
+                        "summary": "Grid delay and interconnection queues slow deployment.",
+                        "full_content": "A power bottleneck and utility delay are delaying the AI data center launch.",
+                        "score": 0.9,
+                        "source": "google_news_power_cooling",
+                        "created_at": "2026-06-09",
+                    },
+                ]
+            return []
+
+        mock_execute.side_effect = side_effect
+        universe = trading_universe.build_trading_universe()
+        self.assertEqual(len(universe), 1)
+        self.assertEqual(universe[0]["negative_hits"], 1)
+        self.assertGreater(universe[0]["negative_score"], 0)
+        self.assertLess(universe[0]["net_evidence_score"], universe[0]["evidence_score"])
+
     @patch("core.trading_universe.UNIVERSE_PATH")
     def test_load_trading_universe_filters_alpaca_to_us(self, mock_path):
         mock_path.exists.return_value = False

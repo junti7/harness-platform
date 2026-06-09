@@ -13,6 +13,7 @@ from core.database import execute_query
 ROOT = Path(__file__).resolve().parents[1]
 UNIVERSE_PATH = ROOT / "docs" / "trading" / "universe.json"
 THEME_TICKER_MAP_PATH = ROOT / "configs" / "trading" / "theme_ticker_map.json"
+NEGATIVE_TICKER_MAP_PATH = ROOT / "configs" / "trading" / "negative_ticker_map.json"
 SEED_REGISTRY_PATH = ROOT / "configs" / "trading" / "universe_seed.json"
 
 
@@ -154,6 +155,7 @@ class EvidenceRow:
 
 
 _THEME_PATTERN_CACHE: dict[str, list[tuple[re.Pattern[str], float]]] | None = None
+_NEGATIVE_PATTERN_CACHE: dict[str, list[tuple[re.Pattern[str], float]]] | None = None
 
 
 def _load_theme_ticker_map() -> dict[str, dict[str, Any]]:
@@ -192,6 +194,44 @@ def _theme_patterns_for_symbol(symbol: str) -> list[tuple[re.Pattern[str], float
                 ))
         _THEME_PATTERN_CACHE = compiled
     return _THEME_PATTERN_CACHE.get(symbol.upper(), [])
+
+
+def _load_negative_ticker_map() -> dict[str, dict[str, Any]]:
+    if not NEGATIVE_TICKER_MAP_PATH.exists():
+        return {}
+    try:
+        data = json.loads(NEGATIVE_TICKER_MAP_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for pattern, payload in data.items():
+        if not isinstance(payload, dict):
+            continue
+        tickers = payload.get("tickers")
+        if not isinstance(tickers, list) or not tickers:
+            continue
+        out[pattern] = {
+            "tickers": [str(t).upper() for t in tickers if str(t).strip()],
+            "weight": float(payload.get("weight") or 0.45),
+        }
+    return out
+
+
+def _negative_patterns_for_symbol(symbol: str) -> list[tuple[re.Pattern[str], float]]:
+    global _NEGATIVE_PATTERN_CACHE
+    if _NEGATIVE_PATTERN_CACHE is None:
+        mapping = _load_negative_ticker_map()
+        compiled: dict[str, list[tuple[re.Pattern[str], float]]] = {}
+        for pattern_expr, payload in mapping.items():
+            for ticker in payload["tickers"]:
+                compiled.setdefault(ticker, []).append((
+                    re.compile(pattern_expr, re.IGNORECASE),
+                    max(0.1, min(1.0, float(payload["weight"]))),
+                ))
+        _NEGATIVE_PATTERN_CACHE = compiled
+    return _NEGATIVE_PATTERN_CACHE.get(symbol.upper(), [])
 
 
 def _load_candidate_rows(domain: str, lookback_days: int) -> list[EvidenceRow]:
@@ -294,11 +334,16 @@ def build_trading_universe(domain: str = "physical_ai", lookback_days: int = 45,
         symbol = item["symbol"]
         alias_patterns = _alias_patterns(symbol, item.get("name", ""))
         theme_patterns = _theme_patterns_for_symbol(symbol)
+        negative_patterns = _negative_patterns_for_symbol(symbol)
         per_source: dict[str, float] = {}
+        negative_per_source: dict[str, float] = {}
         matched_titles: list[str] = []
+        negative_titles: list[str] = []
         seen_titles: set[str] = set()
+        seen_negative_titles: set[str] = set()
         evidence_count = 0
         theme_hit_count = 0
+        negative_hit_count = 0
         for row in evidence_rows:
             text = row.text
             direct_hit = any(pattern.search(text) for pattern in alias_patterns)
@@ -307,24 +352,36 @@ def build_trading_universe(domain: str = "physical_ai", lookback_days: int = 45,
                 for theme_pattern, factor in theme_patterns:
                     if theme_pattern.search(text):
                         theme_weight = max(theme_weight, factor)
-            if not direct_hit and theme_weight <= 0.0:
+            negative_weight = 0.0
+            if negative_patterns:
+                for negative_pattern, factor in negative_patterns:
+                    if negative_pattern.search(text):
+                        negative_weight = max(negative_weight, factor)
+
+            if not direct_hit and theme_weight <= 0.0 and negative_weight <= 0.0:
                 continue
 
             # 교차게재/중복 제목(같은 논문 cs.AI+cs.LG 등)은 1회만 카운트 — 인플레 방지
             tkey = _normalize(row.title)[:80]
-            if tkey and tkey in seen_titles:
-                continue
-            if tkey:
-                seen_titles.add(tkey)
-
-            match_strength = 1.0 if direct_hit else theme_weight
-            weight = max(0.2, row.score) * _reliability_for(row.source) * _recency_factor(row.created_at, lookback_days) * match_strength
-            per_source[row.source] = per_source.get(row.source, 0.0) + weight
-            evidence_count += 1
-            if not direct_hit:
-                theme_hit_count += 1
-            if row.title and row.title not in matched_titles:
-                matched_titles.append(row.title)
+            if direct_hit or theme_weight > 0.0:
+                if tkey and tkey not in seen_titles:
+                    seen_titles.add(tkey)
+                    match_strength = 1.0 if direct_hit else theme_weight
+                    weight = max(0.2, row.score) * _reliability_for(row.source) * _recency_factor(row.created_at, lookback_days) * match_strength
+                    per_source[row.source] = per_source.get(row.source, 0.0) + weight
+                    evidence_count += 1
+                    if not direct_hit:
+                        theme_hit_count += 1
+                    if row.title and row.title not in matched_titles:
+                        matched_titles.append(row.title)
+            if negative_weight > 0.0:
+                if tkey and tkey not in seen_negative_titles:
+                    seen_negative_titles.add(tkey)
+                    penalty = max(0.2, row.score) * _reliability_for(row.source) * _recency_factor(row.created_at, lookback_days) * negative_weight
+                    negative_per_source[row.source] = negative_per_source.get(row.source, 0.0) + penalty
+                    negative_hit_count += 1
+                    if row.title and row.title not in negative_titles:
+                        negative_titles.append(row.title)
         if evidence_count == 0:
             continue
         matched_sources = set(per_source)
@@ -332,17 +389,23 @@ def build_trading_universe(domain: str = "physical_ai", lookback_days: int = 45,
         # 소스별 수확체감(power 0.75): 한 소스 대량 멘션은 포화시키고, 여러 소스의
         # 교차 확인(diversity)을 우대 → 단일 소스 스팸이 만점을 못 받게 한다.
         total = sum(sw ** 0.75 for sw in per_source.values())
+        negative_total = sum(sw ** 0.8 for sw in negative_per_source.values())
+        net_score = max(0.0, total - negative_total)
         # 상위 포화를 줄여 gate(≥7)가 변별력을 갖도록 보정: 품질가중 합 + 소스 다양성.
-        harness_score = min(10, max(1, round(total * 1.0 + distinct_sources * 0.8)))
+        harness_score = min(10, max(1, round(net_score * 1.0 + distinct_sources * 0.8)))
         selection_reason = "; ".join(matched_titles[:3])[:500]
         scores[symbol] = {
             **item,
             "harness_score": harness_score,
             "evidence_count": evidence_count,
             "theme_bridge_hits": theme_hit_count,
+            "negative_hits": negative_hit_count,
+            "negative_score": round(negative_total, 3),
             "evidence_score": round(total, 3),
+            "net_evidence_score": round(net_score, 3),
             "distinct_sources": distinct_sources,
             "selection_reason": selection_reason,
+            "negative_reason": "; ".join(negative_titles[:2])[:320],
             "matched_sources": sorted(matched_sources),
             "brokers": ["alpaca", "ibkr"] if item.get("region") == "US" else ["ibkr"],
         }
@@ -365,17 +428,24 @@ def explain_trading_symbol(symbol: str, domain: str = "physical_ai", lookback_da
         return []
     alias_patterns = _alias_patterns(symbol, meta.get("name", ""))
     theme_patterns = _theme_patterns_for_symbol(symbol)
+    negative_patterns = _negative_patterns_for_symbol(symbol)
     matches: list[dict[str, Any]] = []
     for row in _load_candidate_rows(domain, lookback_days):
         text = row.text
         direct_hit = any(pattern.search(text) for pattern in alias_patterns)
         matched_theme = None
+        matched_negative = None
         if not direct_hit and theme_patterns:
             for theme_pattern, _factor in theme_patterns:
                 if theme_pattern.search(text):
                     matched_theme = theme_pattern.pattern
                     break
-        if not direct_hit and not matched_theme:
+        if negative_patterns:
+            for negative_pattern, _factor in negative_patterns:
+                if negative_pattern.search(text):
+                    matched_negative = negative_pattern.pattern
+                    break
+        if not direct_hit and not matched_theme and not matched_negative:
             continue
         matches.append({
             "title": row.title,
@@ -383,8 +453,9 @@ def explain_trading_symbol(symbol: str, domain: str = "physical_ai", lookback_da
             "source": row.source,
             "score": round(row.score, 3),
             "created_at": row.created_at,
-            "match_kind": "direct" if direct_hit else "theme",
+            "match_kind": "negative" if matched_negative and not direct_hit and not matched_theme else ("direct" if direct_hit else "theme"),
             "matched_theme": matched_theme,
+            "matched_negative": matched_negative,
         })
     matches.sort(key=lambda item: (item["score"], item["created_at"]), reverse=True)
     return matches[:limit]
