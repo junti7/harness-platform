@@ -1,0 +1,50 @@
+{
+  "silicon photonics|photonics interconnect|photonic interconnect": {
+    "tickers": ["AVGO", "ANET", "TSM"],
+    "weight": 0.55
+  },
+  "co-packaged optics|\\bcpo\\b": {
+    "tickers": ["AVGO", "ANET"],
+    "weight": 0.58
+  },
+  "high bandwidth memory|\\bhbm\\b|hbm3e|hbm4": {
+    "tickers": ["MU", "000660", "005930", "042700"],
+    "weight": 0.7
+  },
+  "humanoid|optimus|robotaxi|industrial robot": {
+    "tickers": ["TSLA", "6954", "SYM"],
+    "weight": 0.52
+  },
+  "ai accelerator|gpu cluster|training cluster|inference cluster|blackwell": {
+    "tickers": ["NVDA", "AVGO", "GOOG"],
+    "weight": 0.57
+  },
+  "liquid cooling|immersion cooling|thermal management|cooling loop": {
+    "tickers": ["VRT", "PWR"],
+    "weight": 0.62
+  },
+  "sim-to-real|world model|digital twin|robot simulation": {
+    "tickers": ["NVDA", "TSLA", "GOOG"],
+    "weight": 0.5
+  },
+  "advanced packaging|\\bcowos\\b|chiplet|interposer|osat|substrate": {
+    "tickers": ["TSM", "ASX", "042700", "AVGO"],
+    "weight": 0.63
+  },
+  "grid bottleneck|power distribution|substation|grid infrastructure": {
+    "tickers": ["PWR", "GEV", "CEG", "VST"],
+    "weight": 0.58
+  },
+  "edge ai|automotive mcu|real-time inference|embedded ai": {
+    "tickers": ["6723", "005380", "6861"],
+    "weight": 0.5
+  },
+  "warehouse robotics|warehouse automation|fulfillment automation": {
+    "tickers": ["SYM", "ROK"],
+    "weight": 0.58
+  },
+  "machine vision|factory sensor|smart factory": {
+    "tickers": ["6861", "ROK"],
+    "weight": 0.5
+  }
+}

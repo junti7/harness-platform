@@ -12,6 +12,7 @@ from core.database import execute_query
 
 ROOT = Path(__file__).resolve().parents[1]
 UNIVERSE_PATH = ROOT / "docs" / "trading" / "universe.json"
+THEME_TICKER_MAP_PATH = ROOT / "configs" / "trading" / "theme_ticker_map.json"
 
 
 def now_iso() -> str:
@@ -63,6 +64,11 @@ def _load_seed_registry() -> list[dict[str, Any]]:
         {"region": "US", "symbol": "GOOG", "exchange": "NASDAQ", "currency": "USD", "name": "Alphabet", "sector": "AI Platform"},
         {"region": "US", "symbol": "TSLA", "exchange": "NASDAQ", "currency": "USD", "name": "Tesla", "sector": "Humanoid Robotics"},
         {"region": "US", "symbol": "META", "exchange": "NASDAQ", "currency": "USD", "name": "Meta Platforms", "sector": "AI Platform"},
+        {"region": "US", "symbol": "CEG", "exchange": "SMART", "currency": "USD", "name": "Constellation Energy", "sector": "Power"},
+        {"region": "US", "symbol": "VST", "exchange": "NYSE", "currency": "USD", "name": "Vistra", "sector": "Power"},
+        {"region": "US", "symbol": "GEV", "exchange": "NYSE", "currency": "USD", "name": "GE Vernova", "sector": "Power Equip"},
+        {"region": "US", "symbol": "PWR", "exchange": "NYSE", "currency": "USD", "name": "Quanta Services", "sector": "Power Infra"},
+        {"region": "US", "symbol": "ASX", "exchange": "NYSE", "currency": "USD", "name": "ASE Technology ADR", "sector": "Packaging"},
         {"region": "KR", "symbol": "005930", "exchange": "KRX", "currency": "KRW", "name": "삼성전자", "sector": "Memory/Foundry"},
         {"region": "KR", "symbol": "000660", "exchange": "KRX", "currency": "KRW", "name": "SK하이닉스", "sector": "HBM Memory"},
         {"region": "KR", "symbol": "042700", "exchange": "KRX", "currency": "KRW", "name": "한미반도체", "sector": "Chip Equip"},
@@ -70,6 +76,7 @@ def _load_seed_registry() -> list[dict[str, Any]]:
         {"region": "JP", "symbol": "8035", "exchange": "TSEJ", "currency": "JPY", "name": "Tokyo Electron", "sector": "Chip Equip"},
         {"region": "JP", "symbol": "6861", "exchange": "TSEJ", "currency": "JPY", "name": "Keyence", "sector": "Factory Auto"},
         {"region": "JP", "symbol": "6954", "exchange": "TSEJ", "currency": "JPY", "name": "FANUC", "sector": "Robotics"},
+        {"region": "JP", "symbol": "6723", "exchange": "TSEJ", "currency": "JPY", "name": "Renesas Electronics", "sector": "MCU/Auto Chip"},
     ]
 
 
@@ -80,26 +87,32 @@ def _normalize(text: str) -> str:
 def _alias_map(symbol: str, name: str) -> list[str]:
     base = {_normalize(symbol), _normalize(name)}
     manual = {
-        "NVDA": ["nvidia", "gr00t", "cosmos", "h100", "gb200"],
-        "AVGO": ["broadcom", "custom ai asic", "vmware"],
-        "TSM": ["tsmc", "taiwan semiconductor", "2nm", "wafer"],
-        "MU": ["micron", "hbm", "hbm4", "hbm3e"],
-        "ANET": ["arista", "ethernet switch", "ai networking"],
-        "VRT": ["vertiv", "liquid cooling", "data center cooling"],
-        "TER": ["teradyne", "universal robots"],
-        "SYM": ["symbotic", "warehouse automation"],
-        "ISRG": ["intuitive surgical", "da vinci"],
-        "ROK": ["rockwell automation"],
-        "GOOG": ["google", "alphabet", "deepmind", "gemini robotics"],
-        "TSLA": ["tesla", "optimus"],
-        "META": ["meta", "llama"],
+        "NVDA": ["nvidia", "gr00t", "cosmos", "h100", "gb200", "cuda", "ai accelerator", "blackwell"],
+        "AVGO": ["broadcom", "custom ai asic", "vmware", "co-packaged optics", "cpo", "tomahawk"],
+        "TSM": ["tsmc", "taiwan semiconductor", "2nm", "wafer", "cowos", "advanced packaging", "foundry"],
+        "MU": ["micron", "hbm", "hbm4", "hbm3e", "high bandwidth memory", "dram"],
+        "ANET": ["arista", "ethernet switch", "ai networking", "ethernet fabric", "800g ethernet"],
+        "VRT": ["vertiv", "liquid cooling", "data center cooling", "immersion cooling", "thermal management"],
+        "TER": ["teradyne", "universal robots", "robot tester", "semiconductor test"],
+        "SYM": ["symbotic", "warehouse automation", "warehouse robotics", "autonomous warehouse"],
+        "ISRG": ["intuitive surgical", "da vinci", "surgical robot", "robotic surgery"],
+        "ROK": ["rockwell automation", "industrial automation", "factory automation", "manufacturing execution"],
+        "GOOG": ["google", "alphabet", "deepmind", "gemini robotics", "tpu", "tensor processing unit", "waymo"],
+        "TSLA": ["tesla", "optimus", "humanoid robot", "robotaxi"],
+        "META": ["meta", "llama", "ray-ban meta", "smart glasses"],
+        "CEG": ["constellation energy", "nuclear power", "clean baseload"],
+        "VST": ["vistra", "power generation", "electric utility"],
+        "GEV": ["ge vernova", "grid equipment", "power turbine"],
+        "PWR": ["quanta services", "grid infrastructure", "power transmission", "substation"],
+        "ASX": ["ase technology", "advanced packaging", "chip packaging", "osat"],
         "005930": ["삼성전자", "samsung electronics", "samsung"],
         "000660": ["sk하이닉스", "sk hynix", "hynix"],
-        "042700": ["한미반도체", "hanmi semiconductor"],
-        "005380": ["현대차", "hyundai", "hyundai motor", "metaplant"],
-        "8035": ["tokyo electron"],
-        "6861": ["keyence"],
-        "6954": ["fanuc"],
+        "042700": ["한미반도체", "hanmi semiconductor", "tc bonder", "hbm packaging"],
+        "005380": ["현대차", "hyundai", "hyundai motor", "metaplant", "mobis robotics"],
+        "8035": ["tokyo electron", "tel semiconductor", "wafer fab equipment"],
+        "6861": ["keyence", "machine vision", "factory sensor"],
+        "6954": ["fanuc", "industrial robot", "factory robot"],
+        "6723": ["renesas", "renesas electronics", "automotive mcu", "edge ai mcu"],
     }
     base.update(_normalize(item) for item in manual.get(symbol, []))
     return [item for item in base if item]
@@ -127,6 +140,47 @@ class EvidenceRow:
     @property
     def text(self) -> str:
         return _normalize(" ".join([self.title, self.summary, self.full_content[:4000]]))
+
+
+_THEME_PATTERN_CACHE: dict[str, list[tuple[re.Pattern[str], float]]] | None = None
+
+
+def _load_theme_ticker_map() -> dict[str, dict[str, Any]]:
+    if not THEME_TICKER_MAP_PATH.exists():
+        return {}
+    try:
+        data = json.loads(THEME_TICKER_MAP_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for pattern, payload in data.items():
+        if not isinstance(payload, dict):
+            continue
+        tickers = payload.get("tickers")
+        if not isinstance(tickers, list) or not tickers:
+            continue
+        out[pattern] = {
+            "tickers": [str(t).upper() for t in tickers if str(t).strip()],
+            "weight": float(payload.get("weight") or 0.55),
+        }
+    return out
+
+
+def _theme_patterns_for_symbol(symbol: str) -> list[tuple[re.Pattern[str], float]]:
+    global _THEME_PATTERN_CACHE
+    if _THEME_PATTERN_CACHE is None:
+        mapping = _load_theme_ticker_map()
+        compiled: dict[str, list[tuple[re.Pattern[str], float]]] = {}
+        for pattern_expr, payload in mapping.items():
+            for ticker in payload["tickers"]:
+                compiled.setdefault(ticker, []).append((
+                    re.compile(pattern_expr, re.IGNORECASE),
+                    max(0.1, min(1.0, float(payload["weight"]))),
+                ))
+        _THEME_PATTERN_CACHE = compiled
+    return _THEME_PATTERN_CACHE.get(symbol.upper(), [])
 
 
 def _load_candidate_rows(domain: str, lookback_days: int) -> list[EvidenceRow]:
@@ -228,24 +282,38 @@ def build_trading_universe(domain: str = "physical_ai", lookback_days: int = 45,
     for item in registry:
         symbol = item["symbol"]
         alias_patterns = _alias_patterns(symbol, item.get("name", ""))
+        theme_patterns = _theme_patterns_for_symbol(symbol)
         per_source: dict[str, float] = {}
         matched_titles: list[str] = []
         seen_titles: set[str] = set()
         evidence_count = 0
+        theme_hit_count = 0
         for row in evidence_rows:
-            if any(pattern.search(row.text) for pattern in alias_patterns):
-                # 교차게재/중복 제목(같은 논문 cs.AI+cs.LG 등)은 1회만 카운트 — 인플레 방지
-                tkey = _normalize(row.title)[:80]
-                if tkey and tkey in seen_titles:
-                    continue
-                if tkey:
-                    seen_titles.add(tkey)
-                # 품질 가중치: 관련도(score) × 소스 신뢰도 × 최신성
-                weight = max(0.2, row.score) * _reliability_for(row.source) * _recency_factor(row.created_at, lookback_days)
-                per_source[row.source] = per_source.get(row.source, 0.0) + weight
-                evidence_count += 1
-                if row.title and row.title not in matched_titles:
-                    matched_titles.append(row.title)
+            text = row.text
+            direct_hit = any(pattern.search(text) for pattern in alias_patterns)
+            theme_weight = 0.0
+            if not direct_hit and theme_patterns:
+                for theme_pattern, factor in theme_patterns:
+                    if theme_pattern.search(text):
+                        theme_weight = max(theme_weight, factor)
+            if not direct_hit and theme_weight <= 0.0:
+                continue
+
+            # 교차게재/중복 제목(같은 논문 cs.AI+cs.LG 등)은 1회만 카운트 — 인플레 방지
+            tkey = _normalize(row.title)[:80]
+            if tkey and tkey in seen_titles:
+                continue
+            if tkey:
+                seen_titles.add(tkey)
+
+            match_strength = 1.0 if direct_hit else theme_weight
+            weight = max(0.2, row.score) * _reliability_for(row.source) * _recency_factor(row.created_at, lookback_days) * match_strength
+            per_source[row.source] = per_source.get(row.source, 0.0) + weight
+            evidence_count += 1
+            if not direct_hit:
+                theme_hit_count += 1
+            if row.title and row.title not in matched_titles:
+                matched_titles.append(row.title)
         if evidence_count == 0:
             continue
         matched_sources = set(per_source)
@@ -260,6 +328,7 @@ def build_trading_universe(domain: str = "physical_ai", lookback_days: int = 45,
             **item,
             "harness_score": harness_score,
             "evidence_count": evidence_count,
+            "theme_bridge_hits": theme_hit_count,
             "evidence_score": round(total, 3),
             "distinct_sources": distinct_sources,
             "selection_reason": selection_reason,
@@ -284,16 +353,28 @@ def explain_trading_symbol(symbol: str, domain: str = "physical_ai", lookback_da
     if not meta:
         return []
     alias_patterns = _alias_patterns(symbol, meta.get("name", ""))
+    theme_patterns = _theme_patterns_for_symbol(symbol)
     matches: list[dict[str, Any]] = []
     for row in _load_candidate_rows(domain, lookback_days):
-        if any(pattern.search(row.text) for pattern in alias_patterns):
-            matches.append({
-                "title": row.title,
-                "summary": row.summary[:400],
-                "source": row.source,
-                "score": round(row.score, 3),
-                "created_at": row.created_at,
-            })
+        text = row.text
+        direct_hit = any(pattern.search(text) for pattern in alias_patterns)
+        matched_theme = None
+        if not direct_hit and theme_patterns:
+            for theme_pattern, _factor in theme_patterns:
+                if theme_pattern.search(text):
+                    matched_theme = theme_pattern.pattern
+                    break
+        if not direct_hit and not matched_theme:
+            continue
+        matches.append({
+            "title": row.title,
+            "summary": row.summary[:400],
+            "source": row.source,
+            "score": round(row.score, 3),
+            "created_at": row.created_at,
+            "match_kind": "direct" if direct_hit else "theme",
+            "matched_theme": matched_theme,
+        })
     matches.sort(key=lambda item: (item["score"], item["created_at"]), reverse=True)
     return matches[:limit]
 
