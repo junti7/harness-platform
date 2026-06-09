@@ -21,6 +21,7 @@ def main() -> int:
     parser.add_argument("--max-symbols", type=int, default=24)
     parser.add_argument("--refresh-pipeline", action="store_true", help="Run Tier2 filter + signal promotion before universe build")
     parser.add_argument("--filter-limit", type=int, default=None)
+    parser.add_argument("--skip-ko", action="store_true", help="Skip Korean translation enrichment for fast runtime rebuilds")
     args = parser.parse_args()
     ensure_trading_db_url()
 
@@ -28,7 +29,12 @@ def main() -> int:
         filter_signals(correlation_id="trading-universe-refresh", limit=args.filter_limit, domain=args.domain)
         promote_signals(correlation_id="trading-universe-refresh", domain=args.domain)
 
-    universe = build_trading_universe(domain=args.domain, lookback_days=args.lookback_days, max_symbols=args.max_symbols)
+    universe = build_trading_universe(
+        domain=args.domain,
+        lookback_days=args.lookback_days,
+        max_symbols=args.max_symbols,
+        translate_reasons=not args.skip_ko,
+    )
     write_trading_universe(universe)
 
     payload = {

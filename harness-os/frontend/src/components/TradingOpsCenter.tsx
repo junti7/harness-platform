@@ -117,10 +117,16 @@ type TradingSelectionFlow = {
     harness_score?: number
     evidence_count?: number
     theme_bridge_hits?: number
+    negative_hits?: number
+    negative_score?: number
+    net_evidence_score?: number
+    theme_share_pct?: number
+    bridge_penalty_factor?: number
     evidence_score?: number
     matched_sources?: string[]
     selection_reason?: string
     selection_reason_ko?: string
+    negative_reason?: string
     brokers?: string[]
   }>
   symbol_evidence?: Record<string, Array<{
@@ -129,8 +135,9 @@ type TradingSelectionFlow = {
     source?: string
     score?: number
     created_at?: string
-    match_kind?: 'direct' | 'theme'
+    match_kind?: 'direct' | 'theme' | 'negative'
     matched_theme?: string | null
+    matched_negative?: string | null
   }>>
   trade_flow?: Array<{
     ts?: string
@@ -963,6 +970,8 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                     <MobileField label="선정 점수" value={row.harness_score ?? '—'} />
                     <MobileField label="근거 건수" value={row.evidence_count ?? '—'} />
                     <MobileField label="테마 브리지" value={row.theme_bridge_hits ?? 0} tone={row.theme_bridge_hits ? 'normal' : 'muted'} />
+                    <MobileField label="악재 건수" value={row.negative_hits ?? 0} tone={(row.negative_hits ?? 0) > 0 ? 'muted' : 'normal'} />
+                    <MobileField label="테마 비중" value={row.theme_share_pct != null ? `${row.theme_share_pct}%` : '—'} tone="muted" />
                     <MobileField label="주문 가능 증권사" value={(row.brokers ?? []).join(', ') || '—'} tone="muted" />
                     <MobileField label="근거 출처" value={(row.matched_sources ?? []).slice(0, 3).join(', ') || '—'} tone="muted" />
                   </div>
@@ -986,6 +995,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                     <th title="Harness Score — 얼마나 강하게 뽑혔는지">선정 점수</th>
                     <th title="Evidence Count — 판단 근거 개수">근거 건수</th>
                     <th title="Theme Bridge Hits — 회사명 직접 언급이 아닌 기술 테마로 연결된 근거 수">테마 건수</th>
+                    <th title="Negative Hits — 악재/반대 근거 수">악재 건수</th>
                     <th title="Sources — 어디서 근거가 나왔는지">근거 출처</th>
                     <th title="Brokers — 어디서 실제 주문 가능한지">증권사</th>
                     <th>선정 이유</th>
@@ -1002,6 +1012,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                       <td className="num">{row.harness_score ?? '—'}</td>
                       <td className="num">{row.evidence_count ?? '—'}</td>
                       <td className="num">{row.theme_bridge_hits ?? 0}</td>
+                      <td className="num">{row.negative_hits ?? 0}</td>
                       <td className="sf-td-truncate" title={(row.matched_sources ?? []).join(', ')}>{(row.matched_sources ?? []).slice(0, 3).join(', ') || '—'}</td>
                       <td className="sf-td-truncate" title={(row.brokers ?? []).join(', ')}>{(row.brokers ?? []).join(', ') || '—'}</td>
                       <td className="sf-reason-cell">{row.selection_reason_ko || row.selection_reason || '—'}</td>
@@ -1018,8 +1029,14 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                 <p className="term-note">
                   이 종목은 점수 {selectedUniverseRow.harness_score ?? '—'}점, 근거 {selectedUniverseRow.evidence_count ?? 0}건으로 선택됐습니다.
                   이 중 {selectedUniverseRow.theme_bridge_hits ?? 0}건은 회사명 직접 언급이 아니라 기술 테마를 통해 연결된 근거입니다.
+                  악재 근거는 {selectedUniverseRow.negative_hits ?? 0}건이며, 테마 비중은 {selectedUniverseRow.theme_share_pct ?? 0}%입니다.
                   아래는 실제로 이 종목을 뽑는 데 쓰인 최근 근거입니다.
                 </p>
+                {selectedUniverseRow.negative_reason && (
+                  <p className="term-note" style={{ marginTop: '0.4rem' }}>
+                    최근 악재 요약: {selectedUniverseRow.negative_reason}
+                  </p>
+                )}
                 <div className="mobile-card-list trading-mobile-only" style={{ marginTop: '0.5rem' }}>
                   {selectedEvidence.length === 0 ? (
                     <div className="mobile-detail-card">
@@ -1032,7 +1049,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                           <strong>{row.source ?? '출처 미상'}</strong>
                           <span>{row.created_at ? String(row.created_at).slice(5, 16).replace('T', ' ') : '—'}</span>
                         </div>
-                        <span className={`freshness-chip ${row.match_kind === 'theme' ? 'fresh' : 'aging'}`}>{row.match_kind === 'theme' ? '테마 브리지' : '직접 근거'}</span>
+                        <span className={`freshness-chip ${row.match_kind === 'theme' ? 'fresh' : row.match_kind === 'negative' ? 'stale' : 'aging'}`}>{row.match_kind === 'theme' ? '테마 브리지' : row.match_kind === 'negative' ? '악재 근거' : '직접 근거'}</span>
                       </div>
                       <p className="mobile-card-title">{row.title ?? '제목 없음'}</p>
                       <p className="mobile-card-note">{row.summary ?? '요약 없음'}</p>
@@ -1056,7 +1073,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                       ) : selectedEvidence.map((row, idx) => (
                         <tr key={`${selectedFlowSymbol}-evidence-${idx}`}>
                           <td className="data-meta">{row.created_at ? String(row.created_at).slice(5, 16).replace('T', ' ') : '—'}</td>
-                          <td>{row.match_kind === 'theme' ? '테마 브리지' : '직접 근거'}</td>
+                          <td>{row.match_kind === 'theme' ? '테마 브리지' : row.match_kind === 'negative' ? '악재 근거' : '직접 근거'}</td>
                           <td>{row.source ?? '—'}</td>
                           <td>{row.title ?? '—'}</td>
                           <td className="data-meta">{row.summary ?? '—'}</td>

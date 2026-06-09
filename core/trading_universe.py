@@ -321,7 +321,12 @@ def _recency_factor(created_at: str, lookback_days: int) -> float:
     return 0.4 + 0.6 * max(0.0, 1.0 - age_days / max(1, lookback_days))
 
 
-def build_trading_universe(domain: str = "physical_ai", lookback_days: int = 45, max_symbols: int = 24) -> list[dict[str, Any]]:
+def build_trading_universe(
+    domain: str = "physical_ai",
+    lookback_days: int = 45,
+    max_symbols: int = 24,
+    translate_reasons: bool = True,
+) -> list[dict[str, Any]]:
     ensure_trading_db_url()
     ensure_trading_schema()
     registry = _load_seed_registry()
@@ -391,6 +396,16 @@ def build_trading_universe(domain: str = "physical_ai", lookback_days: int = 45,
         total = sum(sw ** 0.75 for sw in per_source.values())
         negative_total = sum(sw ** 0.8 for sw in negative_per_source.values())
         net_score = max(0.0, total - negative_total)
+        theme_share_pct = round((theme_hit_count / max(1, evidence_count)) * 100, 1)
+        bridge_penalty_factor = 1.0
+        if evidence_count >= 4:
+            if theme_share_pct >= 90:
+                bridge_penalty_factor = 0.78
+            elif theme_share_pct >= 75:
+                bridge_penalty_factor = 0.86
+            elif theme_share_pct >= 60:
+                bridge_penalty_factor = 0.93
+        net_score *= bridge_penalty_factor
         # 상위 포화를 줄여 gate(≥7)가 변별력을 갖도록 보정: 품질가중 합 + 소스 다양성.
         harness_score = min(10, max(1, round(net_score * 1.0 + distinct_sources * 0.8)))
         selection_reason = "; ".join(matched_titles[:3])[:500]
@@ -403,6 +418,8 @@ def build_trading_universe(domain: str = "physical_ai", lookback_days: int = 45,
             "negative_score": round(negative_total, 3),
             "evidence_score": round(total, 3),
             "net_evidence_score": round(net_score, 3),
+            "theme_share_pct": theme_share_pct,
+            "bridge_penalty_factor": round(bridge_penalty_factor, 2),
             "distinct_sources": distinct_sources,
             "selection_reason": selection_reason,
             "negative_reason": "; ".join(negative_titles[:2])[:320],
@@ -415,7 +432,8 @@ def build_trading_universe(domain: str = "physical_ai", lookback_days: int = 45,
         key=lambda row: (row["harness_score"], row["evidence_score"], row.get("distinct_sources", 0), row["evidence_count"]),
         reverse=True,
     )[:max_symbols]
-    ranked = _translate_reasons_ko(ranked)
+    if translate_reasons:
+        ranked = _translate_reasons_ko(ranked)
     return ranked
 
 
