@@ -142,6 +142,33 @@ class TradingUniverseTests(unittest.TestCase):
         self.assertGreater(universe[0]["negative_score"], 0)
         self.assertLess(universe[0]["net_evidence_score"], universe[0]["evidence_score"])
 
+    @patch("core.trading_universe._load_seed_registry")
+    @patch("core.trading_universe.execute_query")
+    def test_theme_bridge_ignores_generic_full_content_without_title_summary_support(self, mock_execute, mock_registry):
+        mock_registry.return_value = [
+            {"region": "US", "symbol": "TSLA", "exchange": "NASDAQ", "currency": "USD", "name": "Tesla", "sector": "Humanoid Robotics"},
+        ]
+
+        def side_effect(query, params=None, fetch=False):
+            if "ALTER TABLE" in query or "CREATE INDEX" in query:
+                return None
+            if "FROM filtered_signals fs" in query:
+                return [
+                    {
+                        "title": "The Beginning of Your Tomorrow",
+                        "summary": "A broad robotics brand film without specific investment signal terms.",
+                        "full_content": "This transcript repeatedly mentions humanoid robots and general robotics systems.",
+                        "score": 0.9,
+                        "source": "Boston_Dynamics",
+                        "created_at": "2026-06-09",
+                    },
+                ]
+            return []
+
+        mock_execute.side_effect = side_effect
+        universe = trading_universe.build_trading_universe()
+        self.assertEqual(universe, [])
+
     @patch("core.trading_universe.UNIVERSE_PATH")
     def test_load_trading_universe_filters_alpaca_to_us(self, mock_path):
         mock_path.exists.return_value = False

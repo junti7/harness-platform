@@ -102,11 +102,11 @@ def _alias_map(symbol: str, name: str) -> list[str]:
         "ANET": ["arista", "ethernet switch", "ai networking", "ethernet fabric", "800g ethernet", "data center switch"],
         "VRT": ["vertiv", "liquid cooling", "data center cooling", "immersion cooling", "thermal management"],
         "TER": ["teradyne", "universal robots", "robot tester", "semiconductor test"],
-        "SYM": ["symbotic", "warehouse automation", "warehouse robotics", "autonomous warehouse"],
-        "ISRG": ["intuitive surgical", "da vinci", "surgical robot", "robotic surgery"],
-        "ROK": ["rockwell automation", "industrial automation", "factory automation", "manufacturing execution"],
+        "SYM": ["symbotic", "autonomous warehouse"],
+        "ISRG": ["intuitive surgical", "da vinci"],
+        "ROK": ["rockwell automation", "manufacturing execution"],
         "GOOG": ["google", "alphabet", "deepmind", "gemini robotics", "tpu", "tensor processing unit", "waymo"],
-        "TSLA": ["tesla", "optimus", "humanoid robot", "robotaxi"],
+        "TSLA": ["tesla", "optimus", "robotaxi"],
         "META": ["meta", "llama", "ray-ban meta", "smart glasses"],
         "CEG": ["constellation energy", "nuclear power", "clean baseload"],
         "VST": ["vistra", "power generation", "electric utility"],
@@ -119,12 +119,12 @@ def _alias_map(symbol: str, name: str) -> list[str]:
         "XYL": ["xylem", "cooling water", "industrial pump", "water infrastructure"],
         "005930": ["삼성전자", "samsung electronics", "samsung"],
         "000660": ["sk하이닉스", "sk hynix", "hynix"],
-        "042700": ["한미반도체", "hanmi semiconductor", "tc bonder", "hbm packaging"],
+        "042700": ["한미반도체", "hanmi semiconductor", "tc bonder"],
         "005380": ["현대차", "hyundai", "hyundai motor", "metaplant", "mobis robotics"],
-        "8035": ["tokyo electron", "tel semiconductor", "wafer fab equipment"],
-        "6861": ["keyence", "machine vision", "factory sensor"],
-        "6954": ["fanuc", "industrial robot", "factory robot"],
-        "6723": ["renesas", "renesas electronics", "automotive mcu", "edge ai mcu"],
+        "8035": ["tokyo electron", "tel semiconductor"],
+        "6861": ["keyence"],
+        "6954": ["fanuc"],
+        "6723": ["renesas", "renesas electronics"],
     }
     base.update(_normalize(item) for item in manual.get(symbol, []))
     return [item for item in base if item]
@@ -152,6 +152,10 @@ class EvidenceRow:
     @property
     def text(self) -> str:
         return _normalize(" ".join([self.title, self.summary, self.full_content[:4000]]))
+
+    @property
+    def brief_text(self) -> str:
+        return _normalize(" ".join([self.title, self.summary]))
 
 
 _THEME_PATTERN_CACHE: dict[str, list[tuple[re.Pattern[str], float]]] | None = None
@@ -350,17 +354,18 @@ def build_trading_universe(
         theme_hit_count = 0
         negative_hit_count = 0
         for row in evidence_rows:
-            text = row.text
-            direct_hit = any(pattern.search(text) for pattern in alias_patterns)
+            full_text = row.text
+            brief_text = row.brief_text
+            direct_hit = any(pattern.search(full_text) for pattern in alias_patterns)
             theme_weight = 0.0
             if not direct_hit and theme_patterns:
                 for theme_pattern, factor in theme_patterns:
-                    if theme_pattern.search(text):
+                    if theme_pattern.search(brief_text):
                         theme_weight = max(theme_weight, factor)
             negative_weight = 0.0
             if negative_patterns:
                 for negative_pattern, factor in negative_patterns:
-                    if negative_pattern.search(text):
+                    if negative_pattern.search(brief_text):
                         negative_weight = max(negative_weight, factor)
 
             if not direct_hit and theme_weight <= 0.0 and negative_weight <= 0.0:
@@ -449,18 +454,19 @@ def explain_trading_symbol(symbol: str, domain: str = "physical_ai", lookback_da
     negative_patterns = _negative_patterns_for_symbol(symbol)
     matches: list[dict[str, Any]] = []
     for row in _load_candidate_rows(domain, lookback_days):
-        text = row.text
-        direct_hit = any(pattern.search(text) for pattern in alias_patterns)
+        full_text = row.text
+        brief_text = row.brief_text
+        direct_hit = any(pattern.search(full_text) for pattern in alias_patterns)
         matched_theme = None
         matched_negative = None
         if not direct_hit and theme_patterns:
             for theme_pattern, _factor in theme_patterns:
-                if theme_pattern.search(text):
+                if theme_pattern.search(brief_text):
                     matched_theme = theme_pattern.pattern
                     break
         if negative_patterns:
             for negative_pattern, _factor in negative_patterns:
-                if negative_pattern.search(text):
+                if negative_pattern.search(brief_text):
                     matched_negative = negative_pattern.pattern
                     break
         if not direct_hit and not matched_theme and not matched_negative:
