@@ -1680,6 +1680,43 @@ def _data_collection_monitor() -> dict[str, Any]:
                 }
             )
 
+        # 카탈로그에 없지만 DB에 실제 적재된 physical_ai 소스(런타임 주입 deep-research:
+        # openalex/hackernews/semantic_scholar/arxiv_api 등)를 실시간으로 노출한다.
+        # 정적 카탈로그만으로는 신규 다양화 소스가 대시보드에 안 보이는 문제 해결(edu_sources와 동일 원리).
+        _consumed: set[str] = set()
+        for _src in source_rows:
+            _consumed.add(str(_src.get("source_name") or ""))
+            if source_channel(_src) == "substack":
+                _consumed.update(k for k in source_map if str(k).startswith("substack_feed_"))
+        for _db_name, _metrics in source_map.items():
+            if not _db_name or _db_name in _consumed:
+                continue
+            if int(_metrics.get("count") or 0) <= 0:
+                continue
+            _low = _db_name.lower()
+            _ch = ("학술/논문" if any(k in _low for k in ("openalex", "scholar", "arxiv", "eric", "pubmed"))
+                   else "커뮤니티" if any(k in _low for k in ("hackernews", "reddit"))
+                   else "기타")
+            sources_out.append({
+                "id": _db_name,
+                "label": _db_name.replace("_", " "),
+                "type": "deep_research",
+                "channel": _ch,
+                "mode": "api_pull",
+                "status": "live",
+                "count": int(_metrics.get("count") or 0),
+                "last_ingested_at": str(_metrics.get("last_at") or ""),
+                "active": True,
+                "expected_signal_type": "research",
+                "reliability_score": 0.0,
+                "base_url": "",
+                "preferred_worker": "mini",
+                "requires_login": False,
+                "notes": "런타임 수집(카탈로그 외) — 실시간 반영",
+                "activation_policy": "always_on",
+                "dynamic": True,
+            })
+
         recent = _physical_ai_recent_rows(limit=12)
         topic_registry = ensure_fresh_topic_registry(domain, recent)
         physical_ai_clusters = [
