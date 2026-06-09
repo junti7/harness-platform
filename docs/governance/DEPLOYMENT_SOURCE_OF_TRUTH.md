@@ -51,4 +51,4 @@
 
 - [ ] Mac Mini의 11,656 dirty 트리 정리: 런타임 산출물 `.gitignore` 등록 + 미커밋 prod 가치 작업(`TradingOpsCenter.tsx`, `evidence_bank.json` 등) 식별·SoT 반영 → 안전한 전체 동기화 복원.
 - [ ] Mac Mini HEAD를 origin/main으로 정합(현재 17커밋 뒤) — 위 dirty 정리 선행 필요.
-- [ ] CLAUDE.md Must/Never에 본 규약 핵심 1줄 반영 (red_team_clear 후).
+- [x] CLAUDE.md Must/Never에 본 규약 핵심 1줄 반영 (red_team_clear 후).
