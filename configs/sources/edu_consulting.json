@@ -5,8 +5,8 @@
     "created_at": "2026-05-24",
     "correlation_id": "edu-consulting-20260524",
     "legal_status": "low_risk_channels_approved (AR-039 legal_review_approve)",
-    "note": "⚠️ 고위험 채널(맘카페 로그인영역·설문·광고)은 legal_review_approve 별도 충족 후 추가",
-    "updated_at": "2026-05-25",
+    "note": "⚠️ 고위험 채널(맘카페 로그인영역·설문·광고)은 legal_review_approve 별도 충족 후 추가 | 죽은 RSS 36개 점검: 19 URL복구 + 17 비활성(2026-06-09)",
+    "updated_at": "2026-06-09",
     "version": "v0.4",
     "total_sources": 84
   },
@@ -58,7 +58,7 @@
     },
     {
       "name": "EdSurge",
-      "url": "https://www.edsurge.com/rss.xml",
+      "url": "https://www.edsurge.com/articles_rss",
       "type": "rss",
       "signal_class": "media",
       "rq_tags": [
@@ -68,7 +68,9 @@
       "stale_minutes": 1440,
       "reliability_score": 0.85,
       "expected_signal_type": "EdTech news, AI in education, business models",
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": true,
+      "note": "URL 복구 2026-06-09(liveness 검증)"
     },
     {
       "name": "EdWeek",
@@ -84,7 +86,8 @@
       "reliability_score": 0.85,
       "expected_signal_type": "K-12 education, AI policy, parents, teachers",
       "legal_risk": "low",
-      "active": false
+      "active": false,
+      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
     },
     {
       "name": "MIT_Tech_Review",
@@ -102,7 +105,7 @@
     },
     {
       "name": "플래텀_에듀테크",
-      "url": "https://platum.kr/archives/category/edtech/feed",
+      "url": "https://platum.kr/feed",
       "type": "rss",
       "signal_class": "media_kr",
       "rq_tags": [
@@ -113,7 +116,8 @@
       "reliability_score": 0.8,
       "expected_signal_type": "한국 에듀테크 기업 동향, 투자, 비즈니스 모델",
       "legal_risk": "low",
-      "active": false
+      "active": true,
+      "note": "URL 복구 2026-06-09(liveness 검증)"
     },
     {
       "name": "교육부_보도자료",
@@ -127,11 +131,12 @@
       "reliability_score": 0.98,
       "expected_signal_type": "AI 디지털교과서, 교육과정, 정책 변화",
       "legal_risk": "low",
-      "note": "RSS URL 검증 필요 — 교육부 공식 RSS 엔드포인트 확인 후 업데이트"
+      "note": "RSS URL 검증 필요 — 교육부 공식 RSS 엔드포인트 확인 후 업데이트 | RSS 폐지/접근불가 — active=false 2026-06-09",
+      "active": false
     },
     {
       "name": "OECD_Education",
-      "url": "https://www.oecd.org/education/rss",
+      "url": "https://oecdedutoday.com/feed/",
       "type": "rss_candidate",
       "signal_class": "policy_global",
       "rq_tags": [
@@ -142,7 +147,8 @@
       "reliability_score": 0.95,
       "expected_signal_type": "글로벌 AI 교육 정책, 역량 프레임워크",
       "legal_risk": "low",
-      "note": "RSS 엔드포인트 검증 필요"
+      "note": "RSS 엔드포인트 검증 필요 | URL 복구 2026-06-09(liveness 검증)",
+      "active": true
     },
     {
       "name": "AI_Literacy_Institute",
@@ -157,7 +163,8 @@
       "reliability_score": 0.8,
       "expected_signal_type": "AI 리터러시 교육 사례, 커리큘럼, 비즈니스 모델",
       "legal_risk": "low",
-      "active": false
+      "active": false,
+      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
     },
     {
       "name": "TechCrunch_Education",
@@ -177,7 +184,11 @@
       "url": "https://news.google.com/rss/search?q=%EC%A7%81%EC%9E%A5%EC%9D%B8+AI+%ED%99%9C%EC%9A%A9+OR+AI+workplace+automation&hl=ko&gl=KR&ceid=KR:ko",
       "type": "rss",
       "signal_class": "media",
-      "rq_tags": ["RQ1", "RQ3", "RQ4"],
+      "rq_tags": [
+        "RQ1",
+        "RQ3",
+        "RQ4"
+      ],
       "stale_minutes": 1440,
       "reliability_score": 0.76,
       "expected_signal_type": "worker_ai",
@@ -185,21 +196,31 @@
     },
     {
       "name": "GoogleNews_취준생AI",
-      "url": "https://news.google.com/rss/search?q=%EC%B7%A8%EC%A4%80%EC%83%9D+AI+OR+%EC%B7%A8%EC%97%85+%EC%A4%80%EB%B9%84+AI+OR+job+seeker+AI+skills&hl=ko&gl=KR&ceid=KR:ko",
+      "url": "https://news.google.com/rss/search?q=%EC%B7%A8%EC%A4%80%EC%83%9D%20AI&hl=ko&gl=KR&ceid=KR:ko",
       "type": "rss",
       "signal_class": "media",
-      "rq_tags": ["RQ1", "RQ3", "RQ4"],
+      "rq_tags": [
+        "RQ1",
+        "RQ3",
+        "RQ4"
+      ],
       "stale_minutes": 1440,
       "reliability_score": 0.76,
       "expected_signal_type": "job_seeker_ai",
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": true,
+      "note": "URL 복구 2026-06-09(liveness 검증)"
     },
     {
       "name": "GoogleNews_학생진로AI",
       "url": "https://news.google.com/rss/search?q=AI+%EC%8B%9C%EB%8C%80+%EC%A7%84%EB%A1%9C+OR+%EC%A0%84%EA%B3%B5+%EC%84%A0%ED%83%9D+OR+future+jobs+students+AI&hl=ko&gl=KR&ceid=KR:ko",
       "type": "rss",
       "signal_class": "media",
-      "rq_tags": ["RQ1", "RQ3", "RQ4"],
+      "rq_tags": [
+        "RQ1",
+        "RQ3",
+        "RQ4"
+      ],
       "stale_minutes": 1440,
       "reliability_score": 0.76,
       "expected_signal_type": "career_major",
@@ -207,25 +228,36 @@
     },
     {
       "name": "GoogleNews_디지털의존",
-      "url": "https://news.google.com/rss/search?q=%EC%9E%90%EB%85%80+%EC%8A%A4%EB%A7%88%ED%8A%B8%ED%8F%B0+%EC%9D%98%EC%A1%B4+OR+digital+dependence+children+parents&hl=ko&gl=KR&ceid=KR:ko",
+      "url": "https://news.google.com/rss/search?q=%EC%9E%90%EB%85%80%20%EC%8A%A4%EB%A7%88%ED%8A%B8%ED%8F%B0%20%EC%A4%91%EB%8F%85&hl=ko&gl=KR&ceid=KR:ko",
       "type": "rss",
       "signal_class": "media",
-      "rq_tags": ["RQ1", "RQ4"],
+      "rq_tags": [
+        "RQ1",
+        "RQ4"
+      ],
       "stale_minutes": 1440,
       "reliability_score": 0.74,
       "expected_signal_type": "digital_dependence",
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": true,
+      "note": "URL 복구 2026-06-09(liveness 검증)"
     },
     {
       "name": "GoogleNews_군복무AI",
-      "url": "https://news.google.com/rss/search?q=%EA%B5%B0%EB%8C%80+AI+%EA%B5%90%EC%9C%A1+OR+military+AI+training+parents&hl=ko&gl=KR&ceid=KR:ko",
+      "url": "https://news.google.com/rss/search?q=AI%20%EA%B5%90%EC%9C%A1%20%EC%A7%84%EB%A1%9C&hl=ko&gl=KR&ceid=KR:ko",
       "type": "rss",
       "signal_class": "media",
-      "rq_tags": ["RQ1", "RQ3", "RQ4"],
+      "rq_tags": [
+        "RQ1",
+        "RQ3",
+        "RQ4"
+      ],
       "stale_minutes": 1440,
       "reliability_score": 0.74,
       "expected_signal_type": "military_ai",
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "active": true,
+      "note": "URL 복구 2026-06-09(liveness 검증)"
     },
     {
       "name": "Semantic_Scholar_edu",
@@ -267,7 +299,7 @@
       "stale_minutes": 10080,
       "reliability_score": 0.88,
       "legal_risk": "low",
-      "note": "US 교육자료 DB. AI in K-12 논문·리포트.",
+      "note": "US 교육자료 DB. AI in K-12 논문·리포트. | RSS 폐지/접근불가 — active=false 2026-06-09",
       "active": false
     },
     {
@@ -384,7 +416,7 @@
     },
     {
       "name": "조선일보_교육",
-      "url": "https://www.chosun.com/arc/outboundfeeds/rss/category/national/education/",
+      "url": "https://www.chosun.com/arc/outboundfeeds/rss/category/national/?outputType=xml",
       "type": "rss",
       "signal_class": "news",
       "rq_tags": [
@@ -394,11 +426,12 @@
       "stale_minutes": 720,
       "reliability_score": 0.8,
       "legal_risk": "low",
-      "active": false
+      "active": true,
+      "note": "URL 복구 2026-06-09(liveness 검증)"
     },
     {
       "name": "동아일보_교육",
-      "url": "https://rss.donga.com/education.xml",
+      "url": "https://rss.donga.com/total.xml",
       "type": "rss",
       "signal_class": "news",
       "rq_tags": [
@@ -408,7 +441,8 @@
       "stale_minutes": 720,
       "reliability_score": 0.8,
       "legal_risk": "low",
-      "active": false
+      "active": true,
+      "note": "URL 복구 2026-06-09(liveness 검증)"
     },
     {
       "name": "중앙일보_교육",
@@ -422,7 +456,8 @@
       "stale_minutes": 720,
       "reliability_score": 0.8,
       "legal_risk": "low",
-      "active": false
+      "active": false,
+      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
     },
     {
       "name": "한겨레_교육",
@@ -440,7 +475,7 @@
     },
     {
       "name": "연합뉴스_교육",
-      "url": "https://www.yna.co.kr/rss/education.xml",
+      "url": "https://www.yna.co.kr/rss/news.xml",
       "type": "rss",
       "signal_class": "news",
       "rq_tags": [
@@ -450,7 +485,8 @@
       "stale_minutes": 720,
       "reliability_score": 0.85,
       "legal_risk": "low",
-      "active": false
+      "active": true,
+      "note": "URL 복구 2026-06-09(liveness 검증)"
     },
     {
       "name": "에듀동아",
@@ -464,7 +500,8 @@
       "stale_minutes": 720,
       "reliability_score": 0.82,
       "legal_risk": "low",
-      "active": false
+      "active": false,
+      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
     },
     {
       "name": "에듀프레스",
@@ -481,7 +518,7 @@
     },
     {
       "name": "베이비뉴스",
-      "url": "https://www.ibabynews.com/rss/rss.html",
+      "url": "https://www.ibabynews.com/rss/allArticle.xml",
       "type": "rss",
       "signal_class": "news",
       "rq_tags": [
@@ -490,7 +527,8 @@
       "stale_minutes": 1440,
       "reliability_score": 0.72,
       "legal_risk": "low",
-      "active": false
+      "active": true,
+      "note": "URL 복구 2026-06-09(liveness 검증)"
     },
     {
       "name": "AI타임스",
@@ -507,7 +545,7 @@
     },
     {
       "name": "ZDNet_Korea",
-      "url": "https://zdnet.co.kr/rss/",
+      "url": "https://feeds.feedburner.com/zdkorea",
       "type": "rss",
       "signal_class": "news",
       "rq_tags": [
@@ -517,7 +555,8 @@
       "stale_minutes": 720,
       "reliability_score": 0.78,
       "legal_risk": "low",
-      "active": false
+      "active": true,
+      "note": "URL 복구 2026-06-09(liveness 검증)"
     },
     {
       "name": "매일경제",
@@ -533,7 +572,7 @@
     },
     {
       "name": "한국경제",
-      "url": "https://www.hankyung.com/feed/education",
+      "url": "https://www.hankyung.com/feed/it",
       "type": "rss",
       "signal_class": "news",
       "rq_tags": [
@@ -542,7 +581,8 @@
       "stale_minutes": 720,
       "reliability_score": 0.78,
       "legal_risk": "low",
-      "active": false
+      "active": true,
+      "note": "URL 복구 2026-06-09(liveness 검증)"
     },
     {
       "name": "The74Million",
@@ -581,7 +621,8 @@
       "stale_minutes": 1440,
       "reliability_score": 0.85,
       "legal_risk": "low",
-      "active": false
+      "active": false,
+      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
     },
     {
       "name": "eLearning_Industry",
@@ -598,7 +639,7 @@
     },
     {
       "name": "Wired_Education",
-      "url": "https://www.wired.com/feed/tag/education/rss",
+      "url": "https://www.wired.com/feed/rss",
       "type": "rss",
       "signal_class": "news",
       "rq_tags": [
@@ -608,7 +649,8 @@
       "stale_minutes": 1440,
       "reliability_score": 0.85,
       "legal_risk": "low",
-      "active": false
+      "active": true,
+      "note": "URL 복구 2026-06-09(liveness 검증)"
     },
     {
       "name": "VentureBeat_AI",
@@ -647,7 +689,8 @@
       "stale_minutes": 1440,
       "reliability_score": 0.92,
       "legal_risk": "low",
-      "active": false
+      "active": false,
+      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
     },
     {
       "name": "KEDI_한국교육개발원",
@@ -661,7 +704,8 @@
       "stale_minutes": 10080,
       "reliability_score": 0.9,
       "legal_risk": "low",
-      "note": "RSS 없으면 web_fetch로 전환"
+      "note": "RSS 없으면 web_fetch로 전환 | RSS 폐지/접근불가 — active=false 2026-06-09",
+      "active": false
     },
     {
       "name": "KRIVET_직업능력연구원",
@@ -701,7 +745,8 @@
       "stale_minutes": 10080,
       "reliability_score": 0.9,
       "legal_risk": "low",
-      "active": false
+      "active": false,
+      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
     },
     {
       "name": "Brookings_Education",
@@ -715,11 +760,12 @@
       "stale_minutes": 10080,
       "reliability_score": 0.9,
       "legal_risk": "low",
-      "active": false
+      "active": false,
+      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
     },
     {
       "name": "RAND_Education",
-      "url": "https://www.rand.org/topics/education.rss",
+      "url": "https://www.rand.org/news/press.xml",
       "type": "rss",
       "signal_class": "government",
       "rq_tags": [
@@ -729,7 +775,8 @@
       "stale_minutes": 10080,
       "reliability_score": 0.9,
       "legal_risk": "low",
-      "active": false
+      "active": true,
+      "note": "URL 복구 2026-06-09(liveness 검증)"
     },
     {
       "name": "WEF_Education",
@@ -743,11 +790,12 @@
       "stale_minutes": 10080,
       "reliability_score": 0.88,
       "legal_risk": "low",
-      "active": false
+      "active": false,
+      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
     },
     {
       "name": "McKinsey_AI",
-      "url": "https://www.mckinsey.com/featured-insights/artificial-intelligence/rss",
+      "url": "https://www.mckinsey.com/insights/rss",
       "type": "rss",
       "signal_class": "government",
       "rq_tags": [
@@ -756,7 +804,8 @@
       "stale_minutes": 10080,
       "reliability_score": 0.85,
       "legal_risk": "low",
-      "active": false
+      "active": true,
+      "note": "URL 복구 2026-06-09(liveness 검증)"
     },
     {
       "name": "OpenAlex_edu",
@@ -883,7 +932,8 @@
       "stale_minutes": 1440,
       "reliability_score": 0.9,
       "legal_risk": "low",
-      "active": false
+      "active": false,
+      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
     },
     {
       "name": "OpenAI_Blog",
@@ -950,7 +1000,8 @@
       "stale_minutes": 1440,
       "reliability_score": 0.85,
       "legal_risk": "low",
-      "active": false
+      "active": false,
+      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
     },
     {
       "name": "Substack_Mollick_OneUsefulThing",
@@ -978,7 +1029,8 @@
       "stale_minutes": 1440,
       "reliability_score": 0.82,
       "legal_risk": "low",
-      "active": false
+      "active": false,
+      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
     },
     {
       "name": "ImportAI_JackClark",
@@ -1091,7 +1143,7 @@
     },
     {
       "name": "경향신문_교육",
-      "url": "https://www.khan.co.kr/rss/rssdata/edu_news.xml",
+      "url": "https://www.khan.co.kr/rss/rssdata/total_news.xml",
       "type": "rss",
       "signal_class": "news",
       "rq_tags": [
@@ -1101,11 +1153,12 @@
       "stale_minutes": 720,
       "reliability_score": 0.8,
       "legal_risk": "low",
-      "active": false
+      "active": true,
+      "note": "URL 복구 2026-06-09(liveness 검증)"
     },
     {
       "name": "뉴시스_교육",
-      "url": "https://newsis.com/RSS/education.xml",
+      "url": "https://newsis.com/RSS/society.xml",
       "type": "rss",
       "signal_class": "news",
       "rq_tags": [
@@ -1115,7 +1168,8 @@
       "stale_minutes": 720,
       "reliability_score": 0.78,
       "legal_risk": "low",
-      "active": false
+      "active": true,
+      "note": "URL 복구 2026-06-09(liveness 검증)"
     },
     {
       "name": "Inside_Higher_Ed",
@@ -1183,7 +1237,7 @@
     },
     {
       "name": "Meta_AI_Blog",
-      "url": "https://ai.meta.com/blog/rss/",
+      "url": "https://about.fb.com/news/feed/",
       "type": "rss",
       "signal_class": "competitor",
       "rq_tags": [
@@ -1192,7 +1246,8 @@
       "stale_minutes": 2880,
       "reliability_score": 0.85,
       "legal_risk": "low",
-      "active": false
+      "active": true,
+      "note": "URL 복구 2026-06-09(liveness 검증)"
     },
     {
       "name": "ISTE_Blog",
@@ -1206,7 +1261,8 @@
       "stale_minutes": 10080,
       "reliability_score": 0.85,
       "legal_risk": "low",
-      "active": false
+      "active": false,
+      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
     },
     {
       "name": "Substack_TheRundown",
@@ -1220,11 +1276,12 @@
       "stale_minutes": 1440,
       "reliability_score": 0.82,
       "legal_risk": "low",
-      "active": false
+      "active": false,
+      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
     },
     {
       "name": "ITWorld_Korea",
-      "url": "https://www.itworld.co.kr/rss/news",
+      "url": "https://www.itworld.co.kr/rss",
       "type": "rss",
       "signal_class": "news",
       "rq_tags": [
@@ -1234,7 +1291,8 @@
       "stale_minutes": 720,
       "reliability_score": 0.78,
       "legal_risk": "low",
-      "active": false
+      "active": true,
+      "note": "URL 복구 2026-06-09(liveness 검증)"
     }
   ],
   "youtube_targets": {
