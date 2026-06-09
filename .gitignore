@@ -43,3 +43,10 @@ docs/trading/trading_diary.jsonl
 docs/reviews/openclaw_route_audit/openclaw_route_audit_daily.md
 docs/reports/price_drop_alerts.jsonl
 logs/lane_telemetry.jsonl
+
+# Mass-regenerated outputs (2026-06-09: Mac Mini에 11,564개 누적 → 만성 dirty 원인)
+# 정제 산출물의 system of record는 Notion (CLAUDE.md §10). git 추적 대상 아님.
+docs/reports/qa/
+docs/reviews/edu_pilot_simulations/
+docs/reviews/conference_room_audit/
+data/collection_health_status.json
