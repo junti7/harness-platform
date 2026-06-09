@@ -1,3 +1,4 @@
+import { useState, type CSSProperties } from 'react'
 import type { DashboardPayload } from './types'
 
 type Monitor = NonNullable<DashboardPayload['data_collection_monitor']>
@@ -104,6 +105,53 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
     return svc.running || failed || !svc.loaded || importantRole
   })
 
+  // 모바일 밀도 개선: 비활성 소스는 기본 숨김, google_news_* 자동 토픽 쿼리는 그룹으로 접기
+  const [showInactive, setShowInactive] = useState(false)
+  const [showGN, setShowGN] = useState(false)
+  const isGN = (s: (typeof sources)[number]) => String(s.id).startsWith('google_news')
+  const activeMain = sources.filter(s => s.active && !isGN(s))
+  const gnSources = sources.filter(s => s.active && isGN(s))
+  const inactiveSources = sources.filter(s => !s.active)
+  const gnTotal = gnSources.reduce((a, s) => a + (s.count || 0), 0)
+  const gnLast = gnSources.reduce((a, s) => (s.last_ingested_at > a ? s.last_ingested_at : a), '')
+
+  const sourceRow = (src: (typeof sources)[number]) => (
+    <div key={src.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+      <span style={{
+        width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+        background: src.active ? 'var(--color-ok)' : 'var(--color-text-muted)',
+        boxShadow: src.active ? '0 0 5px var(--color-ok)' : 'none',
+      }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem' }}>
+          <span style={{ fontWeight: 600, fontSize: '0.85rem', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{src.label}</span>
+          <span style={{ fontSize: '0.85rem', fontWeight: 700, flexShrink: 0, color: src.active ? 'var(--color-text)' : 'var(--color-text-muted)' }}>
+            {src.active ? `${src.count.toLocaleString('ko-KR')}건` : SOURCE_STATUS_BADGE[src.status || 'standby']?.label || '미실행'}
+          </span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', color: 'var(--color-text-muted)', marginTop: '0.1rem', gap: '0.5rem' }}>
+          <span style={{ textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{src.channel || src.type}</span>
+          <span style={{ flexShrink: 0 }}>{src.active ? relativeTime(src.last_ingested_at) : src.mode || '—'}</span>
+        </div>
+        {!src.active && src.notes && (
+          <div style={{ marginTop: '0.2rem', fontSize: '0.7rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {src.notes}
+          </div>
+        )}
+        {src.active && (
+          <div style={{ marginTop: '0.3rem', height: 3, borderRadius: 2, background: 'var(--color-border)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${Math.min(100, (src.count / Math.max(total, 1)) * 100)}%`, background: 'var(--color-accent)', borderRadius: 2 }} />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
+  const toggleBtnStyle: CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'none',
+    border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', width: '100%', color: 'inherit', font: 'inherit',
+  }
+
   return (
     <section className="ops-section" style={{ marginTop: '1.5rem' }}>
       {/* ── 자동 스케줄 현황 ── */}
@@ -209,37 +257,43 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
             데이터 소스
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-            {sources.map(src => (
-              <div key={src.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <span style={{
-                  width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                  background: src.active ? 'var(--color-ok)' : 'var(--color-text-muted)',
-                  boxShadow: src.active ? '0 0 5px var(--color-ok)' : 'none',
-                }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                    <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{src.label}</span>
-                    <span style={{ fontSize: '0.85rem', fontWeight: 700, color: src.active ? 'var(--color-text)' : 'var(--color-text-muted)' }}>
-                      {src.active ? `${src.count.toLocaleString('ko-KR')}건` : SOURCE_STATUS_BADGE[src.status || 'standby']?.label || '미실행'}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', color: 'var(--color-text-muted)', marginTop: '0.1rem' }}>
-                    <span style={{ textTransform: 'uppercase', letterSpacing: '0.03em' }}>{src.channel || src.type}</span>
-                    <span>{src.active ? relativeTime(src.last_ingested_at) : src.mode || '—'}</span>
-                  </div>
-                  {!src.active && src.notes && (
-                    <div style={{ marginTop: '0.2rem', fontSize: '0.7rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {src.notes}
+            {activeMain.map(src => sourceRow(src))}
+
+            {gnSources.length > 0 && (
+              <>
+                <button type="button" onClick={() => setShowGN(v => !v)} style={toggleBtnStyle}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: 'var(--color-ok)', boxShadow: '0 0 5px var(--color-ok)' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem' }}>
+                      <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{showGN ? '▾' : '▸'} 구글 뉴스 토픽 <span style={{ color: 'var(--color-text-muted)', fontWeight: 500 }}>{gnSources.length}개</span></span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, flexShrink: 0 }}>{gnTotal.toLocaleString('ko-KR')}건</span>
                     </div>
-                  )}
-                  {src.active && (
-                    <div style={{ marginTop: '0.3rem', height: 3, borderRadius: 2, background: 'var(--color-border)', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${Math.min(100, (src.count / Math.max(total, 1)) * 100)}%`, background: 'var(--color-accent)', borderRadius: 2 }} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', color: 'var(--color-text-muted)', marginTop: '0.1rem', gap: '0.5rem' }}>
+                      <span style={{ textTransform: 'uppercase', letterSpacing: '0.03em' }}>NEWS · 자동 토픽 쿼리</span>
+                      <span style={{ flexShrink: 0 }}>{relativeTime(gnLast)} · {showGN ? '접기' : '펼치기'}</span>
                     </div>
-                  )}
-                </div>
-              </div>
-            ))}
+                  </div>
+                </button>
+                {showGN && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', paddingLeft: '0.85rem', marginLeft: '3px', borderLeft: '2px solid var(--color-border)' }}>
+                    {gnSources.map(src => sourceRow(src))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {inactiveSources.length > 0 && (
+              <>
+                <button type="button" onClick={() => setShowInactive(v => !v)} style={{ ...toggleBtnStyle, color: 'var(--color-text-muted)', fontSize: '0.78rem', padding: '0.15rem 0' }}>
+                  <span>{showInactive ? '▾' : '▸'} 비활성 소스 {inactiveSources.length}개 {showInactive ? '숨기기' : '보기'}</span>
+                </button>
+                {showInactive && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                    {inactiveSources.map(src => sourceRow(src))}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
 
