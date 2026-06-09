@@ -1318,11 +1318,12 @@ def collect_reddit(subreddits: list[tuple[str, str]], logger: HarnessLogger,
     stats = {"new": 0, "duplicate": 0, "error": 0}
     client_id = os.getenv("REDDIT_CLIENT_ID", "")
     client_secret = os.getenv("REDDIT_CLIENT_SECRET", "")
+    user_agent = os.getenv("REDDIT_USER_AGENT", "").strip() or "Harness-EduResearch/1.0 by junti7"
     if not client_id or not client_secret:
         logger.info("Reddit API credentials missing; skipping reddit collector.")
         return {**stats, "skipped": True}
 
-    headers = {"User-Agent": "Harness-EduResearch/1.0 by junti7"}
+    headers = {"User-Agent": user_agent}
     try:
         token_resp = httpx.post(
             "https://www.reddit.com/api/v1/access_token",
