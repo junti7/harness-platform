@@ -68,10 +68,17 @@ ssh 100.97.175.44 'launchctl list | grep -i "turtle-auto-trader\|ibkr-auto-trade
 > 비서실장 주: 비서실 셸의 SSH 키 인증이 거부되어 prod 직접 집행 불가. 위 명령은 대표님이 실행한다.
 > 집행 결과(체결/0건/게이트 사유)는 본 기록에 후속 첨부한다.
 
-### 집행 로그
+### 집행 로그 (확정)
 
-- 2026-06-10 — **Alpaca paper execute 집행 완료** (대표, 대시보드 Trading Ops Center `Alpaca 가상 주문` 버튼 = `POST /api/paper-trading/execute` = `turtle_auto_trader.py --execute`). 진입은 Turtle 게이트 통과 시에만 체결됨. *상세 결과(체결/0건/게이트 사유) 첨부 대기.*
-- IBKR: 진입 execute 미집행 — SSH(22) 일시 다운으로 prod CLI 접근 불가. SSH 복구 후 `run_trading_cycle --broker ibkr --execute` 또는 스케줄 launchd 잡으로 처리. 청산은 대시보드 `IBKR 청산 실행`(EXIT 신호 시) 가능.
+**Alpaca paper execute** — 2026-06-10 08:30 KST, 대표가 대시보드 `Alpaca 가상 주문` 버튼(`POST /api/paper-trading/execute` = `turtle_auto_trader.py --execute`)으로 집행.
+- 계좌 NAV $99,076.98 · 포지션 없음(flat) · **진입 0건**.
+- 라이브 주문 확인: 오늘(06-10) 신규 주문 없음(최근 주문 = 06-08 리셋 청산 4건 filled). 전 종목 중립으로 20/55일 브레이크아웃 신호 부재 → 진입 미발생(정상).
+
+**IBKR paper execute** — 2026-06-10 08:31 KST, 비서실장이 `ssh macmini` 복구 후 `run_trading_cycle.py --broker ibkr --execute`로 집행 (EXIT=0).
+- 계좌 DUQ416334 · NAV $1,007,743.91 · 포지션 없음 · 유니버스 24종목 **전부 중립** · **진입 0건**.
+- 예: NVDA −12.0%, TSM −4.9%, ROK −1.6% (모두 System2 고점 하회) → 브레이크아웃 진입 신호 없음.
+
+**결론:** 양쪽 브로커 execute 재개·정상 작동 확인. 현 시점 진입 신호가 없어 0건이며, 이는 Turtle 규율(신호 없으면 진입 안 함)에 부합. 향후 거래일은 launchd 스케줄 잡(execute=true)이 자동 집행.
 
 ## 7. 서명
 
