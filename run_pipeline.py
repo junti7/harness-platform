@@ -135,6 +135,17 @@ def run():
         _save_run_end(run_id, results, "failed", f"tier1:{e}")
         sys.exit(1)
 
+    # Tier 1b — physical_ai DEEP RESEARCH 다양화 수집 (Wave 2, gate 통과 2026-06-09:
+    # red_team_clear[Claude+Codex] + legal_review_approve + pre_mortem_approve,
+    # docs/governance/wave2_collection_gate_2026-06-09.md). physical_ai 수집을
+    # RSS+data.go.kr 단일 의존에서 학술/커뮤니티 공개 API로 확장. 비치명적: 실패해도 계속.
+    try:
+        from scripts.run_physical_deep_research import main as physical_deep_research
+        physical_deep_research(["--sources", "scholar,openalex,hackernews,arxiv"])
+        logger.info("[Tier 1b] physical_ai DEEP RESEARCH 완료")
+    except Exception as e:
+        logger.warning(f"[Tier 1b] physical DEEP RESEARCH 실패(비치명적): {e}")
+
     # Tier 2
     logger.info("[Tier 2] 필터링 시작")
     try:

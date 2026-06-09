@@ -79,6 +79,17 @@ def save_signal(source_name: str, raw_data: dict, domain: str, logger: HarnessLo
     raw_data["domain"] = domain
     raw_data["collected_at"] = datetime.now(timezone.utc).isoformat()
 
+    # 학술 콜렉터(openalex/semantic_scholar/pubmed/eric)는 본문을 'abstract' 키에 담는다.
+    # 그러나 Tier2 필터(filter_signals)는 summary/full_content만 읽어 relevance를 채점하므로,
+    # abstract를 매핑하지 않으면 학술 시그널이 '제목만'으로 채점된다(Codex red team BLOCK, 2026-06-09).
+    # summary(raw_data JSON)와 full_content(컬럼) 양쪽이 비어있을 때만 abstract로 채운다.
+    _abstract = (raw_data.get("abstract") or "").strip()
+    if _abstract:
+        if not (raw_data.get("summary") or "").strip():
+            raw_data["summary"] = _abstract
+        if not (raw_data.get("full_content") or "").strip():
+            raw_data["full_content"] = _abstract
+
     try:
         execute_query(
             """
