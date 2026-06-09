@@ -672,12 +672,17 @@ export type CostSubscription = {
   status: string
   key_configured: boolean
   cost_spent_usd: number
+  billing_basis?: string
+  receipt_total_krw?: number | null
+  estimated_subscription_usd?: number
   models: string[]
 }
 
 export type CostsSummaryPayload = {
   initial_budget_usd: number
   total_spent_usd: number
+  estimated_subscription_usd?: number
+  projected_total_spent_usd?: number
   remaining_budget_usd: number
   burn_rate_percent: number
   monthly_costs: Array<{ month: string; cost_usd: number }>
@@ -685,4 +690,18 @@ export type CostsSummaryPayload = {
   breakdown_by_provider: Array<{ provider: string; cost_usd: number; percentage: number }>
   breakdown_by_model: Array<{ model: string; provider: string; cost_usd: number; percentage: number }>
   llm_subscriptions: CostSubscription[]
+  receipt_basis?: {
+    enabled: boolean
+    receipt_count: number
+    providers: string[]
+    items: Array<{
+      provider: string
+      message_id: string
+      day: string
+      subject: string
+      currency: string
+      amount_usd: number
+      amount_krw?: number | null
+    }>
+  }
 }

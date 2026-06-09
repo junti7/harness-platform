@@ -69,12 +69,15 @@ export const CostsPage: React.FC<CostsPageProps> = ({ apiSecret, backendUrl, exc
   const {
     initial_budget_usd,
     total_spent_usd,
+    estimated_subscription_usd = 0,
+    projected_total_spent_usd = total_spent_usd + estimated_subscription_usd,
     remaining_budget_usd,
     burn_rate_percent,
     llm_subscriptions,
     daily_costs,
     breakdown_by_provider,
     breakdown_by_model,
+    receipt_basis,
   } = data
 
   const sortedDailyCosts = [...daily_costs].sort((a, b) => {
@@ -90,6 +93,15 @@ export const CostsPage: React.FC<CostsPageProps> = ({ apiSecret, backendUrl, exc
       case "google": return "Google API / Gemini Advanced (실제 콘솔 조회)"
       case "copilot": return "GitHub Copilot (실제 Usage 확인 최우선)"
       default: return provider
+    }
+  }
+
+  const getBillingBasisLabel = (basis?: string) => {
+    switch (basis) {
+      case "gmail_receipt": return "영수증 대조"
+      case "api_cost_log": return "로그 추정"
+      case "unverified": return "미검증"
+      default: return "기준 미상"
     }
   }
 
@@ -134,9 +146,9 @@ export const CostsPage: React.FC<CostsPageProps> = ({ apiSecret, backendUrl, exc
         </h2>
 
         {/* 정책 경고 안내 배너 추가 */}
-        <div style={{ 
-          background: "hsla(35, 80%, 50%, 0.1)", 
-          border: "1px solid hsla(35, 80%, 55%, 0.3)", 
+          <div style={{ 
+            background: "hsla(35, 80%, 50%, 0.1)", 
+            border: "1px solid hsla(35, 80%, 55%, 0.3)", 
           borderRadius: "8px", 
           padding: "1rem", 
           marginBottom: "1.5rem",
@@ -148,8 +160,13 @@ export const CostsPage: React.FC<CostsPageProps> = ({ apiSecret, backendUrl, exc
             비용 정산 검증 최우선 정책 지침
           </div>
           <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", lineHeight: 1.5 }}>
-            API 실시간 사용 비용과 구독 요금은 이메일(Gmail) 영수증 및 토큰 집계 방식에 의존하는 것을 <strong>차선책(보조 수단)</strong>으로 삼습니다. 이메일 누락 및 집계 지연 등의 리스크가 있으므로, 정확한 지출 정보는 가급적 <strong>각 서비스별 실제 어드민 콘솔(Anthropic, Google Cloud Console 등)에 직접 접속하여 실시간 청구 데이터를 확인하는 것을 최우선(기본 경로)</strong>으로 진행하여 주시기 바랍니다. 아래 요금제 카드별 직통 링크를 통해 직접 접근이 가능합니다.
+            현재 상단의 누적 지출은 <strong>Gmail 영수증 대조 금액을 최우선</strong>으로 사용하고, 영수증이 없는 provider만 <strong>api_cost_log 추정치</strong>를 보완 반영합니다. 정확한 정산은 각 서비스의 실제 어드민 콘솔을 우선 확인해야 합니다.
           </div>
+          {receipt_basis?.enabled && (
+            <div style={{ fontSize: "0.78rem", color: "var(--color-text-muted)" }}>
+              최근 대조 영수증: <strong>{receipt_basis.receipt_count}건</strong> · 반영 provider: <strong>{receipt_basis.providers.join(", ") || "없음"}</strong>
+            </div>
+          )}
         </div>
 
         <div className="kpi-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1.25rem", marginBottom: "1.5rem" }}>
@@ -167,20 +184,33 @@ export const CostsPage: React.FC<CostsPageProps> = ({ apiSecret, backendUrl, exc
             </div>
           </div>
 
-          {/* Card 2: Cumulative Spent */}
+          {/* Card 2: Verified Cumulative Spent */}
           <div className="card" style={{ padding: "1.25rem", background: "var(--color-surface-lighter)" }}>
             <div className="text-muted" style={{ fontSize: "0.75rem", fontWeight: 600, letterSpacing: "0.05em", marginBottom: "0.5rem" }}>
-              누적 지출 금액
+              누적 확정 지출
             </div>
             <div style={{ fontSize: "1.2rem", fontWeight: 700, color: "hsl(0, 75%, 65%)" }}>
               {formatUsdAndKrwDetailed(total_spent_usd, exchangeRate)}
             </div>
             <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", marginTop: "0.25rem" }}>
-              예산 소모율: <strong>{burn_rate_percent.toFixed(4)}%</strong>
+              검증 기준: Gmail 영수증 우선 + 로그 보완
             </div>
           </div>
 
-          {/* Card 3: Remaining Capital */}
+          {/* Card 3: Estimated Subscription */}
+          <div className="card" style={{ padding: "1.25rem", background: "var(--color-surface-lighter)" }}>
+            <div className="text-muted" style={{ fontSize: "0.75rem", fontWeight: 600, letterSpacing: "0.05em", marginBottom: "0.5rem" }}>
+              추정 월 구독비
+            </div>
+            <div style={{ fontSize: "1.2rem", fontWeight: 700, color: "hsl(35, 90%, 65%)" }}>
+              {formatUsdAndKrwDetailed(estimated_subscription_usd, exchangeRate)}
+            </div>
+            <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", marginTop: "0.25rem" }}>
+              콘솔/영수증 미검증 추정치
+            </div>
+          </div>
+
+          {/* Card 4: Remaining Capital */}
           <div className="card" style={{ padding: "1.25rem", background: "var(--color-surface-lighter)" }}>
             <div className="text-muted" style={{ fontSize: "0.75rem", fontWeight: 600, letterSpacing: "0.05em", marginBottom: "0.5rem" }}>
               잔여 가용 예산
@@ -199,7 +229,7 @@ export const CostsPage: React.FC<CostsPageProps> = ({ apiSecret, backendUrl, exc
         <div style={{ background: "var(--color-surface)", padding: "1.25rem", borderRadius: "12px", border: "1px solid var(--color-border)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "var(--color-text-muted)", marginBottom: "0.5rem" }}>
             <span>예산 소모율 진행 현황</span>
-            <span>{formatUsdAndKrw(initial_budget_usd, exchangeRate)} 중 {burn_rate_percent.toFixed(4)}% 지출 완료</span>
+            <span>{formatUsdAndKrw(initial_budget_usd, exchangeRate)} 중 확정 지출 {burn_rate_percent.toFixed(4)}%</span>
           </div>
           <div style={{ height: "12px", width: "100%", background: "var(--color-surface-lighter)", borderRadius: "999px", overflow: "hidden" }}>
             <div 
@@ -215,6 +245,9 @@ export const CostsPage: React.FC<CostsPageProps> = ({ apiSecret, backendUrl, exc
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", color: "var(--color-text-muted)", marginTop: "0.4rem" }}>
             <span>0.00% (시작점)</span>
             <span>100.00% (예산 완전 소진)</span>
+          </div>
+          <div style={{ marginTop: "0.65rem", fontSize: "0.75rem", color: "var(--color-text-muted)" }}>
+            추정 총액(확정 지출 + 추정 월 구독비): <strong>{formatUsdAndKrwDetailed(projected_total_spent_usd, exchangeRate)}</strong>
           </div>
         </div>
 
@@ -252,6 +285,20 @@ export const CostsPage: React.FC<CostsPageProps> = ({ apiSecret, backendUrl, exc
                   ))}
                 </div>
                 <div style={{ marginTop: "0.5rem" }}>
+                  <div style={{ fontSize: "0.78rem", color: "var(--color-text-muted)", marginBottom: "0.35rem" }}>
+                    확정 API 사용비: <strong>{formatUsdAndKrwDetailed(sub.cost_spent_usd, exchangeRate)}</strong>
+                  </div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--color-text-muted)", marginBottom: "0.35rem" }}>
+                    집계 기준: <strong>{getBillingBasisLabel(sub.billing_basis)}</strong>
+                  </div>
+                  {sub.receipt_total_krw ? (
+                    <div style={{ fontSize: "0.78rem", color: "var(--color-text-muted)", marginBottom: "0.35rem" }}>
+                      영수증 원화 합계: <strong>₩{sub.receipt_total_krw.toLocaleString()}</strong>
+                    </div>
+                  ) : null}
+                  <div style={{ fontSize: "0.78rem", color: "var(--color-text-muted)", marginBottom: "0.5rem" }}>
+                    추정 월 구독비: <strong>{formatUsdAndKrwDetailed(sub.estimated_subscription_usd ?? 0, exchangeRate)}</strong>
+                  </div>
                   <a 
                     href={getProviderLink(sub.provider)} 
                     target="_blank" 
@@ -288,6 +335,29 @@ export const CostsPage: React.FC<CostsPageProps> = ({ apiSecret, backendUrl, exc
           ))}
         </div>
       </div>
+
+      {receipt_basis?.items?.length ? (
+        <div className="panel" style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          <h3 style={{ fontSize: "1rem", fontWeight: 600, margin: 0 }}>최근 영수증 대조 내역</h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+            {[...receipt_basis.items].reverse().map((item) => (
+              <div key={item.message_id} className="card" style={{ padding: "0.9rem 1rem", background: "var(--color-surface-lighter)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                    <div style={{ fontSize: "0.82rem", fontWeight: 600 }}>{getProviderLabel(item.provider)}</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)" }}>{item.day} · {item.subject}</div>
+                  </div>
+                  <div style={{ fontSize: "0.82rem", fontWeight: 700 }}>
+                    {item.currency === "KRW" && item.amount_krw
+                      ? `₩${item.amount_krw.toLocaleString()} (${formatUsdAndKrwDetailed(item.amount_usd, exchangeRate)})`
+                      : formatUsdAndKrwDetailed(item.amount_usd, exchangeRate)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {/* 3. COST STRUCTURE BREAKDOWN & DAILY LOG */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "1.5rem" }}>
