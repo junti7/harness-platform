@@ -49,4 +49,17 @@ logs/lane_telemetry.jsonl
 docs/reports/qa/
 docs/reviews/edu_pilot_simulations/
 docs/reviews/conference_room_audit/
+docs/reviews/trading_theme_bridge_precision/
+docs/reviews/openclaw_route_audit/
 data/collection_health_status.json
+
+# 런타임 트레이딩/ops 상태 (prod 재생성)
+docs/reports/ibkr_gateway_runtime_status.json
+docs/reports/paper_trading_reset_report.json
+docs/reports/paper_trading_reset_status.json
+docs/reports/post_open_verification.json
+docs/reports/trading_runtime_guard.json
+docs/reports/resets/
+
+# 프론트엔드 빌드 산출물 (해시 파일명 — npm run build로 재생성)
+harness-os/frontend/assets/
