@@ -61,5 +61,14 @@ docs/reports/post_open_verification.json
 docs/reports/trading_runtime_guard.json
 docs/reports/resets/
 
-# 프론트엔드 빌드 산출물 (해시 파일명 — npm run build로 재생성)
+# 프론트엔드 빌드 산출물 (npm run build로 frontend 루트에 in-place 생성 — 소스 아님)
+# 소스 정적파일은 harness-os/frontend/public/ 에 있음. 루트의 것은 빌드 복사본.
 harness-os/frontend/assets/
+harness-os/frontend/edu-pilot-app.html
+harness-os/frontend/parents-first.html
+harness-os/frontend/favicon.svg
+harness-os/frontend/icons.svg
+harness-os/frontend/manifest.webmanifest
+
+# 일별 raw 수집 데이터 (재수집 가능 — 파생물 evidence_bank/index가 실사용)
+data/edu_research/*/naver_collected.json
