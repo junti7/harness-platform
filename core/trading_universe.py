@@ -13,6 +13,7 @@ from core.database import execute_query
 ROOT = Path(__file__).resolve().parents[1]
 UNIVERSE_PATH = ROOT / "docs" / "trading" / "universe.json"
 THEME_TICKER_MAP_PATH = ROOT / "configs" / "trading" / "theme_ticker_map.json"
+SEED_REGISTRY_PATH = ROOT / "configs" / "trading" / "universe_seed.json"
 
 
 def now_iso() -> str:
@@ -43,16 +44,18 @@ def ensure_trading_schema() -> None:
 
 
 def _load_seed_registry() -> list[dict[str, Any]]:
-    if UNIVERSE_PATH.exists():
+    for path in (SEED_REGISTRY_PATH, UNIVERSE_PATH):
+        if not path.exists():
+            continue
         try:
-            data = json.loads(UNIVERSE_PATH.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(data, list) and data:
                 return data
         except Exception:
             pass
     return [
         {"region": "US", "symbol": "NVDA", "exchange": "SMART", "currency": "USD", "name": "NVIDIA", "sector": "AI Chip"},
-        {"region": "US", "symbol": "AVGO", "exchange": "SMART", "currency": "USD", "name": "Broadcom", "sector": "AI Chip"},
+        {"region": "US", "symbol": "AVGO", "exchange": "SMART", "currency": "USD", "name": "Broadcom", "sector": "AI Chip/Optics"},
         {"region": "US", "symbol": "TSM", "exchange": "SMART", "currency": "USD", "name": "TSMC ADR", "sector": "Foundry"},
         {"region": "US", "symbol": "MU", "exchange": "SMART", "currency": "USD", "name": "Micron Technology", "sector": "Memory"},
         {"region": "US", "symbol": "ANET", "exchange": "SMART", "currency": "USD", "name": "Arista Networks", "sector": "AI Network"},
@@ -69,6 +72,10 @@ def _load_seed_registry() -> list[dict[str, Any]]:
         {"region": "US", "symbol": "GEV", "exchange": "NYSE", "currency": "USD", "name": "GE Vernova", "sector": "Power Equip"},
         {"region": "US", "symbol": "PWR", "exchange": "NYSE", "currency": "USD", "name": "Quanta Services", "sector": "Power Infra"},
         {"region": "US", "symbol": "ASX", "exchange": "NYSE", "currency": "USD", "name": "ASE Technology ADR", "sector": "Packaging"},
+        {"region": "US", "symbol": "MRVL", "exchange": "NASDAQ", "currency": "USD", "name": "Marvell Technology", "sector": "AI Networking/Optics"},
+        {"region": "US", "symbol": "LITE", "exchange": "NASDAQ", "currency": "USD", "name": "Lumentum", "sector": "Optical Components"},
+        {"region": "US", "symbol": "COHR", "exchange": "NYSE", "currency": "USD", "name": "Coherent", "sector": "Photonics"},
+        {"region": "US", "symbol": "XYL", "exchange": "NYSE", "currency": "USD", "name": "Xylem", "sector": "Cooling/Water Infra"},
         {"region": "KR", "symbol": "005930", "exchange": "KRX", "currency": "KRW", "name": "삼성전자", "sector": "Memory/Foundry"},
         {"region": "KR", "symbol": "000660", "exchange": "KRX", "currency": "KRW", "name": "SK하이닉스", "sector": "HBM Memory"},
         {"region": "KR", "symbol": "042700", "exchange": "KRX", "currency": "KRW", "name": "한미반도체", "sector": "Chip Equip"},
@@ -91,7 +98,7 @@ def _alias_map(symbol: str, name: str) -> list[str]:
         "AVGO": ["broadcom", "custom ai asic", "vmware", "co-packaged optics", "cpo", "tomahawk"],
         "TSM": ["tsmc", "taiwan semiconductor", "2nm", "wafer", "cowos", "advanced packaging", "foundry"],
         "MU": ["micron", "hbm", "hbm4", "hbm3e", "high bandwidth memory", "dram"],
-        "ANET": ["arista", "ethernet switch", "ai networking", "ethernet fabric", "800g ethernet"],
+        "ANET": ["arista", "ethernet switch", "ai networking", "ethernet fabric", "800g ethernet", "data center switch"],
         "VRT": ["vertiv", "liquid cooling", "data center cooling", "immersion cooling", "thermal management"],
         "TER": ["teradyne", "universal robots", "robot tester", "semiconductor test"],
         "SYM": ["symbotic", "warehouse automation", "warehouse robotics", "autonomous warehouse"],
@@ -105,6 +112,10 @@ def _alias_map(symbol: str, name: str) -> list[str]:
         "GEV": ["ge vernova", "grid equipment", "power turbine"],
         "PWR": ["quanta services", "grid infrastructure", "power transmission", "substation"],
         "ASX": ["ase technology", "advanced packaging", "chip packaging", "osat"],
+        "MRVL": ["marvell", "marvell technology", "optical dsp", "co-packaged optics", "electro-optics"],
+        "LITE": ["lumentum", "optical component", "laser module", "datacom optics"],
+        "COHR": ["coherent", "ii-vi", "silicon photonics", "optical engine", "laser optics"],
+        "XYL": ["xylem", "cooling water", "industrial pump", "water infrastructure"],
         "005930": ["삼성전자", "samsung electronics", "samsung"],
         "000660": ["sk하이닉스", "sk hynix", "hynix"],
         "042700": ["한미반도체", "hanmi semiconductor", "tc bonder", "hbm packaging"],

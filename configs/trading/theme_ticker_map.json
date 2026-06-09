@@ -1,10 +1,10 @@
 {
   "silicon photonics|photonics interconnect|photonic interconnect": {
-    "tickers": ["AVGO", "ANET", "TSM"],
+    "tickers": ["AVGO", "ANET", "TSM", "COHR", "LITE", "MRVL"],
     "weight": 0.55
   },
   "co-packaged optics|\\bcpo\\b": {
-    "tickers": ["AVGO", "ANET"],
+    "tickers": ["AVGO", "ANET", "MRVL", "COHR"],
     "weight": 0.58
   },
   "high bandwidth memory|\\bhbm\\b|hbm3e|hbm4": {
@@ -20,7 +20,7 @@
     "weight": 0.57
   },
   "liquid cooling|immersion cooling|thermal management|cooling loop": {
-    "tickers": ["VRT", "PWR"],
+    "tickers": ["VRT", "PWR", "XYL"],
     "weight": 0.62
   },
   "sim-to-real|world model|digital twin|robot simulation": {
@@ -38,6 +38,26 @@
   "edge ai|automotive mcu|real-time inference|embedded ai": {
     "tickers": ["6723", "005380", "6861"],
     "weight": 0.5
+  },
+  "embodied ai|embodied intelligence|robot foundation model|generalist robot": {
+    "tickers": ["NVDA", "TSLA", "GOOG", "6954", "SYM"],
+    "weight": 0.53
+  },
+  "optical transceiver|optical engine|laser optics|datacom optics": {
+    "tickers": ["COHR", "LITE", "MRVL", "ANET"],
+    "weight": 0.56
+  },
+  "ai server|rack-scale|rack power|gpu rack": {
+    "tickers": ["NVDA", "VRT", "PWR", "ANET"],
+    "weight": 0.51
+  },
+  "memory bandwidth|dram scaling|memory bottleneck": {
+    "tickers": ["MU", "000660", "005930"],
+    "weight": 0.57
+  },
+  "semiconductor capital equipment|wafer fab equipment|chip manufacturing equipment": {
+    "tickers": ["8035", "042700", "ASX", "TSM"],
+    "weight": 0.54
   },
   "warehouse robotics|warehouse automation|fulfillment automation": {
     "tickers": ["SYM", "ROK"],
