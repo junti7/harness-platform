@@ -28,6 +28,7 @@
 - **커밋하지 않은 코드를 프로덕션에서 라이브로 운영하지 않는다.** (git에 안 보이면 다음 사람이 덮어쓴다 → 유실)
 - 만성 dirty 트리 상태에서 **전체 `git pull` / `git checkout` / `git reset --hard`로 강제 동기화하지 않는다.** 미커밋 prod 작업을 파괴한다.
 - 서버 간 파일을 **scp/수동 복사로 배포하지 않는다.** 드리프트의 근원이다.
+- **프론트엔드를 `harness-os/frontend/` 루트에 빌드하지 않는다.** Vite 출력은 `dist/`만이며(`dist`는 gitignore됨), 백엔드는 `dist/`에서 서빙한다. 루트에 `index.html`(빌드본)·`assets/`·`favicon.svg` 등이 생기면 잘못된 outDir 빌드의 잔재다 — 루트 `index.html`은 항상 dev 소스(`/src/main.tsx`)여야 한다. 프론트 갱신은 prod에서 `cd harness-os/frontend && npm run build`(→`dist/`)로만 한다.
 
 ## 4. 자동 감시 (강제 조치)
 
@@ -49,6 +50,7 @@
 
 ## 6. 미해결 / 후속 (AR)
 
-- [ ] Mac Mini의 11,656 dirty 트리 정리: 런타임 산출물 `.gitignore` 등록 + 미커밋 prod 가치 작업(`TradingOpsCenter.tsx`, `evidence_bank.json` 등) 식별·SoT 반영 → 안전한 전체 동기화 복원.
-- [ ] Mac Mini HEAD를 origin/main으로 정합(현재 17커밋 뒤) — 위 dirty 정리 선행 필요.
+- [x] Mac Mini dirty 트리 정리: 생성형/런타임 산출물 `.gitignore` 등록 + 미커밋 prod 가치 작업 식별·SoT 반영 완료. **11,656 → ~40** (잔여는 HEAD-behind staged + 런타임 churn, prod 가치 위험 0). 드리프트 가드 green = 작업트리 코드 ≡ origin/main.
+- [x] 프론트 build 정리: 빌드 아키텍처는 정상(`dist/` gitignore·백엔드 dist/ 서빙)이었고, 문제는 루트에 쏟아진 stray 빌드물. 루트 `index.html` dev소스 원복 + stray 제거 완료. §3에 재발방지 규칙 추가.
+- [ ] Mac Mini HEAD를 origin/main으로 완전 정합(현재 origin보다 뒤). 두 구조적 선결: (a) read-critical 런타임 파일(`evidence_bank.json` 등) gitignore+rm--cached 시 sync 중 삭제 위험 처리, (b) 백엔드 deploy 엔드포인트의 `git stash -u && git pull`(전체 pull)을 SoT 규약(선택적 동기화)에 맞게 정비. 라이브 정비창에서 수행.
 - [x] CLAUDE.md Must/Never에 본 규약 핵심 1줄 반영 (red_team_clear 후).
