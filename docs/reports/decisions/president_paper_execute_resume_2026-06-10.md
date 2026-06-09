@@ -68,6 +68,11 @@ ssh 100.97.175.44 'launchctl list | grep -i "turtle-auto-trader\|ibkr-auto-trade
 > 비서실장 주: 비서실 셸의 SSH 키 인증이 거부되어 prod 직접 집행 불가. 위 명령은 대표님이 실행한다.
 > 집행 결과(체결/0건/게이트 사유)는 본 기록에 후속 첨부한다.
 
+### 집행 로그
+
+- 2026-06-10 — **Alpaca paper execute 집행 완료** (대표, 대시보드 Trading Ops Center `Alpaca 가상 주문` 버튼 = `POST /api/paper-trading/execute` = `turtle_auto_trader.py --execute`). 진입은 Turtle 게이트 통과 시에만 체결됨. *상세 결과(체결/0건/게이트 사유) 첨부 대기.*
+- IBKR: 진입 execute 미집행 — SSH(22) 일시 다운으로 prod CLI 접근 불가. SSH 복구 후 `run_trading_cycle --broker ibkr --execute` 또는 스케줄 launchd 잡으로 처리. 청산은 대시보드 `IBKR 청산 실행`(EXIT 신호 시) 가능.
+
 ## 7. 서명
 
 - 결재: 대표(President/CEO) — 2026-06-10
