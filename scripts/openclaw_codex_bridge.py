@@ -219,7 +219,10 @@ def _gmail_runtime_target() -> str | None:
 def _gmail_runtime_is_local() -> bool:
     host = GMAIL_RUNTIME_HOST.strip().lower()
     if not host:
-        return False
+        # 원격 runtime host 미설정 = 이 머신에서 직접 실행(로컬).
+        # 프로덕션(Mac Mini)은 gog/Gmail 도구가 로컬에 있고 RUNTIME_HOST를 두지 않으므로
+        # 이 기본값이 Gmail 영수증 수집 기능을 켜는 핵심이다.
+        return True
     local_hosts = {
         "localhost",
         "127.0.0.1",
@@ -259,6 +262,8 @@ def _gmail_runtime_ready() -> tuple[bool, str | None]:
         return False, "HARNESS_GMAIL_RUNTIME_ENABLED=false"
     if not GMAIL_RUNTIME_ACCOUNT:
         return False, "HARNESS_GMAIL_ACCOUNT missing"
+    if _gmail_runtime_is_local():
+        return True, None
     if _gmail_runtime_target() is None:
         return False, "HARNESS_GMAIL_RUNTIME_HOST or HARNESS_GMAIL_RUNTIME_USER missing"
     return True, None
