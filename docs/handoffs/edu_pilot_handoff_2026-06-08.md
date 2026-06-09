@@ -126,18 +126,6 @@ Observed after second pass:
   1. retrieval/source-quality issues
   2. provider quota/availability issues
 
-Observed after third pass:
-- `edu diagnose/curriculum` now has provider fallback ladder
-  - primary: Gemini
-  - fallback: Claude
-  - OpenAI only if package + key are both available
-- `source_name/source_kind/segment` metadata is now backfilled across existing index items without re-embedding
-- fresh bank quota now prefers `community_voice`
-- single-scenario remote smoke (`worker_female_job_seeker`) still scores `71`, but runtime events now clearly show:
-  - source mix is better
-  - provider fallback attempts are visible
-  - remaining failures are mostly provider-side, not hidden retrieval failures
-
 Representative post-patch scores:
 - `parent_father_middle_school_homework`: `73`
 - `parent_neutral_highschool_career_major`: `68`
