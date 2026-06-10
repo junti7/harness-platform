@@ -169,6 +169,48 @@
       "notes": "Deployment/use-case frontier"
     },
     {
+      "name": "google_news_mlcc_power_delivery",
+      "url": "https://news.google.com/rss/search?q=AI+server+MLCC+power+delivery+Murata+TDK+Samsung+Electro-Mechanics&hl=en-US&gl=US&ceid=US:en",
+      "source_type": "rss_search",
+      "channel": "news",
+      "collection_mode": "rss_search",
+      "expected_signal_type": "power_delivery_components_news",
+      "reliability_score": 0.72,
+      "stale_minutes": 1440,
+      "enabled": false,
+      "preferred_worker": "mini",
+      "activation_policy": "always_on",
+      "notes": "[STAGED] DC 공급망 부품(MLCC/전력공급) 확장. 활성화(enabled:true) 전 legal_review_approve + red_team_clear 필요 — 데이터 수집 정책 변경 게이트. AR-031 참조."
+    },
+    {
+      "name": "google_news_datacenter_connectors_optics",
+      "url": "https://news.google.com/rss/search?q=AI+datacenter+connector+backplane+optical+transceiver+Amphenol+Molex&hl=en-US&gl=US&ceid=US:en",
+      "source_type": "rss_search",
+      "channel": "news",
+      "collection_mode": "rss_search",
+      "expected_signal_type": "connector_optics_components_news",
+      "reliability_score": 0.72,
+      "stale_minutes": 1440,
+      "enabled": false,
+      "preferred_worker": "mini",
+      "activation_policy": "always_on",
+      "notes": "[STAGED] 고속 커넥터/백플레인/광 트랜시버 부품. 활성화 전 legal_review_approve + red_team_clear 필요. AR-031 참조."
+    },
+    {
+      "name": "google_news_cpu_gpu_interconnect",
+      "url": "https://news.google.com/rss/search?q=Grace+Blackwell+NVLink-C2C+PCIe+Gen6+datacenter+interconnect&hl=en-US&gl=US&ceid=US:en",
+      "source_type": "rss_search",
+      "channel": "news",
+      "collection_mode": "rss_search",
+      "expected_signal_type": "cpu_gpu_interconnect_news",
+      "reliability_score": 0.74,
+      "stale_minutes": 1440,
+      "enabled": false,
+      "preferred_worker": "mini",
+      "activation_policy": "always_on",
+      "notes": "[STAGED] CPU-GPU 결합/차세대 인터커넥트. 활성화 전 legal_review_approve + red_team_clear 필요. AR-031 참조."
+    },
+    {
       "name": "reddit_robotics_search",
       "url": "https://www.reddit.com/r/robotics/search.json?q=robotics&restrict_sr=1&sort=new",
       "source_type": "api",

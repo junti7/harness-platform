@@ -85,6 +85,8 @@ def _load_seed_registry() -> list[dict[str, Any]]:
         {"region": "US", "symbol": "LITE", "exchange": "NASDAQ", "currency": "USD", "name": "Lumentum", "sector": "Optical Components"},
         {"region": "US", "symbol": "COHR", "exchange": "NYSE", "currency": "USD", "name": "Coherent", "sector": "Photonics"},
         {"region": "US", "symbol": "XYL", "exchange": "NYSE", "currency": "USD", "name": "Xylem", "sector": "Cooling/Water Infra"},
+        {"region": "US", "symbol": "APH", "exchange": "NYSE", "currency": "USD", "name": "Amphenol", "sector": "Connector/Interconnect"},
+        {"region": "US", "symbol": "ARM", "exchange": "NASDAQ", "currency": "USD", "name": "Arm Holdings", "sector": "CPU IP/Interconnect"},
         {"region": "KR", "symbol": "005930", "exchange": "KRX", "currency": "KRW", "name": "삼성전자", "sector": "Memory/Foundry"},
         {"region": "KR", "symbol": "000660", "exchange": "KRX", "currency": "KRW", "name": "SK하이닉스", "sector": "HBM Memory"},
         {"region": "KR", "symbol": "042700", "exchange": "KRX", "currency": "KRW", "name": "한미반도체", "sector": "Chip Equip"},
@@ -93,6 +95,9 @@ def _load_seed_registry() -> list[dict[str, Any]]:
         {"region": "JP", "symbol": "6861", "exchange": "TSEJ", "currency": "JPY", "name": "Keyence", "sector": "Factory Auto"},
         {"region": "JP", "symbol": "6954", "exchange": "TSEJ", "currency": "JPY", "name": "FANUC", "sector": "Robotics"},
         {"region": "JP", "symbol": "6723", "exchange": "TSEJ", "currency": "JPY", "name": "Renesas Electronics", "sector": "MCU/Auto Chip"},
+        {"region": "JP", "symbol": "6981", "exchange": "TSEJ", "currency": "JPY", "name": "Murata Manufacturing", "sector": "MLCC/Passives"},
+        {"region": "JP", "symbol": "6762", "exchange": "TSEJ", "currency": "JPY", "name": "TDK", "sector": "Passives/Power Components"},
+        {"region": "KR", "symbol": "009150", "exchange": "KRX", "currency": "KRW", "name": "삼성전기", "sector": "MLCC/Substrate"},
     ]
 
 
@@ -100,8 +105,13 @@ def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").lower()).strip()
 
 
+# 심볼/회사명에서 자동 파생되면 안 되는 일반어 — direct 매칭에서 제외(theme bridge가 대신 잡음).
+# 예: ARM 심볼이 'arm'으로 파생되면 'robot arm'/'robotic arm' 전부 오매칭. [[trading_theme_bridge]]
+_GENERIC_ALIAS_BLOCKLIST = {"arm"}
+
+
 def _alias_map(symbol: str, name: str) -> list[str]:
-    base = {_normalize(symbol), _normalize(name)}
+    base = {_normalize(symbol), _normalize(name)} - _GENERIC_ALIAS_BLOCKLIST
     manual = {
         "NVDA": ["nvidia", "gr00t", "cosmos", "h100", "gb200", "cuda", "ai accelerator", "blackwell"],
         "AVGO": ["broadcom", "custom ai asic", "vmware", "co-packaged optics", "cpo", "tomahawk"],
@@ -125,6 +135,12 @@ def _alias_map(symbol: str, name: str) -> list[str]:
         "LITE": ["lumentum", "optical component", "laser module", "datacom optics"],
         "COHR": ["coherent", "ii-vi", "silicon photonics", "optical engine", "laser optics"],
         "XYL": ["xylem", "cooling water", "industrial pump", "water infrastructure"],
+        # DC 공급망 부품 레이어 — 회사-특정 별칭만(일반어 mlcc/arm/samsung는 theme bridge로). [[trading_theme_bridge]]
+        "APH": ["amphenol", "amphenol corporation"],
+        "ARM": ["arm holdings", "arm ltd", "neoverse"],
+        "6981": ["murata", "murata manufacturing"],
+        "6762": ["tdk", "tdk corporation"],
+        "009150": ["삼성전기", "samsung electro-mechanics", "semco"],
         "005930": ["삼성전자", "samsung electronics", "samsung"],
         "000660": ["sk하이닉스", "sk hynix", "hynix"],
         "042700": ["한미반도체", "hanmi semiconductor", "tc bonder"],

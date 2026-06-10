@@ -66,5 +66,25 @@
   "machine vision|factory sensor|smart factory": {
     "tickers": ["6861", "ROK"],
     "weight": 0.5
+  },
+  "\\bmlcc\\b|ceramic capacitor|passive component|passives": {
+    "tickers": ["6981", "6762", "009150"],
+    "weight": 0.56
+  },
+  "power delivery network|\\bpdn\\b|\\bvrm\\b|\\bpmic\\b|voltage regulator|busbar|rack power": {
+    "tickers": ["VRT", "GEV", "PWR", "6762"],
+    "weight": 0.52
+  },
+  "backplane connector|high-speed connector|cable assembly|high-speed interconnect cable": {
+    "tickers": ["APH"],
+    "weight": 0.6
+  },
+  "linear pluggable optics|\\blpo\\b|800g|1\\.6t|next-gen optical": {
+    "tickers": ["COHR", "LITE", "MRVL", "AVGO", "ANET"],
+    "weight": 0.55
+  },
+  "nvlink|nvlink-c2c|pcie gen6|grace blackwell|cpu-gpu interconnect|chip-to-chip interconnect": {
+    "tickers": ["NVDA", "ARM", "AVGO"],
+    "weight": 0.54
   }
 }
