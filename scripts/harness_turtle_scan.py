@@ -64,6 +64,9 @@ def load_harness_universe_meta(min_score: int = _HARNESS_MIN_SCORE, broker: str 
         return list(_STATIC_FALLBACK_META)
     meta: list[tuple] = []
     for r in rows:
+        # belt-and-suspenders(Red Team Codex#2): alpaca는 US만 — brokers 필드 외에 region도 확인.
+        if broker == "alpaca" and str(r.get("region", "")).upper() not in ("US", ""):
+            continue
         try:
             score = int(r.get("harness_score", 0) or 0)
         except (TypeError, ValueError):
