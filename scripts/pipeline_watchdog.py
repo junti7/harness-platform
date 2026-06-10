@@ -10,6 +10,7 @@ Pipeline Watchdog — 파이프라인 이상 감지 시 CEO Slack 즉시 알림
 """
 from __future__ import annotations
 
+import fcntl
 import os
 import socket
 import subprocess
@@ -133,6 +134,163 @@ def _check_db() -> list[str]:
     return issues
 
 
+# ── 자가복구(self-healing) ────────────────────────────────────────────────────
+#  알림만으로는 자동매매가 멈춘 채 방치된다. watchdog가 직접 복구를 시도한다.
+
+LAUNCH_AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
+TRADER_JOBS = {
+    "com.harness.turtle-auto-trader": LAUNCH_AGENTS_DIR / "com.harness.turtle-auto-trader.plist",
+    "com.harness.ibkr-auto-trader": LAUNCH_AGENTS_DIR / "com.harness.ibkr-auto-trader.plist",
+}
+# 게이트웨이 자동 재시작: 진짜 IBC 런처(무인 로그인: 저장된 자격증명+2FA 타임아웃 자동 재로그인) 우선.
+# 없으면 수동 open 폴백(이 경우 2FA 수동 승인 필요 — CEO 알림).
+IBC_GATEWAY_LAUNCHER = Path.home() / "IBC" / "gatewaystartmacos.sh"
+GATEWAY_RESTART_FALLBACK = ROOT / "scripts" / "start_ibgateway_ibc.sh"
+GW_COOLDOWN_PATH = ROOT / "runtime" / "gateway_restart_cooldown"
+GW_LOCK_PATH = ROOT / "runtime" / "gateway_restart.lock"  # 동시 재시작 방지(단일 실행 보장)
+GW_RESTART_MIN_INTERVAL_SEC = 600  # 재시작 폭주 방지: 최소 10분 간격
+# 명시적 kill-switch: 자가복구가 CEO의 정지 결정을 덮어쓰지 못하게 하는 안전장치.
+#  - auto_trading_disabled: 트레이더 잡 자동 reload 중단(자동매매 정지의 canonical 경로).
+#  - ibgateway_disabled:    게이트웨이 자동 재시작 중단(게이트웨이를 의도적으로 내릴 때).
+# 운영 규약: 자동매매/게이트웨이를 멈추려면 *반드시 이 플래그*를 쓴다. 단순 `launchctl unload`는
+# 자가복구가 되살리도록 설계된 동작이므로 정지 수단으로 쓰지 않는다.
+AUTO_TRADING_DISABLE_FLAG = ROOT / "runtime" / "auto_trading_disabled"
+IBGATEWAY_DISABLE_FLAG = ROOT / "runtime" / "ibgateway_disabled"
+
+
+def _loaded_labels() -> set[str] | None:
+    """launchctl에 로드된 라벨 집합. 조회 실패/비정상 종료 시 None(판별 불가)."""
+    try:
+        res = subprocess.run(["launchctl", "list"], capture_output=True, text=True, timeout=10)
+        if res.returncode != 0:
+            return None
+        labels: set[str] = set()
+        for ln in res.stdout.splitlines():
+            parts = ln.split()
+            # 데이터 행만(헤더 'PID Status Label' 제외): 첫 칼럼이 PID(int) 또는 '-'
+            if len(parts) >= 3 and (parts[0] == "-" or parts[0].lstrip("-").isdigit()):
+                labels.add(parts[-1])
+        return labels
+    except Exception:
+        return None
+
+
+def ensure_trader_jobs_loaded() -> list[str]:
+    """두 자동매매 launchd 잡이 언로드돼 있으면 자동 reload. 자동매매 중단 방지의 핵심.
+
+    단, AUTO_TRADING_DISABLE_FLAG가 있으면 자동 reload를 건너뛴다(CEO의 명시적 정지 존중).
+    """
+    if AUTO_TRADING_DISABLE_FLAG.exists():
+        return ["⏸️ 자동매매 비활성 플래그 감지 — 트레이더 잡 자동 reload 건너뜀(의도적 중단 존중). 재개하려면 runtime/auto_trading_disabled 삭제"]
+    labels = _loaded_labels()
+    if labels is None:
+        return ["⚠️ launchctl 미응답 — 트레이더 잡 로드 여부 판별 불가(자동복구 보류)"]
+    actions: list[str] = []
+    for label, plist in TRADER_JOBS.items():
+        if label in labels:
+            continue
+        if not plist.exists():
+            actions.append(f"🚨 {label} 미로드 + plist 없음({plist.name}) — 수동 조치 필요")
+            continue
+        try:
+            r = subprocess.run(["launchctl", "load", str(plist)], capture_output=True, text=True, timeout=15)
+            if r.returncode == 0:
+                actions.append(f"✅ 자가복구: {label} 언로드 감지 → 자동 reload 성공(다음 거래일 자동 execute 유지)")
+            else:
+                actions.append(f"🚨 {label} reload 실패(rc={r.returncode}): {r.stderr.strip()[:160]} — 수동 조치 필요")
+        except Exception as e:
+            actions.append(f"🚨 {label} reload 예외: {e} — 수동 조치 필요")
+    return actions
+
+
+def _gateway_port_open() -> bool:
+    try:
+        with socket.create_connection((IBKR_HOST, IBKR_PORT), timeout=5):
+            return True
+    except OSError:
+        return False
+
+
+def _gw_seconds_since_last_restart() -> float | None:
+    try:
+        if not GW_COOLDOWN_PATH.exists():
+            return None
+        ts = float(GW_COOLDOWN_PATH.read_text().strip())
+        return max(0.0, datetime.now(timezone.utc).timestamp() - ts)
+    except Exception:
+        return None
+
+
+def ensure_gateway_up() -> list[str]:
+    """IB Gateway(포트 4002) 다운/로그아웃 감지 시 IBC로 자동 재시작(쿨다운+단일실행락). 거래불가 사태 근본대책.
+
+    동시성: 5분 주기 watchdog 실행이 겹쳐도(launchd 중첩) 단 하나만 런처를 띄우도록 flock(LOCK_EX|LOCK_NB)으로
+    보호한다. 쿨다운 타임스탬프는 spawn *직전*에 기록해(폭주/watchdog 사망 시에도 재시작 storm 방지),
+    Popen 자체가 예외로 실패한 경우에만 쿨다운을 해제해 다음 주기 즉시 재시도(가용성 보호)한다.
+    """
+    if _gateway_port_open():
+        return []
+    if IBGATEWAY_DISABLE_FLAG.exists():
+        return ["⏸️ IB Gateway 비활성 플래그 감지 — 자동 재시작 건너뜀(의도적 중단 존중). 재개하려면 runtime/ibgateway_disabled 삭제"]
+
+    GW_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    lock_fd = os.open(str(GW_LOCK_PATH), os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return ["⏳ 다른 watchdog가 이미 게이트웨이 복구 진행 중 — 중복 런처 실행 방지로 건너뜀"]
+
+        # 락 획득 후 재확인: 그 사이 다른 프로세스가 복구했을 수 있음
+        if _gateway_port_open():
+            return []
+        since = _gw_seconds_since_last_restart()
+        if since is not None and since < GW_RESTART_MIN_INTERVAL_SEC:
+            return [
+                f"🚨 IB Gateway 다운(포트 4002 미응답) — 최근 자동 재시작 {int(since)}s 전(쿨다운 {GW_RESTART_MIN_INTERVAL_SEC}s). "
+                "복구 미수렴 시 Mac Mini 화면공유로 수동 점검 필요"
+            ]
+        # 런처 선택: 진짜 IBC(무인 로그인) 우선, 없으면 수동 open 폴백
+        if IBC_GATEWAY_LAUNCHER.exists():
+            launcher, auto_login = IBC_GATEWAY_LAUNCHER, True
+        elif GATEWAY_RESTART_FALLBACK.exists():
+            launcher, auto_login = GATEWAY_RESTART_FALLBACK, False
+        else:
+            return ["🚨 IB Gateway 다운 + 재시작 런처 없음(IBC/폴백 모두 부재) — 수동 재로그인 필요"]
+
+        # 쿨다운은 spawn *직전* 기록(폭주 방지: watchdog가 spawn 직후 죽어도 storm 안 남).
+        GW_COOLDOWN_PATH.parent.mkdir(parents=True, exist_ok=True)
+        GW_COOLDOWN_PATH.write_text(str(datetime.now(timezone.utc).timestamp()))
+        try:
+            subprocess.Popen(
+                ["/bin/bash", str(launcher)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception as e:
+            # spawn 자체가 실패 → 쿨다운 해제(다음 주기 즉시 재시도 — 가용성 보호)
+            try:
+                GW_COOLDOWN_PATH.unlink()
+            except OSError:
+                pass
+            return [f"🚨 IB Gateway 자동 재시작 실패: {e} — 수동 재로그인 필요(Mac Mini 화면공유)"]
+
+        if auto_login:
+            return [
+                "⚙️ 자가복구: IB Gateway 다운 감지 → IBC 무인 런처 트리거(~/IBC/gatewaystartmacos.sh). "
+                "저장된 자격증명 + 2FA 타임아웃 자동 재로그인으로 세션 복구 시도 중(2~3분). 다음 주기 재확인"
+            ]
+        return [
+            "⚙️ 자가복구: IB Gateway 다운 감지 → 폴백 런처 트리거(IBC 미설치). "
+            "🚨 2FA 수동 승인 필요 — Mac Mini 화면공유/IBKR Mobile 확인"
+        ]
+    finally:
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        finally:
+            os.close(lock_fd)
+
+
 # ── IBKR Gateway 체크 ────────────────────────────────────────────────────────
 
 def _check_ibkr() -> list[str]:
@@ -166,7 +324,8 @@ def main() -> None:
     all_issues: list[str] = []
     all_issues.extend(_check_services())
     all_issues.extend(_check_db())
-    all_issues.extend(_check_ibkr())
+    all_issues.extend(ensure_trader_jobs_loaded())   # 자가복구: 트레이더 잡 자동 reload
+    all_issues.extend(ensure_gateway_up())           # 자가복구: 게이트웨이 자동 재시작
     all_issues.extend(_check_trading_runtime())
 
     if all_issues:
@@ -180,12 +339,15 @@ def main() -> None:
 
 if __name__ == "__main__":
     if "--ibkr-only" in sys.argv:
-        print(f"[{datetime.now(timezone.utc).isoformat()}] IBKR Watchdog 실행")
-        issues = _check_ibkr()
+        print(f"[{datetime.now(timezone.utc).isoformat()}] IBKR Watchdog(자가복구) 실행")
+        # 5분 주기 자가복구: ① 게이트웨이 다운 시 IBC 자동 재시작 ② 트레이더 잡 언로드 시 자동 reload
+        issues = ensure_gateway_up() + ensure_trader_jobs_loaded()
         if issues:
-            print(f"[ALERT] IBKR Gateway 연결 끊김")
-            _send_alert("IBKR Gateway 연결 끊김", issues)
+            print(f"[ALERT/REMEDIATE] {len(issues)}건")
+            for i in issues:
+                print(f"  - {i}")
+            _send_alert("자동매매 자가복구 동작", issues)
         else:
-            print("[OK] IBKR Gateway 정상")
+            print("[OK] IBKR Gateway·트레이더 잡 정상")
     else:
         main()

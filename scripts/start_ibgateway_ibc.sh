@@ -5,6 +5,9 @@
 
 PROJ="/Users/juntaepark/projects/harness-platform"
 LOG="$PROJ/docs/reports/ibgateway_ibc.log"
+# IBC 런처의 raw stdout/stderr 전용(설정 파싱 진단·계정ID 등 민감정보가 섞일 수 있어 사람용 LOG와 분리).
+# runtime/ 는 .gitignore 대상이라 저장소에 커밋되지 않는다.
+IBC_RAW_LOG="$PROJ/runtime/ibgateway_ibc_raw.log"
 ENV_FILE="$PROJ/.env"
 GW_APP="/Users/juntaepark/Applications/IB Gateway 10.45/IB Gateway 10.45-1.app"
 STATUS_HELPER="$PROJ/scripts/ibkr_gateway_runtime_status.py"
@@ -31,18 +34,27 @@ if lsof -i :4002 2>/dev/null | grep -q LISTEN; then
     exit 0
 fi
 
-log "=== IB Gateway 시작 (open 방식) ==="
-write_status "launching" "IB Gateway를 실행했습니다. 로그인 창과 앱 구동을 확인하는 중입니다."
+# 진짜 IBC 무인 로그인 런처(저장된 자격증명 + 2FA 타임아웃 자동 재로그인). 없으면 수동 open 폴백.
+IBC_LAUNCHER="$HOME/IBC/gatewaystartmacos.sh"
 
-if [ ! -d "$GW_APP" ]; then
-    log "[ERROR] IB Gateway 앱 없음: $GW_APP"
-    write_status "offline" "IB Gateway 앱을 찾지 못했습니다."
+if [ -f "$IBC_LAUNCHER" ]; then
+    log "=== IB Gateway 시작 (IBC 무인 로그인) ==="
+    write_status "launching" "IBC로 IB Gateway 무인 로그인을 시작했습니다. 저장된 자격증명으로 자동 로그인 중(수동 입력 불필요)."
+    # IBC 런처는 게이트웨이를 감시하며 상주하므로 백그라운드로 분리 실행.
+    # raw 출력은 gitignore 대상 runtime 로그로 보내 민감정보가 저장소 추적 로그에 남지 않게 한다.
+    mkdir -p "$(dirname "$IBC_RAW_LOG")"
+    nohup /bin/bash "$IBC_LAUNCHER" >> "$IBC_RAW_LOG" 2>&1 &
+    log "IBC 런처 백그라운드 실행(pid=$!) — config.ini 자격증명으로 자동 로그인 진행(raw 로그: runtime/ibgateway_ibc_raw.log)"
+elif [ -d "$GW_APP" ]; then
+    log "=== [폴백] IBC 미설치 → 수동 open ==="
+    write_status "launching" "IBC 미설치 — 수동 로그인 폴백. 로그인 창에서 비밀번호 입력 + IBKR Mobile 2FA 승인 필요."
+    open "$GW_APP"
+    log "[WARN] IBC 미설치 — 수동 로그인 필요(비밀번호+2FA)"
+else
+    log "[ERROR] IBC 런처($IBC_LAUNCHER)·게이트웨이 앱($GW_APP) 모두 없음"
+    write_status "offline" "IBC 런처와 IB Gateway 앱을 모두 찾지 못했습니다."
     exit 1
 fi
-
-# macOS open으로 GUI 앱 실행 (GUI 세션 필요)
-open "$GW_APP"
-log "IB Gateway 앱 열기 요청 완료 — 로그인 창에서 비밀번호 입력 후 IBKR Mobile에서 2FA 승인해주세요"
 
 # .env 로드 (Slack 알림용)
 if [ -f "$ENV_FILE" ]; then
