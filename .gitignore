@@ -76,3 +76,4 @@ data/edu_research/*/naver_collected.json
 # Unmatched-entity miner 산출물 (프로덕션 주1회 재생성 — system of record 아님)
 docs/trading/universe_candidate_queue.json
 docs/trading/UNIVERSE_CANDIDATE_QUEUE.md
+docs/reports/approval_intake.jsonl

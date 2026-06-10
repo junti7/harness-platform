@@ -51,6 +51,8 @@ _COVERAGE_EXTRA_ALIASES: dict[str, list[str]] = {
 ROOT = Path(__file__).resolve().parents[1]
 QUEUE_JSON_PATH = ROOT / "docs" / "trading" / "universe_candidate_queue.json"
 QUEUE_MD_PATH = ROOT / "docs" / "trading" / "UNIVERSE_CANDIDATE_QUEUE.md"
+# 백엔드 _sync_auto_approval_intake가 읽어 CEO 결재 큐로 자동 승격하는 인테이크 로그
+APPROVAL_INTAKE_PATH = ROOT / "docs" / "reports" / "approval_intake.jsonl"
 
 _EXTRACT_MODEL = "claude-haiku-4-5-20251001"
 _BATCH_SIZE = 25
@@ -253,6 +255,85 @@ def mine_candidates(
         })
     candidates.sort(key=lambda c: (c["distinct_sources"], c["mentions"]), reverse=True)
     return candidates[:max_candidates]
+
+
+def _existing_intake_keys() -> set[str]:
+    keys: set[str] = set()
+    if not APPROVAL_INTAKE_PATH.exists():
+        return keys
+    try:
+        with open(APPROVAL_INTAKE_PATH, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                k = str(row.get("correlation_id") or row.get("id") or "")
+                if k:
+                    keys.add(k)
+    except Exception:
+        pass
+    return keys
+
+
+def promote_candidates_to_approval(
+    candidates: list[dict[str, Any]],
+    promote_min_sources: int = 3,
+) -> int:
+    """임계값(distinct_sources ≥ promote_min_sources) 통과 후보를 CEO 결재 인테이크에
+    `[투자결정]` 행으로 추가한다. 백엔드가 이를 CEO pending 결재로 자동 승격한다.
+
+    - correlation_id 기준 dedup → 주1회 재실행해도 같은 후보를 중복 상신하지 않는다.
+    - 승인 의미는 `opportunity_approve`(seed 편입 후보 채택)일 뿐 **실거래가 아니다**.
+      편입 후에도 turtle_gate + legal + capital_action_approve가 별도로 필요하다.
+    반환: 새로 상신된 후보 수.
+    """
+    promotable = [c for c in candidates if c.get("distinct_sources", 0) >= promote_min_sources]
+    if not promotable:
+        return 0
+    existing = _existing_intake_keys()
+    new_rows: list[dict[str, Any]] = []
+    for c in promotable:
+        corr = f"universe-candidate-{c['candidate_key']}"
+        if corr in existing:
+            continue
+        tk = c.get("ticker_guess") or "티커 확인 필요"
+        body = (
+            f"신규 투자 후보 (seed 미보유). 소스 다양성 {c['distinct_sources']} · "
+            f"언급 {c['mentions']}회.\n"
+            f"추정 티커/거래소/지역: {c.get('ticker_guess') or '?'} / "
+            f"{c.get('exchange_guess') or '?'} / {c.get('region_guess') or '?'}\n"
+            f"근거 제목: {'; '.join(c.get('sample_titles', []))[:300]}\n"
+            "승인 의미: seed 편입 후보 채택(opportunity_approve). **실거래 아님** — 편입 후에도 "
+            "turtle_gate + legal + capital_action_approve 별도. 티커/거래소 정합은 편입 시 확인."
+        )
+        ts = now_iso()
+        new_rows.append({
+            "id": f"APR-UNIV-{c['candidate_key'][:16]}",
+            "approval_id": f"APR-UNIV-{c['candidate_key'][:16]}",
+            "title": f"[투자결정] universe 신규 후보: {c['name']} ({tk})",
+            "submitter": "jarvis",
+            "owner": "비서실장",
+            "submitter_display": "비서실장",
+            "approval_type": "opportunity_approve",
+            "target_type": "business_opportunity",
+            "target_id": c["candidate_key"],
+            "body": body,
+            "description": body,
+            "correlation_id": corr,
+            "submitted_at": ts,
+            "ts": ts,
+        })
+        existing.add(corr)
+    if new_rows:
+        APPROVAL_INTAKE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(APPROVAL_INTAKE_PATH, "a", encoding="utf-8") as f:
+            for r in new_rows:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    return len(new_rows)
 
 
 def write_candidate_queue(

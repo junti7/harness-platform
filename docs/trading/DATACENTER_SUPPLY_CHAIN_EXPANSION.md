@@ -66,3 +66,16 @@ high-speed connector/backplane, 차세대 optics, CPU-GPU interconnect)를 evide
   편입은 검토 → `legal_review_approve` + `red_team_clear` + 대표 승인 → seed 편입.
 - 단일 소스 스팸 차단(distinct source ≥ min_sources), LLM 미가용 시 빈 큐 fail-safe(허위 후보 금지).
 - 권장 cadence: 주 1회(프로덕션 스케줄러 등록은 배포 시 후속).
+
+### 6.1 CEO 결재 funnel (발굴 → 결재)
+
+miner는 임계값 통과 후보를 **CEO 결재로 자동 상신**한다(`promote_candidates_to_approval`):
+
+1. miner 실행 → 후보 큐 (distinct source ≥ 2)
+2. **distinct source ≥ 3** 후보를 `docs/reports/approval_intake.jsonl`에 `[투자결정]` 행으로 추가
+3. 백엔드 `_sync_auto_approval_intake`가 이를 **CEO pending 결재**로 자동 승격 → ApprovalsPage/모바일 노출
+4. `correlation_id`(`universe-candidate-<key>`) 기준 dedup — 주1회 재실행해도 중복 상신 없음
+5. 승인 의미 = `opportunity_approve`(seed 편입 후보 채택). **실거래 아님** — 편입 후에도
+   turtle_gate + legal_review + capital_action_approve 별도.
+
+비활성: `--no-promote`. 임계값 조정: `--promote-min-sources N`.

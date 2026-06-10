@@ -17,7 +17,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from core.universe_candidate_miner import mine_candidates, write_candidate_queue  # noqa: E402
+from core.universe_candidate_miner import (  # noqa: E402
+    mine_candidates,
+    promote_candidates_to_approval,
+    write_candidate_queue,
+)
 
 
 def main() -> int:
@@ -27,6 +31,9 @@ def main() -> int:
     ap.add_argument("--min-sources", type=int, default=2, help="distinct source 최소(단일소스 스팸 차단)")
     ap.add_argument("--max-candidates", type=int, default=25)
     ap.add_argument("--max-evidence", type=int, default=400, help="LLM 비용 상한용 evidence 캡")
+    ap.add_argument("--no-promote", action="store_true", help="임계값 통과 후보의 CEO 결재 상신 비활성")
+    ap.add_argument("--promote-min-sources", type=int, default=3,
+                    help="CEO 결재로 승격할 distinct source 임계값(큐 임계값보다 높게)")
     args = ap.parse_args()
 
     candidates = mine_candidates(
@@ -37,9 +44,14 @@ def main() -> int:
         max_evidence=args.max_evidence,
     )
     write_candidate_queue(candidates, args.domain, args.lookback_days, args.min_sources)
+    promoted = 0
+    if not args.no_promote:
+        promoted = promote_candidates_to_approval(candidates, promote_min_sources=args.promote_min_sources)
     print(json.dumps({
         "domain": args.domain,
         "candidate_count": len(candidates),
+        "promoted_to_ceo_approval": promoted,
+        "promote_min_sources": args.promote_min_sources,
         "top": [
             {"name": c["name"], "ticker": c["ticker_guess"], "distinct_sources": c["distinct_sources"]}
             for c in candidates[:10]
