@@ -288,23 +288,21 @@ def _candidate_corr(candidate: dict[str, Any]) -> tuple[str, str | None]:
     return corr, alt
 
 
-def _existing_intake_keys() -> set[str]:
+def _parse_intake_keys(fh: Any) -> set[str]:
+    """열린 파일 핸들에서 correlation_id/id 키 집합 파싱(락 안에서 호출됨)."""
     keys: set[str] = set()
-    if not APPROVAL_INTAKE_PATH.exists():
-        return keys
     try:
-        with open(APPROVAL_INTAKE_PATH, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    row = json.loads(line)
-                except Exception:
-                    continue
-                k = str(row.get("correlation_id") or row.get("id") or "")
-                if k:
-                    keys.add(k)
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            k = str(row.get("correlation_id") or row.get("id") or "")
+            if k:
+                keys.add(k)
     except Exception:
         pass
     return keys
@@ -329,18 +327,14 @@ def promote_candidates_to_approval(
     promotable = [c for c in candidates if c.get("distinct_sources", 0) >= promote_min_sources]
     if not promotable:
         return 0
-    existing = _existing_intake_keys()
-    new_rows: list[dict[str, Any]] = []
-    for c in promotable:
-        corr, alt = _candidate_corr(c)
-        if corr in existing or (alt and alt in existing):
-            continue
+    APPROVAL_INTAKE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    def _build_row(c: dict[str, Any], corr: str) -> dict[str, Any]:
         name = _sanitize(c.get("name", ""), 80)
         ticker = _sanitize(c.get("ticker_guess") or "", 12)
         exchange = _sanitize(c.get("exchange_guess") or "", 12)
         region = _sanitize(c.get("region_guess") or "", 8)
         titles = _sanitize("; ".join(c.get("sample_titles", [])), 300)
-        tk_disp = ticker or "티커 확인 필요"
         body = (
             f"[자동 발굴 제안] 신규 투자 후보 (seed 미보유). 소스 다양성 "
             f"{int(c.get('distinct_sources', 0))} · 언급 {int(c.get('mentions', 0))}회.\n"
@@ -352,10 +346,10 @@ def promote_candidates_to_approval(
         )
         apr_id = f"APR-UNIV-{hashlib.sha1(corr.encode('utf-8')).hexdigest()[:10]}"
         ts = now_iso()
-        new_rows.append({
+        return {
             "id": apr_id,
             "approval_id": apr_id,
-            "title": f"[투자결정] universe 신규 후보: {name} ({tk_disp})",
+            "title": f"[투자결정] universe 신규 후보: {name} ({ticker or '티커 확인 필요'})",
             "submitter": "universe_miner",
             "owner": "universe_miner",
             "submitter_display": "Universe Miner (자동발굴)",
@@ -367,24 +361,35 @@ def promote_candidates_to_approval(
             "correlation_id": corr,
             "submitted_at": ts,
             "ts": ts,
-        })
-        existing.add(corr)
-        if alt:
-            existing.add(alt)
-    if not new_rows:
-        return 0
-    APPROVAL_INTAKE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    payload = "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in new_rows)
-    with open(APPROVAL_INTAKE_PATH, "a", encoding="utf-8") as f:
+        }
+
+    # read→check→append를 **한 락 안에서** 원자적으로 수행. lock 전 사전조회의 TOCTOU 경합
+    # (동시 실행이 둘 다 '없음'을 보고 중복 기록)을 제거한다(Red Team Codex#4 재지적).
+    written = 0
+    with open(APPROVAL_INTAKE_PATH, "a+", encoding="utf-8") as f:
         if fcntl is not None:
             fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         try:
-            f.write(payload)
-            f.flush()
+            f.seek(0)
+            existing = _parse_intake_keys(f)
+            rows_out: list[dict[str, Any]] = []
+            for c in promotable:
+                corr, alt = _candidate_corr(c)
+                if corr in existing or (alt and alt in existing):
+                    continue
+                rows_out.append(_build_row(c, corr))
+                existing.add(corr)
+                if alt:
+                    existing.add(alt)
+            if rows_out:
+                f.seek(0, 2)  # 끝으로 이동 후 append
+                f.write("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows_out))
+                f.flush()
+                written = len(rows_out)
         finally:
             if fcntl is not None:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-    return len(new_rows)
+    return written
 
 
 def write_candidate_queue(
