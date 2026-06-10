@@ -52,13 +52,24 @@ def merge_catalog_rows_with_defaults(db_rows: list[dict[str, Any]], default_rows
         if not name:
             continue
         existing = merged.get(name, {})
-        merged[name] = {
-            **existing,
-            **row,
-            "rate_limit_policy": parse_rate_limit_policy(
-                row.get("rate_limit_policy") or existing.get("rate_limit_policy")
-            ),
-        }
+        if existing:
+            # config(default)가 제어 필드(enabled/base_url/source_type/reliability/expected/policy)의 SoT다.
+            # DB row를 먼저 깔고 config로 덮어써 config가 이긴다 → DB self-register 행이 config를 가려
+            # enabled:false kill switch를 무력화하던 회귀 차단(Red Team Codex). DB는 런타임/DB 전용
+            # 컬럼(id, failure_count, last_poll_*)만 기여한다.
+            merged[name] = {
+                **row,
+                **existing,
+                "rate_limit_policy": parse_rate_limit_policy(
+                    existing.get("rate_limit_policy") or row.get("rate_limit_policy")
+                ),
+            }
+        else:
+            # config에 없는 DB 전용 소스(런타임 시드 등)는 DB 값 그대로 유지.
+            merged[name] = {
+                **row,
+                "rate_limit_policy": parse_rate_limit_policy(row.get("rate_limit_policy")),
+            }
 
     return sorted(
         merged.values(),

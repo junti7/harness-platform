@@ -161,17 +161,42 @@ def ensure_collection_poll_schema() -> None:
             pass
 
 
-def record_poll(source_name: str, status: str, note: str = "") -> None:
+def record_poll(source, status: str, note: str = "") -> None:
     """개별 소스의 '이번 점검 결과' 스냅샷 기록(ok/empty/failed/skipped). best-effort —
     heartbeat 기록 실패가 수집 전체를 죽이면 안 되므로 예외를 삼킨다. failure_count(연속 실패
-    누적)는 collection_health_check가 따로 관리 — 역할 분리."""
-    if not source_name:
+    누적)는 collection_health_check가 따로 관리 — 역할 분리.
+
+    UPSERT인 이유: source_catalog에 행이 없는 **config 전용 소스**(예: The_Robot_Report,
+    google_news_* DC 소스)는 UPDATE-only면 0행 매칭으로 heartbeat가 조용히 누락되고, 대시보드
+    collection_health가 적재가 정상이어도 영구히 'unknown(미점검)'으로 오표시된다. 폴링되는
+    소스를 self-register해 이 누락을 막는다. ON CONFLICT는 poll 컬럼만 갱신해 기존 카탈로그의
+    큐레이션 값(reliability 등)을 덮지 않는다. rate_limit_policy는 비워 두면 get_active_sources/
+    _physical_ai_source_rows 머지가 config 정책으로 폴백하므로 안전(source_type은 NOT NULL이라 필수)."""
+    if isinstance(source, dict):
+        name = source.get("name")
+        base_url = source.get("url")
+        stype = source.get("source_type") or "rss"
+        enabled = bool(source.get("enabled", True))
+        reliability = source.get("reliability_score")
+        expected = source.get("expected_signal_type")
+    else:
+        name, base_url, stype, enabled, reliability, expected = source, None, "rss", True, None, None
+    if not name:
         return
     try:
         execute_query(
-            "UPDATE source_catalog SET last_polled_at = NOW(), last_poll_status = %s, last_poll_note = %s "
-            "WHERE source_name = %s",
-            (str(status)[:32], (note or "")[:500], source_name),
+            """
+            INSERT INTO source_catalog
+                (source_name, source_type, base_url, reliability_score, expected_signal_type, enabled,
+                 last_polled_at, last_poll_status, last_poll_note)
+            VALUES (%s, %s, %s, COALESCE(%s, 0.5), %s, %s, NOW(), %s, %s)
+            ON CONFLICT (source_name) DO UPDATE SET
+                last_polled_at = NOW(),
+                last_poll_status = EXCLUDED.last_poll_status,
+                last_poll_note = EXCLUDED.last_poll_note
+            """,
+            (name, stype, base_url, reliability, expected, enabled,
+             str(status)[:32], (note or "")[:500]),
         )
     except Exception:
         pass
@@ -223,10 +248,10 @@ def collect(correlation_id: str = None):
     for source in sources:
         _sname = source.get("name")
         if not source.get("url"):
-            record_poll(_sname, "skipped", "no url")
+            record_poll(source, "skipped", "no url")
             continue
         if not check_liveness(source["url"]):
-            record_poll(_sname, "failed", "liveness check failed (non-200/timeout)")
+            record_poll(source, "failed", "liveness check failed (non-200/timeout)")
             continue
 
         if source.get("source_type") == "open_api" and source.get("channel") == "data_go_kr":
@@ -298,13 +323,13 @@ def collect(correlation_id: str = None):
                             _http_err = f"HTTP {resp.status_code}"
                 # 판정: 200이 한 번도 없으면 failed(죽음/인증오류), 200인데 item 0이면 empty, 그 외 ok(살아있음).
                 if not _any_200:
-                    record_poll(_sname, "failed", f"data.go.kr {_http_err or 'no 200 response'}")
+                    record_poll(source, "failed", f"data.go.kr {_http_err or 'no 200 response'}")
                 elif _items_seen == 0:
-                    record_poll(_sname, "empty", "data.go.kr 200, 0 items")
+                    record_poll(source, "empty", "data.go.kr 200, 0 items")
                 else:
-                    record_poll(_sname, "ok", f"data.go.kr items={_items_seen}, saved={_saved_here}")
+                    record_poll(source, "ok", f"data.go.kr items={_items_seen}, saved={_saved_here}")
             except Exception as e:
-                record_poll(_sname, "failed", f"data_go_kr: {str(e)[:200]}")
+                record_poll(source, "failed", f"data_go_kr: {str(e)[:200]}")
                 logger.warning(f"data_go_kr API 수집 실패 [{_sname}]: {e}")
             continue
 
@@ -334,13 +359,13 @@ def collect(correlation_id: str = None):
             # 판정: entries>0=ok(살아있음). entries 0 + bozo(파싱오류/비피드 200)=failed.
             # entries 0 + 정상 파싱=empty(피드는 점검됐으나 신규 없음 — '죽음'과 구분되는 핵심 신호).
             if _n_entries > 0:
-                record_poll(_sname, "ok", f"entries={_n_entries}, saved={_saved_rss}")
+                record_poll(source, "ok", f"entries={_n_entries}, saved={_saved_rss}")
             elif _bozo:
-                record_poll(_sname, "failed", f"feed parse error: {str(getattr(feed, 'bozo_exception', ''))[:160]}")
+                record_poll(source, "failed", f"feed parse error: {str(getattr(feed, 'bozo_exception', ''))[:160]}")
             else:
-                record_poll(_sname, "empty", "feed parsed, 0 entries")
+                record_poll(source, "empty", "feed parsed, 0 entries")
         except Exception as e:
-            record_poll(_sname, "failed", f"rss: {str(e)[:200]}")
+            record_poll(source, "failed", f"rss: {str(e)[:200]}")
             logger.warning(f"RSS 수집 실패 [{_sname}]: {e}")
     logger.info(f"=== Tier 1 완료: {total_saved}개 저장 ===")
     return total_saved
