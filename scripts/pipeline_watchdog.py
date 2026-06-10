@@ -229,9 +229,10 @@ def ensure_gateway_up() -> list[str]:
     보호한다. 쿨다운 타임스탬프는 spawn *직전*에 기록해(폭주/watchdog 사망 시에도 재시작 storm 방지),
     Popen 자체가 예외로 실패한 경우에만 쿨다운을 해제해 다음 주기 즉시 재시도(가용성 보호)한다.
 
-    좀비 락 우려 없음(Red Team 2026-06-10 Infra 1 검토): flock은 *advisory + fd 기반*이라 락을 잡은
+    좀비 락 우려 없음(Red Team 2026-06-10 Infra 1): flock은 *advisory + fd 기반*이라 락을 잡은
     프로세스가 SIGKILL/크래시로 죽으면 커널이 fd를 닫으며 락을 자동 해제한다. PID 파일 락과 달리
-    수동 stale 정리가 불필요하다(PID-liveness 추가 로직은 불필요 — 본 finding은 rationale와 함께 기각).
+    수동 stale 정리·PID-liveness *게이팅*은 불필요하다(오히려 stale-steal은 이중 실행 위험).
+    단, finding의 취지(보유자 추적)를 반영해 락 파일에 pid/시각/host를 기록하고 경합 시 노출한다(관측성).
     """
     if _gateway_port_open():
         return []
@@ -244,7 +245,26 @@ def ensure_gateway_up() -> list[str]:
         try:
             fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
-            return ["⏳ 다른 watchdog가 이미 게이트웨이 복구 진행 중 — 중복 런처 실행 방지로 건너뜀"]
+            # 경합: flock은 *살아있는* 보유자에게만 잡혀 있다(죽으면 커널이 자동 해제). 즉 좀비 락이
+            # 아니라 실제 동시 복구 중. 진단성 강화(Red Team Infra 1): 락 파일에 기록된 보유자 정보 노출.
+            holder = ""
+            try:
+                holder = GW_LOCK_PATH.read_text().strip()
+            except OSError:
+                pass
+            who = f" (보유: {holder})" if holder else ""
+            return [f"⏳ 다른 watchdog가 이미 게이트웨이 복구 진행 중{who} — 중복 런처 실행 방지로 건너뜀"]
+
+        # 락 획득 → 보유자 정보(pid/시각/host) 기록(관측성). flock이 배타성을 보장하므로
+        # 이 내용은 진단용일 뿐 정합성 판단에는 쓰지 않는다(stale-steal 같은 위험 로직 없음).
+        try:
+            os.ftruncate(lock_fd, 0)
+            os.lseek(lock_fd, 0, os.SEEK_SET)
+            holder_info = f"pid={os.getpid()} since={datetime.now(timezone.utc).isoformat(timespec='seconds')} host={socket.gethostname()}"
+            os.write(lock_fd, holder_info.encode())
+            os.fsync(lock_fd)
+        except OSError:
+            pass
 
         # 락 획득 후 재확인: 그 사이 다른 프로세스가 복구했을 수 있음
         if _gateway_port_open():
