@@ -860,3 +860,11 @@ C-1 수정 후 잔존 blocking 이슈 없음. C-2~C-4는 Phase 2 로드맵 또�
 - Remediation 7건 반영 후 재확인 → **Codex=clear (5/5 resolved)**
 - **✅ red_team_clear: 2026-06-10** — memo: docs/governance/RED_TEAM_DC_SUPPLY_CHAIN_2026-06-10.md
 - 잔여: distinct_sources 피드 단위(publisher dedup 향후). 소스 활성화는 legal_review_approve 별도.
+
+### 2026-06-10 (추가) — miner → CEO 결재 wiring
+
+- 참여: Claude + Gemini + Codex
+- R1: Gemini=(empty/재실행), Codex=**block** (blocker: 비서실장 명의 위조; major: 불안정 dedup키, 미sanitize 주입, 비원자 append)
+- R2: Gemini=clear(4/4), Codex=block(잔여 #4 TOCTOU: 락 전 dedup 조회 경합)
+- R3: Codex=**clear** — read→check→append를 단일 flock 내 원자화. 자금이동/auto-seed 없음, opportunity_approve 유지
+- **✅ red_team_clear (wiring): 2026-06-10**
