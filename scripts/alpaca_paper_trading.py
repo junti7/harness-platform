@@ -378,9 +378,33 @@ def get_ar018_kpi(account: dict, positions: list) -> dict[str, Any]:
     }
 
 
+def _dashboard_scan_universe() -> list[str]:
+    """대시보드 신호 스캔 유니버스 = **실제 트레이더와 동일한 동적 universe.json**(harness_score≥7, US).
+
+    2026-06-11 통합: 기존 하드코딩 SIGNAL_UNIVERSE(ETF)는 실제 turtle 트레이더 유니버스와
+    불일치해 모니터가 거래 유니버스를 못 보여줬다. core.trading_universe에서 직접 로드(순환 import
+    회피). universe.json 부재/비어있거나 ≥7 종목이 없으면 SIGNAL_UNIVERSE로 fallback.
+    """
+    try:
+        from core.trading_universe import load_trading_universe
+        rows, source = load_trading_universe(broker="alpaca")
+        if source != "fallback":
+            dyn = [
+                r["symbol"] for r in rows
+                if int(r.get("harness_score", 0) or 0) >= 7
+                and str(r.get("region", "US")).upper() in ("US", "")
+            ]
+            if dyn:
+                return dyn
+    except Exception:
+        pass
+    return list(SIGNAL_UNIVERSE)
+
+
 def get_full_dashboard() -> dict[str, Any]:
     account = get_account_summary()
-    
+    scan_universe = _dashboard_scan_universe()
+
     # 1. Fetch active position symbols dynamically
     pos_symbols = []
     try:
@@ -389,8 +413,8 @@ def get_full_dashboard() -> dict[str, Any]:
     except Exception:
         pass
 
-    # 2. Merge position symbols with SIGNAL_UNIVERSE to fetch all bars in a single API call
-    all_symbols = list(set(SIGNAL_UNIVERSE + pos_symbols))
+    # 2. Merge position symbols with scan universe to fetch all bars in a single API call
+    all_symbols = list(set(scan_universe + pos_symbols))
     multi_bars = get_multi_bars(all_symbols, days=70)
 
     # 3. Call get_positions and get_turtle_signal using the pre-fetched bars
@@ -400,7 +424,7 @@ def get_full_dashboard() -> dict[str, Any]:
     kpi = get_ar018_kpi(account, positions)
 
     signals = []
-    for sym in SIGNAL_UNIVERSE:
+    for sym in scan_universe:
         try:
             signals.append(get_turtle_signal(sym, pre_fetched_bars=multi_bars.get(sym)))
         except Exception as e:
@@ -416,6 +440,7 @@ def get_full_dashboard() -> dict[str, Any]:
         "orders": orders,
         "history": history,
         "ar018_kpi": kpi,
-        "universe": SIGNAL_UNIVERSE,
+        "universe": scan_universe,
+        "universe_source": "universe.json" if scan_universe != list(SIGNAL_UNIVERSE) else "fallback(SIGNAL_UNIVERSE)",
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }

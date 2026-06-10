@@ -3999,7 +3999,9 @@ def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
     # 3. 최초 진입 시 빈 캐시 일 때만 즉각적인 Offline 구조체 리턴하여 화면 락 방지
     try:
         state_path = PROJECT_ROOT / "docs" / "reports" / "ibkr_tws_positions.json"
-        universe_path = PROJECT_ROOT / "configs" / "universe.json"
+        # 동적 유니버스 단일 출처(2026-06-11). configs/universe.json(부재)에서 전환 — warm cache 경로
+        # (ibkr_turtle_monitor)와 동일한 docs/trading/universe.json을 cold-start fallback에서도 사용.
+        universe_path = PROJECT_ROOT / "docs" / "trading" / "universe.json"
         
         # Gateway 4002 포트 활성화 여부 1ms 만에 초고속 핑 감지
         gateway_connected = False
@@ -4034,10 +4036,12 @@ def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
                     "name": u.get("name", ""),
                     "sector": u.get("sector", ""),
                     "currency": u.get("currency", "USD"),
+                    "harness_score": u.get("harness_score"),
                     "signal": "no_connection",
                     "in_position": any(p["symbol"] == u.get("symbol") for p in positions),
                 }
                 for u in univ_data
+                if int(u.get("harness_score", 0) or 0) >= 7  # 트레이더 ≥7 게이트와 일치
             ]
             
         import datetime
