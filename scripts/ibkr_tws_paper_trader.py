@@ -248,6 +248,11 @@ def calc_turtle_signal(ib: IB, contract: Stock) -> dict | None:
 def run(execute: bool = False) -> None:
     dry_run = not execute
     universe = load_universe()
+    # Finding 3(Red Team 2026-06-10): MAX_POSITIONS 한도가 선착순으로 채워져 저점수 종목이
+    # 슬롯을 선점하는 문제 방지. 진입 후보를 harness_score 내림차순으로 정렬해 *동일 스캔에서
+    # 동시 돌파* 시 고확신 종목이 한정 슬롯을 먼저 차지하게 한다.
+    # (Turtle 원칙 준수: 기존 보유 포지션을 점수로 교체하지 않음 — 진입 우선순위만 조정)
+    universe = sorted(universe, key=lambda r: float(r.get("harness_score") or 0), reverse=True)
 
     print("=" * 62)
     print(f"IBKR TWS Paper Trader — {'DRY RUN' if dry_run else '*** EXECUTE ***'}")

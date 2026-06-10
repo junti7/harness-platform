@@ -392,8 +392,15 @@ def run(execute: bool = False) -> dict:
     entered = []
     skipped = []
 
-    for sym in UNIVERSE:
-        sym = sym.strip()
+    # Finding 3(Red Team 2026-06-10): MAX_POSITIONS 선착순 슬롯 선점 방지.
+    # harness_score 내림차순으로 진입 순서를 정렬해 동시 돌파 시 고확신 종목이 한정 슬롯을
+    # 먼저 차지하게 한다. (Turtle 원칙 준수: 기존 포지션을 점수로 교체하지 않음 — 순서만 조정)
+    entry_order = sorted(
+        (s.strip() for s in UNIVERSE),
+        key=lambda s: _UNIVERSE_INFO.get(s, {}).get("harness_score", 0),
+        reverse=True,
+    )
+    for sym in entry_order:
         try:
             signal = get_turtle_signal(sym)
         except Exception as e:
