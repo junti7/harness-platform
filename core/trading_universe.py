@@ -28,17 +28,24 @@ _SENTIMENT_FACTORS = {"positive": 1.0, "neutral": 0.9, "negative": 0.55}
 
 # harness_score 정규화(2026-06-10 진단): 기존 `min(10, round(net + 0.8*dsrc))`는 비정규화
 # 누적합이라 evidence 볼륨·45일 윈도우에 비례해 net이 4~149로 커지고, 천장(10)이 정상값이 돼
-# 24종목 중 22개가 10으로 포화 → ≥7 게이트(turtle_auto_trader Layer1)와 진입 우선순위 정렬
-# (ibkr_tws_paper_trader Finding 3)의 변별력이 사라졌다. 고정 로그곡선으로 1~10에 압축한다.
-# 계수는 prod 실데이터(v=net+0.8*dsrc ≈ 7~175)로 캘리브레이션: top→10, 최약체→3, ≥7≈상위 9.
+# 24종목 중 22개가 10으로 포화. 이 동적 점수의 실제 소비처는 **ibkr_tws_paper_trader**의
+# 진입 우선순위 정렬(harness_score 내림차순, Finding 3)이며, 포화 시 22종 동점으로 슬롯 배정이
+# 임의가 됐다. (turtle_auto_trader/harness_turtle_scan은 별도 *정적* HARNESS_UNIVERSE_META(7~9)를
+# 쓰므로 포화와 무관 — 동적/정적 유니버스 통합은 별도 후속.)
+# 고정 로그곡선으로 1~10 압축. 계수는 prod 실데이터(v=net+0.8*dsrc ≈ 7~175)로 캘리브레이션:
+# top→10, 최약체→3, ≥7≈상위 9.
 _HS_LOG_A = 2.3
 _HS_LOG_B = -1.5
 
 
 def _compute_harness_score(net_score: float, distinct_sources: int) -> int:
-    """net_score + 소스 다양성을 로그 압축해 1~10 정수로 변환(포화 방지, 단조 증가)."""
-    v = max(0.0, net_score) + 0.8 * distinct_sources
-    return max(1, min(10, round(_HS_LOG_A * math.log(1.0 + v) + _HS_LOG_B)))
+    """net_score + 소스 다양성을 로그 압축해 1~10 정수로 변환(포화 방지, 단조 증가).
+
+    음수 net(페널티/부정 sentiment 우세)은 v를 끌어내려 점수를 하한으로 낮춘다 —
+    log 도메인 보호를 위한 max(0,·)는 *합산 v에만* 적용해 페널티가 소스 보너스를 상쇄하게 한다.
+    """
+    v = net_score + 0.8 * distinct_sources
+    return max(1, min(10, round(_HS_LOG_A * math.log(1.0 + max(0.0, v)) + _HS_LOG_B)))
 
 
 def now_iso() -> str:
