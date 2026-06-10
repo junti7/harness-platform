@@ -39,7 +39,8 @@
 
 **복구 동작(`start_ibgateway_ibc.sh`):** ① 콘솔 GUI 세션이 juntaepark인지 확인(아니면 즉시 🚨 알림 — Aqua 세션 없으면 어떤 방법으로도 불가) → ② IBC `-inline` 무인 로그인(최대 90s 대기) → ③ 실패 시 `open` 폴백(60s) → ④ 그래도 미연결이면 수동 2FA 알림.
 
-> ⚠️ **구조적 한계 — GUI 자동 로그인 OFF:** Mac Mini는 현재 macOS **GUI 자동 로그인이 꺼져 있어**, 재부팅 시 누군가 화면에서 GUI 로그인하기 전까지 Aqua 세션이 없다 → **그 어떤 방법으로도 게이트웨이를 못 띄운다(IBC 포함).** "절대 안 멈춤"의 진짜 전제는 **GUI 자동 로그인 ON**이다(보안 트레이드오프 — CEO 결정 필요).
+> ⚠️ **구조적 한계 — 재부팅 시 GUI 세션 부재 (CEO 결정: FileVault 유지):** Mac Mini는 **FileVault ON**이라 macOS GUI 자동 로그인을 켤 수 없다(자동 로그인은 FileVault와 상호 배타). 따라서 **재부팅 시 화면에서 FileVault 잠금해제 + GUI 로그인 1회**가 필요하며, 그 전까지 Aqua 세션이 없어 게이트웨이를 못 띄운다.
+> - **2026-06-10 CEO 결정: FileVault 유지(보안 우선).** 디스크에 IB 비밀번호(IBC config.ini)·secret이 있어 암호화를 유지한다. 재부팅은 드문 일(정전·OS 업데이트·크래시)이고, **평상시(재부팅 없을 때) 자동매매 무중단은 이미 달성**(게이트웨이 로그아웃·트레이더 잡 언로드 모두 watchdog 무인 자가복구). reboot-proof(FileVault OFF + 자동 로그인 ON)는 채택하지 않음.
 >
 > IBC 런처의 raw stdout/stderr는 설정 파싱 진단·계정ID 등이 섞일 수 있어 사람용 로그(`docs/reports/ibgateway_ibc.log`)와 분리해 **gitignore 대상 `runtime/ibgateway_ibc_raw.log`** 로 보낸다(저장소 미추적).
 
@@ -74,8 +75,8 @@
 
 | 리스크 | 현재 완화 | 추가 강화(권고) |
 |---|---|---|
-| **GUI 자동 로그인 OFF → 재부팅 시 Aqua 세션 없음** | 스크립트가 GUI 세션 부재 감지 시 🚨 알림 | **macOS GUI 자동 로그인 ON**(보안 트레이드오프, CEO 결정) — 진짜 reboot-proof의 전제 |
-| **IBC `-inline` 무인 로그인 prod 미검증** | open 폴백으로 최소 가용성 보장 | 게이트웨이 down인 안전한 시간대(미국장 마감)에 부팅 잡 kickstart로 **무인 로그인 1회 실측** |
+| **재부팅 시 Aqua 세션 없음(FileVault ON)** | 스크립트가 GUI 세션 부재 감지 시 🚨 알림 | CEO 결정으로 FileVault 유지(보안 우선) — 재부팅 시 화면에서 잠금해제 1회 수용. reboot-proof 미채택 |
+| ~~IBC `-inline` 무인 로그인 prod 미검증~~ | ✅ **2026-06-10 실측 검증 완료** (Login completed ~6초, 2FA 없음, setsid 분리로 생존) | — |
 | IBC 미설치 환경 | 폴백 `open` + 🚨 2FA 수동 알림 | — (prod엔 IBC 설치됨) |
 | 게이트웨이 프로세스가 KeepAlive 없이 죽음 | 5분 watchdog가 재시작 | **전용 launchd 잡(`com.harness.ibgateway`, KeepAlive=true)** 추가 시 즉시 재기동 |
 | 신규 기기 2FA 푸시 | IBC 2FA 타임아웃 자동 재로그인 | IB Key 자동승인/디바이스 신뢰 등록 |
