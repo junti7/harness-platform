@@ -228,6 +228,10 @@ def ensure_gateway_up() -> list[str]:
     동시성: 5분 주기 watchdog 실행이 겹쳐도(launchd 중첩) 단 하나만 런처를 띄우도록 flock(LOCK_EX|LOCK_NB)으로
     보호한다. 쿨다운 타임스탬프는 spawn *직전*에 기록해(폭주/watchdog 사망 시에도 재시작 storm 방지),
     Popen 자체가 예외로 실패한 경우에만 쿨다운을 해제해 다음 주기 즉시 재시도(가용성 보호)한다.
+
+    좀비 락 우려 없음(Red Team 2026-06-10 Infra 1 검토): flock은 *advisory + fd 기반*이라 락을 잡은
+    프로세스가 SIGKILL/크래시로 죽으면 커널이 fd를 닫으며 락을 자동 해제한다. PID 파일 락과 달리
+    수동 stale 정리가 불필요하다(PID-liveness 추가 로직은 불필요 — 본 finding은 rationale와 함께 기각).
     """
     if _gateway_port_open():
         return []

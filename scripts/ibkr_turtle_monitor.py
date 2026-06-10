@@ -978,42 +978,24 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
                 _p(f"  [{region}] {sym}: {_fp(sig['current_price'], currency)} {currency} | "
                    f"S1고점 {_fp(sig['s1_high'], currency)} | S2고점 {_fp(sig['s2_high'], currency)} | {sig_str}", json_mode)
             else:
-                # Yahoo Finance도 실패 시: 화면 락 방지 및 PoC 지원을 위한 초안 시뮬레이션 데이터 제공
-                import random
-                # Ticker별 현실적인 baseline 가격 설정
-                baseline_prices = {
-                    "NVDA": 1050.0, "AVGO": 1400.0, "TSM": 160.0, "MU": 130.0, "ANET": 310.0,
-                    "VRT": 90.0, "TER": 115.0, "SYM": 30.0, "ISRG": 420.0, "ROK": 260.0,
-                    "CEG": 220.0, "VST": 85.0, "GEV": 170.0, "PWR": 250.0, "ASX": 10.0,
-                    "000660": 185000.0, "005930": 74000.0, "042700": 135000.0,
-                    "8035": 32000.0, "6861": 63000.0, "6954": 4200.0, "6723": 2400.0
-                }
-                base_price = baseline_prices.get(sym, 100.0)
-                # 하루 치 등락 임의 시뮬레이션
-                current_price = round(base_price * random.uniform(0.97, 1.03), 2)
-                s1_high = round(base_price * 1.05, 2)
-                s2_high = round(base_price * 1.12, 2)
-                atr = round(base_price * 0.04, 4)
-                
-                if currency in ("KRW", "JPY"):
-                    current_price = int(current_price)
-                    s1_high = int(s1_high)
-                    s2_high = int(s2_high)
-                    atr = int(atr)
-
+                # Yahoo Finance도 실패 → 안전 실패(Fail-safe). 임의 가격/ATR 시뮬레이션 금지.
+                # (Red Team 2026-06-10 Finding 1: random.uniform 가짜 가격이 가짜 돌파 신호·상태
+                #  오염·오주문으로 이어질 수 있음). IBKR 실패 경로(위)·run_offline과 동일하게
+                #  가격은 None, signal은 'insufficient_data'로 명시해 다운스트림이 진입에서 배제하게 한다.
+                _p(f"  [{region}] {sym}: 데이터 없음(insufficient_data) — 가격 조회 실패, 진입 후보 제외", json_mode)
                 entry_candidates.append({
                     "symbol":        sym,
                     "region":        region,
                     "name":          name,
                     "sector":        sector,
                     "currency":      currency,
-                    "current_price": current_price,
-                    "s1_high":       s1_high,
-                    "s2_high":       s2_high,
-                    "atr":           atr,
-                    "signal":        "neutral",
+                    "current_price": None,
+                    "s1_high":       None,
+                    "s2_high":       None,
+                    "atr":           None,
+                    "signal":        "insufficient_data",
                     "active_signal": None,
-                    "gap_pct":       round((current_price - s2_high) / s2_high * 100, 2),
+                    "gap_pct":       None,
                     "in_position":   in_pos,
                 })
 

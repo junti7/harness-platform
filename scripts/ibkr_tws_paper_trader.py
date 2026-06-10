@@ -74,6 +74,9 @@ _FOREX_FALLBACK: dict[str, float] = {
 }
 # 캐시: currency → (usd_per_local, fetched_at_epoch)
 _forex_cache: dict[str, tuple[float, float]] = {}
+# 환율 출처 추적: currency → "live_api" | "ibkr_historical" | "hardcoded" | "usd"
+# 포지션 사이징에서 "hardcoded"(근사값)일 때 해외 진입을 차단하기 위해 사용(over-sizing 방지).
+_forex_source: dict[str, str] = {}
 _FOREX_CACHE_TTL = 1800  # 30분
 
 
@@ -81,11 +84,13 @@ def get_usd_rate(ib: "IB | None", currency: str) -> float:
     """
     로컬 통화 1단위 → USD 반환. 절대 예외 없음.
     우선순위: open.er-api.com 실시간 → IBKR 전일 종가 → 하드코딩 근사값
+    출처는 _forex_source에 기록(usd_rate_is_reliable로 신뢰성 판정).
     """
     if currency == "USD":
+        _forex_source["USD"] = "usd"
         return 1.0
 
-    # 캐시 확인 (30분 TTL)
+    # 캐시 확인 (30분 TTL) — 출처는 이미 기록돼 있음
     if currency in _forex_cache:
         rate, fetched_at = _forex_cache[currency]
         if _time.time() - fetched_at < _FOREX_CACHE_TTL:
@@ -101,6 +106,7 @@ def get_usd_rate(ib: "IB | None", currency: str) -> float:
             for cur, units_per_usd in data.get("rates", {}).items():
                 if units_per_usd > 0:
                     _forex_cache[cur] = (1.0 / units_per_usd, now)
+                    _forex_source[cur] = "live_api"
             if currency in _forex_cache:
                 return _forex_cache[currency][0]
     except Exception:
@@ -120,14 +126,22 @@ def get_usd_rate(ib: "IB | None", currency: str) -> float:
             if bars:
                 usd_per_local = 1.0 / bars[-1].close
                 _forex_cache[currency] = (usd_per_local, _time.time())
+                _forex_source[currency] = "ibkr_historical"
                 return usd_per_local
         except Exception:
             pass
 
-    # 3순위: 하드코딩 fallback
+    # 3순위: 하드코딩 fallback (근사값 — 사이징 신뢰 불가)
     rate = _FOREX_FALLBACK.get(currency, 1.0)
     _forex_cache[currency] = (rate, _time.time())
+    _forex_source[currency] = "hardcoded"
     return rate
+
+
+def usd_rate_is_reliable(currency: str) -> bool:
+    """포지션 사이징에 쓸 만큼 환율이 신뢰 가능한가. 하드코딩 근사값이면 False.
+    USD(1.0)·실시간 API·IBKR 전일종가는 신뢰. get_usd_rate 호출 *후* 확인한다."""
+    return _forex_source.get(currency) in ("usd", "live_api", "ibkr_historical")
 
 
 # ── 유틸 ──────────────────────────────────────────────────────────────────────
@@ -307,6 +321,17 @@ def run(execute: bool = False) -> None:
         if signal == "breakout_long":
             # 포지션 사이징: ATR을 USD로 환산 후 계좌 1% 리스크 기준
             usd_rate = get_usd_rate(ib, currency)
+            # Fail-safe(Red Team 2026-06-10 Infra 2): 해외 통화 환율이 하드코딩 근사값으로
+            # 폴백된 상태면 사이징이 틀려 1% 리스크 한도를 초과할 수 있다(over-sizing).
+            # Turtle Never 규칙(단일 트레이드 리스크 1% 초과 금지)에 따라 진입을 차단한다.
+            if not usd_rate_is_reliable(currency):
+                print(f"     → ⚠️ 환율 신뢰 불가({currency}, 하드코딩 폴백) — 사이징 부정확 위험으로 진입 차단(스킵)")
+                log_entry({
+                    "ts": now_iso(), "action": "enter_blocked_fx_unreliable", "symbol": sym,
+                    "region": region, "currency": currency, "price": price, "atr": atr,
+                    "usd_rate": round(usd_rate, 8), "fx_source": _forex_source.get(currency, "unknown"), "system": "S2",
+                })
+                continue
             atr_usd  = atr * usd_rate
             shares   = int((nav * TURTLE_RISK_PCT) / atr_usd) if atr_usd > 0 else 0
             stop_loss = round(price - TURTLE_STOP_MULT * atr, 2)
