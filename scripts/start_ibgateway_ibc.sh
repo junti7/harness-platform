@@ -71,9 +71,14 @@ if [ -f "$IBC_LAUNCHER" ]; then
     log "=== IB Gateway 시작 (IBC 무인 로그인, -inline) ==="
     write_status "launching" "IBC 무인 로그인 시작 — 저장된 자격증명으로 자동 로그인 중(수동 입력 불필요)."
     mkdir -p "$(dirname "$IBC_RAW_LOG")"
-    # -inline: displaybannerandlaunch.sh를 직접 exec(osascript/Terminal 우회). 백그라운드 상주.
-    nohup /bin/bash "$IBC_LAUNCHER" -inline >> "$IBC_RAW_LOG" 2>&1 &
-    log "IBC -inline 실행(pid=$!) — 최대 ${IBC_WAIT_SEC}s 대기"
+    # -inline: displaybannerandlaunch.sh를 직접 exec(osascript/Terminal 우회).
+    # IBC를 *새 세션(setsid)*으로 완전 분리한다. 이유: launchd 잡이 main 스크립트 종료 시
+    # 잡 프로세스그룹을 함께 reap하므로, `nohup &`만으론 IBC/게이트웨이가 같이 죽는다
+    # (2026-06-10 실측: 부팅 잡 직접 실행 시 reap됨). macOS엔 setsid 바이너리가 없어 python의
+    # start_new_session=True(os.setsid)로 분리 → 부팅 잡·watchdog 양쪽 모두 게이트웨이 생존.
+    PYBIN="$PROJ/.venv/bin/python"; [ -x "$PYBIN" ] || PYBIN="/usr/bin/python3"
+    "$PYBIN" -c "import subprocess,sys; subprocess.Popen(['/bin/bash', sys.argv[1], '-inline'], stdout=open(sys.argv[2],'a'), stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)" "$IBC_LAUNCHER" "$IBC_RAW_LOG"
+    log "IBC -inline 분리 실행(새 세션, setsid) — 최대 ${IBC_WAIT_SEC}s 대기"
     if wait_for_gw "$IBC_WAIT_SEC"; then
         log "✅ IBC 무인 로그인 성공 — port 4002 OPEN (대표 수동 로그인 불필요)"
         write_status "ready" "IBC 무인 로그인 완료. 다음 스캔부터 즉시 사용 가능(수동 로그인 없이 자동 복구)."
