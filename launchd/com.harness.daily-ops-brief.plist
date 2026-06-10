@@ -6,19 +6,11 @@
   <key>Label</key>
   <string>com.harness.daily-ops-brief</string>
 
-  <!-- 직접 Python 스크립트 실행 — LLM 에이전트 우회, ~1초 완료 -->
+  <!-- 정밀도 오디트 + 일일 자동화 ops brief 실행 -->
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/juntaepark/projects/harness-platform/.venv/bin/python3</string>
-    <string>/Users/juntaepark/projects/harness-platform/scripts/openclaw_ops_sync.py</string>
-    <string>--to-slack</string>
-    <string>--to-notion</string>
-    <string>--route</string>
-    <string>exec_daily_brief</string>
-    <string>--summary-text</string>
-    <string>Daily automated ops brief (launchd direct — no LLM overhead)</string>
-    <string>--review-type</string>
-    <string>openclaw_daily_ops</string>
+    <string>/bin/bash</string>
+    <string>/Users/juntaepark/projects/harness-platform/scripts/run_daily_ops_brief.sh</string>
   </array>
 
   <key>WorkingDirectory</key>
