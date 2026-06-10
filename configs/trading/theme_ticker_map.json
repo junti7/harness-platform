@@ -71,15 +71,15 @@
     "tickers": ["6981", "6762", "009150"],
     "weight": 0.56
   },
-  "power delivery network|\\bpdn\\b|\\bvrm\\b|\\bpmic\\b|voltage regulator|busbar|rack power": {
-    "tickers": ["VRT", "GEV", "PWR", "6762"],
+  "busbar|rack power|rack-level power|power shelf|power distribution unit": {
+    "tickers": ["VRT", "GEV", "PWR"],
     "weight": 0.52
   },
   "backplane connector|high-speed connector|cable assembly|high-speed interconnect cable": {
     "tickers": ["APH"],
     "weight": 0.6
   },
-  "linear pluggable optics|\\blpo\\b|800g|1\\.6t|next-gen optical": {
+  "linear pluggable optics|\\blpo\\b|\\b800g\\b|\\b1\\.6t\\b|next-gen optical": {
     "tickers": ["COHR", "LITE", "MRVL", "AVGO", "ANET"],
     "weight": 0.55
   },

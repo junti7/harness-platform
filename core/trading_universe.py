@@ -141,7 +141,7 @@ def _alias_map(symbol: str, name: str) -> list[str]:
         "6981": ["murata", "murata manufacturing"],
         "6762": ["tdk", "tdk corporation"],
         "009150": ["삼성전기", "samsung electro-mechanics", "semco"],
-        "005930": ["삼성전자", "samsung electronics", "samsung"],
+        "005930": ["삼성전자", "samsung electronics"],
         "000660": ["sk하이닉스", "sk hynix", "hynix"],
         "042700": ["한미반도체", "hanmi semiconductor", "tc bonder"],
         "005380": ["현대차", "hyundai", "hyundai motor", "metaplant", "mobis robotics"],

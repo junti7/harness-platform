@@ -22,12 +22,31 @@ from typing import Any
 
 from core.trading_universe import (
     EvidenceRow,
-    _alias_map,
     _load_candidate_rows,
     _load_seed_registry,
     _normalize,
     ensure_trading_db_url,
 )
+
+# seed 커버리지 판정용 cross-language/ADR 회사명 별칭. **제품/테마어는 절대 넣지 않는다**
+# (Red Team Codex#4: _alias_map은 'blackwell'·'cpo'·'liquid cooling' 등 제품/테마어를 포함해
+#  실제 미커버 회사를 오제외함). 정식 회사명 + 아래 회사-동의어만으로 커버리지를 판정한다.
+_COVERAGE_EXTRA_ALIASES: dict[str, list[str]] = {
+    "005930": ["samsung electronics"],
+    "000660": ["sk hynix", "sk하이닉스"],
+    "042700": ["hanmi semiconductor"],
+    "005380": ["hyundai motor"],
+    "009150": ["samsung electro-mechanics"],
+    "TSM": ["tsmc", "taiwan semiconductor"],
+    "ASX": ["ase technology"],
+    "GOOG": ["alphabet", "google"],
+    "6981": ["murata"],
+    "6762": ["tdk"],
+    "8035": ["tokyo electron"],
+    "6723": ["renesas"],
+    "ARM": ["arm holdings"],
+    "APH": ["amphenol"],
+}
 
 ROOT = Path(__file__).resolve().parents[1]
 QUEUE_JSON_PATH = ROOT / "docs" / "trading" / "universe_candidate_queue.json"
@@ -47,17 +66,17 @@ def _ticker_key(ticker: str) -> str:
 
 
 def _seed_coverage() -> tuple[set[str], set[str]]:
-    """seed가 이미 커버하는 (티커키 set, 정규화 회사명/alias set)."""
+    """seed가 이미 커버하는 (티커키 set, 정규화 *회사명* set). 제품/테마어는 포함하지 않는다."""
     registry = _load_seed_registry()
     ticker_keys: set[str] = set()
     name_aliases: set[str] = set()
     for item in registry:
         sym = item.get("symbol", "")
         ticker_keys.add(_ticker_key(sym))
-        for alias in _alias_map(sym, item.get("name", "")):
-            # 너무 짧은 일반 토큰(예: 티커 자체)은 회사명 매칭에 쓰지 않는다(오제외 방지)
-            if len(alias) >= 3 and not alias.isdigit():
-                name_aliases.add(alias)
+        for cand in [item.get("name", ""), *(_COVERAGE_EXTRA_ALIASES.get(sym, []))]:
+            n = _normalize(cand)
+            if n and not n.isdigit():
+                name_aliases.add(n)
     return ticker_keys, name_aliases
 
 
@@ -69,9 +88,12 @@ def _is_covered(name: str, ticker: str, ticker_keys: set[str], name_aliases: set
         return True  # 이름 없으면 후보로 못 씀
     if norm in name_aliases:
         return True
-    # 부분 포함(예: 'nvidia corporation' vs alias 'nvidia')
+    # 토큰 단위 포함(부분문자열 금지) — 'nvidia' ⊆ {'nvidia','corporation'}는 같은 회사로 보되,
+    # 'meta'가 'metalenz'를, 'arm'이 'armada'를 잘못 제외하는 substring 과잉제외는 막는다.
+    cand_tokens = set(norm.split())
     for alias in name_aliases:
-        if alias in norm or norm in alias:
+        alias_tokens = set(alias.split())
+        if alias_tokens and (alias_tokens <= cand_tokens or cand_tokens <= alias_tokens):
             return True
     return False
 
@@ -146,41 +168,9 @@ def mine_candidates(
     evidence = evidence[:max_evidence]
     ticker_keys, name_aliases = _seed_coverage()
 
-    # 후보 집계: key = 티커키(있으면) else 정규화 회사명
-    agg: dict[str, dict[str, Any]] = {}
-
-    def _bucket(name: str, ticker: str, exchange: str, region: str, row: EvidenceRow) -> None:
-        if _is_covered(name, ticker, ticker_keys, name_aliases):
-            return
-        key = _ticker_key(ticker) if ticker else _normalize(name)
-        if not key:
-            return
-        b = agg.setdefault(key, {
-            "display_name": name,
-            "ticker": ticker,
-            "exchange": exchange,
-            "region": region,
-            "mentions": 0,
-            "sources": set(),
-            "sample_titles": [],
-            "first_seen": row.created_at,
-            "last_seen": row.created_at,
-        })
-        b["mentions"] += 1
-        if row.source:
-            b["sources"].add(row.source)
-        if row.title and row.title not in b["sample_titles"] and len(b["sample_titles"]) < 3:
-            b["sample_titles"].append(row.title)
-        if not b["ticker"] and ticker:
-            b["ticker"] = ticker
-        if not b["exchange"] and exchange:
-            b["exchange"] = exchange
-        if not b["region"] and region:
-            b["region"] = region
-        if row.created_at:
-            b["first_seen"] = min(b["first_seen"] or row.created_at, row.created_at)
-            b["last_seen"] = max(b["last_seen"] or row.created_at, row.created_at)
-
+    # 1단계: 원시 멘션 수집(커버리지 필터 후). 같은 회사가 한 멘션엔 티커, 다른 멘션엔 무티커로
+    #         나와 두 버킷으로 쪼개지는 문제(Codex#2)를 막기 위해 name→ticker 해석맵을 먼저 만든다.
+    raw: list[tuple[str, dict[str, str], EvidenceRow]] = []
     for start in range(0, len(evidence), _BATCH_SIZE):
         chunk = evidence[start:start + _BATCH_SIZE]
         snippets = {str(i): f"{r.title}. {r.summary}"[:600] for i, r in enumerate(chunk)}
@@ -191,11 +181,59 @@ def mine_candidates(
             except (ValueError, IndexError):
                 continue
             for c in companies:
-                _bucket(c["name"], c["ticker"], c["exchange"], c["region"], row)
+                if _is_covered(c["name"], c["ticker"], ticker_keys, name_aliases):
+                    continue
+                norm = _normalize(c["name"])
+                if norm:
+                    raw.append((norm, c, row))
+
+    name_to_ticker: dict[str, str] = {}
+    for norm, c, _row in raw:
+        tk = _ticker_key(c["ticker"])
+        if tk and norm not in name_to_ticker:
+            name_to_ticker[norm] = tk
+
+    # 2단계: 버킷 집계. key = 해석된 티커(있으면) else 정규화 회사명.
+    #         같은 제목(다른 피드 syndication 포함)은 1회만 카운트 → distinct_sources/mentions
+    #         부풀림 차단(Codex#3/#5). distinct는 *제목 dedup 후* 피드 단위.
+    agg: dict[str, dict[str, Any]] = {}
+    for norm, c, row in raw:
+        tk = _ticker_key(c["ticker"]) or name_to_ticker.get(norm, "")
+        key = tk or norm
+        b = agg.setdefault(key, {
+            "display_name": c["name"],
+            "ticker": "",
+            "exchange": "",
+            "region": "",
+            "titles": {},  # normalized_title -> source (제목당 1회)
+            "sample_titles": [],
+            "first_seen": row.created_at,
+            "last_seen": row.created_at,
+        })
+        if tk and not b["ticker"]:
+            b["ticker"] = tk
+            if c["name"]:
+                b["display_name"] = c["name"]
+        if c["exchange"] and not b["exchange"]:
+            b["exchange"] = c["exchange"]
+        if c["region"] and not b["region"]:
+            b["region"] = c["region"]
+        tkey = _normalize(row.title)[:80]
+        if tkey and tkey in b["titles"]:
+            continue  # 같은 제목 재등장(syndication) → 카운트 제외
+        if tkey:
+            b["titles"][tkey] = row.source
+        if row.title and row.title not in b["sample_titles"] and len(b["sample_titles"]) < 3:
+            b["sample_titles"].append(row.title)
+        if row.created_at:
+            b["first_seen"] = min(b["first_seen"] or row.created_at, row.created_at)
+            b["last_seen"] = max(b["last_seen"] or row.created_at, row.created_at)
 
     candidates = []
     for key, b in agg.items():
-        distinct = len(b["sources"])
+        unique_sources = set(b["titles"].values())
+        distinct = len(unique_sources)
+        mentions = len(b["titles"])
         if distinct < min_sources:
             continue
         candidates.append({
@@ -204,9 +242,9 @@ def mine_candidates(
             "ticker_guess": b["ticker"],
             "exchange_guess": b["exchange"],
             "region_guess": b["region"],
-            "mentions": b["mentions"],
+            "mentions": mentions,
             "distinct_sources": distinct,
-            "sources": sorted(b["sources"]),
+            "sources": sorted(unique_sources),
             "sample_titles": b["sample_titles"],
             "first_seen": b["first_seen"],
             "last_seen": b["last_seen"],
