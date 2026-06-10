@@ -142,10 +142,11 @@ TRADER_JOBS = {
     "com.harness.turtle-auto-trader": LAUNCH_AGENTS_DIR / "com.harness.turtle-auto-trader.plist",
     "com.harness.ibkr-auto-trader": LAUNCH_AGENTS_DIR / "com.harness.ibkr-auto-trader.plist",
 }
-# 게이트웨이 자동 재시작: 진짜 IBC 런처(무인 로그인: 저장된 자격증명+2FA 타임아웃 자동 재로그인) 우선.
-# 없으면 수동 open 폴백(이 경우 2FA 수동 승인 필요 — CEO 알림).
-IBC_GATEWAY_LAUNCHER = Path.home() / "IBC" / "gatewaystartmacos.sh"
-GATEWAY_RESTART_FALLBACK = ROOT / "scripts" / "start_ibgateway_ibc.sh"
+# 게이트웨이 자동 재시작은 start_ibgateway_ibc.sh 단일 경로로만 한다(중복 로직 금지).
+# 이 스크립트가: GUI(Aqua) 세션 확인 → IBC 무인 로그인(-inline, Terminal 우회) → 실패 시 open 폴백 →
+# 수동 로그인 필요 시 Slack 알림까지 캡슐화한다. watchdog는 트리거만 하고 다음 주기에 4002를 재확인한다.
+# (watchdog LaunchAgent도 domain=gui/<uid>이므로 Popen 자식이 GUI 세션을 그대로 상속 → HeadlessException 회피)
+GATEWAY_START_SCRIPT = ROOT / "scripts" / "start_ibgateway_ibc.sh"
 GW_COOLDOWN_PATH = ROOT / "runtime" / "gateway_restart_cooldown"
 GW_LOCK_PATH = ROOT / "runtime" / "gateway_restart.lock"  # 동시 재시작 방지(단일 실행 보장)
 GW_RESTART_MIN_INTERVAL_SEC = 600  # 재시작 폭주 방지: 최소 10분 간격
@@ -250,20 +251,16 @@ def ensure_gateway_up() -> list[str]:
                 f"🚨 IB Gateway 다운(포트 4002 미응답) — 최근 자동 재시작 {int(since)}s 전(쿨다운 {GW_RESTART_MIN_INTERVAL_SEC}s). "
                 "복구 미수렴 시 Mac Mini 화면공유로 수동 점검 필요"
             ]
-        # 런처 선택: 진짜 IBC(무인 로그인) 우선, 없으면 수동 open 폴백
-        if IBC_GATEWAY_LAUNCHER.exists():
-            launcher, auto_login = IBC_GATEWAY_LAUNCHER, True
-        elif GATEWAY_RESTART_FALLBACK.exists():
-            launcher, auto_login = GATEWAY_RESTART_FALLBACK, False
-        else:
-            return ["🚨 IB Gateway 다운 + 재시작 런처 없음(IBC/폴백 모두 부재) — 수동 재로그인 필요"]
+        if not GATEWAY_START_SCRIPT.exists():
+            return [f"🚨 IB Gateway 다운 + 재시작 스크립트 부재({GATEWAY_START_SCRIPT.name}) — 수동 재로그인 필요"]
 
         # 쿨다운은 spawn *직전* 기록(폭주 방지: watchdog가 spawn 직후 죽어도 storm 안 남).
         GW_COOLDOWN_PATH.parent.mkdir(parents=True, exist_ok=True)
         GW_COOLDOWN_PATH.write_text(str(datetime.now(timezone.utc).timestamp()))
         try:
+            # start_ibgateway_ibc.sh가 IBC -inline → open 폴백 → 알림까지 캡슐화. watchdog는 트리거만.
             subprocess.Popen(
-                ["/bin/bash", str(launcher)],
+                ["/bin/bash", str(GATEWAY_START_SCRIPT)],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
@@ -275,14 +272,9 @@ def ensure_gateway_up() -> list[str]:
                 pass
             return [f"🚨 IB Gateway 자동 재시작 실패: {e} — 수동 재로그인 필요(Mac Mini 화면공유)"]
 
-        if auto_login:
-            return [
-                "⚙️ 자가복구: IB Gateway 다운 감지 → IBC 무인 런처 트리거(~/IBC/gatewaystartmacos.sh). "
-                "저장된 자격증명 + 2FA 타임아웃 자동 재로그인으로 세션 복구 시도 중(2~3분). 다음 주기 재확인"
-            ]
         return [
-            "⚙️ 자가복구: IB Gateway 다운 감지 → 폴백 런처 트리거(IBC 미설치). "
-            "🚨 2FA 수동 승인 필요 — Mac Mini 화면공유/IBKR Mobile 확인"
+            "⚙️ 자가복구: IB Gateway 다운 감지 → start_ibgateway_ibc.sh 트리거. "
+            "IBC 무인 로그인(-inline) 시도, 실패 시 open 폴백 + 수동 로그인 알림. 다음 주기 재확인"
         ]
     finally:
         try:

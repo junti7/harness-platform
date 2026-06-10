@@ -23,17 +23,23 @@
 ### Layer 1 — 자가복구 watchdog (5분 주기, 핵심)
 `scripts/pipeline_watchdog.py` (launchd `com.harness.ibkr-watchdog`, StartInterval 300s):
 - **`ensure_trader_jobs_loaded()`**: 두 트레이더 잡이 언로드면 `launchctl load`로 **자동 재로드**. → 장애 A 자동 해결.
-- **`ensure_gateway_up()`**: 포트 4002 미응답이면 **IBC 무인 런처(`~/IBC/gatewaystartmacos.sh`)로 자동 재시작**. → 장애 B 자동 해결.
+- **`ensure_gateway_up()`**: 포트 4002 미응답이면 **`scripts/start_ibgateway_ibc.sh`를 트리거**(단일 진입점). 이 스크립트가 GUI 세션 확인 → IBC `-inline` 무인 로그인 → 실패 시 `open` 폴백까지 처리. → 장애 B 자동 해결.
 - 모든 복구 동작은 `#exec-president-decisions` Slack로 통보(✅ 복구 / 🚨 실패+수동필요).
 
 ### Layer 2 — IBC 무인 로그인 (게이트웨이 근본 / 수동 로그인 제거)
 `~/IBC/` (IBC.jar + `config.ini`): `IbLoginId`+`IbPassword` 저장, `ReloginAfterSecondFactorAuthenticationTimeout`(2FA 타임아웃 자동 재로그인), `AutoRestartTime`(일일 **무중단** 재시작 — 2FA 재입력 없이 세션 유지). → 일일 로그아웃이라는 **가장 흔한 원인을 무인 처리**.
 
-**검증:** IBC 로그(2026-06-02) `Login attempt: 1 → Click button: Paper Log In → Login has completed`(~5초, **2FA 벽 없음**) — paper 계정 무인 로그인 실측 성공.
+**수동 로그인의 근본 원인 2가지(2026-06-10 라이브 테스트로 규명):**
 
-**수동 로그인의 근본 원인(2026-06-10 발견 & 해결):** 부팅 자동기동 잡 `com.harness.ibgateway`(RunAtLoad=true)가 실행하던 `scripts/start_ibgateway_ibc.sh`가 **이름과 달리 IBC를 안 쓰고 수동 `open`** 만 했다 → 매번 대표가 비밀번호+2FA를 직접 입력. **수정:** 이 스크립트를 **진짜 IBC 런처(`~/IBC/gatewaystartmacos.sh`) 호출로 교체**. 이제 부팅 잡과 watchdog 모두 IBC 무인 로그인을 사용 → **IBC가 설치된 prod에서는 대표 수동 로그인 불필요**.
+1. **IBC 런처의 Terminal 자동화 타임아웃** — `gatewaystartmacos.sh`(인자 없이)는 `osascript`로 Terminal을 조종해 `$0 -inline`을 새 창에서 실행하는데, 비대화형/launchd 컨텍스트에선 AppleEvent가 타임아웃(`-1712`)된다. **해결: `-inline` 인자로 직접 호출** → `displaybannerandlaunch.sh`를 곧장 `exec`(Terminal/osascript 우회). 기존 `start_ibgateway_ibc.sh`가 이름과 달리 수동 `open`만 했던 것을, **`gatewaystartmacos.sh -inline` 호출로 교체**.
 
-> ⚠️ **단, IBC 미설치 시에는 수동 로그인이 남는다.** `~/IBC/gatewaystartmacos.sh`가 없으면 스크립트·watchdog 모두 **폴백으로 `open GW_APP`** 를 실행하며 이 경우 비밀번호+2FA 수동 승인이 필요하다(🚨 Slack 알림). prod에는 IBC가 설치돼 있어 정상 경로는 무인이지만, 무인 로그인 제거는 **IBC 설치를 전제**로 한다.
+2. **`java.awt.HeadlessException`(GUI 세션 필수)** — IB Gateway는 GUI(Aqua) 데스크톱 세션이 **반드시** 필요하다. SSH로 띄운 프로세스는 GUI 세션 밖이라 `getScreenSize`에서 HeadlessException으로 즉시 종료(exit 1107). **해결: 게이트웨이 기동은 항상 launchd LaunchAgent(`domain=gui/<uid>`)가 수행**한다 — `com.harness.ibgateway`(부팅)·`com.harness.ibkr-watchdog`(자가복구) 모두 gui 도메인이라 스크립트·Popen 자식이 GUI 세션을 상속한다. (수동 SSH 실행은 운영 경로가 아니다. `launchctl asuser`는 root 필요라 미사용.)
+
+**검증:** IBC 로그(2026-06-02) `Login attempt: 1 → Click button: Paper Log In → Login has completed`(~5초, **2FA 벽 없음**) — paper 계정 무인 로그인 자체는 실측 성공. (단 GUI 세션 안에서 실행됐을 때 한정.)
+
+**복구 동작(`start_ibgateway_ibc.sh`):** ① 콘솔 GUI 세션이 juntaepark인지 확인(아니면 즉시 🚨 알림 — Aqua 세션 없으면 어떤 방법으로도 불가) → ② IBC `-inline` 무인 로그인(최대 90s 대기) → ③ 실패 시 `open` 폴백(60s) → ④ 그래도 미연결이면 수동 2FA 알림.
+
+> ⚠️ **구조적 한계 — GUI 자동 로그인 OFF:** Mac Mini는 현재 macOS **GUI 자동 로그인이 꺼져 있어**, 재부팅 시 누군가 화면에서 GUI 로그인하기 전까지 Aqua 세션이 없다 → **그 어떤 방법으로도 게이트웨이를 못 띄운다(IBC 포함).** "절대 안 멈춤"의 진짜 전제는 **GUI 자동 로그인 ON**이다(보안 트레이드오프 — CEO 결정 필요).
 >
 > IBC 런처의 raw stdout/stderr는 설정 파싱 진단·계정ID 등이 섞일 수 있어 사람용 로그(`docs/reports/ibgateway_ibc.log`)와 분리해 **gitignore 대상 `runtime/ibgateway_ibc_raw.log`** 로 보낸다(저장소 미추적).
 
@@ -68,7 +74,9 @@
 
 | 리스크 | 현재 완화 | 추가 강화(권고) |
 |---|---|---|
-| IBC 미설치 환경 | 폴백 런처 + 🚨 2FA 수동 알림 | — (prod엔 IBC 설치됨) |
+| **GUI 자동 로그인 OFF → 재부팅 시 Aqua 세션 없음** | 스크립트가 GUI 세션 부재 감지 시 🚨 알림 | **macOS GUI 자동 로그인 ON**(보안 트레이드오프, CEO 결정) — 진짜 reboot-proof의 전제 |
+| **IBC `-inline` 무인 로그인 prod 미검증** | open 폴백으로 최소 가용성 보장 | 게이트웨이 down인 안전한 시간대(미국장 마감)에 부팅 잡 kickstart로 **무인 로그인 1회 실측** |
+| IBC 미설치 환경 | 폴백 `open` + 🚨 2FA 수동 알림 | — (prod엔 IBC 설치됨) |
 | 게이트웨이 프로세스가 KeepAlive 없이 죽음 | 5분 watchdog가 재시작 | **전용 launchd 잡(`com.harness.ibgateway`, KeepAlive=true)** 추가 시 즉시 재기동 |
 | 신규 기기 2FA 푸시 | IBC 2FA 타임아웃 자동 재로그인 | IB Key 자동승인/디바이스 신뢰 등록 |
 | watchdog 자체 중단 | launchd가 5분 주기 유지 | runtime-guard(10분)가 watchdog 잡 상태도 점검 |
