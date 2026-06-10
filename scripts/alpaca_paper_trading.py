@@ -379,23 +379,18 @@ def get_ar018_kpi(account: dict, positions: list) -> dict[str, Any]:
 
 
 def _dashboard_scan_universe() -> list[str]:
-    """대시보드 신호 스캔 유니버스 = **실제 트레이더와 동일한 동적 universe.json**(harness_score≥7, US).
+    """대시보드 신호 스캔 유니버스 = **실제 turtle 트레이더와 동일 소스**.
 
-    2026-06-11 통합: 기존 하드코딩 SIGNAL_UNIVERSE(ETF)는 실제 turtle 트레이더 유니버스와
-    불일치해 모니터가 거래 유니버스를 못 보여줬다. core.trading_universe에서 직접 로드(순환 import
-    회피). universe.json 부재/비어있거나 ≥7 종목이 없으면 SIGNAL_UNIVERSE로 fallback.
+    Red Team(Codex#1): 트레이더(turtle_auto_trader)는 harness_turtle_scan.load_harness_universe_meta()
+    (동적 universe.json ≥7 US, universe.json 부재 시 _STATIC_FALLBACK_META)에서 유니버스를 얻는다.
+    대시보드도 *같은 함수*를 lazy import(순환 회피)로 호출해 실패 모드까지 100% 일치시킨다.
+    최후의 안전망으로만 SIGNAL_UNIVERSE(ETF) 사용(해당 모듈 import 자체가 실패할 때).
     """
     try:
-        from core.trading_universe import load_trading_universe
-        rows, source = load_trading_universe(broker="alpaca")
-        if source != "fallback":
-            dyn = [
-                r["symbol"] for r in rows
-                if int(r.get("harness_score", 0) or 0) >= 7
-                and str(r.get("region", "US")).upper() in ("US", "")
-            ]
-            if dyn:
-                return dyn
+        from scripts.harness_turtle_scan import load_harness_universe_meta
+        syms = [t for t, _, _, _, _ in load_harness_universe_meta()]
+        if syms:
+            return syms
     except Exception:
         pass
     return list(SIGNAL_UNIVERSE)

@@ -3999,10 +3999,7 @@ def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
     # 3. 최초 진입 시 빈 캐시 일 때만 즉각적인 Offline 구조체 리턴하여 화면 락 방지
     try:
         state_path = PROJECT_ROOT / "docs" / "reports" / "ibkr_tws_positions.json"
-        # 동적 유니버스 단일 출처(2026-06-11). configs/universe.json(부재)에서 전환 — warm cache 경로
-        # (ibkr_turtle_monitor)와 동일한 docs/trading/universe.json을 cold-start fallback에서도 사용.
-        universe_path = PROJECT_ROOT / "docs" / "trading" / "universe.json"
-        
+
         # Gateway 4002 포트 활성화 여부 1ms 만에 초고속 핑 감지
         gateway_connected = False
         import socket as _socket
@@ -4025,10 +4022,13 @@ def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
                     "action": "HOLD",
                 })
         
+        # cold-start 유니버스: ibkr 트레이더(ibkr_tws_paper_trader)·warm cache(ibkr_turtle_monitor)와
+        # **동일 소스/필터** = load_trading_universe(broker="ibkr"). configs/universe.json(부재) 및
+        # 임의 ≥7 하드필터 제거(Red Team Codex#2): ibkr 경로는 broker 유니버스 전체를 후보로 본다.
         universe = []
-        if universe_path.exists():
-            with open(universe_path, "r", encoding="utf-8") as f:
-                univ_data = _json.load(f)
+        try:
+            from core.trading_universe import load_trading_universe as _ltu
+            _rows, _ = _ltu(broker="ibkr")
             universe = [
                 {
                     "symbol": u.get("symbol"),
@@ -4040,9 +4040,10 @@ def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
                     "signal": "no_connection",
                     "in_position": any(p["symbol"] == u.get("symbol") for p in positions),
                 }
-                for u in univ_data
-                if int(u.get("harness_score", 0) or 0) >= 7  # 트레이더 ≥7 게이트와 일치
+                for u in _rows
             ]
+        except Exception:
+            universe = []
             
         import datetime
         ts = datetime.datetime.utcnow().isoformat() + "Z"
