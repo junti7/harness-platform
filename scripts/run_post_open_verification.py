@@ -150,6 +150,35 @@ def update_incident_state(verdict: dict) -> dict:
     return new_state
 
 
+TRADER_LABELS = {
+    "alpaca": "com.harness.turtle-auto-trader",
+    "ibkr": "com.harness.ibkr-auto-trader",
+}
+
+
+def scheduler_status() -> dict:
+    """두 자동매매 launchd 잡의 로드 여부를 실측. execute 자동 집행 활성 여부 판단용.
+
+    probe_ok=False(launchctl 미응답)이면 로드 여부를 '미상'으로 처리해, 실패를 OFF로 오표시하지 않는다.
+    """
+    loaded: dict[str, bool] = {"alpaca": False, "ibkr": False}
+    probe_ok = True
+    try:
+        out = subprocess.run(["launchctl", "list"], capture_output=True, text=True, timeout=10).stdout
+        labels = {line.split()[-1] for line in out.splitlines() if line.strip()}
+        for broker, label in TRADER_LABELS.items():
+            loaded[broker] = label in labels
+    except Exception:
+        probe_ok = False
+    return {
+        "probe_ok": probe_ok,
+        "alpaca_loaded": loaded["alpaca"],
+        "ibkr_loaded": loaded["ibkr"],
+        "auto_execute_active": probe_ok and loaded["alpaca"] and loaded["ibkr"],
+        "schedule": "평일(월~금) Alpaca 22:30 · IBKR 22:35 KST (13:30/13:35 UTC, 미국장 개장)",
+    }
+
+
 def main() -> int:
     runtime = run_json([str(PYTHON), "scripts/trading_runtime_guard.py"])
     flat_check = run_json([str(PYTHON), "scripts/check_paper_books_flat.py"])
@@ -174,6 +203,7 @@ def main() -> int:
         "reset_status": reset_status,
         "ready_for_execute": False,
         "next_action": [],
+        "scheduler": scheduler_status(),
     }
 
     runtime_ok = bool(verdict["runtime_guard"].get("ok")) if isinstance(verdict["runtime_guard"], dict) else False
@@ -195,7 +225,24 @@ def main() -> int:
         if not ibkr_ok:
             verdict["next_action"].append("IBKR dry-run 실패 원인을 수정합니다.")
         if verdict["ready_for_execute"]:
-            verdict["next_action"].append("다음 거래일은 dry-run only로 1회 더 검증한 뒤 execute 재개 여부를 판단합니다.")
+            sched = verdict["scheduler"]
+            if not sched.get("probe_ok"):
+                verdict["next_action"].append(
+                    "스케줄러 상태 확인 불가(launchctl 미응답) — 자동 execute 활성 여부를 수동 점검하세요."
+                )
+            elif sched.get("auto_execute_active"):
+                verdict["next_action"].append(
+                    f"자동 execute 활성 — {sched.get('schedule')}. 다음 거래일부터 자동 집행됩니다."
+                )
+            elif sched.get("alpaca_loaded") or sched.get("ibkr_loaded"):
+                missing = "IBKR" if not sched.get("ibkr_loaded") else "Alpaca"
+                verdict["next_action"].append(
+                    f"자동 execute 부분 활성({missing} 스케줄러 미로드) — 해당 launchd 잡을 로드해야 양쪽 자동 집행됩니다."
+                )
+            else:
+                verdict["next_action"].append(
+                    "execute 재개 준비 완료. 자동 집행하려면 트레이더 launchd 잡(turtle-auto-trader/ibkr-auto-trader)을 로드하거나 대표 결정으로 재개합니다."
+                )
 
     verdict["incident_state"] = update_incident_state(verdict)
 

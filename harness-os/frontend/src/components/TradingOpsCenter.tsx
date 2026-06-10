@@ -63,6 +63,21 @@ type ForexRateInfo = {
   age_sec: number
 }
 
+type IbkrOrder = {
+  exec_id?: string | null
+  order_id?: string
+  symbol: string
+  side: 'buy' | 'sell' | 'unknown' | string
+  type?: string
+  kind?: 'open' | 'fill' | string
+  qty?: number
+  filled_qty?: number
+  fill_price?: number | null
+  status?: string
+  submitted_at?: string
+  observed_at?: string
+}
+
 type IbkrMonitorData = {
   ok: boolean
   ts: string
@@ -75,6 +90,8 @@ type IbkrMonitorData = {
   universe_source: string
   nav_history: NavPoint[]
   forex_rates: Record<string, ForexRateInfo>
+  recent_orders?: IbkrOrder[]
+  orders_history_ok?: boolean
   error: string | null
 }
 
@@ -95,6 +112,13 @@ type PaperResetStatus = {
     next_action?: string[]
     alpaca_dry_run?: { status?: string; reason?: string; returncode?: number }
     ibkr_dry_run?: { status?: string; reason?: string; returncode?: number }
+  }
+  scheduler?: {
+    probe_ok?: boolean
+    alpaca_loaded: boolean
+    ibkr_loaded: boolean
+    auto_execute_active: boolean
+    schedule?: string
   }
 }
 
@@ -730,6 +754,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
 
   const ibkrAccount = ibkrData?.account
   const ibkrPositions = ibkrData?.positions ?? []
+  const ibkrOrders = ibkrData?.recent_orders ?? []
   const ibkrCandidates = ibkrData?.entry_candidates ?? []
   const ibkrExitSignals = ibkrData?.exit_signals ?? []
   const gatewayConnected = ibkrData?.gateway_connected ?? false
@@ -900,6 +925,24 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                 Alpaca dry-run {resetStatus.post_open_verification.alpaca_dry_run?.status ?? '대기'}
                 {' · '}
                 IBKR dry-run {resetStatus.post_open_verification.ibkr_dry_run?.status ?? '대기'}
+              </span>
+            </div>
+          )}
+          {resetStatus.scheduler && (
+            <div className="alpaca-gate-status" style={{ marginTop: '0.6rem' }}>
+              {resetStatus.scheduler.probe_ok === false ? (
+                <span className="gate-chip aging">스케줄러 상태 미확인</span>
+              ) : resetStatus.scheduler.auto_execute_active ? (
+                <span className="gate-chip clear">자동 execute 활성</span>
+              ) : (resetStatus.scheduler.alpaca_loaded || resetStatus.scheduler.ibkr_loaded) ? (
+                <span className="gate-chip aging">자동 execute 부분 활성</span>
+              ) : (
+                <span className="gate-chip blocked">자동 execute 꺼짐</span>
+              )}
+              <span className="data-meta">
+                {resetStatus.scheduler.probe_ok === false
+                  ? 'launchctl 미응답 — ON/OFF 판별 불가'
+                  : `Alpaca 스케줄러 ${resetStatus.scheduler.alpaca_loaded ? 'ON' : 'OFF'} · IBKR 스케줄러 ${resetStatus.scheduler.ibkr_loaded ? 'ON' : 'OFF'}${resetStatus.scheduler.schedule ? ` · ${resetStatus.scheduler.schedule}` : ''}`}
               </span>
             </div>
           )}
@@ -1835,6 +1878,67 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
           {ibkrExitSignals.length > 0 && (
             <p className="term-note" style={{ marginTop: '0.5rem' }}>
               IBKR EXIT 신호: {ibkrExitSignals.join(', ')} — 위 "IBKR 청산 실행" 버튼으로 실행하세요.
+            </p>
+          )}
+        </article>
+      )}
+
+      {/* ── IBKR 최근 주문 내역 ── */}
+      {ibkrOrders.length > 0 && (
+        <article className="panel ibkr-full">
+          <div className="panel-head">
+            <h3>최근 주문 내역 <span className="broker-tag ibkr">IBKR</span></h3>
+            <span className="data-meta">
+              {gatewayConnected ? '게이트웨이 연결됨' : '게이트웨이 오프라인 — 저장된 내역'}
+            </span>
+          </div>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>주문ID</th><th>종목</th><th>방향</th><th>유형</th>
+                  <th className="num">수량</th><th className="num">체결수량</th>
+                  <th className="num">체결가</th><th>상태</th><th>시각</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ibkrOrders.map((o, i) => (
+                  <tr key={`${o.exec_id ?? o.order_id ?? ''}-${i}`}>
+                    <td className="mono">{o.order_id || '—'}</td>
+                    <td><SymbolCell symbol={o.symbol} names={symbolNames} /></td>
+                    <td>
+                      <span className={`signal-badge ${o.side === 'buy' ? 'signal-long' : o.side === 'sell' ? 'signal-short' : ''}`}>
+                        {o.side === 'buy' ? '매수' : o.side === 'sell' ? '매도' : '미상'}
+                      </span>
+                    </td>
+                    <td>{o.kind === 'open' ? '미체결' : (o.type || '—')}</td>
+                    <td className="num">{o.qty ?? '—'}</td>
+                    <td className="num">{o.filled_qty ?? '—'}</td>
+                    <td className="num">{o.fill_price ? `$${fmt(o.fill_price)}` : '—'}</td>
+                    <td>
+                      <span className={`freshness-chip ${o.status === 'filled' ? 'fresh' : (o.status === 'canceled' || o.status === 'Cancelled') ? 'stale' : 'aging'}`}>
+                        {o.status || '—'}
+                      </span>
+                    </td>
+                    <td className="data-meta">
+                      {o.submitted_at
+                        ? relativeTime(o.submitted_at)
+                        : o.observed_at
+                          ? `관측 ${relativeTime(o.observed_at)}`
+                          : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {ibkrData?.orders_history_ok === false ? (
+            <p className="term-note" style={{ marginTop: '0.5rem', color: 'var(--danger, #c0392b)' }}>
+              ⚠ 주문 히스토리 파일 입출력 오류 — 일부 체결 내역이 저장/표시되지 않았을 수 있습니다.
+            </p>
+          ) : (
+            <p className="term-note" style={{ marginTop: '0.5rem' }}>
+              체결 내역은 영속 저장되어 게이트웨이 오프라인 시에도 표시됩니다. 미체결(미상 시각은 "관측")은 실시간 상태입니다.
             </p>
           )}
         </article>

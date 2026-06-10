@@ -60,6 +60,7 @@ TWS_CLIENT_ID = 11       # paper_trader(10)와 충돌 방지
 
 LOG_PATH   = ROOT / "docs" / "reports" / "ibkr_turtle_monitor.jsonl"
 STATE_PATH = ROOT / "docs" / "reports" / "ibkr_tws_positions.json"
+ORDER_HISTORY_PATH = ROOT / "docs" / "reports" / "ibkr_order_history.jsonl"
 TRADING_UNIVERSE_LOOKBACK_DAYS = int(os.getenv("TRADING_UNIVERSE_LOOKBACK_DAYS", "45"))
 TRADING_UNIVERSE_MAX_SYMBOLS = int(os.getenv("TRADING_UNIVERSE_MAX_SYMBOLS", "24"))
 TRADING_UNIVERSE_REFRESH_ON_RUN = os.getenv("TRADING_UNIVERSE_REFRESH_ON_RUN", "true").lower() == "true"
@@ -375,6 +376,150 @@ def log_entry(entry: dict) -> None:
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(LOG_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def _iso_ts(val) -> str:
+    """datetime 또는 문자열을 ISO 문자열로 정규화(정렬·표시 일관성). 빈 값은 ''."""
+    if val is None:
+        return ""
+    try:
+        if hasattr(val, "isoformat"):
+            return val.isoformat()
+    except Exception:
+        pass
+    return str(val)
+
+
+def _norm_side(raw) -> str:
+    """BOT/BUY→buy, SLD/SELL→sell, 그 외(미상)→unknown. 절대 임의로 sell로 단정하지 않는다."""
+    u = str(raw or "").upper()
+    if u in ("BOT", "BUY"):
+        return "buy"
+    if u in ("SLD", "SELL"):
+        return "sell"
+    return "unknown"
+
+
+def _order_sort_key(r: dict) -> str:
+    return str(r.get("submitted_at") or r.get("observed_at") or "")
+
+
+def _read_ibkr_order_history(limit: int = 15) -> tuple[list[dict], bool]:
+    """(records, read_ok). 파일 없음은 ok(빈 리스트). 읽기 예외 시 read_ok=False."""
+    if not ORDER_HISTORY_PATH.exists():
+        return [], True
+    try:
+        recs: list[dict] = []
+        for ln in ORDER_HISTORY_PATH.read_text(encoding="utf-8").splitlines():
+            ln = ln.strip()
+            if not ln:
+                continue
+            try:
+                recs.append(json.loads(ln))
+            except Exception:
+                continue
+        recs.sort(key=_order_sort_key, reverse=True)
+        return recs[:limit], True
+    except Exception:
+        return [], False
+
+
+def _append_ibkr_order_history(new_recs: list[dict]) -> bool:
+    """신규 체결 누적. write_ok 반환. 1000줄 초과 시 최근 500줄만 유지."""
+    if not new_recs:
+        return True
+    try:
+        ORDER_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(ORDER_HISTORY_PATH, "a", encoding="utf-8") as fh:
+            for rec in new_recs:
+                fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        lines = ORDER_HISTORY_PATH.read_text(encoding="utf-8").splitlines()
+        if len(lines) > 1000:
+            ORDER_HISTORY_PATH.write_text("\n".join(lines[-500:]) + "\n", encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
+def collect_recent_ibkr_orders(ib, limit: int = 15) -> dict:
+    """현재 미체결(open) 주문 + 당일 체결(execution)을 합쳐 최근 주문 내역 반환.
+
+    당일 체결은 ORDER_HISTORY_PATH에 누적해 세션이 바뀌어도 과거 내역이 유지된다.
+    반환: {"orders": [...], "history_ok": bool}. orders 필드:
+      order_id/symbol/side/type/kind/qty/filled_qty/fill_price/status/submitted_at(/observed_at).
+    """
+    # 1) 기존 히스토리 로드(dedup용)
+    history, read_ok = _read_ibkr_order_history(limit=10000)
+    seen = {str(r.get("exec_id")) for r in history if r.get("exec_id")}
+
+    # 2) 당일 체결(reqExecutions) → 신규만 누적. 실제 체결시각(ex.time) 사용.
+    new_recs: list[dict] = []
+    try:
+        for f in ib.reqExecutions():
+            ex = getattr(f, "execution", None)
+            con = getattr(f, "contract", None)
+            if ex is None:
+                continue
+            eid = str(getattr(ex, "execId", "") or "")
+            if not eid or eid in seen:
+                continue
+            seen.add(eid)
+            price = float(getattr(ex, "price", 0) or 0)
+            new_recs.append({
+                "exec_id": eid,
+                "order_id": str(getattr(ex, "orderId", "") or ""),
+                "symbol": str(getattr(con, "symbol", "") or ""),
+                "side": _norm_side(getattr(ex, "side", "")),
+                "type": "fill",
+                "kind": "fill",
+                "qty": float(getattr(ex, "shares", 0) or 0),
+                "filled_qty": float(getattr(ex, "shares", 0) or 0),
+                "fill_price": price or None,
+                "status": "filled",
+                "submitted_at": _iso_ts(getattr(ex, "time", None)),
+            })
+    except Exception:
+        pass
+    write_ok = _append_ibkr_order_history(new_recs)
+
+    # 3) 현재 미체결(open) 주문 — 영속 아님(상태가 변하므로 실시간만).
+    #    실제 제출시각은 trade.log[0].time. 없으면 submitted_at 비우고 observed_at(관측시각)만 표기.
+    live: list[dict] = []
+    try:
+        for tr in ib.openTrades():
+            o = getattr(tr, "order", None)
+            st = getattr(tr, "orderStatus", None)
+            con = getattr(tr, "contract", None)
+            if o is None:
+                continue
+            submitted = ""
+            try:
+                logs = getattr(tr, "log", None) or []
+                if logs:
+                    submitted = _iso_ts(getattr(logs[0], "time", None))
+            except Exception:
+                submitted = ""
+            avg = float(getattr(st, "avgFillPrice", 0) or 0) if st is not None else 0.0
+            live.append({
+                "exec_id": None,
+                "order_id": str(getattr(o, "orderId", "") or ""),
+                "symbol": str(getattr(con, "symbol", "") or ""),
+                "side": _norm_side(getattr(o, "action", "")),
+                "type": str(getattr(o, "orderType", "") or ""),
+                "kind": "open",
+                "qty": float(getattr(o, "totalQuantity", 0) or 0),
+                "filled_qty": float(getattr(st, "filled", 0) or 0) if st is not None else 0.0,
+                "fill_price": avg or None,
+                "status": str(getattr(st, "status", "") or "open") if st is not None else "open",
+                "submitted_at": submitted,
+                "observed_at": now_iso(),
+            })
+    except Exception:
+        pass
+
+    combined = live + history + new_recs
+    combined.sort(key=_order_sort_key, reverse=True)
+    return {"orders": combined[:limit], "history_ok": bool(read_ok and write_ok)}
 
 
 def send_slack(msg: str) -> None:
@@ -872,6 +1017,18 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
                     "in_position":   in_pos,
                 })
 
+    # ── 최근 주문/체결 내역 수집 (연결 해제 전) ──────────────────────────────
+    recent_orders: list[dict] = []
+    orders_history_ok = True
+    if ib is not None and gateway_connected:
+        try:
+            _oc = collect_recent_ibkr_orders(ib, limit=15)
+            recent_orders, orders_history_ok = _oc["orders"], _oc["history_ok"]
+        except Exception:
+            recent_orders, orders_history_ok = _read_ibkr_order_history(limit=15)
+    else:
+        recent_orders, orders_history_ok = _read_ibkr_order_history(limit=15)
+
     # ── IB 연결 해제 ─────────────────────────────────────────────────────────
     if ib is not None and gateway_connected:
         try:
@@ -988,6 +1145,8 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
         "universe_source":  universe_source,
         "nav_history":      chart_history,
         "forex_rates":      get_forex_snapshot(),
+        "recent_orders":    recent_orders,
+        "orders_history_ok": orders_history_ok,
         "error":            None,
     }
 
@@ -996,6 +1155,7 @@ def run_offline() -> dict:
     """게이트웨이 없이 상태 파일만 읽어 최소 결과를 반환 (fallback)."""
     state = load_state()
     universe, universe_source = load_universe()
+    _offline_orders = _read_ibkr_order_history(limit=15)
     positions = []
     for sym, meta in state.get("positions", {}).items():
         meta["symbol"] = sym
@@ -1029,6 +1189,8 @@ def run_offline() -> dict:
         "exit_signals":     [],
         "entry_candidates": candidates,
         "universe_source":  universe_source,
+        "recent_orders":    _offline_orders[0],
+        "orders_history_ok": _offline_orders[1],
         "error":            "Gateway offline — state file only",
     }
 
@@ -1054,6 +1216,8 @@ if __name__ == "__main__":
             "exit_signals":     [],
             "entry_candidates": [],
             "universe_source":  "hardcoded",
+            "recent_orders":    [],
+            "orders_history_ok": False,
             "error":            f"{e}\n{tb}",
         }
 

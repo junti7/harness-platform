@@ -3702,6 +3702,30 @@ def get_paper_trading_dashboard(_: None = Depends(_require_secret)) -> dict[str,
         return {"ok": False, "error": str(e), "account": {"ok": False, "error": str(e)}}
 
 
+def _trading_scheduler_status() -> dict[str, Any]:
+    """두 자동매매 launchd 잡 로드 여부를 실측해 자동 execute 활성 상태를 반환."""
+    labels = {
+        "alpaca": "com.harness.turtle-auto-trader",
+        "ibkr": "com.harness.ibkr-auto-trader",
+    }
+    loaded = {"alpaca": False, "ibkr": False}
+    probe_ok = True
+    try:
+        out = subprocess.run(["launchctl", "list"], capture_output=True, text=True, timeout=10).stdout
+        present = {ln.split()[-1] for ln in out.splitlines() if ln.strip()}
+        for broker, label in labels.items():
+            loaded[broker] = label in present
+    except Exception:
+        probe_ok = False
+    return {
+        "probe_ok": probe_ok,
+        "alpaca_loaded": loaded["alpaca"],
+        "ibkr_loaded": loaded["ibkr"],
+        "auto_execute_active": probe_ok and loaded["alpaca"] and loaded["ibkr"],
+        "schedule": "평일 Alpaca 22:30 · IBKR 22:35 KST",
+    }
+
+
 @app.get("/api/paper-trading/reset-status")
 def get_paper_trading_reset_status(_: None = Depends(_require_secret)) -> dict[str, Any]:
     path = PROJECT_ROOT / "docs" / "reports" / "paper_trading_reset_status.json"
@@ -3712,13 +3736,14 @@ def get_paper_trading_reset_status(_: None = Depends(_require_secret)) -> dict[s
             post_open_payload = json.loads(post_open_path.read_text(encoding="utf-8"))
         except Exception as e:
             post_open_payload = {"ok": False, "error": str(e)}
+    scheduler = _trading_scheduler_status()
     if not path.exists():
-        return {"ok": True, "exists": False, "reset_pending": False, "flat": True, "post_open_verification": post_open_payload}
+        return {"ok": True, "exists": False, "reset_pending": False, "flat": True, "post_open_verification": post_open_payload, "scheduler": scheduler}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-        return {"ok": True, "exists": True, **payload, "post_open_verification": post_open_payload}
+        return {"ok": True, "exists": True, **payload, "post_open_verification": post_open_payload, "scheduler": scheduler}
     except Exception as e:
-        return {"ok": False, "exists": True, "error": str(e), "reset_pending": True, "flat": False, "post_open_verification": post_open_payload}
+        return {"ok": False, "exists": True, "error": str(e), "reset_pending": True, "flat": False, "post_open_verification": post_open_payload, "scheduler": scheduler}
 
 
 def _read_json_file(path: Path, default: Any) -> Any:
