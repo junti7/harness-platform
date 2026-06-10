@@ -19,10 +19,15 @@ load_dotenv(ROOT / ".env", override=True)
 from scripts.alpaca_paper_trading import (
     get_turtle_signal, get_account_summary, TURTLE_RISK_PCT, TURTLE_STOP_MULT,
 )
+from core.trading_universe import load_trading_universe
 
-# Harness 리서치 파이프라인 선정 종목 (Layer 1 결과)
+# Layer 1 선정 종목은 **동적 universe.json**을 단일 출처로 한다(2026-06-10 통합).
+# Alpaca는 US만 거래 가능 → broker="alpaca"로 US 종목만, harness_score ≥ 7만 채택.
+# universe.json 부재/비어있으면 아래 정적 fallback(2026-05-28 수기 선정)을 쓴다.
+_HARNESS_MIN_SCORE = 7
+
 # (ticker, company_name, sector, harness_score, selection_reason)
-HARNESS_UNIVERSE_META = [
+_STATIC_FALLBACK_META = [
     ("NVDA", "NVIDIA",              "Physical AI / AGI인프라",  9,
      "AI 가속기 80-90% 점유율. Isaac GR00T·Cosmos로 로봇 OS 표준화 중. 2026 로보틱스 매출 YoY +72%."),
     ("AVGO", "Broadcom",            "AGI인프라 / 반도체",       9,
@@ -47,6 +52,31 @@ HARNESS_UNIVERSE_META = [
      "미국 리쇼어링 수혜 1위. 인더스트리 4.0 + AI 예측 유지보수. YTD +32.2%. 목표가 $480-525."),
 ]
 
+
+def load_harness_universe_meta(min_score: int = _HARNESS_MIN_SCORE, broker: str = "alpaca") -> list[tuple]:
+    """동적 universe.json에서 (ticker, name, sector, harness_score, selection_reason) 튜플 목록.
+
+    broker로 거래 가능 시장 필터(alpaca=US). harness_score ≥ min_score만.
+    universe.json 부재/비어있으면 정적 fallback(_STATIC_FALLBACK_META). 동적 결과가 비면 fallback.
+    """
+    rows, source = load_trading_universe(broker=broker)
+    if source == "fallback":
+        return list(_STATIC_FALLBACK_META)
+    meta: list[tuple] = []
+    for r in rows:
+        try:
+            score = int(r.get("harness_score", 0) or 0)
+        except (TypeError, ValueError):
+            score = 0
+        if score < min_score:
+            continue
+        reason = (r.get("selection_reason_ko") or r.get("selection_reason") or "")[:300]
+        meta.append((r["symbol"], r.get("name", r["symbol"]), r.get("sector", ""), score, reason))
+    return meta or list(_STATIC_FALLBACK_META)
+
+
+# Layer 1 동적 유니버스(단일 출처). 정적 _STATIC_FALLBACK_META는 universe.json 없을 때만.
+HARNESS_UNIVERSE_META = load_harness_universe_meta()
 # 하위 호환 (tuple 슬라이싱용)
 HARNESS_UNIVERSE = [(t, s, sc) for t, _, s, sc, _ in HARNESS_UNIVERSE_META]
 

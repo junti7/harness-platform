@@ -47,12 +47,17 @@ SLACK_CHANNEL = os.getenv("SLACK_CHANNEL_EXEC_PRESIDENT_DECISIONS", "")
 LOG_PATH = ROOT / "docs/reports/paper_trading_log.jsonl"
 STATE_PATH = ROOT / "docs/reports/paper_trading_positions.json"
 
-# Turtle Trading 유니버스 — Harness 리서치 파이프라인 선정 (2026-05-28 갱신)
-# Layer 1(리서치) harness_score ≥ 7인 종목만 포함. 이전 ETF 중심 유니버스 대체.
-UNIVERSE = os.getenv(
-    "PAPER_TRADING_UNIVERSE",
-    "NVDA,AVGO,TSM,MU,ANET,VRT,TER,CRWV,SYM,ISRG,ROK"
-).split(",")
+# Turtle Trading 진입 유니버스 — **동적 universe.json**(harness_score ≥ 7, US/alpaca) 단일 출처.
+# (2026-06-10 통합: 정적 목록 대신 _UNIVERSE_META=동적 메타에서 티커 도출.)
+# PAPER_TRADING_UNIVERSE 환경변수가 설정되면 수동 override로 우선한다.
+# 청산은 manage_positions가 보유 포지션을 유니버스와 무관하게 검사하므로, 유니버스에서 빠진
+# 종목의 기존 포지션도 청산 신호로 정상 정리된다(고아 포지션 없음).
+_ENV_UNIVERSE = os.getenv("PAPER_TRADING_UNIVERSE", "").strip()
+UNIVERSE = (
+    [s.strip() for s in _ENV_UNIVERSE.split(",") if s.strip()]
+    if _ENV_UNIVERSE
+    else [t for t, _, _, _, _ in _UNIVERSE_META]
+)
 
 MAX_POSITIONS = int(os.getenv("PAPER_TRADING_MAX_POSITIONS", "6"))
 
