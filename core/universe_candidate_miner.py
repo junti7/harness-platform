@@ -13,12 +13,17 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
-import os
-from collections import defaultdict
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+try:
+    import fcntl  # POSIX 파일 락 (동시 실행 시 intake JSONL 인터리브 방지)
+except ImportError:  # pragma: no cover - 비POSIX 폴백
+    fcntl = None  # type: ignore[assignment]
 
 from core.trading_universe import (
     EvidenceRow,
@@ -257,6 +262,32 @@ def mine_candidates(
     return candidates[:max_candidates]
 
 
+def _sanitize(text: str, limit: int) -> str:
+    """제어문자 제거 + 공백 정규화 + 라우팅 토큰 무력화 + 길이 제한.
+
+    Red Team Codex#3: 후보명/제목은 LLM이 evidence에서 뽑은 신뢰 불가 텍스트다. 이를 결재
+    title/body에 넣기 전 통제한다. 대괄호는 '[투자결정]' 라우팅 토큰을 후보가 위조하지 못하게 치환.
+    """
+    s = re.sub(r"[\x00-\x1f\x7f]", " ", str(text or ""))
+    s = re.sub(r"\s+", " ", s).strip()
+    s = s.replace("[", "(").replace("]", ")")
+    return s[:limit]
+
+
+def _candidate_corr(candidate: dict[str, Any]) -> tuple[str, str | None]:
+    """후보의 안정 correlation_id(이름 앵커) + 보조 키(티커).
+
+    Red Team Codex#2: candidate_key는 런타임에 name↔ticker로 바뀌어 dedup이 깨진다.
+    회사명은 ticker 가용성보다 안정적이므로 정규화 회사명을 1차 앵커로 쓰고,
+    과거 ticker 기반으로 상신된 적이 있는지 보조로 함께 확인한다.
+    """
+    norm_name = _normalize(candidate.get("name", ""))
+    corr = f"universe-candidate-{norm_name}" if norm_name else f"universe-candidate-{candidate.get('candidate_key', '')}"
+    tk = _ticker_key(candidate.get("ticker_guess") or "")
+    alt = f"universe-candidate-{tk}" if tk else None
+    return corr, alt
+
+
 def _existing_intake_keys() -> set[str]:
     keys: set[str] = set()
     if not APPROVAL_INTAKE_PATH.exists():
@@ -283,12 +314,16 @@ def promote_candidates_to_approval(
     candidates: list[dict[str, Any]],
     promote_min_sources: int = 3,
 ) -> int:
-    """임계값(distinct_sources ≥ promote_min_sources) 통과 후보를 CEO 결재 인테이크에
-    `[투자결정]` 행으로 추가한다. 백엔드가 이를 CEO pending 결재로 자동 승격한다.
+    """임계값(distinct_sources ≥ promote_min_sources) 통과 후보를 결재 인테이크에
+    `[투자결정]` 행으로 추가한다. 백엔드가 이를 pending 결재로 자동 승격한다.
 
-    - correlation_id 기준 dedup → 주1회 재실행해도 같은 후보를 중복 상신하지 않는다.
+    - 안정 correlation_id(회사명 앵커) + 보조 ticker 키로 dedup → 주1회 재실행/티커 추가 후에도
+      같은 후보를 중복 상신하지 않는다.
+    - **자동 발굴 식별자로 상신**한다(submitter='universe_miner'). 비서실장/사람 명의를 위조하지
+      않는다(Red Team Codex#1). body에 비서실장 1차 선별 권고와 하위 게이트를 명시.
     - 승인 의미는 `opportunity_approve`(seed 편입 후보 채택)일 뿐 **실거래가 아니다**.
       편입 후에도 turtle_gate + legal + capital_action_approve가 별도로 필요하다.
+    - intake JSONL append는 파일 락으로 보호(동시 실행 인터리브 방지, Red Team Codex#4).
     반환: 새로 상신된 후보 수.
     """
     promotable = [c for c in candidates if c.get("distinct_sources", 0) >= promote_min_sources]
@@ -297,30 +332,36 @@ def promote_candidates_to_approval(
     existing = _existing_intake_keys()
     new_rows: list[dict[str, Any]] = []
     for c in promotable:
-        corr = f"universe-candidate-{c['candidate_key']}"
-        if corr in existing:
+        corr, alt = _candidate_corr(c)
+        if corr in existing or (alt and alt in existing):
             continue
-        tk = c.get("ticker_guess") or "티커 확인 필요"
+        name = _sanitize(c.get("name", ""), 80)
+        ticker = _sanitize(c.get("ticker_guess") or "", 12)
+        exchange = _sanitize(c.get("exchange_guess") or "", 12)
+        region = _sanitize(c.get("region_guess") or "", 8)
+        titles = _sanitize("; ".join(c.get("sample_titles", [])), 300)
+        tk_disp = ticker or "티커 확인 필요"
         body = (
-            f"신규 투자 후보 (seed 미보유). 소스 다양성 {c['distinct_sources']} · "
-            f"언급 {c['mentions']}회.\n"
-            f"추정 티커/거래소/지역: {c.get('ticker_guess') or '?'} / "
-            f"{c.get('exchange_guess') or '?'} / {c.get('region_guess') or '?'}\n"
-            f"근거 제목: {'; '.join(c.get('sample_titles', []))[:300]}\n"
-            "승인 의미: seed 편입 후보 채택(opportunity_approve). **실거래 아님** — 편입 후에도 "
-            "turtle_gate + legal + capital_action_approve 별도. 티커/거래소 정합은 편입 시 확인."
+            f"[자동 발굴 제안] 신규 투자 후보 (seed 미보유). 소스 다양성 "
+            f"{int(c.get('distinct_sources', 0))} · 언급 {int(c.get('mentions', 0))}회.\n"
+            f"추정 티커/거래소/지역: {ticker or '?'} / {exchange or '?'} / {region or '?'}\n"
+            f"근거 제목: {titles}\n"
+            "처리: 비서실장 1차 선별/티커·거래소 정합 확인 후 CEO 확정. 승인 의미="
+            "opportunity_approve(seed 편입 후보 채택). **실거래 아님** — 편입 후에도 "
+            "turtle_gate + legal_review + capital_action_approve 별도."
         )
+        apr_id = f"APR-UNIV-{hashlib.sha1(corr.encode('utf-8')).hexdigest()[:10]}"
         ts = now_iso()
         new_rows.append({
-            "id": f"APR-UNIV-{c['candidate_key'][:16]}",
-            "approval_id": f"APR-UNIV-{c['candidate_key'][:16]}",
-            "title": f"[투자결정] universe 신규 후보: {c['name']} ({tk})",
-            "submitter": "jarvis",
-            "owner": "비서실장",
-            "submitter_display": "비서실장",
+            "id": apr_id,
+            "approval_id": apr_id,
+            "title": f"[투자결정] universe 신규 후보: {name} ({tk_disp})",
+            "submitter": "universe_miner",
+            "owner": "universe_miner",
+            "submitter_display": "Universe Miner (자동발굴)",
             "approval_type": "opportunity_approve",
             "target_type": "business_opportunity",
-            "target_id": c["candidate_key"],
+            "target_id": _sanitize(c.get("candidate_key", ""), 32),
             "body": body,
             "description": body,
             "correlation_id": corr,
@@ -328,11 +369,21 @@ def promote_candidates_to_approval(
             "ts": ts,
         })
         existing.add(corr)
-    if new_rows:
-        APPROVAL_INTAKE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(APPROVAL_INTAKE_PATH, "a", encoding="utf-8") as f:
-            for r in new_rows:
-                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        if alt:
+            existing.add(alt)
+    if not new_rows:
+        return 0
+    APPROVAL_INTAKE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in new_rows)
+    with open(APPROVAL_INTAKE_PATH, "a", encoding="utf-8") as f:
+        if fcntl is not None:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            f.write(payload)
+            f.flush()
+        finally:
+            if fcntl is not None:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
     return len(new_rows)
 
 
