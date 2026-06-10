@@ -16,6 +16,11 @@ SSH_HOST="${MACMINI_SSH_HOST:-macmini}"
 REMOTE_REPO="${MACMINI_REPO:-/Users/juntaepark/projects/harness-platform}"
 LABEL="com.harness.universe-miner"
 
+# 원격 셸 인젝션 방지: REPO/LABEL에 작은따옴표가 있으면 인라인 따옴표가 깨져 코드 주입 가능 → 차단
+case "$REMOTE_REPO$LABEL" in
+  *\'*) echo "  ✖ REMOTE_REPO/LABEL에 작은따옴표(')는 허용되지 않습니다. 중단."; exit 1;;
+esac
+
 echo "▶ Mac Mini($SSH_HOST)에 Universe miner 주1회 launchd 설치"
 
 ssh -o ConnectTimeout=20 "$SSH_HOST" "REPO='$REMOTE_REPO' LABEL='$LABEL' bash -s" <<'REMOTE'
@@ -24,6 +29,8 @@ cd "$REPO"
 
 PY="$REPO/.venv/bin/python"
 [ -x "$PY" ] || { echo "  ✖ $PY 없음 — .venv 확인"; exit 1; }
+MINER="$REPO/scripts/mine_universe_candidates.py"
+[ -f "$MINER" ] || { echo "  ✖ $MINER 없음 — 먼저 배포하세요"; exit 1; }
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 mkdir -p "$HOME/Library/LaunchAgents" "$REPO/logs"
 
