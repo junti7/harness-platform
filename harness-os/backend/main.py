@@ -1635,6 +1635,51 @@ def _source_metrics_for_dashboard(source_name: str, source_row: dict[str, Any], 
     return {"count": 0, "last_at": ""}
 
 
+def _poll_age_minutes(iso: str) -> float | None:
+    try:
+        t = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - t).total_seconds() / 60.0
+    except Exception:
+        return None
+
+
+def _derive_collection_health(poll: dict[str, Any], last_ingested_at: str, stale_minutes: int, active: bool) -> str:
+    """운영자가 '죽음'과 '빈 피드'를 한 단어로 구분하도록 파생 상태를 계산.
+
+    반환: standby(비활성) / unknown(점검기록 없음) / failing(실패·연속실패) /
+          stale(최근 점검 자체가 없음=수집기 중단 의심) / live_no_new(점검 정상·신규 없음) / live.
+    """
+    if not active:
+        return "standby"
+    lp = poll.get("last_polled_at") or ""
+    ps = str(poll.get("last_poll_status") or "").lower()
+    fc = int(poll.get("failure_count") or 0)
+    if not lp:
+        return "unknown"
+    limit = max(int(stale_minutes) * 2, 2880) if stale_minutes else 2880  # 점검 신선도 한계(분), 최소 48h
+    poll_age = _poll_age_minutes(lp)
+    if ps == "failed" or fc >= 3:
+        return "failing"
+    if poll_age is None or poll_age > limit:
+        return "stale"
+    ing_age = _poll_age_minutes(last_ingested_at) if last_ingested_at else None
+    if ps == "empty" or ing_age is None or ing_age > limit:
+        return "live_no_new"
+    return "live"
+
+
+def _poll_summary(sources_out: list[dict[str, Any]]) -> dict[str, int]:
+    """소스별 collection_health를 집계해 상단 한눈 지표 제공(운영 가시성)."""
+    summary = {"live": 0, "live_no_new": 0, "failing": 0, "stale": 0, "unknown": 0, "standby": 0}
+    for s in sources_out:
+        h = str(s.get("collection_health") or "")
+        if h in summary:
+            summary[h] += 1
+    return summary
+
+
 def _data_collection_monitor() -> dict[str, Any]:
     try:
         domain = "physical_ai"
@@ -1653,12 +1698,30 @@ def _data_collection_monitor() -> dict[str, Any]:
         )
         source_map = {r["source"]: {"count": int(r["cnt"]), "last_at": str(r["last_at"] or "")} for r in by_source}
 
+        # poll 스냅샷(이번 점검 결과) — last_ingested_at(raw_signals 파생)과 분리. 신규 컬럼 미존재 시 graceful.
+        poll_map: dict[str, dict[str, Any]] = {}
+        try:
+            for r in _execute_query(
+                "SELECT source_name, last_polled_at, last_poll_status, last_poll_note, failure_count FROM source_catalog"
+            ):
+                poll_map[str(r.get("source_name") or "")] = {
+                    "last_polled_at": str(r.get("last_polled_at") or ""),
+                    "last_poll_status": str(r.get("last_poll_status") or ""),
+                    "last_poll_note": str(r.get("last_poll_note") or ""),
+                    "failure_count": int(r.get("failure_count") or 0),
+                }
+        except Exception:
+            poll_map = {}
+
         source_rows = _physical_ai_source_rows()
         sources_out = []
         for src in source_rows:
             source_name = str(src.get("source_name") or "")
             matched = _source_metrics_for_dashboard(source_name, src, source_map)
             policy = parse_rate_limit_policy(src.get("rate_limit_policy"))
+            poll = poll_map.get(source_name, {})
+            active = bool(src.get("enabled", True))
+            stale_min = int(policy.get("stale_minutes", 0) or 0)
             sources_out.append(
                 {
                     "id": source_name,
@@ -1669,7 +1732,7 @@ def _data_collection_monitor() -> dict[str, Any]:
                     "status": source_status(src),
                     "count": int(matched["count"]),
                     "last_ingested_at": matched["last_at"],
-                    "active": bool(src.get("enabled", True)),
+                    "active": active,
                     "expected_signal_type": str(src.get("expected_signal_type") or ""),
                     "reliability_score": float(src.get("reliability_score") or 0),
                     "base_url": str(src.get("base_url") or ""),
@@ -1677,6 +1740,12 @@ def _data_collection_monitor() -> dict[str, Any]:
                     "requires_login": source_requires_login(src),
                     "notes": source_notes(src),
                     "activation_policy": str(policy.get("activation_policy") or ""),
+                    # poll 가시성(2026-06-11): 점검 시각/결과를 적재 시각과 분리 노출
+                    "last_polled_at": poll.get("last_polled_at", ""),
+                    "last_poll_status": poll.get("last_poll_status", ""),
+                    "last_poll_note": poll.get("last_poll_note", ""),
+                    "failure_count": int(poll.get("failure_count", 0)),
+                    "collection_health": _derive_collection_health(poll, matched["last_at"], stale_min, active),
                 }
             )
 
@@ -1714,6 +1783,11 @@ def _data_collection_monitor() -> dict[str, Any]:
                 "requires_login": False,
                 "notes": "런타임 수집(카탈로그 외) — 실시간 반영",
                 "activation_policy": "always_on",
+                "last_polled_at": str(_metrics.get("last_at") or ""),
+                "last_poll_status": "ok",
+                "last_poll_note": "",
+                "failure_count": 0,
+                "collection_health": "live",
                 "dynamic": True,
             })
 
@@ -1802,6 +1876,7 @@ def _data_collection_monitor() -> dict[str, Any]:
             "pass_count": counts.get("filtered_pass", 0),
             "fail_count": counts.get("filtered_fail", 0),
             "sources": sources_out,
+            "poll_summary": _poll_summary(sources_out),
             "edu_sources": edu_sources,
             "channel_coverage": build_channel_coverage(source_rows),
             "tier2_worker": _tier2_worker_health(domain),

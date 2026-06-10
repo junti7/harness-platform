@@ -211,6 +211,20 @@
       "notes": "CPU-GPU 결합/차세대 인터커넥트. 활성화 게이트 충족: red_team_clear + legal_review_approve(2026-06-10). 내부 evidence 한정. AR-031."
     },
     {
+      "name": "The_Robot_Report",
+      "url": "https://www.therobotreport.com/feed/",
+      "source_type": "rss",
+      "channel": "news",
+      "collection_mode": "rss_pull",
+      "expected_signal_type": "industry_news",
+      "reliability_score": 0.7,
+      "stale_minutes": 1440,
+      "enabled": false,
+      "preferred_worker": "mini",
+      "activation_policy": "always_on",
+      "notes": "[STAGED] 로보틱스 산업 뉴스 밀도 보강(핸드오프 3순위). 활성화 전 legal_review_approve + red_team_clear 필요 — 데이터 수집 정책 변경 게이트."
+    },
+    {
       "name": "reddit_robotics_search",
       "url": "https://www.reddit.com/r/robotics/search.json?q=robotics&restrict_sr=1&sort=new",
       "source_type": "api",

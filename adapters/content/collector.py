@@ -142,6 +142,36 @@ def check_liveness(url: str) -> bool:
     except Exception:
         return False
 
+
+def ensure_collection_poll_schema() -> None:
+    """source_catalog에 poll 스냅샷 컬럼 추가(멱등). last_ingested_at(=raw_signals 파생)과 달리
+    '이번에 실제 점검했는지/결과가 무엇인지'를 운영자가 구분하게 한다. best-effort."""
+    for stmt in (
+        "ALTER TABLE source_catalog ADD COLUMN IF NOT EXISTS last_polled_at TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE source_catalog ADD COLUMN IF NOT EXISTS last_poll_status VARCHAR(32)",
+        "ALTER TABLE source_catalog ADD COLUMN IF NOT EXISTS last_poll_note TEXT",
+    ):
+        try:
+            execute_query(stmt)
+        except Exception:
+            pass
+
+
+def record_poll(source_name: str, status: str, note: str = "") -> None:
+    """개별 소스의 '이번 점검 결과' 스냅샷 기록(ok/empty/failed/skipped). best-effort —
+    heartbeat 기록 실패가 수집 전체를 죽이면 안 되므로 예외를 삼킨다. failure_count(연속 실패
+    누적)는 collection_health_check가 따로 관리 — 역할 분리."""
+    if not source_name:
+        return
+    try:
+        execute_query(
+            "UPDATE source_catalog SET last_polled_at = NOW(), last_poll_status = %s, last_poll_note = %s "
+            "WHERE source_name = %s",
+            (str(status)[:32], (note or "")[:500], source_name),
+        )
+    except Exception:
+        pass
+
 def get_active_sources(logger: HarnessLogger) -> list[dict]:
     rows = execute_query("""
         SELECT source_name, base_url, reliability_score, expected_signal_type, rate_limit_policy
@@ -182,11 +212,18 @@ def get_active_sources(logger: HarnessLogger) -> list[dict]:
 def collect(correlation_id: str = None):
     logger = HarnessLogger(tier=1, correlation_id=correlation_id)
     logger.info("=== Tier 1 수집 시작 (Deep Scraping 활성화) ===")
+    ensure_collection_poll_schema()
     total_saved = 0
     sources = merged_sources_with_generated("physical_ai", get_active_sources(logger))
     logger.info(f"활성 소스 총 {len(sources)}개 (자동 주제 쿼리 포함)")
     for source in sources:
-        if not check_liveness(source["url"]): continue
+        _sname = source.get("name")
+        if not source.get("url"):
+            record_poll(_sname, "skipped", "no url")
+            continue
+        if not check_liveness(source["url"]):
+            record_poll(_sname, "failed", "liveness check failed (non-200/timeout)")
+            continue
 
         if source.get("source_type") == "open_api" and source.get("channel") == "data_go_kr":
             api_key = os.getenv("DATA_GO_KR_API_KEY", "data-portal-test-key")
@@ -199,6 +236,7 @@ def collect(correlation_id: str = None):
                 "부동산", "경매", "재건축", "재개발", "공매", "상권", "토지", "주택"
             ]
             low_signal_terms = ["민원", "공원", "관광", "복지"]
+            _saved_here = 0
             try:
                 base_host = "https://api.odcloud.kr/api/15077093/v1"
                 endpoints = ["/dataset", "/open-data-list"]
@@ -246,28 +284,40 @@ def collect(correlation_id: str = None):
                                 }
                                 save_raw_signal(source["name"], raw_data, content_hash, desc)
                                 total_saved += 1
+                                _saved_here += 1
+                record_poll(_sname, "ok" if _saved_here > 0 else "empty", f"data.go.kr saved={_saved_here}")
             except Exception as e:
+                record_poll(_sname, "failed", f"data_go_kr: {str(e)[:200]}")
                 logger.warning(f"data_go_kr API 수집 실패: {e}")
             continue
 
         # Default RSS fallback
-        feed = feedparser.parse(source["url"])
-        for entry in feed.entries:
-            title = entry.get("title", "")
-            url = entry.get("link", "")
-            content_hash = hashlib.sha256(f"{title}{url}".encode()).hexdigest()[:64]
-            full_text = deep_fetch_content(url, logger)
-            summary = entry.get("summary", "")
-            raw_data = {
-                "title": title,
-                "url": url,
-                "summary": summary,
-                "source_name": source["name"],
-                "domain": "physical_ai",
-                "topic_cluster": infer_physical_ai_topic_cluster(title, summary, source["name"], url),
-            }
-            save_raw_signal(source["name"], raw_data, content_hash, full_text)
-            total_saved += 1
+        try:
+            feed = feedparser.parse(source["url"])
+            _n_entries = len(feed.entries)
+            _saved_rss = 0
+            for entry in feed.entries:
+                title = entry.get("title", "")
+                url = entry.get("link", "")
+                content_hash = hashlib.sha256(f"{title}{url}".encode()).hexdigest()[:64]
+                full_text = deep_fetch_content(url, logger)
+                summary = entry.get("summary", "")
+                raw_data = {
+                    "title": title,
+                    "url": url,
+                    "summary": summary,
+                    "source_name": source["name"],
+                    "domain": "physical_ai",
+                    "topic_cluster": infer_physical_ai_topic_cluster(title, summary, source["name"], url),
+                }
+                save_raw_signal(source["name"], raw_data, content_hash, full_text)
+                total_saved += 1
+                _saved_rss += 1
+            # entries 0 = 피드는 정상 점검됐으나 신규 없음(empty) — '죽음'과 구분되는 핵심 신호
+            record_poll(_sname, "empty" if _n_entries == 0 else "ok", f"entries={_n_entries}, saved={_saved_rss}")
+        except Exception as e:
+            record_poll(_sname, "failed", f"rss: {str(e)[:200]}")
+            logger.warning(f"RSS 수집 실패 [{_sname}]: {e}")
     logger.info(f"=== Tier 1 완료: {total_saved}개 저장 ===")
     return total_saved
 

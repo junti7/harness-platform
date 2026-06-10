@@ -216,7 +216,13 @@ export type DashboardPayload = {
       requires_login?: boolean
       notes?: string
       activation_policy?: string
+      last_polled_at?: string
+      last_poll_status?: string
+      last_poll_note?: string
+      failure_count?: number
+      collection_health?: string
     }>
+    poll_summary?: { live: number; live_no_new: number; failing: number; stale: number; unknown: number; standby: number }
     edu_sources?: Array<{
       id: string; label: string; channel: string
       count: number; pass_count: number; pending_count: number

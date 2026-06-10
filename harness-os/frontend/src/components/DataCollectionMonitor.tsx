@@ -73,6 +73,19 @@ function clusterLabel(key: string) {
   return CLUSTER_LABELS[key] || key.replaceAll('_', ' ')
 }
 
+// 수집 상태(파생): '죽음'과 '빈 피드'를 한눈에 구분. backend _derive_collection_health와 1:1.
+const HEALTH_BADGE: Record<string, { color: string; label: string }> = {
+  live: { color: 'var(--color-ok)', label: '정상' },
+  live_no_new: { color: 'var(--color-accent)', label: '신규없음' },
+  failing: { color: 'var(--color-danger)', label: '실패' },
+  stale: { color: 'var(--color-warn)', label: '점검끊김' },
+  unknown: { color: 'var(--color-text-muted)', label: '미점검' },
+  standby: { color: 'var(--color-text-muted)', label: '대기' },
+}
+function healthOf(key?: string) {
+  return HEALTH_BADGE[key || 'unknown'] || HEALTH_BADGE.unknown
+}
+
 export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props) {
   const {
     total,
@@ -93,6 +106,7 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
     expansion_policy,
     workers,
     recent_activity = [],
+    poll_summary,
   } = monitor
   const passRate = total ? (pass_count / total) * 100 : 0
 
@@ -115,12 +129,16 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
   const gnTotal = gnSources.reduce((a, s) => a + (s.count || 0), 0)
   const gnLast = gnSources.reduce((a, s) => (s.last_ingested_at > a ? s.last_ingested_at : a), '')
 
-  const sourceRow = (src: (typeof sources)[number]) => (
+  const sourceRow = (src: (typeof sources)[number]) => {
+    const health = healthOf(src.collection_health)
+    const dotColor = src.active ? health.color : 'var(--color-text-muted)'
+    const showPoll = src.active && (src.last_polled_at || src.last_poll_status)
+    return (
     <div key={src.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
       <span style={{
         width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-        background: src.active ? 'var(--color-ok)' : 'var(--color-text-muted)',
-        boxShadow: src.active ? '0 0 5px var(--color-ok)' : 'none',
+        background: dotColor,
+        boxShadow: src.active ? `0 0 5px ${dotColor}` : 'none',
       }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem' }}>
@@ -131,8 +149,18 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', color: 'var(--color-text-muted)', marginTop: '0.1rem', gap: '0.5rem' }}>
           <span style={{ textTransform: 'uppercase', letterSpacing: '0.03em', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{src.channel || src.type}</span>
-          <span style={{ flexShrink: 0 }}>{src.active ? relativeTime(src.last_ingested_at) : src.mode || '—'}</span>
+          <span style={{ flexShrink: 0 }}>{src.active ? `적재 ${relativeTime(src.last_ingested_at)}` : src.mode || '—'}</span>
         </div>
+        {showPoll && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginTop: '0.1rem', gap: '0.5rem' }}>
+            <span style={{ color: 'var(--color-text-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              점검 {relativeTime(src.last_polled_at || '')}{src.last_poll_status ? ` · ${src.last_poll_status}` : ''}
+            </span>
+            <span style={{ flexShrink: 0, fontWeight: 700, color: health.color }}>
+              {health.label}{src.failure_count ? ` (${src.failure_count})` : ''}
+            </span>
+          </div>
+        )}
         {!src.active && src.notes && (
           <div style={{ marginTop: '0.2rem', fontSize: '0.7rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {src.notes}
@@ -145,7 +173,8 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
         )}
       </div>
     </div>
-  )
+    )
+  }
 
   const toggleBtnStyle: CSSProperties = {
     display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'none',
@@ -256,6 +285,19 @@ export function DataCollectionMonitor({ monitor, scheduleServices = [] }: Props)
           <p style={{ margin: '0 0 1rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>
             데이터 소스
           </p>
+          {poll_summary && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.9rem' }}>
+              {([
+                ['live', '정상'], ['live_no_new', '신규없음'], ['stale', '점검끊김'], ['failing', '실패'],
+              ] as const).map(([k, label]) => (
+                poll_summary[k] ? (
+                  <span key={k} style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: 999, background: 'var(--color-surface)', border: `1px solid ${healthOf(k).color}`, color: healthOf(k).color }}>
+                    {label} {poll_summary[k]}
+                  </span>
+                ) : null
+              ))}
+            </div>
+          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
             {activeMain.map(src => sourceRow(src))}
 
