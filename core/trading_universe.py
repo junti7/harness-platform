@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from dataclasses import dataclass
@@ -23,6 +24,21 @@ SEED_REGISTRY_PATH = ROOT / "configs" / "trading" / "universe_seed.json"
 SENTIMENT_GATE_ENABLED = os.getenv("TRADING_UNIVERSE_SENTIMENT_GATE", "false").lower() == "true"
 # sentiment 라벨 → 점수 곱(factor). positive=영향 없음, neutral 약 감쇠, negative 강 감쇠.
 _SENTIMENT_FACTORS = {"positive": 1.0, "neutral": 0.9, "negative": 0.55}
+
+
+# harness_score 정규화(2026-06-10 진단): 기존 `min(10, round(net + 0.8*dsrc))`는 비정규화
+# 누적합이라 evidence 볼륨·45일 윈도우에 비례해 net이 4~149로 커지고, 천장(10)이 정상값이 돼
+# 24종목 중 22개가 10으로 포화 → ≥7 게이트(turtle_auto_trader Layer1)와 진입 우선순위 정렬
+# (ibkr_tws_paper_trader Finding 3)의 변별력이 사라졌다. 고정 로그곡선으로 1~10에 압축한다.
+# 계수는 prod 실데이터(v=net+0.8*dsrc ≈ 7~175)로 캘리브레이션: top→10, 최약체→3, ≥7≈상위 9.
+_HS_LOG_A = 2.3
+_HS_LOG_B = -1.5
+
+
+def _compute_harness_score(net_score: float, distinct_sources: int) -> int:
+    """net_score + 소스 다양성을 로그 압축해 1~10 정수로 변환(포화 방지, 단조 증가)."""
+    v = max(0.0, net_score) + 0.8 * distinct_sources
+    return max(1, min(10, round(_HS_LOG_A * math.log(1.0 + v) + _HS_LOG_B)))
 
 
 def now_iso() -> str:
@@ -435,8 +451,8 @@ def build_trading_universe(
             elif theme_share_pct >= 60:
                 bridge_penalty_factor = 0.93
         net_score *= bridge_penalty_factor
-        # 상위 포화를 줄여 gate(≥7)가 변별력을 갖도록 보정: 품질가중 합 + 소스 다양성.
-        harness_score = min(10, max(1, round(net_score * 1.0 + distinct_sources * 0.8)))
+        # 로그 압축 정규화로 상위 포화 제거(gate ≥7·진입 우선순위 변별력 복구). [[_compute_harness_score]]
+        harness_score = _compute_harness_score(net_score, distinct_sources)
         selection_reason = "; ".join(matched_titles[:3])[:500]
         scores[symbol] = {
             **item,
@@ -618,7 +634,7 @@ def _apply_sentiment_gate(scores: dict[str, dict[str, Any]]) -> None:
             continue
         adj_net = float(row.get("net_evidence_score") or 0.0) * factor
         row["net_evidence_score"] = round(adj_net, 3)
-        row["harness_score"] = min(10, max(1, round(adj_net * 1.0 + row.get("distinct_sources", 0) * 0.8)))
+        row["harness_score"] = _compute_harness_score(adj_net, row.get("distinct_sources", 0))
 
 
 def enrich_universe_ko(output_path: Path = UNIVERSE_PATH) -> int:
