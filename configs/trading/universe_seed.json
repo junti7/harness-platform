@@ -21,6 +21,8 @@
   {"region": "US", "symbol": "LITE", "exchange": "NASDAQ", "currency": "USD", "name": "Lumentum", "sector": "Optical Components"},
   {"region": "US", "symbol": "COHR", "exchange": "NYSE", "currency": "USD", "name": "Coherent", "sector": "Photonics"},
   {"region": "US", "symbol": "XYL", "exchange": "NYSE", "currency": "USD", "name": "Xylem", "sector": "Cooling/Water Infra"},
+  {"region": "US", "symbol": "APH", "exchange": "NYSE", "currency": "USD", "name": "Amphenol", "sector": "Connector/Interconnect"},
+  {"region": "US", "symbol": "ARM", "exchange": "NASDAQ", "currency": "USD", "name": "Arm Holdings", "sector": "CPU IP/Interconnect"},
   {"region": "KR", "symbol": "000660", "exchange": "KRX", "currency": "KRW", "name": "SK하이닉스", "sector": "HBM Memory"},
   {"region": "KR", "symbol": "005930", "exchange": "KRX", "currency": "KRW", "name": "삼성전자", "sector": "Memory/Foundry"},
   {"region": "KR", "symbol": "042700", "exchange": "KRX", "currency": "KRW", "name": "한미반도체", "sector": "Chip Equip"},
@@ -28,5 +30,8 @@
   {"region": "JP", "symbol": "8035", "exchange": "TSEJ", "currency": "JPY", "name": "Tokyo Electron", "sector": "Chip Equip"},
   {"region": "JP", "symbol": "6861", "exchange": "TSEJ", "currency": "JPY", "name": "Keyence", "sector": "Factory Auto"},
   {"region": "JP", "symbol": "6954", "exchange": "TSEJ", "currency": "JPY", "name": "FANUC", "sector": "Robotics"},
-  {"region": "JP", "symbol": "6723", "exchange": "TSEJ", "currency": "JPY", "name": "Renesas Electronics", "sector": "MCU/Auto Chip"}
+  {"region": "JP", "symbol": "6723", "exchange": "TSEJ", "currency": "JPY", "name": "Renesas Electronics", "sector": "MCU/Auto Chip"},
+  {"region": "JP", "symbol": "6981", "exchange": "TSEJ", "currency": "JPY", "name": "Murata Manufacturing", "sector": "MLCC/Passives"},
+  {"region": "JP", "symbol": "6762", "exchange": "TSEJ", "currency": "JPY", "name": "TDK", "sector": "Passives/Power Components"},
+  {"region": "KR", "symbol": "009150", "exchange": "KRX", "currency": "KRW", "name": "삼성전기", "sector": "MLCC/Substrate"}
 ]

@@ -47,6 +47,8 @@ EXCLUDE_SUFFIXES = (
 )
 EXCLUDE_SUBSTRINGS = (
     "docs/trading/universe.json",
+    "docs/trading/universe_candidate_queue",
+    "docs/trading/UNIVERSE_CANDIDATE_QUEUE",
     "docs/trading/trading_diary",
     "data/edu_research/",
     "docs/reports/",

@@ -34,5 +34,13 @@
   "supply chain bottleneck|substrate shortage|yield issue|packaging shortage": {
     "tickers": ["TSM", "ASX", "042700", "8035", "AVGO"],
     "weight": 0.56
+  },
+  "passive oversupply|mlcc oversupply|capacitor price war|component inventory glut": {
+    "tickers": ["6981", "6762", "009150"],
+    "weight": 0.5
+  },
+  "connector pricing pressure|interconnect margin pressure|optics asp decline": {
+    "tickers": ["APH", "COHR", "LITE", "MRVL"],
+    "weight": 0.5
   }
 }
