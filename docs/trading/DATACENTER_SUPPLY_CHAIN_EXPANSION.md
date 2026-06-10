@@ -55,5 +55,14 @@ high-speed connector/backplane, 차세대 optics, CPU-GPU interconnect)를 evide
 ## 6. 한계 (중요)
 
 현재 universe는 **seed-gated closed registry**다 — `universe_seed.json`에 없는 회사는 evidence가
-아무리 많아도 자동 편입되지 않는다. 신규 회사 발굴은 본 문서처럼 **수동 seed 추가 + 게이트**가 필요하다.
-자동 후보 발굴(unmatched-entity miner)은 별도 제안 대상이다. → AR-031 후속.
+아무리 많아도 자동 편입되지 않는다. 신규 회사 편입은 **수동 seed 추가 + 게이트**가 필요하다.
+
+이 한계를 보완하기 위해 **자동 후보 발굴기(unmatched-entity miner)**를 구축했다(AR-032):
+
+- 모듈 `core/universe_candidate_miner.py`, 실행 `scripts/mine_universe_candidates.py`
+- evidence에서 seed에 없는 상장 회사를 LLM NER로 추출 → 빈도/소스다양성 집계 → 제안 큐 출력
+- 출력: `docs/trading/universe_candidate_queue.json` + `UNIVERSE_CANDIDATE_QUEUE.md`(모바일 검토용)
+- **발굴은 자동, 편입은 게이트.** 큐는 *제안*일 뿐 seed/거래를 바꾸지 않는다.
+  편입은 검토 → `legal_review_approve` + `red_team_clear` + 대표 승인 → seed 편입.
+- 단일 소스 스팸 차단(distinct source ≥ min_sources), LLM 미가용 시 빈 큐 fail-safe(허위 후보 금지).
+- 권장 cadence: 주 1회(프로덕션 스케줄러 등록은 배포 시 후속).
