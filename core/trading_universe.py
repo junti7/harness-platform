@@ -41,11 +41,14 @@ _HS_LOG_B = -1.5
 def _compute_harness_score(net_score: float, distinct_sources: int) -> int:
     """net_score + 소스 다양성을 로그 압축해 1~10 정수로 변환(포화 방지, 단조 증가).
 
-    음수 net(페널티/부정 sentiment 우세)은 v를 끌어내려 점수를 하한으로 낮춘다 —
-    log 도메인 보호를 위한 max(0,·)는 *합산 v에만* 적용해 페널티가 소스 보너스를 상쇄하게 한다.
+    부정 evidence 페널티는 **이 함수 진입 전**에 이미 반영된다: build_trading_universe는
+    `net_score = max(0, total - negative_total)`(×bridge_penalty), sentiment 게이트는
+    `adj_net = net(≥0) × factor(≤1)`로 전달하므로 두 호출 모두 net_score ≥ 0이다.
+    `max(0.0, v)`는 만일의 음수 입력에 대한 log 도메인 방어일 뿐 페널티 로직이 아니다.
+    (0 미만으로 더 깊이 벌점화하려면 상위 net_score floor 변경이 필요 — 별도 스코프.)
     """
-    v = net_score + 0.8 * distinct_sources
-    return max(1, min(10, round(_HS_LOG_A * math.log(1.0 + max(0.0, v)) + _HS_LOG_B)))
+    v = max(0.0, net_score + 0.8 * distinct_sources)
+    return max(1, min(10, round(_HS_LOG_A * math.log(1.0 + v) + _HS_LOG_B)))
 
 
 def now_iso() -> str:
