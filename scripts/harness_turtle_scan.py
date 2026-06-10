@@ -25,7 +25,7 @@ from scripts.alpaca_paper_trading import (
 HARNESS_UNIVERSE_META = [
     ("NVDA", "NVIDIA",              "Physical AI / AGI인프라",  9,
      "AI 가속기 80-90% 점유율. Isaac GR00T·Cosmos로 로봇 OS 표준화 중. 2026 로보틱스 매출 YoY +72%."),
-    ("AVBO", "Broadcom",            "AGI인프라 / 반도체",       9,
+    ("AVGO", "Broadcom",            "AGI인프라 / 반도체",       9,
      "커스텀 AI ASIC 1위. FY2026 Q1 AI칩 매출 YoY +106%. $73B 수주 잔고. Anthropic TPU 공급."),
     ("TSM",  "TSMC",                "반도체 파운드리",          9,
      "AI칩 유일한 2nm 첨단 파운드리. 2026 Q1 매출 YoY +35%, 마진 66.2%. 대체 불가 병목 자산."),
