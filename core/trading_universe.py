@@ -450,7 +450,6 @@ def build_trading_universe(
         # 교차 확인(diversity)을 우대 → 단일 소스 스팸이 만점을 못 받게 한다.
         total = sum(sw ** 0.75 for sw in per_source.values())
         negative_total = sum(sw ** 0.8 for sw in negative_per_source.values())
-        net_score = max(0.0, total - negative_total)
         theme_share_pct = round((theme_hit_count / max(1, evidence_count)) * 100, 1)
         bridge_penalty_factor = 1.0
         if evidence_count >= 4:
@@ -460,8 +459,11 @@ def build_trading_universe(
                 bridge_penalty_factor = 0.86
             elif theme_share_pct >= 60:
                 bridge_penalty_factor = 0.93
-        net_score *= bridge_penalty_factor
-        # 로그 압축 정규화로 상위 포화 제거(gate ≥7·진입 우선순위 변별력 복구). [[_compute_harness_score]]
+        # theme 과의존 할인은 *긍정 기여*에만 적용하고, 부정 evidence는 전액 차감한다.
+        # 0 floor 제거(2026-06-10): 부정 evidence가 긍정을 압도하는 종목은 net<0로 두어 무증거(0)보다
+        # 더 깊이 벌점화 → 로그 압축에서 점수 하한(1)으로 밀리고 ≥7 게이트/랭킹에서 배제된다.
+        # (long-only Turtle에서 부정 우세 종목을 매수 후보로 올리지 않기 위함.) [[_compute_harness_score]]
+        net_score = total * bridge_penalty_factor - negative_total
         harness_score = _compute_harness_score(net_score, distinct_sources)
         selection_reason = "; ".join(matched_titles[:3])[:500]
         scores[symbol] = {
