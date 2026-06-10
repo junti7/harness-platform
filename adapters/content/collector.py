@@ -113,27 +113,31 @@ def deep_fetch_content(url: str, logger: HarnessLogger) -> str:
         logger.warning(f"Deep fetch 실패 ({url}): {e}")
         return ""
 
-def save_raw_signal(source: str, entry: dict, content_hash: str, full_content: str = ""):
+def save_raw_signal(source: str, entry: dict, content_hash: str, full_content: str = "") -> bool:
+    """raw_signals에 신규 저장. **실제로 새로 적재했으면 True, 중복/충돌로 건너뛰면 False** 반환
+    (poll saved 카운트가 실적재만 세도록 — Red Team Codex#1)."""
     title = entry.get("title", "")
     if title:
         import re
         normalized_title = re.sub(r'\s+', '', title).lower()
         # 이미 동일한 제목(공백/대소문자 무시)이 수집되었는지 체크하여 절대 중복 방지
         check_query = """
-            SELECT 1 FROM raw_signals 
+            SELECT 1 FROM raw_signals
             WHERE REPLACE(LOWER(raw_data::jsonb->>'title'), ' ', '') = %s
             LIMIT 1
         """
         rows = execute_query(check_query, (normalized_title,), fetch=True)
         if rows:
-            return  # 완벽히 동일한 제목의 데이터가 존재하면 중복 수집 안 함
+            return False  # 완벽히 동일한 제목의 데이터가 존재하면 중복 수집 안 함
 
     query = """
         INSERT INTO raw_signals (source, raw_data, content_hash, full_content, status)
         VALUES (%s, %s, %s, %s, 'pending')
         ON CONFLICT (content_hash) DO NOTHING
+        RETURNING id
     """
-    execute_query(query, (source, json.dumps(entry), content_hash, full_content))
+    inserted = execute_query(query, (source, json.dumps(entry), content_hash, full_content), fetch=True)
+    return bool(inserted)
 
 def check_liveness(url: str) -> bool:
     try:
@@ -236,18 +240,23 @@ def collect(correlation_id: str = None):
                 "부동산", "경매", "재건축", "재개발", "공매", "상권", "토지", "주택"
             ]
             low_signal_terms = ["민원", "공원", "관광", "복지"]
-            _saved_here = 0
+            _saved_here = 0       # 실제 신규 적재 수
+            _items_seen = 0       # API가 반환한 raw item 수(필터 전) — '살아있음' 판정용
+            _any_200 = False      # 200 응답이 한 번이라도 있었나
+            _http_err = ""        # 마지막 비200 상태 메모
             try:
                 base_host = "https://api.odcloud.kr/api/15077093/v1"
                 endpoints = ["/dataset", "/open-data-list"]
-                
+
                 for ep in endpoints:
                     for page in range(1, 11):
                         url_with_page = f"{base_host}{ep}?page={page}&perPage=100"
                         resp = httpx.get(url_with_page, headers=headers, timeout=15)
                         if resp.status_code == 200:
+                            _any_200 = True
                             data = resp.json()
                             items = data.get("data", [])
+                            _items_seen += len(items or [])
                             if not items:
                                 break
 
@@ -282,13 +291,21 @@ def collect(correlation_id: str = None):
                                     "domain": "physical_ai",
                                     "topic_cluster": infer_physical_ai_topic_cluster(title, desc, source["name"], url),
                                 }
-                                save_raw_signal(source["name"], raw_data, content_hash, desc)
-                                total_saved += 1
-                                _saved_here += 1
-                record_poll(_sname, "ok" if _saved_here > 0 else "empty", f"data.go.kr saved={_saved_here}")
+                                if save_raw_signal(source["name"], raw_data, content_hash, desc):
+                                    total_saved += 1
+                                    _saved_here += 1
+                        else:
+                            _http_err = f"HTTP {resp.status_code}"
+                # 판정: 200이 한 번도 없으면 failed(죽음/인증오류), 200인데 item 0이면 empty, 그 외 ok(살아있음).
+                if not _any_200:
+                    record_poll(_sname, "failed", f"data.go.kr {_http_err or 'no 200 response'}")
+                elif _items_seen == 0:
+                    record_poll(_sname, "empty", "data.go.kr 200, 0 items")
+                else:
+                    record_poll(_sname, "ok", f"data.go.kr items={_items_seen}, saved={_saved_here}")
             except Exception as e:
                 record_poll(_sname, "failed", f"data_go_kr: {str(e)[:200]}")
-                logger.warning(f"data_go_kr API 수집 실패: {e}")
+                logger.warning(f"data_go_kr API 수집 실패 [{_sname}]: {e}")
             continue
 
         # Default RSS fallback
@@ -296,6 +313,7 @@ def collect(correlation_id: str = None):
             feed = feedparser.parse(source["url"])
             _n_entries = len(feed.entries)
             _saved_rss = 0
+            _bozo = bool(getattr(feed, "bozo", 0))
             for entry in feed.entries:
                 title = entry.get("title", "")
                 url = entry.get("link", "")
@@ -310,11 +328,17 @@ def collect(correlation_id: str = None):
                     "domain": "physical_ai",
                     "topic_cluster": infer_physical_ai_topic_cluster(title, summary, source["name"], url),
                 }
-                save_raw_signal(source["name"], raw_data, content_hash, full_text)
-                total_saved += 1
-                _saved_rss += 1
-            # entries 0 = 피드는 정상 점검됐으나 신규 없음(empty) — '죽음'과 구분되는 핵심 신호
-            record_poll(_sname, "empty" if _n_entries == 0 else "ok", f"entries={_n_entries}, saved={_saved_rss}")
+                if save_raw_signal(source["name"], raw_data, content_hash, full_text):
+                    total_saved += 1
+                    _saved_rss += 1
+            # 판정: entries>0=ok(살아있음). entries 0 + bozo(파싱오류/비피드 200)=failed.
+            # entries 0 + 정상 파싱=empty(피드는 점검됐으나 신규 없음 — '죽음'과 구분되는 핵심 신호).
+            if _n_entries > 0:
+                record_poll(_sname, "ok", f"entries={_n_entries}, saved={_saved_rss}")
+            elif _bozo:
+                record_poll(_sname, "failed", f"feed parse error: {str(getattr(feed, 'bozo_exception', ''))[:160]}")
+            else:
+                record_poll(_sname, "empty", "feed parsed, 0 entries")
         except Exception as e:
             record_poll(_sname, "failed", f"rss: {str(e)[:200]}")
             logger.warning(f"RSS 수집 실패 [{_sname}]: {e}")
