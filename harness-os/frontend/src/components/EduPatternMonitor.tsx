@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 type Props = {
   apiBase: string
   authHeaders: () => Record<string, string>
+  defaultOpen?: boolean
+  mode?: 'inline' | 'page'
 }
 
 type PatternMonitorPayload = {
@@ -160,8 +162,20 @@ function statusBadge(status: string | undefined) {
   return <span style={badgeStyle(C.danger, C.dangerSoft)}>{status || 'unknown'}</span>
 }
 
-export function EduPatternMonitor({ apiBase, authHeaders }: Props) {
-  const [open, setOpen] = useState(false)
+function chipList(items: string[], color = C.accent) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      {items.map(item => (
+        <span key={item} style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 8px', borderRadius: 999, fontSize: '.72rem', color, background: `${color}14`, border: `1px solid ${color}2d` }}>
+          {item}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, mode = 'inline' }: Props) {
+  const [open, setOpen] = useState(defaultOpen)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [payload, setPayload] = useState<PatternMonitorPayload | null>(null)
@@ -172,7 +186,12 @@ export function EduPatternMonitor({ apiBase, authHeaders }: Props) {
     try {
       const qs = force ? '?force_refresh=true' : ''
       const res = await fetch(`${apiBase}/api/edu/pattern-intelligence${qs}`, { headers: authHeaders() })
-      const data = await res.json()
+      const raw = await res.text()
+      const contentType = res.headers.get('content-type') || ''
+      if (!contentType.includes('application/json')) {
+        throw new Error(`패턴 API가 JSON이 아니라 ${contentType || 'unknown'}을 반환했습니다. 응답 시작: ${raw.slice(0, 160)}`)
+      }
+      const data = JSON.parse(raw)
       if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
       setPayload(data as PatternMonitorPayload)
     } catch (err) {
@@ -198,7 +217,7 @@ export function EduPatternMonitor({ apiBase, authHeaders }: Props) {
   }, [payload?.fact_check?.patterns])
 
   return (
-    <div style={{ marginBottom: 16, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
+    <div style={{ marginBottom: 16, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden', boxShadow: mode === 'page' ? '0 12px 30px rgba(15,23,42,.05)' : 'none' }}>
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
@@ -214,8 +233,8 @@ export function EduPatternMonitor({ apiBase, authHeaders }: Props) {
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <div>
-            <div style={{ fontSize: '.76rem', color: C.accent, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase' }}>Edu Pattern Monitor</div>
-            <div style={{ fontSize: '1rem', color: C.ink, fontWeight: 800, marginTop: 3 }}>어떤 자료를 검토해 어떤 패턴으로 묶였는지 실시간 투명 모니터</div>
+            <div style={{ fontSize: '.76rem', color: C.accent, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase' }}>{mode === 'page' ? 'Pattern Intelligence Control Room' : 'Edu Pattern Monitor'}</div>
+            <div style={{ fontSize: mode === 'page' ? '1.08rem' : '1rem', color: C.ink, fontWeight: 800, marginTop: 3 }}>어떤 자료를 검토해 어떤 패턴으로 묶였는지 실시간 투명 모니터</div>
             <div style={{ fontSize: '.78rem', color: C.faint, marginTop: 5 }}>
               {summary ? `facts ${summary.total_extracted_facts ?? 0} · patterns ${summary.pattern_count ?? 0} · complaints ${summary.complaint_fact_count ?? 0}` : '펼치면 최신 패턴, 팩트체크, Red Team 결과를 불러옵니다.'}
             </div>
@@ -302,17 +321,43 @@ export function EduPatternMonitor({ apiBase, authHeaders }: Props) {
                 {(payload?.monitor?.transparency?.non_negotiables || []).map(item => <li key={item}>{item}</li>)}
               </ul>
             </div>
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: '.76rem', color: C.faint, marginBottom: 6 }}>정규화 규칙</div>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {Object.entries(payload?.monitor?.transparency?.normalization_rules || {}).map(([key, value]) => (
+                  <div key={key} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px' }}>
+                    <div style={{ fontSize: '.74rem', color: C.ink, fontWeight: 700 }}>{key}</div>
+                    <div style={{ fontSize: '.78rem', color: C.muted, lineHeight: 1.55, marginTop: 3 }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 14 }}>
             <div style={{ fontSize: '.86rem', fontWeight: 800, color: C.ink, marginBottom: 8 }}>검토한 자료 범위</div>
-            <div style={{ display: 'grid', gap: 8 }}>
-              <div style={{ fontSize: '.8rem', color: C.muted }}>Evidence bank: {payload?.monitor?.source_inputs?.evidence_bank?.item_count ?? 0}건 · {payload?.monitor?.source_inputs?.evidence_bank?.path}</div>
-              <div style={{ fontSize: '.8rem', color: C.muted }}>Runtime events: {payload?.monitor?.source_inputs?.runtime_events?.event_count ?? 0}건 · {payload?.monitor?.source_inputs?.runtime_events?.path}</div>
-              <div style={{ fontSize: '.8rem', color: C.muted }}>Manual observations: {payload?.monitor?.source_inputs?.manual_observations?.item_count ?? 0}건 · {payload?.monitor?.source_inputs?.manual_observations?.path}</div>
-              <div style={{ fontSize: '.8rem', color: C.muted }}>
-                Transcript DB: cases {payload?.monitor?.source_inputs?.transcript_db?.case_count ?? 0} · turns {payload?.monitor?.source_inputs?.transcript_db?.turn_count ?? 0}
-                {payload?.monitor?.source_inputs?.transcript_db?.error ? ` · ${payload?.monitor?.source_inputs?.transcript_db?.error}` : ''}
+            <div style={{ display: 'grid', gap: 10 }}>
+              <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px' }}>
+                <div style={{ fontSize: '.76rem', color: C.ink, fontWeight: 700 }}>Evidence bank</div>
+                <div style={{ fontSize: '.78rem', color: C.muted, marginTop: 4 }}>{payload?.monitor?.source_inputs?.evidence_bank?.item_count ?? 0}건 · {payload?.monitor?.source_inputs?.evidence_bank?.path}</div>
+                <div style={{ fontSize: '.74rem', color: C.faint, marginTop: 6 }}>
+                  {Object.entries(payload?.monitor?.source_inputs?.evidence_bank?.source_kind_counts || {}).map(([k, v]) => `${k} ${v}`).join(' · ')}
+                </div>
+              </div>
+              <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px' }}>
+                <div style={{ fontSize: '.76rem', color: C.ink, fontWeight: 700 }}>Runtime events</div>
+                <div style={{ fontSize: '.78rem', color: C.muted, marginTop: 4 }}>{payload?.monitor?.source_inputs?.runtime_events?.event_count ?? 0}건 · {payload?.monitor?.source_inputs?.runtime_events?.path}</div>
+                <div style={{ fontSize: '.74rem', color: C.faint, marginTop: 6 }}>
+                  {Object.entries(payload?.monitor?.source_inputs?.runtime_events?.event_type_counts || {}).map(([k, v]) => `${k} ${v}`).join(' · ') || 'event 없음'}
+                </div>
+              </div>
+              <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px' }}>
+                <div style={{ fontSize: '.76rem', color: C.ink, fontWeight: 700 }}>Manual observations / transcript DB</div>
+                <div style={{ fontSize: '.78rem', color: C.muted, marginTop: 4 }}>observations {payload?.monitor?.source_inputs?.manual_observations?.item_count ?? 0}건 · {payload?.monitor?.source_inputs?.manual_observations?.path}</div>
+                <div style={{ fontSize: '.78rem', color: C.muted, marginTop: 4 }}>
+                  transcript cases {payload?.monitor?.source_inputs?.transcript_db?.case_count ?? 0} · turns {payload?.monitor?.source_inputs?.transcript_db?.turn_count ?? 0}
+                </div>
+                {payload?.monitor?.source_inputs?.transcript_db?.error && <div style={{ fontSize: '.74rem', color: C.warning, marginTop: 6 }}>{payload?.monitor?.source_inputs?.transcript_db?.error}</div>}
               </div>
             </div>
           </div>
@@ -329,9 +374,48 @@ export function EduPatternMonitor({ apiBase, authHeaders }: Props) {
               <div style={{ fontSize: '.8rem', color: C.muted }}>
                 Fact check summary: {Object.entries(payload?.fact_check?.summary || {}).map(([key, value]) => `${key} ${value}`).join(' · ') || '없음'}
               </div>
+              <div style={{ fontSize: '.78rem', color: C.muted, lineHeight: 1.6 }}>
+                {Object.entries(payload?.fact_check?.policy || {}).map(([key, value]) => <div key={key}>- {key}: {String(value)}</div>)}
+              </div>
               {payload?.red_team?.summary && <div style={{ fontSize: '.8rem', color: C.muted, lineHeight: 1.6 }}>{payload.red_team.summary}</div>}
+              {payload?.refresh?.details?.steps?.length ? (
+                <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px' }}>
+                  <div style={{ fontSize: '.76rem', color: C.ink, fontWeight: 700, marginBottom: 6 }}>최근 재계산 파이프라인</div>
+                  {(payload.refresh.details.steps || []).map((step, idx) => (
+                    <div key={`${step.script}-${idx}`} style={{ fontSize: '.78rem', color: step.ok ? C.muted : C.danger, lineHeight: 1.55, marginBottom: 4 }}>
+                      - {step.script} · {step.ok ? 'ok' : `fail(${step.returncode ?? '-'})`} {step.stderr ? `· ${step.stderr}` : ''}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </div>
+
+          {mode === 'page' && (
+            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 14 }}>
+              <div style={{ fontSize: '.86rem', fontWeight: 800, color: C.ink, marginBottom: 10 }}>패턴 catalog 전체</div>
+              <div style={{ display: 'grid', gap: 12 }}>
+                {(payload?.monitor?.transparency?.pattern_catalog || []).map((pattern) => (
+                  <div key={pattern.pattern_id} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12, padding: '12px 14px' }}>
+                    <div style={{ fontSize: '.72rem', color: C.accent, fontWeight: 800, textTransform: 'uppercase' }}>{pattern.segment} · {pattern.pain_category}</div>
+                    <div style={{ fontSize: '.9rem', color: C.ink, fontWeight: 800, marginTop: 4 }}>{pattern.label}</div>
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: '.74rem', color: C.faint, marginBottom: 4 }}>keywords</div>
+                      {chipList(pattern.keywords)}
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: '.74rem', color: C.faint, marginBottom: 4 }}>urgency</div>
+                      {chipList(pattern.urgency_keywords, C.warning)}
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: '.74rem', color: C.faint, marginBottom: 4 }}>execution block</div>
+                      {chipList(pattern.execution_keywords, C.success)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div style={{ display: 'grid', gap: 12 }}>
             {topPatterns.map((pattern) => {

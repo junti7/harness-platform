@@ -27,7 +27,7 @@ export function EduPatternPage({ apiBase, authHeaders }: Props) {
         </p>
       </section>
 
-      <EduPatternMonitor apiBase={apiBase} authHeaders={authHeaders} />
+      <EduPatternMonitor apiBase={apiBase} authHeaders={authHeaders} defaultOpen mode="page" />
     </div>
   )
 }
