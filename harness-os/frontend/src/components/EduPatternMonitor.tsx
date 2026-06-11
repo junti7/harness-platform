@@ -55,6 +55,9 @@ type PatternMonitorPayload = {
       weights?: Record<string, number>
       normalization_rules?: Record<string, string>
       complaint_policy?: string[]
+      fact_selection_definition?: Record<string, string>
+      fact_selection_rules?: string[]
+      fact_selection_why_low?: string[]
       pattern_catalog?: Array<{
         pattern_id: string
         segment: string
@@ -66,6 +69,9 @@ type PatternMonitorPayload = {
       }>
     }
     summary?: {
+      total_raw_input_rows?: number
+      total_scanned_rows?: number
+      total_unique_rows_linked?: number
       total_extracted_facts?: number
       pattern_count?: number
       complaint_fact_count?: number
@@ -105,6 +111,29 @@ type PatternMonitorPayload = {
           event_type?: string
         }
       }>
+    }>
+  }
+  extraction_funnel?: {
+    raw_input_rows?: number
+    scanned_rows?: number
+    unique_rows_linked?: number
+    extracted_facts?: number
+    source_breakdown?: Array<{
+      source_key?: string
+      label?: string
+      total_rows?: number
+      scanned_rows?: number
+      eligible_rows?: number
+      rows_with_match?: number
+      unique_rows_linked?: number
+      included_fact_count?: number
+      excluded_rows?: number
+      excluded_reason_counts?: Record<string, number>
+      complaint_only_rows?: number
+      notes?: string[]
+      source_kind_counts?: Record<string, number>
+      event_type_counts?: Record<string, number>
+      segment_counts?: Record<string, number>
     }>
   }
   fact_check?: {
@@ -231,6 +260,12 @@ function prettyJson(value: unknown) {
   return JSON.stringify(value, null, 2)
 }
 
+function countPairs(value?: Record<string, number>) {
+  return Object.entries(value || {})
+    .map(([key, count]) => `${key} ${count}`)
+    .join(' · ')
+}
+
 export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, mode = 'inline' }: Props) {
   const [open, setOpen] = useState(defaultOpen)
   const [loading, setLoading] = useState(false)
@@ -271,6 +306,7 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
   const summary = payload?.monitor?.summary
   const topPatterns = payload?.monitor?.patterns ?? []
   const history = payload?.history ?? []
+  const funnel = payload?.extraction_funnel
   const factByPattern = useMemo(() => {
     const out = new Map<string, FactCheckPattern>()
     for (const item of (payload?.fact_check?.patterns ?? []) as FactCheckPattern[]) out.set(item.pattern_id, item)
@@ -339,7 +375,7 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
             <div style={{ fontSize: '.76rem', color: C.accent, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase' }}>{mode === 'page' ? 'Pattern Intelligence Control Room' : 'Edu Pattern Monitor'}</div>
             <div style={{ fontSize: mode === 'page' ? '1.08rem' : '1rem', color: C.ink, fontWeight: 800, marginTop: 3 }}>어떤 자료를 검토해 어떤 패턴으로 묶였는지 실시간 투명 모니터</div>
             <div style={{ fontSize: '.78rem', color: C.faint, marginTop: 5 }}>
-              {summary ? `facts ${summary.total_extracted_facts ?? 0} · patterns ${summary.pattern_count ?? 0} · complaints ${summary.complaint_fact_count ?? 0}` : '펼치면 최신 패턴, 팩트체크, Red Team 결과를 불러옵니다.'}
+              {summary ? `raw ${summary.total_raw_input_rows ?? 0} · linked rows ${summary.total_unique_rows_linked ?? 0} · extracted facts ${summary.total_extracted_facts ?? 0}` : '펼치면 최신 패턴, 팩트체크, Red Team 결과를 불러옵니다.'}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -406,7 +442,19 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10 }}>
             <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
-              <div style={{ fontSize: '.72rem', color: C.faint }}>검토된 fact</div>
+              <div style={{ fontSize: '.72rem', color: C.faint }}>raw 입력 row</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 800, color: C.ink }}>{summary?.total_raw_input_rows ?? 0}</div>
+            </div>
+            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
+              <div style={{ fontSize: '.72rem', color: C.faint }}>실제 스캔 row</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 800, color: C.ink }}>{summary?.total_scanned_rows ?? 0}</div>
+            </div>
+            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
+              <div style={{ fontSize: '.72rem', color: C.faint }}>pattern 연결 row</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 800, color: C.ink }}>{summary?.total_unique_rows_linked ?? 0}</div>
+            </div>
+            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
+              <div style={{ fontSize: '.72rem', color: C.faint }}>extracted fact</div>
               <div style={{ fontSize: '1.25rem', fontWeight: 800, color: C.ink }}>{summary?.total_extracted_facts ?? 0}</div>
             </div>
             <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
@@ -420,6 +468,14 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
             <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
               <div style={{ fontSize: '.72rem', color: C.faint }}>생성 시각</div>
               <div style={{ fontSize: '.82rem', fontWeight: 700, color: C.ink, lineHeight: 1.45 }}>{payload?.generated_at ?? '-'}</div>
+            </div>
+          </div>
+
+          <div style={{ background: '#fff7ed', border: '1px solid #fdba74', borderRadius: 14, padding: 14 }}>
+            <div style={{ fontSize: '.88rem', fontWeight: 800, color: '#9a3412', marginBottom: 8 }}>왜 검토된 fact가 이 숫자인가</div>
+            <div style={{ fontSize: '.82rem', color: '#7c2d12', lineHeight: 1.65 }}>
+              raw 입력 {funnel?.raw_input_rows ?? 0}건 중 실제 스캔 {funnel?.scanned_rows ?? 0}건, pattern과 연결된 고유 row {funnel?.unique_rows_linked ?? 0}건,
+              그리고 pattern별로 펼쳐진 extracted fact {funnel?.extracted_facts ?? 0}건입니다. 이 숫자는 저장된 전체 자료 수가 아니라 pattern keyword 또는 complaint rule에 걸린 신호만 집계한 값입니다.
             </div>
           </div>
 
@@ -484,6 +540,29 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
               </ul>
             </div>
             <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: '.76rem', color: C.faint, marginBottom: 6 }}>fact 선정 정의</div>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {Object.entries(payload?.monitor?.transparency?.fact_selection_definition || {}).map(([key, value]) => (
+                  <div key={key} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px' }}>
+                    <div style={{ fontSize: '.74rem', color: C.ink, fontWeight: 700 }}>{key}</div>
+                    <div style={{ fontSize: '.78rem', color: C.muted, lineHeight: 1.55, marginTop: 3 }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: '.76rem', color: C.faint, marginBottom: 6 }}>fact 선정 규칙</div>
+              <ul style={{ margin: 0, paddingLeft: 18, color: C.muted, fontSize: '.82rem', lineHeight: 1.6 }}>
+                {(payload?.monitor?.transparency?.fact_selection_rules || []).map(item => <li key={item}>{item}</li>)}
+              </ul>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: '.76rem', color: C.faint, marginBottom: 6 }}>fact 수가 적어 보일 수 있는 이유</div>
+              <ul style={{ margin: 0, paddingLeft: 18, color: C.muted, fontSize: '.82rem', lineHeight: 1.6 }}>
+                {(payload?.monitor?.transparency?.fact_selection_why_low || []).map(item => <li key={item}>{item}</li>)}
+              </ul>
+            </div>
+            <div style={{ marginTop: 12 }}>
               <div style={{ fontSize: '.76rem', color: C.faint, marginBottom: 6 }}>정규화 규칙</div>
               <div style={{ display: 'grid', gap: 8 }}>
                 {Object.entries(payload?.monitor?.transparency?.normalization_rules || {}).map(([key, value]) => (
@@ -497,20 +576,47 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
           </div>
 
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 14 }}>
+            <div style={{ fontSize: '.86rem', fontWeight: 800, color: C.ink, marginBottom: 8 }}>raw → linked → fact 퍼널</div>
+            <div style={{ display: 'grid', gap: 10, marginBottom: 12 }}>
+              {(payload?.extraction_funnel?.source_breakdown || []).map((row, idx) => (
+                <div key={`${row.source_key || row.label || 'source'}-${idx}`} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px' }}>
+                  <div style={{ fontSize: '.78rem', color: C.ink, fontWeight: 700 }}>{row.label}</div>
+                  <div style={{ fontSize: '.8rem', color: C.muted, marginTop: 5, lineHeight: 1.6 }}>
+                    raw {row.total_rows ?? 0} → scanned {row.scanned_rows ?? 0} → linked rows {row.unique_rows_linked ?? 0} → facts {row.included_fact_count ?? 0}
+                  </div>
+                  <div style={{ fontSize: '.74rem', color: C.faint, marginTop: 6 }}>
+                    제외: {countPairs(row.excluded_reason_counts) || '없음'}
+                  </div>
+                  {!!row.complaint_only_rows && (
+                    <div style={{ fontSize: '.74rem', color: C.warning, marginTop: 4 }}>
+                      complaint-only rows: {row.complaint_only_rows}
+                    </div>
+                  )}
+                  {row.notes?.length ? (
+                    <ul style={{ margin: '8px 0 0', paddingLeft: 18, color: C.muted, fontSize: '.78rem', lineHeight: 1.55 }}>
+                      {row.notes.map(note => <li key={note}>{note}</li>)}
+                    </ul>
+                  ) : null}
+                  {!!row.source_kind_counts && <div style={{ fontSize: '.74rem', color: C.faint, marginTop: 6 }}>source kinds: {countPairs(row.source_kind_counts)}</div>}
+                  {!!row.event_type_counts && <div style={{ fontSize: '.74rem', color: C.faint, marginTop: 4 }}>event types: {countPairs(row.event_type_counts)}</div>}
+                  {!!row.segment_counts && <div style={{ fontSize: '.74rem', color: C.faint, marginTop: 4 }}>segments: {countPairs(row.segment_counts)}</div>}
+                </div>
+              ))}
+            </div>
             <div style={{ fontSize: '.86rem', fontWeight: 800, color: C.ink, marginBottom: 8 }}>검토한 자료 범위</div>
             <div style={{ display: 'grid', gap: 10 }}>
               <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px' }}>
                 <div style={{ fontSize: '.76rem', color: C.ink, fontWeight: 700 }}>Evidence bank</div>
                 <div style={{ fontSize: '.78rem', color: C.muted, marginTop: 4 }}>{payload?.monitor?.source_inputs?.evidence_bank?.item_count ?? 0}건 · {payload?.monitor?.source_inputs?.evidence_bank?.path}</div>
                 <div style={{ fontSize: '.74rem', color: C.faint, marginTop: 6 }}>
-                  {Object.entries(payload?.monitor?.source_inputs?.evidence_bank?.source_kind_counts || {}).map(([k, v]) => `${k} ${v}`).join(' · ')}
+                  {countPairs(payload?.monitor?.source_inputs?.evidence_bank?.source_kind_counts)}
                 </div>
               </div>
               <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px' }}>
                 <div style={{ fontSize: '.76rem', color: C.ink, fontWeight: 700 }}>Runtime events</div>
                 <div style={{ fontSize: '.78rem', color: C.muted, marginTop: 4 }}>{payload?.monitor?.source_inputs?.runtime_events?.event_count ?? 0}건 · {payload?.monitor?.source_inputs?.runtime_events?.path}</div>
                 <div style={{ fontSize: '.74rem', color: C.faint, marginTop: 6 }}>
-                  {Object.entries(payload?.monitor?.source_inputs?.runtime_events?.event_type_counts || {}).map(([k, v]) => `${k} ${v}`).join(' · ') || 'event 없음'}
+                  {countPairs(payload?.monitor?.source_inputs?.runtime_events?.event_type_counts) || 'event 없음'}
                 </div>
               </div>
               <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px' }}>

@@ -373,6 +373,47 @@ def _extract_facts_from_evidence(items: list[dict[str, Any]], pattern_defs: list
     return facts
 
 
+def _funnel_for_evidence(items: list[dict[str, Any]], pattern_defs: list[dict[str, Any]]) -> dict[str, Any]:
+    total_rows = len(items)
+    rows_with_match = 0
+    included_facts = 0
+    segment_counts = Counter(str(item.get("segment") or "parent") for item in items)
+    source_kind_counts = Counter(str(item.get("source_kind") or "unknown") for item in items)
+    for item in items:
+        text = " ".join(str(item.get(key) or "") for key in ("cite", "source", "type", "title", "summary", "note"))
+        segment = item.get("segment") or "parent"
+        row_hits = 0
+        for pattern in pattern_defs:
+            if pattern["segment"] != segment:
+                continue
+            hit_count, _ = _count_hits(text, pattern["keywords"])
+            if hit_count > 0:
+                row_hits += 1
+        if row_hits > 0:
+            rows_with_match += 1
+            included_facts += row_hits
+    return {
+        "source_key": "evidence_bank",
+        "label": "Evidence bank",
+        "total_rows": total_rows,
+        "scanned_rows": total_rows,
+        "eligible_rows": total_rows,
+        "rows_with_match": rows_with_match,
+        "unique_rows_linked": rows_with_match,
+        "included_fact_count": included_facts,
+        "excluded_rows": max(0, total_rows - rows_with_match),
+        "excluded_reason_counts": {
+            "no_pattern_keyword_match": max(0, total_rows - rows_with_match),
+        },
+        "notes": [
+            "evidence_bank는 segment가 맞는 pattern keyword 1개 이상 hit해야 fact로 연결된다.",
+            "complaint rule만으로는 evidence_bank fact를 만들지 않는다.",
+        ],
+        "segment_counts": dict(segment_counts),
+        "source_kind_counts": dict(source_kind_counts),
+    }
+
+
 def _extract_facts_from_turns(rows: list[dict[str, Any]], pattern_defs: list[dict[str, Any]]) -> dict[str, list[SourceFact]]:
     facts: dict[str, list[SourceFact]] = defaultdict(list)
     for row in rows:
@@ -415,6 +456,62 @@ def _extract_facts_from_turns(rows: list[dict[str, Any]], pattern_defs: list[dic
     return facts
 
 
+def _funnel_for_turns(rows: list[dict[str, Any]], pattern_defs: list[dict[str, Any]]) -> dict[str, Any]:
+    total_rows = len(rows)
+    scanned_rows = 0
+    rows_with_match = 0
+    complaint_only_rows = 0
+    included_facts = 0
+    excluded_non_user = 0
+    excluded_no_match = 0
+    for row in rows:
+        if str(row.get("role") or "").lower() != "user":
+            excluded_non_user += 1
+            continue
+        scanned_rows += 1
+        text = str(row.get("text") or "")
+        segment = row.get("segment") or "parent"
+        complaint_signal, _, _, _ = _detect_complaint(text)
+        row_hits = 0
+        matched_pattern = False
+        for pattern in pattern_defs:
+            if pattern["segment"] != segment:
+                continue
+            hit_count, _ = _count_hits(text, pattern["keywords"])
+            if hit_count > 0:
+                matched_pattern = True
+                row_hits += 1
+            elif complaint_signal:
+                row_hits += 1
+        if row_hits == 0:
+            excluded_no_match += 1
+            continue
+        rows_with_match += 1
+        included_facts += row_hits
+        if complaint_signal and not matched_pattern:
+            complaint_only_rows += 1
+    return {
+        "source_key": "transcript_db",
+        "label": "Transcript DB",
+        "total_rows": total_rows,
+        "scanned_rows": scanned_rows,
+        "eligible_rows": scanned_rows,
+        "rows_with_match": rows_with_match,
+        "unique_rows_linked": rows_with_match,
+        "included_fact_count": included_facts,
+        "excluded_rows": excluded_non_user + excluded_no_match,
+        "excluded_reason_counts": {
+            "assistant_or_system_turn": excluded_non_user,
+            "no_pattern_keyword_or_complaint_match": excluded_no_match,
+        },
+        "complaint_only_rows": complaint_only_rows,
+        "notes": [
+            "transcript는 user role turn만 스캔한다.",
+            "pattern keyword hit가 없더라도 complaint rule hit면 같은 segment pattern 후보들에 연결될 수 있다.",
+        ],
+    }
+
+
 def _extract_facts_from_runtime(rows: list[dict[str, Any]], pattern_defs: list[dict[str, Any]]) -> dict[str, list[SourceFact]]:
     facts: dict[str, list[SourceFact]] = defaultdict(list)
     for row in rows:
@@ -450,6 +547,56 @@ def _extract_facts_from_runtime(rows: list[dict[str, Any]], pattern_defs: list[d
     return facts
 
 
+def _funnel_for_runtime(rows: list[dict[str, Any]], pattern_defs: list[dict[str, Any]]) -> dict[str, Any]:
+    total_rows = len(rows)
+    rows_with_match = 0
+    complaint_only_rows = 0
+    included_facts = 0
+    excluded_no_match = 0
+    for row in rows:
+        text = " ".join(str(row.get(key) or "") for key in ("event_type", "error", "reason", "segment", "track"))
+        segment = row.get("segment") or "parent"
+        complaint_signal, _, _, _ = _detect_complaint(text)
+        row_hits = 0
+        matched_pattern = False
+        for pattern in pattern_defs:
+            if pattern["segment"] != segment:
+                continue
+            hit_count, _ = _count_hits(text, pattern["keywords"])
+            if hit_count > 0:
+                matched_pattern = True
+                row_hits += 1
+            elif complaint_signal:
+                row_hits += 1
+        if row_hits == 0:
+            excluded_no_match += 1
+            continue
+        rows_with_match += 1
+        included_facts += row_hits
+        if complaint_signal and not matched_pattern:
+            complaint_only_rows += 1
+    return {
+        "source_key": "runtime_events",
+        "label": "Runtime events",
+        "total_rows": total_rows,
+        "scanned_rows": total_rows,
+        "eligible_rows": total_rows,
+        "rows_with_match": rows_with_match,
+        "unique_rows_linked": rows_with_match,
+        "included_fact_count": included_facts,
+        "excluded_rows": excluded_no_match,
+        "excluded_reason_counts": {
+            "no_pattern_keyword_or_complaint_match": excluded_no_match,
+        },
+        "complaint_only_rows": complaint_only_rows,
+        "notes": [
+            "runtime event는 event_type/error/reason/segment/track 문자열만 fact 추출에 사용한다.",
+            "패턴 keyword hit 또는 complaint hit가 있어야 fact로 연결된다.",
+        ],
+        "event_type_counts": dict(Counter(str(row.get("event_type") or "unknown") for row in rows)),
+    }
+
+
 def _extract_facts_from_observations(rows: list[dict[str, Any]], pattern_defs: list[dict[str, Any]]) -> dict[str, list[SourceFact]]:
     facts: dict[str, list[SourceFact]] = defaultdict(list)
     for row in rows:
@@ -483,6 +630,55 @@ def _extract_facts_from_observations(rows: list[dict[str, Any]], pattern_defs: l
                 )
             )
     return facts
+
+
+def _funnel_for_observations(rows: list[dict[str, Any]], pattern_defs: list[dict[str, Any]]) -> dict[str, Any]:
+    total_rows = len(rows)
+    rows_with_match = 0
+    complaint_only_rows = 0
+    included_facts = 0
+    excluded_no_match = 0
+    for row in rows:
+        text = " ".join(str(row.get(key) or "") for key in ("quote", "note", "source"))
+        segment = row.get("segment") or "worker"
+        complaint_signal, _, _, _ = _detect_complaint(text)
+        row_hits = 0
+        matched_pattern = False
+        for pattern in pattern_defs:
+            if pattern["segment"] != segment:
+                continue
+            hit_count, _ = _count_hits(text, pattern["keywords"])
+            if hit_count > 0:
+                matched_pattern = True
+                row_hits += 1
+            elif complaint_signal:
+                row_hits += 1
+        if row_hits == 0:
+            excluded_no_match += 1
+            continue
+        rows_with_match += 1
+        included_facts += row_hits
+        if complaint_signal and not matched_pattern:
+            complaint_only_rows += 1
+    return {
+        "source_key": "manual_observations",
+        "label": "Manual observations",
+        "total_rows": total_rows,
+        "scanned_rows": total_rows,
+        "eligible_rows": total_rows,
+        "rows_with_match": rows_with_match,
+        "unique_rows_linked": rows_with_match,
+        "included_fact_count": included_facts,
+        "excluded_rows": excluded_no_match,
+        "excluded_reason_counts": {
+            "no_pattern_keyword_or_complaint_match": excluded_no_match,
+        },
+        "complaint_only_rows": complaint_only_rows,
+        "notes": [
+            "manual observation은 quote/note/source 문자열에서만 fact를 뽑는다.",
+            "패턴 keyword hit 또는 complaint hit가 있어야 fact로 연결된다.",
+        ],
+    }
 
 
 def _merge_fact_maps(*fact_maps: dict[str, list[SourceFact]]) -> dict[str, list[SourceFact]]:
@@ -605,6 +801,10 @@ def build_payload() -> dict[str, Any]:
     turn_rows, db_meta = _load_db_turns()
 
     pattern_defs = PARENT_PATTERNS + WORKER_PATTERNS
+    evidence_funnel = _funnel_for_evidence(evidence_items, pattern_defs)
+    runtime_funnel = _funnel_for_runtime(runtime_rows, pattern_defs)
+    observation_funnel = _funnel_for_observations(observation_rows, pattern_defs)
+    transcript_funnel = _funnel_for_turns(turn_rows, pattern_defs)
     merged_facts = _merge_fact_maps(
         _extract_facts_from_evidence(evidence_items, pattern_defs),
         _extract_facts_from_runtime(runtime_rows, pattern_defs),
@@ -621,6 +821,10 @@ def build_payload() -> dict[str, Any]:
 
     total_facts = sum(len(v) for v in merged_facts.values())
     complaint_facts = sum(sum(1 for fact in v if fact.complaint_signal) for v in merged_facts.values())
+    funnel_rows = [evidence_funnel, runtime_funnel, observation_funnel, transcript_funnel]
+    total_raw_rows = sum(int(row.get("total_rows") or 0) for row in funnel_rows)
+    total_scanned_rows = sum(int(row.get("scanned_rows") or 0) for row in funnel_rows)
+    total_unique_rows_linked = sum(int(row.get("unique_rows_linked") or 0) for row in funnel_rows)
     output = {
         "generated_at": _now_iso(),
         "artifact_version": "v1",
@@ -668,6 +872,23 @@ def build_payload() -> dict[str, Any]:
                 "reality gap 불만은 retrieval gap 보완 우선순위를 올린다.",
                 "complaint recurrence는 fact check 단계에서 별도 점검한다.",
             ],
+            "fact_selection_definition": {
+                "raw_input_row": "evidence item 1개, runtime event 1개, manual observation 1개, transcript turn 1개를 뜻한다.",
+                "unique_linked_row": "raw row 중 pattern keyword 또는 complaint rule에 걸려 적어도 1개 pattern에 연결된 row다.",
+                "extracted_fact": "pattern별로 연결된 row 1건이다. 같은 raw row가 여러 pattern에 매칭되면 fact는 2건 이상으로 늘어난다.",
+                "not_every_document_becomes_fact": "저장된 자료 전체를 다 fact로 세지 않는다. pattern과 무관한 일반 자료는 raw input으로만 집계되고 fact에서는 제외된다.",
+            },
+            "fact_selection_rules": [
+                "evidence_bank는 segment가 맞는 pattern keyword 1개 이상 hit해야 fact가 된다.",
+                "runtime_events / manual_observations / transcript user turn은 pattern keyword hit 또는 complaint rule hit가 있어야 fact가 된다.",
+                "transcript는 user role turn만 스캔하고 assistant/system turn은 fact 추출 대상에서 제외된다.",
+                "complaint rule만 hit하고 pattern keyword가 없는 row는 같은 segment의 여러 pattern 후보에 동시에 연결될 수 있다.",
+            ],
+            "fact_selection_why_low": [
+                "원자료가 많아도 pattern과 직접 연결되지 않으면 fact에 포함되지 않는다.",
+                "현재 pattern catalog가 parent/worker 핵심 고민만 정의하므로 범용 자료는 많이 제외될 수 있다.",
+                "검토된 fact 수는 '모든 문서 수'가 아니라 '패턴과 연결된 신호 수'다.",
+            ],
             "pattern_catalog": [
                 {
                     "pattern_id": pattern["pattern_id"],
@@ -682,6 +903,9 @@ def build_payload() -> dict[str, Any]:
             ],
         },
         "summary": {
+            "total_raw_input_rows": total_raw_rows,
+            "total_scanned_rows": total_scanned_rows,
+            "total_unique_rows_linked": total_unique_rows_linked,
             "total_extracted_facts": total_facts,
             "pattern_count": len(patterns),
             "complaint_fact_count": complaint_facts,
@@ -695,6 +919,13 @@ def build_payload() -> dict[str, Any]:
                 }
                 for pattern in patterns[:5]
             ],
+        },
+        "extraction_funnel": {
+            "raw_input_rows": total_raw_rows,
+            "scanned_rows": total_scanned_rows,
+            "unique_rows_linked": total_unique_rows_linked,
+            "extracted_facts": total_facts,
+            "source_breakdown": funnel_rows,
         },
         "patterns": patterns,
         "artifact_paths": {
