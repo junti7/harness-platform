@@ -5470,6 +5470,7 @@ def _edu_render_transcript_markdown(req: EduTranscriptExportRequest) -> str:
 _EDU_RED_TEAM_DIR = PROJECT_ROOT / "docs" / "reviews" / "edu_pilot_red_team"
 _EDU_PATTERN_MONITOR_PATH = PROJECT_ROOT / "runtime" / "edu_pattern_intelligence.json"
 _EDU_PATTERN_FACT_CHECK_PATH = PROJECT_ROOT / "runtime" / "edu_pattern_fact_check.json"
+_EDU_PATTERN_HISTORY_PATH = PROJECT_ROOT / "runtime" / "edu_pattern_history.jsonl"
 _EDU_PATTERN_PLAN_PATH = PROJECT_ROOT / "docs" / "handoffs" / "edu_pattern_intelligence_plan_2026-06-11.md"
 _EDU_PATTERN_BACKLOG_PATH = PROJECT_ROOT / "docs" / "handoffs" / "edu_pattern_intelligence_backlog_2026-06-11.md"
 _EDU_PATTERN_HANDOFF_PATH = PROJECT_ROOT / "docs" / "handoffs" / "edu_pattern_intelligence_handoff_2026-06-11.md"
@@ -5572,6 +5573,16 @@ def _run_edu_pattern_pipeline() -> dict[str, Any]:
 def _read_edu_pattern_payload() -> dict[str, Any]:
     monitor = _read_json_file(_EDU_PATTERN_MONITOR_PATH, {})
     fact_check = _read_json_file(_EDU_PATTERN_FACT_CHECK_PATH, {})
+    history_rows = []
+    if _EDU_PATTERN_HISTORY_PATH.exists():
+        try:
+            history_rows = [
+                json.loads(line)
+                for line in _EDU_PATTERN_HISTORY_PATH.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ][-30:]
+        except Exception:
+            history_rows = []
     red_team = _edu_pattern_red_team_summary()
     latest_review = _latest_edu_pattern_red_team_file()
     return {
@@ -5579,16 +5590,119 @@ def _read_edu_pattern_payload() -> dict[str, Any]:
         "generated_at": monitor.get("generated_at") or datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "monitor": monitor,
         "fact_check": fact_check,
+        "history": history_rows,
         "red_team": red_team,
         "artifacts": {
             "monitor_url": "/api/edu/pattern-intelligence/artifacts/edu_pattern_intelligence.json",
             "fact_check_url": "/api/edu/pattern-intelligence/artifacts/edu_pattern_fact_check.json",
+            "history_url": "/api/edu/pattern-intelligence/artifacts/edu_pattern_history.jsonl",
             "red_team_url": f"/api/edu/pattern-intelligence/artifacts/{latest_review.name}" if latest_review else None,
             "plan_url": f"/api/edu/pattern-intelligence/artifacts/{_EDU_PATTERN_PLAN_PATH.name}",
             "backlog_url": f"/api/edu/pattern-intelligence/artifacts/{_EDU_PATTERN_BACKLOG_PATH.name}",
             "handoff_url": f"/api/edu/pattern-intelligence/artifacts/{_EDU_PATTERN_HANDOFF_PATH.name}",
             "red_team_prompt_url": f"/api/edu/pattern-intelligence/artifacts/{_EDU_PATTERN_REVIEW_PROMPT_PATH.name}",
         },
+    }
+
+
+def _resolve_edu_pattern_sample(pattern_id: str, sample_index: int) -> dict[str, Any]:
+    monitor = _read_json_file(_EDU_PATTERN_MONITOR_PATH, {})
+    patterns = monitor.get("patterns") or []
+    target = next((p for p in patterns if p.get("pattern_id") == pattern_id), None)
+    if not target:
+        raise HTTPException(404, "pattern not found")
+    samples = target.get("evidence_samples") or []
+    if sample_index < 0 or sample_index >= len(samples):
+        raise HTTPException(404, "sample not found")
+    sample = samples[sample_index]
+    ref = sample.get("source_ref") or {}
+    resolver = ref.get("resolver")
+
+    if resolver == "evidence_bank":
+        bank = _read_json_file(PROJECT_ROOT / "data" / "edu_research" / "evidence_bank.json", {"items": []})
+        items = bank.get("items") if isinstance(bank, dict) else []
+        item = next((row for row in (items or []) if row.get("id") == ref.get("id")), None)
+        return {
+            "ok": True,
+            "pattern_id": pattern_id,
+            "sample_index": sample_index,
+            "resolver": resolver,
+            "sample": sample,
+            "detail": item,
+        }
+
+    if resolver == "runtime_event":
+        path = PROJECT_ROOT / "runtime" / "edu_pilot_runtime_events.jsonl"
+        rows = []
+        if path.exists():
+            try:
+                rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            except Exception:
+                rows = []
+        item = next((row for row in rows if row.get("ts") == ref.get("ts") and row.get("event_type") == ref.get("event_type")), None)
+        return {
+            "ok": True,
+            "pattern_id": pattern_id,
+            "sample_index": sample_index,
+            "resolver": resolver,
+            "sample": sample,
+            "detail": item,
+        }
+
+    if resolver == "manual_observation":
+        path = PROJECT_ROOT / "data" / "edu_research" / "manual_observations.jsonl"
+        rows = []
+        if path.exists():
+            try:
+                rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            except Exception:
+                rows = []
+        item = next((row for row in rows if row.get("id") == ref.get("id")), None)
+        return {
+            "ok": True,
+            "pattern_id": pattern_id,
+            "sample_index": sample_index,
+            "resolver": resolver,
+            "sample": sample,
+            "detail": item,
+        }
+
+    if resolver == "transcript_turn":
+        case_id = ref.get("case_id")
+        turn_no = ref.get("turn_no")
+        if case_id is None or turn_no is None:
+            raise HTTPException(404, "transcript reference missing")
+        rows = _edu_execute(
+            """
+            SELECT turn_no, role, text, phase, tone_level, created_at
+            FROM edu_case_turns
+            WHERE case_id = %s
+              AND turn_no BETWEEN %s AND %s
+            ORDER BY turn_no ASC, id ASC
+            """,
+            (case_id, max(0, int(turn_no) - 1), int(turn_no) + 1),
+            fetch=True,
+        )
+        return {
+            "ok": True,
+            "pattern_id": pattern_id,
+            "sample_index": sample_index,
+            "resolver": resolver,
+            "sample": sample,
+            "detail": {
+                "case_id": case_id,
+                "turn_no": turn_no,
+                "window": rows,
+            },
+        }
+
+    return {
+        "ok": True,
+        "pattern_id": pattern_id,
+        "sample_index": sample_index,
+        "resolver": resolver or "unknown",
+        "sample": sample,
+        "detail": sample.get("provenance"),
     }
 
 
@@ -7366,6 +7480,15 @@ def edu_pattern_intelligence_refresh(_: None = Depends(_require_secret)) -> dict
     return _ensure_edu_pattern_artifacts(force_refresh=True)
 
 
+@app.get("/api/edu/pattern-intelligence/source-detail")
+def edu_pattern_intelligence_source_detail(
+    pattern_id: str,
+    sample_index: int,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    return _resolve_edu_pattern_sample(pattern_id=pattern_id, sample_index=sample_index)
+
+
 @app.get("/api/edu/pattern-intelligence/artifacts/{filename}")
 def edu_pattern_intelligence_artifact(
     filename: str,
@@ -7375,6 +7498,7 @@ def edu_pattern_intelligence_artifact(
     allowed: dict[str, Path] = {
         _EDU_PATTERN_MONITOR_PATH.name: _EDU_PATTERN_MONITOR_PATH,
         _EDU_PATTERN_FACT_CHECK_PATH.name: _EDU_PATTERN_FACT_CHECK_PATH,
+        _EDU_PATTERN_HISTORY_PATH.name: _EDU_PATTERN_HISTORY_PATH,
         _EDU_PATTERN_PLAN_PATH.name: _EDU_PATTERN_PLAN_PATH,
         _EDU_PATTERN_BACKLOG_PATH.name: _EDU_PATTERN_BACKLOG_PATH,
         _EDU_PATTERN_HANDOFF_PATH.name: _EDU_PATTERN_HANDOFF_PATH,

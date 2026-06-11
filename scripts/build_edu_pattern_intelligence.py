@@ -17,6 +17,7 @@ EVIDENCE_BANK_PATH = ROOT / "data" / "edu_research" / "evidence_bank.json"
 OBSERVATIONS_PATH = ROOT / "data" / "edu_research" / "manual_observations.jsonl"
 RUNTIME_EVENTS_PATH = ROOT / "runtime" / "edu_pilot_runtime_events.jsonl"
 OUTPUT_PATH = ROOT / "runtime" / "edu_pattern_intelligence.json"
+HISTORY_PATH = ROOT / "runtime" / "edu_pattern_history.jsonl"
 RED_TEAM_REVIEW_GLOB = "edu_pattern_intelligence_red_team_*.md"
 
 WEIGHTS = {
@@ -234,6 +235,41 @@ def _detect_complaint(text: str) -> tuple[bool, str | None, int, list[str]]:
 def _safe_excerpt(text: str, cap: int = 220) -> str:
     clean = re.sub(r"\s+", " ", (text or "").strip())
     return clean[:cap] + ("…" if len(clean) > cap else "")
+
+
+def _source_ref_from_fact(fact: SourceFact) -> dict[str, Any]:
+    ref = {
+        "type": fact.source_type,
+        "label": fact.source_label,
+        "observed_at": fact.observed_at,
+    }
+    if fact.source_type in {"research_policy", "community_voice", "general_reference", "unknown"}:
+        ref.update({
+            "resolver": "evidence_bank",
+            "id": fact.provenance.get("id"),
+            "path": fact.provenance.get("path"),
+        })
+    elif fact.source_type == "runtime_event":
+        ref.update({
+            "resolver": "runtime_event",
+            "event_type": (fact.provenance.get("row") or {}).get("event_type"),
+            "ts": (fact.provenance.get("row") or {}).get("ts"),
+        })
+    elif fact.source_type == "operator_note":
+        ref.update({
+            "resolver": "manual_observation",
+            "id": fact.provenance.get("id"),
+            "url": fact.provenance.get("url"),
+        })
+    elif fact.source_type == "transcript":
+        ref.update({
+            "resolver": "transcript_turn",
+            "case_id": fact.provenance.get("case_id"),
+            "turn_no": fact.provenance.get("turn_no"),
+        })
+    else:
+        ref.update({"resolver": "unknown"})
+    return ref
 
 
 def _load_db_turns() -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -531,6 +567,7 @@ def _score_pattern(pattern: dict[str, Any], facts: list[SourceFact]) -> dict[str
                 "complaint_type": sample.complaint_type,
                 "complaint_severity": sample.complaint_severity,
                 "provenance": sample.provenance,
+                "source_ref": _source_ref_from_fact(sample),
             }
             for sample in top_samples
         ],
@@ -662,11 +699,42 @@ def build_payload() -> dict[str, Any]:
         "patterns": patterns,
         "artifact_paths": {
             "pattern_monitor_json": str(OUTPUT_PATH.relative_to(ROOT)),
+            "pattern_history_jsonl": str(HISTORY_PATH.relative_to(ROOT)),
             "fact_check_json": "runtime/edu_pattern_fact_check.json",
             "red_team_review": _latest_red_team_review(),
         },
     }
     return output
+
+
+def _append_history(payload: dict[str, Any]) -> None:
+    summary = payload.get("summary") or {}
+    top_patterns = payload.get("patterns") or []
+    row = {
+        "generated_at": payload.get("generated_at"),
+        "total_extracted_facts": summary.get("total_extracted_facts", 0),
+        "pattern_count": summary.get("pattern_count", 0),
+        "complaint_fact_count": summary.get("complaint_fact_count", 0),
+        "top_patterns": [
+            {
+                "pattern_id": p.get("pattern_id"),
+                "label": p.get("label"),
+                "segment": p.get("segment"),
+                "pattern_score": p.get("pattern_score"),
+                "complaint_risk_score": p.get("complaint_risk_score"),
+                "supporting_evidence_count": p.get("supporting_evidence_count"),
+            }
+            for p in top_patterns[:8]
+        ],
+    }
+    HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    existing = _load_jsonl(HISTORY_PATH)
+    if existing:
+        latest = existing[-1]
+        if latest.get("generated_at") == row["generated_at"]:
+            return
+    with open(HISTORY_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def main() -> int:
@@ -679,6 +747,7 @@ def main() -> int:
     if args.write or not args.stdout:
         OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
         OUTPUT_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        _append_history(payload)
     if args.stdout:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0

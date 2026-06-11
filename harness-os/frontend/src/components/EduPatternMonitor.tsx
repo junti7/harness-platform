@@ -9,6 +9,22 @@ type Props = {
 
 type PatternMonitorPayload = {
   generated_at?: string
+  history?: Array<{
+    generated_at?: string
+    summary?: {
+      total_extracted_facts?: number
+      pattern_count?: number
+      complaint_fact_count?: number
+      top_patterns?: Array<{ pattern_id?: string; label?: string; score?: number; segment?: string }>
+    }
+    patterns?: Array<{
+      pattern_id?: string
+      label?: string
+      pattern_score?: number
+      complaint_count?: number
+      supporting_evidence_count?: number
+    }>
+  }>
   refresh?: {
     attempted?: boolean
     ok?: boolean
@@ -80,6 +96,14 @@ type PatternMonitorPayload = {
         matched_keywords?: string[]
         complaint_signal?: boolean
         complaint_type?: string | null
+        source_ref?: {
+          resolver?: string
+          id?: string
+          case_id?: number
+          turn_no?: number
+          ts?: string
+          event_type?: string
+        }
       }>
     }>
   }
@@ -115,6 +139,15 @@ type FactCheckPattern = {
     pattern_score?: number
     complaint_count?: number
   }
+}
+
+type SourceDetailPayload = {
+  ok?: boolean
+  pattern_id?: string
+  sample_index?: number
+  resolver?: string
+  sample?: Record<string, unknown>
+  detail?: unknown
 }
 
 const C = {
@@ -174,11 +207,38 @@ function chipList(items: string[], color = C.accent) {
   )
 }
 
+function miniTrendSvg(values: number[], color: string) {
+  if (!values.length) return null
+  const width = 180
+  const height = 46
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const range = max - min || 1
+  const points = values.map((value, idx) => {
+    const x = (idx / Math.max(values.length - 1, 1)) * (width - 8) + 4
+    const y = height - 4 - ((value - min) / range) * (height - 12)
+    return `${x},${y}`
+  })
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="46" preserveAspectRatio="none" aria-hidden="true">
+      <polyline fill="none" stroke={`${color}40`} strokeWidth="1" points={`4,${height - 4} ${width - 4},${height - 4}`} />
+      <polyline fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" points={points.join(' ')} />
+    </svg>
+  )
+}
+
+function prettyJson(value: unknown) {
+  return JSON.stringify(value, null, 2)
+}
+
 export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, mode = 'inline' }: Props) {
   const [open, setOpen] = useState(defaultOpen)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [payload, setPayload] = useState<PatternMonitorPayload | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState<string | null>(null)
+  const [detailPayload, setDetailPayload] = useState<SourceDetailPayload | null>(null)
 
   async function load(force = false) {
     setLoading(true)
@@ -210,11 +270,54 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
 
   const summary = payload?.monitor?.summary
   const topPatterns = payload?.monitor?.patterns ?? []
+  const history = payload?.history ?? []
   const factByPattern = useMemo(() => {
     const out = new Map<string, FactCheckPattern>()
     for (const item of (payload?.fact_check?.patterns ?? []) as FactCheckPattern[]) out.set(item.pattern_id, item)
     return out
   }, [payload?.fact_check?.patterns])
+  const overallTrend = useMemo(() => ({
+    facts: history.map(row => row.summary?.total_extracted_facts ?? 0),
+    complaints: history.map(row => row.summary?.complaint_fact_count ?? 0),
+    patterns: history.map(row => row.summary?.pattern_count ?? 0),
+  }), [history])
+  const patternTrendMap = useMemo(() => {
+    const out = new Map<string, { score: number[]; complaints: number[]; support: number[] }>()
+    for (const row of history) {
+      for (const item of row.patterns ?? []) {
+        const key = item.pattern_id || ''
+        if (!key) continue
+        if (!out.has(key)) out.set(key, { score: [], complaints: [], support: [] })
+        const bucket = out.get(key)!
+        bucket.score.push(item.pattern_score ?? 0)
+        bucket.complaints.push(item.complaint_count ?? 0)
+        bucket.support.push(item.supporting_evidence_count ?? 0)
+      }
+    }
+    return out
+  }, [history])
+
+  async function loadDetail(patternId: string, sampleIndex: number) {
+    setDetailLoading(true)
+    setDetailError(null)
+    try {
+      const qs = new URLSearchParams({ pattern_id: patternId, sample_index: String(sampleIndex) })
+      const res = await fetch(`${apiBase}/api/edu/pattern-intelligence/source-detail?${qs.toString()}`, { headers: authHeaders() })
+      const raw = await res.text()
+      const contentType = res.headers.get('content-type') || ''
+      if (!contentType.includes('application/json')) {
+        throw new Error(`source-detail API가 JSON이 아니라 ${contentType || 'unknown'}을 반환했습니다. 응답 시작: ${raw.slice(0, 160)}`)
+      }
+      const data = JSON.parse(raw)
+      if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
+      setDetailPayload(data as SourceDetailPayload)
+    } catch (err) {
+      setDetailError(err instanceof Error ? err.message : '원문 detail 로드 실패')
+      setDetailPayload(null)
+    } finally {
+      setDetailLoading(false)
+    }
+  }
 
   return (
     <div style={{ marginBottom: 16, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden', boxShadow: mode === 'page' ? '0 12px 30px rgba(15,23,42,.05)' : 'none' }}>
@@ -267,6 +370,11 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
                 fact check
               </button>
             )}
+            {payload?.artifacts?.history_url && (
+              <button type="button" onClick={() => window.open(`${apiBase}${payload.artifacts?.history_url}`, '_blank', 'noopener,noreferrer')} style={{ background: C.surface, color: C.accent, border: `1px solid ${C.accent}`, borderRadius: 10, padding: '9px 12px', fontSize: '.78rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                history
+              </button>
+            )}
             {payload?.artifacts?.red_team_url && (
               <button type="button" onClick={() => window.open(`${apiBase}${payload.artifacts?.red_team_url}`, '_blank', 'noopener,noreferrer')} style={{ background: C.surface, color: C.accent, border: `1px solid ${C.accent}`, borderRadius: 10, padding: '9px 12px', fontSize: '.78rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                 RED TEAM
@@ -275,6 +383,21 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
             {payload?.artifacts?.plan_url && (
               <button type="button" onClick={() => window.open(`${apiBase}${payload.artifacts?.plan_url}`, '_blank', 'noopener,noreferrer')} style={{ background: C.surface, color: C.accent, border: `1px solid ${C.accent}`, borderRadius: 10, padding: '9px 12px', fontSize: '.78rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                 구현 계획
+              </button>
+            )}
+            {payload?.artifacts?.backlog_url && (
+              <button type="button" onClick={() => window.open(`${apiBase}${payload.artifacts?.backlog_url}`, '_blank', 'noopener,noreferrer')} style={{ background: C.surface, color: C.accent, border: `1px solid ${C.accent}`, borderRadius: 10, padding: '9px 12px', fontSize: '.78rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                backlog
+              </button>
+            )}
+            {payload?.artifacts?.handoff_url && (
+              <button type="button" onClick={() => window.open(`${apiBase}${payload.artifacts?.handoff_url}`, '_blank', 'noopener,noreferrer')} style={{ background: C.surface, color: C.accent, border: `1px solid ${C.accent}`, borderRadius: 10, padding: '9px 12px', fontSize: '.78rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                handoff
+              </button>
+            )}
+            {payload?.artifacts?.red_team_prompt_url && (
+              <button type="button" onClick={() => window.open(`${apiBase}${payload.artifacts?.red_team_prompt_url}`, '_blank', 'noopener,noreferrer')} style={{ background: C.surface, color: C.accent, border: `1px solid ${C.accent}`, borderRadius: 10, padding: '9px 12px', fontSize: '.78rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                red-team prompt
               </button>
             )}
           </div>
@@ -298,6 +421,45 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
               <div style={{ fontSize: '.72rem', color: C.faint }}>생성 시각</div>
               <div style={{ fontSize: '.82rem', fontWeight: 700, color: C.ink, lineHeight: 1.45 }}>{payload?.generated_at ?? '-'}</div>
             </div>
+          </div>
+
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+              <div style={{ fontSize: '.86rem', fontWeight: 800, color: C.ink }}>시간축 변화량</div>
+              <div style={{ fontSize: '.76rem', color: C.faint }}>최근 {history.length || 0}회 산출 기준</div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 10 }}>
+              <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
+                <div style={{ fontSize: '.74rem', color: C.faint, marginBottom: 6 }}>검토 fact 추이</div>
+                {miniTrendSvg(overallTrend.facts, C.accent)}
+                <div style={{ fontSize: '.78rem', color: C.muted, marginTop: 6 }}>{overallTrend.facts.join(' → ') || 'history 없음'}</div>
+              </div>
+              <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
+                <div style={{ fontSize: '.74rem', color: C.faint, marginBottom: 6 }}>불만 signal 추이</div>
+                {miniTrendSvg(overallTrend.complaints, C.warning)}
+                <div style={{ fontSize: '.78rem', color: C.muted, marginTop: 6 }}>{overallTrend.complaints.join(' → ') || 'history 없음'}</div>
+              </div>
+              <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
+                <div style={{ fontSize: '.74rem', color: C.faint, marginBottom: 6 }}>활성 패턴 수 추이</div>
+                {miniTrendSvg(overallTrend.patterns, C.success)}
+                <div style={{ fontSize: '.78rem', color: C.muted, marginTop: 6 }}>{overallTrend.patterns.join(' → ') || 'history 없음'}</div>
+              </div>
+            </div>
+            {mode === 'page' && history.length > 0 && (
+              <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+                {history.slice(-8).map((row, idx) => (
+                  <div key={`${row.generated_at || 'history'}-${idx}`} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '9px 11px' }}>
+                    <div style={{ fontSize: '.76rem', color: C.ink, fontWeight: 700 }}>{row.generated_at || 'unknown run'}</div>
+                    <div style={{ fontSize: '.78rem', color: C.muted, marginTop: 4 }}>
+                      facts {row.summary?.total_extracted_facts ?? 0} · patterns {row.summary?.pattern_count ?? 0} · complaints {row.summary?.complaint_fact_count ?? 0}
+                    </div>
+                    <div style={{ fontSize: '.74rem', color: C.faint, marginTop: 4 }}>
+                      top: {(row.summary?.top_patterns || []).map(item => `${item.label || item.pattern_id}(${item.score ?? 0})`).join(' · ') || '없음'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 14 }}>
@@ -455,6 +617,23 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
                       ))}
                     </div>
 
+                    {patternTrendMap.get(pattern.pattern_id) && (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 8 }}>
+                        <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px' }}>
+                          <div style={{ fontSize: '.72rem', color: C.faint, marginBottom: 4 }}>pattern score trend</div>
+                          {miniTrendSvg(patternTrendMap.get(pattern.pattern_id)?.score || [], C.accent)}
+                        </div>
+                        <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px' }}>
+                          <div style={{ fontSize: '.72rem', color: C.faint, marginBottom: 4 }}>complaint trend</div>
+                          {miniTrendSvg(patternTrendMap.get(pattern.pattern_id)?.complaints || [], C.warning)}
+                        </div>
+                        <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px' }}>
+                          <div style={{ fontSize: '.72rem', color: C.faint, marginBottom: 4 }}>support trend</div>
+                          {miniTrendSvg(patternTrendMap.get(pattern.pattern_id)?.support || [], C.success)}
+                        </div>
+                      </div>
+                    )}
+
                     {fact && (
                       <div>
                         <div style={{ fontSize: '.76rem', color: C.faint, marginBottom: 6 }}>팩트체크 판단</div>
@@ -476,6 +655,18 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
                             <div style={{ fontSize: '.72rem', color: C.faint, marginTop: 6 }}>
                               keywords: {(sample.matched_keywords || []).join(', ') || '-'}
                               {sample.complaint_signal ? ` · complaint=${sample.complaint_type || 'yes'}` : ''}
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+                              <div style={{ fontSize: '.72rem', color: C.faint }}>
+                                resolver: {sample.source_ref?.resolver || sample.source_type}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => void loadDetail(pattern.pattern_id, idx)}
+                                style={{ background: C.surface, color: C.accent, border: `1px solid ${C.accent}`, borderRadius: 9, padding: '6px 9px', fontSize: '.75rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+                              >
+                                원문 detail 보기
+                              </button>
                             </div>
                           </div>
                         ))}
@@ -501,6 +692,50 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
               )
             })}
           </div>
+
+          {(detailLoading || detailError || detailPayload) && (
+            <div style={{ background: '#0f172a', color: '#e2e8f0', borderRadius: 14, padding: 14, display: 'grid', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: '.78rem', color: '#93c5fd', fontWeight: 800, textTransform: 'uppercase' }}>Source Drill-Down</div>
+                  <div style={{ fontSize: '.92rem', fontWeight: 800 }}>근거 원문 / 이벤트 / transcript 창</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetailPayload(null)
+                    setDetailError(null)
+                  }}
+                  style={{ background: 'transparent', color: '#cbd5e1', border: '1px solid #475569', borderRadius: 9, padding: '6px 10px', fontSize: '.75rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+                >
+                  닫기
+                </button>
+              </div>
+              {detailLoading && <div style={{ fontSize: '.82rem', color: '#cbd5e1' }}>원문 detail 로드 중…</div>}
+              {detailError && <div style={{ fontSize: '.82rem', color: '#fca5a5' }}>{detailError}</div>}
+              {detailPayload && (
+                <>
+                  <div style={{ fontSize: '.78rem', color: '#cbd5e1' }}>
+                    pattern {detailPayload.pattern_id} · sample {detailPayload.sample_index} · resolver {detailPayload.resolver}
+                  </div>
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: '.74rem', color: '#93c5fd', marginBottom: 4 }}>sample metadata</div>
+                      <pre style={{ margin: 0, background: '#111827', borderRadius: 10, padding: '10px 12px', fontSize: '.75rem', whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
+                        {prettyJson(detailPayload.sample)}
+                      </pre>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '.74rem', color: '#93c5fd', marginBottom: 4 }}>resolved detail</div>
+                      <pre style={{ margin: 0, background: '#111827', borderRadius: 10, padding: '10px 12px', fontSize: '.75rem', whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
+                        {prettyJson(detailPayload.detail)}
+                      </pre>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
