@@ -49,6 +49,7 @@ def generate_text(
     timeout_seconds: float | None = None,
     max_output_tokens: int | None = None,
     response_mime_type: str | None = None,
+    thinking_budget: int | None = None,
     meta: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, int]]:
     client = build_client(timeout_seconds=timeout_seconds)
@@ -59,6 +60,15 @@ def generate_text(
         config["response_mime_type"] = response_mime_type
     if system_instruction:
         config["system_instruction"] = system_instruction
+    if thinking_budget is not None:
+        # gemini-2.5는 thinking이 기본 ON이라 max_output_tokens 예산을 사고에 소진해
+        # 구조화 출력을 절단할 수 있다. budget=0이면 thinking 비활성(2.5-flash 지원).
+        try:
+            from google.genai import types as _genai_types
+
+            config["thinking_config"] = _genai_types.ThinkingConfig(thinking_budget=thinking_budget)
+        except Exception:
+            config["thinking_config"] = {"thinking_budget": thinking_budget}
     response = client.models.generate_content(
         model=model or gemini_model_name(),
         contents=prompt,

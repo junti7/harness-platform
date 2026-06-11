@@ -6686,6 +6686,10 @@ def _edu_generate_text(
                     max_output_tokens=max_output_tokens,
                     timeout_seconds=timeout_seconds,
                     response_mime_type=response_mime_type,
+                    # 구조화 JSON 추출엔 추론이 불필요. thinking을 끄지 않으면 gemini-2.5-flash가
+                    # max_output_tokens 예산을 thinking에 써버려 본문 JSON이 잘린다(과거 255건 JSONDecodeError 원인).
+                    # 끄면 절단 제거 + 토큰 비용↓(spend cap 완화).
+                    thinking_budget=0,
                     meta=meta,
                 )
             elif model_name.startswith("gpt") or model_name.startswith("o"):
