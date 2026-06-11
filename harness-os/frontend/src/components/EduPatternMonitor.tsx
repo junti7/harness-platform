@@ -128,6 +128,11 @@ type PatternMonitorPayload = {
         included_fact_count?: number
         excluded_rows?: number
         excluded_reason_counts?: Record<string, number>
+        excluded_samples?: Array<{
+          reason?: string
+          excerpt?: string
+          meta?: Record<string, unknown>
+        }>
         complaint_only_rows?: number
         notes?: string[]
         source_kind_counts?: Record<string, number>
@@ -596,6 +601,22 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
                     <ul style={{ margin: '8px 0 0', paddingLeft: 18, color: C.muted, fontSize: '.78rem', lineHeight: 1.55 }}>
                       {row.notes.map(note => <li key={note}>{note}</li>)}
                     </ul>
+                  ) : null}
+                  {row.excluded_samples?.length ? (
+                    <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+                      <div style={{ fontSize: '.74rem', color: C.ink, fontWeight: 700 }}>탈락한 raw 예시</div>
+                      {row.excluded_samples.map((sample, sampleIdx) => (
+                        <div key={`${row.source_key || row.label || 'source'}-excluded-${sampleIdx}`} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, padding: '8px 10px' }}>
+                          <div style={{ fontSize: '.72rem', color: C.warning, fontWeight: 700 }}>{sample.reason || 'excluded'}</div>
+                          <div style={{ fontSize: '.78rem', color: C.ink, lineHeight: 1.55, marginTop: 4 }}>{sample.excerpt || '-'}</div>
+                          {!!sample.meta && Object.keys(sample.meta).length > 0 && (
+                            <div style={{ fontSize: '.72rem', color: C.faint, marginTop: 5 }}>
+                              {Object.entries(sample.meta).map(([key, value]) => `${key}=${String(value)}`).join(' · ')}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   ) : null}
                   {!!row.source_kind_counts && <div style={{ fontSize: '.74rem', color: C.faint, marginTop: 6 }}>source kinds: {countPairs(row.source_kind_counts)}</div>}
                   {!!row.event_type_counts && <div style={{ fontSize: '.74rem', color: C.faint, marginTop: 4 }}>event types: {countPairs(row.event_type_counts)}</div>}

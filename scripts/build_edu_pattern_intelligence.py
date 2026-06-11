@@ -237,6 +237,14 @@ def _safe_excerpt(text: str, cap: int = 220) -> str:
     return clean[:cap] + ("…" if len(clean) > cap else "")
 
 
+def _excluded_sample(reason: str, excerpt: str, meta: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {
+        "reason": reason,
+        "excerpt": _safe_excerpt(excerpt),
+        "meta": meta or {},
+    }
+
+
 def _source_ref_from_fact(fact: SourceFact) -> dict[str, Any]:
     ref = {
         "type": fact.source_type,
@@ -377,11 +385,14 @@ def _funnel_for_evidence(items: list[dict[str, Any]], pattern_defs: list[dict[st
     total_rows = len(items)
     rows_with_match = 0
     included_facts = 0
+    excluded_samples: list[dict[str, Any]] = []
     segment_counts = Counter(str(item.get("segment") or "parent") for item in items)
     source_kind_counts = Counter(str(item.get("source_kind") or "unknown") for item in items)
     for item in items:
         text = " ".join(str(item.get(key) or "") for key in ("cite", "source", "type", "title", "summary", "note"))
         segment = item.get("segment") or "parent"
+        source_kind = str(item.get("source_kind") or "unknown")
+        source_label = str(item.get("source") or item.get("type") or "evidence_bank")
         row_hits = 0
         for pattern in pattern_defs:
             if pattern["segment"] != segment:
@@ -392,6 +403,17 @@ def _funnel_for_evidence(items: list[dict[str, Any]], pattern_defs: list[dict[st
         if row_hits > 0:
             rows_with_match += 1
             included_facts += row_hits
+        elif len(excluded_samples) < 3:
+            excluded_samples.append(_excluded_sample(
+                "no_pattern_keyword_match",
+                text,
+                {
+                    "id": item.get("id"),
+                    "segment": segment,
+                    "source_kind": source_kind,
+                    "source": source_label,
+                },
+            ))
     return {
         "source_key": "evidence_bank",
         "label": "Evidence bank",
@@ -405,6 +427,7 @@ def _funnel_for_evidence(items: list[dict[str, Any]], pattern_defs: list[dict[st
         "excluded_reason_counts": {
             "no_pattern_keyword_match": max(0, total_rows - rows_with_match),
         },
+        "excluded_samples": excluded_samples,
         "notes": [
             "evidence_bank는 segment가 맞는 pattern keyword 1개 이상 hit해야 fact로 연결된다.",
             "complaint rule만으로는 evidence_bank fact를 만들지 않는다.",
@@ -464,9 +487,21 @@ def _funnel_for_turns(rows: list[dict[str, Any]], pattern_defs: list[dict[str, A
     included_facts = 0
     excluded_non_user = 0
     excluded_no_match = 0
+    excluded_samples: list[dict[str, Any]] = []
     for row in rows:
         if str(row.get("role") or "").lower() != "user":
             excluded_non_user += 1
+            if len(excluded_samples) < 3:
+                excluded_samples.append(_excluded_sample(
+                    "assistant_or_system_turn",
+                    str(row.get("text") or ""),
+                    {
+                        "case_id": row.get("case_id"),
+                        "turn_no": row.get("turn_no"),
+                        "role": row.get("role"),
+                        "segment": row.get("segment"),
+                    },
+                ))
             continue
         scanned_rows += 1
         text = str(row.get("text") or "")
@@ -485,6 +520,17 @@ def _funnel_for_turns(rows: list[dict[str, Any]], pattern_defs: list[dict[str, A
                 row_hits += 1
         if row_hits == 0:
             excluded_no_match += 1
+            if len(excluded_samples) < 3:
+                excluded_samples.append(_excluded_sample(
+                    "no_pattern_keyword_or_complaint_match",
+                    text,
+                    {
+                        "case_id": row.get("case_id"),
+                        "turn_no": row.get("turn_no"),
+                        "role": row.get("role"),
+                        "segment": segment,
+                    },
+                ))
             continue
         rows_with_match += 1
         included_facts += row_hits
@@ -504,6 +550,7 @@ def _funnel_for_turns(rows: list[dict[str, Any]], pattern_defs: list[dict[str, A
             "assistant_or_system_turn": excluded_non_user,
             "no_pattern_keyword_or_complaint_match": excluded_no_match,
         },
+        "excluded_samples": excluded_samples,
         "complaint_only_rows": complaint_only_rows,
         "notes": [
             "transcript는 user role turn만 스캔한다.",
@@ -553,6 +600,7 @@ def _funnel_for_runtime(rows: list[dict[str, Any]], pattern_defs: list[dict[str,
     complaint_only_rows = 0
     included_facts = 0
     excluded_no_match = 0
+    excluded_samples: list[dict[str, Any]] = []
     for row in rows:
         text = " ".join(str(row.get(key) or "") for key in ("event_type", "error", "reason", "segment", "track"))
         segment = row.get("segment") or "parent"
@@ -570,6 +618,16 @@ def _funnel_for_runtime(rows: list[dict[str, Any]], pattern_defs: list[dict[str,
                 row_hits += 1
         if row_hits == 0:
             excluded_no_match += 1
+            if len(excluded_samples) < 3:
+                excluded_samples.append(_excluded_sample(
+                    "no_pattern_keyword_or_complaint_match",
+                    text,
+                    {
+                        "event_type": row.get("event_type"),
+                        "segment": segment,
+                        "ts": row.get("ts"),
+                    },
+                ))
             continue
         rows_with_match += 1
         included_facts += row_hits
@@ -588,6 +646,7 @@ def _funnel_for_runtime(rows: list[dict[str, Any]], pattern_defs: list[dict[str,
         "excluded_reason_counts": {
             "no_pattern_keyword_or_complaint_match": excluded_no_match,
         },
+        "excluded_samples": excluded_samples,
         "complaint_only_rows": complaint_only_rows,
         "notes": [
             "runtime event는 event_type/error/reason/segment/track 문자열만 fact 추출에 사용한다.",
@@ -638,6 +697,7 @@ def _funnel_for_observations(rows: list[dict[str, Any]], pattern_defs: list[dict
     complaint_only_rows = 0
     included_facts = 0
     excluded_no_match = 0
+    excluded_samples: list[dict[str, Any]] = []
     for row in rows:
         text = " ".join(str(row.get(key) or "") for key in ("quote", "note", "source"))
         segment = row.get("segment") or "worker"
@@ -655,6 +715,17 @@ def _funnel_for_observations(rows: list[dict[str, Any]], pattern_defs: list[dict
                 row_hits += 1
         if row_hits == 0:
             excluded_no_match += 1
+            if len(excluded_samples) < 3:
+                excluded_samples.append(_excluded_sample(
+                    "no_pattern_keyword_or_complaint_match",
+                    text,
+                    {
+                        "id": row.get("id"),
+                        "segment": segment,
+                        "source": row.get("source"),
+                        "ts": row.get("ts"),
+                    },
+                ))
             continue
         rows_with_match += 1
         included_facts += row_hits
@@ -673,6 +744,7 @@ def _funnel_for_observations(rows: list[dict[str, Any]], pattern_defs: list[dict
         "excluded_reason_counts": {
             "no_pattern_keyword_or_complaint_match": excluded_no_match,
         },
+        "excluded_samples": excluded_samples,
         "complaint_only_rows": complaint_only_rows,
         "notes": [
             "manual observation은 quote/note/source 문자열에서만 fact를 뽑는다.",
