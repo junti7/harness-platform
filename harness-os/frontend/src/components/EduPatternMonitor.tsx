@@ -11,19 +11,24 @@ type PatternMonitorPayload = {
   generated_at?: string
   history?: Array<{
     generated_at?: string
+    total_extracted_facts?: number
+    pattern_count?: number
+    complaint_fact_count?: number
+    top_patterns?: Array<{
+      pattern_id?: string
+      label?: string
+      segment?: string
+      pattern_score?: number
+      complaint_risk_score?: number
+      complaint_count?: number
+      supporting_evidence_count?: number
+    }>
     summary?: {
       total_extracted_facts?: number
       pattern_count?: number
       complaint_fact_count?: number
       top_patterns?: Array<{ pattern_id?: string; label?: string; score?: number; segment?: string }>
     }
-    patterns?: Array<{
-      pattern_id?: string
-      label?: string
-      pattern_score?: number
-      complaint_count?: number
-      supporting_evidence_count?: number
-    }>
   }>
   refresh?: {
     attempted?: boolean
@@ -279,6 +284,10 @@ function countPairs(value?: Record<string, number>) {
     .join(' · ')
 }
 
+function trendPatternScore(item: { score?: number; pattern_score?: number }) {
+  return item.score ?? item.pattern_score ?? 0
+}
+
 export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, mode = 'inline' }: Props) {
   const [open, setOpen] = useState(defaultOpen)
   const [loading, setLoading] = useState(false)
@@ -326,14 +335,14 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
     return out
   }, [payload?.fact_check?.patterns])
   const overallTrend = useMemo(() => ({
-    facts: history.map(row => row.summary?.total_extracted_facts ?? 0),
-    complaints: history.map(row => row.summary?.complaint_fact_count ?? 0),
-    patterns: history.map(row => row.summary?.pattern_count ?? 0),
+    facts: history.map(row => row.total_extracted_facts ?? row.summary?.total_extracted_facts ?? 0),
+    complaints: history.map(row => row.complaint_fact_count ?? row.summary?.complaint_fact_count ?? 0),
+    patterns: history.map(row => row.pattern_count ?? row.summary?.pattern_count ?? 0),
   }), [history])
   const patternTrendMap = useMemo(() => {
     const out = new Map<string, { score: number[]; complaints: number[]; support: number[] }>()
     for (const row of history) {
-      for (const item of row.patterns ?? []) {
+      for (const item of row.top_patterns ?? []) {
         const key = item.pattern_id || ''
         if (!key) continue
         if (!out.has(key)) out.set(key, { score: [], complaints: [], support: [] })
@@ -542,10 +551,10 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
                   <div key={`${row.generated_at || 'history'}-${idx}`} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '9px 11px' }}>
                     <div style={{ fontSize: '.76rem', color: C.ink, fontWeight: 700 }}>{row.generated_at || 'unknown run'}</div>
                     <div style={{ fontSize: '.78rem', color: C.muted, marginTop: 4 }}>
-                      facts {row.summary?.total_extracted_facts ?? 0} · patterns {row.summary?.pattern_count ?? 0} · complaints {row.summary?.complaint_fact_count ?? 0}
+                      facts {row.total_extracted_facts ?? row.summary?.total_extracted_facts ?? 0} · patterns {row.pattern_count ?? row.summary?.pattern_count ?? 0} · complaints {row.complaint_fact_count ?? row.summary?.complaint_fact_count ?? 0}
                     </div>
                     <div style={{ fontSize: '.74rem', color: C.faint, marginTop: 4 }}>
-                      top: {(row.summary?.top_patterns || []).map(item => `${item.label || item.pattern_id}(${item.score ?? 0})`).join(' · ') || '없음'}
+                      top: {(row.top_patterns || row.summary?.top_patterns || []).map(item => `${item.label || item.pattern_id}(${trendPatternScore(item)})`).join(' · ') || '없음'}
                     </div>
                   </div>
                 ))}

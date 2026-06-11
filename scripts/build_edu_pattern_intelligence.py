@@ -1054,6 +1054,7 @@ def _append_history(payload: dict[str, Any]) -> None:
                 "segment": p.get("segment"),
                 "pattern_score": p.get("pattern_score"),
                 "complaint_risk_score": p.get("complaint_risk_score"),
+                "complaint_count": p.get("complaint_count"),
                 "supporting_evidence_count": p.get("supporting_evidence_count"),
             }
             for p in top_patterns[:8]
