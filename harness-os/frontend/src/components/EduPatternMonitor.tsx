@@ -193,6 +193,7 @@ type SourceDetailPayload = {
   pattern_id?: string
   sample_index?: number
   resolver?: string
+  excluded?: boolean
   sample?: Record<string, unknown>
   detail?: unknown
 }
@@ -871,49 +872,80 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
             })}
           </div>
 
-          {(detailLoading || detailError || detailPayload) && (
-            <div style={{ background: '#0f172a', color: '#e2e8f0', borderRadius: 14, padding: 14, display: 'grid', gap: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                <div>
-                  <div style={{ fontSize: '.78rem', color: '#93c5fd', fontWeight: 800, textTransform: 'uppercase' }}>Source Drill-Down</div>
-                  <div style={{ fontSize: '.92rem', fontWeight: 800 }}>근거 원문 / 이벤트 / transcript 창</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDetailPayload(null)
-                    setDetailError(null)
-                  }}
-                  style={{ background: 'transparent', color: '#cbd5e1', border: '1px solid #475569', borderRadius: 9, padding: '6px 10px', fontSize: '.75rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
-                >
-                  닫기
-                </button>
+        </div>
+      )}
+      {(detailLoading || detailError || detailPayload) && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15,23,42,.58)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 18,
+            zIndex: 1200,
+          }}
+          onClick={() => {
+            setDetailPayload(null)
+            setDetailError(null)
+          }}
+        >
+          <div
+            style={{
+              width: 'min(980px, 100%)',
+              maxHeight: '88vh',
+              overflowY: 'auto',
+              background: '#0f172a',
+              color: '#e2e8f0',
+              borderRadius: 16,
+              padding: 16,
+              display: 'grid',
+              gap: 10,
+              boxShadow: '0 18px 48px rgba(15,23,42,.45)',
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontSize: '.78rem', color: '#93c5fd', fontWeight: 800, textTransform: 'uppercase' }}>Source Drill-Down</div>
+                <div style={{ fontSize: '.98rem', fontWeight: 800 }}>근거 원문 / 이벤트 / transcript 창</div>
               </div>
-              {detailLoading && <div style={{ fontSize: '.82rem', color: '#cbd5e1' }}>원문 detail 로드 중…</div>}
-              {detailError && <div style={{ fontSize: '.82rem', color: '#fca5a5' }}>{detailError}</div>}
-              {detailPayload && (
-                <>
-                  <div style={{ fontSize: '.78rem', color: '#cbd5e1' }}>
-                    pattern {detailPayload.pattern_id} · sample {detailPayload.sample_index} · resolver {detailPayload.resolver}
-                  </div>
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    <div>
-                      <div style={{ fontSize: '.74rem', color: '#93c5fd', marginBottom: 4 }}>sample metadata</div>
-                      <pre style={{ margin: 0, background: '#111827', borderRadius: 10, padding: '10px 12px', fontSize: '.75rem', whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
-                        {prettyJson(detailPayload.sample)}
-                      </pre>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '.74rem', color: '#93c5fd', marginBottom: 4 }}>resolved detail</div>
-                      <pre style={{ margin: 0, background: '#111827', borderRadius: 10, padding: '10px 12px', fontSize: '.75rem', whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
-                        {prettyJson(detailPayload.detail)}
-                      </pre>
-                    </div>
-                  </div>
-                </>
-              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setDetailPayload(null)
+                  setDetailError(null)
+                }}
+                style={{ background: 'transparent', color: '#cbd5e1', border: '1px solid #475569', borderRadius: 9, padding: '6px 10px', fontSize: '.75rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                닫기
+              </button>
             </div>
-          )}
+            {detailLoading && <div style={{ fontSize: '.82rem', color: '#cbd5e1' }}>원문 detail 로드 중…</div>}
+            {detailError && <div style={{ fontSize: '.82rem', color: '#fca5a5' }}>{detailError}</div>}
+            {detailPayload && (
+              <>
+                <div style={{ fontSize: '.78rem', color: '#cbd5e1' }}>
+                  {detailPayload.excluded ? 'excluded sample' : `pattern ${detailPayload.pattern_id}`} · sample {detailPayload.sample_index} · resolver {detailPayload.resolver}
+                </div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: '.74rem', color: '#93c5fd', marginBottom: 4 }}>sample metadata</div>
+                    <pre style={{ margin: 0, background: '#111827', borderRadius: 10, padding: '10px 12px', fontSize: '.75rem', whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
+                      {prettyJson(detailPayload.sample)}
+                    </pre>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '.74rem', color: '#93c5fd', marginBottom: 4 }}>resolved detail</div>
+                    <pre style={{ margin: 0, background: '#111827', borderRadius: 10, padding: '10px 12px', fontSize: '.75rem', whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
+                      {prettyJson(detailPayload.detail)}
+                    </pre>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
