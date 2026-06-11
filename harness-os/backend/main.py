@@ -5468,6 +5468,15 @@ def _edu_render_transcript_markdown(req: EduTranscriptExportRequest) -> str:
 
 
 _EDU_RED_TEAM_DIR = PROJECT_ROOT / "docs" / "reviews" / "edu_pilot_red_team"
+_EDU_PATTERN_MONITOR_PATH = PROJECT_ROOT / "runtime" / "edu_pattern_intelligence.json"
+_EDU_PATTERN_FACT_CHECK_PATH = PROJECT_ROOT / "runtime" / "edu_pattern_fact_check.json"
+_EDU_PATTERN_PLAN_PATH = PROJECT_ROOT / "docs" / "handoffs" / "edu_pattern_intelligence_plan_2026-06-11.md"
+_EDU_PATTERN_BACKLOG_PATH = PROJECT_ROOT / "docs" / "handoffs" / "edu_pattern_intelligence_backlog_2026-06-11.md"
+_EDU_PATTERN_HANDOFF_PATH = PROJECT_ROOT / "docs" / "handoffs" / "edu_pattern_intelligence_handoff_2026-06-11.md"
+_EDU_PATTERN_REVIEW_PROMPT_PATH = PROJECT_ROOT / "docs" / "reviews" / "edu_pattern_intelligence_red_team_prompt_2026-06-11.txt"
+_EDU_PATTERN_REFRESH_LOCK = threading.Lock()
+_EDU_PATTERN_LAST_RUN = 0.0
+_EDU_PATTERN_REFRESH_INTERVAL_SEC = 300.0
 
 
 def _edu_mask_email(email: str) -> str:
@@ -5480,6 +5489,137 @@ def _edu_mask_email(email: str) -> str:
     else:
         local_masked = local[:2] + "*" * max(1, len(local) - 2)
     return f"{local_masked}@{domain}"
+
+
+def _read_json_file(path: Path, default: Any) -> Any:
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+
+
+def _latest_edu_pattern_red_team_file() -> Path | None:
+    review_dir = PROJECT_ROOT / "docs" / "reviews"
+    files = sorted(review_dir.glob("edu_pattern_intelligence_red_team_*.md"))
+    return files[-1] if files else None
+
+
+def _edu_pattern_red_team_summary() -> dict[str, Any]:
+    target = _latest_edu_pattern_red_team_file()
+    if target is None:
+        return {
+            "available": False,
+            "verdict": "missing",
+            "summary": "패턴 인텔리전스 전용 Red Team artifact가 없습니다.",
+            "path": None,
+            "filename": None,
+            "url": None,
+        }
+    text = target.read_text(encoding="utf-8")
+    verdict_match = re.search(r"`(red_team_[a-z_]+)`", text)
+    interpretation_match = re.search(r"Interpretation:\s*(?:\n|\r\n?)([\s\S]+)$", text)
+    summary = interpretation_match.group(1).strip() if interpretation_match else text.strip()
+    safe_name = target.name
+    return {
+        "available": True,
+        "verdict": verdict_match.group(1) if verdict_match else "unknown",
+        "summary": summary[:900],
+        "path": str(target.relative_to(PROJECT_ROOT)),
+        "filename": safe_name,
+        "url": f"/api/edu/pattern-intelligence/artifacts/{safe_name}",
+    }
+
+
+def _run_edu_pattern_pipeline() -> dict[str, Any]:
+    import subprocess
+    import sys as _sys
+
+    builder = PROJECT_ROOT / "scripts" / "build_edu_pattern_intelligence.py"
+    fact_check = PROJECT_ROOT / "scripts" / "fact_check_edu_patterns.py"
+    results: dict[str, Any] = {"ok": False, "steps": [], "ran_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    for script in (builder, fact_check):
+        if not script.exists():
+            results["steps"].append({
+                "script": str(script.relative_to(PROJECT_ROOT)),
+                "ok": False,
+                "stdout": "",
+                "stderr": "script missing",
+                "returncode": 127,
+            })
+            return results
+        proc = subprocess.run(
+            [_sys.executable, str(script), "--write"],
+            capture_output=True,
+            text=True,
+            cwd=str(PROJECT_ROOT),
+            timeout=90,
+        )
+        results["steps"].append({
+            "script": str(script.relative_to(PROJECT_ROOT)),
+            "ok": proc.returncode == 0,
+            "stdout": proc.stdout[-2000:],
+            "stderr": proc.stderr[-2000:],
+            "returncode": proc.returncode,
+        })
+        if proc.returncode != 0:
+            return results
+    results["ok"] = True
+    return results
+
+
+def _read_edu_pattern_payload() -> dict[str, Any]:
+    monitor = _read_json_file(_EDU_PATTERN_MONITOR_PATH, {})
+    fact_check = _read_json_file(_EDU_PATTERN_FACT_CHECK_PATH, {})
+    red_team = _edu_pattern_red_team_summary()
+    latest_review = _latest_edu_pattern_red_team_file()
+    return {
+        "ok": bool(monitor),
+        "generated_at": monitor.get("generated_at") or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "monitor": monitor,
+        "fact_check": fact_check,
+        "red_team": red_team,
+        "artifacts": {
+            "monitor_url": "/api/edu/pattern-intelligence/artifacts/edu_pattern_intelligence.json",
+            "fact_check_url": "/api/edu/pattern-intelligence/artifacts/edu_pattern_fact_check.json",
+            "red_team_url": f"/api/edu/pattern-intelligence/artifacts/{latest_review.name}" if latest_review else None,
+            "plan_url": f"/api/edu/pattern-intelligence/artifacts/{_EDU_PATTERN_PLAN_PATH.name}",
+            "backlog_url": f"/api/edu/pattern-intelligence/artifacts/{_EDU_PATTERN_BACKLOG_PATH.name}",
+            "handoff_url": f"/api/edu/pattern-intelligence/artifacts/{_EDU_PATTERN_HANDOFF_PATH.name}",
+            "red_team_prompt_url": f"/api/edu/pattern-intelligence/artifacts/{_EDU_PATTERN_REVIEW_PROMPT_PATH.name}",
+        },
+    }
+
+
+def _ensure_edu_pattern_artifacts(force_refresh: bool = False) -> dict[str, Any]:
+    global _EDU_PATTERN_LAST_RUN
+    now = time.time()
+    monitor_exists = _EDU_PATTERN_MONITOR_PATH.exists()
+    should_run = force_refresh or not monitor_exists
+    with _EDU_PATTERN_REFRESH_LOCK:
+        if not should_run and now - _EDU_PATTERN_LAST_RUN > _EDU_PATTERN_REFRESH_INTERVAL_SEC:
+            should_run = True
+        if should_run:
+            result = _run_edu_pattern_pipeline()
+            _EDU_PATTERN_LAST_RUN = time.time()
+            payload = _read_edu_pattern_payload()
+            payload["refresh"] = {
+                "attempted": True,
+                "ok": result.get("ok", False),
+                "details": result,
+            }
+            return payload
+    payload = _read_edu_pattern_payload()
+    payload["refresh"] = {
+        "attempted": False,
+        "ok": True,
+        "details": {
+            "ran_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "steps": [],
+        },
+    }
+    return payload
 
 
 def _edu_red_team_report_slug(req: EduRedTeamReviewRequest) -> str:
@@ -7211,6 +7351,46 @@ def edu_red_team_review(
     _: None = Depends(_require_secret),
 ) -> dict[str, Any]:
     return _edu_write_red_team_artifacts(req)
+
+
+@app.get("/api/edu/pattern-intelligence")
+def edu_pattern_intelligence(
+    force_refresh: bool = False,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    return _ensure_edu_pattern_artifacts(force_refresh=force_refresh)
+
+
+@app.post("/api/edu/pattern-intelligence/refresh")
+def edu_pattern_intelligence_refresh(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    return _ensure_edu_pattern_artifacts(force_refresh=True)
+
+
+@app.get("/api/edu/pattern-intelligence/artifacts/{filename}")
+def edu_pattern_intelligence_artifact(
+    filename: str,
+    _: None = Depends(_require_secret),
+) -> Response:
+    latest_red_team = _latest_edu_pattern_red_team_file()
+    allowed: dict[str, Path] = {
+        _EDU_PATTERN_MONITOR_PATH.name: _EDU_PATTERN_MONITOR_PATH,
+        _EDU_PATTERN_FACT_CHECK_PATH.name: _EDU_PATTERN_FACT_CHECK_PATH,
+        _EDU_PATTERN_PLAN_PATH.name: _EDU_PATTERN_PLAN_PATH,
+        _EDU_PATTERN_BACKLOG_PATH.name: _EDU_PATTERN_BACKLOG_PATH,
+        _EDU_PATTERN_HANDOFF_PATH.name: _EDU_PATTERN_HANDOFF_PATH,
+        _EDU_PATTERN_REVIEW_PROMPT_PATH.name: _EDU_PATTERN_REVIEW_PROMPT_PATH,
+    }
+    if latest_red_team is not None:
+        allowed[latest_red_team.name] = latest_red_team
+    safe_name = os.path.basename(filename or "")
+    target = allowed.get(safe_name)
+    if not safe_name or safe_name != filename or target is None or not target.exists() or not target.is_file():
+        raise HTTPException(404, "artifact not found")
+    if target.suffix == ".json":
+        return Response(content=target.read_text(encoding="utf-8"), media_type="application/json; charset=utf-8")
+    if target.suffix == ".md":
+        return Response(content=target.read_text(encoding="utf-8"), media_type="text/markdown; charset=utf-8")
+    return Response(content=target.read_text(encoding="utf-8"), media_type="text/plain; charset=utf-8")
 
 
 @app.post("/api/public/edu/curriculum")

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { EduPatternMonitor } from '../components/EduPatternMonitor'
 
 // ── 적응형 AI 부모 자가점검 — 100% LLM 구동 자유 대화 PoC ───────────────────────
 // rule-based 질문 트리 없음. 매 턴 백엔드 /api/edu/diagnose (Gemini)가 톤·내용 생성.
@@ -395,6 +396,7 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
     const lastAi = [...msgs].reverse().find((m) => m.role === 'ai') ?? { toneLevel: 0, phase: 'opening' }
     return (
       <div style={wrap}>
+        <EduPatternMonitor apiBase={apiBase} authHeaders={authHeaders} />
         {/* 최소한의 상태 바 + 리셋 */}
         <div style={{ padding: '8px 10px', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, marginBottom: 8, fontSize: '.72rem', color: C.faint }}>
           <div style={{ display: 'grid', gap: 8 }}>
@@ -565,6 +567,7 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
   // ── Setup Wizard (started=false) ──
   return (
     <div style={{ ...wrap, justifyContent: 'flex-start' }}>
+      <EduPatternMonitor apiBase={apiBase} authHeaders={authHeaders} />
       {preflightCard}
       {/* CEO/VP 테스트 런처 (접기/펼치기) */}
       <div style={{ marginBottom: 16 }}>
