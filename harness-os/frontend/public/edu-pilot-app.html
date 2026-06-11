@@ -502,16 +502,19 @@
 
       root.innerHTML = `
         <div class="chat-wrap">
-          <div class="topline">
-            <span><b>${escapeHtml(displayName)}</b> · ${state.isReturning?'이어서 보기':'새 케이스'}</span>
-            <span>턴 <b>${state.turn}</b> · 톤 <b>${lastAi.toneLevel||0}</b> · ${PHASE_LABEL[lastAi.phase]||'-'}</span>
-            <div style="display:flex;align-items:center;gap:10px">
+          <div class="topline" style="display:grid;gap:8px">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">
+              <span style="min-width:0;line-height:1.5"><b>${escapeHtml(displayName)}</b> · ${state.isReturning?'이어서 보기':'새 케이스'}</span>
+              <span style="line-height:1.5">턴 <b>${state.turn}</b> · 톤 <b>${lastAi.toneLevel||0}</b> · ${PHASE_LABEL[lastAi.phase]||'-'}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
               <button id="rename-btn" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:.72rem;text-decoration:underline;font-family:inherit">파일명</button>
               <button id="redteam-toggle-btn" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:.72rem;text-decoration:underline;font-family:inherit">RED TEAM</button>
               <button id="download-btn" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:.72rem;text-decoration:underline;font-family:inherit">Markdown</button>
               <button id="reset-btn" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:.72rem;text-decoration:underline;font-family:inherit">처음</button>
             </div>
           </div>
+          ${!state.showRedTeam && !state.editingFilename ? `<div style="color:var(--faint);font-size:.7rem;line-height:1.45;padding:0 4px 6px">대화 중 언제든 <b style="color:var(--ink)">Markdown</b> 저장과 <b style="color:var(--ink)">RED TEAM</b> 진단을 열 수 있습니다.</div>` : ''}
           ${state.editingFilename ? `
             <div style="display:flex;align-items:center;gap:8px;margin:-2px 0 8px;padding:0 4px">
               <input class="field" id="filename-input" value="${escapeHtml(filenameBase)}" style="padding:8px 10px;font-size:.78rem" />

@@ -384,11 +384,13 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
     return (
       <div style={wrap}>
         {/* 최소한의 상태 바 + 리셋 */}
-        <div style={{ padding: '6px 10px', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, marginBottom: 8, fontSize: '.72rem', color: C.faint }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-          <span><b style={{ color: C.ink }}>{name || email || (segment === 'parent' ? '부모' : '직장인')}</b> · {segment === 'parent' ? '부모' : '직장인'}</span>
-          <span>턴 {turn} · 톤 <b style={{ color: C.accent }}>{lastAi.toneLevel ?? 0}</b> · {PHASE_LABEL[(lastAi as Msg).phase ?? 'opening'] ?? '-'}</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ padding: '8px 10px', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, marginBottom: 8, fontSize: '.72rem', color: C.faint }}>
+          <div style={{ display: 'grid', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ minWidth: 0, lineHeight: 1.5 }}><b style={{ color: C.ink }}>{name || email || (segment === 'parent' ? '부모' : '직장인')}</b> · {segment === 'parent' ? '부모' : '직장인'}</span>
+          <span style={{ lineHeight: 1.5 }}>턴 {turn} · 톤 <b style={{ color: C.accent }}>{lastAi.toneLevel ?? 0}</b> · {PHASE_LABEL[(lastAi as Msg).phase ?? 'opening'] ?? '-'}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <button
               onClick={() => setEditingFilename((v) => !v)}
               style={{ background: 'none', border: 'none', color: C.faint, cursor: 'pointer', fontSize: '.72rem', textDecoration: 'underline' }}
@@ -411,6 +413,11 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
             <button onClick={resetAll} style={{ background: 'none', border: 'none', color: C.faint, cursor: 'pointer', fontSize: '.72rem', textDecoration: 'underline' }}>처음</button>
           </div>
           </div>
+          {!showRedTeam && !editingFilename && (
+            <div style={{ color: C.faint, fontSize: '.7rem', lineHeight: 1.45 }}>
+              대화 중 언제든 <b style={{ color: C.ink }}>Markdown</b> 저장과 <b style={{ color: C.ink }}>RED TEAM</b> 진단을 열 수 있습니다.
+            </div>
+          )}
           {editingFilename && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
               <input
