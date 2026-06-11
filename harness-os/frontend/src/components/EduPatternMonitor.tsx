@@ -112,29 +112,29 @@ type PatternMonitorPayload = {
         }
       }>
     }>
-  }
-  extraction_funnel?: {
-    raw_input_rows?: number
-    scanned_rows?: number
-    unique_rows_linked?: number
-    extracted_facts?: number
-    source_breakdown?: Array<{
-      source_key?: string
-      label?: string
-      total_rows?: number
+    extraction_funnel?: {
+      raw_input_rows?: number
       scanned_rows?: number
-      eligible_rows?: number
-      rows_with_match?: number
       unique_rows_linked?: number
-      included_fact_count?: number
-      excluded_rows?: number
-      excluded_reason_counts?: Record<string, number>
-      complaint_only_rows?: number
-      notes?: string[]
-      source_kind_counts?: Record<string, number>
-      event_type_counts?: Record<string, number>
-      segment_counts?: Record<string, number>
-    }>
+      extracted_facts?: number
+      source_breakdown?: Array<{
+        source_key?: string
+        label?: string
+        total_rows?: number
+        scanned_rows?: number
+        eligible_rows?: number
+        rows_with_match?: number
+        unique_rows_linked?: number
+        included_fact_count?: number
+        excluded_rows?: number
+        excluded_reason_counts?: Record<string, number>
+        complaint_only_rows?: number
+        notes?: string[]
+        source_kind_counts?: Record<string, number>
+        event_type_counts?: Record<string, number>
+        segment_counts?: Record<string, number>
+      }>
+    }
   }
   fact_check?: {
     status?: string
@@ -306,7 +306,7 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
   const summary = payload?.monitor?.summary
   const topPatterns = payload?.monitor?.patterns ?? []
   const history = payload?.history ?? []
-  const funnel = payload?.extraction_funnel
+  const funnel = payload?.monitor?.extraction_funnel
   const factByPattern = useMemo(() => {
     const out = new Map<string, FactCheckPattern>()
     for (const item of (payload?.fact_check?.patterns ?? []) as FactCheckPattern[]) out.set(item.pattern_id, item)
@@ -578,7 +578,7 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 14 }}>
             <div style={{ fontSize: '.86rem', fontWeight: 800, color: C.ink, marginBottom: 8 }}>raw → linked → fact 퍼널</div>
             <div style={{ display: 'grid', gap: 10, marginBottom: 12 }}>
-              {(payload?.extraction_funnel?.source_breakdown || []).map((row, idx) => (
+              {(payload?.monitor?.extraction_funnel?.source_breakdown || []).map((row, idx) => (
                 <div key={`${row.source_key || row.label || 'source'}-${idx}`} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px' }}>
                   <div style={{ fontSize: '.78rem', color: C.ink, fontWeight: 700 }}>{row.label}</div>
                   <div style={{ fontSize: '.8rem', color: C.muted, marginTop: 5, lineHeight: 1.6 }}>
