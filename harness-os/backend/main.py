@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
@@ -7500,32 +7501,137 @@ def _persist_edu_case_turns(req: EduDiagnoseRequest, result: dict[str, Any]) -> 
     )
 
 
+_EDU_CONV_LOG_READY = False
+_EDU_CONV_LOG_LOCK = threading.Lock()
+
+
+def _ensure_edu_conversation_log_schema() -> None:
+    global _EDU_CONV_LOG_READY
+    if _EDU_CONV_LOG_READY:
+        return
+    with _EDU_CONV_LOG_LOCK:
+        if _EDU_CONV_LOG_READY:
+            return
+        sql_text = (PROJECT_ROOT / "infra" / "migrations" / "2026-06-11_edu_conversation_log.sql").read_text(encoding="utf-8")
+        from core.database import get_connection
+
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql_text)
+            conn.commit()
+            _EDU_CONV_LOG_READY = True
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+
+def _edu_ip_hash(request: "Request | None") -> str | None:
+    """원본 IP는 저장하지 않고 sha256[:16]만 남긴다(_edu_public_gate와 동일 추출 규칙)."""
+    if request is None:
+        return None
+    ip = request.client.host if request.client else "unknown"
+    if os.getenv("EDU_TRUST_XFF", "false").lower() == "true":
+        xff = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        if xff:
+            ip = xff
+    return hashlib.sha256(ip.encode("utf-8")).hexdigest()[:16]
+
+
+def _log_edu_conversation(
+    *,
+    endpoint: str,
+    kind: str,
+    req: Any,
+    result: dict[str, Any] | None,
+    request: "Request | None",
+    authed: bool,
+) -> None:
+    """모든 edu 대화(요청+응답)를 append-only로 전수 기록한다 — "빠짐없이"(CEO 2026-06-11).
+
+    best-effort: 어떤 예외도 응답 경로로 전파하지 않는다. case_id/성공여부와 무관하게 남긴다.
+    """
+    try:
+        _ensure_edu_conversation_log_schema()
+        try:
+            req_dump = req.model_dump()
+        except Exception:
+            req_dump = {}
+        ok = isinstance(result, dict) and bool(result)
+        _edu_execute(
+            """
+            INSERT INTO edu_conversation_log
+                (endpoint, kind, authed, segment, track, turn, case_id, user_text, locale, ok, ip_hash, request_json, response_json)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb)
+            """,
+            (
+                endpoint,
+                kind,
+                bool(authed),
+                getattr(req, "segment", None),
+                getattr(req, "track", None),
+                int(getattr(req, "turn", 0) or 0),
+                (int(req.case_id) if getattr(req, "case_id", None) is not None else None),
+                (getattr(req, "user_text", None) or None),
+                getattr(req, "locale", None),
+                ok,
+                _edu_ip_hash(request),
+                json.dumps(req_dump, ensure_ascii=False, default=str),
+                json.dumps(result if isinstance(result, dict) else {}, ensure_ascii=False, default=str),
+            ),
+            fetch=False,
+        )
+    except Exception:
+        # 기록 실패가 고객 응답을 막아선 안 된다. (관측만 — 에러 로그)
+        try:
+            logging.getLogger("uvicorn.error").warning("[edu_conv_log] 기록 실패(무시): %s/%s", kind, endpoint)
+        except Exception:
+            pass
+
+
 @app.post("/api/edu/diagnose")
 def edu_diagnose(
     req: EduDiagnoseRequest,
+    request: Request,
     _: None = Depends(_require_secret),
 ) -> dict[str, Any]:
-    result = _run_edu_diagnose(req)
-    _persist_edu_case_turns(req, result)
-    return result
+    result: dict[str, Any] | None = None
+    try:
+        result = _run_edu_diagnose(req)
+        _persist_edu_case_turns(req, result)
+        return result
+    finally:
+        _log_edu_conversation(endpoint="/api/edu/diagnose", kind="diagnose", req=req, result=result, request=request, authed=True)
 
 
 @app.post("/api/public/edu/diagnose")
 def edu_public_diagnose(req: EduDiagnoseRequest, request: Request) -> dict[str, Any]:
     """독립형 PoC용 공개 진입점. case_id가 오면 서버에도 저장한다."""
     _edu_public_gate(request)  # IP rate-limit + 일일 호출 상한 (비용 폭탄/DoS 차단)
-    result = _run_edu_diagnose(req)
-    _persist_edu_case_turns(req, result)
-    return result
+    result: dict[str, Any] | None = None
+    try:
+        result = _run_edu_diagnose(req)
+        _persist_edu_case_turns(req, result)
+        return result
+    finally:
+        _log_edu_conversation(endpoint="/api/public/edu/diagnose", kind="diagnose", req=req, result=result, request=request, authed=False)
 
 
 @app.post("/api/edu/curriculum")
 def edu_curriculum(
     req: EduCurriculumRequest,
+    request: Request,
     _: None = Depends(_require_secret),
 ) -> dict[str, Any]:
     """오퍼 화면 '이어서 보기' — 대화 기반 개인화 단계형 처방 (내부/인증)."""
-    return _run_edu_curriculum(req)
+    result: dict[str, Any] | None = None
+    try:
+        result = _run_edu_curriculum(req)
+        return result
+    finally:
+        _log_edu_conversation(endpoint="/api/edu/curriculum", kind="curriculum", req=req, result=result, request=request, authed=True)
 
 
 @app.post("/api/edu/export-markdown")
@@ -7614,7 +7720,12 @@ def edu_pattern_intelligence_artifact(
 def edu_public_curriculum(req: EduCurriculumRequest, request: Request) -> dict[str, Any]:
     """오퍼 화면 '이어서 보기' — 대화 기반 개인화 단계형 처방 (공개 PoC)."""
     _edu_public_gate(request)  # IP rate-limit + 일일 호출 상한 (비용 폭탄/DoS 차단)
-    return _run_edu_curriculum(req)
+    result: dict[str, Any] | None = None
+    try:
+        result = _run_edu_curriculum(req)
+        return result
+    finally:
+        _log_edu_conversation(endpoint="/api/public/edu/curriculum", kind="curriculum", req=req, result=result, request=request, authed=False)
 
 
 @app.post("/api/public/edu/export-markdown")
