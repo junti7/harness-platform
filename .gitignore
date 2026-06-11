@@ -73,6 +73,10 @@ harness-os/frontend/manifest.webmanifest
 # 일별 raw 수집 데이터 (재수집 가능 — 파생물 evidence_bank/index가 실사용)
 data/edu_research/*/naver_collected.json
 
+# edu evidence 파생물 (run_pipeline/edu_daily/tier3-refine가 매 사이클 재생성 — 만성 dirty).
+# 추적 해제 시 rollout에서 ff가 삭제할 수 있으니 배포는 백업→restore 동반(Codex). drift 가드도 제외.
+data/edu_research/evidence_bank.json
+
 # Unmatched-entity miner 산출물 (프로덕션 주1회 재생성 — system of record 아님)
 docs/trading/universe_candidate_queue.json
 docs/trading/UNIVERSE_CANDIDATE_QUEUE.md
