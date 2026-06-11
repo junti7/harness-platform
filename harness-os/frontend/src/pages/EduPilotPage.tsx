@@ -377,6 +377,18 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
     padding: '13px 14px', fontSize: '.97rem', fontFamily: 'inherit',
     boxSizing: 'border-box', outline: 'none',
   }
+  const preflightCard = (
+    <div style={{ marginBottom: 16, padding: '10px 12px', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12 }}>
+      <div style={{ fontSize: '.74rem', color: C.faint, lineHeight: 1.5, marginBottom: 8 }}>
+        대화가 시작되면 여기서 바로 transcript 저장과 RED TEAM 진단을 실행할 수 있습니다.
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <button disabled style={{ background: 'none', border: 'none', color: C.border, fontSize: '.74rem', textDecoration: 'underline', padding: 0 }}>파일명</button>
+        <button disabled style={{ background: 'none', border: 'none', color: C.border, fontSize: '.74rem', textDecoration: 'underline', padding: 0 }}>RED TEAM</button>
+        <button disabled style={{ background: 'none', border: 'none', color: C.border, fontSize: '.74rem', textDecoration: 'underline', padding: 0 }}>Markdown</button>
+      </div>
+    </div>
+  )
 
   // ── Chat Screen ── (started=true 이면 폼 전혀 없음)
   if (started) {
@@ -553,6 +565,7 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
   // ── Setup Wizard (started=false) ──
   return (
     <div style={{ ...wrap, justifyContent: 'flex-start' }}>
+      {preflightCard}
       {/* CEO/VP 테스트 런처 (접기/펼치기) */}
       <div style={{ marginBottom: 16 }}>
         <button
