@@ -5479,6 +5479,61 @@ _EDU_PATTERN_REFRESH_LOCK = threading.Lock()
 _EDU_PATTERN_LAST_RUN = 0.0
 _EDU_PATTERN_REFRESH_INTERVAL_SEC = 300.0
 
+# Background scheduler (com.harness.edu-pattern-intelligence LaunchAgent, StartInterval=1800)
+_EDU_PATTERN_SCHEDULER_LABEL = "com.harness.edu-pattern-intelligence"
+_EDU_PATTERN_SCHEDULER_INTERVAL_SEC = 1800
+_EDU_PATTERN_SCHEDULER_LOG_PATH = PROJECT_ROOT / "logs" / "edu-pattern-intelligence.log"
+_EDU_PATTERN_SCHEDULER_CACHE: dict[str, Any] = {"ts": 0.0, "value": None}
+# TTL을 프런트 polling 간격(45s)보다 넉넉히 크게 둬 연속 poll이 캐시에 적중하게 한다.
+# scheduler 상태(loaded/last_run)는 느리게 변하므로 120초 staleness는 무해하다.
+# backend는 단일 워커 uvicorn이라 프로세스-로컬 캐시로 충분(멀티워커 비공유 이슈 없음).
+_EDU_PATTERN_SCHEDULER_CACHE_TTL = 120.0
+
+
+def _edu_pattern_scheduler_status() -> dict[str, Any]:
+    """Best-effort observability for the edu-pattern-intelligence LaunchAgent.
+
+    화면 polling(45s)이 잦으므로 launchctl 호출 결과를 캐시(120s)한다.
+    last_run은 전용 로그 파일의 mtime(마지막 wrapper 실행 시각)으로 근사한다.
+    """
+    now = time.time()
+    cached = _EDU_PATTERN_SCHEDULER_CACHE
+    if cached["value"] is not None and now - cached["ts"] < _EDU_PATTERN_SCHEDULER_CACHE_TTL:
+        return cached["value"]
+    loaded = False
+    try:
+        import subprocess
+
+        proc = subprocess.run(
+            ["launchctl", "print", f"gui/{os.getuid()}/{_EDU_PATTERN_SCHEDULER_LABEL}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        loaded = proc.returncode == 0
+    except Exception:
+        loaded = False
+    last_run = None
+    log_exists = _EDU_PATTERN_SCHEDULER_LOG_PATH.exists()
+    if log_exists:
+        try:
+            last_run = datetime.fromtimestamp(
+                _EDU_PATTERN_SCHEDULER_LOG_PATH.stat().st_mtime, tz=timezone.utc
+            ).isoformat(timespec="seconds")
+        except Exception:
+            last_run = None
+    status = {
+        "label": _EDU_PATTERN_SCHEDULER_LABEL,
+        "loaded": loaded,
+        "interval_sec": _EDU_PATTERN_SCHEDULER_INTERVAL_SEC,
+        "last_run": last_run,
+        "log_path": str(_EDU_PATTERN_SCHEDULER_LOG_PATH.relative_to(PROJECT_ROOT)),
+        "log_exists": log_exists,
+    }
+    _EDU_PATTERN_SCHEDULER_CACHE["ts"] = now
+    _EDU_PATTERN_SCHEDULER_CACHE["value"] = status
+    return status
+
 
 def _edu_mask_email(email: str) -> str:
     normalized = _edu_normalize_email(email)
@@ -5592,6 +5647,7 @@ def _read_edu_pattern_payload() -> dict[str, Any]:
         "fact_check": fact_check,
         "history": history_rows,
         "red_team": red_team,
+        "scheduler": _edu_pattern_scheduler_status(),
         "artifacts": {
             "monitor_url": "/api/edu/pattern-intelligence/artifacts/edu_pattern_intelligence.json",
             "fact_check_url": "/api/edu/pattern-intelligence/artifacts/edu_pattern_fact_check.json",

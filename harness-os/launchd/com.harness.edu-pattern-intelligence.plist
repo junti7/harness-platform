@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.harness.edu-pattern-intelligence</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/juntaepark/projects/harness-platform/scripts/run_edu_pattern_intelligence_refresh.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/juntaepark/projects/harness-platform</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    <key>DATABASE_URL</key>
+    <string>postgresql://localhost/harness_prod</string>
+  </dict>
+
+  <!-- 30분 주기 — edu 패턴 인텔리전스 artifact를 background에서 정기 재빌드.
+       관제 화면 on-demand refresh(backend 5분 guard)에만 의존하던 최신성 공백을 메운다.
+       로드 즉시 1회 실행(RunAtLoad)해 artifact를 즉시 준비. -->
+  <key>StartInterval</key>
+  <integer>1800</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/juntaepark/projects/harness-platform/logs/edu-pattern-intelligence.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/juntaepark/projects/harness-platform/logs/edu-pattern-intelligence.error.log</string>
+</dict>
+</plist>
