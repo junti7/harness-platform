@@ -86,6 +86,8 @@
     const API_BOOTSTRAP  = '/api/public/edu/bootstrap'
     const API_DIAGNOSE   = '/api/public/edu/diagnose'
     const API_CURRICULUM = '/api/public/edu/curriculum'
+    const API_EXPORT     = '/api/public/edu/export-markdown'
+    const API_RED_TEAM   = '/api/public/edu/red-team/review'
     const API_MAGIC      = '/api/public/edu/magic-link/consume'
 
     const PHASE_LABEL = { opening:'첫 인사', probing:'경청', reflecting:'단정', recovering:'복구', prescribing:'가이드 제안' }
@@ -117,6 +119,8 @@
       quickReplies: [], showOffer: false,
       input: '', loading: false,
       prescription: null, prescriptionLoading: false, prescriptionTrack: null,
+      filenameBase: '', editingFilename: false,
+      showRedTeam: false, redTeamLoading: false, redTeamCeoFeedback: '', redTeamVpFeedback: '', redTeamResult: null,
     }
 
     function setState(patch) {
@@ -129,6 +133,24 @@
       return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')
     }
     function toTurnCount(msgs) { return msgs.filter(m=>m.role==='user').length }
+    function slugify(s) { return String(s||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'') }
+    function defaultFilenameBase() {
+      const identity = slugify((state.email||'').split('@')[0] || state.name || '') || 'guest'
+      return `edu-diagnosis-${state.segment}-${identity}`
+    }
+    function buildExportMessages(msgs) {
+      let userTurn = 0
+      return msgs.map(m => {
+        if (m.role === 'user') userTurn += 1
+        return {
+          role: m.role,
+          text: m.text,
+          toneLevel: m.toneLevel ?? null,
+          phase: m.phase ?? null,
+          turnNo: userTurn,
+        }
+      })
+    }
 
     // ── API: magic link ──
     async function consumeMagicTokenIfPresent() {
@@ -227,6 +249,102 @@
       }
     }
 
+    async function downloadTranscript() {
+      if (!state.msgs.length || state.loading) return
+      const safeBase = slugify(state.filenameBase || defaultFilenameBase()) || defaultFilenameBase()
+      try {
+        const res = await fetch(API_EXPORT, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            source: 'magic_link_public',
+            segment: state.segment,
+            name: state.name,
+            email: state.email,
+            preferred_salutation: state.salutation,
+            locale: state.locale,
+            case_id: state.caseId || null,
+            customer_id: state.customerId || null,
+            messages: buildExportMessages(state.msgs),
+          }),
+        })
+        if (!res.ok) throw new Error()
+        const blob = await res.blob()
+        const disposition = res.headers.get('Content-Disposition') || ''
+        const match = disposition.match(/filename=\"?([^\"]+)\"?/)
+        const fallback = `${safeBase}.md`
+        const filename = (match && match[1] ? match[1] : fallback).replace(/^edu-diagnosis-[^.]+\.md$/i, fallback)
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        URL.revokeObjectURL(url)
+      } catch {
+        alert('대화 Markdown 다운로드에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+      }
+    }
+
+    async function runRedTeamReview() {
+      if (!state.msgs.length || state.redTeamLoading) return
+      setState({ redTeamLoading: true })
+      try {
+        const res = await fetch(API_RED_TEAM, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            source: 'magic_link_public',
+            segment: state.segment,
+            locale: state.locale,
+            case_id: state.caseId || null,
+            customer_id: state.customerId || null,
+            name: state.name,
+            email: state.email,
+            ceo_feedback: state.redTeamCeoFeedback,
+            vp_feedback: state.redTeamVpFeedback,
+            messages: buildExportMessages(state.msgs),
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error()
+        setState({ redTeamLoading:false, redTeamResult:data })
+      } catch {
+        setState({ redTeamLoading:false })
+        alert('RED TEAM 진단 실행에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+      }
+    }
+
+    async function downloadRedTeamResult() {
+      if (!state.redTeamResult || !state.redTeamResult.markdown_url) return
+      try {
+        const res = await fetch(state.redTeamResult.markdown_url)
+        if (!res.ok) throw new Error()
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = state.redTeamResult.markdown_filename || 'edu-red-team-review.md'
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        URL.revokeObjectURL(url)
+      } catch {
+        alert('RED TEAM 결과 다운로드에 실패했습니다.')
+      }
+    }
+
+    async function copyRedTeamUrl() {
+      if (!state.redTeamResult || !state.redTeamResult.markdown_url) return
+      try {
+        await navigator.clipboard.writeText(state.redTeamResult.markdown_url)
+        alert('RED TEAM 결과 URL을 복사했습니다.')
+      } catch {
+        alert('URL 복사에 실패했습니다. 브라우저 권한을 확인해 주세요.')
+      }
+    }
+
     function send(text) {
       const t = (text||'').trim()
       if (!t || state.loading) return
@@ -262,7 +380,7 @@
 
     function resetAll() {
       clearState()
-      state = { step:'segment', segment:'parent', name:'', email:'', salutation:'neutral', locale:'ko-KR', customerId:null, caseId:null, isReturning:false, turn:0, msgs:[], quickReplies:[], showOffer:false, input:'', loading:false, prescription:null, prescriptionLoading:false, prescriptionTrack:null }
+      state = { step:'segment', segment:'parent', name:'', email:'', salutation:'neutral', locale:'ko-KR', customerId:null, caseId:null, isReturning:false, turn:0, msgs:[], quickReplies:[], showOffer:false, input:'', loading:false, prescription:null, prescriptionLoading:false, prescriptionTrack:null, filenameBase:'', editingFilename:false, showRedTeam:false, redTeamLoading:false, redTeamCeoFeedback:'', redTeamVpFeedback:'', redTeamResult:null }
       render()
     }
 
@@ -379,14 +497,45 @@
     function renderChat(root) {
       const lastAi = [...state.msgs].reverse().find(m=>m.role==='ai') || { toneLevel:0, phase:'opening' }
       const displayName = state.name || state.email || (state.segment==='parent'?'부모':'직장인')
+      const filenameBase = state.filenameBase || defaultFilenameBase()
+      const redTeam = state.redTeamResult
 
       root.innerHTML = `
         <div class="chat-wrap">
           <div class="topline">
             <span><b>${escapeHtml(displayName)}</b> · ${state.isReturning?'이어서 보기':'새 케이스'}</span>
             <span>턴 <b>${state.turn}</b> · 톤 <b>${lastAi.toneLevel||0}</b> · ${PHASE_LABEL[lastAi.phase]||'-'}</span>
-            <button id="reset-btn" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:.72rem;text-decoration:underline;font-family:inherit">처음</button>
+            <div style="display:flex;align-items:center;gap:10px">
+              <button id="rename-btn" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:.72rem;text-decoration:underline;font-family:inherit">파일명</button>
+              <button id="redteam-toggle-btn" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:.72rem;text-decoration:underline;font-family:inherit">RED TEAM</button>
+              <button id="download-btn" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:.72rem;text-decoration:underline;font-family:inherit">Markdown</button>
+              <button id="reset-btn" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:.72rem;text-decoration:underline;font-family:inherit">처음</button>
+            </div>
           </div>
+          ${state.editingFilename ? `
+            <div style="display:flex;align-items:center;gap:8px;margin:-2px 0 8px;padding:0 4px">
+              <input class="field" id="filename-input" value="${escapeHtml(filenameBase)}" style="padding:8px 10px;font-size:.78rem" />
+              <span style="color:var(--faint);font-size:.72rem">.md</span>
+            </div>
+          ` : ''}
+          ${state.showRedTeam ? `
+            <div style="display:grid;gap:8px;margin:0 0 8px;padding:0 4px">
+              <textarea class="field" id="redteam-ceo" rows="3" placeholder="CEO 의견 (선택)" style="padding:10px 12px;font-size:.8rem;resize:vertical">${escapeHtml(state.redTeamCeoFeedback||'')}</textarea>
+              <textarea class="field" id="redteam-vp" rows="3" placeholder="VP 의견 (선택)" style="padding:10px 12px;font-size:.8rem;resize:vertical">${escapeHtml(state.redTeamVpFeedback||'')}</textarea>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <button class="btn ${state.redTeamLoading ? 'loading' : ''}" id="redteam-run-btn" style="width:auto;padding:10px 14px;font-size:.82rem;box-shadow:none">${state.redTeamLoading ? 'RED TEAM 진단 중…' : 'RED TEAM 진단'}</button>
+                ${redTeam ? `<button class="btn" id="redteam-download-btn" style="width:auto;padding:10px 14px;font-size:.82rem;background:var(--success);box-shadow:none">결과 Markdown</button>` : ''}
+                ${redTeam ? `<button class="btn secondary" id="redteam-copy-btn" style="width:auto;padding:10px 14px;font-size:.82rem">URL 복사</button>` : ''}
+              </div>
+              ${redTeam ? `
+                <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:.78rem;line-height:1.55">
+                  <div style="font-weight:700;color:var(--ink)">${escapeHtml(redTeam.headline || 'RED TEAM 결과')}</div>
+                  <div style="color:var(--faint);margin-top:2px">verdict: <b style="color:var(--accent)">${escapeHtml(redTeam.verdict || '')}</b></div>
+                  ${redTeam.summary ? `<div style="color:var(--muted);margin-top:6px">${escapeHtml(redTeam.summary)}</div>` : ''}
+                </div>
+              ` : ''}
+            </div>
+          ` : ''}
           <div class="chat" id="chatbox"></div>
           ${state.quickReplies.length&&!state.loading ? '<div class="chips" id="chips"></div>' : ''}
           <div class="inputbar">
@@ -458,6 +607,23 @@
 
       // input binding
       document.getElementById('reset-btn').onclick = resetAll
+      document.getElementById('rename-btn').onclick = () => setState({ editingFilename: !state.editingFilename, filenameBase })
+      document.getElementById('redteam-toggle-btn').onclick = () => setState({ showRedTeam: !state.showRedTeam })
+      document.getElementById('download-btn').onclick = () => downloadTranscript()
+      const filenameInput = document.getElementById('filename-input')
+      if (filenameInput) {
+        filenameInput.oninput = e => setState({ filenameBase: e.target.value })
+      }
+      const ceoInput = document.getElementById('redteam-ceo')
+      const vpInput = document.getElementById('redteam-vp')
+      const redTeamRun = document.getElementById('redteam-run-btn')
+      const redTeamDownload = document.getElementById('redteam-download-btn')
+      const redTeamCopy = document.getElementById('redteam-copy-btn')
+      if (ceoInput) ceoInput.oninput = e => setState({ redTeamCeoFeedback: e.target.value })
+      if (vpInput) vpInput.oninput = e => setState({ redTeamVpFeedback: e.target.value })
+      if (redTeamRun) redTeamRun.onclick = () => runRedTeamReview()
+      if (redTeamDownload) redTeamDownload.onclick = () => downloadRedTeamResult()
+      if (redTeamCopy) redTeamCopy.onclick = () => copyRedTeamUrl()
       const inp = document.getElementById('msg-input')
       inp.oninput = e => { state.input = e.target.value; saveState(state) }
       inp.onkeydown = e => { if (e.key==='Enter') send(inp.value) }

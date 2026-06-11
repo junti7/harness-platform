@@ -13,6 +13,7 @@ type Msg = { role: 'ai' | 'user'; text: string; toneLevel?: number; phase?: stri
 type SetupStep = 'segment' | 'info' | 'salutation'
 type RxModule = { step: number; title: string; why_you: string; do_now: string; seasoning: string; minutes: number }
 type Prescription = { track: string; reading: string; intro: string; modules: RxModule[]; closing: string; disclaimer?: string }
+type RedTeamResult = { report_id: string; headline: string; verdict: string; markdown_filename: string; markdown_url: string; summary: string }
 
 const C = {
   ink: '#0f172a', muted: '#475569', faint: '#64748b', accent: '#2563eb',
@@ -34,6 +35,33 @@ const OPENERS: Record<'parent' | 'worker', { text: string; quick: string[] }> = 
     text: '앉으세요. … 요즘 이쪽으로 오시는 분들, 대부분 같은 이유예요. "AI 못 따라가면 끝이다" 싶은 거죠. 우선 하나 봅시다 — 지금 무슨 일 하세요?',
     quick: ['사무직이에요', '기획/마케팅이에요', '딱히 정해진 게 없어요'],
   },
+}
+
+function slugify(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function defaultFilenameBase(segment: 'parent' | 'worker', name: string, email: string) {
+  const identity = slugify(email.split('@')[0] || name) || 'guest'
+  return `edu-diagnosis-${segment}-${identity}`
+}
+
+function buildExportMessages(messages: Msg[]) {
+  let userTurn = 0
+  return messages.map((m) => {
+    if (m.role === 'user') userTurn += 1
+    return {
+      role: m.role,
+      text: m.text,
+      toneLevel: m.toneLevel ?? null,
+      phase: m.phase ?? null,
+      turnNo: m.role === 'user' ? userTurn : userTurn,
+    }
+  })
 }
 
 function PrescriptionCard({ p, C }: { p: Prescription; C: Record<string, string> }) {
@@ -84,6 +112,14 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
   const [quickReplies, setQuickReplies] = useState<string[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const [filenameBase, setFilenameBase] = useState('')
+  const [editingFilename, setEditingFilename] = useState(false)
+  const [showRedTeam, setShowRedTeam] = useState(false)
+  const [redTeamLoading, setRedTeamLoading] = useState(false)
+  const [redTeamCeoFeedback, setRedTeamCeoFeedback] = useState('')
+  const [redTeamVpFeedback, setRedTeamVpFeedback] = useState('')
+  const [redTeamResult, setRedTeamResult] = useState<RedTeamResult | null>(null)
   const [showOffer, setShowOffer] = useState(false)
   const [turn, setTurn] = useState(0)
   const [prescription, setPrescription] = useState<Prescription | null>(null)
@@ -106,6 +142,12 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [msgs, loading])
+
+  useEffect(() => {
+    if (!editingFilename) {
+      setFilenameBase(defaultFilenameBase(segment, name, email))
+    }
+  }, [editingFilename, email, name, segment])
 
   // ── API calls ──
   async function callDiagnose(userText: string, history: Msg[], turnNo: number) {
@@ -179,6 +221,102 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
     }
   }
 
+  async function downloadTranscript() {
+    if (!msgs.length || downloading) return
+    setDownloading(true)
+    try {
+      const safeBase = slugify(filenameBase) || defaultFilenameBase(segment, name, email)
+      const res = await fetch(`${apiBase}/api/edu/export-markdown`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          source: 'harness_os',
+          segment,
+          name,
+          email,
+          preferred_salutation: salutation,
+          locale: 'ko-KR',
+          messages: buildExportMessages(msgs),
+        }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const blob = await res.blob()
+      const disposition = res.headers.get('Content-Disposition') || ''
+      const match = disposition.match(/filename=\"?([^"]+)\"?/)
+      const fallback = `${safeBase}.md`
+      const filename = (match?.[1] || fallback).replace(/^edu-diagnosis-[^.]+\.md$/i, fallback)
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+    } catch {
+      alert('대화 Markdown 다운로드에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  async function runRedTeamReview() {
+    if (!msgs.length || redTeamLoading) return
+    setRedTeamLoading(true)
+    try {
+      const res = await fetch(`${apiBase}/api/edu/red-team/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          source: 'harness_os',
+          segment,
+          locale: 'ko-KR',
+          name,
+          email,
+          ceo_feedback: redTeamCeoFeedback,
+          vp_feedback: redTeamVpFeedback,
+          messages: buildExportMessages(msgs),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
+      setRedTeamResult(data as RedTeamResult)
+    } catch {
+      alert('RED TEAM 진단 실행에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+    } finally {
+      setRedTeamLoading(false)
+    }
+  }
+
+  async function copyRedTeamUrl() {
+    if (!redTeamResult?.markdown_url) return
+    try {
+      await navigator.clipboard.writeText(redTeamResult.markdown_url)
+      alert('RED TEAM 결과 URL을 복사했습니다.')
+    } catch {
+      alert('URL 복사에 실패했습니다. 브라우저 권한을 확인해 주세요.')
+    }
+  }
+
+  async function downloadRedTeamResult() {
+    if (!redTeamResult?.markdown_url) return
+    try {
+      const res = await fetch(redTeamResult.markdown_url)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = redTeamResult.markdown_filename || 'edu-red-team-review.md'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+    } catch {
+      alert('RED TEAM 결과 다운로드에 실패했습니다.')
+    }
+  }
+
   // ── start chat ──
   function startChat(seg: 'parent' | 'worker') {
     setStarted(true)
@@ -212,6 +350,13 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
     setMsgs([])
     setQuickReplies([])
     setInput('')
+    setFilenameBase('')
+    setEditingFilename(false)
+    setShowRedTeam(false)
+    setRedTeamLoading(false)
+    setRedTeamCeoFeedback('')
+    setRedTeamVpFeedback('')
+    setRedTeamResult(null)
     setShowOffer(false)
     setTurn(0)
   }
@@ -239,10 +384,94 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
     return (
       <div style={wrap}>
         {/* 최소한의 상태 바 + 리셋 */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, marginBottom: 8, fontSize: '.72rem', color: C.faint }}>
+        <div style={{ padding: '6px 10px', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, marginBottom: 8, fontSize: '.72rem', color: C.faint }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
           <span><b style={{ color: C.ink }}>{name || email || (segment === 'parent' ? '부모' : '직장인')}</b> · {segment === 'parent' ? '부모' : '직장인'}</span>
           <span>턴 {turn} · 톤 <b style={{ color: C.accent }}>{lastAi.toneLevel ?? 0}</b> · {PHASE_LABEL[(lastAi as Msg).phase ?? 'opening'] ?? '-'}</span>
-          <button onClick={resetAll} style={{ background: 'none', border: 'none', color: C.faint, cursor: 'pointer', fontSize: '.72rem', textDecoration: 'underline' }}>처음</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              onClick={() => setEditingFilename((v) => !v)}
+              style={{ background: 'none', border: 'none', color: C.faint, cursor: 'pointer', fontSize: '.72rem', textDecoration: 'underline' }}
+            >
+              파일명
+            </button>
+            <button
+              onClick={() => setShowRedTeam((v) => !v)}
+              style={{ background: 'none', border: 'none', color: C.faint, cursor: 'pointer', fontSize: '.72rem', textDecoration: 'underline' }}
+            >
+              RED TEAM
+            </button>
+            <button
+              onClick={() => void downloadTranscript()}
+              disabled={downloading || msgs.length === 0}
+              style={{ background: 'none', border: 'none', color: downloading ? C.border : C.accent, cursor: downloading ? 'wait' : 'pointer', fontSize: '.72rem', textDecoration: 'underline' }}
+            >
+              {downloading ? '내리는 중…' : 'Markdown'}
+            </button>
+            <button onClick={resetAll} style={{ background: 'none', border: 'none', color: C.faint, cursor: 'pointer', fontSize: '.72rem', textDecoration: 'underline' }}>처음</button>
+          </div>
+          </div>
+          {editingFilename && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+              <input
+                value={filenameBase}
+                onChange={(e) => setFilenameBase(e.target.value)}
+                placeholder="파일명"
+                style={{ flex: 1, border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px', fontSize: '.78rem', fontFamily: 'inherit', outline: 'none' }}
+              />
+              <span style={{ color: C.faint, fontSize: '.72rem' }}>.md</span>
+            </div>
+          )}
+          {showRedTeam && (
+            <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+              <textarea
+                value={redTeamCeoFeedback}
+                onChange={(e) => setRedTeamCeoFeedback(e.target.value)}
+                placeholder="CEO 의견 (선택)"
+                rows={3}
+                style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', fontSize: '.8rem', fontFamily: 'inherit', resize: 'vertical', outline: 'none' }}
+              />
+              <textarea
+                value={redTeamVpFeedback}
+                onChange={(e) => setRedTeamVpFeedback(e.target.value)}
+                placeholder="VP 의견 (선택)"
+                rows={3}
+                style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', fontSize: '.8rem', fontFamily: 'inherit', resize: 'vertical', outline: 'none' }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => void runRedTeamReview()}
+                  disabled={redTeamLoading || msgs.length === 0}
+                  style={{ ...btn, width: 'auto', padding: '10px 14px', fontSize: '.82rem', boxShadow: 'none' }}
+                >
+                  {redTeamLoading ? 'RED TEAM 진단 중…' : 'RED TEAM 진단'}
+                </button>
+                {redTeamResult && (
+                  <>
+                    <button
+                      onClick={() => void downloadRedTeamResult()}
+                      style={{ ...btn, width: 'auto', padding: '10px 14px', fontSize: '.82rem', background: C.success, boxShadow: 'none' }}
+                    >
+                      결과 Markdown
+                    </button>
+                    <button
+                      onClick={() => void copyRedTeamUrl()}
+                      style={{ ...btn, width: 'auto', padding: '10px 14px', fontSize: '.82rem', background: C.surface, color: C.accent, border: `1.5px solid ${C.accent}`, boxShadow: 'none' }}
+                    >
+                      URL 복사
+                    </button>
+                  </>
+                )}
+              </div>
+              {redTeamResult && (
+                <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', fontSize: '.78rem', lineHeight: 1.55 }}>
+                  <div style={{ fontWeight: 700, color: C.ink }}>{redTeamResult.headline || 'RED TEAM 결과'}</div>
+                  <div style={{ color: C.faint, marginTop: 2 }}>verdict: <b style={{ color: C.accent }}>{redTeamResult.verdict}</b></div>
+                  {redTeamResult.summary && <div style={{ color: C.muted, marginTop: 6 }}>{redTeamResult.summary}</div>}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* 메시지 영역 */}
