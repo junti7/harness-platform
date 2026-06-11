@@ -5618,14 +5618,26 @@ def _resolve_edu_pattern_sample(pattern_id: str, sample_index: int) -> dict[str,
     ref = sample.get("source_ref") or {}
     resolver = ref.get("resolver")
 
+    return _resolve_edu_pattern_source_ref(
+        ref=ref,
+        sample=sample,
+        context={
+            "ok": True,
+            "pattern_id": pattern_id,
+            "sample_index": sample_index,
+        },
+    )
+
+
+def _resolve_edu_pattern_source_ref(ref: dict[str, Any], sample: Any, context: dict[str, Any]) -> dict[str, Any]:
+    resolver = ref.get("resolver")
+
     if resolver == "evidence_bank":
         bank = _read_json_file(PROJECT_ROOT / "data" / "edu_research" / "evidence_bank.json", {"items": []})
         items = bank.get("items") if isinstance(bank, dict) else []
         item = next((row for row in (items or []) if row.get("id") == ref.get("id")), None)
         return {
-            "ok": True,
-            "pattern_id": pattern_id,
-            "sample_index": sample_index,
+            **context,
             "resolver": resolver,
             "sample": sample,
             "detail": item,
@@ -5641,9 +5653,7 @@ def _resolve_edu_pattern_sample(pattern_id: str, sample_index: int) -> dict[str,
                 rows = []
         item = next((row for row in rows if row.get("ts") == ref.get("ts") and row.get("event_type") == ref.get("event_type")), None)
         return {
-            "ok": True,
-            "pattern_id": pattern_id,
-            "sample_index": sample_index,
+            **context,
             "resolver": resolver,
             "sample": sample,
             "detail": item,
@@ -5659,9 +5669,7 @@ def _resolve_edu_pattern_sample(pattern_id: str, sample_index: int) -> dict[str,
                 rows = []
         item = next((row for row in rows if row.get("id") == ref.get("id")), None)
         return {
-            "ok": True,
-            "pattern_id": pattern_id,
-            "sample_index": sample_index,
+            **context,
             "resolver": resolver,
             "sample": sample,
             "detail": item,
@@ -5684,9 +5692,7 @@ def _resolve_edu_pattern_sample(pattern_id: str, sample_index: int) -> dict[str,
             fetch=True,
         )
         return {
-            "ok": True,
-            "pattern_id": pattern_id,
-            "sample_index": sample_index,
+            **context,
             "resolver": resolver,
             "sample": sample,
             "detail": {
@@ -5697,13 +5703,35 @@ def _resolve_edu_pattern_sample(pattern_id: str, sample_index: int) -> dict[str,
         }
 
     return {
-        "ok": True,
-        "pattern_id": pattern_id,
-        "sample_index": sample_index,
+        **context,
         "resolver": resolver or "unknown",
         "sample": sample,
         "detail": sample.get("provenance"),
     }
+
+
+def _resolve_edu_pattern_excluded_sample(source_key: str, sample_index: int) -> dict[str, Any]:
+    monitor = _read_json_file(_EDU_PATTERN_MONITOR_PATH, {})
+    funnel = monitor.get("extraction_funnel") or {}
+    rows = funnel.get("source_breakdown") or []
+    target = next((row for row in rows if row.get("source_key") == source_key), None)
+    if not target:
+        raise HTTPException(404, "source breakdown not found")
+    samples = target.get("excluded_samples") or []
+    if sample_index < 0 or sample_index >= len(samples):
+        raise HTTPException(404, "excluded sample not found")
+    sample = samples[sample_index]
+    ref = sample.get("source_ref") or {}
+    return _resolve_edu_pattern_source_ref(
+        ref=ref,
+        sample=sample,
+        context={
+            "ok": True,
+            "source_key": source_key,
+            "sample_index": sample_index,
+            "excluded": True,
+        },
+    )
 
 
 def _ensure_edu_pattern_artifacts(force_refresh: bool = False) -> dict[str, Any]:
@@ -7487,6 +7515,15 @@ def edu_pattern_intelligence_source_detail(
     _: None = Depends(_require_secret),
 ) -> dict[str, Any]:
     return _resolve_edu_pattern_sample(pattern_id=pattern_id, sample_index=sample_index)
+
+
+@app.get("/api/edu/pattern-intelligence/excluded-detail")
+def edu_pattern_intelligence_excluded_detail(
+    source_key: str,
+    sample_index: int,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    return _resolve_edu_pattern_excluded_sample(source_key=source_key, sample_index=sample_index)
 
 
 @app.get("/api/edu/pattern-intelligence/artifacts/{filename}")

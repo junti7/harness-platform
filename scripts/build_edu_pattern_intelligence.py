@@ -237,11 +237,17 @@ def _safe_excerpt(text: str, cap: int = 220) -> str:
     return clean[:cap] + ("…" if len(clean) > cap else "")
 
 
-def _excluded_sample(reason: str, excerpt: str, meta: dict[str, Any] | None = None) -> dict[str, Any]:
+def _excluded_sample(
+    reason: str,
+    excerpt: str,
+    meta: dict[str, Any] | None = None,
+    source_ref: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     return {
         "reason": reason,
         "excerpt": _safe_excerpt(excerpt),
         "meta": meta or {},
+        "source_ref": source_ref or {},
     }
 
 
@@ -413,6 +419,10 @@ def _funnel_for_evidence(items: list[dict[str, Any]], pattern_defs: list[dict[st
                     "source_kind": source_kind,
                     "source": source_label,
                 },
+                {
+                    "resolver": "evidence_bank",
+                    "id": item.get("id"),
+                },
             ))
     return {
         "source_key": "evidence_bank",
@@ -501,6 +511,11 @@ def _funnel_for_turns(rows: list[dict[str, Any]], pattern_defs: list[dict[str, A
                         "role": row.get("role"),
                         "segment": row.get("segment"),
                     },
+                    {
+                        "resolver": "transcript_turn",
+                        "case_id": row.get("case_id"),
+                        "turn_no": row.get("turn_no"),
+                    },
                 ))
             continue
         scanned_rows += 1
@@ -529,6 +544,11 @@ def _funnel_for_turns(rows: list[dict[str, Any]], pattern_defs: list[dict[str, A
                         "turn_no": row.get("turn_no"),
                         "role": row.get("role"),
                         "segment": segment,
+                    },
+                    {
+                        "resolver": "transcript_turn",
+                        "case_id": row.get("case_id"),
+                        "turn_no": row.get("turn_no"),
                     },
                 ))
             continue
@@ -625,6 +645,11 @@ def _funnel_for_runtime(rows: list[dict[str, Any]], pattern_defs: list[dict[str,
                     {
                         "event_type": row.get("event_type"),
                         "segment": segment,
+                        "ts": row.get("ts"),
+                    },
+                    {
+                        "resolver": "runtime_event",
+                        "event_type": row.get("event_type"),
                         "ts": row.get("ts"),
                     },
                 ))
@@ -724,6 +749,10 @@ def _funnel_for_observations(rows: list[dict[str, Any]], pattern_defs: list[dict
                         "segment": segment,
                         "source": row.get("source"),
                         "ts": row.get("ts"),
+                    },
+                    {
+                        "resolver": "manual_observation",
+                        "id": row.get("id"),
                     },
                 ))
             continue

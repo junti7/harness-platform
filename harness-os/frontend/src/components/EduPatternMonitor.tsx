@@ -132,6 +132,14 @@ type PatternMonitorPayload = {
           reason?: string
           excerpt?: string
           meta?: Record<string, unknown>
+          source_ref?: {
+            resolver?: string
+            id?: string
+            case_id?: number
+            turn_no?: number
+            ts?: string
+            event_type?: string
+          }
         }>
         complaint_only_rows?: number
         notes?: string[]
@@ -354,6 +362,28 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
       setDetailPayload(data as SourceDetailPayload)
     } catch (err) {
       setDetailError(err instanceof Error ? err.message : '원문 detail 로드 실패')
+      setDetailPayload(null)
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  async function loadExcludedDetail(sourceKey: string, sampleIndex: number) {
+    setDetailLoading(true)
+    setDetailError(null)
+    try {
+      const qs = new URLSearchParams({ source_key: sourceKey, sample_index: String(sampleIndex) })
+      const res = await fetch(`${apiBase}/api/edu/pattern-intelligence/excluded-detail?${qs.toString()}`, { headers: authHeaders() })
+      const raw = await res.text()
+      const contentType = res.headers.get('content-type') || ''
+      if (!contentType.includes('application/json')) {
+        throw new Error(`excluded-detail API가 JSON이 아니라 ${contentType || 'unknown'}을 반환했습니다. 응답 시작: ${raw.slice(0, 160)}`)
+      }
+      const data = JSON.parse(raw)
+      if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
+      setDetailPayload(data as SourceDetailPayload)
+    } catch (err) {
+      setDetailError(err instanceof Error ? err.message : '제외 raw detail 로드 실패')
       setDetailPayload(null)
     } finally {
       setDetailLoading(false)
@@ -614,6 +644,18 @@ export function EduPatternMonitor({ apiBase, authHeaders, defaultOpen = false, m
                               {Object.entries(sample.meta).map(([key, value]) => `${key}=${String(value)}`).join(' · ')}
                             </div>
                           )}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+                            <div style={{ fontSize: '.72rem', color: C.faint }}>
+                              resolver: {sample.source_ref?.resolver || row.source_key || 'unknown'}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => void loadExcludedDetail(row.source_key || '', sampleIdx)}
+                              style={{ background: C.bg, color: C.accent, border: `1px solid ${C.accent}`, borderRadius: 9, padding: '6px 9px', fontSize: '.75rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+                            >
+                              제외 원문 보기
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
