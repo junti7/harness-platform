@@ -77,3 +77,8 @@ data/edu_research/*/naver_collected.json
 docs/trading/universe_candidate_queue.json
 docs/trading/UNIVERSE_CANDIDATE_QUEUE.md
 docs/reports/approval_intake.jsonl
+
+# 트레이딩 유니버스 빌드 산출물 (build_trading_universe.py가 seed+evidence로 매 사이클 재생성)
+# 소스는 configs/trading/universe_seed.json + 수집 evidence. 추적 시 만성 dirty.
+# 스케줄 트레이더는 run_trading_cycle.py가 실행 전 항상 재빌드(Codex 확인). drift 가드도 제외.
+docs/trading/universe.json
