@@ -59,6 +59,14 @@ def probe_ollama_host(host: str) -> bool:
 
 # TODO: 이 비용 로깅 함수들은 refiner.py와 중복됩니다. 향후 core 유틸리티로 리팩토링해야 합니다.
 def log_api_cost(model: str, input_tokens: int, output_tokens: int, provider: str = "google"):
+    model_lower = (model or "").lower()
+    if provider == "google":
+        if model_lower.startswith("claude"):
+            provider = "anthropic"
+        elif model_lower.startswith("gpt") or model_lower.startswith("o"):
+            provider = "openai"
+        elif any(model_lower.startswith(prefix) for prefix in ("gemma", "qwen", "llama", "mistral", "deepseek", "nomic-embed")):
+            provider = "ollama"
     try:
         try:
             execute_query("""

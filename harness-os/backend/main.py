@@ -6407,7 +6407,7 @@ def _format_indexed(lines: list[str], empty_msg: str) -> tuple[str, set[str]]:
 # 미리 정한 segment/랜덤이 아니라, 누가 무엇을 묻든 의미 유사도로 최적 근거를 고른다.
 _EDU_INDEX_PATH = PROJECT_ROOT / "data" / "edu_research" / "evidence_index.json"
 _EDU_RUNTIME_EVENTS_PATH = PROJECT_ROOT / "runtime" / "edu_pilot_runtime_events.jsonl"
-_edu_index_cache: dict[str, Any] = {"mtime": None, "items": []}
+_edu_index_cache: dict[str, Any] = {"mtime": None, "items": [], "provider": None, "model": None, "dim": None}
 _edu_index_lock = threading.Lock()
 _EDU_COMMUNITY_SOURCE_MARKERS = ("naver", "맘카페", "카페", "블로그", "blind", "reddit", "dcinside", "디시", "brunch", "maily")
 _EDU_RESEARCH_POLICY_SOURCE_MARKERS = (
@@ -6422,21 +6422,34 @@ _EDU_LOW_SIGNAL_TITLE_PATTERNS = (
 )
 
 
-def _load_rag_index() -> list[dict]:
+def _load_rag_index() -> dict[str, Any]:
     """RAG 인덱스를 캐시하고, 파일이 갱신되면(mtime 변경) 자동 재로딩한다."""
     try:
         mtime = _EDU_INDEX_PATH.stat().st_mtime
     except OSError:
-        return []
+        return {"items": [], "provider": None, "model": None, "dim": None}
     with _edu_index_lock:
         if _edu_index_cache["mtime"] != mtime:
             try:
                 data = json.loads(_EDU_INDEX_PATH.read_text(encoding="utf-8"))
                 _edu_index_cache["items"] = [it for it in data.get("items", []) if it.get("emb")]
+                _edu_index_cache["provider"] = data.get("provider")
+                _edu_index_cache["model"] = data.get("model")
+                _edu_index_cache["dim"] = data.get("dim")
                 _edu_index_cache["mtime"] = mtime
             except Exception:
-                return _edu_index_cache.get("items", [])
-        return _edu_index_cache["items"]
+                return {
+                    "items": _edu_index_cache.get("items", []),
+                    "provider": _edu_index_cache.get("provider"),
+                    "model": _edu_index_cache.get("model"),
+                    "dim": _edu_index_cache.get("dim"),
+                }
+        return {
+            "items": _edu_index_cache["items"],
+            "provider": _edu_index_cache.get("provider"),
+            "model": _edu_index_cache.get("model"),
+            "dim": _edu_index_cache.get("dim"),
+        }
 
 
 def _edu_runtime_event(event_type: str, **payload: Any) -> None:
@@ -6507,11 +6520,31 @@ def _edu_format_evidence_line(item: dict[str, Any]) -> str:
 
 def _edu_ranked_matches(query: str, limit: int) -> list[tuple[dict[str, Any], float]] | None:
     """질의와 가장 가까운 인덱스 항목 후보를 점수와 함께 반환."""
-    items = _load_rag_index()
+    idx = _load_rag_index()
+    items = idx.get("items") or []
     if not items or not query:
         return None
     try:
-        from core.embeddings import embed_query, cosine_topk
+        from core.embeddings import cosine_topk, embed_query, embedding_backend_signature
+        sig = embedding_backend_signature(resolve_runtime=True)
+        if (
+            idx.get("provider")
+            and (
+                idx.get("provider") != sig["provider"]
+                or idx.get("model") != sig["model"]
+                or int(idx.get("dim") or 0) != int(sig["dim"])
+            )
+        ):
+            _edu_runtime_event(
+                "edu_rag_signature_mismatch",
+                index_provider=idx.get("provider"),
+                index_model=idx.get("model"),
+                index_dim=idx.get("dim"),
+                runtime_provider=sig["provider"],
+                runtime_model=sig["model"],
+                runtime_dim=sig["dim"],
+            )
+            return None
         qv = embed_query(query)
         usable = [(it["id"], it["emb"]) for it in items if it.get("id") and it.get("emb")]
         by_id = {it["id"]: it for it in items if it.get("id")}
@@ -6641,6 +6674,8 @@ def _edu_log_llm_cost(usage: dict, model: str | None = None) -> None:
             provider = "openai"
         elif str(name).startswith("claude"):
             provider = "anthropic"
+        elif str(name).startswith(("gemma", "qwen", "llama", "mistral", "deepseek")):
+            provider = "ollama"
         log_api_cost(
             name,
             int((usage or {}).get("prompt_token_count", 0) or 0),

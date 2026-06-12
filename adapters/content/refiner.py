@@ -72,6 +72,14 @@ def get_today_cost(logger=None) -> float:
 
 
 def log_api_cost(model: str, input_tokens: int, output_tokens: int, provider: str = "google"):
+    model_lower = (model or "").lower()
+    if provider == "google":
+        if model_lower.startswith("claude"):
+            provider = "anthropic"
+        elif model_lower.startswith("gpt") or model_lower.startswith("o"):
+            provider = "openai"
+        elif any(model_lower.startswith(prefix) for prefix in ("gemma", "qwen", "llama", "mistral", "deepseek", "nomic-embed")):
+            provider = "ollama"
     try:
         execute_query("""
             INSERT INTO api_cost_log (model, input_tokens, output_tokens, provider)
