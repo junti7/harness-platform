@@ -325,7 +325,7 @@ def _build_pdf(articles: list[dict], insights: dict, date_str: str) -> bytes:
 
     # ── 투자 시그널 섹션 ─────────────────────────────────────────────────────────
     inv_s    = ps("inv",  fontSize=9,  leading=14, textColor=colors.HexColor("#065f46"), spaceAfter=2)
-    inv_h_s  = ps("invh", fontSize=10, leading=14, textColor=colors.HexColor("#065f46"), spaceAfter=3, fontName=font)
+    inv_h_s  = ps("invh", fontSize=10, leading=14, textColor=colors.HexColor("#065f46"), spaceAfter=3)
     inv_tag_s= ps("invt", fontSize=8,  textColor=colors.HexColor("#047857"))
 
     def _parse_body(a: dict) -> dict:
