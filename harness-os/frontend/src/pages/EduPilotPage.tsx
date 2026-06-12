@@ -14,7 +14,15 @@ type Msg = { role: 'ai' | 'user'; text: string; toneLevel?: number; phase?: stri
 type SetupStep = 'segment' | 'info' | 'salutation'
 type RxModule = { step: number; title: string; why_you: string; do_now: string; seasoning: string; minutes: number }
 type Prescription = { track: string; reading: string; intro: string; modules: RxModule[]; closing: string; disclaimer?: string }
-type RedTeamResult = { report_id: string; headline: string; verdict: string; markdown_filename: string; markdown_url: string; summary: string }
+type RedTeamResult = {
+  report_id: string
+  headline: string
+  verdict: string
+  markdown_filename: string
+  markdown_url: string
+  download_path?: string
+  summary: string
+}
 
 const C = {
   ink: '#0f172a', muted: '#475569', faint: '#64748b', accent: '#2563eb',
@@ -63,6 +71,36 @@ function buildExportMessages(messages: Msg[]) {
       turnNo: m.role === 'user' ? userTurn : userTurn,
     }
   })
+}
+
+function resolveRedTeamUrl(result: RedTeamResult) {
+  if (result.download_path && /^https?:$/i.test(window.location.protocol)) {
+    return new URL(result.download_path, window.location.origin).toString()
+  }
+  return result.markdown_url
+}
+
+async function copyText(value: string) {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(value)
+      return
+    } catch {
+      // Some secure contexts still deny clipboard writes without a direct permission grant.
+    }
+  }
+  const textarea = document.createElement('textarea')
+  textarea.value = value
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.top = '-1000px'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  textarea.setSelectionRange(0, textarea.value.length)
+  const ok = document.execCommand('copy')
+  textarea.remove()
+  if (!ok) throw new Error('copy failed')
 }
 
 function PrescriptionCard({ p, C }: { p: Prescription; C: Record<string, string> }) {
@@ -292,7 +330,7 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
   async function copyRedTeamUrl() {
     if (!redTeamResult?.markdown_url) return
     try {
-      await navigator.clipboard.writeText(redTeamResult.markdown_url)
+      await copyText(resolveRedTeamUrl(redTeamResult))
       alert('RED TEAM 결과 URL을 복사했습니다.')
     } catch {
       alert('URL 복사에 실패했습니다. 브라우저 권한을 확인해 주세요.')
@@ -302,7 +340,7 @@ export function EduPilotPage({ apiBase, authHeaders }: Props) {
   async function downloadRedTeamResult() {
     if (!redTeamResult?.markdown_url) return
     try {
-      const res = await fetch(redTeamResult.markdown_url)
+      const res = await fetch(resolveRedTeamUrl(redTeamResult))
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const blob = await res.blob()
       const url = window.URL.createObjectURL(blob)
