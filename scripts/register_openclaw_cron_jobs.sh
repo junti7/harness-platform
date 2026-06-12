@@ -44,6 +44,16 @@ TOPIC_REFRESH_MESSAGE='Run exactly this command from /Users/juntaepark/projects/
 TOPIC_PUSH_NAME="harness-daily-topic-push-brief"
 TOPIC_PUSH_MESSAGE='Run exactly this command from /Users/juntaepark/projects/harness-platform: /Users/juntaepark/projects/harness-platform/.venv/bin/python /Users/juntaepark/projects/harness-platform/scripts/summarize_topic_push_brief.py --to-slack --route exec_president_decisions . After the command completes, reply with exactly OK.'
 
+EMAIL_2PM_NAME="Daily Email Summary - 2 PM"
+EMAIL_2PM_MESSAGE="오늘 오후 2시까지 받은 메일을 요약해서 회사 경영과 연관된 것과 아닌 것을 구분해서 정리해주세요. 회사 연관된 메일은 더 상세히 내용을 알려주세요. 답변은 반드시 한국어로 작성해 주세요."
+
+EMAIL_7PM_NAME="Daily Email Summary - 7 PM"
+EMAIL_7PM_MESSAGE="오늘 저녁 7시까지 받은 메일을 요약해서 회사 경영과 연관된 것과 아닌 것을 구분해서 정리해주세요. 회사 연관된 메일은 더 상세히 내용을 알려주세요. 답변은 반드시 한국어로 작성해 주세요."
+
+EMAIL_5AM_NAME="Daily Email Summary - 5 AM"
+EMAIL_5AM_MESSAGE="오늘 오전 5시까지 받은 메일을 요약해서 회사 경영과 연관된 것과 아닌 것을 구분해서 정리해주세요. 회사 연관된 메일은 더 상세히 내용을 알려주세요. 답변은 반드시 한국어로 작성해 주세요."
+
+
 
 register_if_missing() {
   NAME="$1"
@@ -304,4 +314,56 @@ register_if_missing \
 ensure_cron_schedule "$WEEKLY_OPS_CARD_NAME" "55 3 * * 1" "Asia/Seoul"
 sync_agent_payload "$WEEKLY_OPS_CARD_NAME" "$WEEKLY_OPS_CARD_MESSAGE" "300" "$OPENCLAW_CRON_MODEL" "exec" "true"
 
+register_if_missing \
+  "$EMAIL_2PM_NAME" \
+  --name "$EMAIL_2PM_NAME" \
+  --cron "0 14 * * *" \
+  --tz "Asia/Seoul" \
+  --agent main \
+  --session isolated \
+  --model "$OPENCLAW_CRON_MODEL" \
+  --tools exec \
+  --message "$EMAIL_2PM_MESSAGE" \
+  --timeout-seconds 300 \
+  --announce \
+  --to slack:user:U0B2P25NR6Y
+
+ensure_cron_schedule "$EMAIL_2PM_NAME" "0 14 * * *" "Asia/Seoul"
+sync_agent_payload "$EMAIL_2PM_NAME" "$EMAIL_2PM_MESSAGE" "300" "$OPENCLAW_CRON_MODEL" "exec" "false"
+
+register_if_missing \
+  "$EMAIL_7PM_NAME" \
+  --name "$EMAIL_7PM_NAME" \
+  --cron "0 19 * * *" \
+  --tz "Asia/Seoul" \
+  --agent main \
+  --session isolated \
+  --model "$OPENCLAW_CRON_MODEL" \
+  --tools exec \
+  --message "$EMAIL_7PM_MESSAGE" \
+  --timeout-seconds 300 \
+  --announce \
+  --to slack:user:U0B2P25NR6Y
+
+ensure_cron_schedule "$EMAIL_7PM_NAME" "0 19 * * *" "Asia/Seoul"
+sync_agent_payload "$EMAIL_7PM_NAME" "$EMAIL_7PM_MESSAGE" "300" "$OPENCLAW_CRON_MODEL" "exec" "false"
+
+register_if_missing \
+  "$EMAIL_5AM_NAME" \
+  --name "$EMAIL_5AM_NAME" \
+  --cron "0 5 * * *" \
+  --tz "Asia/Seoul" \
+  --agent main \
+  --session isolated \
+  --model "$OPENCLAW_CRON_MODEL" \
+  --tools exec \
+  --message "$EMAIL_5AM_MESSAGE" \
+  --timeout-seconds 300 \
+  --announce \
+  --to slack:user:U0B2P25NR6Y
+
+ensure_cron_schedule "$EMAIL_5AM_NAME" "0 5 * * *" "Asia/Seoul"
+sync_agent_payload "$EMAIL_5AM_NAME" "$EMAIL_5AM_MESSAGE" "300" "$OPENCLAW_CRON_MODEL" "exec" "false"
+
 "$OPENCLAW_BIN" cron list --json
+
