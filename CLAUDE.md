@@ -574,6 +574,7 @@ PLATFORM.md는 플랫폼 헌법이다.
 | `docs/governance/CURRENT_STAFFING.md` | 공식 직함 기반 staffing 상태 |
 | `docs/operations/LEGAL_REVIEW_PLAYBOOK.md` | 광고/규제/저작권/약관/개인정보 사전검토 절차 |
 | `docs/governance/RED_TEAM_PROTOCOL.md` | 코드/문서/의사결정 cross-LLM 검증 절차 |
+| `docs/governance/LLM_GROUND_RULES.md` | **모든 LLM(Claude/Codex/Gemini/Copilot/Ollama/gemma4/OpenClaw) 공통 비협상 규칙의 단일 출처.** 모델별 부트스트랩 파일(GEMINI.md, .github/copilot-instructions.md 등)이 이 문서를 가리킨다. |
 | `docs/governance/PRE_MORTEM_PROTOCOL.md` | high-impact 의사결정 전 worst-case 분석 템플릿 |
 | `docs/MARKETING_STRATEGY.md` | 익명 고객 acquisition 채널, persona, content calendar |
 | `docs/operations/SALES_PLAYBOOK.md` | 자동화 funnel, 가격 실험, 전환/리텐션 운영 |

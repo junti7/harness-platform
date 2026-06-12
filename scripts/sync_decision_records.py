@@ -207,7 +207,26 @@ def _build_commit_against_origin(base_sha: str, paths: list[str]) -> tuple[str |
             pass
 
 
+def _assert_ssh_remote(slack: bool) -> bool:
+    """origin 이 SSH 인지 확인. HTTPS 면 무인 push 가 비대화형에서 실패하므로 진행 거부.
+    훅(.githooks/pre-push)은 --no-verify 로 우회 가능하지만 이 preflight 는 자동 잡의 진짜 가드다."""
+    # push URL 은 fetch URL 과 다를 수 있으므로 --push 로 실제 push 경로를 검사한다.
+    # blacklist(https) 는 우회됨(auth-embedded/대문자 스킴) → SSH 형식만 허용하는 allowlist.
+    url = _git("remote", "get-url", "--push", REMOTE, check=False)
+    u = url.strip().lower()
+    if url and not (u.startswith("git@") or u.startswith("ssh://")):
+        msg = f"push URL 이 SSH 가 아님({url}) — push 불가. SSH(git@github.com)로 전환 필요"
+        print(f"[sync] ✖ {msg}", file=sys.stderr)
+        if slack:
+            _slack(f":rotating_light: decision-record-sync {msg} — `git remote set-url {REMOTE} git@github.com:junti7/harness-platform.git`")
+        return False
+    return True
+
+
 def sync(dry_run: bool = False, slack: bool = False) -> int:
+    # 0) preflight — origin 이 SSH 가 아니면 시작도 안 한다(무인 push 실패 방지)
+    if not dry_run and not _assert_ssh_remote(slack):
+        return 1
     # 0) origin 최신화
     _git("fetch", REMOTE, "--quiet")
 

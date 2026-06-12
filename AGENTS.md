@@ -952,7 +952,13 @@ QA Agent는 발행 직전 final gate다. VP review + Red Team + Legal review를 
 
 ## 9. Non-Negotiables
 
+> 모든 LLM(Claude/Codex/Gemini/Copilot/Ollama/gemma4/OpenClaw) 공통 비협상 규칙의 단일 출처는
+> **`docs/governance/LLM_GROUND_RULES.md`** 다. git/배포/SSH-remote/게이트 불변식은 그 문서를 따른다.
+
 - No secrets in logs
+- No HTTPS git remote — GitHub remote MUST be SSH (`git@github.com:...`); HTTPS push is blocked by `.githooks/pre-push`
+- No force-push or deletion of `origin/main`
+- No direct production (Mac Mini) edit / manual scp deploy — deploy only via `scripts/deploy_to_macmini.sh`
 - No direct raw-to-premium bypass
 - No unapproved high-risk publication
 - No implicit capital action

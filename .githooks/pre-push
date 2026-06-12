@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Harness 공유 pre-push 훅 — origin push 불변식을 기계적으로 강제한다.
+#
+# 왜: 운영 규칙(SSH-only remote 등)을 LLM/사람이 "기억"으로 지키는 건 신뢰할 수 없다.
+#     어기는 게 물리적으로 막히게 한다. (docs/governance/LLM_GROUND_RULES.md)
+#
+# 적용: 이 훅은 repo의 .githooks/ 에 버전관리되며, scripts/install_git_hooks.sh 가
+#       `git config core.hooksPath .githooks` 로 활성화한다(머신마다 1회).
+#
+# 주의: git push --no-verify 로 우회 가능하다(훅의 한계). 자동 잡의 진짜 가드는
+#       스크립트 preflight(예: sync_decision_records.py 의 SSH assert)다. 훅은 사람/대화형
+#       실수를 잡는 1차 방어선.
+#
+# 인자: $1=remote name, $2=remote URL. push 대상 ref 는 stdin.
+set -euo pipefail
+
+remote_name="${1:-}"
+remote_url="${2:-}"
+
+# remote URL 이 인자로 안 올 때(일부 git 버전) 보강. push URL 은 fetch URL 과 다를 수 있으므로
+# 반드시 --push 로 조회한다(push 가 실제로 쓰는 URL 을 검사).
+if [ -z "$remote_url" ] && [ -n "$remote_name" ]; then
+  remote_url="$(git remote get-url --push "$remote_name" 2>/dev/null || true)"
+fi
+
+# [규칙 1] push URL 은 SSH(git@... 또는 ssh://...) 여야 한다. HTTPS 면 무인 push 가 비대화형에서
+#          실패하거나 자격증명 프롬프트로 멈춘다(2026-06-12 Mac Mini 사고).
+#   blacklist(https://github.com/*) 는 우회됨(auth-embedded `https://x-access-token@github.com/...`,
+#   대문자 스킴 `HTTPS://...`). 그래서 SSH 형식만 허용하는 allowlist 로 검사한다.
+if [ -n "$remote_url" ]; then
+  shopt -s nocasematch 2>/dev/null || true   # 대문자 스킴(SSH://, GIT@)도 포착
+  case "$remote_url" in
+    git@*|ssh://*) : ;;   # 허용(SSH)
+    *)
+      echo "✖ [pre-push 차단] push URL 이 SSH 가 아닙니다: $remote_url" >&2
+      echo "  Harness 규칙: GitHub remote 는 SSH(git@github.com:...) 여야 push 가능합니다(무인 잡 포함)." >&2
+      echo "  수정: git remote set-url $remote_name git@github.com:junti7/harness-platform.git" >&2
+      echo "  근거: docs/governance/LLM_GROUND_RULES.md / DEPLOYMENT_SOURCE_OF_TRUTH.md" >&2
+      exit 1
+      ;;
+  esac
+  shopt -u nocasematch 2>/dev/null || true
+fi
+
+# [규칙 2] main 으로의 force-push 금지(공유 히스토리 보호).
+protected_ref="refs/heads/main"
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$remote_ref" = "$protected_ref" ] || continue
+  # 삭제 push 차단
+  if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+    echo "✖ [pre-push 차단] origin/main 삭제 push 는 금지입니다." >&2
+    exit 1
+  fi
+  # non-fast-forward(force) 차단: 원격 tip 이 로컬 조상이 아니면 거절.
+  if [ "$remote_sha" != "0000000000000000000000000000000000000000" ]; then
+    if ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null; then
+      echo "✖ [pre-push 차단] origin/main 으로의 non-fast-forward(force) push 금지." >&2
+      echo "  먼저 git fetch 후 ff 로 정렬하세요(공유 히스토리 보호)." >&2
+      exit 1
+    fi
+  fi
+done
+
+exit 0
