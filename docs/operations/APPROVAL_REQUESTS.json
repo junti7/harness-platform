@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-05-24T21:00:00",
-  "updated_at": "2026-05-24T19:44:16",
+  "updated_at": "2026-06-12T22:09:22",
   "items": [
     {
       "id": "APR-20260524-001",
@@ -9,12 +9,15 @@
       "submitter_display": "KITT(법무팀)",
       "approver_role": "ceo",
       "body": "한국은행 외환거래 질의 회신 전까지 IBKR 실거래 자금 입금을 계속 보류하는 CEO 결재가 필요합니다.\n\n핵심 근거:\n- AR-017 현재 상태는 waiting_bok_response 입니다.\n- 한국은행 회신 수령 전 자금 입금은 외국환거래법 해석 리스크가 남아 있습니다.\n- 요청 사항은 '실거래 입금 보류 유지'에 대한 명시적 결재입니다.\n\n결재 시 후속 액션:\n- OpenClaw에 법무 보류 유지 지시 전달\n- IBKR live capital action lock 유지\n- 한국은행 회신 수령 시 재상신",
-      "status": "pending",
+      "status": "approved",
       "submitted_at": "2026-05-24T18:05:00",
       "approval_type": "legal_review_approve",
       "correlation_id": "strategy-pivot-b2i-20260524",
       "openclaw_route": "agent_openclaw_routing",
-      "openclaw_command": "AR-017 법무 보류 유지 및 한국은행 회신 수령 후 재상신 준비"
+      "openclaw_command": "AR-017 법무 보류 유지 및 한국은행 회신 수령 후 재상신 준비",
+      "decided_at": "2026-06-12T22:09:22",
+      "decided_by_display": "대표(CEO)",
+      "decision_note": null
     },
     {
       "id": "APR-20260524-002",
