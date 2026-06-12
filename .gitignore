@@ -42,6 +42,8 @@ docs/reports/conference_room_stream.jsonl
 docs/trading/trading_diary.jsonl
 docs/reviews/openclaw_route_audit/openclaw_route_audit_daily.md
 docs/reports/price_drop_alerts.jsonl
+docs/reports/news_pdf_sent_ids.json
+docs/reports/price_feed_audit.txt
 logs/lane_telemetry.jsonl
 
 # Mass-regenerated outputs (2026-06-09: Mac Mini에 11,564개 누적 → 만성 dirty 원인)
