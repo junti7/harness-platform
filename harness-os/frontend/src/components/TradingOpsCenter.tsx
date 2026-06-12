@@ -585,6 +585,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
   // UI state
   const [activeSignalTab, setActiveSignalTab] = useState<'alpaca' | 'ibkr'>('ibkr')
   const [regionFilter, setRegionFilter] = useState<string>('ALL')
+  const [showHelpModal, setShowHelpModal] = useState(false)
 
   // ── Alpaca 데이터 로드 ──────────────────────────────────────────────────────
 
@@ -1537,7 +1538,29 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
       {/* ── ROW 3: 투자 신호 모니터 (탭) ── */}
       <article className="panel alpaca-full">
         <div className="panel-head">
-          <h3>투자 신호 모니터</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+            <h3 style={{ margin: 0 }}>투자 신호 모니터</h3>
+            <button
+              type="button"
+              onClick={() => setShowHelpModal(true)}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                color: '#3b82f6',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                fontWeight: 'bold',
+              }}
+            >
+              ℹ️ 설명 보기
+            </button>
+          </div>
           <span className="term-note">Turtle Trading S1(20일)/S2(55일) 브레이크아웃 기준</span>
         </div>
 
@@ -1950,6 +1973,95 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
         onAck={ackAlert}
         threshold={-3}
       />
+
+      {showHelpModal && (
+        <div className="ar-detail-backdrop" role="dialog" aria-modal="true" aria-label="투자 신호 모니터 설명" onClick={() => setShowHelpModal(false)}>
+          <article className="ar-detail-modal" style={{ maxWidth: '600px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="ar-detail-head">
+              <div>
+                <span className="ar-detail-kicker">도움말</span>
+                <h3 style={{ margin: 0 }}>투자 신호 모니터 설명</h3>
+              </div>
+              <button type="button" className="ar-detail-close" onClick={() => setShowHelpModal(false)}>닫기</button>
+            </div>
+            <div className="ar-detail-body" style={{ display: 'grid', gap: '1.2rem', marginTop: '1rem' }}>
+              <div style={{ borderBottom: '1px solid var(--gridline)', paddingBottom: '0.8rem' }}>
+                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                  이 화면은 <strong>터틀 트레이딩(Turtle Trading)</strong> 규칙에 기반하여 종목의 가격 돌파와 변동성을 실시간 감시하는 모니터입니다. 각 항목의 설명은 다음과 같습니다.
+                </p>
+              </div>
+              <div style={{ display: 'grid', gap: '0.8rem', maxHeight: '450px', overflowY: 'auto', paddingRight: '4px' }}>
+                <div style={{ padding: '0.6rem', border: '1px solid var(--gridline)', borderRadius: '6px', background: 'var(--color-surface-lighter)' }}>
+                  <strong style={{ fontSize: '0.85rem', color: 'var(--ink-strong)' }}>📌 종목 (Symbol)</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                    대상 종목의 티커(Ticker) 코드와 회사/ETF명, 그리고 지역 코드(US, KR 등)와 섹터 분류를 나타냅니다.
+                  </p>
+                </div>
+                <div style={{ padding: '0.6rem', border: '1px solid var(--gridline)', borderRadius: '6px', background: 'var(--color-surface-lighter)' }}>
+                  <strong style={{ fontSize: '0.85rem', color: 'var(--ink-strong)' }}>📌 현재가 (Current Price)</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                    가장 최근에 수집된 종목의 실시간 또는 종가 기준 시장 가격입니다. (수수료 및 환율 계산의 기준이 됨)
+                  </p>
+                </div>
+                <div style={{ padding: '0.6rem', border: '1px solid var(--gridline)', borderRadius: '6px', background: 'var(--color-surface-lighter)' }}>
+                  <strong style={{ fontSize: '0.85rem', color: 'var(--ink-strong)' }}>📌 S1 돌파기준 / S1 고가 (System 1 Breakout / High)</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                    최근 20일간의 최고가입니다. 현재가가 이 가격을 돌파하면 <strong>단기 매수 진입 신호</strong>가 활성화됩니다.
+                  </p>
+                </div>
+                <div style={{ padding: '0.6rem', border: '1px solid var(--gridline)', borderRadius: '6px', background: 'var(--color-surface-lighter)' }}>
+                  <strong style={{ fontSize: '0.85rem', color: 'var(--ink-strong)' }}>📌 S2 돌파기준 / S2 고가 (System 2 Breakout / High)</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                    최근 55일간의 최고가입니다. 현재가가 이 가격을 돌파하면 <strong>장기 매수 진입 신호</strong>가 활성화됩니다.
+                  </p>
+                </div>
+                <div style={{ padding: '0.6rem', border: '1px solid var(--gridline)', borderRadius: '6px', background: 'var(--color-surface-lighter)' }}>
+                  <strong style={{ fontSize: '0.85rem', color: 'var(--ink-strong)' }}>📌 S2 거리 (Distance to S2)</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                    현재가와 S2 돌파기준가 사이의 백분율 격차입니다. +%는 이미 돌파했음을 뜻하며, -%는 돌파까지 남은 거리입니다.
+                  </p>
+                </div>
+                <div style={{ padding: '0.6rem', border: '1px solid var(--gridline)', borderRadius: '6px', background: 'var(--color-surface-lighter)' }}>
+                  <strong style={{ fontSize: '0.85rem', color: 'var(--ink-strong)' }}>📌 ATR (Average True Range)</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                    최근 20일간의 평균 하루 가격 변동폭입니다. 포지션 규모(N)를 산출해 투자 한도 대비 위험(1%)을 고정하고, 손절가 계산의 핵심 기준이 됩니다.
+                  </p>
+                </div>
+                <div style={{ padding: '0.6rem', border: '1px solid var(--gridline)', borderRadius: '6px', background: 'var(--color-surface-lighter)' }}>
+                  <strong style={{ fontSize: '0.85rem', color: 'var(--ink-strong)' }}>📌 신호 / 시스템 (Signal / System)</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                    터틀 신호 상태와 적용 시스템(S1/S2)을 나타냅니다. <strong>관망(neutral)</strong>은 대기 상태, <strong>매수 진입(breakout_long)</strong>은 돌파 신호가 활성화된 상태입니다.
+                  </p>
+                </div>
+                <div style={{ padding: '0.6rem', border: '1px solid var(--gridline)', borderRadius: '6px', background: 'var(--color-surface-lighter)' }}>
+                  <strong style={{ fontSize: '0.85rem', color: 'var(--ink-strong)' }}>📌 상태 / 보유 여부 (Status)</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                    현재 해당 종목에 대해 실제로 포지션을 보유하고 있는지 여부(보유 중 / —)를 나타냅니다.
+                  </p>
+                </div>
+                <div style={{ padding: '0.6rem', border: '1px solid var(--gridline)', borderRadius: '6px', background: 'var(--color-surface-lighter)' }}>
+                  <strong style={{ fontSize: '0.85rem', color: 'var(--ink-strong)' }}>📌 S1 저가 / S2 저가 (S1 / S2 Low)</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                    각각 최근 10일(S1) 또는 20일(S2) 동안의 최저가입니다. 롱 포지션의 이탈/청산 기준 가격이 됩니다.
+                  </p>
+                </div>
+                <div style={{ padding: '0.6rem', border: '1px solid var(--gridline)', borderRadius: '6px', background: 'var(--color-surface-lighter)' }}>
+                  <strong style={{ fontSize: '0.85rem', color: 'var(--ink-strong)' }}>📌 손절(롱) (Stop Long)</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                    롱 포지션 진입 시 최악의 리스크를 방어하기 위한 최대 손실 가격선입니다. 일반적으로 <strong>진입가 - 2×ATR</strong>로 산출합니다.
+                  </p>
+                </div>
+                <div style={{ padding: '0.6rem', border: '1px solid var(--gridline)', borderRadius: '6px', background: 'var(--color-surface-lighter)' }}>
+                  <strong style={{ fontSize: '0.85rem', color: 'var(--ink-strong)' }}>📌 기준일 (As of)</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                    해당 돌파선 및 ATR 등의 지표 데이터가 계산된 기준 일자입니다.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      )}
 
     </section>
   )
