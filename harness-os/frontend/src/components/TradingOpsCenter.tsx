@@ -586,6 +586,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
   const [activeSignalTab, setActiveSignalTab] = useState<'alpaca' | 'ibkr'>('ibkr')
   const [regionFilter, setRegionFilter] = useState<string>('ALL')
   const [showHelpModal, setShowHelpModal] = useState(false)
+  const [selectedReasonSymbol, setSelectedReasonSymbol] = useState<string | null>(null)
 
   // ── Alpaca 데이터 로드 ──────────────────────────────────────────────────────
 
@@ -1019,7 +1020,17 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                     <MobileField label="주문 가능 증권사" value={(row.brokers ?? []).join(', ') || '—'} tone="muted" />
                     <MobileField label="근거 출처" value={(row.matched_sources ?? []).slice(0, 3).join(', ') || '—'} tone="muted" />
                   </div>
-                  <p className="mobile-card-note">{row.selection_reason || '선정 이유 정보가 없습니다.'}</p>
+                  <p
+                    className="mobile-card-note"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSelectedReasonSymbol(row.symbol)
+                    }}
+                    style={{ cursor: 'pointer' }}
+                    title="클릭하여 전체 선정 이유 보기"
+                  >
+                    {row.selection_reason_ko || row.selection_reason || '선정 이유 정보가 없습니다.'}
+                  </p>
                 </button>
               ))}
             </div>
@@ -1059,7 +1070,17 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                       <td className="num">{row.negative_hits ?? 0}</td>
                       <td className="sf-td-truncate" title={(row.matched_sources ?? []).join(', ')}>{(row.matched_sources ?? []).slice(0, 3).join(', ') || '—'}</td>
                       <td className="sf-td-truncate" title={(row.brokers ?? []).join(', ')}>{(row.brokers ?? []).join(', ') || '—'}</td>
-                      <td className="sf-reason-cell">{row.selection_reason_ko || row.selection_reason || '—'}</td>
+                      <td
+                        className="sf-reason-cell"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setSelectedReasonSymbol(row.symbol)
+                        }}
+                        style={{ cursor: 'pointer' }}
+                        title="클릭하여 전체 선정 이유 보기"
+                      >
+                        {row.selection_reason_ko || row.selection_reason || '—'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1070,6 +1091,25 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                 <p className="data-label" style={{ marginBottom: '0.35rem' }}>
                   선택 종목 상세: {selectedUniverseRow.symbol} ({selectedUniverseRow.name ?? '종목명 확인 필요'})
                 </p>
+                <div style={{
+                  fontSize: '0.8rem',
+                  color: 'var(--ink-strong)',
+                  background: 'var(--color-surface-lighter)',
+                  borderLeft: '3px solid var(--color-primary, #3b82f6)',
+                  padding: '0.6rem 0.8rem',
+                  borderRadius: '6px',
+                  marginBottom: '0.8rem',
+                  lineHeight: '1.5',
+                  wordBreak: 'break-word',
+                }}>
+                  <strong style={{ display: 'block', marginBottom: '0.24rem', color: 'var(--color-primary, #3b82f6)' }}>💡 한글 선정 이유 (Rationals)</strong>
+                  {selectedUniverseRow.selection_reason_ko || selectedUniverseRow.selection_reason || '선정 이유 정보가 없습니다.'}
+                  {selectedUniverseRow.selection_reason_ko && selectedUniverseRow.selection_reason && (
+                    <small style={{ display: 'block', marginTop: '0.4rem', color: 'var(--text-faint)', fontSize: '0.72rem' }}>
+                      원문: {selectedUniverseRow.selection_reason}
+                    </small>
+                  )}
+                </div>
                 <p className="term-note">
                   이 종목은 점수 {selectedUniverseRow.harness_score ?? '—'}점, 근거 {selectedUniverseRow.evidence_count ?? 0}건으로 선택됐습니다.
                   이 중 {selectedUniverseRow.theme_bridge_hits ?? 0}건은 회사명 직접 언급이 아니라 기술 테마를 통해 연결된 근거입니다.
@@ -2062,6 +2102,79 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
           </article>
         </div>
       )}
+
+      {selectedReasonSymbol && (() => {
+        const row = (selectionFlow?.selection_universe ?? []).find(r => r.symbol === selectedReasonSymbol)
+        if (!row) return null
+        return (
+          <div className="ar-detail-backdrop" role="dialog" aria-modal="true" aria-label="선정 이유 상세" onClick={() => setSelectedReasonSymbol(null)}>
+            <article className="ar-detail-modal" style={{ maxWidth: '600px' }} onClick={(e) => e.stopPropagation()}>
+              <div className="ar-detail-head">
+                <div>
+                  <span className="ar-detail-kicker">{row.symbol} · {row.region}</span>
+                  <h3 style={{ margin: 0 }}>{row.name ?? '종목명 확인 필요'} - 선정 이유</h3>
+                </div>
+                <button type="button" className="ar-detail-close" onClick={() => setSelectedReasonSymbol(null)}>닫기</button>
+              </div>
+              <div className="ar-detail-body" style={{ display: 'grid', gap: '1.2rem', marginTop: '1rem' }}>
+                <div>
+                  <strong style={{ fontSize: '0.85rem', color: 'var(--ink-strong)', display: 'block', marginBottom: '0.4rem' }}>💡 한글 번역</strong>
+                  <p style={{
+                    margin: 0,
+                    fontSize: '0.85rem',
+                    color: 'var(--ink-strong)',
+                    lineHeight: '1.6',
+                    background: 'var(--color-surface-lighter)',
+                    padding: '0.8rem',
+                    borderRadius: '8px',
+                    borderLeft: '4px solid var(--color-primary, #3b82f6)',
+                    wordBreak: 'keep-all',
+                    whiteSpace: 'pre-line'
+                  }}>
+                    {row.selection_reason_ko || '한글 번역이 존재하지 않거나 준비 중입니다.'}
+                  </p>
+                </div>
+                {row.selection_reason && (
+                  <div>
+                    <strong style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.4rem' }}>📄 영문 원문 (Original)</strong>
+                    <p style={{
+                      margin: 0,
+                      fontSize: '0.8rem',
+                      color: 'var(--text-muted)',
+                      lineHeight: '1.5',
+                      background: 'var(--color-surface-lighter)',
+                      padding: '0.8rem',
+                      borderRadius: '8px',
+                      wordBreak: 'break-word',
+                      whiteSpace: 'pre-line'
+                    }}>
+                      {row.selection_reason}
+                    </p>
+                  </div>
+                )}
+                <div className="ar-detail-grid">
+                  <div>
+                    <span>선정 점수</span>
+                    <strong>{row.harness_score ?? '—'}</strong>
+                  </div>
+                  <div>
+                    <span>근거 건수</span>
+                    <strong>{row.evidence_count ?? '—'}</strong>
+                  </div>
+                  <div>
+                    <span>테마 건수</span>
+                    <strong>{row.theme_bridge_hits ?? 0}</strong>
+                  </div>
+                  <div>
+                    <span>악재 건수</span>
+                    <strong>{row.negative_hits ?? 0}</strong>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+        )
+      })()}
 
     </section>
   )
