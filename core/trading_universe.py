@@ -557,50 +557,57 @@ def _translate_reasons_ko(universe: list[dict[str, Any]]) -> list[dict[str, Any]
     
     ko_map: dict[str, str] = {}
     
-    # 1단계: 로컬 LLM (Ollama) 번역 시도
+    # 1단계: 로컬 LLM (Ollama) 일괄(Batch) 번역 시도
     ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434").strip()
     ollama_model = os.getenv("OLLAMA_MODEL", "gemma4:latest").strip()
     
     try:
         import urllib.request
         
-        for sym, reason in to_translate.items():
-            prompt = (
-                f"You are a professional financial translator. Translate the following English news headlines/reasons into natural Korean.\n"
-                f"The input is a list of headlines separated by semicolons (;) or pipe characters (|).\n"
-                f"Keep the structure and separation (using semicolons) exactly the same in your output.\n"
-                f"Do not include any explanations, introductory text, or formatting. Just output the translated Korean string.\n\n"
-                f"Input: {reason}\n"
-                f"Korean Translation:"
-            )
-            
-            payload = json.dumps({
-                "model": ollama_model,
-                "messages": [{"role": "user", "content": prompt}],
-                "stream": False,
-                "options": {
-                    "temperature": 0.3
-                }
-            }).encode("utf-8")
-            
-            req = urllib.request.Request(
-                f"{ollama_host}/api/chat",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST"
-            )
-            
-            with urllib.request.urlopen(req, timeout=15) as response:
-                resp_json = json.loads(response.read().decode("utf-8"))
-                translation = resp_json.get("message", {}).get("content", "").strip()
-                if translation.startswith('"') and translation.endswith('"'):
-                    translation = translation[1:-1].strip()
-                if translation:
-                    ko_map[sym] = translation
+        system_prompt = (
+            "You are a professional financial translator. Translate the English values in the input JSON into Korean.\n"
+            "Input format: {\"SYMBOL\": \"title1; title2; ...\", ...}\n"
+            "Output format: {\"SYMBOL\": \"translated1; translated2; ...\", ...}\n"
+            "Rules:\n"
+            "1. Keep the JSON structure exactly the same, matching keys to translated values.\n"
+            "2. Keep the semicolon (;) or pipe (|) separators in each string exactly the same.\n"
+            "3. Output ONLY the JSON object. Do not explain anything."
+        )
         
-        print(f"Local LLM (Ollama) translated {len(ko_map)} items.")
+        user_content = json.dumps(to_translate, ensure_ascii=False)
+        
+        payload = json.dumps({
+            "model": ollama_model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content}
+            ],
+            "stream": False,
+            "format": "json",
+            "options": {
+                "temperature": 0.1
+            }
+        }).encode("utf-8")
+        
+        req = urllib.request.Request(
+            f"{ollama_host}/api/chat",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        
+        # 일괄 번역은 최대 60초 대기
+        with urllib.request.urlopen(req, timeout=60) as response:
+            resp_json = json.loads(response.read().decode("utf-8"))
+            content = resp_json.get("message", {}).get("content", "").strip()
+            parsed = json.loads(content)
+            for k, v in parsed.items():
+                if k in to_translate and v:
+                    ko_map[k] = str(v)
+        
+        print(f"Local LLM (Ollama) translated {len(ko_map)} items in batch.")
     except Exception as e:
-        print(f"Local LLM translation failed, falling back to Claude: {e}")
+        print(f"Local LLM batch translation failed, falling back to Claude: {e}")
         
     # 2단계: 로컬 LLM으로 실패한 항목은 Claude로 백업 번역 시도
     remaining_translate = {
