@@ -562,8 +562,8 @@ def _translate_reasons_ko(universe: list[dict[str, Any]]) -> list[dict[str, Any]
     ollama_model = os.getenv("OLLAMA_MODEL", "gemma4:latest").strip()
     
     # 24개 종목을 통째로 보낼 시 gemma4 모델의 생각 토큰(thinking process) 생성으로 인한
-    # 60초 타임아웃 병목을 해결하기 위해, 4개씩 나누어(chunk) 호출합니다.
-    chunk_size = 4
+    # 60초 타임아웃 병목을 해결하기 위해, 3개씩 나누어(chunk) 호출합니다.
+    chunk_size = 3
     items = list(to_translate.items())
     
     for i in range(0, len(items), chunk_size):
@@ -578,7 +578,7 @@ def _translate_reasons_ko(universe: list[dict[str, Any]]) -> list[dict[str, Any]
                 "Rules:\n"
                 "1. Keep the JSON structure exactly the same, matching keys to translated values.\n"
                 "2. Keep the semicolon (;) or pipe (|) separators in each string exactly the same.\n"
-                "3. Output ONLY the JSON object. Do not explain anything."
+                "3. Output ONLY the JSON object. Do not write any thinking process or explanation. Just return raw JSON."
             )
             
             payload = json.dumps({
@@ -601,8 +601,8 @@ def _translate_reasons_ko(universe: list[dict[str, Any]]) -> list[dict[str, Any]
                 method="POST"
             )
             
-            # 개별 청크는 4개짜리이므로 45초면 충분함
-            with urllib.request.urlopen(req, timeout=45) as response:
+            # gemma4의 무거운 thinking 출력을 고려하여 120초 대기
+            with urllib.request.urlopen(req, timeout=120) as response:
                 resp_json = json.loads(response.read().decode("utf-8"))
                 content = resp_json.get("message", {}).get("content", "").strip()
                 parsed = json.loads(content)
