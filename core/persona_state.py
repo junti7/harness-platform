@@ -31,12 +31,10 @@ def personas_paused() -> bool:
 
 
 def pause_reason() -> str:
-    """정지 사유(있으면). flag 파일 내용 또는 env 기본 문구."""
-    try:
-        if _FLAG_FILE.exists():
-            note = _FLAG_FILE.read_text(encoding="utf-8").strip()
-            if note:
-                return note
-    except Exception:
-        pass
+    """정지 안내 문구(고정 상수).
+
+    flag 파일 내용을 그대로 노출하지 않는다 — 임의 파일/심볼릭 링크 내용이 Slack 응답에
+    유출되는 것을 막기 위함(Red Team MAJOR, Copilot 2026-06-13). 상태 신호는 파일의 *존재*이고,
+    안내 문구는 코드가 통제한다.
+    """
     return "페르소나 활동 일시정지 중 (CEO 지시) — 지시는 DM으로 OpenClaw에게 주세요."

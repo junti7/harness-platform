@@ -704,6 +704,12 @@ def call_persona(
     check_lane_b_budget: True면 일일 비용 임계값 초과 시 Lane B 차단 (자동 회의에서 사용).
     CEO 명시적 지시 호출은 False로 예산 제한 우회.
     """
+    # 페르소나 발화의 단일 chokepoint — CEO 지시로 정지 중이면 어떤 LLM도 호출하지 않는다.
+    # (orchestrator·ar_tracker·gate_tracker·run_persona CLI 등 모든 호출자를 한 곳에서 커버)
+    from core.persona_state import personas_paused, pause_reason
+    if personas_paused():
+        return pause_reason(), False
+
     if check_lane_b_budget and not is_lane_b_available():
         msg = "(Lane B 일시 정지 — 일일 비용 임계값 도달. CEO 직접 호출 시 예산 제한 없음)"
         log_routing("persona_opinion", Lane.B, "suspended", escalated=False)
