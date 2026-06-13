@@ -232,8 +232,14 @@ def respond_as_persona(
 
     Used when the CEO addresses someone by name in a meeting (e.g. 'Friday님 ...').
     """
+    from core.persona_state import personas_paused, pause_reason
+
     persona = get_persona(handle)
     cid = correlation_id or f"mention-{uuid.uuid4().hex[:8]}"
+    if personas_paused():
+        # CEO 지시로 페르소나 발화 일시정지 — LLM 호출/게시 없이 no-op 반환.
+        return {"persona": persona.display, "text": pause_reason(),
+                "ok": True, "paused": True, "correlation_id": cid}
     text, ok = call_persona(persona, question, cid)
     if post:
         post_opinion(persona, text, channel_id=channel_id or None)
@@ -251,6 +257,14 @@ def orchestrate(
 ) -> dict:
     correlation_id = correlation_id or f"orch-{uuid.uuid4().hex[:8]}"
     rounds = max(0, min(rounds, MAX_CC_HOPS))
+
+    from core.persona_state import personas_paused, pause_reason
+
+    if personas_paused() and not dry_run:
+        # CEO 지시로 페르소나 오케스트레이션 일시정지 — 어떤 LLM 호출/게시도 하지 않는다.
+        return {"correlation_id": correlation_id, "paused": True,
+                "decision": pause_reason(), "estimated_cost_usd": 0.0}
+
     cap = float(os.getenv("ORCHESTRATION_PER_ORDER_COST_LIMIT_USD", "2.00"))
     guard = CostGuard(cap)
     room = _conference_channel()

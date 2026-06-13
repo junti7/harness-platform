@@ -401,6 +401,14 @@ def _handle_meeting_message(user: str, text: str, channel: str, say, logger):
     if not text.strip():
         return
 
+    # CEO 지시로 페르소나 활동 일시정지 중이면 #회의실 오케스트레이션/페르소나 발화를 모두 막고
+    # 1회 안내만 게시한다(토큰 소모 0). 지시는 DM으로 OpenClaw 단독 응답을 받는다.
+    from core.persona_state import personas_paused, pause_reason
+    if personas_paused():
+        logger.info(f"[meeting] 페르소나 정지 중 — 오케스트레이션 생략 by {user}")
+        say(text=f":pause_button: {pause_reason()}")
+        return
+
     # 1. 소집 트리거 → 오케스트레이션 시작
     if _CONVENE_RE.search(text):
         from core.meeting_scheduler import add_meeting, parse_meeting_time

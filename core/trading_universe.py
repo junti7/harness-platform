@@ -559,7 +559,9 @@ def _translate_reasons_ko(universe: list[dict[str, Any]]) -> list[dict[str, Any]
     
     # 1단계: 로컬 LLM (Ollama) 분할 배치(Chunked Batch) 번역 시도
     ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434").strip()
-    ollama_model = os.getenv("OLLAMA_MODEL", "gemma4:latest").strip()
+    # 번역 작업에는 thinking 병목 및 자원 소모가 심해 타임아웃을 유발하는 gemma4보다
+    # 신속하고 타임아웃이 발생하지 않는 qwen2.5:1.5b 모델을 기본으로 사용합니다.
+    ollama_model = os.getenv("OLLAMA_TRANSLATION_MODEL", "qwen2.5:1.5b").strip()
     
     # 24개 종목을 통째로 보낼 시 gemma4 모델의 생각 토큰(thinking process) 생성으로 인한
     # 60초 타임아웃 병목을 해결하기 위해, 3개씩 나누어(chunk) 호출합니다.

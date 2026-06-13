@@ -2791,7 +2791,10 @@ def run(
 
     # Orchestration shortcut — multi-persona 전사 협의 요청을 orchestrate()로 위임.
     # 이 경로는 claude -p subprocess를 우회하므로 context-compaction 누출 문제가 없다.
-    if _is_orchestration_request(user_message) and _authorized_for_high_risk(requester_user_id):
+    # 단, CEO 지시로 페르소나 활동 일시정지 중이면 위임하지 않고 OpenClaw가 단독으로 응답한다.
+    from core.persona_state import personas_paused as _personas_paused
+    if _is_orchestration_request(user_message) and _authorized_for_high_risk(requester_user_id) \
+            and not _personas_paused():
         logger.info("[router] 전사 오케스트레이션 감지 → orchestrate() 위임")
         _log_route_audit(
             session_id=effective_session_id,

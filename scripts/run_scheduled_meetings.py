@@ -18,6 +18,15 @@ def main() -> int:
     due = due_meetings()
     if not due:
         return 0
+
+    from core.persona_state import personas_paused
+
+    if personas_paused():
+        # CEO 지시로 페르소나 활동 일시정지 — 예약 회의를 실행하지 않고 보류(상태 유지).
+        # 정지 해제 시 due 상태로 남아 그때 실행된다.
+        print(f"paused: {len(due)} meeting(s) deferred (personas paused)")
+        return 0
+
     from adapters.content.orchestrator import orchestrate
 
     for rec in due:
