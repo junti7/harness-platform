@@ -144,6 +144,8 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [arFilter, setArFilter] = useState<ArFilter>('pending')
   const [selectedArItem, setSelectedArItem] = useState<ArItem | null>(null)
+  const [arActionLoading, setArActionLoading] = useState(false)
+  const [arActionError, setArActionError] = useState<string | null>(null)
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0)
   const [gmailInbox, setGmailInbox] = useState<GmailSearchPayload | null>(null)
   const [gmailLoading, setGmailLoading] = useState(false)
@@ -258,6 +260,31 @@ function App() {
       if (!options?.silent) setGmailLoading(false)
     }
   }, [viewRole, gmailDays, gmailLimit, gmailExcludePromotions, gmailExcludeSocial, gmailExcludeForums, gmailExcludeUpdates, authHeaders])
+
+  const handleCompleteAr = useCallback(async (item: ArItem) => {
+    const note = window.prompt('완료 메모를 입력하세요.', '대표 확인 완료. 종료 조건 충족으로 completed 처리.')
+    if (note === null) return
+
+    setArActionLoading(true)
+    setArActionError(null)
+    try {
+      const res = await fetch(`${API_BASE}/api/ar/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ id: item.id, completion_note: note.trim() || undefined }),
+      })
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(text || `AR complete API ${res.status}`)
+      }
+      await loadDashboard({ silent: true })
+      setSelectedArItem(null)
+    } catch (err) {
+      setArActionError(err instanceof Error ? err.message : '완료 처리 실패')
+    } finally {
+      setArActionLoading(false)
+    }
+  }, [loadDashboard])
 
   // 필터 및 설정 변경 시 즉시 메일 갱신
   useEffect(() => {
@@ -922,6 +949,20 @@ function App() {
               </div>
               <button type="button" className="ar-detail-close" onClick={() => setSelectedArItem(null)}>닫기</button>
             </div>
+            {session?.role === 'ceo' && !selectedArItem.is_closed && (
+              <section className="ar-detail-section">
+                <h4>대표 작업</h4>
+                <button
+                  type="button"
+                  className="ar-detail-button"
+                  onClick={() => void handleCompleteAr(selectedArItem)}
+                  disabled={arActionLoading}
+                >
+                  {arActionLoading ? '완료 처리 중…' : '완료 처리'}
+                </button>
+                {arActionError && <p>{arActionError}</p>}
+              </section>
+            )}
             <div className="ar-detail-grid">
               <div>
                 <span>상태</span>

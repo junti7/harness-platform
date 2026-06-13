@@ -4420,6 +4420,11 @@ class ActionRequiredToggleRequest(BaseModel):
     id: str
 
 
+class ArCompleteRequest(BaseModel):
+    id: str
+    completion_note: str | None = None
+
+
 @app.post("/api/action-required/toggle")
 def toggle_ar_status(
     req: ActionRequiredToggleRequest, _: None = Depends(_require_secret)
@@ -4454,6 +4459,47 @@ def toggle_ar_status(
         raise HTTPException(status_code=500, detail=f"Failed to update registry: {e}")
 
     return {"status": "ok", "id": req.id, "new_status": new_status}
+
+
+@app.post("/api/ar/complete")
+def complete_ar_status(
+    req: ArCompleteRequest, _: None = Depends(_require_secret)
+) -> dict[str, Any]:
+    if not AR_TRACKER_PATH.exists():
+        raise HTTPException(status_code=404, detail="AR tracker not found")
+
+    rows = list(_read_jsonl(AR_TRACKER_PATH))
+    latest: dict[str, Any] | None = None
+    for row in rows:
+        if str(row.get("id") or "") == req.id:
+            latest = row
+
+    if latest is None:
+        raise HTTPException(status_code=404, detail=f"AR item {req.id} not found")
+
+    status_meta = _ar_status_meta(latest.get("status"))
+    if status_meta.get("is_closed"):
+        return {"status": "ok", "id": req.id, "new_status": "completed", "already_closed": True}
+
+    completed_at = datetime.now().isoformat(timespec="seconds")
+    completion_note = (req.completion_note or "").strip()
+    if not completion_note:
+        completion_note = "대표 확인 완료. 종료 조건 충족으로 completed 처리."
+
+    updated = dict(latest)
+    updated["status"] = "completed"
+    updated["completed_at"] = completed_at
+    updated["completion_note"] = completion_note
+    if not str(updated.get("outcome") or "").strip():
+        updated["outcome"] = completion_note
+
+    try:
+        with AR_TRACKER_PATH.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(updated, ensure_ascii=False) + "\n")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to append tracker row: {e}")
+
+    return {"status": "ok", "id": req.id, "new_status": "completed", "completed_at": completed_at}
 
 
 # ── Pipeline Control API ─────────────────────────────────────────
