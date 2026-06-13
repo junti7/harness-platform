@@ -2167,10 +2167,12 @@ def _resolve_evidence_path(candidate: str | None) -> str | None:
 def _normalize_ar_item(raw: dict[str, Any]) -> dict[str, Any]:
     owner = str(raw.get("owner") or "").strip()
     status_meta = _ar_status_meta(raw.get("status"))
+    detail_text = raw.get("description") or raw.get("blocking_condition") or raw.get("outcome") or ""
+    note_text = raw.get("completion_note") or raw.get("outcome") or ""
     evidence_hint = _extract_repo_path(
         str(raw.get("evidence_required") or ""),
-        str(raw.get("completion_note") or ""),
-        str(raw.get("description") or ""),
+        str(note_text or ""),
+        str(detail_text or ""),
     )
     evidence_path = _resolve_evidence_path(evidence_hint)
     evidence_exists = bool(evidence_path and (PROJECT_ROOT / evidence_path).exists())
@@ -2196,8 +2198,8 @@ def _normalize_ar_item(raw: dict[str, Any]) -> dict[str, Any]:
         "status_label": status_meta["label"],
         "status_variant": status_meta["variant"],
         "is_closed": status_meta["is_closed"],
-        "description": raw.get("description") or "",
-        "completion_note": raw.get("completion_note") or "",
+        "description": detail_text,
+        "completion_note": note_text,
         "last_checked_at": raw.get("last_checked_at"),
         "last_updated_at": last_updated,
         "evidence_required": raw.get("evidence_required") or "",
