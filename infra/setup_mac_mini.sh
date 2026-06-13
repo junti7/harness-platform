@@ -113,16 +113,9 @@ if [ ! -d ".venv" ]; then
     python3.12 -m venv .venv
 fi
 
-echo "  → 패키지 설치..."
+echo "  → 패키지 설치 (requirements.txt 기준 — 단일 출처, 수동 목록 드리프트 방지)..."
 .venv/bin/pip install --quiet --upgrade pip
-.venv/bin/pip install --quiet \
-    anthropic \
-    httpx \
-    psycopg2-binary \
-    python-dotenv \
-    feedparser \
-    requests \
-    ollama
+.venv/bin/pip install --quiet -r requirements.txt
 
 echo "  → 설치 완료"
 
