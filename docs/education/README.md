@@ -16,6 +16,14 @@
 | [EDU_PRODUCT_MODEL.md](EDU_PRODUCT_MODEL.md) | 개인화 모델 · 포춘텔러 온보딩 · 음성 온보딩 · 메시징 | ~1397줄 |
 | [EDU_ECONOMICS.md](EDU_ECONOMICS.md) | 가격 설계(Step당 천원) · 단가 경제 · CAC 계획 | ~200줄 |
 | [EDU_DATA_OPERATIONS.md](EDU_DATA_OPERATIONS.md) | 데이터 수집 채널 · DEEP RESEARCH 계획 · 파이프라인 | ~1093줄 |
+| [EDU_STANDALONE_APP_IMPLEMENTATION.md](EDU_STANDALONE_APP_IMPLEMENTATION.md) | 공개 독립 앱 구현 기준 · 케이스 저장 · 매직 링크 | implementation |
+| [EDU_UX_SERVICE_GUIDELINES.md](EDU_UX_SERVICE_GUIDELINES.md) | 모바일 매직링크 진입 · PC/Mac 심화 전환 · 전 연령 상담 UX 상위 지침 | design guide |
+| [EDU_SIMULATION_GATING.md](EDU_SIMULATION_GATING.md) | 디지털 트윈 · dark factory · RED TEAM simulation gate | test gate |
+| [EDU_REALISTIC_TASK_TEMPLATES.md](EDU_REALISTIC_TASK_TEMPLATES.md) | 교과서형 금지 대체용 첫 실습 템플릿 | task templates |
+| [DIGITAL_TWIN_CORPUS_SPEC.md](DIGITAL_TWIN_CORPUS_SPEC.md) | evidence-grounded twin 코퍼스 최소 기준 | corpus spec |
+| [EDU_SEEKER_TARGET_FLOWS.md](EDU_SEEKER_TARGET_FLOWS.md) | seeker-target 실제 흐름 정의 | flow spec |
+| [TOOL_READINESS_BLOCKAGE_TAXONOMY.md](TOOL_READINESS_BLOCKAGE_TAXONOMY.md) | 설치/실행/로그인 막힘 표준 분류 | ops taxonomy |
+| [SIMULATION_PASS_CRITERIA.md](SIMULATION_PASS_CRITERIA.md) | simulation clear / needs_work / block 기준 | gate criteria |
 
 ---
 
