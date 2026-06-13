@@ -921,7 +921,16 @@ function App() {
                               </button>
                             </div>
                           ) : (
-                            <span className="ar-evidence-empty">필요 결과물 없음</span>
+                            <div className="ar-evidence-block">
+                              <span className="ar-evidence-empty">필요 결과물 없음</span>
+                              <button
+                                type="button"
+                                className="ar-detail-button"
+                                onClick={() => setSelectedArItem(item)}
+                              >
+                                상세 보기
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>
