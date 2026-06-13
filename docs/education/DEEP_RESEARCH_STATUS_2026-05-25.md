@@ -118,9 +118,9 @@
 - [x] DATA_GATHERING_UNIVERSE.md 기준 소스 전수 반영
 - [x] 실제 수집 실행 및 결과 확인 (164건)
 - [x] 실패 소스 원인 분석 + 극복 방안 문서화
-- [ ] Semantic Scholar API 키 연결 + 수집
-- [ ] Reddit API 키 연결 + 수집
-- [ ] arXiv 평일 실제 수집 확인
-- [ ] YouTube yt-dlp 수집 실행
+- [x] Semantic Scholar 수집 산출물 존재 확인 (`data/edu_research/2026-05-25/semantic_scholar_collected.json`, 34건)
+- [x] Reddit 수집 산출물 존재 확인 (`data/edu_research/2026-05-25/reddit_collected.json`, 40건)
+- [x] arXiv API 실제 실행 확인 (`2026-06-13 14:04:45~14:05:17 KST`, `raw_signals`에 `arxiv_api` 126건 저장)
+- [x] YouTube yt-dlp 수집 실행 (`data/edu_youtube_transcripts/20260613_8ufgiZsa0s4.json`)
 
-> **현재 상태**: `in_progress` — 핵심 소스(Semantic Scholar, Reddit) 키 설정 후 완료 가능
+> **상태 갱신 (2026-06-13)**: 초기 메모의 "Semantic Scholar/Reddit 키 연결"은 당시 계획 기준 표현이었고, 현재는 두 소스 모두 수집 산출물 존재로 충족 처리한다. 남아 있던 실운영 blocker는 `arXiv live run evidence`와 `YouTube transcript artifact`였고, 둘 다 2026-06-13에 확인 완료.
