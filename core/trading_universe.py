@@ -557,57 +557,63 @@ def _translate_reasons_ko(universe: list[dict[str, Any]]) -> list[dict[str, Any]
     
     ko_map: dict[str, str] = {}
     
-    # 1단계: 로컬 LLM (Ollama) 일괄(Batch) 번역 시도
+    # 1단계: 로컬 LLM (Ollama) 분할 배치(Chunked Batch) 번역 시도
     ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434").strip()
     ollama_model = os.getenv("OLLAMA_MODEL", "gemma4:latest").strip()
     
-    try:
-        import urllib.request
+    # 24개 종목을 통째로 보낼 시 gemma4 모델의 생각 토큰(thinking process) 생성으로 인한
+    # 60초 타임아웃 병목을 해결하기 위해, 4개씩 나누어(chunk) 호출합니다.
+    chunk_size = 4
+    items = list(to_translate.items())
+    
+    for i in range(0, len(items), chunk_size):
+        chunk = dict(items[i:i+chunk_size])
+        try:
+            import urllib.request
+            
+            system_prompt = (
+                "You are a professional financial translator. Translate the English values in the input JSON into Korean.\n"
+                "Input format: {\"SYMBOL\": \"title1; title2; ...\", ...}\n"
+                "Output format: {\"SYMBOL\": \"translated1; translated2; ...\", ...}\n"
+                "Rules:\n"
+                "1. Keep the JSON structure exactly the same, matching keys to translated values.\n"
+                "2. Keep the semicolon (;) or pipe (|) separators in each string exactly the same.\n"
+                "3. Output ONLY the JSON object. Do not explain anything."
+            )
+            
+            payload = json.dumps({
+                "model": ollama_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": json.dumps(chunk, ensure_ascii=False)}
+                ],
+                "stream": False,
+                "format": "json",
+                "options": {
+                    "temperature": 0.1
+                }
+            }).encode("utf-8")
+            
+            req = urllib.request.Request(
+                f"{ollama_host}/api/chat",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            
+            # 개별 청크는 4개짜리이므로 45초면 충분함
+            with urllib.request.urlopen(req, timeout=45) as response:
+                resp_json = json.loads(response.read().decode("utf-8"))
+                content = resp_json.get("message", {}).get("content", "").strip()
+                parsed = json.loads(content)
+                for k, v in parsed.items():
+                    if k in chunk and v:
+                        ko_map[k] = str(v)
+            print(f"Local LLM (Ollama) translated chunk ({len(chunk)} items).")
+        except Exception as e:
+            print(f"Local LLM chunk translation failed for keys {list(chunk.keys())}: {e}")
         
-        system_prompt = (
-            "You are a professional financial translator. Translate the English values in the input JSON into Korean.\n"
-            "Input format: {\"SYMBOL\": \"title1; title2; ...\", ...}\n"
-            "Output format: {\"SYMBOL\": \"translated1; translated2; ...\", ...}\n"
-            "Rules:\n"
-            "1. Keep the JSON structure exactly the same, matching keys to translated values.\n"
-            "2. Keep the semicolon (;) or pipe (|) separators in each string exactly the same.\n"
-            "3. Output ONLY the JSON object. Do not explain anything."
-        )
-        
-        user_content = json.dumps(to_translate, ensure_ascii=False)
-        
-        payload = json.dumps({
-            "model": ollama_model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content}
-            ],
-            "stream": False,
-            "format": "json",
-            "options": {
-                "temperature": 0.1
-            }
-        }).encode("utf-8")
-        
-        req = urllib.request.Request(
-            f"{ollama_host}/api/chat",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST"
-        )
-        
-        # 일괄 번역은 최대 60초 대기
-        with urllib.request.urlopen(req, timeout=60) as response:
-            resp_json = json.loads(response.read().decode("utf-8"))
-            content = resp_json.get("message", {}).get("content", "").strip()
-            parsed = json.loads(content)
-            for k, v in parsed.items():
-                if k in to_translate and v:
-                    ko_map[k] = str(v)
-        
-        print(f"Local LLM (Ollama) translated {len(ko_map)} items in batch.")
-    except Exception as e:
-        print(f"Local LLM batch translation failed, falling back to Claude: {e}")
+    print(f"Local LLM (Ollama) completed translations for {len(ko_map)} items in chunked batch.")
         
     # 2단계: 로컬 LLM으로 실패한 항목은 Claude로 백업 번역 시도
     remaining_translate = {
