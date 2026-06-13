@@ -174,6 +174,7 @@ export type DashboardPayload = {
       is_closed?: boolean;
       description?: string;
       completion_note?: string;
+      checklist_items?: string[];
       last_checked_at?: string | null;
       last_updated_at?: string | null;
       evidence_required?: string;

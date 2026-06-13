@@ -31,6 +31,11 @@ AR이 되는 항목:
   "created_at": "2026-05-22T21:50:45",
   "due_by": "2026-05-24",
   "description": "메일리 어댑터와 동일한 구조로 스티비 연동 계획 작성",
+  "checklist": [
+    "스티비 연동 설계 문서 초안 작성",
+    "기존 Maily 어댑터와 차이점 검토",
+    "대표 확인용 결과물 경로 첨부"
+  ],
   "evidence_required": "stibee_publisher.py 설계 문서 또는 코드 PR",
   "last_checked_at": null,
   "reminder_count": 0,
@@ -38,6 +43,12 @@ AR이 되는 항목:
   "completion_note": null
 }
 ```
+
+추가 규칙:
+- 신규 AR은 가능하면 `checklist` 배열을 명시한다.
+- `checklist`는 대표/부대표가 `상세 보기`에서 바로 확인할 미결 항목만 짧게 적는다.
+- 기존 필드(`blocking_condition`, `next_action`, `progress`, `evidence_required`)만 있어도 UI가 자동 추출해 보여주지만, 새 AR은 자동 추출에 의존하지 않는 것이 기본이다.
+- 각 항목은 한 줄 한 행동 원칙으로 작성한다.
 
 ### Priority 기준
 

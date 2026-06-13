@@ -2164,11 +2164,127 @@ def _resolve_evidence_path(candidate: str | None) -> str | None:
     return None
 
 
+def _split_checklist_candidates(text: str | None) -> list[str]:
+    if not text:
+        return []
+    normalized = str(text).replace("\r\n", "\n").strip()
+    if not normalized:
+        return []
+
+    matches = re.findall(r"(?:^|\s)(\d+\))\s*", normalized)
+    if len(matches) >= 2:
+        parts = re.split(r"\s(?=\d+\)\s*)", normalized)
+        return [part.strip() for part in parts if part.strip()]
+    if sum(marker in normalized for marker in "①②③④⑤⑥⑦⑧⑨") >= 2:
+        parts = re.split(r"(?=[①②③④⑤⑥⑦⑧⑨])", normalized)
+        return [part.strip() for part in parts if part.strip()]
+
+    lines: list[str] = []
+    for raw_line in normalized.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        line = re.sub(r"^[-*•]\s*", "", line)
+        lines.append(line)
+    return lines
+
+
+def _coerce_checklist_items(raw_items: Any) -> list[str]:
+    if not isinstance(raw_items, list):
+        return []
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for entry in raw_items:
+        text = str(entry or "").strip()
+        if not text:
+            continue
+        key = re.sub(r"\s+", " ", text)
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(text)
+    return cleaned
+
+
+def _build_ar_checklist(raw: dict[str, Any], detail_text: str, note_text: str) -> list[str]:
+    explicit_items = _coerce_checklist_items(raw.get("checklist"))
+    if explicit_items:
+        return explicit_items
+
+    candidates: list[str] = []
+    lower_detail = detail_text.lower()
+    evidence_required = str(raw.get("evidence_required") or "").strip()
+
+    if "종료 조건 카드:" in detail_text:
+        _, remainder = detail_text.split("종료 조건 카드:", 1)
+        candidates.extend(_split_checklist_candidates(remainder.split("쉬운 설명:", 1)[0]))
+    elif raw.get("blocking_condition"):
+        candidates.extend(_split_checklist_candidates(str(raw.get("blocking_condition"))))
+
+    if raw.get("next_action"):
+        candidates.extend(_split_checklist_candidates(str(raw.get("next_action"))))
+
+    progress_text = str(raw.get("progress") or "").strip()
+    if progress_text:
+        if "잔여:" in progress_text:
+            _, remainder = progress_text.split("잔여:", 1)
+            candidates.extend(_split_checklist_candidates(remainder))
+        elif "미충족:" in progress_text:
+            _, remainder = progress_text.split("미충족:", 1)
+            candidates.extend([part.strip() for part in remainder.split(",") if part.strip()])
+        elif raw.get("status") in {"in_progress", "open"}:
+            candidates.extend(_split_checklist_candidates(progress_text))
+
+    if evidence_required and not _extract_repo_path(evidence_required):
+        candidates.extend(_split_checklist_candidates(evidence_required))
+
+    blockers = str(raw.get("blockers") or "").strip()
+    if blockers:
+        candidates.extend(_split_checklist_candidates(blockers))
+
+    scope_excludes = str(raw.get("scope_excludes") or "").strip()
+    if scope_excludes and raw.get("status") in {"open", "in_progress"}:
+        candidates.extend(_split_checklist_candidates(scope_excludes))
+
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        item = str(candidate or "").strip()
+        if not item:
+            continue
+        if note_text and item == note_text.strip():
+            continue
+        if item == evidence_required and _extract_repo_path(evidence_required):
+            continue
+        if item == "종료 조건 카드:":
+            continue
+        if item.startswith("쉬운 설명:") or item.startswith("참고로 "):
+            continue
+        if "자동 리셋 의존 운영은 비권장" in item and "종료 조건 카드" in lower_detail:
+            continue
+        key = re.sub(r"\s+", " ", item)
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(item)
+
+    status_text = str(raw.get("status") or "").strip().lower()
+    if not cleaned and status_text not in {"completed", "완료"} and evidence_required:
+        if _extract_repo_path(evidence_required):
+            cleaned.append(f"결과물 경로 확인: {evidence_required}")
+        else:
+            cleaned.append(evidence_required)
+    if not cleaned and status_text not in {"completed", "완료"} and detail_text.strip():
+        cleaned.append(detail_text.strip())
+    return cleaned
+
+
 def _normalize_ar_item(raw: dict[str, Any]) -> dict[str, Any]:
     owner = str(raw.get("owner") or "").strip()
     status_meta = _ar_status_meta(raw.get("status"))
     detail_text = raw.get("description") or raw.get("blocking_condition") or raw.get("outcome") or ""
     note_text = raw.get("completion_note") or raw.get("outcome") or ""
+    checklist_items = _build_ar_checklist(raw, str(detail_text or ""), str(note_text or ""))
     evidence_hint = _extract_repo_path(
         str(raw.get("evidence_required") or ""),
         str(note_text or ""),
@@ -2200,6 +2316,7 @@ def _normalize_ar_item(raw: dict[str, Any]) -> dict[str, Any]:
         "is_closed": status_meta["is_closed"],
         "description": detail_text,
         "completion_note": note_text,
+        "checklist_items": checklist_items,
         "last_checked_at": raw.get("last_checked_at"),
         "last_updated_at": last_updated,
         "evidence_required": raw.get("evidence_required") or "",

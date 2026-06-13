@@ -97,6 +97,11 @@ function arStatusBadgeClass(item: ArItem): string {
   return 'ar-status-badge ar-status-badge-warn'
 }
 
+function arChecklistEmptyLabel(item: ArItem): string {
+  if (item.is_closed) return '미결 체크리스트 없음'
+  return '등록된 미결 체크리스트 없음'
+}
+
 function App() {
   // ── 인증 세션 ──
   const [session, setSession] = useState<SessionData | null>(() => loadSession())
@@ -996,6 +1001,21 @@ function App() {
                 <p>{selectedArItem.description}</p>
               </section>
             )}
+            <section className="ar-detail-section">
+              <h4>미결 체크리스트</h4>
+              {selectedArItem.checklist_items && selectedArItem.checklist_items.length > 0 ? (
+                <ul className="checklist ar-detail-checklist">
+                  {selectedArItem.checklist_items.map((entry, index) => (
+                    <li key={`${selectedArItem.id}-check-${index}`}>
+                      <span className="check-dot" aria-hidden="true" />
+                      <span>{entry}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>{arChecklistEmptyLabel(selectedArItem)}</p>
+              )}
+            </section>
             <section className="ar-detail-section">
               <h4>결과물 확인</h4>
               <p>{arEvidenceSummary(selectedArItem)}</p>

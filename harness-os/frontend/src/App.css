@@ -3683,6 +3683,14 @@ h1, h2, h3, h4, h5, h6 {
   border-color: var(--success);
 }
 
+.ar-detail-checklist {
+  margin-top: 0;
+}
+
+.ar-detail-checklist li {
+  align-items: flex-start;
+}
+
 .check-dot.open {
   background: var(--warning-soft);
   border-color: var(--warning-border);
