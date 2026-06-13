@@ -546,7 +546,7 @@ def write_trading_universe(universe: list[dict[str, Any]], output_path: Path = U
 
 
 def _translate_reasons_ko(universe: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """selection_reason_ko가 없는 항목을 Claude Haiku로 일괄 번역."""
+    """selection_reason_ko가 없는 항목을 로컬 LLM(Ollama) 또는 Claude Haiku로 일괄 번역."""
     to_translate = {
         row["symbol"]: row["selection_reason"]
         for row in universe
@@ -554,27 +554,85 @@ def _translate_reasons_ko(universe: list[dict[str, Any]]) -> list[dict[str, Any]
     }
     if not to_translate:
         return universe
+    
     ko_map: dict[str, str] = {}
+    
+    # 1단계: 로컬 LLM (Ollama) 번역 시도
+    ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434").strip()
+    ollama_model = os.getenv("OLLAMA_MODEL", "gemma4:latest").strip()
+    
     try:
-        import anthropic as _ant
-        client = _ant.Anthropic()
-        input_text = json.dumps(to_translate, ensure_ascii=False)
-        resp = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=2048,
-            system=(
-                "영어 기사 제목들을 한국어로 번역하세요.\n"
-                "입력 형식: {\"심볼\": \"title1; title2; title3\", ...}\n"
-                "출력 형식: {\"심볼\": \"한국어1; 한국어2; 한국어3\", ...}\n"
-                "규칙: 세미콜론 구분 유지. 번역 결과만 포함된 JSON만 반환. 설명 금지."
-            ),
-            messages=[{"role": "user", "content": input_text}],
-        )
-        raw = resp.content[0].text.strip() if resp.content else "{}"
-        parsed = json.loads(raw)
-        ko_map = {k: str(v) for k, v in parsed.items() if k in to_translate}
-    except Exception:
-        pass
+        import urllib.request
+        
+        for sym, reason in to_translate.items():
+            prompt = (
+                f"You are a professional financial translator. Translate the following English news headlines/reasons into natural Korean.\n"
+                f"The input is a list of headlines separated by semicolons (;) or pipe characters (|).\n"
+                f"Keep the structure and separation (using semicolons) exactly the same in your output.\n"
+                f"Do not include any explanations, introductory text, or formatting. Just output the translated Korean string.\n\n"
+                f"Input: {reason}\n"
+                f"Korean Translation:"
+            )
+            
+            payload = json.dumps({
+                "model": ollama_model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "options": {
+                    "temperature": 0.3
+                }
+            }).encode("utf-8")
+            
+            req = urllib.request.Request(
+                f"{ollama_host}/api/chat",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            
+            with urllib.request.urlopen(req, timeout=15) as response:
+                resp_json = json.loads(response.read().decode("utf-8"))
+                translation = resp_json.get("message", {}).get("content", "").strip()
+                if translation.startswith('"') and translation.endswith('"'):
+                    translation = translation[1:-1].strip()
+                if translation:
+                    ko_map[sym] = translation
+        
+        print(f"Local LLM (Ollama) translated {len(ko_map)} items.")
+    except Exception as e:
+        print(f"Local LLM translation failed, falling back to Claude: {e}")
+        
+    # 2단계: 로컬 LLM으로 실패한 항목은 Claude로 백업 번역 시도
+    remaining_translate = {
+        sym: reason
+        for sym, reason in to_translate.items()
+        if sym not in ko_map
+    }
+    
+    if remaining_translate:
+        try:
+            import anthropic as _ant
+            client = _ant.Anthropic()
+            input_text = json.dumps(remaining_translate, ensure_ascii=False)
+            resp = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=2048,
+                system=(
+                    "영어 기사 제목들을 한국어로 번역하세요.\n"
+                    "입력 형식: {\"심볼\": \"title1; title2; title3\", ...}\n"
+                    "출력 형식: {\"심볼\": \"한국어1; 한국어2; 한국어3\", ...}\n"
+                    "규칙: 세미콜론 구분 유지. 번역 결과만 포함된 JSON만 반환. 설명 금지."
+                ),
+                messages=[{"role": "user", "content": input_text}],
+            )
+            raw = resp.content[0].text.strip() if resp.content else "{}"
+            parsed = json.loads(raw)
+            for k, v in parsed.items():
+                if k in remaining_translate:
+                    ko_map[k] = str(v)
+        except Exception:
+            pass
+
     result = []
     for row in universe:
         sym = row.get("symbol", "")
