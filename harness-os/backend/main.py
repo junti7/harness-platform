@@ -3850,9 +3850,19 @@ def _read_jsonl(path: Path, limit: int = 100) -> list[dict[str, Any]]:
 
 
 def _paper_trade_flow_payload() -> dict[str, Any]:
-    from core.trading_universe import explain_trading_symbol
+    from core.trading_universe import explain_trading_symbol, _translate_reasons_ko, write_trading_universe
 
     universe = _read_json_file(PROJECT_ROOT / "docs" / "trading" / "universe.json", [])
+    
+    # 누락된 한글 번역이 존재하면 로컬 LLM을 통해 온더플라이 번역 수행 및 캐싱
+    missing_ko = any(row.get("selection_reason") and not row.get("selection_reason_ko") for row in universe)
+    if missing_ko:
+        try:
+            universe = _translate_reasons_ko(universe)
+            write_trading_universe(universe)
+        except Exception as e:
+            print(f"[On-the-fly Translation] Failed: {e}")
+
     alpaca_state = _read_json_file(PROJECT_ROOT / "docs" / "reports" / "paper_trading_positions.json", {})
     ibkr_state = _read_json_file(PROJECT_ROOT / "docs" / "reports" / "ibkr_tws_positions.json", {})
     reset_status = _read_json_file(PROJECT_ROOT / "docs" / "reports" / "paper_trading_reset_status.json", {})
