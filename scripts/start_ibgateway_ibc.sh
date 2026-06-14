@@ -9,12 +9,12 @@
 #     (SSH로 직접 실행하면 GUI 세션 밖이라 HeadlessException 발생 — 운영 경로 아님.)
 #  3) GUI 세션 자체가 없으면(재부팅 후 자동 로그인 OFF 등) 어떤 방법으로도 구동 불가 → 명시 경고.
 
-PROJ="/Users/juntaepark/projects/harness-platform"
+PROJ="/Users/juntae.park/projects/harness-platform"
 LOG="$PROJ/docs/reports/ibgateway_ibc.log"
 # IBC 런처의 raw stdout/stderr 전용(설정 파싱 진단·계정ID 등 민감정보 분리). runtime/은 .gitignore 대상.
 IBC_RAW_LOG="$PROJ/runtime/ibgateway_ibc_raw.log"
 ENV_FILE="$PROJ/.env"
-GW_APP="/Users/juntaepark/Applications/IB Gateway 10.45/IB Gateway 10.45-1.app"
+GW_APP="/Users/juntae.park/Applications/IB Gateway 10.45/IB Gateway 10.45-1.app"
 STATUS_HELPER="$PROJ/scripts/ibkr_gateway_runtime_status.py"
 IBC_LAUNCHER="$HOME/IBC/gatewaystartmacos.sh"
 IBC_WAIT_SEC=90        # IBC 무인 로그인 대기
@@ -59,8 +59,8 @@ fi
 
 # GUI(Aqua) 세션 존재 확인 — 없으면 게이트웨이 구동 자체가 불가(HeadlessException)
 CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null)
-if [ "$CONSOLE_USER" != "juntaepark" ]; then
-    log "[ERROR] 콘솔 GUI 세션에 juntaepark 없음(현재: '$CONSOLE_USER') — Aqua 세션 부재. 게이트웨이 구동 불가."
+if [ "$CONSOLE_USER" != "juntae.park" ]; then
+    log "[ERROR] 콘솔 GUI 세션에 juntae.park 없음(현재: '$CONSOLE_USER') — Aqua 세션 부재. 게이트웨이 구동 불가."
     write_status "offline" "Mac Mini에 juntaepark GUI 로그인이 없어 IB Gateway를 띄울 수 없습니다(재부팅 후 자동 로그인 OFF 등). 화면공유로 GUI 로그인이 필요합니다."
     slack '{"text":"🚨 *[IB Gateway]* Aqua GUI 세션 없음 — Mac Mini 화면 GUI 로그인 필요(이 상태에선 자동매매 불가)"}'
     exit 1
