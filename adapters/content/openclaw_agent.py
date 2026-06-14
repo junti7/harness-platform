@@ -1079,7 +1079,9 @@ def _build_failure_memory_context(message: str) -> str:
 
 
 def _build_chat_system_prompt(user_message: str) -> str:
-    parts = [CHAT_SYSTEM_PROMPT]
+    now = datetime.now()
+    now_str = now.strftime("%Y년 %m월 %d일 %H시 %M분 (%A)")
+    parts = [CHAT_SYSTEM_PROMPT, f"\n== 현재 시각 ==\n{now_str}\n(이 값은 시스템이 자동으로 주입한 실제 시각입니다. 별도로 확인하거나 추측하지 말고 이 값을 사용하세요.)"]
     soul_rules = _load_soul_rules()
     if soul_rules:
         parts.append("\nOpenClaw SOUL:\n" + soul_rules)
