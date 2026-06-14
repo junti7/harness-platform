@@ -138,7 +138,37 @@ def handle_dm(event, say, logger):
             _handle_meeting_message(user, text, channel, say, logger)
         return
 
-    # DM 처리는 아래로 이어짐
+    # DM 처리
+    logger.info(f"[DM] user={user} text={text!r}")
+
+    if CEO_SLACK_USER_ID and user == CEO_SLACK_USER_ID:
+        # 즉시 ack — Slack 3초 타임아웃 방지
+        say(text=":thinking_face: 처리 중...")
+        session_id = f"slack:{channel}:{user}"
+
+        def _run_and_reply():
+            try:
+                response = agent_run(text, dm_channel_id=channel, requester_user_id=user, session_id=session_id)
+            except Exception as exc:
+                logger.exception("[DM] OpenClaw agent 처리 실패")
+                response = (
+                    ":warning: OpenClaw 처리 중 내부 오류가 발생했습니다.\n"
+                    f"- 오류: {type(exc).__name__}\n"
+                    "- 조치: 로그에 기록했습니다. 같은 지시를 반복 실행하지 말고 원인 확인 후 재시도하겠습니다."
+                )
+            try:
+                app.client.chat_postMessage(channel=channel, text=to_slack_mrkdwn(response))
+            except Exception as post_exc:
+                logger.error(f"[DM] Slack 응답 전송 실패: {post_exc}")
+
+        threading.Thread(target=_run_and_reply, daemon=True).start()
+        # 핸들러는 즉시 return → Slack socket 3초 타임아웃 방지
+
+    elif VP_SLACK_USER_ID and user == VP_SLACK_USER_ID:
+        _handle_vp_dm(user, text, say=say, logger=logger)
+    else:
+        _handle_reader_feedback(user, text, source_channel=f"slack_dm:{channel}", say=say,
+                                thread_ts=None, logger=logger)
 
 
 # @app.event("message")와 별도로 채널 메시지를 잡기 위한 핸들러
@@ -156,27 +186,6 @@ def handle_channel_message(message, say, logger):
     orch = _orchestration_channels()
     if channel in orch and not _is_duplicate_event(message):
         _handle_meeting_message(user, text, channel, say, logger)
-
-    logger.info(f"[DM] user={user} text={text!r}")
-
-    if CEO_SLACK_USER_ID and user == CEO_SLACK_USER_ID:
-        say(text=":thinking_face: 처리 중...")
-        session_id = f"slack:{channel}:{user}"
-        try:
-            response = agent_run(text, dm_channel_id=channel, requester_user_id=user, session_id=session_id)
-        except Exception as exc:
-            logger.exception("[DM] OpenClaw agent 처리 실패")
-            response = (
-                ":warning: OpenClaw 처리 중 내부 오류가 발생했습니다.\n"
-                f"- 오류: {type(exc).__name__}\n"
-                "- 조치: 로그에 기록했습니다. 같은 지시를 반복 실행하지 말고 원인 확인 후 재시도하겠습니다."
-            )
-        say(text=to_slack_mrkdwn(response))
-    elif VP_SLACK_USER_ID and user == VP_SLACK_USER_ID:
-        _handle_vp_dm(user, text, say=say, logger=logger)
-    else:
-        _handle_reader_feedback(user, text, source_channel=f"slack_dm:{channel}", say=say,
-                                thread_ts=None, logger=logger)
 
 
 # ── 회의실 / 팀 채널 orchestration 라우터 ──────────────────────────────────────
