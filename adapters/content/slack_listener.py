@@ -11,7 +11,7 @@ import os
 import sys
 import logging
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FutureTimeoutError
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -58,6 +58,8 @@ if not any(isinstance(h, logging.StreamHandler) and not isinstance(h, RotatingFi
     _root_logger.addHandler(_stream_handler)
 
 logger = logging.getLogger(__name__)
+_DM_EXECUTOR = ThreadPoolExecutor(max_workers=4)
+_FAST_DM_TIMEOUT_SECONDS = float(os.environ.get("OPENCLAW_FAST_DM_TIMEOUT_SECONDS", "1.2"))
 
 # ── Slack event dedup (retry guard) ──────────────────────────────────────────
 # Slack retries event delivery when the handler takes > 3 s.  Without dedup,
@@ -144,27 +146,53 @@ def handle_dm(event, say, logger):
     logger.info(f"[DM] user={user} text={text!r}")
 
     if CEO_SLACK_USER_ID and user == CEO_SLACK_USER_ID:
-        # 즉시 ack — Slack 3초 타임아웃 방지
-        say(text=":thinking_face: 처리 중...")
         session_id = f"slack:{channel}:{user}"
+        future = _DM_EXECUTOR.submit(
+            agent_run,
+            text,
+            dm_channel_id=channel,
+            requester_user_id=user,
+            session_id=session_id,
+        )
 
-        def _run_and_reply():
+        def _post_response(response_text: str) -> None:
             try:
-                response = agent_run(text, dm_channel_id=channel, requester_user_id=user, session_id=session_id)
-            except Exception as exc:
-                logger.exception("[DM] OpenClaw agent 처리 실패")
-                response = (
+                app.client.chat_postMessage(channel=channel, text=to_slack_mrkdwn(response_text))
+                logger.info(f"[DM] Slack 응답 전송 성공 channel={channel}")
+            except Exception as post_exc:
+                logger.error(f"[DM] Slack 응답 전송 실패: {post_exc}")
+
+        try:
+            response = future.result(timeout=_FAST_DM_TIMEOUT_SECONDS)
+        except FutureTimeoutError:
+            logger.info(f"[DM] fast-path timeout -> async ack channel={channel}")
+            say(text=":thinking_face: 처리 중...")
+
+            def _wait_and_reply():
+                try:
+                    response_text = future.result()
+                except Exception as exc:
+                    logger.exception("[DM] OpenClaw agent 처리 실패")
+                    response_text = (
+                        ":warning: OpenClaw 처리 중 내부 오류가 발생했습니다.\n"
+                        f"- 오류: {type(exc).__name__}\n"
+                        "- 조치: 로그에 기록했습니다. 같은 지시를 반복 실행하지 말고 원인 확인 후 재시도하겠습니다."
+                    )
+                _post_response(response_text)
+
+            threading.Thread(target=_wait_and_reply, daemon=True).start()
+        except Exception as exc:
+            logger.exception("[DM] OpenClaw agent 처리 실패")
+            say(
+                text=to_slack_mrkdwn(
                     ":warning: OpenClaw 처리 중 내부 오류가 발생했습니다.\n"
                     f"- 오류: {type(exc).__name__}\n"
                     "- 조치: 로그에 기록했습니다. 같은 지시를 반복 실행하지 말고 원인 확인 후 재시도하겠습니다."
                 )
-            try:
-                app.client.chat_postMessage(channel=channel, text=to_slack_mrkdwn(response))
-            except Exception as post_exc:
-                logger.error(f"[DM] Slack 응답 전송 실패: {post_exc}")
-
-        threading.Thread(target=_run_and_reply, daemon=True).start()
-        # 핸들러는 즉시 return → Slack socket 3초 타임아웃 방지
+            )
+        else:
+            logger.info(f"[DM] fast-path direct reply channel={channel}")
+            say(text=to_slack_mrkdwn(response))
 
     elif VP_SLACK_USER_ID and user == VP_SLACK_USER_ID:
         _handle_vp_dm(user, text, say=say, logger=logger)
