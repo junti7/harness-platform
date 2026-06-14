@@ -398,6 +398,16 @@ _CURRENT_TIME_RE = re.compile(
     r"(지금\s*(시각|시간)|현재\s*(시각|시간)|몇\s*시|current\s*time|what\s*time)",
     re.IGNORECASE,
 )
+_GREETING_ONLY_RE = re.compile(
+    r"^\s*(안녕(?:하세요)?|하이|hello|hey|헬로)\s*[!.?~]*\s*$",
+    re.IGNORECASE,
+)
+_LOG_REQUEST_RE = re.compile(
+    r"(로그|log).*(보여|확인|조회|읽어|요약|분석)|"
+    r"(보여|확인|조회|읽어|요약|분석).*(로그|log)|"
+    r"(에러\s*로그|error\s*log)",
+    re.IGNORECASE,
+)
 _RESPONSE_GREETING_RE = re.compile(
     r"^(안녕하세요[!.\s]*|감사합니다[!.\s]*|좋습니다[!.\s]*)+",
     re.IGNORECASE,
@@ -408,6 +418,7 @@ _ROUTE_RESPONSE_LIMITS = {
     "deterministic_status_brief": 800,
     "deterministic_gmail_summary": 1500,
     "deterministic_current_time": 120,
+    "deterministic_greeting": 120,
     "bypass_minutes_latest": 1500,
     "bypass_ar_list": 1500,
     "structured_bridge": 2000,
@@ -857,6 +868,12 @@ def _try_current_time_response(user_message: str) -> str | None:
 
     now = datetime.now()
     return now.strftime("현재 시각은 %Y년 %m월 %d일 %H시 %M분입니다.")
+
+
+def _try_greeting_response(user_message: str) -> str | None:
+    if not _GREETING_ONLY_RE.match(user_message):
+        return None
+    return "안녕하세요. 무엇을 도와드릴까요?"
 
 
 def _safe_eval_arithmetic(expression: str) -> float | None:
@@ -1852,6 +1869,8 @@ from adapters.content.tools import TOOL_EXECUTORS
 def _needs_tools(message: str) -> bool:
     """도구 사용이 필요한 메시지인지 키워드로 판별"""
     msg_lower = message.lower()
+    if _LOG_REQUEST_RE.search(msg_lower):
+        return True
     if (_ANALYSIS_CHAT_RE.search(msg_lower) or _VP_REVIEW_CHAT_RE.search(msg_lower)) and not _HARD_TOOL_NEED_RE.search(msg_lower):
         return False
     return any(kw in msg_lower for kw in TOOL_KEYWORDS)
@@ -2782,6 +2801,18 @@ def run(
             action_name="current_time",
         )
         return _finish("deterministic_current_time", current_time_response)
+
+    greeting_response = _try_greeting_response(user_message)
+    if greeting_response is not None:
+        _log_route_audit(
+            session_id=effective_session_id,
+            requester_user_id=requester_user_id,
+            user_message=user_message,
+            route="deterministic_greeting",
+            risk_scan=risk_scan,
+            action_name="greeting",
+        )
+        return _finish("deterministic_greeting", greeting_response)
 
     # === 초고속 바이패스 필터 (Bypass intent API for latency & accuracy) ===
     msg_clean = " ".join(user_message.strip().split()).lower()

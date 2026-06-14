@@ -207,6 +207,16 @@ class OpenClawAgentTests(unittest.TestCase):
         self.assertEqual(result, "현재 시각은 2026년 06월 14일 18시 41분입니다.")
         mock_ollama.assert_not_called()
 
+    @patch("adapters.content.openclaw_agent._run_ollama_chat")
+    def test_greeting_uses_deterministic_response(self, mock_ollama):
+        result = openclaw_agent.run("안녕", session_id="greeting-session")
+
+        self.assertEqual(result, "무엇을 도와드릴까요?")
+        mock_ollama.assert_not_called()
+
+    def test_log_request_requires_tools(self):
+        self.assertTrue(openclaw_agent._needs_tools("백엔드 에러 로그 보여줘"))
+
     @patch("adapters.content.openclaw_agent._run_anthropic_chat", return_value="fallback")
     @patch("adapters.content.openclaw_agent._ollama_chat", return_value="local-ok")
     @patch("adapters.content.openclaw_agent._ollama_probe", return_value=True)
