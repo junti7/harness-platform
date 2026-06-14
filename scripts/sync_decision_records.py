@@ -3,9 +3,10 @@
 
 배경:
   APPROVAL_REQUESTS.json(CEO 결재 상태), openclaw_approval_handoffs.jsonl(결재 핸드오프 로그),
-  docs/reviews/edu_pilot_red_team/(red-team 리뷰 산출물)는 *프로덕션 런타임이 생성*하는
-  비즈니스 결재·감사 기록이다. 코드 드리프트 가드(check_code_drift.py)는 오탐 방지를 위해
-  이 경로들을 제외하므로, 이들은 아무도 모르게 dirty로 쌓이다가 ff/배포를 막는다.
+  gate_tracker.jsonl(게이트 상태 원장 — red_team_clear/legal_review_approve/pre_mortem_approve의
+  pending→overdue→cleared 에스컬레이션 추적), docs/reviews/edu_pilot_red_team/(red-team 리뷰 산출물)는
+  *프로덕션 런타임이 생성·갱신*하는 비즈니스 결재·감사 기록이다. 코드 드리프트 가드(check_code_drift.py)는
+  오탐 방지를 위해 이 경로들을 제외하므로, 이들은 아무도 모르게 dirty로 쌓이다가 ff/배포를 막는다.
   버리는 쓰레기가 아니라 보존해야 할 기록이므로 gitignore가 아니라 *origin 환원*이 정답이다.
 
 안전 설계 — 라이브 작업트리를 절대 건드리지 않는다:
@@ -46,9 +47,17 @@ BRANCH = "main"
 #  - 정확 파일(EXACT_FILES): 단일 기록/상태 파일
 #  - 디렉터리(DIR_PREFIXES): 그 아래 모든 파일(리뷰 산출물 등)
 # 이 목록 밖의 어떤 경로도 이 잡은 절대 커밋하지 않는다.
+#
+# [bootstrap 요건 — *이미 origin 에 추적 중인* 파일을 새로 추가할 때]
+#   최초 1회 마커(SYNC_STATE)가 없으면 _detect_external_conflict 가 "prod 권위"로 채택한다.
+#   따라서 기존 추적 파일(예: gate_tracker.jsonl: origin=pending vs prod=overdue)은 enablement 시점에
+#   반드시 **prod 워킹본 == origin blob 인 상태에서 마커를 seed** 한 뒤 잡을 켠다. 그러면 첫 실회차는
+#   "정상 런타임 진전"만 push 하고, 검증 안 된 로컬 드리프트를 origin 에 덮어쓰지 않는다.
+#   seed: prod 에서 origin==working 확인 후 runtime/decision_record_sync_state.json 에 {경로: blob} 기록.
 EXACT_FILES = [
     "docs/operations/APPROVAL_REQUESTS.json",
     "docs/reports/openclaw_approval_handoffs.jsonl",
+    "docs/reports/gate_tracker.jsonl",  # 게이트 상태 원장(런타임 점검기가 status/last_checked_at 갱신)
 ]
 DIR_PREFIXES = [
     "docs/reviews/edu_pilot_red_team/",

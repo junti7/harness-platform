@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -98,10 +99,27 @@ def _save_gate(gate: dict) -> None:
 
 
 def _rewrite_gates(gates: list[dict]) -> None:
+    # 원자적 재작성: 전체를 temp 파일에 쓰고 fsync 후 os.replace 로 한 번에 교체한다.
+    # 비원자적 open("w") 는 재작성 도중 "유효한 JSONL prefix"(앞줄만 완성) 상태가 잠깐 생겨,
+    # 이를 읽는 쪽(decision-record-sync 의 _is_stable)이 잘린 원장을 정상으로 오인해 커밋할 수 있다.
+    # os.replace 는 POSIX 상 원자적이라 읽는 쪽은 항상 옛 파일 또는 새 파일만 본다(중간 절단본 없음).
     GATE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with GATE_LOG_PATH.open("w", encoding="utf-8") as fh:
-        for g in gates:
-            fh.write(json.dumps(g, ensure_ascii=False) + "\n")
+    fd, tmp_path = tempfile.mkstemp(
+        dir=str(GATE_LOG_PATH.parent), prefix=".gate_tracker_", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            for g in gates:
+                fh.write(json.dumps(g, ensure_ascii=False) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, GATE_LOG_PATH)  # 원자적 교체
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def _post_slack(channel: str, text: str) -> None:
