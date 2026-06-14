@@ -27,6 +27,8 @@ load_dotenv(_PROJECT_ROOT / ".env", override=True)
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from adapters.content.openclaw_agent import run as agent_run, OLLAMA_CHAT_MODEL, OLLAMA_REMOTE_HOST, OLLAMA_HOST
+from adapters.content.runtime_host import should_use_remote_ollama
+from adapters.content.slack_runtime_guard import assert_slack_runtime_allowed
 from adapters.content.slack_format import to_slack_mrkdwn
 from core.reader_feedback import classify_feedback, upsert_reader_profile, record_feedback
 from adapters.content.vp_review_card import parse_vp_response
@@ -502,6 +504,7 @@ def _handle_reader_feedback(user: str, text: str, source_channel: str, say, thre
 
 
 if __name__ == "__main__":
+    assert_slack_runtime_allowed()
     logger.info("Harness Slack Listener 시작 (OpenClaw Agent Mode)")
 
     # Ollama 모델 사전 로드 (백그라운드) — 첫 메시지 콜드 스타트 방지
@@ -542,7 +545,7 @@ if __name__ == "__main__":
                 return False
 
         candidates = []
-        if OLLAMA_REMOTE_HOST:
+        if should_use_remote_ollama(OLLAMA_REMOTE_HOST):
             candidates.append((OLLAMA_REMOTE_HOST, "MBP"))
         candidates.append((OLLAMA_HOST, "Local"))
 

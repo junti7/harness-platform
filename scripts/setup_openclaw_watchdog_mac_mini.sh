@@ -5,6 +5,12 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PLIST_PATH="$HOME/Library/LaunchAgents/com.harness.openclaw-watchdog.plist"
 LABEL="com.harness.openclaw-watchdog"
+HOSTNAME_LC="$(hostname | tr '[:upper:]' '[:lower:]')"
+
+if [[ "$HOSTNAME_LC" == *macbook* || "$HOSTNAME_LC" == *mbp* ]]; then
+  echo "ERROR: OpenClaw watchdog setup is Mac Mini-only. Refusing to install on host: $(hostname)" >&2
+  exit 1
+fi
 
 echo "=== 1. git pull ==="
 git -C "$PROJECT_ROOT" pull

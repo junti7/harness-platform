@@ -1,5 +1,6 @@
 import json
 import unittest
+from datetime import datetime as real_datetime
 from unittest.mock import patch
 from tempfile import TemporaryDirectory
 from pathlib import Path
@@ -195,6 +196,40 @@ class OpenClawAgentTests(unittest.TestCase):
         mock_gmail.assert_called_once_with("newer_than:1d", limit=5)
         mock_ollama.assert_not_called()
         mock_chat.assert_not_called()
+
+    @patch("adapters.content.openclaw_agent._run_ollama_chat")
+    @patch("adapters.content.openclaw_agent.datetime")
+    def test_current_time_query_uses_deterministic_response(self, mock_datetime, mock_ollama):
+        mock_datetime.now.return_value = real_datetime(2026, 6, 14, 18, 41)
+
+        result = openclaw_agent.run("지금 시각 알려줘", session_id="time-session")
+
+        self.assertEqual(result, "현재 시각은 2026년 06월 14일 18시 41분입니다.")
+        mock_ollama.assert_not_called()
+
+    @patch("adapters.content.openclaw_agent._run_anthropic_chat", return_value="fallback")
+    @patch("adapters.content.openclaw_agent._ollama_chat", return_value="local-ok")
+    @patch("adapters.content.openclaw_agent._ollama_probe", return_value=True)
+    @patch("adapters.content.openclaw_agent.should_use_remote_ollama", return_value=False)
+    def test_macmini_runtime_skips_remote_ollama_candidate(
+        self,
+        _mock_should_use_remote,
+        _mock_probe,
+        mock_ollama_chat,
+        _mock_fallback,
+    ):
+        with patch.object(openclaw_agent, "OLLAMA_REMOTE_HOST", "http://remote-host:11434"), patch.object(
+            openclaw_agent, "OLLAMA_HOST", "http://local-host:11434"
+        ):
+            result = openclaw_agent._run_ollama_chat("안녕")
+
+        self.assertEqual(result, "local-ok")
+        mock_ollama_chat.assert_called_once_with(
+            "http://local-host:11434",
+            "Tier0b/Local-Ollama",
+            "안녕",
+            history=None,
+        )
 
     def test_route_audit_records_blocked_contextual_risk(self):
         with TemporaryDirectory() as tmpdir:

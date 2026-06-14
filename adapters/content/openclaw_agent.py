@@ -45,6 +45,7 @@ import httpx
 from dotenv import load_dotenv
 from core.logger import HarnessLogger
 from adapters.content.substack_publisher import fetch_draft_as_text
+from adapters.content.runtime_host import should_use_remote_ollama
 from adapters.content.refiner import log_api_cost, get_today_cost, DAILY_COST_LIMIT
 from core.cost_alerts import check_and_alert
 from core.gemini_sdk import generate_text, gemini_model_name
@@ -71,7 +72,7 @@ OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")           
 OLLAMA_REMOTE_HOST = os.environ.get("OLLAMA_REMOTE_HOST", "")                  # MBP (켜져 있을 때)
 OLLAMA_CHAT_MODEL = os.environ.get("OLLAMA_CHAT_MODEL") or os.environ.get("OLLAMA_MODEL", "qwen2.5:1.5b")
 OLLAMA_PROBE_TIMEOUT = float(os.environ.get("OLLAMA_PROBE_TIMEOUT", "2.0"))    # 온라인 감지 제한시간
-OLLAMA_CHAT_TIMEOUT = float(os.environ.get("OLLAMA_CHAT_TIMEOUT", "15.0"))     # 대화 응답 제한시간
+OLLAMA_CHAT_TIMEOUT = float(os.environ.get("OLLAMA_CHAT_TIMEOUT", "45.0"))     # 대화 응답 제한시간
 OPENCLAW_INTENT_MODEL = os.environ.get("OPENCLAW_INTENT_MODEL", "claude-haiku-4-5")
 OPENCLAW_CHAT_MODEL = os.environ.get("OPENCLAW_CHAT_MODEL", "claude-sonnet-4-5")
 OPENCLAW_TOOL_MODEL = os.environ.get("OPENCLAW_TOOL_MODEL", OPENCLAW_CHAT_MODEL)
@@ -393,6 +394,10 @@ _GMAIL_SUMMARY_RE = re.compile(
     r"오늘\s*온\s*메일",
     re.IGNORECASE,
 )
+_CURRENT_TIME_RE = re.compile(
+    r"(지금\s*(시각|시간)|현재\s*(시각|시간)|몇\s*시|current\s*time|what\s*time)",
+    re.IGNORECASE,
+)
 _RESPONSE_GREETING_RE = re.compile(
     r"^(안녕하세요[!.\s]*|감사합니다[!.\s]*|좋습니다[!.\s]*)+",
     re.IGNORECASE,
@@ -402,6 +407,7 @@ _ROUTE_RESPONSE_LIMITS = {
     "deterministic_newsletter_status": 1000,
     "deterministic_status_brief": 800,
     "deterministic_gmail_summary": 1500,
+    "deterministic_current_time": 120,
     "bypass_minutes_latest": 1500,
     "bypass_ar_list": 1500,
     "structured_bridge": 2000,
@@ -843,6 +849,14 @@ def _format_number(value: float) -> str:
     if value == int(value):
         return str(int(value))
     return f"{value:.10g}"
+
+
+def _try_current_time_response(user_message: str) -> str | None:
+    if not _CURRENT_TIME_RE.search(user_message):
+        return None
+
+    now = datetime.now()
+    return now.strftime("현재 시각은 %Y년 %m월 %d일 %H시 %M분입니다.")
 
 
 def _safe_eval_arithmetic(expression: str) -> float | None:
@@ -2058,7 +2072,7 @@ def _run_ollama_chat(
       Tier 1 : Claude Haiku                    — 모든 Ollama 불가 시 fallback
     """
     candidates = []
-    if OLLAMA_REMOTE_HOST:
+    if should_use_remote_ollama(OLLAMA_REMOTE_HOST):
         candidates.append((OLLAMA_REMOTE_HOST, "Tier0a/MBP-Ollama"))
     candidates.append((OLLAMA_HOST, "Tier0b/Local-Ollama"))
 
@@ -2756,6 +2770,18 @@ def run(
             action_name="gmail_summary",
         )
         return _finish("deterministic_gmail_summary", gmail_summary_response)
+
+    current_time_response = _try_current_time_response(user_message)
+    if current_time_response is not None:
+        _log_route_audit(
+            session_id=effective_session_id,
+            requester_user_id=requester_user_id,
+            user_message=user_message,
+            route="deterministic_current_time",
+            risk_scan=risk_scan,
+            action_name="current_time",
+        )
+        return _finish("deterministic_current_time", current_time_response)
 
     # === 초고속 바이패스 필터 (Bypass intent API for latency & accuracy) ===
     msg_clean = " ".join(user_message.strip().split()).lower()

@@ -21,6 +21,8 @@
 - 배포 전, 배포 대상이 **origin/main에 push되어 있음**을 확인한다 (deploy 스크립트가 자동 검증).
 - 코드 작업을 마치면 **그날 안에 commit+push**한다. 커밋했는데 push 안 한 코드는 "유실 예약" 상태다.
 - 작업트리는 깨끗하게 유지한다. 런타임 산출물은 `.gitignore`에 등록해 추적 대상에서 뺀다.
+- **OpenClaw main runtime 은 Mac Mini 에만 둔다.** Slack DM ingress(`adapters/content/slack_listener.py`), Socket Mode 연결,
+  `ai.openclaw.gateway`, watchdog 는 Mac Mini 에서만 살아 있어야 하며, MBP 에서는 꺼진 상태가 정상이다.
 - **MBP에서 추적 파일 commit이 발생한 작업은 그 시점에서 끝난 것이 아니다.** 같은 작업 안에서 반드시:
   1. `origin/main` push,
   2. `scripts/deploy_to_macmini.sh`로 Mac Mini 선택 배포,
@@ -38,6 +40,8 @@
 - **프론트엔드를 `harness-os/frontend/` 루트에 빌드하지 않는다.** Vite 출력은 `dist/`만이며(`dist`는 gitignore됨), 백엔드는 `dist/`에서 서빙한다. 루트에 `index.html`(빌드본)·`assets/`·`favicon.svg` 등이 생기면 잘못된 outDir 빌드의 잔재다 — 루트 `index.html`은 항상 dev 소스(`/src/main.tsx`)여야 한다. 프론트 갱신은 prod에서 `cd harness-os/frontend && npm run build`(→`dist/`)로만 한다.
 - MBP에서 commit만 하고 Mac Mini 선택 배포/청결 검증을 생략한 채 작업을 종료하지 않는다.
 - MBP 또는 Mac Mini에서 추적 파일 dirty를 "원래 그런 상태"로 정상화하지 않는다. 반복 dirty는 출력 경로, 런타임 저장 위치, `.gitignore` 설계 문제로 간주하고 구조적으로 제거한다.
+- **MBP 에서 OpenClaw 가 Slack DM 을 수신하게 두지 않는다.** MBP 에서 listener/gateway 를 수동 `nohup`, launchd, watchdog 로 살리는 행위는
+  SoT 위반이자 운영 드리프트다. 발견 즉시 프로세스를 중지하고 Mac Mini 단일 runtime 으로 복귀한다.
 
 ## 4. 자동 감시 (강제 조치)
 

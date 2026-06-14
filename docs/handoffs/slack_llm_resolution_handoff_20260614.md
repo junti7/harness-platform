@@ -17,8 +17,9 @@
 
 ### 🛠️ 장애 1: Slack 지시에 대해 아예 무반응인 현상
 * **원인**: 백그라운드 데몬 목록 및 프로세스 모니터링 결과, `slack_listener.py` 프로세스가 완전히 꺼져 있었습니다.
-* **조치**: 프로젝트 가상환경(`.venv`)을 활용해 백그라운드로 리스너를 재기동 완료했습니다.
+* **조치**: 당시 프로젝트 가상환경(`.venv`)으로 리스너를 재기동했습니다. 다만 이 방식은 **Mac Mini 전용 운영 원칙이 생기기 전의 임시 복구 절차**였고, **이제는 MBP에서 절대 실행하면 안 됩니다.**
   ```bash
+  # historical only — do not run on MBP
   nohup .venv/bin/python adapters/content/slack_listener.py > logs/slack_listener.stdout.log 2> logs/slack_listener.stderr.log &
   ```
   현재 PID `7016`으로 활성화되어 `⚡️ Bolt app is running!` 연결 수립이 완료된 상태입니다.

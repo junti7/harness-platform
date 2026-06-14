@@ -9,12 +9,18 @@ LABEL="${OPENCLAW_LAUNCHAGENT_LABEL:-ai.openclaw.gateway}"
 PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
 LOG_DIR="${HOME}/.openclaw/watchdog"
 LOG_FILE="${LOG_DIR}/watchdog.log"
+HOSTNAME_LC="$(hostname | tr '[:upper:]' '[:lower:]')"
 
 mkdir -p "$LOG_DIR"
 
 ts() { date '+%Y-%m-%dT%H:%M:%S'; }
 
 log() { echo "[$(ts)] $*" | tee -a "$LOG_FILE"; }
+
+if [[ "$HOSTNAME_LC" == *macbook* || "$HOSTNAME_LC" == *mbp* ]]; then
+    log "SKIP host=$(hostname) reason=OpenClaw gateway/watchdog is Mac Mini-only"
+    exit 0
+fi
 
 # 오래된 로그 정리 (7일 초과 줄 제거)
 if [[ -f "$LOG_FILE" ]]; then

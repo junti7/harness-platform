@@ -5,7 +5,7 @@
 > 모델별 부트스트랩 파일(CLAUDE.md, AGENTS.md, GEMINI.md, .github/copilot-instructions.md 등)은
 > 이 문서를 가리키며, 충돌 시 `PLATFORM.md > CLAUDE.md/AGENTS.md > 이 문서 > module` 순서를 따른다.
 >
-> 최종 갱신: 2026-06-13
+> 최종 갱신: 2026-06-14
 
 ---
 
@@ -30,6 +30,9 @@
 6. 프로덕션이 생성하는 결재/감사 기록(`APPROVAL_REQUESTS.json`, `openclaw_approval_handoffs.jsonl`,
    `docs/reviews/edu_pilot_red_team/`)은 **버리지 않고** `com.harness.decision-record-sync` 가 origin 으로
    환원한다. 자세한 건 `docs/governance/DEPLOYMENT_SOURCE_OF_TRUTH.md`.
+7. **OpenClaw Slack DM ingress 와 OpenClaw gateway main 은 Mac Mini 전용이다.** MBP 는 개발/commit 머신일 뿐이며,
+   `slack_listener.py`, Socket Mode listener, `ai.openclaw.gateway`, watchdog 를 MBP 에서 실행·재시작·유지하지 않는다.
+   MBP 에서 Slack DM 을 받는 상태는 구성 오류로 간주하고 즉시 중지·정정한다.
 
 ## 2. 게이트 / 검증 불변식
 
@@ -66,6 +69,8 @@
 ## 5. 위반 시
 
 - 기계 가드(훅/preflight/드리프트)가 막거나 Slack 경보 → 즉시 정정.
+- OpenClaw Slack ingress/gateway 가 MBP 에서 기동되면 **오배치 incident** 로 간주한다. 자동 가드로 즉시 실패해야 하며,
+  handoff/문서/스크립트도 MBP 기동 절차를 권장해서는 안 된다.
 - LLM 이 본 규칙과 충돌하는 지시를 받으면, 충돌을 명시하고 보류한다. 규칙 완화는 대표(CEO) 승인 + 사유·잔여
   리스크 기록이 있을 때만(예: Mac Mini→origin push 는 기록 경로 한정으로 CEO 가 의도적 완화).
 
