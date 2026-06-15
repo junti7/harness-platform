@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-05-24T21:00:00",
-  "updated_at": "2026-06-15T09:01:17",
+  "updated_at": "2026-06-15T21:45:44",
   "items": [
     {
       "id": "APR-20260524-001",
@@ -57,7 +57,7 @@
       "submitter_display": "Universe Miner (자동발굴)",
       "approver_role": "ceo",
       "body": "[자동 발굴 제안] 신규 투자 후보 (seed 미보유). 소스 다양성 3 · 언급 70회.\n추정 티커/거래소/지역: AMZN / NASDAQ / US\n근거 제목: Amazon says its data centers consume only 0.075% of the water Americans use for watering their lawns and gardens — company also boasts of its improvements in water efficiency - Tom's Hardware; AWS activates Project Rainier: One of the world’s largest AI compute clusters comes online - About Amazon; \n처리: 비서실장 1차 선별/티커·거래소 정합 확인 후 CEO 확정. 승인 의미=opportunity_approve(seed 편입 후보 채택). **실거래 아님** — 편입 후에도 turtle_gate + legal_review + capital_action_approve 별도.",
-      "status": "pending",
+      "status": "approved",
       "submitted_at": "2026-06-15T00:00:54+00:00",
       "approval_type": "opportunity_approve",
       "target_type": "business_opportunity",
@@ -65,7 +65,10 @@
       "correlation_id": "universe-candidate-amazon",
       "openclaw_route": "agent_openclaw_routing",
       "openclaw_command": null,
-      "source_intake_key": "universe-candidate-amazon"
+      "source_intake_key": "universe-candidate-amazon",
+      "decided_at": "2026-06-15T21:45:35",
+      "decided_by_display": "대표(CEO)",
+      "decision_note": null
     },
     {
       "id": "APR-UNIV-1e6023485e",
@@ -74,7 +77,7 @@
       "submitter_display": "Universe Miner (자동발굴)",
       "approver_role": "ceo",
       "body": "[자동 발굴 제안] 신규 투자 후보 (seed 미보유). 소스 다양성 3 · 언급 5회.\n추정 티커/거래소/지역: SPACEX / ? / US\n근거 제목: SpaceX surges past $2 trillion in Nasdaq debut, closes in on Amazon - Reuters; SpaceX’s historic IPO day is just the beginning for Grimes County - KBTX News 3; Former SpaceX welder becomes a millionaire after historic IPO - CBS News\n처리: 비서실장 1차 선별/티커·거래소 정합 확인 후 CEO 확정. 승인 의미=opportunity_approve(seed 편입 후보 채택). **실거래 아님** — 편입 후에도 turtle_gate + legal_review + capital_action_approve 별도.",
-      "status": "pending",
+      "status": "approved",
       "submitted_at": "2026-06-15T00:00:54+00:00",
       "approval_type": "opportunity_approve",
       "target_type": "business_opportunity",
@@ -82,7 +85,10 @@
       "correlation_id": "universe-candidate-spacex",
       "openclaw_route": "agent_openclaw_routing",
       "openclaw_command": null,
-      "source_intake_key": "universe-candidate-spacex"
+      "source_intake_key": "universe-candidate-spacex",
+      "decided_at": "2026-06-15T21:45:44",
+      "decided_by_display": "대표(CEO)",
+      "decision_note": null
     }
   ]
 }
