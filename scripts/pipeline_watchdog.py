@@ -31,6 +31,14 @@ from scripts.alpaca_paper_trading import get_account_summary
 
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
 SLACK_CHANNEL   = os.getenv("SLACK_CHANNEL_EXEC_PRESIDENT_DECISIONS", "")
+ALLOWED_IBKR_WATCHDOG_HOSTS = {
+    host.strip()
+    for host in os.getenv(
+        "ALLOWED_IBKR_WATCHDOG_HOSTS",
+        "bagjuntaeui-Macmini.local,bagjuntaeui-Macmini",
+    ).split(",")
+    if host.strip()
+}
 
 CRITICAL_SERVICES = [
     "com.harness.pipeline",
@@ -48,6 +56,10 @@ TRADING_REQUIRED_FILES = [
     ROOT / "scripts" / "check_paper_books_flat.py",
     ROOT / "scripts" / "ibkr_tws_paper_trader.py",
 ]
+
+
+def _ibkr_watchdog_allowed_on_this_host() -> bool:
+    return socket.gethostname() in ALLOWED_IBKR_WATCHDOG_HOSTS
 
 
 # ── Slack 알림 ──────────────────────────────────────────────────────────────
@@ -390,6 +402,12 @@ def main() -> None:
 if __name__ == "__main__":
     if "--ibkr-only" in sys.argv:
         print(f"[{datetime.now(timezone.utc).isoformat()}] IBKR Watchdog(자가복구) 실행")
+        if not _ibkr_watchdog_allowed_on_this_host():
+            print(
+                "[SKIP] 이 호스트는 IBKR watchdog 실행 대상이 아님 "
+                f"(host={socket.gethostname()}, allowed={sorted(ALLOWED_IBKR_WATCHDOG_HOSTS)})"
+            )
+            raise SystemExit(0)
         # 5분 주기 자가복구: ① 게이트웨이 다운 시 IBC 자동 재시작 ② 트레이더 잡 언로드 시 자동 reload
         issues = ensure_gateway_up() + ensure_trader_jobs_loaded()
         if issues:
