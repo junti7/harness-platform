@@ -14,9 +14,7 @@ LOG="$PROJ/docs/reports/ibgateway_ibc.log"
 # IBC 런처의 raw stdout/stderr 전용(설정 파싱 진단·계정ID 등 민감정보 분리). runtime/은 .gitignore 대상.
 IBC_RAW_LOG="$PROJ/runtime/ibgateway_ibc_raw.log"
 ENV_FILE="$PROJ/.env"
-GW_APP="/Users/juntae.park/Applications/IB Gateway 10.45/IB Gateway 10.45-1.app"
 STATUS_HELPER="$PROJ/scripts/ibkr_gateway_runtime_status.py"
-IBC_LAUNCHER="$HOME/IBC/gatewaystartmacos.sh"
 IBC_WAIT_SEC=90        # IBC 무인 로그인 대기
 FALLBACK_WAIT_SEC=60   # open 폴백 후 대기(수동 로그인 여지)
 POLL_INTERVAL_SEC=5
@@ -32,6 +30,40 @@ write_status() {
             --wait-timeout-sec "$IBC_WAIT_SEC" \
             > /dev/null 2>&1 || true
     fi
+}
+resolve_ibc_launcher() {
+    if [ -n "${IBC_LAUNCHER_PATH:-}" ] && [ -f "${IBC_LAUNCHER_PATH}" ]; then
+        printf '%s\n' "${IBC_LAUNCHER_PATH}"
+        return 0
+    fi
+    for candidate in \
+        "$HOME/IBC/gatewaystartmacos.sh" \
+        "$HOME/Applications/IBC/gatewaystartmacos.sh" \
+        "/Applications/IBC/gatewaystartmacos.sh"
+    do
+        if [ -f "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    find "$HOME" /Applications -maxdepth 4 -name 'gatewaystartmacos.sh' 2>/dev/null | head -n 1
+}
+resolve_gateway_app() {
+    if [ -n "${IBGATEWAY_APP_PATH:-}" ] && [ -d "${IBGATEWAY_APP_PATH}" ]; then
+        printf '%s\n' "${IBGATEWAY_APP_PATH}"
+        return 0
+    fi
+    for candidate in \
+        "$HOME/Applications/IB Gateway 10.45/IB Gateway 10.45-1.app" \
+        "$HOME/Applications/IB Gateway.app" \
+        "/Applications/IB Gateway.app"
+    do
+        if [ -d "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    find "$HOME" /Applications -maxdepth 4 -name 'IB Gateway*.app' -type d 2>/dev/null | head -n 1
 }
 gw_up() { lsof -i :4002 2>/dev/null | grep -q LISTEN; }
 wait_for_gw() {  # $1=대기 초
@@ -56,6 +88,9 @@ fi
 if [ -f "$ENV_FILE" ]; then
     set -a; source "$ENV_FILE"; set +a
 fi
+
+IBC_LAUNCHER="$(resolve_ibc_launcher)"
+GW_APP="$(resolve_gateway_app)"
 
 # GUI(Aqua) 세션 존재 확인 — 없으면 게이트웨이 구동 자체가 불가(HeadlessException)
 CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null)
@@ -104,5 +139,5 @@ if [ -d "$GW_APP" ]; then
 fi
 
 log "[ERROR] IBC 런처($IBC_LAUNCHER)·게이트웨이 앱($GW_APP) 모두 없음"
-write_status "offline" "IBC 런처와 IB Gateway 앱을 모두 찾지 못했습니다."
+write_status "offline" "ibgateway_installation_missing: IBC 런처와 IB Gateway 앱을 모두 찾지 못했습니다."
 exit 1

@@ -8,6 +8,7 @@ PROJ="/Users/juntaepark/projects/harness-platform"
 LOG="$PROJ/docs/reports/ibkr_monitor_cron.log"
 IBC_SCRIPT="$PROJ/scripts/start_ibgateway_ibc.sh"
 STATUS_HELPER="$PROJ/scripts/ibkr_gateway_runtime_status.py"
+STATUS_JSON="$PROJ/docs/reports/ibkr_gateway_runtime_status.json"
 WAIT_TIMEOUT_SEC=120
 POLL_INTERVAL_SEC=5
 
@@ -38,6 +39,11 @@ if ! lsof -i :4002 2>/dev/null | grep -q LISTEN; then
     WAITED=0
     while [ $WAITED -lt "$WAIT_TIMEOUT_SEC" ]; do
         sleep "$POLL_INTERVAL_SEC"; WAITED=$((WAITED + POLL_INTERVAL_SEC))
+        if grep -q "ibgateway_installation_missing" "$STATUS_JSON" 2>/dev/null; then
+            log "[GATEWAY] 설치물/경로 누락 감지 — 추가 대기 중단"
+            write_status "offline" "ibgateway_installation_missing 상태가 감지되어 이번 스캔을 즉시 중단합니다."
+            exit 0
+        fi
         if lsof -i :4002 2>/dev/null | grep -q LISTEN; then
             log "[GATEWAY] ✅ ${WAITED}초 후 연결 성공"
             write_status "ready" "IB Gateway 연결이 완료되어 신호 스캔을 계속 진행합니다."
