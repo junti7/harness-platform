@@ -181,6 +181,22 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
   const [daemonLoading, setDaemonLoading] = useState(false)
   const [scheduleServices, setScheduleServices] = useState<ScheduleService[]>([])
 
+  // 정제 파이프라인 적체 (refine backlog) 상태
+  type BacklogStatus = {
+    domain: string
+    raw_pending: number
+    filtered_total: number
+    refined_total: number
+    refine_backlog: number
+    refined_per_hour: number
+    eta_hours: number | null
+  }
+  const [backlog, setBacklog] = useState<BacklogStatus | null>(null)
+  const [backlogAt, setBacklogAt] = useState<number | null>(null)
+  const [backlogStale, setBacklogStale] = useState(false)
+  const [backlogError, setBacklogError] = useState<string | null>(null)
+  const backlogInFlight = useRef(false)
+
   // 최근 실행 이력용 검색 및 지능형 필터 상태
   const [historySearch, setHistorySearch] = useState('')
   const [historySourceFilter, setHistorySourceFilter] = useState('')
@@ -286,6 +302,40 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
     }
   }, [apiBase, authHeaders])
 
+  const fetchBacklog = useCallback(async () => {
+    // in-flight 가드: 직전 요청이 아직 끝나지 않았으면 중첩 호출하지 않는다(폴링 경합·DB 부하 방지).
+    if (backlogInFlight.current) return
+    backlogInFlight.current = true
+    try {
+      const res = await fetch(`${apiBase}/api/pipeline/backlog`, { headers: authHeaders() })
+      if (!res.ok) {
+        // 운영자 triage 를 위해 원인을 구분해 남긴다(인증 / 서버 / 기타).
+        const cause = res.status === 401 || res.status === 403 ? '인증 실패' : res.status >= 500 ? '서버 오류' : `요청 실패`
+        setBacklogError(`${cause} (HTTP ${res.status})`)
+        setBacklogStale(true)
+        return
+      }
+      const d = await res.json()
+      // 운영 지표 화면이므로 shape 오염을 0으로 위장하지 않는다(서버/스키마 회귀를 0 backlog 로 숨기면 안 됨).
+      // 필수 숫자 필드가 유효하지 않으면 '표시 실패'로 처리하고 이전 값을 그대로 둔다.
+      const isNum = (v: unknown) => typeof v === 'number' && Number.isFinite(v)
+      const required = ['raw_pending', 'filtered_total', 'refined_total', 'refine_backlog', 'refined_per_hour'] as const
+      const shapeOk = !!d && typeof d.domain === 'string' && required.every(k => isNum(d[k]))
+        && (d.eta_hours === null || isNum(d.eta_hours))
+      if (!shapeOk) { setBacklogError('응답 형식 오류'); setBacklogStale(true); return }
+      setBacklog(d as BacklogStatus)
+      setBacklogAt(Date.now())
+      setBacklogStale(false)
+      setBacklogError(null)
+    } catch (err) {
+      setBacklogError('네트워크 오류')
+      setBacklogStale(true)
+      void err
+    } finally {
+      backlogInFlight.current = false
+    }
+  }, [apiBase, authHeaders])
+
   // 폴링 설정 (stale closure 방지: jobsRef 사용)
   const resetPoll = useCallback((fast: boolean) => {
     if (pollRef.current) clearInterval(pollRef.current)
@@ -294,6 +344,8 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
       await fetchStatus()
       await fetchDaemonStatus()
       await fetchScheduleStatus()
+      // backlog 는 anti-join 집계라 무겁고 천천히 변하므로 2초 fast-poll 에는 싣지 않는다(15초 주기에서만).
+      if (!fast) await fetchBacklog()
       const nowRunning = jobsRef.current.some(j => j.status === 'running')
       if (!nowRunning && fast) {
         if (pollRef.current) clearInterval(pollRef.current)
@@ -301,11 +353,12 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
           await fetchStatus()
           await fetchDaemonStatus()
           await fetchScheduleStatus()
+          await fetchBacklog()
         }, 15000)
         fetchSourceStats()
       }
     }, intervalMs)
-  }, [fetchStatus, fetchSourceStats, fetchDaemonStatus, fetchScheduleStatus])
+  }, [fetchStatus, fetchSourceStats, fetchDaemonStatus, fetchScheduleStatus, fetchBacklog])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -314,6 +367,7 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
       void fetchQueries()
       void fetchDaemonStatus()
       void fetchScheduleStatus()
+      void fetchBacklog()
       resetPoll(false)
     }, 0)
     return () => {
@@ -715,6 +769,109 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
               </div>
             )}
           </div>
+
+          {/* 정제 파이프라인 적체 — 첫 로드 실패 시에도 장애를 인지할 수 있게 에러 패널 노출 */}
+          {!backlog && backlogStale && (
+            <div className="panel" style={{ padding: '1rem 1.25rem', border: '1px solid var(--color-warn)', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-warn)' }}>
+                🧱 정제 파이프라인 적체 — 데이터를 불러오지 못했습니다{backlogError ? ` (${backlogError})` : ''}
+              </span>
+              <button onClick={fetchBacklog} style={{
+                background: 'transparent', border: 'none', color: 'var(--color-accent)',
+                fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
+              }}>🔄 다시 시도</button>
+            </div>
+          )}
+
+          {/* 정제 파이프라인 적체 (Refine Backlog) */}
+          {backlog && (
+            <div className="panel" style={{ padding: '1.25rem', border: '1px solid var(--color-border)', borderRadius: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <span style={{ fontSize: '1.3rem' }}>🧱</span>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800 }}>정제 파이프라인 적체 (Refine Backlog)</h3>
+                    <p style={{ margin: '0.15rem 0 0', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                      {backlog.domain} 도메인 · 필터 통과 후 아직 Tier3 정제가 안 된 신호 수 · 현재 처리율 기준 소진 예상
+                    </p>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  {backlogStale && (
+                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--color-warn)' }}>
+                      ⚠ 갱신 실패{backlogError ? ` · ${backlogError}` : ''} (이전 값)
+                    </span>
+                  )}
+                  {backlogAt && !backlogStale && (
+                    <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>
+                      {relTime(new Date(backlogAt).toISOString())} 갱신
+                    </span>
+                  )}
+                  <button onClick={fetchBacklog} style={{
+                    background: 'transparent', border: 'none', color: 'var(--color-accent)',
+                    fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
+                  }}>🔄 새로고침</button>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.85rem' }}>
+                <div style={{ background: 'var(--color-surface-lighter)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.3rem' }}>
+                    정제 대기
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem' }}>
+                    <span style={{ fontSize: '1.5rem', fontWeight: 800, color: backlog.refine_backlog > 5000 ? 'var(--color-warn)' : 'var(--color-text)' }}>
+                      {backlog.refine_backlog.toLocaleString('ko-KR')}
+                    </span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>건</span>
+                  </div>
+                </div>
+
+                <div style={{ background: 'var(--color-surface-lighter)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.3rem' }}>
+                    처리율 (최근 1시간)
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem' }}>
+                    <span style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--color-ok)' }}>
+                      {backlog.refined_per_hour.toLocaleString('ko-KR')}
+                    </span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>건/시간</span>
+                  </div>
+                </div>
+
+                <div style={{ background: 'var(--color-surface-lighter)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.3rem' }}>
+                    소진 예상 (ETA)
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem' }}>
+                    <span style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--color-accent)' }}>
+                      {backlog.eta_hours === null ? '—' : backlog.eta_hours >= 24 ? (backlog.eta_hours / 24).toFixed(1) : backlog.eta_hours}
+                    </span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                      {backlog.eta_hours === null ? '처리율 0' : backlog.eta_hours >= 24 ? '일' : '시간'}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ background: 'var(--color-surface-lighter)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.3rem' }}>
+                    누적 정제 / 필터
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem' }}>
+                    <span style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--color-text)' }}>
+                      {backlog.refined_total.toLocaleString('ko-KR')}
+                    </span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                      / {backlog.filtered_total.toLocaleString('ko-KR')}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)', marginTop: '0.1rem' }}>
+                    Tier2 대기 raw {backlog.raw_pending.toLocaleString('ko-KR')}건
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {monitor && <DataCollectionMonitor monitor={monitor} scheduleServices={scheduleServices} />}
 

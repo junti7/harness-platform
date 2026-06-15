@@ -5043,6 +5043,90 @@ def pipeline_source_stats(_: None = Depends(_require_secret)) -> dict[str, Any]:
     return {"stats": stats}
 
 
+# 정제 backlog KPI 는 화면에서 15초 주기로 폴링된다. 매 호출마다 집계 쿼리를 다시 돌리면
+# 테이블 증가 시 DB 부하가 되므로, 도메인별로 짧은 TTL 캐시를 둔다(여러 탭/클라이언트가 폴링해도
+# DB 는 TTL 당 1회만 친다). _require_secret 로 보호되고 도메인은 allowlist 로 제한한다.
+_BACKLOG_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_BACKLOG_CACHE_LOCK = threading.Lock()
+_BACKLOG_CACHE_TTL = 45.0
+# 임의 도메인으로 고비용 집계를 반복 호출하거나 캐시 키를 무한 증식시키지 못하게 허용값 고정.
+_BACKLOG_ALLOWED_DOMAINS = ("edu_consulting", "physical_ai")
+
+
+@app.get("/api/pipeline/backlog")
+def pipeline_backlog(
+    domain: str = "edu_consulting",
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    """파이프라인 적체 현황 — Tier2 대기(raw pending)와 Tier3 정제 적체(filtered 중 미정제)를 반환.
+
+    UI에 노출되지 않던 '정제 backlog'(filtered_signals 중 refined_outputs 없는 건수)를
+    수집 현황 탭에서 바로 보기 위한 읽기 전용 집계. 같은 화면의 source-stats 와 동일하게
+    plain domain 기준으로 스코프(SoT 일관성)하며 파라미터 바인딩한다.
+    """
+    if domain not in _BACKLOG_ALLOWED_DOMAINS:
+        raise HTTPException(status_code=400, detail=f"unsupported domain: {domain}")
+
+    now = time.time()
+    with _BACKLOG_CACHE_LOCK:
+        cached = _BACKLOG_CACHE.get(domain)
+        if cached and now - cached[0] < _BACKLOG_CACHE_TTL:
+            return cached[1]
+
+    def _first(rows, key: str) -> int:
+        return int(rows[0][key]) if rows else 0
+
+    p = (domain,)
+    # Tier2 대기(raw_signals)는 정제 불변식과 무관한 별도 단계라 독립 쿼리.
+    # raw_signals 는 collector 가 insert 시 domain 컬럼을 비워 넣고(이후 단계가 태깅) raw_data->>'domain'
+    # 에만 값이 있는 "수집 직후~태깅 전 pending" 전이 row 가 생길 수 있다. 그 구간을 누락하지 않도록
+    # 같은 화면의 get_pipeline_signals 와 동일하게 coalesce(domain, raw_data->>'domain', '') 로 해석한다.
+    # (filtered_signals 는 필터가 domain 컬럼을 항상 채우므로 plain f.domain 으로 충분.)
+    raw_rows = _execute_query(
+        "SELECT count(*) AS raw_pending FROM raw_signals "
+        "WHERE status = 'pending' AND coalesce(domain, raw_data->>'domain', '') = %s",
+        p,
+    )
+    raw_pending = _first(raw_rows, "raw_pending")
+
+    # 정제 깔때기(filtered/refined)는 *단일 쿼리·단일 MVCC 스냅샷*으로 읽는다.
+    # 4개 쿼리를 순차 실행하면 동시 Tier3 쓰기 중 시점이 어긋나
+    # refined + backlog == filtered 불변식이 일시적으로 깨지고 ETA 분자/분모가 다른 스냅샷을 섞는다.
+    # 또 refined_outputs.filtered_signal_id 에 유니크 제약이 없어 병렬 워커가 중복 row 를 남길 수 있으므로
+    # 정제 측은 count(DISTINCT filtered_signal_id) 로 "신호 수"를 세어 backlog(신호 수)와 단위를 맞춘다.
+    funnel_rows = _execute_query(
+        "SELECT "
+        "count(DISTINCT f.id) AS filtered_total, "
+        "count(DISTINCT f.id) FILTER (WHERE r.id IS NULL) AS refine_backlog, "
+        "count(DISTINCT r.filtered_signal_id) AS refined_total, "
+        "count(DISTINCT r.filtered_signal_id) "
+        "  FILTER (WHERE r.created_at > now() - interval '1 hour') AS refined_per_hour "
+        "FROM filtered_signals f "
+        "LEFT JOIN refined_outputs r ON r.filtered_signal_id = f.id "
+        "WHERE f.domain = %s",
+        p,
+    )
+    filtered_total = _first(funnel_rows, "filtered_total")
+    refine_backlog = _first(funnel_rows, "refine_backlog")
+    refined_total = _first(funnel_rows, "refined_total")
+    refined_per_hour = _first(funnel_rows, "refined_per_hour")
+
+    # 현재 처리율 기준 잔여 소진 예상 시간(시간). 처리율 0이면 None.
+    eta_hours = round(refine_backlog / refined_per_hour, 1) if refined_per_hour > 0 else None
+    result = {
+        "domain": domain,
+        "raw_pending": raw_pending,
+        "filtered_total": filtered_total,
+        "refined_total": refined_total,
+        "refine_backlog": refine_backlog,
+        "refined_per_hour": refined_per_hour,
+        "eta_hours": eta_hours,
+    }
+    with _BACKLOG_CACHE_LOCK:
+        _BACKLOG_CACHE[domain] = (now, result)
+    return result
+
+
 @app.get("/api/pipeline/queries")
 def get_pipeline_queries(_: None = Depends(_require_secret)) -> dict[str, Any]:
     return {"queries": _load_custom_queries()}

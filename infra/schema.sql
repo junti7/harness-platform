@@ -7,8 +7,10 @@ CREATE TABLE IF NOT EXISTS raw_signals (
     ingested_at  TIMESTAMP DEFAULT NOW(),
     raw_data     JSONB NOT NULL,
     content_hash VARCHAR(64) UNIQUE,
-    status       VARCHAR(20) DEFAULT 'pending'
+    status       VARCHAR(20) DEFAULT 'pending',
+    domain       VARCHAR(50)
 );
+CREATE INDEX IF NOT EXISTS idx_raw_signals_domain_status ON raw_signals(domain, status);
 
 CREATE TABLE IF NOT EXISTS source_catalog (
     id                   SERIAL PRIMARY KEY,
@@ -36,8 +38,10 @@ CREATE TABLE IF NOT EXISTS filtered_signals (
     category       VARCHAR(50),
     content_hash   VARCHAR(64) UNIQUE,
     tier2_model    VARCHAR(50),
-    created_at     TIMESTAMP DEFAULT NOW()
+    created_at     TIMESTAMP DEFAULT NOW(),
+    domain         VARCHAR(50)
 );
+CREATE INDEX IF NOT EXISTS idx_filtered_signals_domain_created_at ON filtered_signals(domain, created_at);
 
 CREATE TABLE IF NOT EXISTS signals (
     id                         SERIAL PRIMARY KEY,
@@ -94,6 +98,12 @@ CREATE TABLE IF NOT EXISTS refined_outputs (
     published_at        TIMESTAMP,
     created_at          TIMESTAMP DEFAULT NOW()
 );
+
+-- 정제 backlog KPI(/api/pipeline/backlog) 의 LEFT JOIN/created_at FILTER 집계 가속.
+CREATE INDEX IF NOT EXISTS idx_refined_outputs_filtered_signal_id
+    ON refined_outputs(filtered_signal_id);
+CREATE INDEX IF NOT EXISTS idx_refined_outputs_created_at
+    ON refined_outputs(created_at DESC);
 
 CREATE TABLE IF NOT EXISTS agent_reviews (
     id                   SERIAL PRIMARY KEY,
