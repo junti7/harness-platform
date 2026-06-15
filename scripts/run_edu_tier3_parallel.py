@@ -69,10 +69,16 @@ def _fetch_candidates(min_score: float, shard_i: int, shard_n: int, limit: int |
           AND fs.domain = 'edu_consulting'
           AND fs.score >= %s
           AND (MOD(fs.id, %s) = %s)
-        -- 최신 날짜 우선: 글 작성일(postdate, 네이버) → 없으면 수집일(ingested_at)
-        ORDER BY COALESCE(NULLIF(rs.raw_data->>'postdate', ''),
+        -- 정렬 정책: (1) freshness floor — 최근 7일 수집분을 먼저 정제한다. 이 러너 출력은
+        --   refresh_edu_evidence_bank 가 created_at DESC 로 "fresh evidence"를 구성하므로,
+        --   순수 score 우선이면 고점수 오래된 백로그가 최근 신호를 굶겨 최신 근거층이 낡아진다.
+        -- (2) 각 신선도 티어 안에서 가치(score) 우선 — 같은 정제 예산을 고가치부터 소진(가성비).
+        -- (3) 동점이면 최신 날짜(postdate→수집일), (4) id. → 신선도 보장 + 고가치 우선 양립.
+        ORDER BY (CASE WHEN rs.ingested_at >= now() - interval '7 days' THEN 0 ELSE 1 END),
+                 fs.score DESC NULLS LAST,
+                 COALESCE(NULLIF(rs.raw_data->>'postdate', ''),
                           to_char(rs.ingested_at, 'YYYYMMDD')) DESC,
-                 fs.score DESC, fs.id DESC
+                 fs.id DESC
         """,
         (min_score, shard_n, shard_i),
         fetch=True,

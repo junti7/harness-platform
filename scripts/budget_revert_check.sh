@@ -18,8 +18,8 @@ source .venv/bin/activate 2>/dev/null
 ENVF=".env"   # 프로덕션은 항상 프로젝트 .env (외부 ENVF 주입 무시; 테스트는 lib 직접 source)
 source scripts/_budget_lib.sh
 
-DEFAULT="${DAILY_COST_LIMIT_DEFAULT:-30.00}"
-QUOTA_PENDING="runtime/gemini_quota_revert_pending.flag"   # 쿼터 원복 실패 시 재시도 신호(fail-closed)     # 평상시 유한 기본값(이상 가드레일). 1.00 아님.
+DEFAULT="${DAILY_COST_LIMIT_DEFAULT:-2.00}"   # 평상시 유한 기본값(이상 가드레일). 실지출 $0~1/일이라 $2면 정상운영 무영향+폭주 조기차단(CEO 2026-06-16, 기존 30.00에서 하향).
+QUOTA_PENDING="runtime/gemini_quota_revert_pending.flag"   # 쿼터 원복 실패 시 재시도 신호(fail-closed)
 MAX_HOURS="${BUDGET_ELEVATION_MAX_HOURS:-48}"    # elevation 절대 TTL 상한(시간)
 RECENT_HOURS="${BUDGET_THROUGHPUT_WINDOW_H:-6}"  # throughput 판정 창(시간)
 MARKER="runtime/budget_elevation.json"
