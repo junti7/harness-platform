@@ -2062,6 +2062,9 @@ def _ollama_chat(
                 "model": OLLAMA_CHAT_MODEL,
                 "messages": messages,
                 "stream": False,
+                "options": {
+                    "keep_alive": "1m"
+                }
             },
             timeout=OLLAMA_CHAT_TIMEOUT,
         )
