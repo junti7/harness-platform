@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 .DS_Store
 *.log
+*.log.[0-9]*
 
 # SSH keys — never commit
 ssh *

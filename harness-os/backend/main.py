@@ -4207,8 +4207,14 @@ def execute_paper_trading(_: None = Depends(_require_secret)) -> dict[str, Any]:
 
 _IBKR_CACHE_PATH = PROJECT_ROOT / "docs" / "reports" / "ibkr_monitor_cache.json"
 _IBKR_GATEWAY_STATUS_PATH = PROJECT_ROOT / "docs" / "reports" / "ibkr_gateway_runtime_status.json"
+# IBKR 전용 진단 로그. launchd 가 harness-os-backend.error.log 를 프로세스 StandardErrorPath 로
+# 쓰므로(plist) 그 파일에 append/rotate 하면 uvicorn stderr sink 와 충돌(rename split-brain)·오염된다
+# (Red Team Codex 8R MAJOR). 전용 파일로 분리해 롤오버를 안전하게 한다.
+_IBKR_ERROR_LOG_PATH = PROJECT_ROOT / "logs" / "ibkr_monitor.diag.log"
 _IBKR_LOCK = threading.Lock()
+_IBKR_CACHE_WRITE_LOCK = threading.Lock()  # 캐시 파일 writer(background/upload) 직렬화
 _IBKR_LAST_RUN = 0.0
+_IBKR_RUN_IN_PROGRESS = False  # background 스캔 in-flight 가드(450s timeout > 300s 간격 중첩 방지)
 
 
 def _load_ibkr_gateway_runtime_status() -> dict[str, Any]:
@@ -4244,59 +4250,284 @@ def _merge_ibkr_gateway_status(payload: dict[str, Any]) -> dict[str, Any]:
     payload["gateway_status"] = runtime_status
     return payload
 
-def _run_ibkr_monitor_background():
-    global _IBKR_LAST_RUN
-    import subprocess, sys as _sys, json as _json
-    script = PROJECT_ROOT / "scripts" / "ibkr_turtle_monitor.py"
-    if not script.exists():
-        return
+def _parse_iso_ts(value) -> "datetime | None":
+    """모니터 ts(ISO8601 UTC, now_iso())를 datetime 으로 파싱. 실패 시 None.
+
+    사전식 문자열 비교는 ts="z" 같은 비-ISO 입력이 모든 정상 timestamp 보다 "최신"으로
+    취급돼 캐시를 영구 고착시킬 수 있다(Red Team Codex 6R BLOCKER). 그래서 ts 는
+    *파싱 가능한 datetime* 이어야만 유효로 보고, 순서 비교도 datetime 으로 한다.
+    """
+    if not isinstance(value, str) or not value:
+        return None
     try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        return None
+    # tz-aware 만 허용한다(6R/7R BLOCKER): naive("2026-06-17T11:00:00")·date-only("2026-06-17")는
+    # fromisoformat 를 통과하지만, aware(now_iso, +00:00)와 비교하면 TypeError 가 나고 broad except 가
+    # 삼켜 단조성 가드가 무력화된다. naive 를 invalid 로 보면 비교는 항상 aware↔aware 로 안전.
+    if dt.tzinfo is None:
+        return None
+    return dt
+
+
+_IBKR_VALID_MODES = ("paper", "live")  # IBKR_TRADING_MODE 가 취할 수 있는 정확한 값
+
+
+def _ibkr_configured_mode() -> str:
+    """offline/fallback payload 의 mode 를 monitor 와 *정확히 동일한 규칙* 으로 해석한다(9R/12R).
+
+    캐시 거부/게이트웨이 오프라인 시 mode 를 무조건 "paper" 로 내리면 live 운용 중 일시 장애에서
+    실전 경고 배너가 사라진다. 따라서 monitor(ibkr_turtle_monitor.py)의 해석을 그대로 미러링한다:
+    env 가 정확히 "paper"(strip/lower) 이면 paper(포트 4002), 그 외 모든 값(unset/garbage/live)은 live(포트 4001).
+    → backend 표시가 항상 monitor 의 실제 접속 포트/모드와 일치한다(불일치 제거).
+    """
+    return "paper" if os.getenv("IBKR_TRADING_MODE", "paper").strip().lower() == "paper" else "live"
+
+
+def _is_nav_point(p) -> bool:
+    """nav_history 원소가 프론트 NavPoint 계약(date:str, value:number, pnl_pct:number|null)을 만족하는지.
+
+    원소 dict 여부만 보면 {"date":1,"value":"x"} 같은 깨진 항목이 통과해 차트 렌더/수치 표시를
+    다시 깨뜨릴 수 있다(9R MAJOR). bool 은 int 의 subclass 이므로 명시적으로 배제하고,
+    NaN/Infinity 도 거부한다(cache-upload 외부 입력 신뢰 경계, 10R MINOR).
+    """
+    import math as _math
+    if not isinstance(p, dict):
+        return False
+    if not isinstance(p.get("date"), str):
+        return False
+    val = p.get("value")
+    if isinstance(val, bool) or not isinstance(val, (int, float)) or not _math.isfinite(val):
+        return False
+    pnl = p.get("pnl_pct")
+    if pnl is not None and (isinstance(pnl, bool) or not isinstance(pnl, (int, float)) or not _math.isfinite(pnl)):
+        return False
+    return True
+
+
+def _is_ibkr_monitor_result(obj) -> bool:
+    """ibkr_turtle_monitor.py 의 결과 JSON 인지 *타입·shape 까지* 검증한다.
+
+    success/offline/exception fallback 결과 3종 공통 필드의 타입을 검증한다.
+    - ts: ISO8601 로 파싱 가능해야 한다(비-ISO 고착 방지, 6R BLOCKER).
+    - nav_history: success 전용이라 필수는 아니지만, *있으면* list 이고 원소는 dict 여야 한다
+      (차트가 직접 참조 — 깨진 shape 가 차트 경로를 다시 정지시키는 것 방지, 6R BLOCKER).
+    - account: None 또는 dict.
+    키 존재만 보면 {"positions": "oops"} 같은 깨진 객체도 통과하므로 타입을 직접 본다.
+    """
+    if not (
+        isinstance(obj, dict)
+        and isinstance(obj.get("ok"), bool)
+        and isinstance(obj.get("gateway_connected"), bool)
+        and isinstance(obj.get("positions"), list)
+        and isinstance(obj.get("entry_candidates"), list)
+        # mode 는 정확한 enum {"paper","live"} 만 허용(8R/9R BLOCKER, 자본 UI 안전): "live "·"prod"
+        # 같은 값이 통과하면 프론트의 ibkrMode==='live' 경고 배너가 사라져 live 가 paper 로 오표시된다.
+        and obj.get("mode") in _IBKR_VALID_MODES
+    ):
+        return False
+    if _parse_iso_ts(obj.get("ts")) is None:
+        return False
+    nav = obj.get("nav_history")
+    if nav is not None and not (isinstance(nav, list) and all(_is_nav_point(p) for p in nav)):
+        return False
+    acct = obj.get("account")
+    if acct is not None and not isinstance(acct, dict):
+        return False
+    # 프론트가 순회하는 선택 필드의 컨테이너 타입 검증(11R MAJOR): 있는데 타입이 틀리면
+    # exit_signals.map / recent_orders.map / Object.entries(forex_rates) 가 런타임에 깨진다.
+    # (없으면 프론트가 ?? [] 로 방어하므로 허용)
+    for k in ("exit_signals", "recent_orders"):
+        v = obj.get(k)
+        if v is not None and not isinstance(v, list):
+            return False
+    fx = obj.get("forex_rates")
+    if fx is not None and not isinstance(fx, dict):
+        return False
+    return True
+
+
+def _extract_ibkr_result_json(stdout: str, _json) -> dict | None:
+    """ibkr_turtle_monitor.py --json 의 stdout 에서 결과 JSON 객체를 추출한다.
+
+    스크립트는 --json 모드에서 결과를 한 줄짜리 JSON 으로 출력하고 나머지는 stderr 로 보낸다.
+    그러나 import 시점에 일부 헬퍼(core.trading_universe 의 Ollama 번역 진행 로그 등)가
+    stdout 으로 새어 나올 수 있어 stdout 전체를 json.loads 하면 깨진다.
+    뒤에서부터 거슬러 올라가며 '{' 로 시작하고 모니터 결과 스키마(_is_ibkr_monitor_result)를
+    만족하는 첫 JSON 객체 줄을 채택한다.
+    → 선행/후행 잡음 내성 + stray/타입깨진 JSON 오발행 방지.
+    """
+    for line in reversed(stdout.splitlines()):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            parsed = _json.loads(line)
+        except Exception:
+            continue
+        if _is_ibkr_monitor_result(parsed):
+            return parsed
+    return None
+
+
+def _load_valid_ibkr_cache() -> dict | None:
+    """캐시를 읽어 모니터 결과 스키마면 반환, 아니면(없음/손상/legacy wrong-shape) None.
+
+    GET /api/ibkr/monitor 가 검증 없이 캐시를 서비스하면(Red Team Codex 5R MAJOR)
+    과거 valid-JSON-but-wrong-shape 캐시나 수동 편집본이 프론트(positions.map 등)를
+    런타임에 깨뜨릴 수 있다. 읽기 실패/스키마 불일치는 단서를 남기고 미존재로 취급해
+    호출부에서 갱신 유도 + offline 구조체로 떨어지게 한다.
+    """
+    if not _IBKR_CACHE_PATH.exists():
+        return None
+    try:
+        with open(_IBKR_CACHE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        _ibkr_log_error(f"캐시 읽기 실패(손상 가능): {e}")
+        return None
+    if not _is_ibkr_monitor_result(data):
+        _ibkr_log_error("캐시 스키마 불일치(legacy/손상) — 서비스 보류, 갱신 유도")
+        return None
+    return data
+
+
+_IBKR_ERROR_LOG_MAX_BYTES = 1_000_000  # 무한 성장 방지(6R MINOR): 초과 시 새 파일로 롤오버
+
+
+def _ibkr_log_error(msg: str) -> None:
+    """IBKR 모니터 관련 진단 단서를 로컬 에러로그에 남긴다(secret/ raw stderr 미적재).
+
+    반복 실패로 파일이 무한 성장하지 않도록 상한 초과 시 한 번 롤오버한다(.1 로 이동).
+    """
+    try:
+        _IBKR_ERROR_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if _IBKR_ERROR_LOG_PATH.exists() and _IBKR_ERROR_LOG_PATH.stat().st_size > _IBKR_ERROR_LOG_MAX_BYTES:
+                os.replace(_IBKR_ERROR_LOG_PATH, _IBKR_ERROR_LOG_PATH.with_suffix(_IBKR_ERROR_LOG_PATH.suffix + ".1"))
+        except Exception:
+            pass
+        with open(_IBKR_ERROR_LOG_PATH, "a") as err_f:
+            err_f.write(f"\n[IBKR monitor] {msg}\n")
+    except Exception:
+        pass
+
+
+def _write_ibkr_cache_atomic(data: dict) -> None:
+    """IBKR 모니터 캐시를 원자적·직렬·단조(ts)로 쓴다.
+
+    프론트가 직접 읽는 캐시 파일이므로 직접 "w" 로 쓰다 크래시하면 빈/잘린 JSON 이
+    남아 차트가 깨진다. background writer 와 cache-upload 엔드포인트가 공유하는
+    단일 안전 경로(Red Team Codex 4R MAJOR: 동일 SoT 파일의 모든 writer 일관 적용).
+
+    동시성/복구(Red Team Codex 5R MAJOR):
+      - `_IBKR_CACHE_WRITE_LOCK` 으로 두 writer 를 직렬화(인터리브 방지).
+      - ts 단조성: 기존 캐시가 *유효한 모니터 결과*이고 그 ts 가 들어온 data 보다 최신이면
+        덮어쓰지 않는다(오래된 background 결과가 더 새로운 upload 를 덮는 것 방지).
+        ts 는 monitor `now_iso()`(tz-aware ISO8601 UTC)라 _parse_iso_ts 로 datetime 비교.
+
+    동시성 범위(Red Team Codex 7R MAJOR): `_IBKR_CACHE_WRITE_LOCK` 은 *단일 프로세스 내* writer 만
+    직렬화한다. os.replace 자체는 cross-process 에서도 원자적이라 torn 파일은 없지만,
+    ts 단조성 체크는 단일 프로세스 가정 위에서 성립한다. Harness OS backend 는 단일 uvicorn
+    프로세스로 운영한다(다중 worker 도입 시 파일락 등 cross-process 보강 필요).
+    """
+    import tempfile as _tempfile
+    # 자가 검증(7R MINOR): canonical safe writer 이므로 입력이 모니터 결과 스키마인지 스스로 강제.
+    if not _is_ibkr_monitor_result(data):
+        raise ValueError("모니터 결과 스키마가 아닌 data 는 캐시에 쓰지 않는다")
+    with _IBKR_CACHE_WRITE_LOCK:
+        # ts 단조성 가드 (기존 캐시가 유효·최신일 때만 skip). 기존이 깨졌으면 그냥 덮어써 복구.
+        # 비교는 datetime 으로 한다(사전식 비교는 ts="z" 고착 위험 — 6R BLOCKER).
+        try:
+            if _IBKR_CACHE_PATH.exists():
+                existing = json.loads(_IBKR_CACHE_PATH.read_text(encoding="utf-8"))
+                if _is_ibkr_monitor_result(existing):
+                    existing_ts = _parse_iso_ts(existing.get("ts"))
+                    new_ts = _parse_iso_ts(data.get("ts"))
+                    if existing_ts is not None and new_ts is not None and existing_ts > new_ts:
+                        return  # 들어온 데이터가 더 오래됨 → 최신 캐시 보존
+        except Exception:
+            pass
+        _IBKR_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_path = _tempfile.mkstemp(
+            dir=str(_IBKR_CACHE_PATH.parent), prefix=".ibkr_cache_", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, _IBKR_CACHE_PATH)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+            raise
+
+
+def _run_ibkr_monitor_background():
+    global _IBKR_LAST_RUN, _IBKR_RUN_IN_PROGRESS
+    import subprocess, sys as _sys, json as _json
+    result = None
+    try:
+        # script 누락 검사도 try 안에 둔다(9R/10R): 바깥에서 return 하면 finally 가 안 돌아
+        # GET 이 미리 켠 _IBKR_RUN_IN_PROGRESS 가 영구 True 로 고착돼 이후 갱신이 멈춘다.
+        script = PROJECT_ROOT / "scripts" / "ibkr_turtle_monitor.py"
+        if not script.exists():
+            raise FileNotFoundError(f"monitor script 없음: {script}")
         result = subprocess.run(
             [_sys.executable, str(script), "--json"],
             capture_output=True, text=True, timeout=450,
             cwd=str(PROJECT_ROOT),
         )
-        if result.returncode == 0 and result.stdout.strip():
-            data = _json.loads(result.stdout.strip())
-            _IBKR_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            with open(_IBKR_CACHE_PATH, "w", encoding="utf-8") as f:
-                _json.dump(data, f, ensure_ascii=False, indent=2)
+        if result.returncode != 0 or not result.stdout.strip():
+            # rc!=0 또는 빈 stdout 도 명시적 에러로 남긴다(이전엔 silent no-op → 차트 동결만 보이고 단서 없음).
+            raise ValueError(f"monitor 실행 비정상: rc={result.returncode}, stdout_empty={not result.stdout.strip()}")
+        data = _extract_ibkr_result_json(result.stdout, _json)
+        if data is None:
+            raise ValueError("monitor stdout에서 모니터 결과 JSON 줄을 찾지 못함")
+        _write_ibkr_cache_atomic(data)
     except Exception as e:
-        try:
-            with open(PROJECT_ROOT / "logs" / "harness-os-backend.error.log", "a") as err_f:
-                err_f.write(f"\n[Background Thread Error] IBKR background scan failed: {e}\n")
-        except Exception:
-            pass
+        # 진단 단서는 예외 메시지만 로컬 로그에 남긴다. 서브프로세스 raw stderr 는
+        # 그대로 적재하지 않는다(불필요한 런타임 세부·식별자 영속화 회피).
+        _ibkr_log_error(f"background scan failed: {e}")
     finally:
         with _IBKR_LOCK:
             _IBKR_LAST_RUN = time.time()
+            _IBKR_RUN_IN_PROGRESS = False
 
 
 @app.get("/api/ibkr/monitor")
 def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
     """IBKR Turtle Monitor 캐시된 결과 즉시 반환 + 5분 주기 백그라운드 자동 갱신."""
-    global _IBKR_LAST_RUN
+    global _IBKR_LAST_RUN, _IBKR_RUN_IN_PROGRESS
     import json as _json
-    
-    # 1. 캐시 파일이 존재하면 즉시 로드
-    cache_data = None
-    if _IBKR_CACHE_PATH.exists():
-        try:
-            with open(_IBKR_CACHE_PATH, "r", encoding="utf-8") as f:
-                cache_data = _json.load(f)
-        except Exception:
-            pass
-            
-    # 2. 캐시가 없거나 마지막 실행 후 5분이 지났다면 백그라운드 갱신 스레드 기동
+
+    # 1. 캐시 로드 + 스키마 검증(손상/legacy/wrong-shape 는 미존재로 취급, 단서 로그)
+    cache_data = _load_valid_ibkr_cache()
+
+    # 2. 갱신 스레드 기동 조건: (캐시가 없거나/거부됐거나 OR 5분 경과) AND in-flight 아님.
+    #    캐시가 None(손상·legacy 거부 포함)이면 300초를 기다리지 않고 즉시 복구 시도(10R MINOR: "갱신 유도").
+    #    in-flight 가드로 timeout(450s) > 간격(300s) 중첩 기동을 방지(8R MAJOR).
     now = time.time()
     should_run = False
+    prev_last_run = _IBKR_LAST_RUN
     with _IBKR_LOCK:
-        if now - _IBKR_LAST_RUN > 300:  # 5분 주기
+        if (cache_data is None or now - _IBKR_LAST_RUN > 300) and not _IBKR_RUN_IN_PROGRESS:
             _IBKR_LAST_RUN = now
+            _IBKR_RUN_IN_PROGRESS = True
             should_run = True
-            
+
     if should_run:
-        threading.Thread(target=_run_ibkr_monitor_background, daemon=True).start()
+        try:
+            threading.Thread(target=_run_ibkr_monitor_background, daemon=True).start()
+        except Exception as e:
+            # start() 실패(스레드 고갈 등) 시 in-flight 플래그와 LAST_RUN 을 모두 되돌려(9R/13R MAJOR)
+            # 갱신이 영구 정지하거나 다음 5분간 재시도가 억제되지 않게 한다(즉시 재시도 가능).
+            with _IBKR_LOCK:
+                _IBKR_RUN_IN_PROGRESS = False
+                _IBKR_LAST_RUN = prev_last_run
+            _ibkr_log_error(f"background thread start 실패: {e}")
         
     if cache_data:
         return _merge_ibkr_gateway_status(cache_data)
@@ -4308,8 +4539,11 @@ def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
         # Gateway 4002 포트 활성화 여부 1ms 만에 초고속 핑 감지
         gateway_connected = False
         import socket as _socket
+        # 게이트웨이 포트는 mode 에 따라 다르다(monitor 와 동일): paper=4002, live=4001.
+        # 4002 고정 시 live 에서 게이트웨이가 떠 있어도 false 로 오표시된다(10R/11R BLOCKER).
+        gateway_port = 4002 if _ibkr_configured_mode() == "paper" else 4001
         try:
-            with _socket.create_connection(("127.0.0.1", 4002), timeout=1.0) as sock:
+            with _socket.create_connection(("127.0.0.1", gateway_port), timeout=1.0) as sock:
                 gateway_connected = True
         except Exception:
             pass
@@ -4355,7 +4589,7 @@ def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
         return _merge_ibkr_gateway_status({
             "ok": True,
             "ts": ts,
-            "mode": "paper",
+            "mode": _ibkr_configured_mode(),
             "gateway_connected": gateway_connected,
             "account": None,
             "positions": positions,
@@ -4373,7 +4607,7 @@ def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
     return _merge_ibkr_gateway_status({
         "ok": True,
         "ts": ts,
-        "mode": "paper",
+        "mode": _ibkr_configured_mode(),
         "gateway_connected": False,
         "account": None,
         "positions": [],
@@ -4404,14 +4638,19 @@ def post_ibkr_monitor_scan(_: None = Depends(_require_secret)) -> dict[str, Any]
 @app.post("/api/ibkr/monitor/cache-upload")
 def post_ibkr_cache_upload(payload: dict = Body(...), _: None = Depends(_require_secret)) -> dict[str, Any]:
     """MacBook → Mac Mini 캐시 직접 주입. ibkr_monitor_cache.json을 덮어씁니다."""
-    import json as _json
+    # 동일 캐시 파일의 다른 writer 와 같은 안전 계약 적용(Red Team Codex 4R MAJOR):
+    # ① payload 가 모니터 결과 스키마(타입)인지 검증해 깨진 캐시 영구 저장을 막고,
+    # ② 원자적 쓰기로 torn JSON / 빈 파일을 방지한다.
+    if not _is_ibkr_monitor_result(payload):
+        raise HTTPException(status_code=400, detail="모니터 결과 스키마가 아닌 payload (ok/ts/gateway_connected/positions/entry_candidates 타입 확인)")
     try:
-        _IBKR_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(_IBKR_CACHE_PATH, "w", encoding="utf-8") as f:
-            _json.dump(payload, f, ensure_ascii=False, indent=2)
-        return {"ok": True, "message": f"캐시 업데이트 완료 ({len(payload.get('entry_candidates', []))}개 캔디데이트, {len(payload.get('positions', []))}개 포지션)"}
+        _write_ibkr_cache_atomic(payload)
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        # 쓰기 실패는 200 {"ok": false} 가 아니라 5xx 로 신호(5R MINOR). 단, 응답 detail 은 일반화하고
+        # 원시 예외(경로/OS 단서)는 로컬 로그로만 남긴다(6R MAJOR: 내부 단서 노출 회피).
+        _ibkr_log_error(f"cache-upload 쓰기 실패: {e}")
+        raise HTTPException(status_code=500, detail="캐시 쓰기 실패")
+    return {"ok": True, "message": f"캐시 업데이트 완료 ({len(payload.get('entry_candidates', []))}개 캔디데이트, {len(payload.get('positions', []))}개 포지션)"}
 
 
 @app.post("/api/ibkr/monitor/positions-upload")

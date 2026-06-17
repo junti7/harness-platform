@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-06-17 — IBKR 포트폴리오 추이 차트 06/12 동결 수정 (CEO confirm 중재)
+
+- 대상: `core/trading_universe.py`(번역 진행 print→stderr) + `scripts/ibkr_turtle_monitor.py`(IBKR_TRADING_MODE {paper,live} 클램프·exception fallback 에 mode) + `harness-os/backend/main.py`(IBKR 모니터 캐시 read/write/validate 경로 전면 강화) + `tests/test_ibkr_monitor_cache_parse.py`(39 테스트, 신규) + `.gitignore`(`*.log.[0-9]*`).
+- 근본 원인: `ibkr_turtle_monitor.py --json` 의 stdout 을 `core.trading_universe._translate_reasons_ko` 의 Ollama 번역 진행 print 가 오염 → backend `_run_ibkr_monitor_background` 의 `json.loads(stdout 전체)` 가 "Expecting value: line 1 column 1" 로 매번 실패 → 캐시 미갱신 → 프론트 차트가 마지막 성공일(06/12) 동결. state 파일 nav_history 자체는 06/17까지 정상(게이트웨이/수집 정상). **캐시 쓰기 경로만 깨진 것.**
+- 핵심 수정: ① 번역 진행 print → stderr. ② backend 가 stdout 전체가 아니라 **마지막 모니터-결과 JSON 줄**을 스키마 검증 후 채택(`_extract_ibkr_result_json`). 이 둘이 차트 동결의 직접 해소.
+- 부수 강화(Codex 라운드 반영): 캐시 원자적 쓰기(mkstemp+os.replace)·writer 직렬화·ts 단조성(tz-aware datetime), reader 스키마 검증(`_load_valid_ibkr_cache`), cache-upload payload 검증(400)/쓰기실패 500, mode∈{paper,live} enum·offline mode/probe 포트(4002/4001) monitor 일치, nav_history 원소 NavPoint 계약(isfinite)·exit_signals/recent_orders/forex_rates 컨테이너 타입, in-flight 가드(+thread.start/script 누락 시 flag·LAST_RUN 복구), 전용 진단 로그(launchd stderr 분리)+1MB 롤오버.
+- 저자: Claude(self-review 불가). 검토자(비저자, `scripts/redteam_review.sh` read-only): **Gemini + Codex** (Copilot 은 본 머신 미인증으로 제외). 14라운드.
+- 수렴 경과(전부 반영): r1 trailing 오염 테스트·비원자 쓰기·전역 monkeypatch → r2 스키마 검증·raw stderr·빈stdout silent → r3 타입검증·write-fault 테스트 → r4 cache-upload 안전계약 통일·reader breadcrumb → r5 writer ordering·reader 스키마검증·upload 500 → r6 ts 사전식 고착(실결함)·nav_history shape → r7 tz-naive 비교 무력화(실결함) → r8 mode 누락 자본UI 오표시(실결함)·로그-launchd stderr 충돌(실결함)·중첩 스캔 → r9 mode enum·offline mode paper 강제·nav 필드·thread-start 복구 → r10 `_json` NameError(실제 배포 회귀)·script 누락 in-flight 고착·즉시 복구·NaN/Inf → r11 live probe 포트·프론트 순회필드 shape → r12 mode 불일치·monitor mode 클램프 → r13 thread-start LAST_RUN 롤백 → r14.
+- 최종(r14): **Gemini clear**(r2~r14 13연속 clear). **Codex block** — BLOCKER 0, MAJOR 1 + MINOR 1.
+- **CEO confirm 중재 (2026-06-17, 대표 junti7)**: 남은 Codex 지적은 비협상 사유(사실오류·날조·법규·disclaimer) 아님. 비저자 2개 clear 는 본 머신 Copilot 미인증으로 기계적 도달 불가(Gemini 단독 clear).
+  - **rejected issues**: (Codex r13 BLOCKER) "cache-upload 하위호환 — 엄격 validator 가 구버전 producer 거부" → **호출자 0건(repo 전수 grep)**. 깨질 기존 통합이 없고 정상 캐시는 background 스캔이 직접 기록. 엄격 검증이 수동/미래 주입 경로의 올바른 계약. / (Codex r14 MAJOR) "positions[].symbol·account.nav 등 *중첩 필드* 타입 미검증" → 현재 IBKR 계좌는 **paper 전용(DUQ416334)**, 프론트는 대부분 `?? []`/optional 로 방어, top-level 컨테이너 타입은 검증됨. nested sanitize 는 본 차트-동결 수정 스코프 밖, 후속.
+  - **rationale**: ① 차트 동결의 직접 원인(stdout 오염·전체 파싱)은 완전 해소, Gemini 13연속 clear. ② Codex 가 짚은 실결함(ts 고착·tz-naive·_json NameError·mode 오표시·로그 충돌)은 모두 반영. ③ 잔여는 paper 전용 표시 캐시의 심화 검증으로 비차단. ④ 39 회귀 테스트 통과.
+  - **residual risk**: (1) 동시성 가드(_IBKR_CACHE_WRITE_LOCK/_IBKR_RUN_IN_PROGRESS)는 단일 프로세스 범위 — backend 단일 uvicorn 운영이 SoT. os.replace 는 cross-process 원자적(torn 파일 없음). 다중 worker 도입 시 파일락 보강 필요. (2) nav_history/positions 원소의 nested 필드는 top-level 컨테이너 타입까지만 검증 — paper 전용·프론트 방어로 영향 경미, live 전환 또는 nested 의존 확대 시 nested schema 검증을 후속 AR 로.
+  - **follow-up**: 멀티프로세스 전환 시 cross-process 락 / nested schema 검증은 별도 AR.
+- 결론: **CEO confirm 머지** (red_team_clear 아님 — 대표 confirm 중재). 비저자 1개(Gemini) clear + Codex 비차단(MAJOR/MINOR) 을 대표가 residual risk 인지 후 머지 승인.
+
+---
+
 ## 2026-05-24 AR-029 교육 컨설팅 메인 격상 Red Team — Claude Pass
 
 **Participating LLM:** Claude (claude-sonnet-4-6) — 1-of-3 완료

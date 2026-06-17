@@ -54,7 +54,9 @@ TWS_HOST = "127.0.0.1"
 
 # IBKR_TRADING_MODE=paper (기본) → IB Gateway 페이퍼 포트 4002
 # IBKR_TRADING_MODE=live         → IB Gateway 실전 포트 4001
-IBKR_TRADING_MODE = os.getenv("IBKR_TRADING_MODE", "paper").strip().lower()
+# mode 를 정확히 {"paper","live"} 로 클램프한다(backend validator enum 과 일치): 포트 분기(paper→4002,
+# 그 외→4001)와 동일하게, "paper" 가 아니면 live 로 본다. 이로써 emit 되는 mode 가 항상 enum 안에 든다.
+IBKR_TRADING_MODE = "paper" if os.getenv("IBKR_TRADING_MODE", "paper").strip().lower() == "paper" else "live"
 TWS_PORT = 4002 if IBKR_TRADING_MODE == "paper" else 4001
 TWS_CLIENT_ID = 11       # paper_trader(10)와 충돌 방지
 
@@ -1192,6 +1194,7 @@ if __name__ == "__main__":
         result = {
             "ok":               False,
             "ts":               now_iso(),
+            "mode":             IBKR_TRADING_MODE,  # 예외 경로에도 mode 필수: 누락 시 프론트가 paper 로 오표시(자본 UI 안전)
             "gateway_connected": False,
             "account":          None,
             "positions":        [],

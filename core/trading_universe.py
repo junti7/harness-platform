@@ -4,6 +4,7 @@ import json
 import math
 import os
 import re
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -611,7 +612,7 @@ def _translate_reasons_ko(universe: list[dict[str, Any]]) -> list[dict[str, Any]
                 for k, v in parsed.items():
                     if k in chunk and v:
                         ko_map[k] = str(v)
-            print(f"Local LLM (Ollama) translated chunk ({len(chunk)} items).")
+            print(f"Local LLM (Ollama) translated chunk ({len(chunk)} items).", file=sys.stderr)
             
             # 성공한 청크 결과를 universe 리스트에 즉시 반영 후 디스크에 중간 쓰기(Incremental Save)
             for idx, row in enumerate(universe):
@@ -621,9 +622,9 @@ def _translate_reasons_ko(universe: list[dict[str, Any]]) -> list[dict[str, Any]
             write_trading_universe(universe)
             
         except Exception as e:
-            print(f"Local LLM chunk translation failed for keys {list(chunk.keys())}: {e}")
+            print(f"Local LLM chunk translation failed for keys {list(chunk.keys())}: {e}", file=sys.stderr)
         
-    print(f"Local LLM (Ollama) completed translations for {len(ko_map)} items in chunked batch.")
+    print(f"Local LLM (Ollama) completed translations for {len(ko_map)} items in chunked batch.", file=sys.stderr)
         
     # 2단계: 로컬 LLM으로 실패한 항목은 Claude로 백업 번역 시도
     remaining_translate = {
