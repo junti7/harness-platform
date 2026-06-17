@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-06-17 — edu 패턴 모니터 원자적 쓰기(torn-file 방지)
+
+- 대상: `scripts/build_edu_pattern_intelligence.py` + `scripts/fact_check_edu_patterns.py`(`_atomic_write_json` 헬퍼로 OUTPUT 기록 교체) + `harness-os/backend/main.py`(edu pattern history JSONL per-line 관용 파싱) + `tests/test_edu_pattern_atomic_write.py`(6 테스트, 신규).
+- 배경: "다른 트레이딩 화면 캐시 점검" 후속. IBKR 같은 stdout-파싱 동결 버그는 edu 패턴엔 구조적으로 없음(스크립트가 `--write` 로 파일 직접 기록, backend 는 파일만 읽음). 다만 두 스크립트가 `OUTPUT_PATH.write_text` 로 *비원자적* 기록 → backend timeout(90s) SIGKILL 이 쓰기 도중 들어오면 torn JSON → `_read_json_file` 가 `{}` → 프론트 *일시* 빈 화면(영구 동결 아님). IBKR 캐시 수정과 동일 계열 하드닝.
+- 수정: `_atomic_write_json` = mkstemp(같은 dir) → 권한 메타데이터 승계(기존: copystat mode/flags/xattr + chown uid/gid / 신규: mkstemp 0600 유지=권한 확대 없음, 전역 umask 미조작) → write → flush+fsync → os.replace, 실패 시 tmp unlink, 메타 승계 실패는 stderr 경고(쓰기 계속). backend history 파싱은 줄 단위 관용 파싱(torn 줄만 skip).
+- 저자: Claude(self-review 불가). 검토자(비저자, read-only): Gemini + Codex. 6라운드.
+- 수렴 경과(전부 반영): r2 orphan-tmp sweep 동시성 위험→sweep 제거 / r3 mkstemp 0600 inode mode 유실→메타 승계 / r4 신규 0644 하드코딩 umask 확대→신규 0600(확대 차단), ACL/xattr→copystat / r5 uid/gid 미보존→chown, 전역 umask race→umask 미사용으로 제거, silent 실패→stderr 경고.
+- 최종(r6): **Gemini clear + Codex clear** (동일 최종 diff, 비저자 2개 clear).
+- **✅ red_team_clear: 2026-06-17**. Codex 잔여 MINOR(history 관용 파싱의 skip 관측성 / `_atomic_write_json` 두 파일 중복→공용 util 권고) 2건은 비차단으로 후속 정리 대상.
+- 운영 메모: 본 작업 도중 CEO(junti7)가 "심각 Major 아니면 red-team r5까지만" 표준 지시(메모리 feedback_redteam_round_cap). 본 건은 r6에서 2개 clear 도달해 정식 종료.
+
+---
+
 ## 2026-06-17 — IBKR 포트폴리오 추이 차트 06/12 동결 수정 (CEO confirm 중재)
 
 - 대상: `core/trading_universe.py`(번역 진행 print→stderr) + `scripts/ibkr_turtle_monitor.py`(IBKR_TRADING_MODE {paper,live} 클램프·exception fallback 에 mode) + `harness-os/backend/main.py`(IBKR 모니터 캐시 read/write/validate 경로 전면 강화) + `tests/test_ibkr_monitor_cache_parse.py`(39 테스트, 신규) + `.gitignore`(`*.log.[0-9]*`).

@@ -20,6 +20,52 @@ OUTPUT_PATH = ROOT / "runtime" / "edu_pattern_intelligence.json"
 HISTORY_PATH = ROOT / "runtime" / "edu_pattern_history.jsonl"
 RED_TEAM_REVIEW_GLOB = "edu_pattern_intelligence_red_team_*.md"
 
+
+def _atomic_write_json(path: Path, payload: Any) -> None:
+    """런타임 아티팩트를 원자적으로 쓴다(tmp 작성 → fsync → os.replace).
+
+    backend 가 이 스크립트를 timeout 으로 돌리다 쓰기 도중 SIGKILL 하면 직접 write_text 는
+    잘린 JSON 을 남겨 프론트가 빈 화면으로 떨어진다. 같은 디렉터리 tmp 에 쓰고 fsync 후
+    os.replace 로 교체해 torn-file 을 막는다. (호스트 크래시 수준 내구성은 비목표 — timeout/SIGKILL 한정.
+    tmp 는 고유 이름이라 충돌하지 않으며, SIGKILL 시 드물게 남는 orphan .tmp 는 무해한 cosmetic 잔여물이다.
+    overlap 안전을 위해 다른 writer 의 tmp 를 건드리는 일괄 정리는 하지 않는다.)
+    """
+    import os
+    import shutil
+    import sys
+    import tempfile
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        # mkstemp 는 0600 새 inode 라, os.replace 후 기존 파일의 권한 메타데이터가 사라진다.
+        # 하위호환 보존:
+        #  - 기존 파일: copystat 으로 mode/flags/xattr(ACL 포함, macOS) 승계 + chown 으로 uid/gid 승계
+        #    (SGID 디렉터리/상속 그룹 보존). 동일 사용자 실행이라 chown 은 보통 no-op·허용.
+        #  - 신규 파일: mkstemp 기본 0600 유지. write_text(0644)보다 제한적이라 권한 *확대*가 없고
+        #    (동일 사용자 reader 는 영향 없음), 전역 umask 조작(스레드 비안전)을 피한다.
+        # 메타데이터 승계 실패는 삼키지 않고 stderr 경고만 남긴다(쓰기는 계속 — staleness 회피 우선).
+        try:
+            if path.exists():
+                _st = os.stat(path)
+                shutil.copystat(path, tmp)
+                try:
+                    os.chown(tmp, _st.st_uid, _st.st_gid)
+                except (PermissionError, OSError):
+                    pass
+        except Exception as _meta_err:
+            print(f"[atomic_write] metadata carry-over warning for {path.name}: {_meta_err}", file=sys.stderr)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        raise
+
 WEIGHTS = {
     "frequency": 0.35,
     "urgency": 0.20,
@@ -1078,8 +1124,7 @@ def main() -> int:
 
     payload = build_payload()
     if args.write or not args.stdout:
-        OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        OUTPUT_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        _atomic_write_json(OUTPUT_PATH, payload)
         _append_history(payload)
     if args.stdout:
         print(json.dumps(payload, ensure_ascii=False, indent=2))

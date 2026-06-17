@@ -6230,11 +6230,16 @@ def _read_edu_pattern_payload() -> dict[str, Any]:
     history_rows = []
     if _EDU_PATTERN_HISTORY_PATH.exists():
         try:
-            history_rows = [
-                json.loads(line)
-                for line in _EDU_PATTERN_HISTORY_PATH.read_text(encoding="utf-8").splitlines()
-                if line.strip()
-            ][-30:]
+            # 줄 단위 관용 파싱: append 도중 SIGKILL 로 한 줄이 잘려도 그 줄만 건너뛰고
+            # 나머지 history 는 보존(전체를 [] 로 날리지 않음).
+            for line in _EDU_PATTERN_HISTORY_PATH.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    history_rows.append(json.loads(line))
+                except Exception:
+                    continue
+            history_rows = history_rows[-30:]
         except Exception:
             history_rows = []
     red_team = _edu_pattern_red_team_summary()
