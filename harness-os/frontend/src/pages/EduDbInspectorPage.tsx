@@ -169,9 +169,8 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
     codeText: '#e2e8f0',
   } as const
 
-  const inspectorGridTemplate = isNarrowLayout ? '1fr' : '320px minmax(0, 1fr)'
-  const compactTableMinWidth = isNarrowLayout ? 640 : 760
-  const rawTableMinWidth = isNarrowLayout ? 760 : 960
+  const compactTableMinWidth = isNarrowLayout ? 560 : 680
+  const rawTableMinWidth = isNarrowLayout ? 680 : 860
   const sectionTitleStyle = { margin: 0, fontSize: '.98rem', color: palette.textStrong } as const
   const codePanelStyle = {
     margin: 0,
@@ -202,7 +201,7 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
         </section>
       )}
 
-      <section style={{ display: 'grid', gridTemplateColumns: inspectorGridTemplate, gap: 12, alignItems: 'start', width: '100%', maxWidth: '100%' }}>
+      <section style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, alignItems: 'start', width: '100%', maxWidth: '100%' }}>
         <section style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 12, padding: 12, minWidth: 0 }}>
           <div style={{ marginBottom: 10 }}>
             <h3 style={sectionTitleStyle}>Object List</h3>
@@ -210,7 +209,7 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
               actual `{bundle?.actual_tables?.length ?? 0}` · missing tables `{(bundle?.missing_expected_tables || []).join(', ') || '(none)'}`
             </p>
           </div>
-          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <div style={{ width: '100%', maxWidth: '100%', overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}>
             <table style={{ minWidth: 520, width: '100%', borderCollapse: 'collapse', fontSize: '.86rem', color: palette.text }}>
               <thead>
                 <tr>
@@ -254,7 +253,7 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
               <div style={{ color: '#b91c1c' }}>{selectedObject.error}</div>
             ) : (
               <div style={{ display: 'grid', gap: 12 }}>
-                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                <div style={{ width: '100%', maxWidth: '100%', overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}>
                   <table style={{ minWidth: compactTableMinWidth, width: '100%', borderCollapse: 'collapse', fontSize: '.86rem', color: palette.text }}>
                     <thead>
                       <tr>
@@ -279,7 +278,7 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
 
                 <div>
                   <h4 style={sectionTitleStyle}>Columns dataframe</h4>
-                  <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginTop: 8 }}>
+                  <div style={{ width: '100%', maxWidth: '100%', overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', marginTop: 8 }}>
                     <table style={{ minWidth: compactTableMinWidth, width: '100%', borderCollapse: 'collapse', fontSize: '.86rem', color: palette.text }}>
                       <thead>
                         <tr>
@@ -309,7 +308,7 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
                     <div style={{ color: palette.textSoft, fontSize: '.8rem' }}>row click to raw JSON</div>
                   </div>
                   {selectedSampleColumns.length > 0 ? (
-                    <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginTop: 8 }}>
+                    <div style={{ width: '100%', maxWidth: '100%', overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', marginTop: 8 }}>
                       <table style={{ minWidth: rawTableMinWidth, width: '100%', borderCollapse: 'collapse', fontSize: '.84rem', color: palette.text }}>
                         <thead>
                           <tr>
@@ -365,7 +364,7 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
                   )}
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: isNarrowLayout ? '1fr' : '1fr 1fr', gap: 12, minWidth: 0 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, minWidth: 0 }}>
                   <div>
                     <h4 style={sectionTitleStyle}>Selected sample row raw JSON</h4>
                     <pre style={{ ...codePanelStyle, marginTop: 8, maxHeight: 320 }}>
@@ -386,7 +385,7 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
           <details style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 12, padding: '10px 12px', minWidth: 0, overflow: 'hidden' }}>
             <summary style={{ cursor: 'pointer', color: palette.textStrong, fontWeight: 700 }}>Ancillary raw JSON</summary>
             <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: isNarrowLayout ? '1fr' : '1fr 1fr', gap: 12, minWidth: 0 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, minWidth: 0 }}>
                 <div>
                   <h4 style={sectionTitleStyle}>Latest Pipeline Runs raw JSON</h4>
                   <pre style={{ ...codePanelStyle, marginTop: 8, maxHeight: 320 }}>
