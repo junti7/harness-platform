@@ -16,20 +16,20 @@ type Bundle = {
   latest_dead_letter_queue?: any[]
 }
 
-function useIsMobile(breakpoint = 980): boolean {
-  const [isMobile, setIsMobile] = useState(() =>
+function useIsNarrowLayout(breakpoint = 1280): boolean {
+  const [isNarrowLayout, setIsNarrowLayout] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth <= breakpoint : false
   )
 
   useEffect(() => {
     const mq = window.matchMedia(`(max-width: ${breakpoint}px)`)
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
-    setIsMobile(mq.matches)
+    const handler = (e: MediaQueryListEvent) => setIsNarrowLayout(e.matches)
+    setIsNarrowLayout(mq.matches)
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
   }, [breakpoint])
 
-  return isMobile
+  return isNarrowLayout
 }
 
 function formatCellValue(value: unknown): string {
@@ -66,7 +66,7 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
   const [query, setQuery] = useState('중학생 숙제할 때 AI 답부터 보는 아이를 부모가 어떻게 다뤄야 하나요?')
   const [segment, setSegment] = useState<'parent' | 'worker'>('parent')
   const [k, setK] = useState(6)
-  const isMobile = useIsMobile()
+  const isNarrowLayout = useIsNarrowLayout()
 
   useEffect(() => {
     let cancelled = false
@@ -169,9 +169,9 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
     codeText: '#e2e8f0',
   } as const
 
-  const inspectorGridTemplate = isMobile ? '1fr' : '320px minmax(0, 1fr)'
-  const compactTableMinWidth = isMobile ? 720 : 820
-  const rawTableMinWidth = isMobile ? 960 : 1280
+  const inspectorGridTemplate = isNarrowLayout ? '1fr' : '320px minmax(0, 1fr)'
+  const compactTableMinWidth = isNarrowLayout ? 640 : 760
+  const rawTableMinWidth = isNarrowLayout ? 760 : 960
   const sectionTitleStyle = { margin: 0, fontSize: '.98rem', color: palette.textStrong } as const
   const codePanelStyle = {
     margin: 0,
@@ -187,7 +187,7 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
   } as const
 
   return (
-    <div style={{ display: 'grid', gap: 12 }}>
+    <div style={{ display: 'grid', gap: 12, width: '100%', maxWidth: '100%' }}>
       <section style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 12, padding: '12px 14px' }}>
         <h2 style={{ margin: 0, fontSize: '1.05rem', color: palette.textStrong }}>Edu DB Inspector</h2>
         <p style={{ margin: '6px 0 0', color: palette.textSoft, fontSize: '.86rem', lineHeight: 1.5 }}>
@@ -202,8 +202,8 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
         </section>
       )}
 
-      <section style={{ display: 'grid', gridTemplateColumns: inspectorGridTemplate, gap: 12, alignItems: 'start' }}>
-        <section style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 12, padding: 12 }}>
+      <section style={{ display: 'grid', gridTemplateColumns: inspectorGridTemplate, gap: 12, alignItems: 'start', width: '100%', maxWidth: '100%' }}>
+        <section style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 12, padding: 12, minWidth: 0 }}>
           <div style={{ marginBottom: 10 }}>
             <h3 style={sectionTitleStyle}>Object List</h3>
             <p style={{ margin: '4px 0 0', color: palette.textSoft, fontSize: '.82rem' }}>
@@ -241,8 +241,8 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
           </div>
         </section>
 
-        <div style={{ display: 'grid', gap: 12 }}>
-          <section style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 12, padding: 12 }}>
+        <div style={{ display: 'grid', gap: 12, minWidth: 0, width: '100%', maxWidth: '100%' }}>
+          <section style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 12, padding: 12, minWidth: 0, overflow: 'hidden' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
               <div>
                 <h3 style={sectionTitleStyle}>{selectedName || '선택 없음'}</h3>
@@ -365,7 +365,7 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
                   )}
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isNarrowLayout ? '1fr' : '1fr 1fr', gap: 12, minWidth: 0 }}>
                   <div>
                     <h4 style={sectionTitleStyle}>Selected sample row raw JSON</h4>
                     <pre style={{ ...codePanelStyle, marginTop: 8, maxHeight: 320 }}>
@@ -383,10 +383,10 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
             )}
           </section>
 
-          <details style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 12, padding: '10px 12px' }}>
+          <details style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 12, padding: '10px 12px', minWidth: 0, overflow: 'hidden' }}>
             <summary style={{ cursor: 'pointer', color: palette.textStrong, fontWeight: 700 }}>Ancillary raw JSON</summary>
             <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isNarrowLayout ? '1fr' : '1fr 1fr', gap: 12, minWidth: 0 }}>
                 <div>
                   <h4 style={sectionTitleStyle}>Latest Pipeline Runs raw JSON</h4>
                   <pre style={{ ...codePanelStyle, marginTop: 8, maxHeight: 320 }}>
@@ -403,7 +403,7 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
 
               <div>
                 <h4 style={sectionTitleStyle}>Customer-Facing Retrieval Debug</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,1fr) 120px 90px 140px', gap: 10, alignItems: 'end', marginTop: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isNarrowLayout ? '1fr' : 'minmax(0,1fr) 120px 90px 140px', gap: 10, alignItems: 'end', marginTop: 8 }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '.8rem', color: palette.textMuted, fontWeight: 800, marginBottom: 6 }}>query</label>
                     <textarea value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: '100%', minHeight: 92, borderRadius: 10, border: `1px solid ${palette.border}`, padding: 12, color: palette.textStrong, background: palette.surfaceMuted }} />
