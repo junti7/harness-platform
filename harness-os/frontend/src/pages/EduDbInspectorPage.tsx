@@ -164,79 +164,60 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
     borderSoft: '#dbe4ee',
     surface: '#ffffff',
     surfaceMuted: '#f8fafc',
-    surfaceActive: '#dff7f3',
+    surfaceActive: '#e0f2fe',
+    codeBg: '#0f172a',
+    codeText: '#e2e8f0',
   } as const
 
-  const inspectorGridTemplate = isMobile ? '1fr' : '360px minmax(0, 1fr)'
+  const inspectorGridTemplate = isMobile ? '1fr' : '320px minmax(0, 1fr)'
   const compactTableMinWidth = isMobile ? 720 : 820
-  const rawTableMinWidth = isMobile ? 900 : 1200
+  const rawTableMinWidth = isMobile ? 960 : 1280
+  const sectionTitleStyle = { margin: 0, fontSize: '.98rem', color: palette.textStrong } as const
+  const codePanelStyle = {
+    margin: 0,
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+    background: palette.codeBg,
+    color: palette.codeText,
+    padding: 14,
+    borderRadius: 10,
+    fontSize: '.79rem',
+    lineHeight: 1.55,
+    overflow: 'auto',
+  } as const
 
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
-      <section
-        style={{
-          background: 'linear-gradient(135deg,#f8fafc,#ecfeff 50%,#fff7ed)',
-          border: '1px solid #dbeafe',
-          borderRadius: 18,
-          padding: '18px 20px',
-        }}
-      >
-        <div style={{ fontSize: '.78rem', color: '#0f766e', fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', marginBottom: 6 }}>
-          Database Transparency
-        </div>
-        <h2 style={{ margin: '0 0 8px', fontSize: '1.25rem', color: '#0f172a' }}>Edu DB Inspector</h2>
-        <p style={{ margin: 0, fontSize: '.92rem', lineHeight: 1.65, color: '#475569', maxWidth: 1080 }}>
-          각 테이블이나 뷰를 누르면 바로 그 구조와 sample row를 원시 데이터프레임처럼 볼 수 있게 만든 화면입니다. 모바일에서는 표를 줄이지 않고 가로 스크롤로 그대로 조회합니다.
+    <div style={{ display: 'grid', gap: 12 }}>
+      <section style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 12, padding: '12px 14px' }}>
+        <h2 style={{ margin: 0, fontSize: '1.05rem', color: palette.textStrong }}>Edu DB Inspector</h2>
+        <p style={{ margin: '6px 0 0', color: palette.textSoft, fontSize: '.86rem', lineHeight: 1.5 }}>
+          raw table browser. object list에서 선택하면 컬럼 구조와 sample rows dataframe이 바로 열립니다.
         </p>
       </section>
 
       {error && (
-        <section style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', borderRadius: 16, padding: '14px 16px' }}>
+        <section style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', borderRadius: 12, padding: '12px 14px' }}>
           <strong>불러오기 실패</strong>
           <div style={{ marginTop: 6 }}>{error}</div>
         </section>
       )}
 
-      <section style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 18, padding: 16 }}>
-        <div style={{ fontSize: '.76rem', letterSpacing: '.08em', textTransform: 'uppercase', color: palette.textMuted, fontWeight: 800, marginBottom: 10 }}>
-          Summary Dataframe
-        </div>
-        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          <table style={{ minWidth: compactTableMinWidth, width: '100%', borderCollapse: 'collapse', fontSize: '.9rem', color: palette.text }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '10px 8px', color: palette.textMuted, fontWeight: 800 }}>expected_tables_count</th>
-                <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '10px 8px', color: palette.textMuted, fontWeight: 800 }}>actual_tables_count</th>
-                <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '10px 8px', color: palette.textMuted, fontWeight: 800 }}>missing_tables</th>
-                <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '10px 8px', color: palette.textMuted, fontWeight: 800 }}>missing_views</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '10px 8px', fontWeight: 700, color: palette.textStrong }}>{bundle?.expected_tables?.length ?? '-'}</td>
-                <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '10px 8px', fontWeight: 700, color: palette.textStrong }}>{bundle?.actual_tables?.length ?? '-'}</td>
-                <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '10px 8px', color: '#b91c1c', fontWeight: 700 }}>{(bundle?.missing_expected_tables || []).join(', ') || '(none)'}</td>
-                <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '10px 8px', color: '#b91c1c', fontWeight: 700 }}>{(bundle?.missing_expected_views || []).join(', ') || '(none)'}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section style={{ display: 'grid', gridTemplateColumns: inspectorGridTemplate, gap: 16, alignItems: 'start' }}>
-        <section style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 18, padding: 16 }}>
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: '.76rem', letterSpacing: '.08em', textTransform: 'uppercase', color: palette.textMuted, fontWeight: 800 }}>Table List</div>
-            <h3 style={{ margin: '6px 0 0', fontSize: '1.04rem', color: palette.textStrong }}>Object inventory</h3>
+      <section style={{ display: 'grid', gridTemplateColumns: inspectorGridTemplate, gap: 12, alignItems: 'start' }}>
+        <section style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 12, padding: 12 }}>
+          <div style={{ marginBottom: 10 }}>
+            <h3 style={sectionTitleStyle}>Object List</h3>
+            <p style={{ margin: '4px 0 0', color: palette.textSoft, fontSize: '.82rem' }}>
+              actual `{bundle?.actual_tables?.length ?? 0}` · missing tables `{(bundle?.missing_expected_tables || []).join(', ') || '(none)'}`
+            </p>
           </div>
           <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-            <table style={{ minWidth: 560, width: '100%', borderCollapse: 'collapse', fontSize: '.88rem', color: palette.text }}>
+            <table style={{ minWidth: 520, width: '100%', borderCollapse: 'collapse', fontSize: '.86rem', color: palette.text }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '10px 8px', color: palette.textMuted, fontWeight: 800 }}>object_name</th>
-                  <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '10px 8px', color: palette.textMuted, fontWeight: 800 }}>type</th>
-                  <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '10px 8px', color: palette.textMuted, fontWeight: 800 }}>exists</th>
-                  <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '10px 8px', color: palette.textMuted, fontWeight: 800 }}>rows</th>
+                  <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>object_name</th>
+                  <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>type</th>
+                  <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>exists</th>
+                  <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>rows</th>
                 </tr>
               </thead>
               <tbody>
@@ -248,10 +229,10 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
                       onClick={() => setSelectedName(row.name)}
                       style={{ background: active ? palette.surfaceActive : palette.surface, cursor: 'pointer' }}
                     >
-                      <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '10px 8px', fontFamily: 'monospace', color: palette.textStrong, fontWeight: 700 }}>{row.name}</td>
-                      <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '10px 8px' }}>{row.type}</td>
-                      <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '10px 8px', color: row.exists ? '#166534' : '#b91c1c', fontWeight: 700 }}>{String(row.exists)}</td>
-                      <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '10px 8px' }}>{String(row.rowCount)}</td>
+                      <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px', fontFamily: 'monospace', color: palette.textStrong, fontWeight: 700 }}>{row.name}</td>
+                      <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px' }}>{row.type}</td>
+                      <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px', color: row.exists ? '#166534' : '#b91c1c', fontWeight: 700 }}>{String(row.exists)}</td>
+                      <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px' }}>{String(row.rowCount)}</td>
                     </tr>
                   )
                 })}
@@ -260,46 +241,46 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
           </div>
         </section>
 
-        <div style={{ display: 'grid', gap: 16 }}>
-          <section style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 18, padding: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'grid', gap: 12 }}>
+          <section style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 12, padding: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
               <div>
-                <div style={{ fontSize: '.76rem', letterSpacing: '.08em', textTransform: 'uppercase', color: palette.textMuted, fontWeight: 800 }}>Selected Table</div>
-                <h3 style={{ margin: '6px 0 0', fontSize: '1.08rem', color: palette.textStrong }}>{selectedName || '선택 없음'}</h3>
+                <h3 style={sectionTitleStyle}>{selectedName || '선택 없음'}</h3>
+                <p style={{ margin: '4px 0 0', color: palette.textSoft, fontSize: '.82rem' }}>raw structure + raw rows</p>
               </div>
-              {detailLoading && <div style={{ color: palette.textSoft, fontSize: '.88rem', fontWeight: 600 }}>불러오는 중…</div>}
+              {detailLoading && <div style={{ color: palette.textSoft, fontSize: '.86rem', fontWeight: 600 }}>불러오는 중…</div>}
             </div>
             {selectedObject?.error ? (
               <div style={{ color: '#b91c1c' }}>{selectedObject.error}</div>
             ) : (
-              <div style={{ display: 'grid', gap: 16 }}>
+              <div style={{ display: 'grid', gap: 12 }}>
                 <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <table style={{ minWidth: compactTableMinWidth, width: '100%', borderCollapse: 'collapse', fontSize: '.9rem', color: palette.text }}>
+                  <table style={{ minWidth: compactTableMinWidth, width: '100%', borderCollapse: 'collapse', fontSize: '.86rem', color: palette.text }}>
                     <thead>
                       <tr>
-                        <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '10px 8px', color: palette.textMuted, fontWeight: 800 }}>type</th>
-                        <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '10px 8px', color: palette.textMuted, fontWeight: 800 }}>exists</th>
-                        <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '10px 8px', color: palette.textMuted, fontWeight: 800 }}>row_count</th>
-                        <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '10px 8px', color: palette.textMuted, fontWeight: 800 }}>owner</th>
-                        <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '10px 8px', color: palette.textMuted, fontWeight: 800 }}>source_of_truth</th>
+                        <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>type</th>
+                        <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>exists</th>
+                        <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>row_count</th>
+                        <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>owner</th>
+                        <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>source_of_truth</th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr>
-                        <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '10px 8px' }}>{selectedObject?.type ?? '-'}</td>
-                        <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '10px 8px', fontWeight: 700 }}>{String(selectedObject?.exists ?? '-')}</td>
-                        <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '10px 8px' }}>{String(selectedObject?.row_count ?? '-')}</td>
-                        <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '10px 8px' }}>{selectedObject?.owner || 'n/a'}</td>
-                        <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '10px 8px', color: palette.textSoft }}>{selectedObject?.source_of_truth || 'n/a'}</td>
+                        <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px' }}>{selectedObject?.type ?? '-'}</td>
+                        <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px', fontWeight: 700 }}>{String(selectedObject?.exists ?? '-')}</td>
+                        <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px' }}>{String(selectedObject?.row_count ?? '-')}</td>
+                        <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px' }}>{selectedObject?.owner || 'n/a'}</td>
+                        <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px', color: palette.textSoft }}>{selectedObject?.source_of_truth || 'n/a'}</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
 
                 <div>
-                  <h4 style={{ margin: '0 0 8px', color: palette.textStrong }}>Columns dataframe</h4>
-                  <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                    <table style={{ minWidth: compactTableMinWidth, width: '100%', borderCollapse: 'collapse', fontSize: '.9rem', color: palette.text }}>
+                  <h4 style={sectionTitleStyle}>Columns dataframe</h4>
+                  <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginTop: 8 }}>
+                    <table style={{ minWidth: compactTableMinWidth, width: '100%', borderCollapse: 'collapse', fontSize: '.86rem', color: palette.text }}>
                       <thead>
                         <tr>
                           <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>idx</th>
@@ -323,20 +304,23 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
                 </div>
 
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', marginBottom: 8, flexWrap: 'wrap' }}>
-                    <h4 style={{ margin: 0, color: palette.textStrong }}>Sample rows dataframe</h4>
-                    <div style={{ fontSize: '.82rem', color: palette.textSoft }}>object API sample limit: 20 rows</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                    <h4 style={sectionTitleStyle}>Sample rows dataframe</h4>
+                    <div style={{ color: palette.textSoft, fontSize: '.8rem' }}>row click to raw JSON</div>
                   </div>
                   {selectedSampleColumns.length > 0 ? (
-                    <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                      <table style={{ minWidth: rawTableMinWidth, width: '100%', borderCollapse: 'collapse', fontSize: '.88rem', color: palette.text }}>
+                    <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginTop: 8 }}>
+                      <table style={{ minWidth: rawTableMinWidth, width: '100%', borderCollapse: 'collapse', fontSize: '.84rem', color: palette.text }}>
                         <thead>
                           <tr>
-                            <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>idx</th>
+                            <th style={{ position: 'sticky', top: 0, background: palette.surfaceMuted, textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>idx</th>
                             {selectedSampleColumns.map((column) => (
                               <th
                                 key={column}
                                 style={{
+                                  position: 'sticky',
+                                  top: 0,
+                                  background: palette.surfaceMuted,
                                   textAlign: 'left',
                                   borderBottom: `1px solid ${palette.border}`,
                                   padding: '8px 6px',
@@ -358,12 +342,12 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
                               <tr
                                 key={`sample-row-${rowIndex}`}
                                 onClick={() => setSelectedSampleRowIndex(rowIndex)}
-                                style={{ background: active ? '#eff6ff' : palette.surface, cursor: 'pointer' }}
+                                style={{ background: active ? '#dbeafe' : palette.surface, cursor: 'pointer' }}
                               >
                                 <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px', color: palette.textSoft }}>{rowIndex}</td>
                                 {selectedSampleColumns.map((column) => (
                                   <td key={`${rowIndex}-${column}`} style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px', verticalAlign: 'top', minWidth: 160, maxWidth: 320 }}>
-                                    <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.45 }}>
+                                    <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.42 }}>
                                       {formatCellValue(row?.[column])}
                                     </div>
                                   </td>
@@ -375,70 +359,76 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
                       </table>
                     </div>
                   ) : (
-                    <div style={{ border: `1px solid ${palette.borderSoft}`, borderRadius: 12, padding: '12px 14px', color: palette.textSoft }}>
+                    <div style={{ border: `1px solid ${palette.borderSoft}`, borderRadius: 10, padding: '12px 14px', color: palette.textSoft, marginTop: 8 }}>
                       sample row가 없습니다.
                     </div>
                   )}
                 </div>
 
-                <div>
-                  <h4 style={{ margin: '0 0 8px', color: palette.textStrong }}>Selected sample row raw JSON</h4>
-                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: '#0f172a', color: '#e2e8f0', padding: 14, borderRadius: 16, fontSize: '.8rem', lineHeight: 1.55, maxHeight: 320, overflow: 'auto' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <h4 style={sectionTitleStyle}>Selected sample row raw JSON</h4>
+                    <pre style={{ ...codePanelStyle, marginTop: 8, maxHeight: 320 }}>
 {JSON.stringify(selectedSampleRow, null, 2)}
-                  </pre>
-                </div>
-
-                <div>
-                  <h4 style={{ margin: '0 0 8px', color: palette.textStrong }}>Indexes / Definition raw JSON</h4>
-                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: '#0f172a', color: '#e2e8f0', padding: 14, borderRadius: 16, fontSize: '.8rem', lineHeight: 1.55, maxHeight: 420, overflow: 'auto' }}>
+                    </pre>
+                  </div>
+                  <div>
+                    <h4 style={sectionTitleStyle}>Indexes / Definition raw JSON</h4>
+                    <pre style={{ ...codePanelStyle, marginTop: 8, maxHeight: 320 }}>
 {JSON.stringify({ indexes: selectedObject?.indexes || [], definition: selectedObject?.definition || null }, null, 2)}
-                  </pre>
+                    </pre>
+                  </div>
                 </div>
               </div>
             )}
           </section>
 
-          <section style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
-            <div style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 18, padding: 16 }}>
-              <h3 style={{ margin: '0 0 10px', fontSize: '1rem', color: palette.textStrong }}>Latest Pipeline Runs raw JSON</h3>
-              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: '#0f172a', color: '#e2e8f0', padding: 14, borderRadius: 16, fontSize: '.8rem', lineHeight: 1.55, maxHeight: 360, overflow: 'auto' }}>
+          <details style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 12, padding: '10px 12px' }}>
+            <summary style={{ cursor: 'pointer', color: palette.textStrong, fontWeight: 700 }}>Ancillary raw JSON</summary>
+            <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+                <div>
+                  <h4 style={sectionTitleStyle}>Latest Pipeline Runs raw JSON</h4>
+                  <pre style={{ ...codePanelStyle, marginTop: 8, maxHeight: 320 }}>
 {JSON.stringify(bundle?.latest_pipeline_runs || [], null, 2)}
-              </pre>
-            </div>
-            <div style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 18, padding: 16 }}>
-              <h3 style={{ margin: '0 0 10px', fontSize: '1rem', color: palette.textStrong }}>Latest Dead Letter Queue raw JSON</h3>
-              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: '#0f172a', color: '#e2e8f0', padding: 14, borderRadius: 16, fontSize: '.8rem', lineHeight: 1.55, maxHeight: 360, overflow: 'auto' }}>
+                  </pre>
+                </div>
+                <div>
+                  <h4 style={sectionTitleStyle}>Latest Dead Letter Queue raw JSON</h4>
+                  <pre style={{ ...codePanelStyle, marginTop: 8, maxHeight: 320 }}>
 {JSON.stringify(bundle?.latest_dead_letter_queue || [], null, 2)}
-              </pre>
-            </div>
-          </section>
+                  </pre>
+                </div>
+              </div>
 
-          <section style={{ background: palette.surface, border: `1px solid ${palette.border}`, borderRadius: 18, padding: 16 }}>
-            <h3 style={{ margin: '0 0 12px', fontSize: '1rem', color: palette.textStrong }}>Customer-Facing Retrieval Debug</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,1fr) 120px 90px 140px', gap: 10, alignItems: 'end' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '.8rem', color: palette.textMuted, fontWeight: 800, marginBottom: 6 }}>query</label>
-                <textarea value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: '100%', minHeight: 92, borderRadius: 14, border: `1px solid ${palette.border}`, padding: 12, color: palette.textStrong, background: palette.surfaceMuted }} />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '.8rem', color: palette.textMuted, fontWeight: 800, marginBottom: 6 }}>segment</label>
-                <select value={segment} onChange={(e) => setSegment(e.target.value as 'parent' | 'worker')} style={{ width: '100%', borderRadius: 14, border: `1px solid ${palette.border}`, padding: 12, color: palette.textStrong, background: palette.surfaceMuted }}>
-                  <option value="parent">parent</option>
-                  <option value="worker">worker</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '.8rem', color: palette.textMuted, fontWeight: 800, marginBottom: 6 }}>k</label>
-                <input type="number" min={1} max={12} value={k} onChange={(e) => setK(Number(e.target.value))} style={{ width: '100%', borderRadius: 14, border: `1px solid ${palette.border}`, padding: 12, color: palette.textStrong, background: palette.surfaceMuted }} />
-              </div>
-              <button type="button" onClick={() => void runDebug()} style={{ border: 'none', borderRadius: 14, background: '#0f172a', color: '#fff', padding: '12px 14px', fontWeight: 800 }}>
-                {debugLoading ? '실행 중…' : '실행'}
-              </button>
-            </div>
-            <pre style={{ margin: '14px 0 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: '#0f172a', color: '#e2e8f0', padding: 14, borderRadius: 16, fontSize: '.8rem', lineHeight: 1.55, maxHeight: 420, overflow: 'auto' }}>
+                <h4 style={sectionTitleStyle}>Customer-Facing Retrieval Debug</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,1fr) 120px 90px 140px', gap: 10, alignItems: 'end', marginTop: 8 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '.8rem', color: palette.textMuted, fontWeight: 800, marginBottom: 6 }}>query</label>
+                    <textarea value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: '100%', minHeight: 92, borderRadius: 10, border: `1px solid ${palette.border}`, padding: 12, color: palette.textStrong, background: palette.surfaceMuted }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '.8rem', color: palette.textMuted, fontWeight: 800, marginBottom: 6 }}>segment</label>
+                    <select value={segment} onChange={(e) => setSegment(e.target.value as 'parent' | 'worker')} style={{ width: '100%', borderRadius: 10, border: `1px solid ${palette.border}`, padding: 12, color: palette.textStrong, background: palette.surfaceMuted }}>
+                      <option value="parent">parent</option>
+                      <option value="worker">worker</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '.8rem', color: palette.textMuted, fontWeight: 800, marginBottom: 6 }}>k</label>
+                    <input type="number" min={1} max={12} value={k} onChange={(e) => setK(Number(e.target.value))} style={{ width: '100%', borderRadius: 10, border: `1px solid ${palette.border}`, padding: 12, color: palette.textStrong, background: palette.surfaceMuted }} />
+                  </div>
+                  <button type="button" onClick={() => void runDebug()} style={{ border: 'none', borderRadius: 10, background: '#0f172a', color: '#fff', padding: '12px 14px', fontWeight: 800 }}>
+                    {debugLoading ? '실행 중…' : '실행'}
+                  </button>
+                </div>
+                <pre style={{ ...codePanelStyle, marginTop: 12, maxHeight: 420 }}>
 {JSON.stringify(debugResult || {}, null, 2)}
-            </pre>
-          </section>
+                </pre>
+              </div>
+            </div>
+          </details>
         </div>
       </section>
 
