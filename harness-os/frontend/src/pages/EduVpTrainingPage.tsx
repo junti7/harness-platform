@@ -978,9 +978,10 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
         headers: { 'Content-Type': 'application/json', ...trainingHeaders() },
         body: JSON.stringify({ case_id: caseId, stage, ...payload }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
-      const nextTrainingState = normalizeTrainingState(data.training_state || null)
+      const { raw, data } = await readJsonSafe(res)
+      const detail = typeof data.detail === 'string' ? data.detail : ''
+      if (!res.ok) throw new Error(detail || raw || `HTTP ${res.status}`)
+      const nextTrainingState = normalizeTrainingState((data.training_state as TrainingState | null | undefined) || null)
       setTrainingState(nextTrainingState)
       setShowContinueFrom(stage)
       setUiState((prev) => ({ ...prev, show_continue_from: stage }))
@@ -1003,9 +1004,10 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
         headers: { 'Content-Type': 'application/json', ...trainingHeaders() },
         body: JSON.stringify({ case_id: caseId, stage, ...payload }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
-      const nextTrainingState = normalizeTrainingState(data.training_state || null)
+      const { raw, data } = await readJsonSafe(res)
+      const detail = typeof data.detail === 'string' ? data.detail : ''
+      if (!res.ok) throw new Error(detail || raw || `HTTP ${res.status}`)
+      const nextTrainingState = normalizeTrainingState((data.training_state as TrainingState | null | undefined) || null)
       setTrainingState(nextTrainingState)
       if (authEmail.trim()) persistSessionCache(authEmail.trim().toLowerCase(), caseId, nextTrainingState, latestUiStateRef.current)
       if (showCaseArchive) await loadCases()
@@ -1083,7 +1085,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       })
       const { data } = await readJsonSafe(res)
       if (!res.ok) {
-        setError('진행 기록 저장에 실패했습니다. 새로고침하지 말고 잠시 후 다시 시도하세요.')
+        console.warn('VP training session sync failed', { status: res.status, eventType, eventName })
         return
       }
       if (data.ignored_stale_sync && data.training_state) {
@@ -1094,8 +1096,8 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
           applyTrainingSession(safeEmail, nextCaseId, data.training_state as TrainingState)
         }
       }
-    } catch {
-      setError('진행 기록 저장에 실패했습니다. 네트워크 상태를 확인하세요.')
+    } catch (err) {
+      console.warn('VP training session sync network failure', err)
       return
     }
   }
