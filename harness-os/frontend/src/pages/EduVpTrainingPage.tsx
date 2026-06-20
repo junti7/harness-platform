@@ -612,6 +612,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
   const [selectedStage, setSelectedStage] = useState<'week0' | 'week1'>('week0')
   const [showContinueFrom, setShowContinueFrom] = useState<'week0' | 'week1' | null>(null)
   const [activeCurriculumIndex, setActiveCurriculumIndex] = useState(0)
+  const [resettingCases, setResettingCases] = useState(false)
   const archivedCases = caseHistory.filter((item) => item.case_id !== caseId)
   const hasCaseHistory = archivedCases.length > 0
 
@@ -782,6 +783,36 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       setError(err instanceof Error ? err.message : 'feedback save failed')
     } finally {
       setSavingFeedbackStage(null)
+    }
+  }
+
+  async function resetAllCases() {
+    const safeEmail = authEmail.trim().toLowerCase()
+    if (!safeEmail || resettingCases) return
+    const confirmed = window.confirm('현재 계정의 VP 훈련 케이스를 모두 삭제하고 처음부터 다시 시작할까요?')
+    if (!confirmed) return
+    setResettingCases(true)
+    setError(null)
+    try {
+      const res = await fetch(`${apiBase}/api/edu/vp-training/cases/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ email: safeEmail }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
+      window.localStorage.removeItem(caseStorageKey(safeEmail))
+      setCaseId(null)
+      setTrainingState(null)
+      setCaseHistory([])
+      setShowCaseArchive(false)
+      setSelectedStage('week0')
+      setShowContinueFrom(null)
+      await buildTrainingSlice(undefined, true, safeEmail)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'case reset failed')
+    } finally {
+      setResettingCases(false)
     }
   }
 
@@ -956,11 +987,14 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
               </button>
             ) : (
               <>
-                <button type="button" onClick={() => void buildTrainingSlice(caseId, false)} disabled={loading} style={{ width: isMobile ? '100%' : undefined, background: '#111827', color: '#fff', border: 'none', borderRadius: 14, padding: '12px 16px', fontWeight: 800, cursor: loading ? 'wait' : 'pointer' }}>
+                <button type="button" onClick={() => void buildTrainingSlice(caseId, false)} disabled={loading || resettingCases} style={{ width: isMobile ? '100%' : undefined, background: '#111827', color: '#fff', border: 'none', borderRadius: 14, padding: '12px 16px', fontWeight: 800, cursor: loading || resettingCases ? 'wait' : 'pointer' }}>
                   {loading ? 'Day 플로우 생성 중…' : trainingState ? 'VP AI 훈련 이어서 하기' : 'VP AI 훈련 시작'}
                 </button>
-                <button type="button" onClick={() => void buildTrainingSlice(undefined, true)} disabled={loading} style={{ width: isMobile ? '100%' : undefined, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: loading ? 'wait' : 'pointer' }}>
+                <button type="button" onClick={() => void buildTrainingSlice(undefined, true)} disabled={loading || resettingCases} style={{ width: isMobile ? '100%' : undefined, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: loading || resettingCases ? 'wait' : 'pointer' }}>
                   새 케이스로 다시 시작
+                </button>
+                <button type="button" onClick={() => void resetAllCases()} disabled={loading || resettingCases} style={{ width: isMobile ? '100%' : undefined, background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: loading || resettingCases ? 'wait' : 'pointer' }}>
+                  {resettingCases ? '전체 초기화 중…' : '전체 초기화'}
                 </button>
                 {!embeddedMode && (
                   <button type="button" onClick={logoutTrainingAccount} style={{ width: isMobile ? '100%' : undefined, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: 'pointer' }}>

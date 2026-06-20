@@ -5873,6 +5873,15 @@ class EduVpTrainingAccountUpdateEmailRequest(BaseModel):
     new_email: str = ""
 
 
+class EduVpTrainingCaseDeleteRequest(BaseModel):
+    case_id: int
+    email: str = ""
+
+
+class EduVpTrainingCaseResetRequest(BaseModel):
+    email: str = ""
+
+
 def _edu_normalize_email(email: str) -> str:
     return (email or "").strip().lower()
 
@@ -9583,6 +9592,107 @@ def edu_vp_training_cases(
             }
         )
     return {"ok": True, "cases": items}
+
+
+@app.post("/api/edu/vp-training/cases/delete")
+def edu_vp_training_case_delete(
+    req: EduVpTrainingCaseDeleteRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    safe_email = _edu_normalize_email(req.email)
+    case_id = int(req.case_id)
+    if not safe_email:
+        raise HTTPException(400, "email is required")
+    rows = _edu_execute(
+        """
+        SELECT c.id AS case_id,
+               c.customer_id,
+               c.status,
+               COALESCE((
+                   SELECT s.summary_json->>'program'
+                   FROM edu_case_snapshots s
+                   WHERE s.case_id = c.id
+                   ORDER BY s.id DESC
+                   LIMIT 1
+               ), '') AS program
+        FROM edu_cases c
+        JOIN edu_customers cu ON cu.id = c.customer_id
+        WHERE c.id = %s
+          AND LOWER(COALESCE(cu.email, '')) = %s
+        LIMIT 1
+        """,
+        (case_id, safe_email),
+        fetch=True,
+    )
+    if not rows:
+        raise HTTPException(404, "case not found")
+    row = rows[0]
+    status = str(row.get("status") or "")
+    program = str(row.get("program") or "")
+    if program not in {"", "vp_training"} and not status.startswith("vp_training"):
+        raise HTTPException(400, "only vp training cases can be deleted from this endpoint")
+    customer_id = int(row["customer_id"])
+    _edu_execute(
+        "DELETE FROM edu_cases WHERE id = %s AND customer_id = %s",
+        (case_id, customer_id),
+        fetch=False,
+    )
+    remaining_rows = _edu_execute(
+        "SELECT COUNT(*) AS cnt FROM edu_cases WHERE customer_id = %s",
+        (customer_id,),
+        fetch=True,
+    )
+    remaining_cases = int((remaining_rows[0] or {}).get("cnt") or 0) if remaining_rows else 0
+    return {
+        "ok": True,
+        "deleted_case_id": case_id,
+        "email": safe_email,
+        "remaining_cases": remaining_cases,
+    }
+
+
+@app.post("/api/edu/vp-training/cases/reset")
+def edu_vp_training_case_reset(
+    req: EduVpTrainingCaseResetRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    safe_email = _edu_normalize_email(req.email)
+    if not safe_email:
+        raise HTTPException(400, "email is required")
+    rows = _edu_execute(
+        """
+        SELECT c.id AS case_id
+        FROM edu_cases c
+        JOIN edu_customers cu ON cu.id = c.customer_id
+        LEFT JOIN LATERAL (
+            SELECT COALESCE(s.summary_json->>'program', '') AS program
+            FROM edu_case_snapshots s
+            WHERE s.case_id = c.id
+            ORDER BY s.id DESC
+            LIMIT 1
+        ) snap ON TRUE
+        WHERE LOWER(COALESCE(cu.email, '')) = %s
+          AND (
+              COALESCE(snap.program, '') IN ('', 'vp_training')
+              OR c.status LIKE 'vp_training%%'
+          )
+        """,
+        (safe_email,),
+        fetch=True,
+    )
+    deleted_case_ids = [int(row["case_id"]) for row in rows if row.get("case_id") is not None]
+    if deleted_case_ids:
+        _edu_execute(
+            "DELETE FROM edu_cases WHERE id = ANY(%s)",
+            (deleted_case_ids,),
+            fetch=False,
+        )
+    return {
+        "ok": True,
+        "email": safe_email,
+        "deleted_case_ids": deleted_case_ids,
+        "deleted_count": len(deleted_case_ids),
+    }
 
 
 def _edu_vp_material_zip_bytes(kit_id: str) -> tuple[str, bytes]:
