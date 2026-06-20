@@ -4171,9 +4171,11 @@ def _paper_trade_flow_payload() -> dict[str, Any]:
         },
         "trade_flow": events[:80],
         "runtime_state": {
-            "alpaca_tracked": sorted((alpaca_state.get("turtle_positions") or {}).keys()),
-            "ibkr_positions": sorted((ibkr_state.get("positions") or {}).keys()),
-            "ibkr_pending_orders": sorted((ibkr_state.get("pending_orders") or {}).keys()),
+            # 손상 shape(non-dict) 내성: 상태 파일이 list/str 로 오염돼도 .keys() 에서 죽지 않게
+            # 빈 리스트로 강등한다(Red Team 2026-06-20 MAJOR — selection-flow 500 방지).
+            "alpaca_tracked": _safe_state_keys(alpaca_state.get("turtle_positions")),
+            "ibkr_positions": _safe_state_keys(ibkr_state.get("positions")),
+            "ibkr_pending_orders": _safe_state_keys(ibkr_state.get("pending_orders")),
             "reset_status": reset_status,
         },
     }
@@ -4308,6 +4310,15 @@ def _ibkr_configured_mode() -> str:
     return "paper" if os.getenv("IBKR_TRADING_MODE", "paper").strip().lower() == "paper" else "live"
 
 
+def _safe_state_keys(container) -> list:
+    """런타임 상태 파일의 dict 필드에서 정렬된 키 목록을 안전하게 추출.
+
+    상태 파일(ibkr_tws_positions.json 등)이 손상돼 positions/pending_orders 가 dict 가 아니면
+    .keys() 가 AttributeError 로 관측 엔드포인트(selection-flow)를 죽인다. non-dict 는 [] 로 강등.
+    """
+    return sorted(container.keys()) if isinstance(container, dict) else []
+
+
 def _is_nav_point(p) -> bool:
     """nav_history 원소가 프론트 NavPoint 계약(date:str, value:number, pnl_pct:number|null)을 만족하는지.
 
@@ -4361,7 +4372,7 @@ def _is_ibkr_monitor_result(obj) -> bool:
     # 프론트가 순회하는 선택 필드의 컨테이너 타입 검증(11R MAJOR): 있는데 타입이 틀리면
     # exit_signals.map / recent_orders.map / Object.entries(forex_rates) 가 런타임에 깨진다.
     # (없으면 프론트가 ?? [] 로 방어하므로 허용)
-    for k in ("exit_signals", "recent_orders"):
+    for k in ("exit_signals", "recent_orders", "pending_orders"):
         v = obj.get(k)
         if v is not None and not isinstance(v, list):
             return False
@@ -4572,10 +4583,19 @@ def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
             pass
         
         positions = []
+        pending_orders = []
         if state_path.exists():
             with open(state_path, "r", encoding="utf-8") as f:
                 state_data = _json.load(f)
-            for sym, meta in state_data.get("positions", {}).items():
+            if not isinstance(state_data, dict):
+                state_data = {}
+            # positions 도 pending_orders 와 동일한 손상 shape 내성(Red Team 2026-06-20 MAJOR):
+            # non-dict 면 빈 dict 로 강등해 cold-start 가 generic fallback 으로 떨어지지 않게 한다.
+            _positions_state = state_data.get("positions")
+            _positions_items = _positions_state.items() if isinstance(_positions_state, dict) else []
+            for sym, meta in _positions_items:
+                if not isinstance(meta, dict):
+                    continue
                 positions.append({
                     "symbol": sym,
                     "qty": meta.get("qty", 0),
@@ -4583,7 +4603,32 @@ def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
                     "stop_loss": meta.get("stop_loss", 0.0),
                     "action": "HOLD",
                 })
-        
+            # 진입 대기(미체결) 주문도 cold-start 화면에 노출(handoff: TSM/MU/SK하이닉스 PreSubmitted).
+            # 현재가/갭은 background 모니터가 캐시를 채우면 갱신되므로 여기선 durable 메타만 싣는다.
+            # 상태 파일 손상 내성(Red Team Codex 2026-06-20 MAJOR): pending_orders 가 dict 가 아니면
+            # 빈 값으로 강등해 관측 계층(cold-start API)이 .items() 에서 죽지 않게 한다.
+            _pending_state = state_data.get("pending_orders")
+            _pending_items = _pending_state.items() if isinstance(_pending_state, dict) else []
+            for sym, meta in _pending_items:
+                if not isinstance(meta, dict):
+                    continue
+                pending_orders.append({
+                    "symbol": sym,
+                    "exchange": meta.get("exchange", "SMART"),
+                    "currency": meta.get("currency", "USD"),
+                    "region": meta.get("region", "US"),
+                    "qty": meta.get("qty", 0),
+                    "entry_ts": meta.get("entry_ts", ""),
+                    "entry_price": meta.get("entry_price", 0.0),
+                    "stop_loss": meta.get("stop_loss"),
+                    "atr": meta.get("atr"),
+                    "order_id": meta.get("order_id"),
+                    "status": meta.get("status") or "pending",
+                    "current_price": None,
+                    "gap_to_entry_pct": None,
+                    "age_hours": None,
+                })
+
         # cold-start 유니버스: ibkr 트레이더(ibkr_tws_paper_trader)·warm cache(ibkr_turtle_monitor)와
         # **동일 소스/필터** = load_trading_universe(broker="ibkr"). configs/universe.json(부재) 및
         # 임의 ≥7 하드필터 제거(Red Team Codex#2): ibkr 경로는 broker 유니버스 전체를 후보로 본다.
@@ -4616,6 +4661,7 @@ def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
             "gateway_connected": gateway_connected,
             "account": None,
             "positions": positions,
+            "pending_orders": pending_orders,
             "exit_signals": [],
             "entry_candidates": universe,
             "universe_source": "universe.json",

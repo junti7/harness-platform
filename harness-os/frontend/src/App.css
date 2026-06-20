@@ -6413,6 +6413,31 @@ td.pnl-neg,
   color: var(--warning, #d97706);
   border: 1px solid rgba(217, 119, 6, 0.25);
 }
+.action-pending-badge {
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--info, #2563eb);
+  border: 1px solid rgba(37, 99, 235, 0.22);
+}
+
+/* ── 대기 주문(미체결) 카드 ── */
+.ibkr-pending-section {
+  margin-top: 0.5rem;
+}
+.pending-order-card {
+  border-left-color: var(--info, #2563eb);
+  background: rgba(37, 99, 235, 0.025);
+}
+.pending-order-card.pending-stale {
+  border-left-color: var(--warning, #d97706);
+  background: rgba(217, 119, 6, 0.04);
+}
+.pending-stale-note {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--warning, #d97706);
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border, #e2e8f0);
+}
 
 /* ── 진입 스캐너 ── */
 .entry-scanner-section {

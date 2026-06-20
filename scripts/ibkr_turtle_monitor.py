@@ -363,15 +363,26 @@ def load_universe() -> tuple[list[dict], str]:
 def load_state() -> dict:
     if STATE_PATH.exists():
         try:
-            return json.loads(STATE_PATH.read_text())
+            state = json.loads(STATE_PATH.read_text())
+            if not isinstance(state, dict):
+                state = {}
+            # 손상 state 내성(Red Team 2026-06-20 MAJOR): positions/pending_orders 가 dict 가 아니면
+            # 빈 dict 로 교정한다. 모니터의 run()/run_offline() 이 .items()/.keys() 로 순회하므로,
+            # writer(ibkr_tws_paper_trader.load_state)와 동일한 교정을 적용해 손상 파일에서도 죽지 않게 한다.
+            for _k in ("positions", "pending_orders"):
+                if _k in state and not isinstance(state.get(_k), dict):
+                    state[_k] = {}
+            return state
         except Exception:
             pass
     return {"positions": {}, "last_run": None}
 
 
 def save_state(s: dict) -> None:
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps(s, indent=2, ensure_ascii=False))
+    # 원자적 쓰기(Red Team 2026-06-20 MAJOR): paper_trader/backend 가 같은 파일을 교차로 읽으므로
+    # 비원자적 write_text 는 torn-read(JSONDecodeError)를 유발할 수 있다. tmp+rename 으로 방지.
+    from core.atomic_io import atomic_write_json
+    atomic_write_json(STATE_PATH, s)
 
 
 def log_entry(entry: dict) -> None:
@@ -663,6 +674,76 @@ def assess_position(pos_meta: dict, sig: dict | None) -> dict:
         "near_stop":          near_stop,
         "near_s1":            near_s1,
     }
+
+
+def assess_pending_order(meta: dict, cand: dict | None) -> dict:
+    """미체결(PreSubmitted/PendingSubmit/Submitted) 진입 주문을 화면용으로 평가.
+
+    durable 한 state["pending_orders"][sym] 메타(ibkr_tws_paper_trader 가 기록)를 받아
+    현재가(entry_candidates 재사용) 대비 진입기준가 갭과 경과 시간을 덧붙인다. 가격 조회 없이
+    이미 계산된 후보 가격만 재사용하므로 부작용/네트워크 호출이 없다(읽기 전용 가시화).
+
+    age_hours 는 writer(ibkr_tws_paper_trader)가 now_iso()로 tz-aware UTC 를 적재하는 것을
+    전제로 한다. 방어적으로 naive entry_ts 는 UTC 로 간주한다(crash 방지). writer 가 로컬시간
+    naive 를 남기면 age 가 tz offset 만큼 어긋나 stale 경고가 오작동할 수 있으나, 현 writer 는
+    항상 UTC aware 라 실무상 영향 없음(Red Team 2026-06-20 MINOR).
+    """
+    entry_price = meta.get("entry_price", 0) or 0
+    current_price = cand.get("current_price") if cand else None
+    gap_to_entry_pct = (
+        round((current_price - entry_price) / entry_price * 100, 2)
+        if current_price is not None and entry_price > 0 else None
+    )
+    age_hours = None
+    entry_ts = meta.get("entry_ts") or ""
+    if entry_ts:
+        try:
+            placed = datetime.fromisoformat(entry_ts)
+            if placed.tzinfo is None:
+                placed = placed.replace(tzinfo=timezone.utc)
+            age_hours = round((datetime.now(timezone.utc) - placed).total_seconds() / 3600, 1)
+        except Exception:
+            age_hours = None
+    return {
+        "symbol":           meta.get("symbol", ""),
+        "exchange":         meta.get("exchange", "SMART"),
+        "currency":         meta.get("currency", "USD"),
+        "region":           meta.get("region", "US"),
+        "qty":              meta.get("qty", 0),
+        "entry_ts":         entry_ts,
+        "entry_price":      entry_price,
+        "stop_loss":        meta.get("stop_loss"),
+        "atr":              meta.get("atr"),
+        "order_id":         meta.get("order_id"),
+        "status":           meta.get("status") or "pending",
+        "current_price":    current_price,
+        "gap_to_entry_pct": gap_to_entry_pct,
+        "age_hours":        age_hours,
+    }
+
+
+def _collect_pending_orders(state: dict, entry_candidates: list[dict], json_mode: bool) -> list[dict]:
+    """state["pending_orders"] 를 평가해 화면용 리스트로 반환. 현재가는 스캔 결과 재사용."""
+    pending_state = state.get("pending_orders") or {}
+    if not isinstance(pending_state, dict) or not pending_state:
+        return []
+    cand_by_symbol = {c.get("symbol"): c for c in entry_candidates}
+    _p("\n── 대기 주문(Pending Orders) 평가 ──", json_mode)
+    results: list[dict] = []
+    for sym, raw in pending_state.items():
+        meta = {**(raw if isinstance(raw, dict) else {}), "symbol": sym}
+        assessed = assess_pending_order(meta, cand_by_symbol.get(sym))
+        results.append(assessed)
+        cp = assessed["current_price"]
+        cp_str = f"${cp:.2f}" if cp is not None else "—"
+        age = assessed["age_hours"]
+        age_str = f" | {age}h 경과" if age is not None else ""
+        _p(
+            f"  [{sym}] {assessed['status']} | {assessed['qty']}주 | "
+            f"진입기준 {assessed['entry_price']} | 현재 {cp_str} | 주문ID {assessed['order_id']}{age_str}",
+            json_mode,
+        )
+    return results
 
 
 # ── 메인 실행 ─────────────────────────────────────────────────────────────────
@@ -1001,6 +1082,12 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
                     "in_position":   in_pos,
                 })
 
+    # ── 대기 주문(Pending Orders) 평가 ───────────────────────────────────────
+    # ibkr_tws_paper_trader 가 진입 주문을 placeOrder 후 미체결이면 state["pending_orders"]에
+    # durable 하게 적재한다. 모니터는 기존에 positions 만 순회해 이 진입 대기 주문이 화면에서
+    # 사라졌다(handoff: TSM/MU/SK하이닉스 PreSubmitted 미표시). 스캔 결과 현재가를 재사용해 가시화.
+    pending_orders = _collect_pending_orders(state, entry_candidates, json_mode)
+
     # ── 최근 주문/체결 내역 수집 (연결 해제 전) ──────────────────────────────
     recent_orders: list[dict] = []
     orders_history_ok = True
@@ -1115,7 +1202,7 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
         except Exception:
             pass
 
-    _p(f"\n완료 | 포지션: {len(position_results)}건 | EXIT 신호: {len(exit_signals)}건 | 스캔: {len(entry_candidates)}종목", json_mode)
+    _p(f"\n완료 | 포지션: {len(position_results)}건 | 대기주문: {len(pending_orders)}건 | EXIT 신호: {len(exit_signals)}건 | 스캔: {len(entry_candidates)}종목", json_mode)
 
     return {
         "ok":               True,
@@ -1124,6 +1211,7 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
         "gateway_connected": gateway_connected,
         "account":          account_data,
         "positions":        position_results,
+        "pending_orders":   pending_orders,
         "exit_signals":     exit_signals,
         "entry_candidates": entry_candidates,
         "universe_source":  universe_source,
@@ -1145,6 +1233,11 @@ def run_offline() -> dict:
         meta["symbol"] = sym
         assessed = assess_position(meta, None)
         positions.append(assessed)
+    _pending_state = state.get("pending_orders")
+    pending_orders = [
+        assess_pending_order({**(meta if isinstance(meta, dict) else {}), "symbol": sym}, None)
+        for sym, meta in (_pending_state.items() if isinstance(_pending_state, dict) else [])
+    ]
     candidates = [
         {
             "symbol":        u["symbol"],
@@ -1170,6 +1263,7 @@ def run_offline() -> dict:
         "gateway_connected": False,
         "account":          None,
         "positions":        positions,
+        "pending_orders":   pending_orders,
         "exit_signals":     [],
         "entry_candidates": candidates,
         "universe_source":  universe_source,
@@ -1198,6 +1292,7 @@ if __name__ == "__main__":
             "gateway_connected": False,
             "account":          None,
             "positions":        [],
+            "pending_orders":   [],
             "exit_signals":     [],
             "entry_candidates": [],
             "universe_source":  "hardcoded",

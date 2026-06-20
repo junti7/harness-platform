@@ -33,6 +33,23 @@ type IbkrPosition = {
   near_s1: boolean
 }
 
+type IbkrPendingOrder = {
+  symbol: string
+  exchange: string
+  currency: string
+  region: string
+  qty: number
+  entry_ts: string
+  entry_price: number
+  stop_loss: number | null
+  atr: number | null
+  order_id: number | string | null
+  status: string
+  current_price: number | null
+  gap_to_entry_pct: number | null
+  age_hours: number | null
+}
+
 type IbkrCandidate = {
   symbol: string
   current_price: number | null
@@ -59,6 +76,7 @@ type IbkrMonitorData = {
   }
   account: IbkrAccount | null
   positions: IbkrPosition[]
+  pending_orders?: IbkrPendingOrder[]
   exit_signals: string[]
   entry_candidates: IbkrCandidate[]
   universe_source: string
@@ -99,6 +117,22 @@ function fmtUsd(n: number | undefined | null): string {
   const v = n as number
   const sign = v >= 0 ? '+$' : '-$'
   return `${sign}${fmt(Math.abs(v), 2)}`
+}
+
+function curSym(currency: string | undefined): string {
+  switch (currency) {
+    case 'KRW': return '₩'
+    case 'JPY': return '¥'
+    case 'TWD': return 'NT$'
+    case 'HKD': return 'HK$'
+    default: return '$'
+  }
+}
+
+function fmtPrice(n: number | undefined | null, currency: string | undefined): string {
+  if (n === undefined || n === null || isNaN(n as number)) return '—'
+  const decimals = currency === 'KRW' || currency === 'JPY' ? 0 : 2
+  return `${curSym(currency)}${fmt(n, decimals)}`
 }
 
 function relTime(iso: string): string {
@@ -323,6 +357,7 @@ function SystemStatusRow({
   const acct      = data?.account
   const exitCnt   = data?.exit_signals?.length ?? 0
   const posCnt    = data?.positions?.length ?? 0
+  const pendingCnt = data?.pending_orders?.length ?? 0
   const statusLabel = gatewayStatusLabel(gatewayStatus, connected)
   const dotClass = gatewayDotClass(gatewayStatus, connected)
 
@@ -361,6 +396,15 @@ function SystemStatusRow({
         <span className="ibkr-status-label">포지션</span>
         <span className="ibkr-status-value">{posCnt}건</span>
       </span>
+      {pendingCnt > 0 && (
+        <>
+          <span className="ibkr-status-sep">·</span>
+          <span className="ibkr-status-item">
+            <span className="ibkr-status-label">대기주문</span>
+            <span className="ibkr-status-value">{pendingCnt}건</span>
+          </span>
+        </>
+      )}
       {exitCnt > 0 && (
         <>
           <span className="ibkr-status-sep">·</span>
@@ -429,6 +473,68 @@ function PositionCard({ pos }: { pos: IbkrPosition }) {
           <span>시장가치 ${fmt(pos.market_value, 0)}</span>
         )}
       </div>
+    </article>
+  )
+}
+
+// ── 대기 주문(미체결) 카드 ────────────────────────────────────────────────────
+
+function PendingStatusBadge({ status }: { status: string }) {
+  const s = (status || '').toLowerCase()
+  const label =
+    s === 'presubmitted' ? 'PreSubmitted'
+    : s === 'pendingsubmit' ? 'PendingSubmit'
+    : s === 'submitted' ? 'Submitted'
+    : status || '대기'
+  return <span className="position-action-badge action-pending-badge">{label}</span>
+}
+
+function PendingOrderCard({ po }: { po: IbkrPendingOrder }) {
+  const stale = (po.age_hours ?? 0) >= 24
+  const gap = po.gap_to_entry_pct
+  return (
+    <article className={`position-risk-card pending-order-card ${stale ? 'pending-stale' : ''}`}>
+      {/* 헤더 */}
+      <div className="prcard-header">
+        <div className="prcard-symbol">
+          <strong>{po.symbol}</strong>
+          <small>{symName(po.symbol)}</small>
+        </div>
+        <PendingStatusBadge status={po.status} />
+      </div>
+
+      {/* 메타 */}
+      <div className="prcard-meta">
+        {po.qty}주 · {po.exchange} · 주문 {po.order_id ?? '—'}
+        {po.age_hours !== null && po.age_hours !== undefined && ` · ${fmt(po.age_hours, 1)}h 경과`}
+      </div>
+
+      {/* 가격 */}
+      <div className="prcard-prices">
+        <div className="prcard-price-main">
+          {po.current_price !== null ? fmtPrice(po.current_price, po.currency) : '대기 중'}
+        </div>
+        <div className="prcard-price-entry">
+          진입기준 {fmtPrice(po.entry_price, po.currency)}
+        </div>
+        {gap !== null && gap !== undefined && (
+          <div className={`prcard-pnl ${gap >= 0 ? 'pnl-pos' : 'pnl-neg'}`}>
+            <span>현재가 대비 {fmtPct(gap)}</span>
+          </div>
+        )}
+      </div>
+
+      {/* 푸터 */}
+      <div className="prcard-footer">
+        <span>손절 {fmtPrice(po.stop_loss, po.currency)}</span>
+        {po.atr !== null && po.atr !== undefined && <span>ATR {fmt(po.atr)}</span>}
+      </div>
+
+      {stale && (
+        <div className="pending-stale-note">
+          ⚠ 24시간+ 미체결 — IB Gateway 연결/주문 상태를 확인하세요
+        </div>
+      )}
     </article>
   )
 }
@@ -640,6 +746,7 @@ export function IbkrTurtleMonitor({ apiBase, authHeaders }: Props) {
   }
 
   const positions        = data?.positions ?? []
+  const pendingOrders    = data?.pending_orders ?? []
   const candidates       = data?.entry_candidates ?? []
   const exitSignals      = data?.exit_signals ?? []
   const hasExitSignals   = exitSignals.length > 0
@@ -782,6 +889,27 @@ export function IbkrTurtleMonitor({ apiBase, authHeaders }: Props) {
           <p className="data-meta">현재 IBKR에 보유 중인 포지션이 없습니다.</p>
           <p className="term-note">신호 스캐너에서 진입 기회를 확인하세요.</p>
         </article>
+      )}
+
+      {/* ── 대기 주문(미체결) ── */}
+      {pendingOrders.length > 0 && (
+        <div className="ibkr-pending-section">
+          <div className="panel-head" style={{ marginBottom: '0.5rem' }}>
+            <h3>대기 주문 (미체결)</h3>
+            <span className="data-meta">
+              {pendingOrders.length}건 · 진입 주문이 아직 체결되지 않았습니다
+            </span>
+            <span className="term-note">
+              브로커에 제출됐으나 아직 체결 전(PreSubmitted / PendingSubmit / Submitted)인 진입 주문입니다.
+              체결되면 '현재 포지션'으로 이동합니다.
+            </span>
+          </div>
+          <div className="position-cards-grid">
+            {pendingOrders.map(po => (
+              <PendingOrderCard key={`${po.symbol}-${po.order_id ?? 'na'}`} po={po} />
+            ))}
+          </div>
+        </div>
       )}
 
       {/* ── 진입 신호 스캐너 ── */}

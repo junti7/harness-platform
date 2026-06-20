@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-06-20 — IBKR 대기 주문(pending_orders) 대시보드 가시화 + 상태파일 손상 내성 (CEO confirm 머지)
+
+- 대상: `scripts/ibkr_turtle_monitor.py`(`assess_pending_order`/`_collect_pending_orders` 신규, run()/run_offline()/예외 fallback 에 `pending_orders` 추가, `load_state` 손상 shape 교정, `save_state` 원자화) + `scripts/ibkr_tws_paper_trader.py`(`load_state` 손상 shape 교정, `save_state` 원자화) + `harness-os/backend/main.py`(`_is_ibkr_monitor_result` pending_orders 컨테이너 검증, cold-start positions+pending 손상 내성, `_safe_state_keys` 헬퍼로 selection-flow runtime_state 강등) + `core/atomic_io.py`(공용 `atomic_write_json`, 신규) + 프론트 `IbkrTurtleMonitor.tsx`/`App.css`(대기주문 카드·배지·상태행 카운트) + 테스트 3종(`test_ibkr_pending_orders.py`/`test_atomic_io.py` 신규, `test_ibkr_monitor_cache_parse.py` 보강).
+- 배경(handoff `ibkr_pending_visibility`): IBKR 진입 주문이 미체결(PreSubmitted/PendingSubmit)이면 `ibkr_tws_paper_trader` 가 `state["pending_orders"]` 에 durable 적재하나, 모니터는 `state["positions"]` 만 순회해 TSM/MU/SK하이닉스 대기 주문이 화면에서 사라졌다. durable pending_orders 를 script→backend→프론트 end-to-end 로 노출(읽기 전용 가시화, 주문/자본 집행 변경 없음).
+- 저자: Claude(self-review 불가). 검토자(비저자, `scripts/redteam_review.sh` read-only): Codex + Copilot. **Gemini CLI 영구 불가**(IneligibleTierError — 개인용 Gemini Code Assist 지원 종료, Antigravity 이전). r1~r5.
+- 수렴 경과(전부 반영): r1 Codex MAJOR(pending_orders 손상 shape `.items()` crash)→`_collect`/run_offline isinstance 가드 / r2 Codex MAJOR(selection-flow 4176 `.keys()` crash, trader load_state 손상)→`_safe_state_keys` 헬퍼 3키 강등 + trader load_state 교정 / r3 Codex MAJOR(monitor load_state 손상)→monitor load_state 교정 / r4 Codex MAJOR(cold-start positions `.items()`)→positions 손상 내성 + per-item dict 체크. **이로써 이 상태 파일의 모든 reader(monitor/trader/backend cold-start/selection-flow)가 손상 shape 내성**.
+- 최종(r5): **Codex clear**(BLOCKER 없음 — 손상 crash 경로 전부 폐쇄, 읽기 전용, secret/path/input-trust BLOCKER 없음). **Copilot block** — 2 MAJOR.
+- **CEO confirm 중재 (2026-06-20, 대표 junti7 — "개선 완료 시 commit" 사전 승인)**:
+  - **addressed (rejected 아님)**: Copilot MAJOR #1(writer 비원자적 save_state → 동시 read 시 torn JSON) → **루트 수정**: `core/atomic_io.atomic_write_json`(tmp+fsync+os.replace) 신규 + monitor/trader `save_state` 양쪽 원자화. 모든 reader 의 torn-read 위험을 writer 단에서 봉합.
+  - **residual (out-of-scope)**: Copilot MAJOR #2(주문 lifecycle reconcile — fill/cancel/reject/reconnect 후 pending_orders purge 미검증 시 stale 미체결 오표시) → 본 PR 은 **읽기 전용 가시화**이고, lifecycle reconcile 은 주문 상태머신을 건드리는 **capital-adjacent 행위**라 별도 스코프. 24h 미체결 stale 배지로 운영자 경고를 interim mitigation 으로 제공. 별도 AR 후보로 분리.
+  - **rationale**: ① 비협상 사유(사실오류·날조·법규·disclaimer) 아님 ② 신규 코드는 read-only 가시화 — 주문/자본/Turtle gate 실행 경로 변경 없음(Codex·Copilot 공통 확인) ③ Copilot 2 MAJOR 중 #1 은 루트 수정 완료, #2 는 본 변경이 *유발/악화하지 않는* 사전 writer-side 문제(해당 state read 는 변경 전부터 존재) ④ Gemini 영구 불가는 스킵이 아닌 인프라 현실.
+  - **residual risk**: writer 가 terminal state 후 pending_orders 를 purge 하지 않으면 대시보드가 실제보다 많은 미체결을 보일 수 있음(24h 배지로 경고). naive entry_ts 시 age 가 tz offset 만큼 어긋날 수 있으나 현 writer 는 항상 UTC aware.
+- 검증: 관련 테스트 53 pass(`test_atomic_io`/`test_ibkr_pending_orders`/`test_ibkr_monitor_cache_parse`), 프론트 `tsc -b && vite build` clean.
+- 결론: **CEO confirm 머지** (정식 red_team_clear 아님 — 비저자 1개(Codex) clear + Copilot #1 루트수정/#2 residual, Gemini 영구 불가). 대표가 residual(#2 lifecycle reconcile) 인지 후 머지.
+
+---
+
 ## 2026-06-17 — edu 패턴 모니터 원자적 쓰기(torn-file 방지)
 
 - 대상: `scripts/build_edu_pattern_intelligence.py` + `scripts/fact_check_edu_patterns.py`(`_atomic_write_json` 헬퍼로 OUTPUT 기록 교체) + `harness-os/backend/main.py`(edu pattern history JSONL per-line 관용 파싱) + `tests/test_edu_pattern_atomic_write.py`(6 테스트, 신규).

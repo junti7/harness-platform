@@ -194,8 +194,13 @@ class IbkrResultJsonExtractTests(unittest.TestCase):
         self.assertIsNone(self._extract(json.dumps(bad_ro) + "\n"))
         bad_fx = _result(); bad_fx["forex_rates"] = []
         self.assertIsNone(self._extract(json.dumps(bad_fx) + "\n"))
+        # pending_orders(2026-06-20 추가): 프론트가 .map 으로 순회 — wrong-shape(object) 거부.
+        bad_po = _result(); bad_po["pending_orders"] = {}
+        self.assertIsNone(self._extract(json.dumps(bad_po) + "\n"))
         # 올바른 타입(또는 미존재)은 허용
-        ok = _result(); ok["exit_signals"] = ["AAA"]; ok["recent_orders"] = []; ok["forex_rates"] = {"USD": 1}
+        ok = _result(); ok["exit_signals"] = ["AAA"]; ok["recent_orders"] = []
+        ok["pending_orders"] = [{"symbol": "TSM", "status": "PreSubmitted"}]
+        ok["forex_rates"] = {"USD": 1}
         self.assertIsNotNone(self._extract(json.dumps(ok) + "\n"))
 
     def test_exception_fallback_shape_accepted(self):

@@ -180,8 +180,14 @@ def load_state() -> dict:
     if STATE_PATH.exists():
         try:
             state = json.loads(STATE_PATH.read_text())
-            state.setdefault("positions", {})
-            state.setdefault("pending_orders", {})
+            if not isinstance(state, dict):
+                state = {}
+            # positions/pending_orders 가 손상 shape(list/str 등)면 빈 dict 로 교정한다(Red Team
+            # 2026-06-20 MAJOR). 이후 .keys()/membership/len() 이 dict 를 전제하므로, 손상 상태에서
+            # 주문 파이프라인 owner 가 AttributeError 로 죽지 않게 한다. 유효 데이터엔 영향 없음.
+            for _k in ("positions", "pending_orders"):
+                if not isinstance(state.get(_k), dict):
+                    state[_k] = {}
             return state
         except Exception:
             pass
@@ -189,8 +195,10 @@ def load_state() -> dict:
 
 
 def save_state(s: dict) -> None:
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps(s, indent=2, ensure_ascii=False))
+    # 원자적 쓰기(Red Team 2026-06-20 MAJOR): monitor/backend 가 같은 파일을 교차로 읽으므로
+    # 비원자적 write_text 는 torn-read(JSONDecodeError)를 유발할 수 있다. tmp+rename 으로 방지.
+    from core.atomic_io import atomic_write_json
+    atomic_write_json(STATE_PATH, s)
 
 
 # ── 가격 히스토리 + Turtle 계산 ───────────────────────────────────────────────
