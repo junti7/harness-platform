@@ -1,0 +1,463 @@
+# Edu Full Transparency Bundle
+
+- generated_at: `2026-06-15T12:34:51+00:00`
+- expected_tables: `dead_letter_queue, edu_knowledge_items, edu_rag_accumulation, pipeline_runs`
+- actual_tables: `dead_letter_queue, edu_conversation_log, pipeline_runs`
+- missing_expected_tables: `edu_knowledge_items, edu_rag_accumulation`
+- expected_views: `edu_knowledge_items_customer_facing`
+- actual_views: `(none)`
+- missing_expected_views: `edu_knowledge_items_customer_facing`
+
+## Filesystem Inventory
+
+- edu_research_files: `19`
+- edu_youtube_transcript_files: `2`
+- anchors_exists: `True`
+- evidence_index_exists: `True`
+
+## Query Path
+
+- stage: `ingestion`
+  file: `scripts/edu_data_analysis_agent.py`
+  functions: `_upsert_knowledge_items, _write_dlq, _mark_pipeline_success_in_tx, _run_db_persist`
+  targets: `edu_knowledge_items, dead_letter_queue, pipeline_runs`
+- stage: `customer_facing_retrieval`
+  file: `harness-os/backend/main.py`
+  functions: `_edu_query_text, _retrieve_evidence_bundle, _edu_db_customer_facing_bundle`
+  targets: `edu_knowledge_items_customer_facing`
+- stage: `fallback_retrieval`
+  file: `harness-os/backend/main.py`
+  functions: `_edu_ranked_matches, _load_rag_index`
+  targets: `data/edu_research/evidence_index.json`
+
+## Customer-Facing SQL
+
+```sql
+SELECT
+    id,
+    source,
+    source_kind,
+    segment,
+    item_type AS type,
+    title,
+    body,
+    cite,
+    quality_score,
+    rights_class,
+    excerpt_max_chars,
+    verbatim_allowed,
+    keywords
+FROM edu_knowledge_items_customer_facing
+WHERE COALESCE(segment, '') IN ('', :segment)
+ORDER BY
+    CASE WHEN segment = :segment THEN 0 ELSE 1 END,
+    quality_score DESC,
+    id DESC
+LIMIT :limit
+```
+
+## Table: dead_letter_queue
+
+- exists: `True`
+- expected: `True`
+- owner: `ingestion failure queue`
+- source_of_truth: `infra/schema.sql + infra/migrations/2026-06-14_edu_query_engine_p1.sql`
+- row_count: `127`
+- columns:
+  - `id` `integer` nullable=`NO`
+  - `tier` `integer` nullable=`NO`
+  - `item_id` `integer` nullable=`YES`
+  - `item_type` `character varying` nullable=`YES`
+  - `error_message` `text` nullable=`YES`
+  - `raw_data` `jsonb` nullable=`YES`
+  - `created_at` `timestamp without time zone` nullable=`YES`
+- indexes:
+  - `dead_letter_queue_pkey`
+
+## Table: edu_conversation_log
+
+- exists: `True`
+- expected: `False`
+- owner: `None`
+- source_of_truth: `None`
+- row_count: `0`
+- columns:
+  - `id` `bigint` nullable=`NO`
+  - `created_at` `timestamp with time zone` nullable=`NO`
+  - `endpoint` `text` nullable=`NO`
+  - `kind` `text` nullable=`NO`
+  - `authed` `boolean` nullable=`NO`
+  - `segment` `text` nullable=`YES`
+  - `track` `text` nullable=`YES`
+  - `turn` `integer` nullable=`YES`
+  - `case_id` `bigint` nullable=`YES`
+  - `user_text` `text` nullable=`YES`
+  - `locale` `text` nullable=`YES`
+  - `ok` `boolean` nullable=`YES`
+  - `ip_hash` `text` nullable=`YES`
+  - `request_json` `jsonb` nullable=`YES`
+  - `response_json` `jsonb` nullable=`YES`
+- indexes:
+  - `edu_conversation_log_pkey`
+  - `idx_edu_conv_log_case`
+  - `idx_edu_conv_log_created`
+  - `idx_edu_conv_log_kind`
+
+## Table: edu_knowledge_items
+
+- exists: `False`
+- expected: `True`
+- owner: `P1 normalized knowledge store`
+- source_of_truth: `infra/migrations/2026-06-14_edu_query_engine_p1.sql`
+- row_count: `None`
+- columns:
+- indexes:
+
+## Table: edu_rag_accumulation
+
+- exists: `False`
+- expected: `True`
+- owner: `grounded answer accumulation`
+- source_of_truth: `infra/migrations/2026-06-14_edu_query_engine_p1.sql`
+- row_count: `None`
+- columns:
+- indexes:
+
+## Table: pipeline_runs
+
+- exists: `True`
+- expected: `True`
+- owner: `ingestion audit log`
+- source_of_truth: `infra/schema.sql + infra/migrations/2026-06-14_edu_query_engine_p1.sql`
+- row_count: `35`
+- columns:
+  - `id` `integer` nullable=`NO`
+  - `correlation_id` `character varying` nullable=`NO`
+  - `started_at` `timestamp without time zone` nullable=`YES`
+  - `finished_at` `timestamp without time zone` nullable=`YES`
+  - `tier1_count` `integer` nullable=`YES`
+  - `tier2_count` `integer` nullable=`YES`
+  - `tier3_count` `integer` nullable=`YES`
+  - `tier4_count` `integer` nullable=`YES`
+  - `status` `character varying` nullable=`YES`
+  - `error` `text` nullable=`YES`
+- indexes:
+  - `pipeline_runs_pkey`
+
+## View: edu_knowledge_items_customer_facing
+
+- exists: `False`
+- expected: `True`
+- owner: `canonical safe retrieval boundary`
+- source_of_truth: `infra/migrations/2026-06-14_edu_query_engine_p1.sql`
+- row_count: `None`
+
+## Latest Pipeline Runs
+
+```json
+[
+  {
+    "id": 35,
+    "correlation_id": "eb7b4060",
+    "started_at": "2026-06-15 10:00:04.542989",
+    "finished_at": "2026-06-15 10:21:47.480105",
+    "tier1_count": 7,
+    "tier2_count": 40,
+    "tier3_count": 0,
+    "tier4_count": 0,
+    "status": "success",
+    "error": null
+  },
+  {
+    "id": 34,
+    "correlation_id": "3d15d6be",
+    "started_at": "2026-06-14 10:00:01.798446",
+    "finished_at": "2026-06-14 10:18:28.492122",
+    "tier1_count": 12,
+    "tier2_count": 40,
+    "tier3_count": 0,
+    "tier4_count": 0,
+    "status": "success",
+    "error": null
+  },
+  {
+    "id": 33,
+    "correlation_id": "236df4ed",
+    "started_at": "2026-06-13 10:00:01.409906",
+    "finished_at": "2026-06-13 10:18:03.970684",
+    "tier1_count": 24,
+    "tier2_count": 40,
+    "tier3_count": 0,
+    "tier4_count": 0,
+    "status": "success",
+    "error": null
+  },
+  {
+    "id": 32,
+    "correlation_id": "dc08039e",
+    "started_at": "2026-06-12 13:56:02.682578",
+    "finished_at": "2026-06-12 14:22:56.022129",
+    "tier1_count": 132,
+    "tier2_count": 40,
+    "tier3_count": 0,
+    "tier4_count": 0,
+    "status": "success",
+    "error": null
+  },
+  {
+    "id": 31,
+    "correlation_id": "9e71e223",
+    "started_at": "2026-06-12 10:00:02.212483",
+    "finished_at": "2026-06-12 10:08:38.297425",
+    "tier1_count": 151,
+    "tier2_count": 40,
+    "tier3_count": 0,
+    "tier4_count": 0,
+    "status": "success",
+    "error": null
+  },
+  {
+    "id": 30,
+    "correlation_id": "f3d92a6f",
+    "started_at": "2026-06-11 10:00:01.961129",
+    "finished_at": "2026-06-11 10:08:46.578769",
+    "tier1_count": 213,
+    "tier2_count": 40,
+    "tier3_count": 0,
+    "tier4_count": 0,
+    "status": "success",
+    "error": null
+  },
+  {
+    "id": 29,
+    "correlation_id": "ff2b9863",
+    "started_at": "2026-06-10 10:00:05.708606",
+    "finished_at": "2026-06-10 10:07:14.221647",
+    "tier1_count": 321,
+    "tier2_count": 40,
+    "tier3_count": 0,
+    "tier4_count": 0,
+    "status": "success",
+    "error": null
+  },
+  {
+    "id": 28,
+    "correlation_id": "63d96e87",
+    "started_at": "2026-06-09 10:00:05.349817",
+    "finished_at": "2026-06-09 10:04:49.907287",
+    "tier1_count": 321,
+    "tier2_count": 40,
+    "tier3_count": 0,
+    "tier4_count": 20,
+    "status": "success",
+    "error": null
+  },
+  {
+    "id": 27,
+    "correlation_id": "f7fa0a1f",
+    "started_at": "2026-06-08 10:00:04.554680",
+    "finished_at": "2026-06-08 10:12:35.001402",
+    "tier1_count": 319,
+    "tier2_count": 40,
+    "tier3_count": 5,
+    "tier4_count": 0,
+    "status": "success",
+    "error": null
+  },
+  {
+    "id": 26,
+    "correlation_id": "8c619126",
+    "started_at": "2026-06-07 10:00:05.066519",
+    "finished_at": "2026-06-07 10:11:46.358682",
+    "tier1_count": 321,
+    "tier2_count": 40,
+    "tier3_count": 4,
+    "tier4_count": 0,
+    "status": "success",
+    "error": null
+  }
+]
+```
+
+## Latest DLQ Rows
+
+```json
+[
+  {
+    "id": 127,
+    "tier": 3,
+    "item_id": 455,
+    "item_type": "filtered_signal",
+    "error_message": "json_decode:Extra data: line 22 column 4 (char 8730)",
+    "raw_data": {
+      "id": "455",
+      "score": "0.8",
+      "title": "Bionic Tech Must Prove Itself Beyond the Lab",
+      "source": "IEEE_Spectrum",
+      "summary": "<img src=\"https://spectrum.ieee.org/media-library/a-seated-man-in-a-robotic-suit-smiles-at-a-seated-woman-holding-a-laptop.png?id=65559767&amp;width=1245&amp;height=700&amp;coordinates=0%2C269%2C0%2C269\" /><br /><br /><p>I first met Robert Woo in 2011, during his third time <a href=\"https://spectrum.ieee.org/goodbye-wheelchair-hello-exoskeleton\" target=\"_blank\">walking in a powered exoskeleton</a>. The architect had been paralyzed in a construction accident four years earlier, but he was determined to get back on his feet. Watching him clunk across a rehab room in an exoskeleton prototype, the technology felt astonishing. I had the same reaction when reporting on early <a href=\"https://en.wikipedia.org/wiki/Brain%E2%80%93computer_interface\" target=\"_blank\">brain-computer interfaces</a> (BCIs), which enabled paralyzed people to <a href=\"https://spectrum.ieee.org/a-better-way-for-brains-to-control-robotic-arms\" target=\"_blank\">move robotic arms</a> or <a href=\"https://spectrum.ieee.org/neural-implant-enables-paralyzed-als-patient-to-type-six-words-per-minute\" target=\"_blank\">communicate by thought alone</a>. Both types of bionic technology seemed to verge on magic.</p><p>But that initial sense of awe, I’ve learned over many years of reporting on these technologies, is only a starting point. What matters is not what these systems can do in a carefully staged demo but how they perform in the real world. Do they work reliably? Can people with disabilities use them for their intended purposes? And what does it actually cost—in time, effort, and trade-offs—to do so? The question isn’t whether the technology looks impressive the first time but whether it holds up on the hundredth.</p><p> The special report in this issue, “<a href=\"https://spectrum.ieee.org/special-reports/cyborg-tech/\" target=\"_blank\">Cyborg Tech From the Inside</a>” takes that perspective seriously. In my <a href=\"https://spectrum.ieee.org/exoskeleton-user-experience\" target=\"_blank\">feature article on Woo</a>, an exoskeleton super-user who has spent 15 years testing these systems, the story of the technology is inseparable from the story of its use. Woo’s relentless feedback has driven steady, incremental improvements. In Edd Gent’s reporting on the <a href=\"https://spectrum.ieee.org/bci-user-experience\" target=\"_blank\">pioneers testing the earliest BCIs</a>, the experience of these extraordinary technologies likewise resolves into something more complex. As one trial participant notes, these early adopters are like the first astronauts, who barely reached space before coming back down to Earth. Together, these stories reframe these individuals not as passive medical patients but as the ultimate beta testers and co-engineers of the bionic age.</p><p><span>I saw the gap between demonstration and daily use firsthand when I interviewed Woo in a Manhattan showroom recently, where he was testing a new self-balancing exoskeleton from </span><a href=\"https://en.wandercraft.eu/\" target=\"_blank\">Wandercraft</a><span>. The device is a striking advance that kept him upright without crutches, but it also revealed the friction of the real world. As Woo tried to walk out the door, barely an inch of slope on the Park Avenue sidewalk was enough to trigger the machine’s safety sensors and halt his progress. It was a stark reminder of how far these systems must evolve before they fit seamlessly into everyday life.</span></p><p> For the people who use them, that seamless integration is the ultimate goal. Getting there will depend not just on technical breakthroughs but on how well these systems hold up outside controlled environments, over time, and under real conditions. Looking from the inside doesn’t make these technologies any less remarkable, but it does change how we judge them—not by what they can do once for a photo but by what they can sustain over a lifetime. That’s the standard their users have been applying all along.</p><p> Our commitment to evaluating technology from the user’s perspective extends beyond this special report. To provide a necessary corrective to the “techno-solutionism” that often dominates coverage of assistive devices, <em><em>IEEE</em></em> <em><em>Spectrum</em></em> created the Taenzer Fellowship for Disability-Engaged Journalism, under which six writers with disabilities are contributing articles about the devices they rely on daily. As Special Projects Director <a href=\"https://spectrum.ieee.org/u/stephen-cass\" target=\"_blank\">Stephen Cass</a> notes, these journalists “aren’t afraid to ask clear-eyed questions about the tech and are deeply aware of how it impacts humans.” You can read the fellows’ work at <a href=\"https://spectrum.ieee.org/tag/taenzer-fellowship\" target=\"_blank\">spectrum.ieee.org/tag/taenzer-fellowship</a>.</p>",
+      "content_hash": "e4f1d4dfb8a83685e94406ee90f061dae59655a4f905b3a9eb2dfcae2ce61e09",
+      "extracted_facts": "{}"
+    },
+    "created_at": "2026-05-31 10:06:58.481779"
+  },
+  {
+    "id": 126,
+    "tier": 3,
+    "item_id": 442,
+    "item_type": "filtered_signal",
+    "error_message": "ValueError:필수 필드 누락: is_relevant",
+    "raw_data": {
+      "id": "442",
+      "score": "0.8",
+      "title": "Why Runway is eyeing the robotics industry for future revenue growth",
+      "source": "TechCrunch_robotics",
+      "summary": "Runway is building up a robotics-focused team and fine-tuning its existing models for robotics and self-driving car customers.",
+      "content_hash": "8931073316ce66affc7044dacbd9bde8819b378785e4e0edd89a73558810dbb7",
+      "extracted_facts": "{}"
+    },
+    "created_at": "2026-05-31 10:05:46.291230"
+  },
+  {
+    "id": 125,
+    "tier": 3,
+    "item_id": 456,
+    "item_type": "filtered_signal",
+    "error_message": "ValueError:필수 필드 누락: is_relevant",
+    "raw_data": {
+      "id": "456",
+      "score": "0.8",
+      "title": "With $1 Cyberattacks on the Rise, Durable Defenses Pay Off",
+      "source": "IEEE_Spectrum",
+      "summary": "<img src=\"https://spectrum.ieee.org/media-library/illustration-of-a-castle-shaped-container-filled-with-colorful-binary-numbers.jpg?id=66656097&amp;width=1245&amp;height=700&amp;coordinates=0%2C469%2C0%2C469\" /><br /><br /><p>Transforming a newly discovered software vulnerability into a cyberattack used to take months. Today—as the recent headlines over Anthropic’s <a href=\"https://spectrum.ieee.org/anthropic-claude-mythos-preview-code\" target=\"_self\">Project Glasswing have shown</a>—generative AI can do the job in minutes, often for less than a dollar of cloud-computing time.</p><p>But while large language models present a real cyberthreat, they also provide an opportunity to reinforce cyberdefenses. Anthropic reports its <a href=\"https://en.wikipedia.org/wiki/Claude_(language_model)#Claude_Mythos\" rel=\"noopener noreferrer\" target=\"_blank\"><span>Claude Mythos preview</span></a> model has already helped defenders preemptively discover over <a href=\"https://www.anthropic.com/glasswing\" target=\"_blank\">a thousand zero-day vulnerabilities</a>, including <a href=\"https://red.anthropic.com/2026/mythos-preview/\" target=\"_blank\">flaws in every major operating system and web browser</a>, with Anthropic <a href=\"https://www.cfr.org/articles/six-reasons-claude-mythos-is-an-inflection-point-for-ai-and-global-security\" target=\"_blank\">coordinating disclosure</a> and its efforts to patch the revealed flaws. </p><p>It is not yet clear whether AI-driven bug finding will ultimately favor attackers or defenders. But to understand how defenders can increase their odds, and perhaps hold the advantage, it helps to look at an earlier wave of automated vulnerability discovery.</p><p>In the early 2010s, a new category of software appeared that could attack programs with millions of random, malformed inputs—a proverbial monkey at a typewriter, tapping on the keys until it finds a vulnerability. When such “fuzzers” like <a href=\"https://en.wikipedia.org/wiki/American_Fuzzy_Lop_(software)\" target=\"_blank\"><span>American Fuzzy Lop</span></a> (AFL) hit the scene, <a href=\"https://github.com/google/oss-fuzz\" target=\"_blank\">they found critical flaws in every major browser and operating system</a>.</p><p>The security community’s response was instructive. Rather than panic, organizations industrialized the defense. For instance, Google built a system called <a href=\"https://github.com/google/oss-fuzz\" target=\"_blank\"><span>OSS-Fuzz</span></a> that runs fuzzers continuously, around the clock, on thousands of software projects. So software providers could catch bugs before they shipped, not after attackers found them. The expectation is that AI-driven vulnerability discovery will follow the same arc. Organizations will integrate the tools into standard development practice, run them continuously, and establish a new baseline for security.</p><p>But the analogy has a limit. Fuzzing requires significant technical expertise to set up and operate. It was a tool for specialists. An LLM, meanwhile, finds vulnerabilities with just a prompt—resulting in a troubling asymmetry. Attackers no longer need to be technically sophisticated to exploit code, while robust defenses still require engineers to read, evaluate, and act on what the AI models surface. The human cost of finding and exploiting bugs may approach zero, but fixing them won’t.</p><h2><a target=\"_blank\"></a><strong>Is AI Better at Finding Bugs Than Fixing Them?</strong></h2><p>In the opening to his book <a href=\"https://www.cs.auckland.ac.nz/~pgut001/pubs/book.pdf\" target=\"_blank\"><em><span>Engineering Security</span></em></a> (2014), Peter Gutmann observed that “a great many of today’s security technologies are ‘secure’ only because no one has ever bothered to look at them.” That observation was made before AI made looking for bugs dramatically cheaper. Most present-day code—including <a href=\"https://www.atlanticcouncil.org/in-depth-research-reports/report/open-source-software-as-infrastructure/\" target=\"_blank\">the open source infrastructure that commercial software depends on</a>—is maintained by small teams, part-time contributors, or individual volunteers with no dedicated security resources. A bug in any open source project can have significant downstream impact, too.</p><p>In 2021, a <a href=\"https://www.ibm.com/think/topics/log4j\" target=\"_blank\"><span>critical vulnerability</span></a> in <a href=\"https://logging.apache.org/log4j/2.x/index.html\" target=\"_blank\">Log4j</a>—a logging library maintained by a handful of volunteers—exposed hundreds of millions of devices. Log4j’s widespread use meant that a vulnerability in a single volunteer-maintained library became one of the most widespread software vulnerabilities ever recorded. The popular code library is just one example of the broader problem of critical software dependencies that have never been seriously audited. For better or worse, AI-driven vulnerability discovery will likely perform a lot of auditing, at low cost and at scale.</p><p>An attacker targeting an under-resourced project requires little manual effort. AI tools can scan an unaudited codebase, identify critical vulnerabilities, and assist in building a working exploit with minimal human expertise. </p><p>Research on LLM-assisted exploit generation has shown that capable models <a href=\"https://arxiv.org/pdf/2404.08144?\" target=\"_blank\">can autonomously and rapidly exploit cyber weaknesses</a>, compressing the time between disclosure of the bug and working exploit of that bug from weeks down to mere hours. Generative AI-based attacks launched from cloud servers operate staggeringly cheaply as well. In August 2025, researchers at NYU’s <a href=\"https://engineering.nyu.edu/\" target=\"_blank\">Tandon School of Engineering</a> demonstrated that an LLM-based system could <a href=\"https://engineering.nyu.edu/news/large-language-models-can-execute-complete-ransomware-attacks-autonomously-nyu-tandon-research\" target=\"_blank\">autonomously complete the major phases of a ransomware campaign</a> for some $0.70 per run, with no human intervention. </p><p>And the attacker’s job ends there. The defender’s job, on the other hand, is only getting underway. While an AI tool can find vulnerabilities and potentially assist with bug triaging, a dedicated security engineer still has to review any potential patches, evaluate the AI’s analysis of the root cause, and understand the bug well enough to approve and deploy a fully functional fix without breaking anything. For a small team maintaining a widely-depended-upon library in their spare time, that remediation burden may be difficult to manage even if the discovery cost drops to zero.</p><h2><a target=\"_blank\"></a><strong>Why AI Guardrails and Automated Patching Aren’t the Answer</strong></h2><p>The natural policy response to the problem is to <a href=\"https://www.theregreview.org/2025/11/30/spotlight-improving-regulation-of-ai-and-cybersecurity/\" target=\"_blank\">go after AI at the source</a>: holding AI companies responsible for spotting misuse, <a href=\"https://statetechmagazine.com/article/2026/01/ai-guardrails-will-stop-being-optional-2026\" target=\"_blank\">putting guardrails in their products</a>, and <a href=\"https://www.cigionline.org/articles/not-open-and-shut-how-to-regulate-unsecured-ai/\" target=\"_blank\">pulling the plug on anyone using LLMs to mount cyberattacks</a>. There is evidence that pre-emptive defenses like this have some effect. Anthropic has published data showing that <a href=\"https://www.anthropic.com/news/detecting-countering-misuse-aug-2025\" target=\"_blank\"><span>automated misuse detection can derail some cyberattacks</span></a>. <span>However, blocking a few bad actors does not make for a satisfying and comprehensive solution.</span></p><p>At a root level, there are two<em> </em>reasons why policy does not solve the whole problem.</p><p>The first is technical. <a href=\"https://spectrum.ieee.org/large-language-model-performance\" target=\"_self\">LLMs</a> judge whether a request is malicious by reading the request itself. But a sufficiently creative prompt can frame any harmful action as a legitimate one. Security researchers know this as the problem of the persuasive <a href=\"https://spectrum.ieee.org/prompt-injection-attack\" target=\"_self\"><span>prompt injection</span></a>. Consider, for example, the difference between “Attack <em>website A</em> to steal users’ credit card info” and “I am a security researcher and would like secure <em>website A</em>. Run a simulation there to see if it’s possible to steal users’ credit card info.” No one’s yet discovered how to root out the source of subtle cyberattacks, like in the latter example, with 100 percent accuracy.</p><p>The second reason is jurisdictional. Any regulation confined to U.S.-based providers (or that of any other single country or region) still leaves the problem largely unsolved worldwide. Strong, open-source LLMs are already available anywhere the internet reaches. A policy aimed at handful of American technology companies is not a comprehensive defense.</p><p>Another tempting fix is to automate the defensive side entirely—let AI autonomously identify, patch, and deploy fixes without waiting for an overworked volunteer maintainer to review them.</p><p><a target=\"_blank\"></a><a target=\"_blank\">Tools like </a><a href=\"https://docs.github.com/en/code-security/concepts/code-scanning/copilot-autofix-for-code-scanning\" target=\"_blank\"></a><a href=\"https://docs.github.com/en/code-security/concepts/code-scanning/copilot-autofix-for-code-scanning\" target=\"_blank\">GitHub Copilot Autofix</a> generate patches for flagged vulnerabilities directly with proposed code changes. Several <a href=\"https://www.linuxfoundation.org/blog/project-glasswing-gives-maintainers-advanced-ai-to-secure-open-source\" target=\"_blank\">open-source security initiatives</a> are also <a href=\"https://openssf.org/blog/2025/01/23/predictions-for-open-source-security-in-2025-ai-state-actors-and-supply-chains/\" target=\"_blank\">experimenting</a> with <a href=\"https://blog.google/innovation-and-ai/technology/safety-security/ai-powered-open-source-security/\" target=\"_blank\">autonomous AI maintainers</a> for under-resourced projects. It is becoming much easier to have the same AI system find bugs, generate a patch, and update the code with no human intervention.</p><p>But LLM-generated patches can be unreliable in ways that are difficult to detect. For example, even if they pass muster with popular code-testing software suites, <a href=\"https://dl.acm.org/doi/pdf/10.1145/3610721\" target=\"_blank\"><span>they may still introduce subtle logic errors</span></a>. LLM-generated code, even from the most powerful generative AI models out there, is still subject to a range of cyber-vulnerabilities. A coding agent with write access to a repository and no human in the loop is, in so many words, an easy target. Misleading bug reports, malicious instructions hidden in project files, or untrusted code pulled in from outside the project <a target=\"_blank\">can turn an automated AI codebase maintainer into a cyber-vulnerability generator.</a><span><a href=\"https://spectrum.ieee.org/feeds/feed.rss#_msocom_3\" target=\"_blank\"></a></span></p><p>Guardrails and automated patching are useful tools, but they share a common limitation. Both are ad hoc and incomplete. Neither addresses the deeper question of whether the software was built securely from the start. The more lasting solution is to prevent vulnerabilities from being introduced at all. No matter how deeply an AI system can inspect a project, it cannot find flaws that don’t exist.</p><h2><a target=\"_blank\"></a><strong>Memory-Safe Code Creates More Robust Defenses</strong></h2><p>The most accessible starting point is the adoption of memory-safe languages. Simply by <a href=\"https://bidenwhitehouse.archives.gov/oncd/briefing-room/2024/02/26/memory-safety-fact-sheet/\" target=\"_blank\">changing the programming language their coders use</a>, organizations can have a <a href=\"https://www.cisa.gov/resources-tools/resources/memory-safe-languages-reducing-vulnerabilities-modern-software-development\" target=\"_blank\">large positive impact on their security</a>. </p><p><span>Both </span><a href=\"https://security.googleblog.com/2024/10/safer-with-google-advancing-memory.html\" target=\"_blank\"><span>Google</span></a><span> and </span><a href=\"https://www.microsoft.com/en-us/msrc/blog/2019/07/a-proactive-approach-to-more-secure-code\" target=\"_blank\">Microsoft</a><span> </span><span>have found that roughly 70 percent of serious security flaws come down to the ways in which software manages memory. Languages like C and C++ leave every memory decision to the developer. A</span><span>nd when something slips, even briefly, </span><a href=\"https://www.memorysafety.org/docs/memory-safety/\" target=\"_blank\">attackers can exploit that gap</a><span> to run their own code, siphon data, or bring systems down. Languages like <a href=\"https://spectrum.ieee.org/ai-code-rust-great-refactor\" target=\"_blank\">Rust</a> go further; they make the most dangerous class of memory errors structurally impossible, not just harder to make.</span></p><p><span>Memory-safe languages address the problem at the source, but legacy codebases written in C and C++ will remain a reality for decades. <a href=\"https://en.wikipedia.org/wiki/Sandbox_(software_development)\" target=\"_blank\">Software sandboxing</a> techniques complement memory-safe languages by addressing what they cannot—containing the blast radius of vulnerabilities that do exist. Tools like </span><a href=\"https://webassembly.org/\" target=\"_blank\"><span>WebAssembly</span></a><span> and </span><a href=\"https://hacks.mozilla.org/2021/12/webassembly-and-back-again-fine-grained-sandboxing-in-firefox-95/\" target=\"_blank\">RLBox</a><span> already demonstrate this in practice in web browsers and cloud service providers like <a href=\"https://en.wikipedia.org/wiki/Fastly\" target=\"_blank\">Fastly</a> and <a href=\"https://en.wikipedia.org/wiki/Cloudflare\" target=\"_blank\">Cloudflare</a>. However, while sandboxes dramatically raise the bar for attackers, they are only as strong as their implementation. Moreover, Anthropic reports that </span><a href=\"https://red.anthropic.com/2026/mythos-preview/\" target=\"_blank\">Claude Mythos has demonstrated that it can breach software sandboxes</a><span>. </span></p><p><span>For the most security-critical components, where implementation complexity is highest and the cost of failure greatest, a stronger guarantee still is available.</span></p><p><a href=\"https://en.wikipedia.org/wiki/Formal_verification\" target=\"_blank\">Formal verification</a> proves, mathematically, that certain bugs cannot exist. It treats code like a mathematical theorem. Instead of testing whether bugs appear, it proves that specific categories of flaw cannot exist under any conditions.</p><p><span><span><a href=\"https://aws.amazon.com/blogs/opensource/verify-the-safety-of-the-rust-standard-library/\" target=\"_blank\">AWS</a>, <a href=\"https://blog.cloudflare.com/topaz-policy-engine-design/\" target=\"_blank\">Cloudflare</a></span>, and <a href=\"https://datatracker.ietf.org/meeting/118/materials/slides-118-ufmrg-using-formal-methods-at-google-00\" target=\"_blank\">Google</a>  already use formal verification to protect their most sensitive infrastructure—cryptographic code, network protocols, and storage systems where failure isn’t an option. Tools like <a href=\"https://github.com/flux-rs/flux\" target=\"_blank\">Flux</a> now bring that same rigor to everyday production Rust code, without requiring a dedicated team of specialists. That matters when your attacker is a powerful generative-AI system that can rapidly scan millions of lines of code for weaknesses. Formally verified code doesn’t just put up some fences and firewalls—it provably has no weaknesses to find.</span></p><p><span>The defenses described above are asymmetric. Code written in memory-safe languages—separated by strong sandboxing boundaries and selectively formally verified—presents a smaller and much more constrained target. When applied correctly, these techniques can prevent LLM-powered exploitation, regardless of how capable an attacker’s bug-scanning tools become.</span></p><p>Generative AI can support this more foundational shift by <a href=\"https://www.darpa.mil/research/programs/translating-all-c-to-rust\" target=\"_blank\">accelerating the translation of legacy code into safer languages like Rust</a>, and <a href=\"https://dl.acm.org/doi/abs/10.1145/3720499\" target=\"_blank\">making formal verification more practical</a> at every stage. Which helps engineers write specifications, generate proofs, and keep those proofs current as code evolves.</p><p><span>For organizations, the lasting solution is not just better scanning but stronger foundations: memory-safe languages where possible, sandboxing where not, and formal verification where the cost of being wrong is highest. For researchers, the bottleneck is making those foundations practical—and using generative AI to accelerate the migration. But instead of automated, ad hoc vulnerability patching, generative AI in this mode of defense can help translate legacy code to memory-safe alternatives. It also assists in verification proofs and lowers the expertise barrier to a safer and less vulnerable codebase.</span></p><p>The latest wave of smarter AI bug scanners can still be useful for cyberdefense—not just as another overhyped AI threat. But AI bug scanners treat the symptom, not the cause. The lasting solution is software that doesn’t produce vulnerabilities in the first place.</p>",
+      "content_hash": "a8120a778a6bc974fbc277d4b321bea0cf6a4fedf997d6b799a3bae974b00446",
+      "extracted_facts": "{}"
+    },
+    "created_at": "2026-05-31 10:03:53.238524"
+  },
+  {
+    "id": 124,
+    "tier": 3,
+    "item_id": 453,
+    "item_type": "filtered_signal",
+    "error_message": "json_decode:Expecting ',' delimiter: line 59 column 2 (char 9130)",
+    "raw_data": {
+      "id": "453",
+      "score": "0.8",
+      "title": "Atlas | Product Features | Boston Dynamics",
+      "source": "Boston_Dynamics",
+      "summary": "This short video introduces some of the high level futures of the production version of our Atlas robot. \n\nLearn more about Atlas: https://bosdyn.co/4jrAuRG",
+      "content_hash": "3a3ce1c643a8b1d9607396962724045cf97650a2783d4cdf376916cc217544f5",
+      "extracted_facts": "{}"
+    },
+    "created_at": "2026-05-31 10:03:18.220141"
+  },
+  {
+    "id": 123,
+    "tier": 3,
+    "item_id": 434,
+    "item_type": "filtered_signal",
+    "error_message": "json_decode:Expecting ',' delimiter: line 58 column 2 (char 8435)",
+    "raw_data": {
+      "id": "434",
+      "score": "0.8",
+      "title": "This Khosla-backed startup can track drones, trucks, and robotaxis, inch by inch",
+      "source": "TechCrunch_robotics",
+      "summary": "Point One Navigation, now valued at $230 million, is building out well beyond automotive.",
+      "content_hash": "af88595cb8ab62311874a05100ee6a6dfae99fdf9c6e636f574b18a839882b1f",
+      "extracted_facts": "{}"
+    },
+    "created_at": "2026-05-31 10:02:45.144020"
+  },
+  {
+    "id": 122,
+    "tier": 3,
+    "item_id": 459,
+    "item_type": "filtered_signal",
+    "error_message": "json_decode:Invalid control character at: line 7 column 361 (char 3433)",
+    "raw_data": {
+      "id": "459",
+      "score": "0.8",
+      "title": "The Chip That Made Hardware Rewriteable",
+      "source": "IEEE_Spectrum",
+      "summary": "<img src=\"https://spectrum.ieee.org/media-library/die-photo-of-an-integrated-circuit-with-an-8-by-8-array.jpg?id=66633028&amp;width=1245&amp;height=700&amp;coordinates=0%2C469%2C0%2C469\" /><br /><br /><p>Many of the world’s most advanced electronic systems—including <a href=\"https://spectrum.ieee.org/tag/routers\" target=\"_self\">Internet routers</a>, <a href=\"https://spectrum.ieee.org/6g-wireless\" target=\"_self\">wireless base stations</a>, <a href=\"https://spectrum.ieee.org/mri\" target=\"_self\">medical imaging scanners</a>, and <a href=\"https://www.ibm.com/think/topics/ai-accelerator\" rel=\"noopener noreferrer\" target=\"_blank\">some artificial intelligence tools</a>—depend on <a href=\"https://spectrum.ieee.org/tag/fpga\" target=\"_self\">field-programmable gate arrays</a>. Computer chips with internal hardware circuits, the FPGAs can be reconfigured after manufacturing.</p><p>On 12 March, an <a href=\"https://ieeemilestones.ethw.org/Main_Page\" rel=\"noopener noreferrer\" target=\"_blank\">IEEE Milestone</a> plaque recognizing the first FPGA was dedicated at the <a href=\"https://www.amd.com/en.html\" rel=\"noopener noreferrer\" target=\"_blank\">Advanced Micro Devices</a> campus in San Jose, Calif., the former <a href=\"https://en.wikipedia.org/wiki/Xilinx\" rel=\"noopener noreferrer\" target=\"_blank\">Xilinx</a> headquarters and the birthplace of the technology.</p><p>The FPGA earned the Milestone designation because it introduced iteration to semiconductor design. Engineers could redesign hardware repeatedly without fabricating a new chip, dramatically reducing development risk and enabling faster innovation at a time when semiconductor costs were rising rapidly.</p><p>The ceremony, which was organized by the <a href=\"https://ieeescv.org/\" rel=\"noopener noreferrer\" target=\"_blank\">IEEE Santa Clara Valley Section</a>, brought together professionals from across the semiconductor industry and IEEE leadership. Speakers at the event included <a href=\"https://www.seti.org/people/stephen-trimberger/\" rel=\"noopener noreferrer\" target=\"_blank\">Stephen Trimberger</a>, an IEEE and <a href=\"https://www.acm.org/\" rel=\"noopener noreferrer\" target=\"_blank\">ACM</a> Fellow <a href=\"https://www.seti.org/people/stephen-trimberger/\" rel=\"noopener noreferrer\" target=\"_blank\"></a>whose technical contributions helped shape modern FPGA architecture. Trimberger reflected on how the invention enabled software-programmable hardware.</p><h2>Solving computing’s flexibility-performance tradeoff</h2><p>FPGAs emerged in the 1980s to address a core limitation in computing. A microprocessor executes software instructions sequentially, making it flexible but sometimes too slow for workloads requiring many operations at once.</p><p>At the other extreme, <a href=\"https://spectrum.ieee.org/lowbudget-chip-design-how-hard-is-it\" target=\"_self\">application-specific integrated circuits</a> are chips designed to do only one task. ASICs achieve high efficiency but require lengthy development cycles and nonrecurring engineering costs, which are large, upfront investments. Expenses include designing the chip and preparing it for manufacturing—a process that involves creating detailed layouts, building <a href=\"https://spectrum.ieee.org/leading-chipmakers-eye-euv-lithography-to-save-moores-law\" target=\"_self\">masks for the fabrication machines</a>, and setting up production lines to handle the tiny circuits.</p><p>“ASICs can deliver the best performance, but the development cycle is long and the nonrecurring engineering cost can be very high,” says <a href=\"https://vast.cs.ucla.edu/people/faculty/jason-cong\" rel=\"noopener noreferrer\" target=\"_blank\">Jason Cong</a>, an IEEE Fellow and professor of computer science at the <a href=\"https://samueli.ucla.edu/\" rel=\"noopener noreferrer\" target=\"_blank\">University of California, Los Angeles</a>. “FPGAs provide a sweet spot between processors and custom silicon.”</p><p>Cong’s foundational work in FPGA design automation and high-level synthesis transformed how reconfigurable systems are programmed. He developed synthesis tools that translate <a href=\"https://spectrum.ieee.org/top-programming-languages-2025\" target=\"_self\">C/C++</a> into hardware designs, for example.</p><p>At the heart of his work is an underlying principle first espoused by electrical engineer <a href=\"https://www.invent.org/inductees/ross-freeman\" rel=\"noopener noreferrer\" target=\"_blank\">Ross Freeman</a>: By configuring hardware using programmable memory embedded inside the chip, FPGAs combine hardware-level speed with the adaptability traditionally associated with software.</p><h2>Silicon Valley origins: the first FPGA</h2><p>The FPGA architecture originated in the mid-1980s at Xilinx, a Silicon Valley company founded in 1984. The invention is widely credited to Freeman, a Xilinx cofounder and the startup’s CTO. He envisioned a chip with circuitry that could be configured after fabrication rather than fixed permanently during creation.</p><p>Articles about the <a href=\"https://www.eejournal.com/article/how-the-fpga-came-to-be-part-5/\" rel=\"noopener noreferrer\" target=\"_blank\">history of the FPGA</a> emphasize that he saw it as a deliberate break from conventional chip design.</p><p>At the time, semiconductor engineers treated <a href=\"https://spectrum.ieee.org/special-reports/the-transistor-at-75/\" target=\"_self\">transistors</a> as scarce resources. Custom chips were carefully optimized so that nearly every transistor served a specific purpose.</p><p>Freeman proposed a different approach. He figured <a href=\"https://spectrum.ieee.org/special-reports/50-years-of-moores-law/\" target=\"_self\">Moore’s Law</a> would soon change chip economics. The principle holds that transistor counts roughly double every two years, making computing cheaper and more powerful. Freeman posited that as transistors became abundant, flexibility would matter more than perfect efficiency.</p><p>He envisioned a device composed of programmable logic blocks connected through configurable routing—a chip filled with what he described as “open gates,” ready to be defined by users after manufacturing. Instead of fixing hardware in silicon permanently, engineers could configure and reconfigure circuits as requirements evolved.</p><p>Freeman sometimes compared the concept to a blank cassette tape: Manufacturers would supply the medium, while engineers determined its function. The analogy captured a profound shift in who controls the technology, shifting hardware design flexibility from chip fabrication facilities to the system designers themselves.</p><p>In 1985 Xilinx introduced the first FPGA for commercial sale: the <a href=\"https://spectrum.ieee.org/chip-hall-of-fame-xilinx-xc2064-fpga\" target=\"_self\">XC2064</a>. The device contained 64 configurable logic blocks—small digital circuits capable of performing logical operations—arranged in an 8-by-8 grid. Programmable routing channels allowed engineers to define how signals moved between blocks, effectively wiring a custom circuit with software.</p><p>Fabricated using a 2-micrometer process (meaning that 2 µm was the minimum size of the features that could be patterned onto silicon using <a href=\"https://www.micron.com/content/dam/micron/educatorhub/fabrication/photolithography/micron-fabrication-intro-to-photolithography-presentation.pdf\" rel=\"noopener noreferrer\" target=\"_blank\">photolithography</a>), the XC2064 implemented a few thousand logic gates. Modern FPGAs can contain hundreds of millions of gates, enabling vastly more complex designs. Yet the XC2064 established a design workflow still used today: Engineers describe the hardware behavior digitally and then “compile the design,” a process that automatically translates the plans into the instructions the FPGA needs to set its logic blocks and wiring, according to <a href=\"https://www.amd.com/en.html\" rel=\"noopener noreferrer\" target=\"_blank\">AMD</a>. Engineers then load that configuration onto the chip.</p><h2>The breakthrough: hardware defined by memory</h2><p>Earlier <a href=\"https://tessellatedcircuits.com/pld_hist.php\" rel=\"noopener noreferrer\" target=\"_blank\">programmable logic devices</a>, such as erasable programmable read-only memory, or EPROM, allowed limited customization but relied on largely fixed wiring structures that <a href=\"https://medium.com/@najamhassan569/understanding-plds-the-building-blocks-of-modern-digital-systems-dbefd69fbc21\" rel=\"noopener noreferrer\" target=\"_blank\">did not scale well</a> as circuits grew more complex, Cong says.</p><p>FPGAs introduced programmable interconnects—networks of electronic switches controlled by memory cells distributed across the chip. When powered on, the device loads a <a href=\"https://spectrum.ieee.org/computing-with-random-pulses-promises-to-simplify-circuitry-and-save-power\" target=\"_self\">bitstream</a> configuration file that determines how its internal circuits behave.</p><p>“As process technology improved and transistor counts increased, the cost of programmability became much less significant,” Cong says.</p><h2>From “glue logic” to essential infrastructure</h2><p>“Initially, FPGAs were used as what engineers called <a href=\"https://www.pcmag.com/encyclopedia/term/glue-logic\" rel=\"noopener noreferrer\" target=\"_blank\">glue logic</a>,” Cong says.</p><p><em><em>Glue logic</em></em> refers to simple circuits that connect processors, memory, and peripheral devices so the system works reliably, according to <a href=\"https://www.pcmag.com/encyclopedia/term/glue-logic\" rel=\"noopener noreferrer\" target=\"_blank\"><em><em>PC Magazine</em></em></a>. In other words, it “glues” different components together, especially when interfaces change frequently.</p><p>Early adopters recognized the advantage of hardware that could adapt as standards evolved. In “<a href=\"https://cacm.acm.org/practice/the-history-status-and-future-of-fpgas/\" rel=\"noopener noreferrer\" target=\"_blank\">The History, Status, and Future of FPGAs</a>,” published in <a href=\"https://cacm.acm.org/\" rel=\"noopener noreferrer\" target=\"_blank\"><em><em>Communications of the ACM</em></em></a>, engineers at Xilinx and organizations such as <a href=\"https://spectrum.ieee.org/7-bell-labs-ieee-milestones\" target=\"_self\">Bell Labs</a>, <a href=\"https://computerhistory.org/blog/fairchild-semiconductor-the-60th-anniversary-of-a-silicon-valley-legend/\" rel=\"noopener noreferrer\" target=\"_blank\">Fairchild Semiconductor</a>, <a href=\"https://www.ibm.com/us-en\" rel=\"noopener noreferrer\" target=\"_blank\">IBM</a>, and <a href=\"https://www.britannica.com/money/Sun-Microsystems-Inc\" rel=\"noopener noreferrer\" target=\"_blank\">Sun Microsystems</a> said the earliest uses of <a href=\"https://www.eetimes.com/transfer-from-fpgas-for-prototype-to-asics-for-production/\" rel=\"noopener noreferrer\" target=\"_blank\">FPGAs were for prototyping ASICs</a>. They also used it for <a href=\"https://www.synopsys.com/glossary/what-is-hav-emulation.html\" rel=\"noopener noreferrer\" target=\"_blank\">validating complex systems</a> by running their software before fabrication, allowing the companies to deploy specialized products manufactured in modest volumes.</p><p>Those uses revealed a broader shift: Hardware no longer needed to remain fixed once deployed.</p><p class=\"shortcode-media shortcode-media-rebelmouse-image\"> <img alt=\"A group dressed in business casual attire smiling and posing together around an outdoor bench adorned with a plaque.\" class=\"rm-shortcode\" id=\"c3363\" src=\"https://spectrum.ieee.org/media-library/a-group-dressed-in-business-casual-attire-smiling-and-posing-together-around-an-outdoor-bench-adorned-with-a-plaque.jpg?id=66633157&amp;width=980\" /><small class=\"image-media media-caption\">Attendees at the Milestone plaque dedication ceremony included (seated L to R) 2025 IEEE President Kathleen Kramer, 2024 IEEE President Tom Coughlin, and Santa Clara Valley Section Milestones Chair Brian Berg.</small><small class=\"image-media media-photo-credit\">Douglas Peck/AMD</small></p><h2>Semiconductor economics changed the equation</h2><p>The rise of FPGAs closely followed changes in semiconductor economics, Cong says.</p><p>Developing a custom chip requires a large upfront investment before production begins. As fabrication costs increased, products had to ship in large quantities to make ASIC development economically viable, according to <a href=\"https://anysilicon.com/the-economics-of-asic/\" target=\"_blank\">a post</a> published by <a href=\"https://anysilicon.com/\" target=\"_blank\">AnySilicon</a>.</p><p>FPGAs allowed designers to move forward without that larger monetary commitment.</p><p>ASIC development typically requires 18 to 24 months from conception to silicon, while FPGA implementations often can be completed within three to six months using modern design tools, Cong says. The shorter cycle and the ability to reconfigure the hardware enabled startups, universities, and equipment manufacturers to experiment with advanced architectures that were previously accessible mainly to large chip companies.</p><h2>Lookup tables and the rise of reconfigurable computing</h2><p>A popular technique for implementing mathematical functions in hardware is <a href=\"https://ieeexplore.ieee.org/document/10013797\" target=\"_blank\"></a>the <a href=\"https://ieeexplore.ieee.org/document/10013797\" target=\"_blank\">lookup table</a> (LUT). A LUT is a small memory element that stores the results of logical operations, according to “<a href=\"https://arxiv.org/abs/2511.06174\" rel=\"noopener noreferrer\" target=\"_blank\">LUT-LLM: Efficient Large Language Model Inference with Memory-based Computations on FPGAs</a>,” a paper selected for presentation next month at the 34th <a href=\"https://www.fccm.org/\" rel=\"noopener noreferrer\" target=\"_blank\">IEEE International Symposium on Field-Programmable Custom Computing Machines</a> (FCCM).</p><p>Instead of repeatedly recalculating outcomes, the chip retrieves answers directly from memory. Cong compares the approach to consulting multiplication tables rather than recomputing the arithmetic each time.</p><p>Research led by Cong and others helped develop efficient methods for mapping digital circuits onto LUT-based architectures, shaping routing and layout strategies used in modern devices.</p><p>As transistor budgets expanded, FPGA vendors integrated memory blocks, digital signal-processing units, high-speed communication interfaces, <a href=\"https://spectrum.ieee.org/tag/cryptography\" target=\"_self\">cryptographic engines</a>, and embedded processors, transforming the devices into versatile computing platforms.</p><h2>Why the gate arrays are distinct from CPUs, GPUs, and ASICs</h2><p>FPGAs coexist with other processors because each one optimizes different priorities. Central processing units excel at general computing. Graphics processing units, designed to perform many calculations simultaneously, dominate large parallel workloads such as AI training. ASICs provide maximum efficiency when designs remain stable and production volumes are high.</p><p class=\"pull-quote\">“ASICs can deliver the best performance, but the development cycle is long, and the nonrecurring engineering cost can be very high. FPGAs provide a sweet spot between processors and custom silicon.” <strong>—Jason Cong, IEEE Fellow and professor of computer science at UCLA.</strong></p><p>“FPGAs are not replacements for CPUs or GPUs,” Cong says. “They complement those processors in <a href=\"https://docs.lib.purdue.edu/cgi/viewcontent.cgi?article=1209&amp;context=ecetr\" target=\"_blank\">heterogeneous computing</a> systems.”</p><p>Modern computing platforms increasingly combine multiple types of processors to balance flexibility, performance, and energy efficiency.</p><h2>A Milestone for an idea, not just a device</h2><p>This IEEE Milestone recognizes more than a successful semiconductor product. It also acknowledges a shift in how engineers innovate.</p><p>Reconfigurable hardware allows designers to test ideas quickly, refine architectures, and deploy systems while standards and markets evolve.</p><p>“Without FPGAs,” Cong says, “the pace of hardware innovation would likely be much slower.”</p><p>Four decades after the first FPGA appeared, the technology’s enduring legacy reflects Freeman’s insight: Hardware did not need to remain fixed. By accepting a small amount of unused silicon in exchange for adaptability, engineers transformed chips from static products into platforms for continuous experimentation—turning silicon itself into a medium engineers could rewrite.</p><p>Among those who attended the Milestone ceremony were 2025 IEEE President <a href=\"https://www.linkedin.com/in/kathleenkramer\" target=\"_blank\">Kathleen Kramer</a>; 2024 IEEE President <a href=\"https://corporate-awards.ieee.org/speaker/tom-coughlin/\" rel=\"noopener noreferrer\" target=\"_blank\">Tom Coughlin</a>; <a href=\"https://www.linkedin.com/in/averylu\" rel=\"noopener noreferrer\" target=\"_blank\">Avery Lu</a>, chair of the <a href=\"https://ieeescv.org/\" rel=\"noopener noreferrer\" target=\"_blank\">IEEE Santa Clara Valley Section</a>; and <a href=\"https://ieeetv.ieee.org/speaker/brian-berg\" rel=\"noopener noreferrer\" target=\"_blank\">Brian Berg</a>, history and milestones chair of <a href=\"https://ieee-region6.org/\" rel=\"noopener noreferrer\" target=\"_blank\">IEEE Region 6</a><a href=\"https://ieeetv.ieee.org/speaker/brian-berg\" rel=\"noopener noreferrer\" target=\"_blank\">. They joined</a> AMD’s chief executive, <a href=\"https://www.amd.com/en/corporate/leadership/lisa-su.html\" rel=\"noopener noreferrer\" target=\"_blank\">Lisa Su</a>, and <a href=\"https://www.amd.com/en/corporate/leadership/salil-raje.html#:~:text=Salil%20Raje%20is%20senior%20vice,with%20an%20emphasis%20on%20growing\" rel=\"noopener noreferrer\" target=\"_blank\">Salil Raje</a>, senior vice president and general manager of adaptive and embedded computing at AMD.</p><p>The <a href=\"https://ethw.org/Milestones:Field_Programmable_Gate_Array\" rel=\"noopener noreferrer\" target=\"_blank\">IEEE Milestone plaque</a> honoring the field-programmable gate array reads:</p><p><em><em>“</em></em><em><em>The FPGA is an integrated circuit with user-programmable Boolean logic functions and interconnects. FPGA inventor Ross Freeman cofounded Xilinx to productize his 1984 invention, and in 1985 the XC2064 was introduced with 64 programmable 4-input logic functions. Xilinx’s FPGAs helped accelerate a dramatic industry shift wherein ‘fabless’ companies could use software tools to design hardware while engaging ‘foundry’ companies to handle the capital-intensive task of manufacturing the software-defined hardware.”</em></em></p><p>Administered by the <a href=\"https://www.ieee.org/about/history-center?check_logged_in=1\" rel=\"noopener noreferrer\" target=\"_blank\">IEEE History Center</a> and supported by donors, the IEEE Milestone program recognizes outstanding technical developments worldwide that are at least 25 years old.</p><p>Check out <em><em>Spectrum</em></em>’s <a href=\"https://connect.ieee.org/NzU2LUdQSC04OTkAAAGhT7-QweL2i3BmX2b-_PBdiukfOVwCR2UPcYg1G4khUu5odaR3T07IAVEY5ylL-hWj7LNbRKU=\" rel=\"noopener noreferrer\" target=\"_blank\">History of Technology</a> channel to read more stories about key engineering achievements.</p>",
+      "content_hash": "2a046c913a3f660d00582b1e3f9775a00c0db91edf83b662c4d589064fbfac59",
+      "extracted_facts": "{}"
+    },
+    "created_at": "2026-05-31 10:02:08.587771"
+  },
+  {
+    "id": 121,
+    "tier": 3,
+    "item_id": 1189,
+    "item_type": "filtered_signal",
+    "error_message": "ValueError:필수 필드 누락: is_relevant",
+    "raw_data": {
+      "id": "1189",
+      "score": "0.88",
+      "title": "Finding Success in Industry as a Chip Designer",
+      "source": "IEEE_Spectrum",
+      "summary": "<img src=\"https://spectrum.ieee.org/media-library/engineer-testing-electronic-components-at-a-lab-bench-with-cables-and-equipment.png?id=66821207&amp;width=1245&amp;height=700&amp;coordinates=0%2C97%2C0%2C97\" /><br /><br /><p>I have been an application-specific IC (ASIC) designer for almost three decades. Over that time, I’ve moved through the full academic trajectory, from graduate student to full professor; later, I transitioned to industry after an unsuccessful stint at entrepreneurship. When I made the switch to the private sector in 2019, I began focusing on a critically important aspect of the electronic industry: silicon intellectual property. </p><p>As much as 80 percent of the physical area in today’s most advanced chips is occupied by blocks that aren’t made for specific products or even designed by the consumer-facing companies that built them. Instead, chipmakers draw heavily on established silicon IP from companies like <a href=\"https://www.arm.com/\" rel=\"noopener noreferrer\" target=\"_blank\">Arm</a>, <a href=\"https://www.cadence.com/en_US/home.html\" rel=\"noopener noreferrer\" target=\"_blank\">Cadence</a>, <a href=\"https://www.rambus.com/\" rel=\"noopener noreferrer\" target=\"_blank\">Rambus</a>, <a href=\"https://www.synopsys.com/\" rel=\"noopener noreferrer\" target=\"_blank\">Synopsys</a>, and the company I work for, <a href=\"https://www.siliconcr.com/\" rel=\"noopener noreferrer\" target=\"_blank\">Silicon Creations</a>. </p><p>Throughout my career, I’ve designed chips for very different purposes, including enabling the research program in my academic lab and expanding the IP portfolio of my company. When I joined Silicon Creations, I had no idea how differently the industry approaches IC design and encountered a steep learning curve. Initially, it seemed that much of my two decades of academic research and training did not directly translate to the role. I had to learn new skills and adopt a new mindset.</p><p>Today, demand for <a href=\"https://www.arm.com/glossary/asic\" rel=\"noopener noreferrer\" target=\"_blank\">ASICs</a> is rapidly growing, driven by the need for specialized chips in the automotive sector, AI applications, and more. By <a href=\"https://www.coherentmarketinsights.com/industry-reports/asic-chip-market\" rel=\"noopener noreferrer\" target=\"_blank\">one market estimate</a>, the ASIC market is expected to grow from US $23.4 billion to $38.8 billion by 2033, and the semiconductor industry as a whole is projected to <a href=\"https://www.mckinsey.com/industries/semiconductors/our-insights/hiding-in-plain-sight-the-underestimated-size-of-the-semiconductor-industry\" rel=\"noopener noreferrer\" target=\"_blank\">hit $1 trillion by 2030</a>. The industry <a href=\"https://set.kellyservices.us/resource-center/business-resources/current-talent-trends-and-hiring-outlook-in-the-semiconductor-sector\" rel=\"noopener noreferrer\" target=\"_blank\">needs more chip designers—</a>but if you’re coming from an academic background as I did, there are a few things you’ll need to know.</p><h2>Different goals lead to different strategies</h2><p>The differences between industry and academe begin with a divergence in purpose. In academia, my primary objective was to generate new knowledge: to propose a novel circuit technique, validate an unconventional architecture, or explore the limits of performance in a given domain. A successful chip is one that demonstrates a concept. In industry, it is not nearly enough to prove that something can work. The goal is to ensure that it works reliably, repeatedly, and at scale. Success is measured not by novelty but by whether the silicon meets specifications, yields as expected in production, and supports a competitive product delivered on schedule.</p><p>This leads to a stark contrast in risk tolerance. Academic designs often deliberately push into unproven territory, where even partial success can yield valuable insight. In industry, however, we systematically minimize risk. The cost of failure makes first-time silicon success a central requirement—especially at advanced technology nodes, where the lithography masks used to transfer circuit designs onto silicon wafers alone can cost tens of millions of dollars. As a result, industry design flows are built around eliminating uncertainty through conservative margins, extensive validation, and careful reuse of proven solutions. </p><p class=\"pull-quote\"><span>“Academia explores the design space, asking what is possible, while industry exploits it, determining what is viable at scale.”</span></p><p>This paradigm has existed since the 1970s, when application-specific chip design was established. However, the gulf between academia and industry has expanded since the mid-2010s, when <a href=\"https://spectrum.ieee.org/how-the-father-of-finfets-helped-save-moores-law\" target=\"_self\">FinFET technology</a>, a 3D architecture using vertical “fins” of silicon, was widely adopted in industry. System designs are also becoming increasingly modular with the <a href=\"https://spectrum.ieee.org/3-ways-chiplets-are-remaking-processors\" target=\"_self\">advent of chiplets</a>. This fundamentally altered the economics and complexity of ASIC development, with design costs rising by almost an order of magnitude. Initiatives like <a href=\"https://www.tsmc.com/english\" target=\"_blank\">Taiwan Semiconductor Manufacturing Co.</a>’s <a href=\"https://www.tsmc.com/english/dedicatedFoundry/services/university_program\" target=\"_blank\">University FinFET Program</a> and new government-funded <a href=\"https://pme.uchicago.edu/news/new-3m-us-national-science-foundation-grant-bolsters-american-chip-design\" target=\"_blank\">chip-design hubs</a> now let some well-resourced universities design for more advanced architectures, but the technology is still out of reach for many academics. </p><h2>What the industry-academia split means in practice</h2><p>Consider a startup developing an ASIC. Its engineering team may have deep expertise in a particular algorithm, sensor interface, or system architecture, the features that define its competitive advantage. But it is unlikely to possess world-class expertise in every supporting function. Developing each of these blocks internally would require significant time, capital, and specialized talent. Doing so could delay market entry beyond the startup’s viability.</p><p>Even large semiconductor companies face similar constraints. Advanced-node development demands intense focus. Allocating a team to redesign a standard interface block that has already been implemented elsewhere may be difficult to justify when differentiation lies at the system level, such as an inference chip’s ability to speed up neural network computations. The time it takes to move a new chip from conception to market and risk mitigation, not self-sufficiency, govern most decisions about in-house development versus outsourcing.</p><p>The economics of advanced IC manufacturing reinforce this reality. When the development cost of a leading-edge chip reaches hundreds of millions of dollars, minimizing risk becomes a central design imperative.</p><p>In this context, silicon IP emerged as a practical solution. Similar to how software developers rely on preexisting libraries rather than writing every function from scratch, ASIC designers license predesigned, preverified silicon blocks—such as processor cores, memory interfaces, and security engines—from highly specialized IP vendors. These blocks can then be integrated into larger, increasingly complex systems. </p><h2>Design scope, verification, and time horizons</h2><p>With the use of silicon IP, industry is able to widen the scope of its designs. Academic efforts tend to focus on block-level innovation: a new analog-to-digital converter architecture or an ultralow-noise amplifier, for instance. These designs typically abstract away many of the complexities of bringing a chip to market, such as packaging constraints, long-term reliability, and manufacturing yield.</p><p>In industry, the focus shifts to system-level integration. Modern systems on chips, or SoCs, incorporate dozens or even hundreds of functional blocks. Managing signal integrity, timing, firmware interaction, and system-level validation becomes as critical as the design of any individual block. </p><p>Verification philosophy also diverges sharply. In academia, the goal of verification is to demonstrate that the concept works under nominal conditions, which may not always reflect how it would perform in real applications. Even if only a fraction of fabricated chips from a multiproject wafer operates correctly, the design may still be considered a success if it validates the underlying idea. </p><p>At my academic lab for instance, we used to receive 40 chips from a <a href=\"https://www.tsmc.com/english/dedicatedFoundry/services/cyberShuttle\" target=\"_blank\">TSMC prototyping service</a> and started testing them in batches of five. If the first five or 10 chips proved functional, we had already collected more than enough data for a publication. If some of them failed, we weren’t required to mention this when publishing the results. </p><p>In industry, verification is exhaustive, critical, and often dominates the development schedule. Failures are measured in parts per million, and even rare anomalies are carefully analyzed and documented to identify root causes and prevent recurrence. When I started at Silicon Creations, I was surprised by the level of detail and scrutiny designs face.</p><p>Differences in time horizons and economic constraints reinforce each of these contrasts. Academic projects operate on flexible timelines aligned with research and funding cycles. If I missed a deadline, I just had to wait for the next cycle. Industry projects are driven by fixed product schedules and market windows, frequently targeting costly leading-edge nodes to achieve competitive performance, power, and area efficiency. Missing a deadline can negate the value of an entire design and may have major financial consequences along the entire supply chain.</p><p>In essence, academia explores the design space, asking what is possible, while industry exploits it, determining what is viable at scale. Both are indispensable, but they operate under fundamentally different definitions of success. As ASIC complexity continues to grow, understanding both perspectives will be essential for the next generation of engineers navigating the evolving semiconductor landscape.</p><p><em>This article appears in the June 2026 print issue.</em></p>",
+      "content_hash": "d6a42922d24aaeb2684c54a1f8b2572946a85661ddac08b0ba128db9cbc1237d",
+      "extracted_facts": "{}"
+    },
+    "created_at": "2026-05-31 10:01:26.497114"
+  },
+  {
+    "id": 120,
+    "tier": 3,
+    "item_id": 458,
+    "item_type": "filtered_signal",
+    "error_message": "json_decode:Expecting ',' delimiter: line 65 column 4 (char 10315)",
+    "raw_data": {
+      "id": "458",
+      "score": "0.8",
+      "title": "Better Hardware Could Turn Zeros into AI Heroes",
+      "source": "IEEE_Spectrum",
+      "summary": "<img src=\"https://spectrum.ieee.org/media-library/abstract-gradient-artwork-of-a-stylized-robot-head-with-circuits-and-binary-code-patterns.jpg?id=65862907&amp;width=1245&amp;height=700&amp;coordinates=0%2C760%2C0%2C761\" /><br /><br /><p><strong>When it comes to</strong> AI models, size matters.</p><p>Even though some artificial-intelligence experts <a href=\"https://spectrum.ieee.org/chain-of-thought-prompting\" target=\"_self\">warn</a> that scaling up large language models (LLMs) is hitting diminishing performance returns, companies are still coming out with ever larger AI tools. Meta’s latest Llama release had a staggering <a href=\"https://ai.meta.com/blog/llama-4-multimodal-intelligence/\" rel=\"noopener noreferrer\" target=\"_blank\">2 trillion</a> parameters that define the model.</p><p>As models grow in size, their <a href=\"https://arxiv.org/abs/2001.08361\" rel=\"noopener noreferrer\" target=\"_blank\">capabilities</a> increase. But so do the energy demands and the time it takes to run the models, which increases their <a href=\"https://spectrum.ieee.org/ai-index-2025\" target=\"_self\">carbon footprint</a>. To mitigate these issues, people have turned to <a href=\"https://spectrum.ieee.org/large-language-models-size\" target=\"_self\">smaller, less capable models</a> and using <a href=\"https://spectrum.ieee.org/1-bit-llm\" target=\"_self\">lower-precision</a> numbers whenever possible for the model parameters.</p><p>But there is another path that may retain a staggeringly large model’s high performance while reducing the time it takes to run an energy footprint. This approach involves befriending the zeros inside large AI models.</p><p>For many models, most of the parameters—the weights and activations—are actually zero, or so close to zero that they could be treated as such without losing accuracy. This quality is known as sparsity. Sparsity offers a significant opportunity for computational savings: Instead of wasting time and energy adding or multiplying zeros, these calculations could simply be skipped; rather than storing lots of zeros in memory, one need only store the nonzero parameters.</p><p>Unfortunately, today’s popular hardware, like multicore CPUs and GPUs, do not naturally take full advantage of sparsity. To fully leverage sparsity, researchers and engineers need to rethink and re-architect each piece of the design stack, including the hardware, low-level firmware, and application software.</p><p>In our research group at Stanford University, we have developed the first (to our knowledge) piece of hardware that’s capable of calculating all kinds of sparse and traditional workloads efficiently. The energy savings varied widely over the workloads, but on average our chip consumed one-seventieth the energy of a CPU, and performed the computation on average eight times as fast. To do this, we had to engineer the hardware, low-level firmware, and software from the ground up to take advantage of sparsity. We hope this is just the beginning of hardware and model development that will allow for more energy-efficient AI.</p><h2>What is sparsity?</h2><p>Neural networks, and the data that feeds into them, are represented as arrays of numbers. These arrays can be one-dimensional (vectors), two-dimensional (matrices), or more (tensors). A sparse vector, matrix, or tensor has mostly zero elements. The level of sparsity varies, but when zeroes make up more than 50 percent of any type of array, it can stand to benefit from sparsity-specific computational methods. In contrast, an object that is not sparse—that is, it has few zeros compared with the total number of elements—is called dense.</p><p>Sparsity can be naturally present, or it can be induced. For example, a <a href=\"https://arxiv.org/abs/2005.00687\" rel=\"noopener noreferrer\" target=\"_blank\">social-network graph</a> will be naturally sparse. Imagine a graph where each node (point) represents a person, and each edge (a line segment connecting the points) represents a friendship. Since most people are not friends with one another, a matrix representing all possible edges will be mostly zeros. Other popular applications of AI, such as other forms of graph learning and <a href=\"https://arxiv.org/abs/1906.03109\" rel=\"noopener noreferrer\" target=\"_blank\">recommendation models</a>, contain naturally occurring sparsity as well.</p><h3></h3><br /><img alt=\"Diagram mapping a sparse matrix to a fibertree and compressed storage format\" class=\"rm-shortcode\" id=\"3b584\" src=\"https://spectrum.ieee.org/media-library/diagram-mapping-a-sparse-matrix-to-a-fibertree-and-compressed-storage-format.jpg?id=65866445&amp;width=980\" /><h3></h3><br /><p>Beyond naturally occurring sparsity, sparsity can also be induced within an AI model in several ways. Two years ago, a team at <a href=\"https://spectrum.ieee.org/cerebras-wafer-scale-engine\" target=\"_self\">Cerebras</a> <a href=\"https://www.cerebras.ai/blog/introducing-sparse-llama-70-smaller-3x-faster-full-accuracy\" target=\"_blank\">showed</a> that one can set up to 70 to 80 percent of parameters in an LLM to zero without losing any accuracy. Cerebras demonstrated these results specifically on Meta’s open-source Llama 7B model, but the ideas extend to other LLM models like ChatGPT and Claude.</p><h2>The case for sparsity</h2><p>Sparse computation’s efficiency stems from two fundamental properties: the ability to compress away zeros and the convenient mathematical properties of zeros. Both the algorithms used in sparse computation and the hardware dedicated to them leverage these two basic ideas.</p><p>First, sparse data can be compressed, making it more memory efficient to store “sparsely”—that is, in something called a sparse data type. Compression also makes it more energy efficient to move data when dealing with large amounts of it. This is best understood by an example. Take a four-by-four matrix with three nonzero elements. Traditionally, this matrix would be stored in memory as is, taking up 16 spaces. This matrix can also be compressed into a sparse data type, getting rid of the zeros and saving only the nonzero elements. In our example, this results in 13 memory spaces as opposed to 16 for the dense, uncompressed version. These savings in memory increase with increased sparsity and matrix size.</p><h3></h3><br /><img alt=\"Diagram comparing dense and sparse matrix\\u2013vector multiplication step by step.\" class=\"rm-shortcode\" id=\"f523b\" src=\"https://spectrum.ieee.org/media-library/diagram-comparing-dense-and-sparse-matrix-u2013vector-multiplication-step-by-step.jpg?id=66499008&amp;width=980\" /><p><br /></p><p>In addition to the actual data values, compressed data also requires metadata. The row and column locations of the nonzero elements also must be stored. This is usually thought of as a “fibertree”: The row labels containing nonzero elements are listed and linked to the column labels of the nonzero elements, which are then linked to the values stored in those elements.</p><p>In memory, things get a bit more complicated still: The row and column labels for each nonzero value must be stored as well as the “segments” that indicate how many such labels to expect, so the metadata and data can be clearly delineated from one another.</p><p>In a dense, noncompressed matrix data type, values can be accessed either one at a time or in parallel, and their locations can be calculated directly with a simple equation. However, accessing values in sparse, compressed data requires looking up the coordinates of the row index and using that information to “indirectly” look up the coordinates of the column index before finally reaching the value. Depending on the actual locations of the sparse data values, these indirect lookups can be extremely random, making the computation data-dependent and requiring the allocation of memory lookups on the fly.</p><p>Second, two mathematical properties of zero let software and hardware skip a lot of computation. Multiplying any number by zero will result in a zero, so there’s no need to actually do the multiplication. Adding zero to any number will always return that number, so there’s no need to do the addition either.</p><p>In matrix-vector multiplication, one of the most common operations in AI workloads, all computations except those involving two nonzero elements can simply be skipped. Take, for example, the four-by-four matrix from the previous example and a vector of four numbers. In dense computation, each element of the vector must be multiplied by the corresponding element in each row and then added together to compute the final vector. In this case, that would take 16 multiplication operations and 16 additions (or four accumulations).</p><p>In sparse computation, only the nonzero elements of the vector need be considered. For each nonzero vector element, indirect lookup can be used to find any corresponding nonzero matrix element, and only those need to be multiplied and added. In the example shown here, only two multiplication steps will be performed, instead of 16.</p><h2>The trouble with GPUs and CPUs</h2><p>Unfortunately, modern hardware is not well suited to accelerating sparse computation. For example, say we want to perform a matrix-vector multiplication. In the simplest case, in a single CPU core, each element in the vector would be multiplied sequentially and then written to memory. This is slow, because we can do only one multiplication at a time. So instead people use CPUs with vector support or GPUs. With this hardware, all elements would be multiplied in parallel, greatly speeding up the application. Now, imagine that both the matrix and vector contain extremely sparse data. The vectorized CPU and GPU would spend most of their efforts multiplying by zero, performing completely ineffectual computations.</p><p><a href=\"https://developer.nvidia.com/blog/accelerating-inference-with-sparsity-using-ampere-and-tensorrt/\" target=\"_blank\">Newer generations</a> of GPUs are capable of taking some advantage of sparsity in their hardware, but only a particular kind, called structured sparsity. Structured sparsity assumes that two out of every four adjacent parameters are zero. However, some models benefit more from unstructured sparsity—the ability for any parameter (weight or activation) to be zero and compressed away, regardless of where it is and what it is adjacent to. GPUs can run unstructured sparse computation in software, for example, through the use of the <a href=\"https://docs.nvidia.com/cuda/cusparse/\" target=\"_blank\">cuSparse GPU library</a>. However, the support for sparse computations is often limited, and the GPU hardware gets underutilized, wasting energy-intensive computations on overhead.</p><p class=\"shortcode-media shortcode-media-rebelmouse-image rm-float-left rm-resized-container rm-resized-container-25\" rel=\"float: left;\" style=\"float: left;\"> <img alt=\"Neon pixel art of a glowing portal framed by geometric stairs and circuitry lines\" class=\"rm-shortcode\" id=\"012af\" src=\"https://spectrum.ieee.org/media-library/neon-pixel-art-of-a-glowing-portal-framed-by-geometric-stairs-and-circuitry-lines.jpg?id=65863062&amp;width=980\" /> <small class=\"image-media media-photo-credit\"><a href=\"https://petrapeterffy.com/\" target=\"_blank\">Petra Péterffy</a></small></p><p>When doing sparse computations in software, modern CPUs may be a better alternative to GPU computation, because they are designed to be more flexible. Yet, sparse computations on the CPU are often bottlenecked by the indirect lookups used to find nonzero data. CPUs are designed to “prefetch” data based on what they expect they’ll need from memory, but for randomly sparse data, that process often fails to pull in the right stuff from memory. When that happens, the CPU must waste cycles calling for the right data.</p><p>Apple was the <a href=\"https://ieeexplore.ieee.org/document/9833570\" target=\"_blank\">first</a> to speed up these indirect lookups by supporting a method called an array-of-pointers access pattern in the prefetcher of their A14 and M1 chips. Although innovations in prefetching make Apple CPUs more competitive for sparse computation, CPU architectures still have fundamental overheads that a dedicated sparse computing architecture would not, because they need to handle general-purpose computation.</p><p>Other companies have been developing <a href=\"https://spectrum.ieee.org/nvidia-ai\" target=\"_self\">hardware</a> that accelerates sparse machine learning as well. These include Cerebras’s <a href=\"https://spectrum.ieee.org/cerebras-chip-cs3\" target=\"_self\">Wafer Scale Engine</a> and <a href=\"https://ai.meta.com/blog/next-generation-meta-training-inference-accelerator-AI-MTIA/\" target=\"_blank\">Meta’s Training and Inference Accelerator (MTIA)</a>. The Wafer Scale Engine, and its corresponding sparse programming framework, have <a href=\"https://www.cerebras.ai/blog/introducing-sparse-llama-70-smaller-3x-faster-full-accuracy\" target=\"_blank\">shown</a> incredibly sparse results of up to 70 percent sparsity on LLMs. However, the company’s hardware and software solutions support only weight sparsity, not activation sparsity, which is important for many applications. The second version of the MTIA <a href=\"https://ai.meta.com/blog/next-generation-meta-training-inference-accelerator-AI-MTIA/\" target=\"_blank\">claims</a> a sevenfold sparse compute performance boost over the <a href=\"https://doi-org.stanford.idm.oclc.org/10.1145/3579371.3589348\" target=\"_blank\">MTIA v1</a>. However, the only publicly available information regarding sparsity support in the MTIA v2 is for matrix multiplication, not for vectors or tensors.</p><p>Although matrix multiplications take up the majority of computation time in most modern ML models, it’s important to have sparsity support for other parts of the process. To avoid switching back and forth between sparse and dense data types, all of the operations should be sparse.</p><h2>Onyx</h2><p>Instead of these halfway solutions, our team at Stanford has developed a hardware accelerator, <a href=\"https://ieeexplore.ieee.org/document/10631383\" target=\"_blank\">Onyx</a>, that can take advantage of sparsity from the ground up, whether it’s structured or unstructured. Onyx is the first programmable accelerator to support both sparse and dense computation; it’s capable of accelerating key operations in both domains.</p>To understand Onyx, it is useful to know what a coarse-grained reconfigurable array (CGRA) is and how it compares with more familiar hardware, like CPUs and field-programmable gate arrays (FPGAs).<p>CPUs, CGRAs, and FPGAs represent a trade-off between efficiency and flexibility. Each individual logic unit of a CPU is designed for a specific function that it performs efficiently. On the other hand, since each individual bit of an FPGA is configurable, these arrays are extremely flexible, but very inefficient. The goal of CGRAs is to achieve the flexibility of FPGAs with the efficiency of CPUs.</p><p>CGRAs are composed of efficient and configurable units, typically memory and compute, that are specialized for a particular application domain. This is the key benefit of this type of array: Programmers can reconfigure the internals of a CGRA at a high level, making it more efficient than an FPGA but more flexible than a CPU.</p><p class=\"shortcode-media shortcode-media-rebelmouse-image\"> <img alt=\"Two circuit boards and a pen showing a chip shrinking from large to tiny size.\" class=\"rm-shortcode\" id=\"f394d\" src=\"https://spectrum.ieee.org/media-library/two-circuit-boards-and-a-pen-showing-a-chip-shrinking-from-large-to-tiny-size.jpg?id=65970072&amp;width=980\" /> <small class=\"image-media media-caption\">The Onyx chip, built on a coarse-grained reconfigurable array (CGRA), is the first (to our knowledge) to support both sparse and dense computations. </small><small class=\"image-media media-photo-credit\">Olivia Hsu</small></p><p>Onyx is composed of flexible, programmable processing element (PE) tiles and memory (MEM) tiles. The memory tiles store compressed matrices and other data formats. The processing element tiles operate on compressed matrices, eliminating all unnecessary and ineffectual computation.</p><p>The Onyx compiler handles conversion from software instructions to CGRA configuration. First, the input expression—for instance, a sparse vector multiplication—is translated into a graph of abstract memory and compute nodes. In this example, there are memories for the input vectors and output vectors, a compute node for finding the intersection between nonzero elements, and a compute node for the multiplication. The compiler figures out how to map the abstract memory and compute nodes onto MEMs and PEs on the CGRA, and then how to route them together so that they can transfer data between them. Finally, the compiler produces the instruction set needed to configure the CGRA for the desired purpose.</p><p>Since Onyx is programmable, engineers can map many different operations, such as vector-vector element multiplication, or the key tasks in AI, like matrix-vector or matrix-matrix multiplication, onto the accelerator.</p><p>We evaluated the efficiency gains of our hardware by looking at the product of energy used and the time it took to compute, called the energy-delay product (EDP). This metric captures the trade-off of speed and energy. Minimizing just energy would lead to very slow devices, and minimizing speed would lead to high-area, high-power devices.</p><p>Onyx achieves up to 565 times as much energy-delay product over CPUs (we used a 12-core Intel Xeon CPU) that utilize dedicated sparse libraries. Onyx can also be configured to accelerate regular, dense applications, similar to the way a GPU or TPU would. If the computation is sparse, Onyx is configured to use sparse primitives, and if the computation is dense, Onyx is reconfigured to take advantage of parallelism, similar to how GPUs function. This architecture is a step toward a single system that can accelerate both sparse and dense computations on the same silicon.</p><p>Just as important, Onyx enables new algorithmic thinking. Sparse acceleration hardware will not only make AI more performance- and energy efficient but also enable researchers and engineers to explore new algorithms that have the potential to dramatically improve AI.</p><h2>The future with sparsity</h2><p>Our team is already working on next-generation chips built off of Onyx. Beyond matrix multiplication operations, machine learning models perform other types of math, like nonlinear layers, normalization, the softmax function, and more. We are adding support for the full range of computations on our next-gen accelerator and within the compiler. Since sparse machine learning models may have both sparse and dense layers, we are also working on integrating the dense and sparse accelerator architecture more efficiently on the chip, allowing for fast transformation between the different data types. We’re also looking at ways to manage memory constraints by breaking up the sparse data more effectively so we can run computations on several sparse accelerator chips.</p><p>We are also working on systems that can predict the performance of accelerators such as ours, which will help in designing better hardware for sparse AI. Longer term, we’re interested in seeing whether high degrees of sparsity throughout AI computation will catch on with more model types, and whether sparse accelerators become adopted at a larger scale.</p><p>Building the hardware to unstructured sparsity and optimally take advantage of zeros is just the beginning. With this hardware in hand, AI researchers and engineers will have the opportunity to explore new models and algorithms that leverage sparsity in novel and creative ways. We see this as a crucial research area for managing the ever-increasing runtime, costs, and environmental impact of AI. <span class=\"ieee-end-mark\"></span></p>",
+      "content_hash": "175f55716d47fc01971fa26feeb0df81b707858f02edabe6b55207318864ef6f",
+      "extracted_facts": "{}"
+    },
+    "created_at": "2026-05-30 10:08:39.093296"
+  },
+  {
+    "id": 119,
+    "tier": 3,
+    "item_id": 451,
+    "item_type": "filtered_signal",
+    "error_message": "json_decode:Expecting ',' delimiter: line 21 column 3 (char 4822)",
+    "raw_data": {
+      "id": "451",
+      "score": "0.8",
+      "title": "Spot Cam 2  | Boston Dynamics",
+      "source": "Boston_Dynamics",
+      "summary": "Learn about this latest in Spot, Orbit, and our new 5.1 release at: https://bostondynamics.com/blog/a-new-perspective-for-facilities-inspection/\n\nOur all new Spot Cam 2 payload brings the familiar capabilities of Spot Cam+IR with some key new features that give your optional acoustic imager all-new perspectives from Spot. This second generation Spot Cam now has a 4K pan-tilt-zoom camera with 25x optical zoom, an integrated radiometric thermal camera, and a 360 x 130º spherical camera. \n\nThe on-board accessory bay is compatible with Sorama L642 or Fluke SV600 acoustic imager - bringing more flexibility for sensor pointing for acoustic inspections. The accessory bay will allow for future payload attachments and integrations.\n\nThe new Spot Cam can be front or rear mounted, and is equipped with eight ultra-bright LED lights for illumination in dark environments.",
+      "content_hash": "387f24d2414398aa52949896d482b81b46fc60e89918528de296bbf03f10331d",
+      "extracted_facts": "{}"
+    },
+    "created_at": "2026-05-30 10:07:57.146663"
+  },
+  {
+    "id": 118,
+    "tier": 3,
+    "item_id": 442,
+    "item_type": "filtered_signal",
+    "error_message": "ValueError:필수 필드 누락: is_relevant",
+    "raw_data": {
+      "id": "442",
+      "score": "0.8",
+      "title": "Why Runway is eyeing the robotics industry for future revenue growth",
+      "source": "TechCrunch_robotics",
+      "summary": "Runway is building up a robotics-focused team and fine-tuning its existing models for robotics and self-driving car customers.",
+      "content_hash": "8931073316ce66affc7044dacbd9bde8819b378785e4e0edd89a73558810dbb7",
+      "extracted_facts": "{}"
+    },
+    "created_at": "2026-05-30 10:07:18.647303"
+  }
+]
+```
+
+## DLQ Reason Summary
+
+```json
+null
+```

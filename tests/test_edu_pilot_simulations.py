@@ -101,6 +101,51 @@ class EduPilotSimulationTests(unittest.TestCase):
         self.assertGreaterEqual(result["subscores"]["personalization"], 15)
         self.assertGreaterEqual(result["subscores"]["conversion_readiness"], 10)
 
+    def test_jargon_and_showy_authority_are_flagged(self):
+        scenario = Scenario(
+            id="teacher_candidate",
+            label="teacher",
+            segment="parent",
+            profile={"preferred_salutation": "neutral"},
+            turns=["교대 준비 중이에요.", "AI가 어렵고 불안해요.", "학생을 어떻게 가르쳐야 할지 모르겠어요.", "실제로 뭘 해야 하죠?"],
+            specificity_tokens=["교대", "학생", "가르쳐"],
+            min_offer_turn=4,
+        )
+        transcript = [
+            {"role": "ai", "text": "오프너"},
+            {"role": "user", "text": "교대 준비 중이에요."},
+            {"role": "ai", "text": "P1 관점에서 보면 AI 리터러시와 self-efficacy가 핵심입니다."},
+            {"role": "user", "text": "AI가 어렵고 불안해요."},
+            {"role": "ai", "text": "이 데이터셋과 프레임워크를 이해하면 세그먼트별 접근이 가능합니다."},
+            {"role": "user", "text": "학생을 어떻게 가르쳐야 할지 모르겠어요."},
+            {"role": "ai", "text": "수많은 사례를 보면 이런 workflow 정렬이 중요합니다."},
+        ]
+        result = evaluate_transcript(scenario, transcript, show_offer_turn=None, curriculum=None)
+        self.assertTrue(result["flags"]["jargon_overload"])
+        self.assertTrue(result["flags"]["showy_authority"])
+        self.assertIn("영어·전문 용어가 섞여 AI 초보자가 바로 이해하기 어렵다.", result["customer_complaints"])
+
+    def test_low_empathy_is_flagged(self):
+        scenario = Scenario(
+            id="parent_low_empathy",
+            label="parent",
+            segment="parent",
+            profile={"preferred_salutation": "neutral"},
+            turns=["아이 숙제 때문에 싸워요.", "제가 더 지쳐요.", "어떻게 해야 하죠?", "오늘 뭘 하면 되죠?"],
+            specificity_tokens=["숙제", "지쳐", "오늘"],
+            min_offer_turn=4,
+        )
+        transcript = [
+            {"role": "ai", "text": "오프너"},
+            {"role": "user", "text": "아이 숙제 때문에 싸워요."},
+            {"role": "ai", "text": "숙제 문제는 구조적으로 접근해야 합니다."},
+            {"role": "user", "text": "제가 더 지쳐요."},
+            {"role": "ai", "text": "AI 사용 패턴을 분류하고 규칙을 세우면 됩니다."},
+        ]
+        result = evaluate_transcript(scenario, transcript, show_offer_turn=None, curriculum=None)
+        self.assertTrue(result["flags"]["weak_empathy"])
+        self.assertIn("내 감정을 짧게라도 받아주는 느낌이 부족하다.", result["customer_complaints"])
+
 
 if __name__ == "__main__":
     unittest.main()

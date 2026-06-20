@@ -43,6 +43,14 @@ ROBOTIC_MARKERS = [
     "많이 막히세요",
     "차근히 짚어",
 ]
+PRETENTIOUS_MARKERS = [
+    "수많은 사례",
+    "P1",
+    "데이터셋",
+    "관점에서도",
+    "워낙 많",
+    "세그먼트",
+]
 GENERIC_MARKERS = [
     "참 다양합니다",
     "충분히 이해",
@@ -53,6 +61,17 @@ GENERIC_MARKERS = [
 ]
 ACTION_MARKERS = ["오늘", "해보", "질문", "관찰", "기록", "정리", "한 문장", "대화", "체크"]
 EVIDENCE_MARKERS = ["연구", "자료", "커뮤니티", "맘카페", "지식인", "블로그", "교육부", "학교"]
+EMPATHY_MARKERS = ["그 마음", "그 걱정", "답답", "불안", "충분히", "그럴 수", "먼저", "지금 제일"]
+JARGON_MARKERS = [
+    "self-efficacy",
+    "리터러시",
+    "프레임워크",
+    "워크플로",
+    "policy",
+    "retrieval",
+    "segment",
+    "데이터셋",
+]
 WRONG_GENDER_MAP = {
     "neutral": ["어머님", "아버님", "엄마", "아빠"],
     "father": ["어머님", "어머니", "엄마"],
@@ -175,8 +194,11 @@ def evaluate_transcript(scenario: Scenario, transcript: list[dict[str, Any]], sh
 
     personalization_ratio = round(specificity_hits / max(1, ai_turn_count), 3)
     robotic_count = _count_hits(combined_ai, ROBOTIC_MARKERS)
+    pretentious_count = _count_hits(combined_ai, PRETENTIOUS_MARKERS)
     generic_count = _count_hits(combined_ai, GENERIC_MARKERS)
     evidence_count = _count_hits(combined_ai, EVIDENCE_MARKERS)
+    empathy_count = _count_hits(combined_ai, EMPATHY_MARKERS)
+    jargon_count = _count_hits(combined_ai.lower(), [m.lower() for m in JARGON_MARKERS])
     action_count = 0
     if ai_messages:
         action_count += _count_hits(ai_messages[-1], ACTION_MARKERS)
@@ -191,10 +213,15 @@ def evaluate_transcript(scenario: Scenario, transcript: list[dict[str, Any]], sh
     repeated_template = any(count >= 2 for count in repeated_openings.values())
     weak_actionability = action_count == 0
     weak_grounding = evidence_count == 0
+    weak_empathy = empathy_count == 0
+    jargon_overload = jargon_count >= 1
+    showy_authority = pretentious_count >= 1
 
     naturalness = 40
     naturalness -= min(robotic_count * 3, 12)
+    naturalness -= min(pretentious_count * 4, 12)
     naturalness -= min(generic_count * 2, 8)
+    naturalness -= 8 if jargon_overload else 0
     naturalness -= 8 if repeated_template else 0
     naturalness -= 10 if wrong_salutation else 0
     naturalness -= 12 if enum_leak else 0
@@ -203,6 +230,8 @@ def evaluate_transcript(scenario: Scenario, transcript: list[dict[str, Any]], sh
     personalization = min(25, round(personalization_ratio * 25))
     if low_specificity:
         personalization = max(0, personalization - 8)
+    if weak_empathy:
+        personalization = max(0, personalization - 6)
 
     grounding = 20 if evidence_count >= 2 else 12 if evidence_count == 1 else 4
     conversion = 15
@@ -219,6 +248,8 @@ def evaluate_transcript(scenario: Scenario, transcript: list[dict[str, Any]], sh
         complaints.append("문장 첫머리와 상담 템플릿이 반복돼 챗봇처럼 느껴진다.")
     if robotic_count >= 3:
         complaints.append("‘이맘때’, ‘열에 아홉’ 같은 권위 표현이 과해서 자연스러운 상담처럼 안 들린다.")
+    if showy_authority:
+        complaints.append("상담보다 지식을 과시하는 말투가 보여서, 내 얘기를 듣는 느낌이 약하다.")
     if offer_too_early:
         complaints.append("신뢰가 쌓이기 전에 다음 단계 제안이 빨리 나온다.")
     if wrong_salutation:
@@ -227,6 +258,10 @@ def evaluate_transcript(scenario: Scenario, transcript: list[dict[str, Any]], sh
         complaints.append("내부 호칭 코드(father/mother/neutral)가 답변 문장에 그대로 새어 나와 매우 부자연스럽다.")
     if weak_grounding:
         complaints.append("연구·커뮤니티·현장 자료가 녹아든 느낌이 약하다.")
+    if weak_empathy:
+        complaints.append("내 감정을 짧게라도 받아주는 느낌이 부족하다.")
+    if jargon_overload:
+        complaints.append("영어·전문 용어가 섞여 AI 초보자가 바로 이해하기 어렵다.")
     if weak_actionability:
         complaints.append("마지막으로 뭘 해야 하는지 선명한 한 단계가 없다.")
 
@@ -246,6 +281,9 @@ def evaluate_transcript(scenario: Scenario, transcript: list[dict[str, Any]], sh
             "robotic_marker_count": robotic_count,
             "generic_marker_count": generic_count,
             "evidence_marker_count": evidence_count,
+            "pretentious_marker_count": pretentious_count,
+            "empathy_marker_count": empathy_count,
+            "jargon_marker_count": jargon_count,
             "action_marker_count": action_count,
             "show_offer_turn": show_offer_turn,
         },
@@ -256,6 +294,9 @@ def evaluate_transcript(scenario: Scenario, transcript: list[dict[str, Any]], sh
             "wrong_salutation": wrong_salutation,
             "enum_leak": enum_leak,
             "weak_grounding": weak_grounding,
+            "weak_empathy": weak_empathy,
+            "jargon_overload": jargon_overload,
+            "showy_authority": showy_authority,
             "weak_actionability": weak_actionability,
         },
         "customer_complaints": complaints,
