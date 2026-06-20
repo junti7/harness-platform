@@ -16,6 +16,69 @@ type Bundle = {
   latest_dead_letter_queue?: any[]
 }
 
+const OBJECT_METADATA: Record<string, { label: string; meaning: string; analyticsUse: string }> = {
+  dead_letter_queue: {
+    label: 'ingestion failure queue',
+    meaning: '파이프라인이 적재에 실패한 레코드를 모아두는 큐입니다. 실패 원문과 에러 메시지가 그대로 남습니다.',
+    analyticsUse: '어떤 소스/레코드가 반복적으로 깨지는지, 재시도 우선순위를 어떻게 잡을지 볼 때 확인합니다.',
+  },
+  pipeline_runs: {
+    label: 'pipeline audit ledger',
+    meaning: '배치 실행 단위의 시작/종료/상태/상관관계 ID를 남기는 감사 원장입니다.',
+    analyticsUse: '언제 어떤 파이프라인이 돌았는지, 성공/실패 추세가 어떤지, 특정 DLQ와 어떤 run이 연결되는지 볼 때 씁니다.',
+  },
+  edu_knowledge_items: {
+    label: 'normalized knowledge store',
+    meaning: '교육용 근거 데이터를 정규화해서 적재하는 중심 테이블입니다. source, segment, rights, body, cite가 이 레이어에 모입니다.',
+    analyticsUse: '실제 retrieval 후보군, 품질 점수, rights 경계, source 다양성을 분석할 때 핵심으로 봐야 하는 테이블입니다.',
+  },
+  edu_knowledge_items_customer_facing: {
+    label: 'customer-safe retrieval view',
+    meaning: '고객 응답에 노출 가능한 행만 필터링한 canonical view입니다. internal-only나 rights 위반 후보를 제외하는 경계 역할을 합니다.',
+    analyticsUse: '실제 customer-facing retrieval이 어떤 안전한 근거만 읽어야 하는지 검증할 때 봅니다.',
+  },
+  edu_rag_accumulation: {
+    label: 'generated accumulation buffer',
+    meaning: 'RAG 누적/승격 후보를 담는 테이블입니다. 생성 결과를 바로 지식으로 승격하지 않고 중간 완충 레이어에 둡니다.',
+    analyticsUse: '어떤 생성 산출물이 재사용 후보로 쌓이고 있는지, promoted 여부와 provenance를 분석할 때 봅니다.',
+  },
+  edu_customers: {
+    label: 'customer identity table',
+    meaning: '세그먼트, 이름, 연락수단, 선호 설정 등 고객 식별/설정 정보를 담는 기본 테이블입니다.',
+    analyticsUse: '세그먼트 분포, 재방문 패턴, 로그인 채널, active 상태를 고객 단위로 볼 때 확인합니다.',
+  },
+  edu_cases: {
+    label: 'case-level 상담 헤더',
+    meaning: '한 고객의 상담/교육 케이스 단위 헤더입니다. 현재 phase, 상태, 최근 턴 시점이 이 레벨에 있습니다.',
+    analyticsUse: '케이스 진행 상태, 단계별 퍼널, 장기 미종결 케이스를 파악할 때 기준 테이블이 됩니다.',
+  },
+  edu_case_turns: {
+    label: 'turn-level transcript structure',
+    meaning: '상담 케이스 안의 턴별 대화 구조화 테이블입니다. role, text, phase, tone level 등이 저장됩니다.',
+    analyticsUse: '대화 흐름, 단계 전이, 패턴 추출, 턴 수 분포를 분석할 때 가장 직접적인 transcript 레이어입니다.',
+  },
+  edu_case_snapshots: {
+    label: 'case state snapshots',
+    meaning: '케이스 상태를 특정 시점에 스냅샷으로 저장하는 테이블입니다.',
+    analyticsUse: 'phase 변화 전후 상태 비교, resume 복구, 특정 시점 진단값 회고에 씁니다.',
+  },
+  edu_case_offers: {
+    label: 'offer tracking table',
+    meaning: '케이스 중 제안된 offer 또는 후속 제안 이력을 저장하는 테이블입니다.',
+    analyticsUse: '어느 단계에서 어떤 제안이 노출되는지, offer conversion과 연결할 때 봅니다.',
+  },
+  edu_magic_links: {
+    label: 'magic-link auth ledger',
+    meaning: '이메일 기반 이어하기 링크 발급/사용 기록을 담는 인증 보조 테이블입니다.',
+    analyticsUse: '재진입 퍼널, 링크 만료/실패, 기기 전환 진입 흐름을 볼 때 확인합니다.',
+  },
+  edu_conversation_log: {
+    label: 'append-only raw conversation ledger',
+    meaning: '구조화된 case_turns와 별개로, 요청/응답 원문을 빠짐없이 남기는 append-only 원장입니다.',
+    analyticsUse: '누락 없는 원문 감사, 법무/운영 추적, 구조화 레이어와 raw 원장의 차이를 대조할 때 중요합니다.',
+  },
+}
+
 function useIsNarrowLayout(breakpoint = 1280): boolean {
   const [isNarrowLayout, setIsNarrowLayout] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth <= breakpoint : false
@@ -154,6 +217,7 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
   const selectedSampleRows = Array.isArray(selectedObject?.sample_rows) ? selectedObject.sample_rows : []
   const selectedSampleColumns = collectRowColumns(selectedSampleRows)
   const selectedSampleRow = selectedSampleRows[selectedSampleRowIndex] ?? null
+  const selectedMeta = selectedName ? OBJECT_METADATA[selectedName] : null
 
   const palette = {
     text: '#0f172a',
@@ -253,8 +317,15 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
               <div style={{ color: '#b91c1c' }}>{selectedObject.error}</div>
             ) : (
               <div style={{ display: 'grid', gap: 12 }}>
+                {selectedMeta && (
+                  <div style={{ background: palette.surfaceMuted, border: `1px solid ${palette.borderSoft}`, borderRadius: 10, padding: '12px 14px' }}>
+                    <div style={{ fontSize: '.8rem', color: palette.textMuted, fontWeight: 800, marginBottom: 6 }}>{selectedMeta.label}</div>
+                    <div style={{ fontSize: '.9rem', color: palette.textStrong, lineHeight: 1.55, marginBottom: 8 }}>{selectedMeta.meaning}</div>
+                    <div style={{ fontSize: '.85rem', color: palette.textSoft, lineHeight: 1.55 }}>분석 포인트: {selectedMeta.analyticsUse}</div>
+                  </div>
+                )}
                 <div style={{ width: '100%', maxWidth: '100%', overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}>
-                  <table style={{ minWidth: compactTableMinWidth, width: '100%', borderCollapse: 'collapse', fontSize: '.86rem', color: palette.text }}>
+                  <table style={{ minWidth: compactTableMinWidth, width: 'max-content', maxWidth: 'none', borderCollapse: 'collapse', fontSize: '.86rem', color: palette.text }}>
                     <thead>
                       <tr>
                         <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>type</th>
@@ -279,7 +350,7 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
                 <div>
                   <h4 style={sectionTitleStyle}>Columns dataframe</h4>
                   <div style={{ width: '100%', maxWidth: '100%', overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', marginTop: 8 }}>
-                    <table style={{ minWidth: compactTableMinWidth, width: '100%', borderCollapse: 'collapse', fontSize: '.86rem', color: palette.text }}>
+                    <table style={{ minWidth: compactTableMinWidth, width: 'max-content', maxWidth: 'none', borderCollapse: 'collapse', fontSize: '.86rem', color: palette.text }}>
                       <thead>
                         <tr>
                           <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>idx</th>
@@ -309,7 +380,7 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
                   </div>
                   {selectedSampleColumns.length > 0 ? (
                     <div style={{ width: '100%', maxWidth: '100%', overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', marginTop: 8 }}>
-                      <table style={{ minWidth: rawTableMinWidth, width: '100%', borderCollapse: 'collapse', fontSize: '.84rem', color: palette.text }}>
+                      <table style={{ minWidth: rawTableMinWidth, width: 'max-content', maxWidth: 'none', borderCollapse: 'collapse', fontSize: '.84rem', color: palette.text }}>
                         <thead>
                           <tr>
                             <th style={{ position: 'sticky', top: 0, background: palette.surfaceMuted, textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>idx</th>
@@ -345,10 +416,10 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
                               >
                                 <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px', color: palette.textSoft }}>{rowIndex}</td>
                                 {selectedSampleColumns.map((column) => (
-                                  <td key={`${rowIndex}-${column}`} style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px', verticalAlign: 'top', minWidth: 160, maxWidth: 320 }}>
-                                    <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.42 }}>
-                                      {formatCellValue(row?.[column])}
-                                    </div>
+                                <td key={`${rowIndex}-${column}`} style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px', verticalAlign: 'top', minWidth: 180 }}>
+                                  <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.42 }}>
+                                    {formatCellValue(row?.[column])}
+                                  </div>
                                   </td>
                                 ))}
                               </tr>
