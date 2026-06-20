@@ -881,12 +881,6 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
               <p style={{ margin: 0, color: C.muted, lineHeight: 1.75, fontSize: '1rem' }}>
                 본 화면은 명확한 목표를 향해 부대표님을 체계적으로 성장시키는 실전 훈련 플로우입니다. 일상적인 AI 활용의 기초 단계에서 출발하여, 궁극적으로 전문가 수준의 고도화된 AI 운용 역량을 갖추는 것을 목표로 합니다.
               </p>
-              {trainingState?.program_objective && (
-                <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, fontSize: '.92rem', lineHeight: 1.6 }}>
-                  <strong style={{ display: 'block', marginBottom: 4 }}>현재 고정 목표</strong>
-                  {trainingState.program_objective}
-                </div>
-              )}
             </div>
             <TrainingHeroVisual />
           </div>
