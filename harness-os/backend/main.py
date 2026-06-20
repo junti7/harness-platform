@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import io
 import json
 import logging
@@ -315,6 +316,112 @@ def _persist_password(role: str, new_hash: str) -> None:
 _PASSWORDS: dict[str, str] = _load_passwords()
 
 
+def _auth_token_secret() -> str:
+    configured = os.getenv("HARNESS_OS_AUTH_TOKEN_SECRET", "").strip()
+    if configured:
+        return configured
+    derived = "|".join(f"{role}:{_PASSWORDS.get(role, '')}" for role in sorted(_PASSWORDS))
+    if derived.strip("|"):
+        return f"harness-os-auth::{derived}"
+    return "harness-os-auth-fallback::bootstrap-required"
+
+
+def _issue_role_auth_token(role: str) -> str:
+    payload = {
+        "role": role,
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 1800,
+    }
+    encoded = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode("utf-8")).decode("ascii").rstrip("=")
+    signature = hmac.new(_auth_token_secret().encode("utf-8"), encoded.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{encoded}.{signature}"
+
+
+def _verify_role_auth_token(token: str) -> str | None:
+    raw = str(token or "").strip()
+    if "." not in raw:
+        return None
+    encoded, signature = raw.rsplit(".", 1)
+    expected = hmac.new(_auth_token_secret().encode("utf-8"), encoded.encode("utf-8"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        return None
+    padded = encoded + "=" * (-len(encoded) % 4)
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+    except Exception:
+        return None
+    role = str(payload.get("role") or "")
+    exp = int(payload.get("exp") or 0)
+    if role not in {"ceo", "vp"} or exp <= int(time.time()):
+        return None
+    return role
+
+
+def _request_harness_role(request: Request) -> str | None:
+    return _verify_role_auth_token(request.headers.get("X-Harness-Auth", ""))
+
+
+def _issue_edu_training_auth_token(email: str, customer_id: int) -> str:
+    payload = {
+        "kind": "edu_training",
+        "email": _edu_normalize_email(email),
+        "customer_id": int(customer_id),
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 1800,
+    }
+    encoded = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode("utf-8")).decode("ascii").rstrip("=")
+    signature = hmac.new(_auth_token_secret().encode("utf-8"), encoded.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{encoded}.{signature}"
+
+
+def _verify_edu_training_auth_token(token: str) -> dict[str, Any] | None:
+    raw = str(token or "").strip()
+    if "." not in raw:
+        return None
+    encoded, signature = raw.rsplit(".", 1)
+    expected = hmac.new(_auth_token_secret().encode("utf-8"), encoded.encode("utf-8"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        return None
+    padded = encoded + "=" * (-len(encoded) % 4)
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+    except Exception:
+        return None
+    if payload.get("kind") != "edu_training":
+        return None
+    if int(payload.get("exp") or 0) <= int(time.time()):
+        return None
+    payload["email"] = _edu_normalize_email(str(payload.get("email") or ""))
+    payload["customer_id"] = int(payload.get("customer_id") or 0)
+    return payload
+
+
+def _request_edu_training_auth(request: Request) -> dict[str, Any] | None:
+    return _verify_edu_training_auth_token(request.headers.get("X-Edu-Training-Auth", ""))
+
+
+def _vp_training_role_email(role: str) -> str:
+    if role == "ceo":
+        return "junti7@gmail.com"
+    if role == "vp":
+        return "fox_jazz@naver.com"
+    return ""
+
+
+def _edu_vp_assert_access(request: Request, target_email: str) -> None:
+    role = _request_harness_role(request)
+    allowed_email = _edu_normalize_email(_vp_training_role_email(role)) if role else ""
+    training_auth = _request_edu_training_auth(request)
+    training_email = _edu_normalize_email(str((training_auth or {}).get("email") or ""))
+    safe_target_email = _edu_normalize_email(target_email)
+    if not allowed_email and not training_email:
+        raise HTTPException(401, "auth required")
+    if allowed_email and safe_target_email and allowed_email != safe_target_email:
+        raise HTTPException(403, "forbidden")
+    if training_email and safe_target_email and training_email != safe_target_email:
+        raise HTTPException(403, "forbidden")
+
+
 class AuthLoginRequest(BaseModel):
     role: str
     password: str
@@ -332,7 +439,7 @@ def auth_login(req: AuthLoginRequest, _: None = Depends(_require_secret)):
         raise HTTPException(status_code=400, detail="Invalid role")
     if _PASSWORDS.get(req.role) != _hash_pw(req.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    return {"ok": True, "role": req.role}
+    return {"ok": True, "role": req.role, "auth_token": _issue_role_auth_token(req.role)}
 
 
 @app.post("/api/auth/change-password")
@@ -5841,7 +5948,7 @@ class EduVpTrainingIntakeRequest(BaseModel):
 
 class EduVpTrainingArtifactRequest(BaseModel):
     case_id: int
-    stage: str = "week0"
+    stage: str = "day0"
     proof_artifact: str = ""
     blocked_at_step: str = ""
     notes: str = ""
@@ -5850,7 +5957,7 @@ class EduVpTrainingArtifactRequest(BaseModel):
 
 class EduVpTrainingFeedbackRequest(BaseModel):
     case_id: int
-    stage: str = "week0"
+    stage: str = "day0"
     empathy_score: int = 0
     clarity_score: int = 0
     motivation_score: int = 0
@@ -5882,6 +5989,23 @@ class EduVpTrainingCaseDeleteRequest(BaseModel):
 
 class EduVpTrainingCaseResetRequest(BaseModel):
     email: str = ""
+
+
+class EduVpTrainingSessionSyncRequest(BaseModel):
+    case_id: int
+    email: str = ""
+    selected_stage: str = "day0"
+    active_curriculum_index: int = 0
+    show_case_archive: bool = False
+    show_continue_from: str = ""
+    preferred_llm: str = ""
+    current_device: str = ""
+    desktop_os: str = ""
+    stage_drafts: dict[str, Any] = Field(default_factory=dict)
+    client_seq: int = 0
+    event_type: str = "ui_sync"
+    event_name: str = "state_sync"
+    event_payload: dict[str, Any] = Field(default_factory=dict)
 
 
 def _edu_normalize_email(email: str) -> str:
@@ -6030,10 +6154,27 @@ def _ensure_edu_case_schema() -> None:
             with conn.cursor() as cur:
                 cur.execute(sql_text)
                 cur.execute("ALTER TABLE edu_customers ADD COLUMN IF NOT EXISTS password_hash TEXT")
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS edu_vp_training_event_log (
+                        id BIGSERIAL PRIMARY KEY,
+                        case_id BIGINT REFERENCES edu_cases(id) ON DELETE CASCADE,
+                        email TEXT NOT NULL DEFAULT '',
+                        actor_role TEXT NOT NULL DEFAULT 'learner',
+                        event_type TEXT NOT NULL DEFAULT '',
+                        event_name TEXT NOT NULL DEFAULT '',
+                        event_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_edu_vp_training_event_log_case_id ON edu_vp_training_event_log (case_id, created_at DESC)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_edu_vp_training_event_log_email ON edu_vp_training_event_log (email, created_at DESC)")
             conn.commit()
             _edu_sync_table_id_sequence("edu_customers")
             _edu_sync_table_id_sequence("edu_cases")
             _edu_sync_table_id_sequence("edu_case_turns")
+            _edu_sync_table_id_sequence("edu_vp_training_event_log")
             _EDU_SCHEMA_READY = True
         except Exception:
             conn.rollback()
@@ -6997,8 +7138,8 @@ def _edu_issue_magic_link(req: EduMagicLinkRequest) -> dict[str, Any]:
 def _edu_vp_state_default(case_id: int, customer: dict[str, Any], case_meta: dict[str, Any]) -> dict[str, Any]:
     return {
         "program": "vp_training",
-        "version": "week0-week1-v1",
-        "phase_scope": "week0_week1",
+        "version": "day-based-v1",
+        "phase_scope": "day_based",
         "track": "beginner_practice",
         "active_persona": "homemaker_parent",
         "program_objective": "VP를 생활형 AI 초보 상태에서 출발시켜, 장기적으로 CEO 수준의 AI handling에 가까워지게 만든다.",
@@ -7006,10 +7147,166 @@ def _edu_vp_state_default(case_id: int, customer: dict[str, Any], case_meta: dic
         "customer": customer,
         "case": case_meta,
         "intake": {},
-        "week0": {},
-        "week1": {},
+        "day0": {},
+        "day1": {},
         "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
+
+
+def _edu_vp_normalize_state_keys(state: dict[str, Any] | None) -> dict[str, Any]:
+    normalized = dict(state or {})
+    if "day0" not in normalized and isinstance(normalized.get("week0"), dict):
+        normalized["day0"] = normalized.get("week0") or {}
+    if "day1" not in normalized and isinstance(normalized.get("week1"), dict):
+        normalized["day1"] = normalized.get("week1") or {}
+    normalized.pop("week0", None)
+    normalized.pop("week1", None)
+    ui_state = normalized.get("ui_state")
+    if isinstance(ui_state, dict):
+        selected_stage = str(ui_state.get("selected_stage") or "")
+        if selected_stage == "week0":
+            ui_state["selected_stage"] = "day0"
+        elif selected_stage == "week1":
+            ui_state["selected_stage"] = "day1"
+        show_continue_from = str(ui_state.get("show_continue_from") or "")
+        if show_continue_from == "week0":
+            ui_state["show_continue_from"] = "day0"
+        elif show_continue_from == "week1":
+            ui_state["show_continue_from"] = "day1"
+        stage_drafts = ui_state.get("stage_drafts")
+        if isinstance(stage_drafts, dict):
+            if "day0" not in stage_drafts and isinstance(stage_drafts.get("week0"), dict):
+                stage_drafts["day0"] = stage_drafts.get("week0") or {}
+            if "day1" not in stage_drafts and isinstance(stage_drafts.get("week1"), dict):
+                stage_drafts["day1"] = stage_drafts.get("week1") or {}
+            stage_drafts.pop("week0", None)
+            stage_drafts.pop("week1", None)
+    return normalized
+
+
+def _edu_vp_stage_draft_from_stage(stage: dict[str, Any] | None) -> dict[str, Any]:
+    stage = stage or {}
+    feedback = stage.get("vp_feedback") or {}
+    return {
+        "proof_artifact": str(stage.get("proof_artifact") or ""),
+        "blocked_at_step": str(stage.get("blocked_at_step") or ""),
+        "notes": str(stage.get("notes") or ""),
+        "completed": bool(stage.get("completed")),
+        "empathy_score": int(feedback.get("empathy_score") or 3),
+        "clarity_score": int(feedback.get("clarity_score") or 3),
+        "motivation_score": int(feedback.get("motivation_score") or 3),
+        "biggest_blocker": str(feedback.get("biggest_blocker") or ""),
+        "freeform_feedback": str(feedback.get("freeform_feedback") or ""),
+    }
+
+
+def _edu_vp_default_selected_stage(state: dict[str, Any]) -> str:
+    day1 = state.get("day1") or {}
+    day0 = state.get("day0") or {}
+    if day1.get("proof_artifact") or day1.get("notes") or (day1.get("vp_feedback") or {}).get("submitted_at"):
+        return "day1"
+    if day0.get("completed"):
+        return "day1"
+    return "day0"
+
+
+def _edu_vp_ui_state_default(state: dict[str, Any]) -> dict[str, Any]:
+    intake = state.get("intake") or {}
+    selected_stage = _edu_vp_default_selected_stage(state)
+    return {
+        "selected_stage": selected_stage,
+        "active_curriculum_index": 0,
+        "show_case_archive": False,
+        "show_continue_from": "",
+        "preferred_llm": _edu_normalize_llm(str(intake.get("preferred_llm") or "gemini")),
+        "current_device": str(intake.get("current_device") or "android").strip().lower(),
+        "desktop_os": str(intake.get("desktop_os") or "windows").strip().lower(),
+        "stage_drafts": {
+            "day0": _edu_vp_stage_draft_from_stage(state.get("day0")),
+            "day1": _edu_vp_stage_draft_from_stage(state.get("day1")),
+        },
+        "last_client_seq": 0,
+        "last_event": {},
+        "last_synced_at": state.get("updated_at") or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+
+
+def _edu_vp_merge_ui_state(state: dict[str, Any], incoming: dict[str, Any] | None = None) -> dict[str, Any]:
+    existing = state.get("ui_state") or {}
+    ui_state = _edu_vp_ui_state_default(state)
+    if isinstance(existing, dict):
+        ui_state.update({k: v for k, v in existing.items() if v is not None})
+        stage_drafts = ui_state.get("stage_drafts") or {}
+        if isinstance(existing.get("stage_drafts"), dict):
+            for stage_key in ("day0", "day1"):
+                current = stage_drafts.get(stage_key) if isinstance(stage_drafts, dict) else {}
+                incoming_stage = existing["stage_drafts"].get(stage_key) or {}
+                if isinstance(current, dict) and isinstance(incoming_stage, dict):
+                    stage_drafts[stage_key] = {**current, **incoming_stage}
+        ui_state["stage_drafts"] = stage_drafts
+    if isinstance(incoming, dict):
+        for field in ("selected_stage", "active_curriculum_index", "show_case_archive", "show_continue_from", "preferred_llm", "current_device", "desktop_os", "last_client_seq"):
+            if field in incoming and incoming[field] is not None:
+                ui_state[field] = incoming[field]
+        if isinstance(incoming.get("stage_drafts"), dict):
+            merged_stage_drafts = ui_state.get("stage_drafts") or {}
+            for stage_key in ("day0", "day1"):
+                next_stage = incoming["stage_drafts"].get(stage_key)
+                if isinstance(next_stage, dict):
+                    base_stage = merged_stage_drafts.get(stage_key) or {}
+                    merged_stage_drafts[stage_key] = {**base_stage, **next_stage}
+            ui_state["stage_drafts"] = merged_stage_drafts
+        if isinstance(incoming.get("last_event"), dict):
+            ui_state["last_event"] = incoming["last_event"]
+    ui_state["selected_stage"] = "day1" if str(ui_state.get("selected_stage") or "") == "day1" else "day0"
+    ui_state["active_curriculum_index"] = max(0, int(ui_state.get("active_curriculum_index") or 0))
+    ui_state["show_case_archive"] = bool(ui_state.get("show_case_archive"))
+    ui_state["show_continue_from"] = "day1" if str(ui_state.get("show_continue_from") or "") == "day1" else ("day0" if str(ui_state.get("show_continue_from") or "") == "day0" else "")
+    ui_state["preferred_llm"] = _edu_normalize_llm(str(ui_state.get("preferred_llm") or "gemini"))
+    ui_state["current_device"] = str(ui_state.get("current_device") or "android").strip().lower()
+    ui_state["desktop_os"] = str(ui_state.get("desktop_os") or "windows").strip().lower()
+    ui_state["last_client_seq"] = max(0, int(ui_state.get("last_client_seq") or 0))
+    ui_state["last_synced_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return ui_state
+
+
+def _edu_vp_append_event(
+    *,
+    case_id: int | None,
+    email: str,
+    event_type: str,
+    event_name: str,
+    payload: dict[str, Any] | None = None,
+    actor_role: str = "learner",
+) -> None:
+    safe_email = _edu_normalize_email(email)
+    try:
+        _edu_execute(
+            """
+            INSERT INTO edu_vp_training_event_log
+                (case_id, email, actor_role, event_type, event_name, event_payload)
+            VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+            """,
+            (
+                case_id,
+                safe_email,
+                actor_role[:40],
+                (event_type or "ui_sync")[:80],
+                (event_name or "unknown")[:120],
+                json.dumps(payload or {}, ensure_ascii=False, default=str),
+            ),
+            fetch=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _edu_runtime_event(
+            "vp_training_event_log_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+            email=safe_email[:120],
+            case_id=case_id,
+            event_type=(event_type or "")[:80],
+            event_name=(event_name or "")[:120],
+        )
 
 
 def _edu_vp_load_state(case_id: int) -> dict[str, Any] | None:
@@ -7028,12 +7325,13 @@ def _edu_vp_load_state(case_id: int) -> dict[str, Any] | None:
     if not rows:
         return None
     summary = rows[0].get("summary_json") or {}
-    return summary if isinstance(summary, dict) else None
+    return _edu_vp_normalize_state_keys(summary) if isinstance(summary, dict) else None
 
 
 def _edu_vp_store_state(case_id: int, state: dict[str, Any]) -> None:
     recommended_actions = []
-    for key in ("week0", "week1"):
+    state = _edu_vp_normalize_state_keys(state)
+    for key in ("day0", "day1"):
         section = state.get(key) or {}
         required_action = str(section.get("required_action") or "").strip()
         if required_action:
@@ -7051,6 +7349,29 @@ def _edu_vp_store_state(case_id: int, state: dict[str, Any]) -> None:
         ),
         fetch=False,
     )
+
+
+def _edu_vp_refresh_state(state: dict[str, Any]) -> dict[str, Any]:
+    state = _edu_vp_normalize_state_keys(state)
+    state["day0"] = state.get("day0") or {}
+    state["day1"] = state.get("day1") or {}
+    p0 = _edu_vp_stage_progress(state["day0"])
+    p1 = _edu_vp_stage_progress(state["day1"])
+    flow_outline: list[dict[str, Any]] = []
+    if state["day0"].get("title"):
+        flow_outline.append({"key": "day0", "label": "Day 0", "title": state["day0"]["title"], "completed": p0["completed"], "pct": p0["pct"]})
+    if state["day1"].get("title"):
+        flow_outline.append({"key": "day1", "label": "Day 1", "title": state["day1"]["title"], "completed": p1["completed"], "pct": p1["pct"]})
+    state["flow_outline"] = flow_outline
+    state["progress"] = {
+        "completed_stages": int(p0["completed"]) + int(p1["completed"]),
+        "total_stages": 2,
+        "pct": round((int(p0["completed"]) + int(p1["completed"])) / 2 * 100),
+    }
+    state["persona_library"] = _edu_vp_persona_library(int(state["progress"]["pct"]))
+    state["ui_state"] = _edu_vp_merge_ui_state(state)
+    state["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return state
 
 
 def _edu_vp_llm_label(value: str) -> str:
@@ -7153,7 +7474,7 @@ def _edu_vp_tutorial_steps(stage_key: str, intake: dict[str, Any]) -> list[dict[
         "Gemini": f"{desktop}에서 브라우저를 열고 gemini.google.com에 들어간다.",
         "로컬 모델": f"{desktop}에서 내부 로컬 모델 실행 경로를 연다.",
     }.get(llm, f"{desktop}에서 {llm} 실행 화면을 연다.")
-    if stage_key == "week0":
+    if stage_key == "day0":
         return [
             {"id": "mobile_open", "title": f"{mobile}에서 먼저 열기", "body": llm_mobile},
             {"id": "mobile_prompt", "title": "모바일에서 첫 질문 보내기", "body": "복붙용 질문문을 그대로 붙여 넣고 답이 뜨는지 본다."},
@@ -7169,7 +7490,7 @@ def _edu_vp_tutorial_steps(stage_key: str, intake: dict[str, Any]) -> list[dict[
 
 
 def _edu_vp_recommended_learning(stage_key: str) -> list[dict[str, Any]]:
-    if stage_key == "week0":
+    if stage_key == "day0":
         query = "AI 첫 실행 로그인 첫 질문 모바일 PC handoff"
         segment = "worker"
         limit = 4
@@ -7261,7 +7582,7 @@ def _edu_vp_home_priority_missions() -> list[dict[str, str]]:
 
 
 def _edu_vp_foundation_concepts(stage_key: str, llm_label: str) -> list[dict[str, str]]:
-    if stage_key == "week0":
+    if stage_key == "day0":
         return [
             {
                 "title": "LLM이란 무엇인가",
@@ -7301,7 +7622,7 @@ def _edu_vp_foundation_concepts(stage_key: str, llm_label: str) -> list[dict[str
 
 
 def _edu_vp_schedule_blocks(stage_key: str) -> list[dict[str, Any]]:
-    if stage_key == "week0":
+    if stage_key == "day0":
         return [
             {"title": "오리엔테이션", "minutes": 10, "goal": "오늘 무엇을 배우는지, 왜 모바일부터 시작하는지 이해한다."},
             {"title": "기초 개념 익히기", "minutes": 15, "goal": "LLM, 생성형 AI, 초안 도우미 개념을 쉬운 말로 익힌다."},
@@ -7330,8 +7651,8 @@ def _edu_vp_total_minutes(blocks: list[dict[str, Any]]) -> int:
 def _edu_vp_week0_materials(llm_label: str) -> list[dict[str, Any]]:
     return [
         _edu_vp_material_kit(
-            kit_id="week0-first-login-starter",
-            title="Week 0 스타터팩",
+            kit_id="day0-first-login-starter",
+            title="Day 0 스타터팩",
             description=f"{llm_label}를 처음 켜는 사람도 그대로 따라 할 수 있는 첫 연습 파일 묶음입니다.",
             files=[
                 "00_README_먼저_여세요.md",
@@ -7346,25 +7667,25 @@ def _edu_vp_week0_materials(llm_label: str) -> list[dict[str, Any]]:
 def _edu_vp_week1_materials(llm_label: str) -> list[dict[str, Any]]:
     return [
         _edu_vp_material_kit(
-            kit_id="week1-school-notice-kit",
+            kit_id="day1-school-notice-kit",
             title="가정통신문 정리 실전팩",
             description=f"{llm_label}에게 긴 학교 공지를 쉬운 한국어 요약으로 바꾸게 하는 연습용 샘플입니다.",
             files=["00_README_가정통신문실전팩.md", "01_가정통신문원문.txt", "02_정리조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
         ),
         _edu_vp_material_kit(
-            kit_id="week1-academy-conflict-kit",
+            kit_id="day1-academy-conflict-kit",
             title="학원/학교 일정 충돌 정리 실전팩",
             description="형제자매 학원 시간과 학교 일정을 한 장으로 정리하는 연습용 샘플입니다.",
             files=["00_README_학원학교충돌실전팩.md", "01_흩어진일정메모.txt", "02_정리조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
         ),
         _edu_vp_material_kit(
-            kit_id="week1-briefing-notes-kit",
+            kit_id="day1-briefing-notes-kit",
             title="진학 설명회 메모 정리 실전팩",
             description="뒤죽박죽 적은 설명회 메모를 다시 읽기 쉬운 항목별 정리본으로 바꾸는 연습용 샘플입니다.",
             files=["00_README_설명회메모실전팩.md", "01_설명회메모원본.txt", "02_정리조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
         ),
         _edu_vp_material_kit(
-            kit_id="week1-parent-chat-reply-kit",
+            kit_id="day1-parent-chat-reply-kit",
             title="학부모 단톡방 답장 실전팩",
             description="부담 없고 예의 있는 한국어 답장을 빠르게 만드는 연습용 샘플입니다.",
             files=["00_README_학부모답장실전팩.md", "01_받은메시지.txt", "02_원하는답장조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
@@ -7404,20 +7725,20 @@ def _edu_vp_build_week0(intake: dict[str, Any]) -> dict[str, Any]:
             "success_signal": "복사한 문장 또는 저장한 메모가 남는다.",
         },
     ]
-    schedule_blocks = _edu_vp_schedule_blocks("week0")
+    schedule_blocks = _edu_vp_schedule_blocks("day0")
     return {
         "title": "Day 0 · 환경 열기와 첫 성공",
         "learning_why": "오늘은 미션을 많이 해결하는 날이 아니라, AI가 무엇인지 거의 모르는 상태에서도 '내가 실제로 들어가서 질문하고 결과를 저장할 수 있다'는 첫 성공을 만드는 날입니다.",
         "learning_outcome": "Day 0를 마치면 LLM/생성형 AI를 무서운 기술 용어가 아니라, 생활 문제를 정리해주는 초안 도우미로 이해하고, 모바일과 PC에서 같은 도구를 여는 기본 동작을 몸으로 익히게 됩니다.",
         "estimated_minutes": _edu_vp_total_minutes(schedule_blocks),
         "completion_rule": "30초 만에 끝나는 미션이 아니라, 최소 약 65분 동안 기초 개념을 읽고, 실제 로그인과 첫 질문, 복사/저장, 복습 메모까지 모두 끝냈을 때 Day 0 완료로 봅니다.",
-        "foundation_concepts": _edu_vp_foundation_concepts("week0", llm_label),
+        "foundation_concepts": _edu_vp_foundation_concepts("day0", llm_label),
         "schedule_blocks": schedule_blocks,
         "required_action": f"{llm_label}를 실제로 열고, 본인 고민을 한 문장으로 입력해 첫 답변 1개를 받는다.",
         "proof_artifact_hint": "AI가 답한 첫 문장 1개 또는 본인이 복사한 결과 1개를 붙여 넣으세요.",
         "sample_materials": _edu_vp_week0_materials(llm_label),
-        "tutorial_steps": _edu_vp_tutorial_steps("week0", intake),
-        "recommended_learning": _edu_vp_recommended_learning("week0"),
+        "tutorial_steps": _edu_vp_tutorial_steps("day0", intake),
+        "recommended_learning": _edu_vp_recommended_learning("day0"),
         "pass_fail_rubric": [
             "앱/브라우저를 실제로 열었다",
             "로그인 상태를 확인했다",
@@ -7438,7 +7759,7 @@ def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
         bundle = _retrieve_evidence_bundle(query, "parent", k=4)
     except Exception as exc:  # noqa: BLE001
         _edu_runtime_event(
-            "vp_training_week1_bundle_failed",
+            "vp_training_day1_bundle_failed",
             error_type=type(exc).__name__,
             error=str(exc)[:240],
         )
@@ -7458,14 +7779,14 @@ def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
             )
     mode = (bundle or {}).get("mode") or "fallback"
     customer_facing_safe = mode == "db_customer_facing"
-    schedule_blocks = _edu_vp_schedule_blocks("week1")
+    schedule_blocks = _edu_vp_schedule_blocks("day1")
     return {
         "title": "Day 1 · 가정통신문과 학원 일정을 AI로 정리해보기",
         "learning_why": "오늘은 AI에게 막연히 말을 걸어보는 것이 아니라, 주부/학부모가 실제로 매일 겪는 공지·일정·답장 문제를 구조화해서 머리 부담을 줄이는 연습을 하는 날입니다.",
         "learning_outcome": "Day 1를 마치면 긴 가정통신문, 학원 일정 충돌, 진학 설명회 메모, 학부모 단톡방 답장 같은 재료를 AI로 첫 초안화하고, 내 말투에 맞게 다듬는 기본 루틴을 익히게 됩니다.",
         "estimated_minutes": _edu_vp_total_minutes(schedule_blocks),
         "completion_rule": "한두 개 버튼만 누르면 끝나는 날이 아니라, 최소 약 85분 동안 기초 설명을 읽고, 실전 교보재 1회 이상 수행하고, 수정본과 회고까지 남겼을 때 Day 1 완료로 봅니다.",
-        "foundation_concepts": _edu_vp_foundation_concepts("week1", llm_label),
+        "foundation_concepts": _edu_vp_foundation_concepts("day1", llm_label),
         "schedule_blocks": schedule_blocks,
         "required_action": f"{llm_label}에게 '학원 일정 정리/학교 공지 요약/가정통신문 정리/병원 예약 정리/엄마모임과 가족모임 충돌 정리' 중 지금 제일 스트레스인 장면 1개를 설명하고, 쉬운 한국어 초안 1개를 받은 뒤 직접 고쳐본다.",
         "proof_artifact_hint": "처음 결과와 본인이 고친 최종 결과를 둘 다 붙여 넣으세요.",
@@ -7476,14 +7797,14 @@ def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
             "전/후 결과를 남겼다",
         ],
         "sample_materials": _edu_vp_week1_materials(llm_label),
-        "tutorial_steps": _edu_vp_tutorial_steps("week1", intake),
-        "recommended_learning": _edu_vp_recommended_learning("week1"),
+        "tutorial_steps": _edu_vp_tutorial_steps("day1", intake),
+        "recommended_learning": _edu_vp_recommended_learning("day1"),
         "home_life_recommended_learning": _edu_vp_home_recommended_learning(),
         "home_priority_missions": _edu_vp_home_priority_missions(),
         "scenario_bank": _edu_vp_home_scenarios(),
         "blocked_step_options": ["pick_scene", "ask_ai", "rewrite", "save_output"],
         "practice_prompt_template": f"지금 제일 부담되는 생활 장면은 '{friction}'입니다. 예를 들어 학원 일정, 학교 공지, 가정통신문, 병원 예약, 엄마모임, 가족모임처럼 실제 집안일과 연결해서 생각하고 있습니다. {goal}에 맞게, 초등학생도 이해할 수 있을 만큼 쉬운 한국어로 오늘 바로 쓸 초안 1개만 적어줘.",
-        "evidence_bundle_id": f"vp-week1-{hashlib.sha1(query.encode('utf-8')).hexdigest()[:10]}",
+        "evidence_bundle_id": f"vp-day1-{hashlib.sha1(query.encode('utf-8')).hexdigest()[:10]}",
         "retrieval_mode": mode,
         "customer_facing_safe": customer_facing_safe,
         "fallback_used": mode != "db_customer_facing",
@@ -7564,6 +7885,43 @@ def _edu_vp_prepare_case(
             )
         )
     return payload
+
+
+def _edu_vp_latest_case_payload(email: str, case_id: int | None = None) -> dict[str, Any] | None:
+    safe_email = _edu_normalize_email(email)
+    if not safe_email:
+        raise HTTPException(400, "email is required")
+    if case_id is not None:
+        payload = _edu_load_case_payload(int(case_id))
+        if _edu_normalize_email(str(payload["customer"].get("email") or "")) != safe_email:
+            raise HTTPException(404, "case not found")
+        return payload
+    rows = _edu_execute(
+        """
+        SELECT c.id
+        FROM edu_cases c
+        JOIN edu_customers cu ON cu.id = c.customer_id
+        LEFT JOIN LATERAL (
+            SELECT summary_json
+            FROM edu_case_snapshots s
+            WHERE s.case_id = c.id
+              AND COALESCE(s.summary_json->>'program', '') = 'vp_training'
+            ORDER BY s.id DESC
+            LIMIT 1
+        ) s ON TRUE
+        WHERE LOWER(COALESCE(cu.email, '')) = %s
+        ORDER BY
+            CASE WHEN s.summary_json IS NOT NULL THEN 0 ELSE 1 END,
+            c.updated_at DESC,
+            c.id DESC
+        LIMIT 1
+        """,
+        (safe_email,),
+        fetch=True,
+    )
+    if not rows:
+        return None
+    return _edu_load_case_payload(int(rows[0]["id"]))
 
 
 def _edu_consume_magic_link(token: str) -> dict[str, Any]:
@@ -9334,9 +9692,11 @@ def edu_public_bootstrap(req: EduPublicBootstrapRequest) -> dict[str, Any]:
 
 @app.post("/api/edu/vp-training/intake")
 def edu_vp_training_intake(
+    request: Request,
     req: EduVpTrainingIntakeRequest,
     _: None = Depends(_require_secret),
 ) -> dict[str, Any]:
+    _edu_vp_assert_access(request, req.email)
     payload = _edu_vp_prepare_case(
         case_id=req.case_id,
         name=req.name,
@@ -9356,13 +9716,14 @@ def edu_vp_training_intake(
         "learning_goal": (req.learning_goal or "").strip(),
     }
     current_state = _edu_vp_load_state(case_id) or _edu_vp_state_default(case_id, payload["customer"], payload["case"])
+    current_state = _edu_vp_normalize_state_keys(current_state)
     current_state["customer"] = payload["customer"]
     current_state["case"] = payload["case"]
     current_state["intake"] = intake
     current_state["primary_llm_path"] = intake["preferred_llm"]
     try:
-        current_state["week0"] = _edu_vp_build_week0(intake)
-        current_state["week1"] = _edu_vp_build_week1(intake)
+        current_state["day0"] = _edu_vp_build_week0(intake)
+        current_state["day1"] = _edu_vp_build_week1(intake)
     except Exception as exc:  # noqa: BLE001
         _edu_runtime_event(
             "vp_training_state_build_failed",
@@ -9370,36 +9731,31 @@ def edu_vp_training_intake(
             error=str(exc)[:240],
             email=intake["email"][:120],
         )
-        current_state["week0"] = _edu_vp_build_week0(intake)
-        fallback_week1 = _edu_vp_build_week1({
+        current_state["day0"] = _edu_vp_build_week0(intake)
+        fallback_day1 = _edu_vp_build_week1({
             **intake,
             "biggest_friction": "",
             "learning_goal": "",
         })
-        fallback_week1["evidence_cards"] = []
-        fallback_week1["recommended_learning"] = _edu_vp_recommended_learning("week1")
-        fallback_week1["home_life_recommended_learning"] = _edu_vp_home_recommended_learning()
-        fallback_week1["retrieval_mode"] = "fallback"
-        fallback_week1["fallback_used"] = True
-        current_state["week1"] = fallback_week1
-    p0 = _edu_vp_stage_progress(current_state["week0"])
-    p1 = _edu_vp_stage_progress(current_state["week1"])
-    current_state["flow_outline"] = [
-        {"key": "week0", "label": "Day 0", "title": current_state["week0"]["title"], "completed": p0["completed"], "pct": p0["pct"]},
-        {"key": "week1", "label": "Day 1", "title": current_state["week1"]["title"], "completed": p1["completed"], "pct": p1["pct"]},
-    ]
-    current_state["progress"] = {
-        "completed_stages": int(p0["completed"]) + int(p1["completed"]),
-        "total_stages": 2,
-        "pct": round((int(p0["completed"]) + int(p1["completed"])) / 2 * 100),
-    }
-    current_state["persona_library"] = _edu_vp_persona_library(int(current_state["progress"]["pct"]))
-    current_state["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        fallback_day1["evidence_cards"] = []
+        fallback_day1["recommended_learning"] = _edu_vp_recommended_learning("day1")
+        fallback_day1["home_life_recommended_learning"] = _edu_vp_home_recommended_learning()
+        fallback_day1["retrieval_mode"] = "fallback"
+        fallback_day1["fallback_used"] = True
+        current_state["day1"] = fallback_day1
+    current_state = _edu_vp_refresh_state(current_state)
     _edu_vp_store_state(case_id, current_state)
+    _edu_vp_append_event(
+        case_id=case_id,
+        email=intake["email"],
+        event_type="system",
+        event_name="intake_built",
+        payload={"force_new": bool(req.force_new), "case_id": case_id, "preferred_llm": intake["preferred_llm"]},
+    )
     _edu_execute(
         """
         UPDATE edu_cases
-        SET status = 'vp_training_week0',
+        SET status = 'vp_training_day0',
             primary_concern = %s,
             ai_usage_context = %s,
             updated_at = NOW()
@@ -9415,6 +9771,114 @@ def edu_vp_training_intake(
         "case": payload["case"],
         "training_state": current_state,
     }
+
+
+@app.get("/api/edu/vp-training/session")
+def edu_vp_training_session(
+    request: Request,
+    email: str,
+    case_id: int | None = None,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    _edu_vp_assert_access(request, email)
+    _ensure_edu_case_schema()
+    payload = _edu_vp_latest_case_payload(email, case_id=case_id)
+    if not payload:
+        return {"ok": True, "exists": False}
+    resolved_case_id = int(payload["case"]["id"])
+    state = _edu_vp_load_state(resolved_case_id)
+    if not state:
+        return {"ok": True, "exists": False, "case_id": resolved_case_id}
+    state = _edu_vp_normalize_state_keys(state)
+    state["customer"] = payload["customer"]
+    state["case"] = payload["case"]
+    state = _edu_vp_refresh_state(state)
+    _edu_vp_store_state(resolved_case_id, state)
+    _edu_vp_append_event(
+        case_id=resolved_case_id,
+        email=_edu_normalize_email(email),
+        event_type="session",
+        event_name="resume",
+        payload={"case_id": resolved_case_id, "selected_stage": ((state.get("ui_state") or {}).get("selected_stage") or "day0")},
+    )
+    return {
+        "ok": True,
+        "exists": True,
+        "case_id": resolved_case_id,
+        "customer": payload["customer"],
+        "case": payload["case"],
+        "training_state": state,
+    }
+
+
+@app.post("/api/edu/vp-training/session/sync")
+def edu_vp_training_session_sync(
+    request: Request,
+    req: EduVpTrainingSessionSyncRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    _ensure_edu_case_schema()
+    case_id = int(req.case_id)
+    payload = _edu_load_case_payload(case_id)
+    owner_email = _edu_normalize_email(str(payload["customer"].get("email") or ""))
+    caller_email = _edu_normalize_email(req.email)
+    if not caller_email:
+        raise HTTPException(400, "email is required")
+    if caller_email != owner_email:
+        raise HTTPException(403, "forbidden")
+    _edu_vp_assert_access(request, owner_email)
+    state = _edu_vp_load_state(case_id) or _edu_vp_state_default(case_id, payload["customer"], payload["case"])
+    state = _edu_vp_normalize_state_keys(state)
+    state["customer"] = payload["customer"]
+    state["case"] = payload["case"]
+    current_ui_state = state.get("ui_state") or {}
+    current_seq = int(current_ui_state.get("last_client_seq") or 0) if isinstance(current_ui_state, dict) else 0
+    incoming_seq = max(0, int(req.client_seq or 0))
+    if incoming_seq < current_seq:
+        return {
+            "ok": True,
+            "case_id": case_id,
+            "ignored_stale_sync": True,
+            "ui_state": current_ui_state if isinstance(current_ui_state, dict) else {},
+            "training_state": state,
+        }
+    state["ui_state"] = _edu_vp_merge_ui_state(
+        state,
+        {
+            "selected_stage": req.selected_stage,
+            "active_curriculum_index": req.active_curriculum_index,
+            "show_case_archive": bool(req.show_case_archive),
+            "show_continue_from": req.show_continue_from,
+            "preferred_llm": req.preferred_llm,
+            "current_device": req.current_device,
+            "desktop_os": req.desktop_os,
+            "stage_drafts": req.stage_drafts,
+            "last_client_seq": incoming_seq,
+            "last_event": {
+                "event_type": req.event_type,
+                "event_name": req.event_name,
+                "event_payload": req.event_payload,
+                "client_seq": incoming_seq,
+                "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            },
+        },
+    )
+    state = _edu_vp_refresh_state(state)
+    _edu_vp_store_state(case_id, state)
+    _edu_vp_append_event(
+        case_id=case_id,
+        email=req.email or str(payload["customer"].get("email") or ""),
+        event_type=req.event_type,
+        event_name=req.event_name,
+        payload={
+            "selected_stage": req.selected_stage,
+            "active_curriculum_index": req.active_curriculum_index,
+            "show_case_archive": bool(req.show_case_archive),
+            "show_continue_from": req.show_continue_from,
+            "event_payload": req.event_payload,
+        },
+    )
+    return {"ok": True, "case_id": case_id, "ui_state": state.get("ui_state") or {}, "training_state": state}
 
 
 @app.post("/api/edu/vp-training/account/register")
@@ -9457,7 +9921,12 @@ def edu_vp_training_account_register(
             fetch=True,
         )[0]
         customer_id = int(inserted["id"])
-    return {"ok": True, "customer_id": customer_id, "email": email}
+    return {
+        "ok": True,
+        "customer_id": customer_id,
+        "email": email,
+        "training_auth_token": _issue_edu_training_auth_token(email, customer_id),
+    }
 
 
 @app.post("/api/edu/vp-training/account/login")
@@ -9479,6 +9948,7 @@ def edu_vp_training_account_login(
         "customer_id": int(account["id"]),
         "email": str(account.get("email") or ""),
         "name": str(account.get("name") or ""),
+        "training_auth_token": _issue_edu_training_auth_token(str(account.get("email") or ""), int(account["id"])),
     }
 
 
@@ -9518,18 +9988,22 @@ def edu_vp_training_account_update_email(
         "email": new_email,
         "customer_id": int(account["id"]),
         "account_updated": True,
+        "training_auth_token": _issue_edu_training_auth_token(new_email, int(account["id"])),
     }
 
 
 @app.post("/api/edu/vp-training/artifact")
 def edu_vp_training_artifact(
+    request: Request,
     req: EduVpTrainingArtifactRequest,
     _: None = Depends(_require_secret),
 ) -> dict[str, Any]:
     case_id = int(req.case_id)
     payload = _edu_load_case_payload(case_id)
+    _edu_vp_assert_access(request, str(payload["customer"].get("email") or ""))
     state = _edu_vp_load_state(case_id) or _edu_vp_state_default(case_id, payload["customer"], payload["case"])
-    stage = req.stage if req.stage in {"week0", "week1"} else "week0"
+    state = _edu_vp_normalize_state_keys(state)
+    stage = req.stage if req.stage in {"day0", "day1"} else "day0"
     section = dict(state.get(stage) or {})
     section["proof_artifact"] = (req.proof_artifact or "").strip()
     section["blocked_at_step"] = (req.blocked_at_step or "").strip()
@@ -9539,20 +10013,15 @@ def edu_vp_training_artifact(
     state[stage] = section
     state["customer"] = payload["customer"]
     state["case"] = payload["case"]
-    p0 = _edu_vp_stage_progress(state.get("week0") or {})
-    p1 = _edu_vp_stage_progress(state.get("week1") or {})
-    state["flow_outline"] = [
-        {"key": "week0", "label": "Day 0", "title": (state.get("week0") or {}).get("title"), "completed": p0["completed"], "pct": p0["pct"]},
-        {"key": "week1", "label": "Day 1", "title": (state.get("week1") or {}).get("title"), "completed": p1["completed"], "pct": p1["pct"]},
-    ]
-    state["progress"] = {
-        "completed_stages": int(p0["completed"]) + int(p1["completed"]),
-        "total_stages": 2,
-        "pct": round((int(p0["completed"]) + int(p1["completed"])) / 2 * 100),
-    }
-    state["persona_library"] = _edu_vp_persona_library(int(state["progress"]["pct"]))
-    state["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    state = _edu_vp_refresh_state(state)
     _edu_vp_store_state(case_id, state)
+    _edu_vp_append_event(
+        case_id=case_id,
+        email=str(payload["customer"].get("email") or ""),
+        event_type="artifact",
+        event_name="stage_saved",
+        payload={"stage": stage, "completed": bool(req.completed), "blocked_at_step": section["blocked_at_step"]},
+    )
     _edu_execute(
         """
         UPDATE edu_cases
@@ -9560,7 +10029,7 @@ def edu_vp_training_artifact(
             updated_at = NOW()
         WHERE id = %s
         """,
-        ("vp_training_week1" if stage == "week1" and req.completed else f"{stage}_in_progress", case_id),
+        ("vp_training_day1" if stage == "day1" and req.completed else f"{stage}_in_progress", case_id),
         fetch=False,
     )
     return {
@@ -9572,13 +10041,16 @@ def edu_vp_training_artifact(
 
 @app.post("/api/edu/vp-training/feedback")
 def edu_vp_training_feedback(
+    request: Request,
     req: EduVpTrainingFeedbackRequest,
     _: None = Depends(_require_secret),
 ) -> dict[str, Any]:
     case_id = int(req.case_id)
     payload = _edu_load_case_payload(case_id)
+    _edu_vp_assert_access(request, str(payload["customer"].get("email") or ""))
     state = _edu_vp_load_state(case_id) or _edu_vp_state_default(case_id, payload["customer"], payload["case"])
-    stage = req.stage if req.stage in {"week0", "week1"} else "week0"
+    state = _edu_vp_normalize_state_keys(state)
+    stage = req.stage if req.stage in {"day0", "day1"} else "day0"
     section = dict(state.get(stage) or {})
     section["vp_feedback"] = {
         "empathy_score": max(1, min(5, int(req.empathy_score or 1))),
@@ -9592,29 +10064,26 @@ def edu_vp_training_feedback(
     state[stage] = section
     state["customer"] = payload["customer"]
     state["case"] = payload["case"]
-    p0 = _edu_vp_stage_progress(state.get("week0") or {})
-    p1 = _edu_vp_stage_progress(state.get("week1") or {})
-    state["flow_outline"] = [
-        {"key": "week0", "label": "Day 0", "title": (state.get("week0") or {}).get("title"), "completed": p0["completed"], "pct": p0["pct"]},
-        {"key": "week1", "label": "Day 1", "title": (state.get("week1") or {}).get("title"), "completed": p1["completed"], "pct": p1["pct"]},
-    ]
-    state["progress"] = {
-        "completed_stages": int(p0["completed"]) + int(p1["completed"]),
-        "total_stages": 2,
-        "pct": round((int(p0["completed"]) + int(p1["completed"])) / 2 * 100),
-    }
-    state["persona_library"] = _edu_vp_persona_library(int(state["progress"]["pct"]))
-    state["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    state = _edu_vp_refresh_state(state)
     _edu_vp_store_state(case_id, state)
+    _edu_vp_append_event(
+        case_id=case_id,
+        email=str(payload["customer"].get("email") or ""),
+        event_type="feedback",
+        event_name="vp_feedback_saved",
+        payload={"stage": stage, "empathy_score": section["vp_feedback"]["empathy_score"], "clarity_score": section["vp_feedback"]["clarity_score"]},
+    )
     return {"ok": True, "case_id": case_id, "training_state": state}
 
 
 @app.get("/api/edu/vp-training/cases")
 def edu_vp_training_cases(
+    request: Request,
     email: str,
     _: None = Depends(_require_secret),
 ) -> dict[str, Any]:
     safe_email = _edu_normalize_email(email)
+    _edu_vp_assert_access(request, safe_email)
     if not safe_email:
         return {"ok": True, "cases": []}
     rows = _edu_execute(
@@ -9643,7 +10112,7 @@ def edu_vp_training_cases(
     items = []
     for row in rows:
         summary_raw = row.get("summary_json") or {}
-        summary = summary_raw if isinstance(summary_raw, dict) else {}
+        summary = _edu_vp_normalize_state_keys(summary_raw) if isinstance(summary_raw, dict) else {}
         progress = summary.get("progress") or {"pct": 0}
         flow_outline = summary.get("flow_outline") or []
         latest_stage_title = ""
@@ -9668,10 +10137,12 @@ def edu_vp_training_cases(
 
 @app.post("/api/edu/vp-training/cases/delete")
 def edu_vp_training_case_delete(
+    request: Request,
     req: EduVpTrainingCaseDeleteRequest,
     _: None = Depends(_require_secret),
 ) -> dict[str, Any]:
     safe_email = _edu_normalize_email(req.email)
+    _edu_vp_assert_access(request, safe_email)
     case_id = int(req.case_id)
     if not safe_email:
         raise HTTPException(400, "email is required")
@@ -9725,10 +10196,12 @@ def edu_vp_training_case_delete(
 
 @app.post("/api/edu/vp-training/cases/reset")
 def edu_vp_training_case_reset(
+    request: Request,
     req: EduVpTrainingCaseResetRequest,
     _: None = Depends(_require_secret),
 ) -> dict[str, Any]:
     safe_email = _edu_normalize_email(req.email)
+    _edu_vp_assert_access(request, safe_email)
     if not safe_email:
         raise HTTPException(400, "email is required")
     rows = _edu_execute(
@@ -9770,34 +10243,34 @@ def edu_vp_training_case_reset(
 
 def _edu_vp_material_zip_bytes(kit_id: str) -> tuple[str, bytes]:
     bundles: dict[str, dict[str, str]] = {
-        "week0-first-login-starter": {
-            "00_README_먼저_여세요.md": "# Week 0 스타터팩\n\n이 묶음은 PC나 Mac이 낯선 사람을 위한 첫 연습 파일입니다.\n1. `01_첫질문_복붙용.txt`를 연다.\n2. 문장을 복사한다.\n3. AI 창에 붙여 넣는다.\n4. 나온 답 한 문장을 `03_결과복사용_빈메모.txt`에 붙여 넣는다.\n",
+        "day0-first-login-starter": {
+            "00_README_먼저_여세요.md": "# Day 0 스타터팩\n\n이 묶음은 PC나 Mac이 낯선 사람을 위한 첫 연습 파일입니다.\n1. `01_첫질문_복붙용.txt`를 연다.\n2. 문장을 복사한다.\n3. AI 창에 붙여 넣는다.\n4. 나온 답 한 문장을 `03_결과복사용_빈메모.txt`에 붙여 넣는다.\n",
             "01_첫질문_복붙용.txt": "나는 AI가 아직 낯설어. 오늘 처음 써보는 사람처럼 아주 쉬운 한국어로, 내가 지금 무엇을 하면 되는지 3줄만 알려줘.",
             "02_성공예시_설명.txt": "성공 예시: 입력창이 보이고, 내 질문 아래에 AI 답변이 3~5줄 정도 뜬 상태.",
             "03_결과복사용_빈메모.txt": "여기에 AI가 준 첫 답변 중 마음에 든 문장 1개를 붙여 넣으세요.\n",
         },
-        "week1-school-notice-kit": {
+        "day1-school-notice-kit": {
             "00_README_가정통신문실전팩.md": "# 가정통신문 정리 실전팩\n\n긴 학교 공지에서 날짜, 준비물, 제출할 것, 비용만 뽑아내는 연습입니다.",
             "01_가정통신문원문.txt": "3학년 학부모님께 안내드립니다. 다음 주 목요일에는 현장체험학습이 예정되어 있으며 오전 8시 30분까지 등교해야 합니다. 준비물은 도시락, 물, 모자, 편한 운동화입니다. 참가비 12,000원은 이번 주 금요일까지 스쿨뱅킹 계좌로 납부 부탁드립니다. 동의서는 수요일까지 꼭 제출해주시기 바랍니다.",
             "02_정리조건.txt": "조건: 1) 초등학생도 이해할 만큼 쉬운 한국어 2) 날짜 / 준비물 / 제출할 것 / 비용 4칸으로 정리 3) 오늘 당장 챙길 것도 따로 표시",
             "03_AI에게붙여넣을프롬프트.txt": "아래 가정통신문에서 날짜, 준비물, 제출할 것, 비용만 아주 쉽게 정리해줘. 오늘 당장 챙겨야 할 것도 따로 적어줘.\n\n3학년 학부모님께 안내드립니다. 다음 주 목요일에는 현장체험학습이 예정되어 있으며 오전 8시 30분까지 등교해야 합니다. 준비물은 도시락, 물, 모자, 편한 운동화입니다. 참가비 12,000원은 이번 주 금요일까지 스쿨뱅킹 계좌로 납부 부탁드립니다. 동의서는 수요일까지 꼭 제출해주시기 바랍니다.",
             "04_좋은결과예시.txt": "날짜: 다음 주 목요일 오전 8시 30분까지 등교\n준비물: 도시락, 물, 모자, 편한 운동화\n제출할 것: 동의서 수요일까지 제출\n비용: 참가비 12,000원 금요일까지 납부\n오늘 당장 챙길 것: 동의서 위치 확인, 준비물 미리 메모",
         },
-        "week1-academy-conflict-kit": {
+        "day1-academy-conflict-kit": {
             "00_README_학원학교충돌실전팩.md": "# 학원/학교 일정 충돌 정리 실전팩\n\n형제자매 일정과 학교 준비물을 한 번에 정리하는 연습입니다.",
             "01_흩어진일정메모.txt": "월: 첫째 영어학원 4시, 둘째 피아노 4시 30분 / 화: 학교 준비물 색연필 제출 / 수: 첫째 체육복, 둘째 받아쓰기 / 목: 둘째 치과 3시, 첫째 수학학원 3시 30분 / 금: 공개수업 10시",
             "02_정리조건.txt": "조건: 1) 요일 순서대로 2) 아이별로 나눠서 3) 시간이 겹치거나 바로 준비해야 하는 것 표시 4) 쉬운 한국어",
             "03_AI에게붙여넣을프롬프트.txt": "아래 메모를 요일 순서대로 다시 적어줘. 아이별로 나누고, 시간이 겹치는 부분과 오늘 바로 챙길 준비물은 따로 표시해줘.\n\n월: 첫째 영어학원 4시, 둘째 피아노 4시 30분 / 화: 학교 준비물 색연필 제출 / 수: 첫째 체육복, 둘째 받아쓰기 / 목: 둘째 치과 3시, 첫째 수학학원 3시 30분 / 금: 공개수업 10시",
             "04_좋은결과예시.txt": "월요일: 첫째 영어학원 4시 / 둘째 피아노 4시 30분\n화요일: 학교 준비물 색연필 제출\n수요일: 첫째 체육복, 둘째 받아쓰기 준비\n목요일: 둘째 치과 3시 / 첫째 수학학원 3시 30분 (시간이 가까워 미리 이동 계획 필요)\n금요일: 공개수업 오전 10시\n오늘 바로 챙길 것: 색연필, 체육복, 받아쓰기 준비",
         },
-        "week1-briefing-notes-kit": {
+        "day1-briefing-notes-kit": {
             "00_README_설명회메모실전팩.md": "# 진학 설명회 메모 정리 실전팩\n\n길고 뒤섞인 설명회 메모를 일정, 준비물, 나중에 다시 볼 내용으로 나누는 연습입니다.",
             "01_설명회메모원본.txt": "여름방학 전까지 독서기록 챙기기, 7월 12일 설명회 자료집 배부, 수학은 개념보다 오답정리 강조, 8월 모의평가 접수 확인, 상담 예약은 담임 통해 문의, 봉사시간도 체크",
             "02_정리조건.txt": "조건: 1) 입시 일정 / 준비할 것 / 나중에 다시 볼 메모 3칸 2) 아주 쉬운 한국어 3) 이번 달 안에 할 일은 따로 표시",
             "03_AI에게붙여넣을프롬프트.txt": "아래 설명회 메모를 아주 쉬운 한국어로 정리해줘. 입시 일정 / 준비할 것 / 나중에 다시 볼 메모로 나눠주고, 이번 달 안에 할 일은 따로 표시해줘.\n\n여름방학 전까지 독서기록 챙기기, 7월 12일 설명회 자료집 배부, 수학은 개념보다 오답정리 강조, 8월 모의평가 접수 확인, 상담 예약은 담임 통해 문의, 봉사시간도 체크",
             "04_좋은결과예시.txt": "입시 일정: 7월 12일 설명회 자료집 배부, 8월 모의평가 접수 확인\n준비할 것: 여름방학 전까지 독서기록 챙기기, 봉사시간 체크, 상담 예약 문의\n나중에 다시 볼 메모: 수학은 개념보다 오답정리 강조\n이번 달 안에 할 일: 담임에게 상담 예약 문의, 독서기록 상태 확인",
         },
-        "week1-parent-chat-reply-kit": {
+        "day1-parent-chat-reply-kit": {
             "00_README_학부모답장실전팩.md": "# 학부모 단톡방 답장 실전팩\n\n정중하지만 길지 않은 한국어 답장을 빠르게 만드는 연습입니다.",
             "01_받은메시지.txt": "안녕하세요. 내일 공개수업 후에 간단히 반 대표 모임을 하려고 합니다. 시간 괜찮으실지, 혹시 준비해 오실 의견 있으시면 미리 알려주세요.",
             "02_원하는답장조건.txt": "조건: 1) 부드러운 한국어 2) 너무 길지 않게 3) 참석 가능 여부 포함 4) 예민하거나 딱딱한 말투 금지",

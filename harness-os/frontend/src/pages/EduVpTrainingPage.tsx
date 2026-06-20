@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 type Props = {
   apiBase: string
@@ -19,6 +19,8 @@ type TutorialStep = {
   title: string
   body: string
 }
+
+type StageKey = 'day0' | 'day1'
 
 type LearningLink = {
   title: string
@@ -67,11 +69,37 @@ type TrainingStage = {
 }
 
 type FlowItem = {
-  key: 'week0' | 'week1'
+  key: StageKey
   label: string
   title: string
   completed: boolean
   pct: number
+}
+
+type UiStageDraft = {
+  proof_artifact?: string
+  blocked_at_step?: string
+  notes?: string
+  completed?: boolean
+  empathy_score?: number
+  clarity_score?: number
+  motivation_score?: number
+  biggest_blocker?: string
+  freeform_feedback?: string
+}
+
+type UiState = {
+  selected_stage?: StageKey
+  active_curriculum_index?: number
+  show_case_archive?: boolean
+  show_continue_from?: StageKey | ''
+  preferred_llm?: string
+  current_device?: string
+  desktop_os?: string
+  stage_drafts?: Partial<Record<StageKey, UiStageDraft>>
+  last_client_seq?: number
+  last_event?: Record<string, unknown>
+  last_synced_at?: string
 }
 
 type TrainingState = {
@@ -88,8 +116,9 @@ type TrainingState = {
     personas: Array<{ key: string; label: string; group: string; description: string }>
   }
   flow_outline?: FlowItem[]
-  week0?: TrainingStage
-  week1?: TrainingStage
+  ui_state?: UiState
+  day0?: TrainingStage
+  day1?: TrainingStage
 }
 
 type CaseItem = {
@@ -103,6 +132,8 @@ type CaseItem = {
 
 const VP_TRAINING_CASE_STORAGE_KEY = 'vp_training_case_id'
 const VP_TRAINING_AUTH_EMAIL_KEY = 'vp_training_auth_email'
+const VP_TRAINING_AUTH_TOKEN_KEY = 'vp_training_auth_token'
+const VP_TRAINING_SESSION_CACHE_KEY = 'vp_training_session_cache'
 
 function roleDefaultEmail(role?: 'ceo' | 'vp') {
   if (role === 'ceo') return 'junti7@gmail.com'
@@ -127,6 +158,10 @@ function resolveTrainingEmail(role?: 'ceo' | 'vp') {
 
 function caseStorageKey(email: string) {
   return `${VP_TRAINING_CASE_STORAGE_KEY}:${email}`
+}
+
+function sessionCacheKey(email: string) {
+  return `${VP_TRAINING_SESSION_CACHE_KEY}:${email}`
 }
 
 async function readJsonSafe(res: Response) {
@@ -188,9 +223,38 @@ function progressBar(pct: number) {
   )
 }
 
-function curriculumActiveIndex(stageKey: 'week0' | 'week1', blockedAtStep?: string, completed?: boolean, blockCount?: number) {
+function normalizeTrainingState(raw: TrainingState | Record<string, unknown> | null | undefined): TrainingState | null {
+  if (!raw || typeof raw !== 'object') return null
+  const source = raw as Record<string, unknown>
+  const normalized: TrainingState = {
+    ...source as TrainingState,
+    day0: (source.day0 as TrainingStage | undefined) || (source.week0 as TrainingStage | undefined),
+    day1: (source.day1 as TrainingStage | undefined) || (source.week1 as TrainingStage | undefined),
+  }
+  const uiStateRaw = (source.ui_state as UiState | undefined) || undefined
+  if (uiStateRaw) {
+    const nextUiState: UiState = { ...uiStateRaw }
+    if (nextUiState.selected_stage === 'week0' as never) nextUiState.selected_stage = 'day0'
+    if (nextUiState.selected_stage === 'week1' as never) nextUiState.selected_stage = 'day1'
+    if (nextUiState.show_continue_from === 'week0' as never) nextUiState.show_continue_from = 'day0'
+    if (nextUiState.show_continue_from === 'week1' as never) nextUiState.show_continue_from = 'day1'
+    const drafts = nextUiState.stage_drafts || {}
+    nextUiState.stage_drafts = {
+      day0: drafts.day0 || (drafts as Record<string, UiStageDraft>).week0,
+      day1: drafts.day1 || (drafts as Record<string, UiStageDraft>).week1,
+    }
+    normalized.ui_state = nextUiState
+  }
+  normalized.flow_outline = (normalized.flow_outline || []).map((item) => ({
+    ...item,
+    key: item.key === ('week1' as never) ? 'day1' : 'day0',
+  }))
+  return normalized
+}
+
+function curriculumActiveIndex(stageKey: StageKey, blockedAtStep?: string, completed?: boolean, blockCount?: number) {
   if (completed && blockCount && blockCount > 0) return blockCount - 1
-  if (stageKey === 'week0') {
+  if (stageKey === 'day0') {
     if (blockedAtStep === 'open_tool' || blockedAtStep === 'login_ok') return 2
     if (blockedAtStep === 'first_prompt') return 3
     if (blockedAtStep === 'copy_result') return 4
@@ -214,18 +278,23 @@ function stageHasWork(stage?: TrainingStage) {
   )
 }
 
-function resumeStageFromState(state?: TrainingState | null): 'week0' | 'week1' {
-  if (!state) return 'week0'
-  if (stageHasWork(state.week1)) return 'week1'
-  if (state.week0?.completed) return 'week1'
-  return 'week0'
+function resumeStageFromState(state?: TrainingState | null): StageKey {
+  const normalized = normalizeTrainingState(state)
+  if (!normalized) return 'day0'
+  if (normalized.ui_state?.selected_stage === 'day1') return 'day1'
+  if (stageHasWork(normalized.day1)) return 'day1'
+  if (normalized.day0?.completed) return 'day1'
+  return 'day0'
 }
 
 function StageCard({
   stage,
   stageKey,
+  draft,
   onSave,
   onSaveFeedback,
+  onDraftChange,
+  onInteraction,
   onContinue,
   saving,
   feedbackSaving,
@@ -235,9 +304,12 @@ function StageCard({
   reminder,
 }: {
   stage: TrainingStage | undefined
-  stageKey: 'week0' | 'week1'
-  onSave: (stageKey: 'week0' | 'week1', payload: { proof_artifact: string; blocked_at_step: string; notes: string; completed: boolean }) => void
-  onSaveFeedback: (stageKey: 'week0' | 'week1', payload: { empathy_score: number; clarity_score: number; motivation_score: number; biggest_blocker: string; freeform_feedback: string }) => void
+  stageKey: StageKey
+  draft?: UiStageDraft
+  onSave: (stageKey: StageKey, payload: { proof_artifact: string; blocked_at_step: string; notes: string; completed: boolean }) => void
+  onSaveFeedback: (stageKey: StageKey, payload: { empathy_score: number; clarity_score: number; motivation_score: number; biggest_blocker: string; freeform_feedback: string }) => void
+  onDraftChange: (stageKey: StageKey, draft: UiStageDraft) => void
+  onInteraction: (eventName: string, payload?: Record<string, unknown>) => void
   onContinue: () => void
   saving: boolean
   feedbackSaving: boolean
@@ -246,27 +318,41 @@ function StageCard({
   showContinue: boolean
   reminder?: string | null
 }) {
-  const [proof, setProof] = useState(stage?.proof_artifact || '')
-  const [blocked, setBlocked] = useState(stage?.blocked_at_step || '')
-  const [notes, setNotes] = useState(stage?.notes || '')
-  const [completed, setCompleted] = useState(Boolean(stage?.completed))
-  const [empathyScore, setEmpathyScore] = useState(stage?.vp_feedback?.empathy_score || 3)
-  const [clarityScore, setClarityScore] = useState(stage?.vp_feedback?.clarity_score || 3)
-  const [motivationScore, setMotivationScore] = useState(stage?.vp_feedback?.motivation_score || 3)
-  const [biggestBlocker, setBiggestBlocker] = useState(stage?.vp_feedback?.biggest_blocker || '')
-  const [freeformFeedback, setFreeformFeedback] = useState(stage?.vp_feedback?.freeform_feedback || '')
+  const [proof, setProof] = useState(draft?.proof_artifact ?? stage?.proof_artifact ?? '')
+  const [blocked, setBlocked] = useState(draft?.blocked_at_step ?? stage?.blocked_at_step ?? '')
+  const [notes, setNotes] = useState(draft?.notes ?? stage?.notes ?? '')
+  const [completed, setCompleted] = useState(Boolean(draft?.completed ?? stage?.completed))
+  const [empathyScore, setEmpathyScore] = useState(draft?.empathy_score ?? stage?.vp_feedback?.empathy_score ?? 3)
+  const [clarityScore, setClarityScore] = useState(draft?.clarity_score ?? stage?.vp_feedback?.clarity_score ?? 3)
+  const [motivationScore, setMotivationScore] = useState(draft?.motivation_score ?? stage?.vp_feedback?.motivation_score ?? 3)
+  const [biggestBlocker, setBiggestBlocker] = useState(draft?.biggest_blocker ?? stage?.vp_feedback?.biggest_blocker ?? '')
+  const [freeformFeedback, setFreeformFeedback] = useState(draft?.freeform_feedback ?? stage?.vp_feedback?.freeform_feedback ?? '')
 
   useEffect(() => {
-    setProof(stage?.proof_artifact || '')
-    setBlocked(stage?.blocked_at_step || '')
-    setNotes(stage?.notes || '')
-    setCompleted(Boolean(stage?.completed))
-    setEmpathyScore(stage?.vp_feedback?.empathy_score || 3)
-    setClarityScore(stage?.vp_feedback?.clarity_score || 3)
-    setMotivationScore(stage?.vp_feedback?.motivation_score || 3)
-    setBiggestBlocker(stage?.vp_feedback?.biggest_blocker || '')
-    setFreeformFeedback(stage?.vp_feedback?.freeform_feedback || '')
-  }, [stageKey, stage])
+    setProof(draft?.proof_artifact ?? stage?.proof_artifact ?? '')
+    setBlocked(draft?.blocked_at_step ?? stage?.blocked_at_step ?? '')
+    setNotes(draft?.notes ?? stage?.notes ?? '')
+    setCompleted(Boolean(draft?.completed ?? stage?.completed))
+    setEmpathyScore(draft?.empathy_score ?? stage?.vp_feedback?.empathy_score ?? 3)
+    setClarityScore(draft?.clarity_score ?? stage?.vp_feedback?.clarity_score ?? 3)
+    setMotivationScore(draft?.motivation_score ?? stage?.vp_feedback?.motivation_score ?? 3)
+    setBiggestBlocker(draft?.biggest_blocker ?? stage?.vp_feedback?.biggest_blocker ?? '')
+    setFreeformFeedback(draft?.freeform_feedback ?? stage?.vp_feedback?.freeform_feedback ?? '')
+  }, [stageKey, stage, draft])
+
+  useEffect(() => {
+    onDraftChange(stageKey, {
+      proof_artifact: proof,
+      blocked_at_step: blocked,
+      notes,
+      completed,
+      empathy_score: empathyScore,
+      clarity_score: clarityScore,
+      motivation_score: motivationScore,
+      biggest_blocker: biggestBlocker,
+      freeform_feedback: freeformFeedback,
+    })
+  }, [stageKey, proof, blocked, notes, completed, empathyScore, clarityScore, motivationScore, biggestBlocker, freeformFeedback, onDraftChange])
 
   async function downloadKit(downloadUrl: string, kitId: string) {
     const res = await fetch(`${apiBase}${downloadUrl}`, { headers: { ...authHeaders() } })
@@ -285,7 +371,7 @@ function StageCard({
   return (
     <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 24, padding: 20, display: 'grid', gap: 16 }}>
       <div>
-        <div style={{ fontSize: '.82rem', color: C.accent, fontWeight: 900, letterSpacing: '.05em', marginBottom: 6 }}>{stageKey === 'week0' ? 'DAY 0' : 'DAY 1'}</div>
+        <div style={{ fontSize: '.82rem', color: C.accent, fontWeight: 900, letterSpacing: '.05em', marginBottom: 6 }}>{stageKey === 'day0' ? 'DAY 0' : 'DAY 1'}</div>
         <h2 style={{ margin: 0, fontSize: '1.55rem', lineHeight: 1.3, color: '#000000' }}>{stage?.title || '준비 중'}</h2>
       </div>
 
@@ -400,7 +486,10 @@ function StageCard({
               <div style={{ fontWeight: 800, color: C.ink }}>{item.title}</div>
               <div style={{ color: C.muted, fontSize: '.95rem', lineHeight: 1.6 }}>{item.description}</div>
               <div style={{ color: C.faint, fontSize: '.82rem', lineHeight: 1.5 }}>포함 파일: {item.files.join(', ')}</div>
-              <button type="button" onClick={() => void downloadKit(item.download_url, item.kit_id)} style={{ justifySelf: 'start', background: '#111827', color: '#fff', border: 'none', borderRadius: 12, padding: '11px 14px', fontWeight: 800, cursor: 'pointer' }}>
+              <button type="button" onClick={() => {
+                onInteraction('download_material', { kit_id: item.kit_id })
+                void downloadKit(item.download_url, item.kit_id)
+              }} style={{ justifySelf: 'start', background: '#111827', color: '#fff', border: 'none', borderRadius: 12, padding: '11px 14px', fontWeight: 800, cursor: 'pointer' }}>
                 샘플 파일 내려받기
               </button>
             </div>
@@ -523,12 +612,12 @@ function StageCard({
       <div style={{ display: 'grid', gap: 10 }}>
         <label style={{ display: 'grid', gap: 6 }}>
           <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>증거 결과물</span>
-          <textarea value={proof} onChange={(e) => setProof(e.target.value)} rows={5} placeholder={stage?.proof_artifact_hint || '실제로 만든 결과를 붙여 넣으세요.'} style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.92rem', lineHeight: 1.5, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+          <textarea value={proof} onChange={(e) => setProof(e.target.value)} onKeyDown={(e) => onInteraction('proof_keydown', { key: e.key, field: 'proof_artifact' })} rows={5} placeholder={stage?.proof_artifact_hint || '실제로 만든 결과를 붙여 넣으세요.'} style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.92rem', lineHeight: 1.5, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
         </label>
 
         <label style={{ display: 'grid', gap: 6 }}>
           <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>어디서 막혔나</span>
-          <select value={blocked} onChange={(e) => setBlocked(e.target.value)} style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.92rem', fontFamily: 'inherit', background: C.surface, boxSizing: 'border-box' }}>
+          <select value={blocked} onChange={(e) => setBlocked(e.target.value)} onClick={() => onInteraction('blocked_step_click', { field: 'blocked_at_step' })} style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.92rem', fontFamily: 'inherit', background: C.surface, boxSizing: 'border-box' }}>
             <option value="">막힌 단계 없음</option>
             {(stage?.blocked_step_options || []).map((item) => (
               <option key={item} value={item}>{item}</option>
@@ -538,22 +627,31 @@ function StageCard({
 
         <label style={{ display: 'grid', gap: 6 }}>
           <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>메모</span>
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="어디서 이해가 잘 됐고, 어디서 막혔는지 적으세요." style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.92rem', lineHeight: 1.5, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} onKeyDown={(e) => onInteraction('notes_keydown', { key: e.key, field: 'notes' })} rows={3} placeholder="어디서 이해가 잘 됐고, 어디서 막혔는지 적으세요." style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.92rem', lineHeight: 1.5, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
         </label>
 
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.ink, fontSize: '.9rem', fontWeight: 700 }}>
-          <input type="checkbox" checked={completed} onChange={(e) => setCompleted(e.target.checked)} />
+          <input type="checkbox" checked={completed} onChange={(e) => {
+            setCompleted(e.target.checked)
+            onInteraction('toggle_completed', { checked: e.target.checked })
+          }} />
           이 단계는 실제로 끝까지 해봤다
         </label>
 
-        <button onClick={() => onSave(stageKey, { proof_artifact: proof, blocked_at_step: blocked, notes, completed })} disabled={saving} style={{ background: saving ? '#cbd5e1' : '#111827', color: '#fff', border: 'none', borderRadius: 14, padding: '13px 16px', fontSize: '.95rem', fontWeight: 800, cursor: saving ? 'wait' : 'pointer' }}>
+        <button onClick={() => {
+          onInteraction('save_stage_click', { stage: stageKey })
+          onSave(stageKey, { proof_artifact: proof, blocked_at_step: blocked, notes, completed })
+        }} disabled={saving} style={{ background: saving ? '#cbd5e1' : '#111827', color: '#fff', border: 'none', borderRadius: 14, padding: '13px 16px', fontSize: '.95rem', fontWeight: 800, cursor: saving ? 'wait' : 'pointer' }}>
           {saving ? '저장 중…' : '이 단계 저장'}
         </button>
 
         {showContinue && (
           <div style={{ background: C.accentSoft, border: `1px solid ${C.accent}`, borderRadius: 16, padding: 14, display: 'grid', gap: 10 }}>
             <div style={{ color: C.ink, fontWeight: 800 }}>이어서 다음 단계로 진행할까요?</div>
-            <button type="button" onClick={onContinue} style={{ justifySelf: 'start', background: C.accent, color: '#fff', border: 'none', borderRadius: 12, padding: '11px 14px', fontWeight: 800, cursor: 'pointer' }}>
+            <button type="button" onClick={() => {
+              onInteraction('continue_click', { from: stageKey })
+              onContinue()
+            }} style={{ justifySelf: 'start', background: C.accent, color: '#fff', border: 'none', borderRadius: 12, padding: '11px 14px', fontWeight: 800, cursor: 'pointer' }}>
               다음 단계로 이어서 하기
             </button>
           </div>
@@ -565,19 +663,19 @@ function StageCard({
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
           <label style={{ display: 'grid', gap: 6 }}>
             <span style={{ fontSize: '.82rem', color: C.muted, fontWeight: 700 }}>공감도</span>
-            <select value={empathyScore} onChange={(e) => setEmpathyScore(Number(e.target.value))} style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 10, background: C.surface }}>
+            <select value={empathyScore} onChange={(e) => setEmpathyScore(Number(e.target.value))} onClick={() => onInteraction('feedback_score_click', { field: 'empathy_score' })} style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 10, background: C.surface }}>
               {[1, 2, 3, 4, 5].map((score) => <option key={score} value={score}>{score}</option>)}
             </select>
           </label>
           <label style={{ display: 'grid', gap: 6 }}>
             <span style={{ fontSize: '.82rem', color: C.muted, fontWeight: 700 }}>명확성</span>
-            <select value={clarityScore} onChange={(e) => setClarityScore(Number(e.target.value))} style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 10, background: C.surface }}>
+            <select value={clarityScore} onChange={(e) => setClarityScore(Number(e.target.value))} onClick={() => onInteraction('feedback_score_click', { field: 'clarity_score' })} style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 10, background: C.surface }}>
               {[1, 2, 3, 4, 5].map((score) => <option key={score} value={score}>{score}</option>)}
             </select>
           </label>
           <label style={{ display: 'grid', gap: 6 }}>
             <span style={{ fontSize: '.82rem', color: C.muted, fontWeight: 700 }}>학습욕구</span>
-            <select value={motivationScore} onChange={(e) => setMotivationScore(Number(e.target.value))} style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 10, background: C.surface }}>
+            <select value={motivationScore} onChange={(e) => setMotivationScore(Number(e.target.value))} onClick={() => onInteraction('feedback_score_click', { field: 'motivation_score' })} style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 10, background: C.surface }}>
               {[1, 2, 3, 4, 5].map((score) => <option key={score} value={score}>{score}</option>)}
             </select>
           </label>
@@ -585,15 +683,18 @@ function StageCard({
 
         <label style={{ display: 'grid', gap: 6 }}>
           <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>가장 크게 막힌 지점</span>
-          <input value={biggestBlocker} onChange={(e) => setBiggestBlocker(e.target.value)} placeholder="예: 파일을 어디서 열어야 하는지 처음엔 헷갈렸음" style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }} />
+          <input value={biggestBlocker} onChange={(e) => setBiggestBlocker(e.target.value)} onKeyDown={(e) => onInteraction('feedback_keydown', { key: e.key, field: 'biggest_blocker' })} placeholder="예: 파일을 어디서 열어야 하는지 처음엔 헷갈렸음" style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }} />
         </label>
 
         <label style={{ display: 'grid', gap: 6 }}>
           <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>자유 피드백</span>
-          <textarea value={freeformFeedback} onChange={(e) => setFreeformFeedback(e.target.value)} rows={4} placeholder="무엇이 좋았는지, 무엇이 어렵거나 피상적으로 느껴졌는지 적으세요." style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.92rem', lineHeight: 1.5, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+          <textarea value={freeformFeedback} onChange={(e) => setFreeformFeedback(e.target.value)} onKeyDown={(e) => onInteraction('feedback_keydown', { key: e.key, field: 'freeform_feedback' })} rows={4} placeholder="무엇이 좋았는지, 무엇이 어렵거나 피상적으로 느껴졌는지 적으세요." style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.92rem', lineHeight: 1.5, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
         </label>
 
-        <button onClick={() => onSaveFeedback(stageKey, { empathy_score: empathyScore, clarity_score: clarityScore, motivation_score: motivationScore, biggest_blocker: biggestBlocker, freeform_feedback: freeformFeedback })} disabled={feedbackSaving} style={{ background: feedbackSaving ? '#cbd5e1' : C.accent, color: '#fff', border: 'none', borderRadius: 14, padding: '13px 16px', fontSize: '.95rem', fontWeight: 800, cursor: feedbackSaving ? 'wait' : 'pointer' }}>
+        <button onClick={() => {
+          onInteraction('save_feedback_click', { stage: stageKey })
+          onSaveFeedback(stageKey, { empathy_score: empathyScore, clarity_score: clarityScore, motivation_score: motivationScore, biggest_blocker: biggestBlocker, freeform_feedback: freeformFeedback })
+        }} disabled={feedbackSaving} style={{ background: feedbackSaving ? '#cbd5e1' : C.accent, color: '#fff', border: 'none', borderRadius: 14, padding: '13px 16px', fontSize: '.95rem', fontWeight: 800, cursor: feedbackSaving ? 'wait' : 'pointer' }}>
           {feedbackSaving ? '피드백 저장 중…' : 'VP 피드백 저장'}
         </button>
         {stage?.vp_feedback?.submitted_at && <div style={{ fontSize: '.8rem', color: C.faint }}>최근 저장: {stage.vp_feedback.submitted_at}</div>}
@@ -611,30 +712,94 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
   const [authLoading, setAuthLoading] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [trainingAuthToken, setTrainingAuthToken] = useState('')
   const [preferredLlm, setPreferredLlm] = useState('gemini')
   const [currentDevice, setCurrentDevice] = useState('android')
   const [desktopOs, setDesktopOs] = useState('windows')
   const [loading, setLoading] = useState(false)
-  const [savingStage, setSavingStage] = useState<'week0' | 'week1' | null>(null)
-  const [savingFeedbackStage, setSavingFeedbackStage] = useState<'week0' | 'week1' | null>(null)
+  const [savingStage, setSavingStage] = useState<StageKey | null>(null)
+  const [savingFeedbackStage, setSavingFeedbackStage] = useState<StageKey | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [caseId, setCaseId] = useState<number | null>(null)
   const [trainingState, setTrainingState] = useState<TrainingState | null>(null)
+  const [uiState, setUiState] = useState<UiState>({})
   const [caseHistory, setCaseHistory] = useState<CaseItem[]>([])
   const [showCaseArchive, setShowCaseArchive] = useState(false)
-  const [selectedStage, setSelectedStage] = useState<'week0' | 'week1'>('week0')
-  const [showContinueFrom, setShowContinueFrom] = useState<'week0' | 'week1' | null>(null)
+  const [selectedStage, setSelectedStage] = useState<StageKey>('day0')
+  const [showContinueFrom, setShowContinueFrom] = useState<StageKey | null>(null)
   const [activeCurriculumIndex, setActiveCurriculumIndex] = useState(0)
   const [resettingCases, setResettingCases] = useState(false)
+  const latestUiStateRef = useRef<UiState>({})
+  const latestAuthEmailRef = useRef('')
+  const latestCaseIdRef = useRef<number | null>(null)
+  const syncSeqRef = useRef(0)
   const archivedCases = caseHistory.filter((item) => item.case_id !== caseId)
   const hasCaseHistory = archivedCases.length > 0
   const hasStoredCases = caseHistory.length > 0
+
+  function trainingHeaders() {
+    const headers = { ...authHeaders() }
+    if (trainingAuthToken.trim()) headers['X-Edu-Training-Auth'] = trainingAuthToken.trim()
+    return headers
+  }
+
+  function persistSessionCache(email: string, nextCaseId: number, nextTrainingState: TrainingState | null, nextUiState: UiState) {
+    const safeEmail = email.trim().toLowerCase()
+    if (!safeEmail) return
+    window.localStorage.setItem(caseStorageKey(safeEmail), String(nextCaseId))
+    window.localStorage.setItem(sessionCacheKey(safeEmail), JSON.stringify({
+      case_id: nextCaseId,
+      training_state: nextTrainingState,
+      ui_state: nextUiState,
+      cached_at: new Date().toISOString(),
+    }))
+  }
+
+  function applyTrainingSession(email: string, nextCaseId: number, nextTrainingStateRaw: TrainingState | null | undefined) {
+    const nextTrainingState = normalizeTrainingState(nextTrainingStateRaw) || null
+    const nextUiState = nextTrainingState?.ui_state || {}
+    const nextStage = nextUiState.selected_stage || resumeStageFromState(nextTrainingState)
+    setAuthEmail(email)
+    setIsAuthenticated(true)
+    setCaseId(nextCaseId)
+    setTrainingState(nextTrainingState)
+    setUiState(nextUiState)
+    setSelectedStage(nextStage)
+    setShowContinueFrom(nextUiState.show_continue_from === 'day0' || nextUiState.show_continue_from === 'day1' ? nextUiState.show_continue_from : null)
+    setShowCaseArchive(Boolean(nextUiState.show_case_archive))
+    setActiveCurriculumIndex(Math.max(0, Number(nextUiState.active_curriculum_index || 0)))
+    setPreferredLlm(nextUiState.preferred_llm || nextTrainingState?.primary_llm_path || preferredLlm)
+    setCurrentDevice(nextUiState.current_device || currentDevice)
+    setDesktopOs(nextUiState.desktop_os || desktopOs)
+    latestUiStateRef.current = nextUiState
+    latestAuthEmailRef.current = email
+    latestCaseIdRef.current = nextCaseId
+    syncSeqRef.current = Math.max(syncSeqRef.current, Number(nextUiState.last_client_seq || 0))
+    persistSessionCache(email, nextCaseId, nextTrainingState, nextUiState)
+  }
+
+  function hydrateFromLocalCache(email: string) {
+    try {
+      const raw = window.localStorage.getItem(sessionCacheKey(email))
+      if (!raw) return false
+      const parsed = JSON.parse(raw) as { case_id?: number; training_state?: TrainingState; ui_state?: UiState }
+      const cachedCaseId = Number(parsed.case_id)
+      if (!Number.isFinite(cachedCaseId) || cachedCaseId < 0) return false
+      const cachedState = normalizeTrainingState(parsed.training_state || null)
+      if (!cachedState) return false
+      if (parsed.ui_state && !cachedState.ui_state) cachedState.ui_state = parsed.ui_state
+      applyTrainingSession(email, cachedCaseId, cachedState)
+      return true
+    } catch {
+      return false
+    }
+  }
 
   async function loadCases(explicitEmail?: string, options?: { silentError?: boolean }) {
     const safeEmail = (explicitEmail || authEmail).trim().toLowerCase()
     if (!safeEmail) return [] as CaseItem[]
     const res = await fetch(`${apiBase}/api/edu/vp-training/cases?email=${encodeURIComponent(safeEmail)}`, {
-      headers: { ...authHeaders() },
+      headers: trainingHeaders(),
     })
     const { raw, data } = await readJsonSafe(res)
     if (res.ok) {
@@ -665,7 +830,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
         : { email: safeEmail, password: authPassword, name: authName }
       const res = await fetch(`${apiBase}${endpoint}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        headers: { 'Content-Type': 'application/json', ...trainingHeaders() },
         body: JSON.stringify(payload),
       })
       const data = await res.json()
@@ -673,8 +838,12 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       setAuthEmail(safeEmail)
       setIsAuthenticated(true)
       window.localStorage.setItem(VP_TRAINING_AUTH_EMAIL_KEY, safeEmail)
+      const nextToken = typeof data?.training_auth_token === 'string' ? data.training_auth_token : ''
+      setTrainingAuthToken(nextToken)
+      if (nextToken) window.localStorage.setItem(VP_TRAINING_AUTH_TOKEN_KEY, nextToken)
       setAuthPassword('')
-      await buildTrainingSlice(undefined, false, safeEmail)
+      const resumed = await resumeTrainingSession(safeEmail)
+      if (!resumed) await buildTrainingSlice(undefined, false, safeEmail)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'account auth failed')
     } finally {
@@ -690,13 +859,43 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
     setAuthName('')
     setCaseId(null)
     setTrainingState(null)
+    setUiState({})
     setCaseHistory([])
     setShowCaseArchive(false)
-    setSelectedStage('week0')
+    setSelectedStage('day0')
     setShowContinueFrom(null)
     window.localStorage.removeItem(VP_TRAINING_AUTH_EMAIL_KEY)
+    window.localStorage.removeItem(VP_TRAINING_AUTH_TOKEN_KEY)
+    setTrainingAuthToken('')
     if (authEmail.trim()) {
       window.localStorage.removeItem(caseStorageKey(authEmail.trim().toLowerCase()))
+      window.localStorage.removeItem(sessionCacheKey(authEmail.trim().toLowerCase()))
+    }
+  }
+
+  async function resumeTrainingSession(explicitEmail?: string, targetCaseId?: number | null, options?: { silentError?: boolean }) {
+    const safeEmail = (explicitEmail || authEmail).trim().toLowerCase()
+    if (!safeEmail) return false
+    setLoading(true)
+    if (!options?.silentError) setError(null)
+    try {
+      const url = new URL(`${apiBase}/api/edu/vp-training/session`)
+      url.searchParams.set('email', safeEmail)
+      if (targetCaseId != null) url.searchParams.set('case_id', String(targetCaseId))
+      const res = await fetch(url.toString(), { headers: trainingHeaders() })
+      const { raw, data } = await readJsonSafe(res)
+      const detail = typeof data.detail === 'string' ? data.detail : ''
+      if (!res.ok) throw new Error(detail || raw || `HTTP ${res.status}`)
+      if (!data.exists) return false
+      const nextCaseId = typeof data.case_id === 'number' ? data.case_id : Number(data.case_id)
+      applyTrainingSession(safeEmail, nextCaseId, (data.training_state as TrainingState | null | undefined) || null)
+      if (showCaseArchive) await loadCases(safeEmail, { silentError: true })
+      return true
+    } catch (err) {
+      if (!options?.silentError) setError(err instanceof Error ? err.message : 'session resume failed')
+      return false
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -718,7 +917,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       }
       const res = await fetch(`${apiBase}/api/edu/vp-training/intake`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        headers: { 'Content-Type': 'application/json', ...trainingHeaders() },
         body: JSON.stringify({
           case_id: resolvedCaseId,
           email: safeEmail,
@@ -735,13 +934,8 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       const detail = typeof data.detail === 'string' ? data.detail : ''
       if (!res.ok) throw new Error(detail || raw || `HTTP ${res.status}`)
       const nextCaseId = typeof data.case_id === 'number' ? data.case_id : Number(data.case_id)
-      const nextTrainingState = (data.training_state as TrainingState | null | undefined) || null
-      setAuthEmail(safeEmail)
-      setIsAuthenticated(true)
-      setCaseId(nextCaseId)
-      setTrainingState(nextTrainingState)
-      setSelectedStage(resumeStageFromState(nextTrainingState))
-      window.localStorage.setItem(caseStorageKey(safeEmail), String(nextCaseId))
+      const nextTrainingState = normalizeTrainingState((data.training_state as TrainingState | null | undefined) || null)
+      applyTrainingSession(safeEmail, nextCaseId, nextTrainingState)
       if (showCaseArchive) await loadCases(safeEmail)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'VP training flow build failed'
@@ -749,6 +943,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
         const staleEmail = (explicitEmail || authEmail).trim().toLowerCase()
         if (staleEmail) {
           window.localStorage.removeItem(caseStorageKey(staleEmail))
+          window.localStorage.removeItem(sessionCacheKey(staleEmail))
         }
         if (!restart && (targetCaseId ?? caseId)) {
           await buildTrainingSlice(undefined, false, explicitEmail || authEmail, options)
@@ -761,6 +956,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
         } else {
           setCaseId(null)
           setTrainingState(null)
+          setUiState({})
         }
       }
     } finally {
@@ -768,20 +964,23 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
     }
   }
 
-  async function saveStage(stage: 'week0' | 'week1', payload: { proof_artifact: string; blocked_at_step: string; notes: string; completed: boolean }) {
+  async function saveStage(stage: StageKey, payload: { proof_artifact: string; blocked_at_step: string; notes: string; completed: boolean }) {
     if (caseId == null) return
     setSavingStage(stage)
     setError(null)
     try {
       const res = await fetch(`${apiBase}/api/edu/vp-training/artifact`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        headers: { 'Content-Type': 'application/json', ...trainingHeaders() },
         body: JSON.stringify({ case_id: caseId, stage, ...payload }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
-      setTrainingState(data.training_state || null)
+      const nextTrainingState = normalizeTrainingState(data.training_state || null)
+      setTrainingState(nextTrainingState)
       setShowContinueFrom(stage)
+      setUiState((prev) => ({ ...prev, show_continue_from: stage }))
+      if (authEmail.trim()) persistSessionCache(authEmail.trim().toLowerCase(), caseId, nextTrainingState, { ...latestUiStateRef.current, show_continue_from: stage })
       if (showCaseArchive) await loadCases()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'stage save failed')
@@ -790,19 +989,21 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
     }
   }
 
-  async function saveFeedback(stage: 'week0' | 'week1', payload: { empathy_score: number; clarity_score: number; motivation_score: number; biggest_blocker: string; freeform_feedback: string }) {
+  async function saveFeedback(stage: StageKey, payload: { empathy_score: number; clarity_score: number; motivation_score: number; biggest_blocker: string; freeform_feedback: string }) {
     if (caseId == null) return
     setSavingFeedbackStage(stage)
     setError(null)
     try {
       const res = await fetch(`${apiBase}/api/edu/vp-training/feedback`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        headers: { 'Content-Type': 'application/json', ...trainingHeaders() },
         body: JSON.stringify({ case_id: caseId, stage, ...payload }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
-      setTrainingState(data.training_state || null)
+      const nextTrainingState = normalizeTrainingState(data.training_state || null)
+      setTrainingState(nextTrainingState)
+      if (authEmail.trim()) persistSessionCache(authEmail.trim().toLowerCase(), caseId, nextTrainingState, latestUiStateRef.current)
       if (showCaseArchive) await loadCases()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'feedback save failed')
@@ -821,18 +1022,20 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
     try {
       const res = await fetch(`${apiBase}/api/edu/vp-training/cases/reset`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        headers: { 'Content-Type': 'application/json', ...trainingHeaders() },
         body: JSON.stringify({ email: safeEmail }),
       })
       const { raw, data } = await readJsonSafe(res)
       const detail = typeof data.detail === 'string' ? data.detail : ''
       if (!res.ok) throw new Error(detail || raw || `HTTP ${res.status}`)
       window.localStorage.removeItem(caseStorageKey(safeEmail))
+      window.localStorage.removeItem(sessionCacheKey(safeEmail))
       setCaseId(null)
       setTrainingState(null)
+      setUiState({})
       setCaseHistory([])
       setShowCaseArchive(false)
-      setSelectedStage('week0')
+      setSelectedStage('day0')
       setShowContinueFrom(null)
       await buildTrainingSlice(undefined, true, safeEmail)
     } catch (err) {
@@ -840,6 +1043,88 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
     } finally {
       setResettingCases(false)
     }
+  }
+
+  useEffect(() => {
+    latestUiStateRef.current = uiState
+    latestAuthEmailRef.current = authEmail.trim().toLowerCase()
+    latestCaseIdRef.current = caseId
+  }, [uiState, authEmail, caseId])
+
+  async function syncSessionState(eventType: string, eventName: string, eventPayload?: Record<string, unknown>, overrideUiState?: UiState) {
+    const safeEmail = latestAuthEmailRef.current
+    const activeCaseId = latestCaseIdRef.current
+    if (!safeEmail || activeCaseId == null) return
+    const payloadUiState = overrideUiState || latestUiStateRef.current
+    await fetch(`${apiBase}/api/edu/vp-training/session/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({
+        case_id: activeCaseId,
+        email: safeEmail,
+        selected_stage: payloadUiState.selected_stage || selectedStage,
+        active_curriculum_index: payloadUiState.active_curriculum_index ?? activeCurriculumIndex,
+        show_case_archive: Boolean(payloadUiState.show_case_archive ?? showCaseArchive),
+        show_continue_from: payloadUiState.show_continue_from || '',
+        preferred_llm: payloadUiState.preferred_llm || preferredLlm,
+        current_device: payloadUiState.current_device || currentDevice,
+        desktop_os: payloadUiState.desktop_os || desktopOs,
+        stage_drafts: payloadUiState.stage_drafts || {},
+        client_seq: ++syncSeqRef.current,
+        event_type: eventType,
+        event_name: eventName,
+        event_payload: eventPayload || {},
+      }),
+    })
+  }
+
+  function mergeUiState(patch: Partial<UiState>) {
+    setUiState((prev) => {
+      const next: UiState = {
+        ...prev,
+        ...patch,
+        stage_drafts: {
+          ...(prev.stage_drafts || {}),
+          ...(patch.stage_drafts || {}),
+        },
+      }
+      latestUiStateRef.current = next
+      return next
+    })
+  }
+
+  function trackInteraction(eventName: string, payload?: Record<string, unknown>) {
+    const nextUiState: UiState = {
+      ...latestUiStateRef.current,
+      selected_stage: selectedStage,
+      active_curriculum_index: activeCurriculumIndex,
+      show_case_archive: showCaseArchive,
+      show_continue_from: showContinueFrom ?? '',
+      preferred_llm: preferredLlm,
+      current_device: currentDevice,
+      desktop_os: desktopOs,
+    }
+    void syncSessionState('interaction', eventName, payload, nextUiState)
+  }
+
+  function updateStageDraft(stageKey: StageKey, draft: UiStageDraft) {
+    const nextUiState: UiState = {
+      ...latestUiStateRef.current,
+      selected_stage: selectedStage,
+      active_curriculum_index: activeCurriculumIndex,
+      show_case_archive: showCaseArchive,
+      show_continue_from: showContinueFrom ?? '',
+      preferred_llm: preferredLlm,
+      current_device: currentDevice,
+      desktop_os: desktopOs,
+      stage_drafts: {
+        ...(latestUiStateRef.current.stage_drafts || {}),
+        [stageKey]: draft,
+      },
+    }
+    latestUiStateRef.current = nextUiState
+    setUiState(nextUiState)
+    void syncSessionState('draft', 'draft_changed', { stage: stageKey }, nextUiState)
   }
 
   useEffect(() => {
@@ -856,27 +1141,24 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
     if (savedEmail) {
       setAuthEmail(savedEmail)
       setIsAuthenticated(true)
+      const savedToken = window.localStorage.getItem(VP_TRAINING_AUTH_TOKEN_KEY) || ''
+      if (savedToken) setTrainingAuthToken(savedToken)
       if (!embeddedMode) {
         window.localStorage.setItem(VP_TRAINING_AUTH_EMAIL_KEY, savedEmail)
       }
-    }
-    const stored = savedEmail ? window.localStorage.getItem(caseStorageKey(savedEmail)) : null
-    const parsed = stored == null ? null : Number(stored)
-    if (savedEmail && parsed != null && Number.isFinite(parsed) && parsed >= 0) {
-      setCaseId(parsed)
-      void buildTrainingSlice(parsed, false, savedEmail, { silentError: true })
-      return
+      hydrateFromLocalCache(savedEmail)
     }
     if (!savedEmail) return
+    const stored = window.localStorage.getItem(caseStorageKey(savedEmail))
+    const parsed = stored == null ? null : Number(stored)
     void (async () => {
-        const existingCases = await loadCases(savedEmail, { silentError: true })
-        if (existingCases.length > 0) {
-          const latestCaseId = existingCases[0].case_id
-          setCaseId(latestCaseId)
-          window.localStorage.setItem(caseStorageKey(savedEmail), String(latestCaseId))
-          await buildTrainingSlice(latestCaseId, false, savedEmail, { silentError: true })
-        }
-      })()
+      const resumed = await resumeTrainingSession(savedEmail, parsed != null && Number.isFinite(parsed) && parsed >= 0 ? parsed : null, { silentError: true })
+      if (resumed) return
+      const existingCases = await loadCases(savedEmail, { silentError: true })
+      if (existingCases.length > 0) {
+        await resumeTrainingSession(savedEmail, existingCases[0].case_id, { silentError: true })
+      }
+    })()
   }, [])
 
   useEffect(() => {
@@ -886,26 +1168,26 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
     if (nextEmail === authEmail && isAuthenticated) return
     setAuthEmail(nextEmail)
     setIsAuthenticated(true)
+    if (!embeddedMode) {
+      const savedToken = window.localStorage.getItem(VP_TRAINING_AUTH_TOKEN_KEY) || ''
+      if (savedToken) setTrainingAuthToken(savedToken)
+    }
     setCaseId(null)
     setTrainingState(null)
+    setUiState({})
     setCaseHistory([])
-    setSelectedStage('week0')
+    setSelectedStage('day0')
     setShowCaseArchive(false)
     setShowContinueFrom(null)
+    hydrateFromLocalCache(nextEmail)
     const stored = window.localStorage.getItem(caseStorageKey(nextEmail))
     const parsed = stored == null ? null : Number(stored)
-    if (parsed != null && Number.isFinite(parsed) && parsed >= 0) {
-      setCaseId(parsed)
-      void buildTrainingSlice(parsed, false, nextEmail, { silentError: true })
-      return
-    }
     void (async () => {
+      const resumed = await resumeTrainingSession(nextEmail, parsed != null && Number.isFinite(parsed) && parsed >= 0 ? parsed : null, { silentError: true })
+      if (resumed) return
       const existingCases = await loadCases(nextEmail, { silentError: true })
       if (existingCases.length > 0) {
-        const latestCaseId = existingCases[0].case_id
-        setCaseId(latestCaseId)
-        window.localStorage.setItem(caseStorageKey(nextEmail), String(latestCaseId))
-        await buildTrainingSlice(latestCaseId, false, nextEmail, { silentError: true })
+        await resumeTrainingSession(nextEmail, existingCases[0].case_id, { silentError: true })
         return
       }
       await buildTrainingSlice(undefined, false, nextEmail, { silentError: true })
@@ -916,9 +1198,28 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
     if (isAuthenticated) void loadCases()
   }, [isAuthenticated, authEmail])
 
-  const stage = selectedStage === 'week0' ? trainingState?.week0 : trainingState?.week1
-  const week0Completed = Boolean(trainingState?.week0?.completed)
-  const stageOrder: Array<'week0' | 'week1'> = week0Completed ? ['week0', 'week1'] : ['week0']
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const nextUiState: UiState = {
+      ...latestUiStateRef.current,
+      selected_stage: selectedStage,
+      active_curriculum_index: activeCurriculumIndex,
+      show_case_archive: showCaseArchive,
+      show_continue_from: showContinueFrom || '',
+      preferred_llm: preferredLlm,
+      current_device: currentDevice,
+      desktop_os: desktopOs,
+    }
+    latestUiStateRef.current = nextUiState
+    setUiState(nextUiState)
+    if (authEmail.trim() && caseId != null && trainingState) {
+      persistSessionCache(authEmail.trim().toLowerCase(), caseId, trainingState, nextUiState)
+    }
+  }, [isAuthenticated, selectedStage, activeCurriculumIndex, showCaseArchive, showContinueFrom, preferredLlm, currentDevice, desktopOs, authEmail, caseId, trainingState])
+
+  const stage = selectedStage === 'day0' ? trainingState?.day0 : trainingState?.day1
+  const day0Completed = Boolean(trainingState?.day0?.completed)
+  const stageOrder: StageKey[] = day0Completed ? ['day0', 'day1'] : ['day0']
   const currentIndex = stageOrder.indexOf(selectedStage)
   const nextStage = currentIndex >= 0 && currentIndex < stageOrder.length - 1 ? stageOrder[currentIndex + 1] : null
 
@@ -928,10 +1229,10 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
   }, [selectedStage, stage?.blocked_at_step, stage?.completed, stage?.schedule_blocks?.length])
 
   let reminder: string | null = null
-  if (selectedStage === 'week1' && trainingState?.week0 && !trainingState.week0.completed) {
+  if (selectedStage === 'day1' && trainingState?.day0 && !trainingState.day0.completed) {
     reminder = 'Day 0의 첫 실행과 복붙 흐름이 아직 충분히 남지 않았습니다. 답이 잘 안 떠오르면 Day 0로 돌아가 첫 질문과 결과 저장부터 다시 연습하세요.'
   }
-  if (selectedStage === 'week1' && trainingState?.week0?.completed && !(trainingState.week0.proof_artifact || '').trim()) {
+  if (selectedStage === 'day1' && trainingState?.day0?.completed && !(trainingState.day0.proof_artifact || '').trim()) {
     reminder = 'Day 0는 완료로 표시됐지만 남겨진 결과물이 거의 없습니다. 기억이 흐리면 Day 0의 샘플 파일을 다시 열어 복습하는 편이 좋습니다.'
   }
 
@@ -984,7 +1285,10 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
             <label style={{ display: 'grid', gap: 6 }}>
               <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>사용할 AI</span>
-              <select value={preferredLlm} onChange={(e) => setPreferredLlm(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', background: C.surface }}>
+              <select value={preferredLlm} onChange={(e) => {
+                setPreferredLlm(e.target.value)
+                trackInteraction('preferred_llm_changed', { value: e.target.value })
+              }} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', background: C.surface }}>
                 <option value="gpt">ChatGPT</option>
                 <option value="claude">Claude</option>
                 <option value="gemini">Gemini</option>
@@ -993,14 +1297,20 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
             </label>
             <label style={{ display: 'grid', gap: 6 }}>
               <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>현재 모바일 기기</span>
-              <select value={currentDevice} onChange={(e) => setCurrentDevice(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', background: C.surface }}>
+              <select value={currentDevice} onChange={(e) => {
+                setCurrentDevice(e.target.value)
+                trackInteraction('current_device_changed', { value: e.target.value })
+              }} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', background: C.surface }}>
                 <option value="android">Android</option>
                 <option value="iphone">iPhone</option>
               </select>
             </label>
             <label style={{ display: 'grid', gap: 6 }}>
               <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>PC / Mac 경로</span>
-              <select value={desktopOs} onChange={(e) => setDesktopOs(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', background: C.surface }}>
+              <select value={desktopOs} onChange={(e) => {
+                setDesktopOs(e.target.value)
+                trackInteraction('desktop_os_changed', { value: e.target.value })
+              }} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', background: C.surface }}>
                 <option value="windows">Windows PC</option>
                 <option value="mac">Mac</option>
               </select>
@@ -1013,8 +1323,8 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
               </button>
             ) : (
               <>
-                <button type="button" onClick={() => void buildTrainingSlice(caseId, false)} disabled={loading || resettingCases} style={{ width: isMobile ? '100%' : undefined, background: '#111827', color: '#fff', border: 'none', borderRadius: 14, padding: '12px 16px', fontWeight: 800, cursor: loading || resettingCases ? 'wait' : 'pointer' }}>
-                  {loading ? 'Day 플로우 생성 중…' : trainingState ? 'VP AI 훈련 이어서 하기' : 'VP AI 훈련 시작'}
+                <button type="button" onClick={() => void (trainingState ? resumeTrainingSession(authEmail, caseId) : buildTrainingSlice(caseId, false))} disabled={loading || resettingCases} style={{ width: isMobile ? '100%' : undefined, background: '#111827', color: '#fff', border: 'none', borderRadius: 14, padding: '12px 16px', fontWeight: 800, cursor: loading || resettingCases ? 'wait' : 'pointer' }}>
+                  {loading ? '불러오는 중…' : trainingState ? 'VP AI 훈련 이어서 하기' : 'VP AI 훈련 시작'}
                 </button>
                 <button type="button" onClick={() => void buildTrainingSlice(undefined, true)} disabled={loading || resettingCases} style={{ width: isMobile ? '100%' : undefined, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: loading || resettingCases ? 'wait' : 'pointer' }}>
                   새 케이스로 다시 시작
@@ -1035,6 +1345,8 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
               <button type="button" onClick={() => {
                 const next = !showCaseArchive
                 setShowCaseArchive(next)
+                mergeUiState({ show_case_archive: next })
+                trackInteraction('toggle_case_archive', { visible: next })
                 if (next) void loadCases()
               }} style={{ width: isMobile ? '100%' : undefined, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: 'pointer' }}>
                 {showCaseArchive ? '과거 케이스 숨기기' : '과거 케이스 보기'}
@@ -1056,7 +1368,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
                   </div>
                   {progressBar(item.progress_pct)}
                   <div style={{ color: C.muted, fontSize: '.86rem' }}>진행률 {item.progress_pct}%</div>
-                  <button type="button" onClick={() => void buildTrainingSlice(item.case_id, false)} style={{ justifySelf: 'start', background: C.accent, color: '#fff', border: 'none', borderRadius: 12, padding: '10px 12px', fontWeight: 800, cursor: 'pointer' }}>
+                  <button type="button" onClick={() => void resumeTrainingSession(authEmail, item.case_id)} style={{ justifySelf: 'start', background: C.accent, color: '#fff', border: 'none', borderRadius: 12, padding: '10px 12px', fontWeight: 800, cursor: 'pointer' }}>
                     이 케이스 이어서 보기
                   </button>
                 </div>
@@ -1080,6 +1392,8 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
                     onClick={() => {
                       setSelectedStage(item.key)
                       setShowContinueFrom(null)
+                      mergeUiState({ selected_stage: item.key, show_continue_from: '' })
+                      trackInteraction('select_day', { day: item.key })
                     }}
                     style={{
                       textAlign: 'left',
@@ -1099,13 +1413,17 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
 
               {!!stage?.schedule_blocks?.length && (
                 <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 22, padding: 16, display: 'grid', gap: 12 }}>
-                  <div style={{ fontSize: '.82rem', color: C.muted, fontWeight: 900 }}>{selectedStage === 'week0' ? 'DAY 0 목차' : 'DAY 1 목차'}</div>
+                  <div style={{ fontSize: '.82rem', color: C.muted, fontWeight: 900 }}>{selectedStage === 'day0' ? 'DAY 0 목차' : 'DAY 1 목차'}</div>
                   <div style={{ display: 'grid', gap: 8 }}>
                     {stage.schedule_blocks.map((item, index) => (
                       <button
                         key={`${item.title}-${index}`}
                         type="button"
-                        onClick={() => setActiveCurriculumIndex(index)}
+                        onClick={() => {
+                          setActiveCurriculumIndex(index)
+                          mergeUiState({ active_curriculum_index: index })
+                          trackInteraction('select_curriculum_block', { index, day: selectedStage })
+                        }}
                         style={{
                           textAlign: 'left',
                           border: index === activeCurriculumIndex ? `2px solid ${C.accent}` : `1px solid ${C.border}`,
@@ -1155,12 +1473,17 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
               <StageCard
                 stage={stage}
                 stageKey={selectedStage}
+                draft={uiState.stage_drafts?.[selectedStage]}
                 onSave={saveStage}
                 onSaveFeedback={saveFeedback}
+                onDraftChange={updateStageDraft}
+                onInteraction={trackInteraction}
                 onContinue={() => {
                   if (nextStage) {
                     setSelectedStage(nextStage)
                     setShowContinueFrom(null)
+                    mergeUiState({ selected_stage: nextStage, show_continue_from: '' })
+                    trackInteraction('stage_continue', { next_stage: nextStage })
                   }
                 }}
                 saving={savingStage === selectedStage}

@@ -28,7 +28,7 @@ import { EduDbInspectorPage } from './pages/EduDbInspectorPage'
 const SESSION_KEY = 'harness-session'
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000 // 30분
 
-type SessionData = { role: 'ceo' | 'vp'; lastActivity: number }
+type SessionData = { role: 'ceo' | 'vp'; lastActivity: number; authToken?: string }
 
 function loadSession(): SessionData | null {
   try {
@@ -45,8 +45,8 @@ function loadSession(): SessionData | null {
   }
 }
 
-function saveSession(role: 'ceo' | 'vp') {
-  const s: SessionData = { role, lastActivity: Date.now() }
+function saveSession(role: 'ceo' | 'vp', authToken?: string) {
+  const s: SessionData = { role, lastActivity: Date.now(), authToken }
   localStorage.setItem(SESSION_KEY, JSON.stringify(s))
 }
 
@@ -66,8 +66,11 @@ const API_BASE = import.meta.env.VITE_HARNESS_OS_API_BASE ?? ''
 const SECRET_KEY = import.meta.env.VITE_HARNESS_OS_SECRET ?? ''
 
 function authHeaders(): Record<string, string> {
-  if (!SECRET_KEY) return {}
-  return { 'X-Harness-Secret': SECRET_KEY }
+  const headers: Record<string, string> = {}
+  if (SECRET_KEY) headers['X-Harness-Secret'] = SECRET_KEY
+  const session = loadSession()
+  if (session?.authToken) headers['X-Harness-Auth'] = session.authToken
+  return headers
 }
 
 // AR 필터 타입
@@ -108,9 +111,9 @@ function App() {
   const [session, setSession] = useState<SessionData | null>(() => loadSession())
   const activityTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const handleLogin = useCallback((role: 'ceo' | 'vp') => {
-    saveSession(role)
-    setSession({ role, lastActivity: Date.now() })
+  const handleLogin = useCallback((role: 'ceo' | 'vp', authToken?: string) => {
+    saveSession(role, authToken)
+    setSession({ role, lastActivity: Date.now(), authToken })
   }, [])
 
   const handleLogout = useCallback(() => {

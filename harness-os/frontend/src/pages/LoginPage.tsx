@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 type Role = 'ceo' | 'vp'
 
 type Props = {
-  onLogin: (role: Role) => void
+  onLogin: (role: Role, authToken?: string) => void
   apiBase: string
   authHeaders: () => Record<string, string>
 }
@@ -37,7 +37,8 @@ export function LoginPage({ onLogin, apiBase, authHeaders }: Props) {
         body: JSON.stringify({ role, password }),
       })
       if (res.ok) {
-        onLogin(role)
+        const data = await res.json()
+        onLogin(role, typeof data?.auth_token === 'string' ? data.auth_token : undefined)
       } else {
         setError('비밀번호가 올바르지 않습니다.')
         setShake(true)
