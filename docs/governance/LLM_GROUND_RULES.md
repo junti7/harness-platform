@@ -36,8 +36,12 @@
 
 ## 2. 게이트 / 검증 불변식
 
-1. **코드 변경·MD 문서·high-impact 의사결정**은 서로 다른 reasoning LLM 최소 2개의 cross-LLM red team 후
-   `red_team_clear`. 동일 모델 self-review 를 cross-LLM 으로 위장 금지.
+1. **[BASIC RULE — Red Team 은 CEO 주문 시에만]** cross-LLM Red Team 검증은 **CEO(junti7)가 명시적으로
+   주문할 때에만** 수행한다. 코드 변경·MD 문서·high-impact 의사결정·외부발행·자본집행 등 *어떤 영역에서도*
+   red-team 을 자동·의무적으로 돌리지 않는다(2026-06-20 CEO 지시, 모든 영역 적용). CEO 가 주문하지 않았으면
+   `red_team_clear` 는 어떤 게이트의 사전조건도 아니다. CEO 가 red-team 을 주문한 경우에 한해 서로 다른
+   reasoning LLM 최소 2개로 수행하고(동일 모델 self-review 를 cross-LLM 으로 위장 금지) `red_team_clear`
+   를 기록한다. 라운드 상한 등 세부는 `docs/governance/RED_TEAM_PROTOCOL.md`.
 2. 외부 발행·유료 제안·데이터 수집 정책 변경·자본 집행 전 `legal_review_approve` + `pre_mortem_approve`.
 3. 모든 고객-facing 산출물은 발행 직전 `qa_clear`.
 4. 실제 돈은 `capital_action_approve` 에서만. 트레이딩은 `turtle_gate_clear` 추가 필수.

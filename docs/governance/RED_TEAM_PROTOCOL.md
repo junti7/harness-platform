@@ -1,7 +1,14 @@
 # Red Team Protocol
-# Version: 1.0
-# Date: 2026-05-14
+# Version: 1.1
+# Date: 2026-05-14 (2026-06-20 갱신)
 # Owner: Chief of Staff / Red Team
+
+---
+
+> **[BASIC RULE — 최상위 우선, 2026-06-20 CEO 지시]**
+> cross-LLM Red Team 은 **CEO(junti7)가 명시적으로 주문할 때에만** 수행한다. 코드/MD/의사결정/외부발행/
+> 자본집행 등 *모든 영역*에서 자동·정례·의무 red-team 을 돌리지 않는다. **정례(주 1회) red-team 은 폐지.**
+> 아래 절차는 CEO 가 red-team 을 주문한 경우에만 적용된다. 단일 출처: `docs/governance/LLM_GROUND_RULES.md`.
 
 ---
 
