@@ -591,6 +591,7 @@ function StageCard({
 
 export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) {
   const embeddedMode = Boolean(currentRole)
+  const [isMobile, setIsMobile] = useState(false)
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [authName, setAuthName] = useState('')
@@ -785,6 +786,13 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
   }
 
   useEffect(() => {
+    const syncViewport = () => setIsMobile(window.innerWidth < 900)
+    syncViewport()
+    window.addEventListener('resize', syncViewport)
+    return () => window.removeEventListener('resize', syncViewport)
+  }, [])
+
+  useEffect(() => {
     const savedEmail = embeddedMode
       ? resolveTrainingEmail(currentRole)
       : window.localStorage.getItem(VP_TRAINING_AUTH_EMAIL_KEY)
@@ -871,22 +879,23 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
   }
 
   return (
-    <div style={{ maxWidth: 1320, margin: '0 auto', padding: '12px 12px 40px', color: C.ink }}>
+    <div style={{ maxWidth: 1320, margin: '0 auto', padding: isMobile ? '10px 10px 32px' : '12px 12px 40px', color: C.ink }}>
       <div style={{ display: 'grid', gap: 16 }}>
-        <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 26, padding: 22 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(280px, 0.8fr)', gap: 18, alignItems: 'center' }}>
+        <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: isMobile ? 20 : 26, padding: isMobile ? 16 : 22 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1.2fr) minmax(280px, 0.8fr)', gap: isMobile ? 14 : 18, alignItems: 'center' }}>
             <div style={{ display: 'grid', gap: 12 }}>
               <div style={{ fontSize: '.8rem', color: C.accent, fontWeight: 900, letterSpacing: '.08em' }}>VP TRAINING CENTER</div>
-              <h1 style={{ margin: 0, fontSize: '1.8rem', lineHeight: 1.25, color: '#000000' }}>VP AI 훈련</h1>
-              <p style={{ margin: 0, color: C.muted, lineHeight: 1.75, fontSize: '1rem' }}>
+              <p style={{ margin: 0, color: C.muted, lineHeight: isMobile ? 1.65 : 1.75, fontSize: isMobile ? '.95rem' : '1rem' }}>
                 본 화면은 명확한 목표를 향해 부대표님을 체계적으로 성장시키는 실전 훈련 플로우입니다. 일상적인 AI 활용의 기초 단계에서 출발하여, 궁극적으로 전문가 수준의 고도화된 AI 운용 역량을 갖추는 것을 목표로 합니다.
               </p>
             </div>
-            <TrainingHeroVisual />
+            <div style={{ maxWidth: isMobile ? '100%' : undefined }}>
+              <TrainingHeroVisual />
+            </div>
           </div>
         </section>
 
-        <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 24, padding: 18, display: 'grid', gap: 14 }}>
+        <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: isMobile ? 20 : 24, padding: isMobile ? 14 : 18, display: 'grid', gap: 14 }}>
           {!embeddedMode && !isAuthenticated && (
             <div style={{ display: 'grid', gap: 12, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -897,7 +906,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
                   회원가입
                 </button>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
                   <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>이메일</span>
                   <input value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem' }} />
@@ -915,7 +924,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
               </div>
             </div>
           )}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
             <label style={{ display: 'grid', gap: 6 }}>
               <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>사용할 AI</span>
               <select value={preferredLlm} onChange={(e) => setPreferredLlm(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', background: C.surface }}>
@@ -940,21 +949,21 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
               </select>
             </label>
           </div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flexDirection: isMobile ? 'column' : 'row' }}>
             {!embeddedMode && !isAuthenticated ? (
-              <button type="button" onClick={() => void submitAuth()} disabled={authLoading} style={{ background: '#111827', color: '#fff', border: 'none', borderRadius: 14, padding: '12px 16px', fontWeight: 800, cursor: authLoading ? 'wait' : 'pointer' }}>
+              <button type="button" onClick={() => void submitAuth()} disabled={authLoading} style={{ width: isMobile ? '100%' : undefined, background: '#111827', color: '#fff', border: 'none', borderRadius: 14, padding: '12px 16px', fontWeight: 800, cursor: authLoading ? 'wait' : 'pointer' }}>
                 {authLoading ? '처리 중…' : authMode === 'login' ? '로그인' : '회원가입'}
               </button>
             ) : (
               <>
-                <button type="button" onClick={() => void buildTrainingSlice(caseId, false)} disabled={loading} style={{ background: '#111827', color: '#fff', border: 'none', borderRadius: 14, padding: '12px 16px', fontWeight: 800, cursor: loading ? 'wait' : 'pointer' }}>
+                <button type="button" onClick={() => void buildTrainingSlice(caseId, false)} disabled={loading} style={{ width: isMobile ? '100%' : undefined, background: '#111827', color: '#fff', border: 'none', borderRadius: 14, padding: '12px 16px', fontWeight: 800, cursor: loading ? 'wait' : 'pointer' }}>
                   {loading ? 'Day 플로우 생성 중…' : trainingState ? 'VP AI 훈련 이어서 하기' : 'VP AI 훈련 시작'}
                 </button>
-                <button type="button" onClick={() => void buildTrainingSlice(undefined, true)} disabled={loading} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: loading ? 'wait' : 'pointer' }}>
+                <button type="button" onClick={() => void buildTrainingSlice(undefined, true)} disabled={loading} style={{ width: isMobile ? '100%' : undefined, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: loading ? 'wait' : 'pointer' }}>
                   새 케이스로 다시 시작
                 </button>
                 {!embeddedMode && (
-                  <button type="button" onClick={logoutTrainingAccount} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: 'pointer' }}>
+                  <button type="button" onClick={logoutTrainingAccount} style={{ width: isMobile ? '100%' : undefined, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: 'pointer' }}>
                     다른 계정으로 전환
                   </button>
                 )}
@@ -965,7 +974,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
                 const next = !showCaseArchive
                 setShowCaseArchive(next)
                 if (next) void loadCases()
-              }} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: 'pointer' }}>
+              }} style={{ width: isMobile ? '100%' : undefined, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: 'pointer' }}>
                 {showCaseArchive ? '과거 케이스 숨기기' : '과거 케이스 보기'}
               </button>
             )}
@@ -995,8 +1004,8 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
         )}
 
         {isAuthenticated && trainingState && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(250px, 300px) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
-            <aside style={{ display: 'grid', gap: 14, position: 'sticky', top: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(250px, 300px) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
+            <aside style={{ display: 'grid', gap: 14, position: isMobile ? 'static' : 'sticky', top: 12, order: isMobile ? 0 : 0 }}>
               <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 22, padding: 16, display: 'grid', gap: 12 }}>
                 <div style={{ fontSize: '.82rem', color: C.muted, fontWeight: 900 }}>FLOW MENU</div>
                 <div style={{ color: C.ink, fontWeight: 800 }}>전체 진행률 {trainingState.progress?.pct ?? 0}%</div>
@@ -1080,24 +1089,26 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
               )}
             </aside>
 
-            <StageCard
-              stage={stage}
-              stageKey={selectedStage}
-              onSave={saveStage}
-              onSaveFeedback={saveFeedback}
-              onContinue={() => {
-                if (nextStage) {
-                  setSelectedStage(nextStage)
-                  setShowContinueFrom(null)
-                }
-              }}
-              saving={savingStage === selectedStage}
-              feedbackSaving={savingFeedbackStage === selectedStage}
-              apiBase={apiBase}
-              authHeaders={authHeaders}
-              showContinue={showContinueFrom === selectedStage && Boolean(nextStage)}
-              reminder={reminder}
-            />
+            <div style={{ order: isMobile ? 1 : 1 }}>
+              <StageCard
+                stage={stage}
+                stageKey={selectedStage}
+                onSave={saveStage}
+                onSaveFeedback={saveFeedback}
+                onContinue={() => {
+                  if (nextStage) {
+                    setSelectedStage(nextStage)
+                    setShowContinueFrom(null)
+                  }
+                }}
+                saving={savingStage === selectedStage}
+                feedbackSaving={savingFeedbackStage === selectedStage}
+                apiBase={apiBase}
+                authHeaders={authHeaders}
+                showContinue={showContinueFrom === selectedStage && Boolean(nextStage)}
+                reminder={reminder}
+              />
+            </div>
           </div>
         )}
       </div>
