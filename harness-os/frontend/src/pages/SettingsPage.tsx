@@ -4,6 +4,7 @@ type Settings = {
   theme: 'light' | 'dark'
   exchangeRate: number
   refreshInterval: number // seconds
+  email: string
   nickname: string
   welcomeMessage: string
   exchangeRateMode: 'realtime' | 'manual'
@@ -28,6 +29,7 @@ const defaultSettings = {
     theme: 'dark' as const,
     exchangeRate: 1400,
     refreshInterval: 60,
+    email: 'junti7@gmail.com',
     nickname: '대표님',
     welcomeMessage: 'Harness OS의 최종 의사결정 및 자산 지배 통제 센터에 오신 것을 환영합니다.',
     exchangeRateMode: 'realtime' as const,
@@ -36,6 +38,7 @@ const defaultSettings = {
     theme: 'light' as const,
     exchangeRate: 1400,
     refreshInterval: 60,
+    email: 'fox_jazz@naver.com',
     nickname: '부대표님',
     welcomeMessage: 'Physical AI 리서치 분석 및 콘텐츠 품질 1차 관제 데스크입니다.',
     exchangeRateMode: 'realtime' as const,
@@ -81,6 +84,10 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase,
   const [openClawRestartLoading, setOpenClawRestartLoading] = useState(false)
   const [openClawRestartMsg, setOpenClawRestartMsg] = useState<{ ok: boolean; msg: string } | null>(null)
   const openClawIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [emailInput, setEmailInput] = useState('')
+  const [emailSaving, setEmailSaving] = useState(false)
+  const [emailError, setEmailError] = useState<string | null>(null)
+  const [emailSuccess, setEmailSuccess] = useState<string | null>(null)
 
   // 역할별 설정
   const [settings, setSettings] = useState<Settings>(() => {
@@ -90,6 +97,9 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase,
         const parsed = JSON.parse(saved) as Settings
         if (!parsed.exchangeRateMode) {
           parsed.exchangeRateMode = defaultSettings[currentRole].exchangeRateMode
+        }
+        if (!parsed.email) {
+          parsed.email = defaultSettings[currentRole].email
         }
         return parsed
       } catch (e) {
@@ -106,6 +116,10 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase,
   const [pwError, setPwError] = useState<string | null>(null)
   const [pwSuccess, setPwSuccess] = useState<string | null>(null)
 
+  useEffect(() => {
+    setEmailInput(settings.email || defaultSettings[currentRole].email)
+  }, [settings.email, currentRole])
+
   // 역할이 바뀌면 설정을 다시 로드
   useEffect(() => {
     const saved = localStorage.getItem(`harness-settings-${currentRole}`)
@@ -114,6 +128,9 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase,
         const parsed = JSON.parse(saved) as Settings
         if (!parsed.exchangeRateMode) {
           parsed.exchangeRateMode = defaultSettings[currentRole].exchangeRateMode
+        }
+        if (!parsed.email) {
+          parsed.email = defaultSettings[currentRole].email
         }
         setSettings(parsed)
       } catch {
@@ -127,6 +144,8 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase,
     setConfirmPasswordInput('')
     setPwError(null)
     setPwSuccess(null)
+    setEmailError(null)
+    setEmailSuccess(null)
   }, [currentRole])
 
   useEffect(() => {
@@ -171,6 +190,40 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase,
     setSettings(newSettings)
     localStorage.setItem(`harness-settings-${currentRole}`, JSON.stringify(newSettings))
     onSettingsChange(currentRole, newSettings)
+  }
+
+  const handleEmailUpdate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setEmailError(null)
+    setEmailSuccess(null)
+    const nextEmail = emailInput.trim().toLowerCase()
+    const currentEmail = (settings.email || '').trim().toLowerCase()
+    if (!nextEmail) {
+      setEmailError('이메일을 입력해 주십시오.')
+      return
+    }
+    setEmailSaving(true)
+    try {
+      const res = await fetch(`${apiBase}/api/edu/vp-training/account/update-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ old_email: currentEmail, new_email: nextEmail }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setEmailError(data?.detail ?? '이메일 변경에 실패했습니다.')
+        return
+      }
+      updateSetting('email', nextEmail)
+      if (window.localStorage.getItem('vp_training_auth_email') === currentEmail) {
+        window.localStorage.setItem('vp_training_auth_email', nextEmail)
+      }
+      setEmailSuccess('이메일이 저장되었습니다.')
+    } catch {
+      setEmailError('서버에 연결할 수 없습니다.')
+    } finally {
+      setEmailSaving(false)
+    }
   }
 
   // 비밀번호 변경 액션 핸들러 (서버 API 기반)
@@ -649,18 +702,46 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase,
 
           <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '1.5rem', alignItems: 'start', paddingBottom: '1.2rem', borderBottom: '1px solid var(--color-border)' }}>
             <div>
-              <strong style={{ display: 'block', fontSize: '0.95rem' }}>교육 계정 이메일</strong>
-              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>VP AI 훈련 테스트 및 운영 시 사용할 기준 이메일입니다.</span>
+              <strong style={{ display: 'block', fontSize: '0.95rem' }}>이메일</strong>
             </div>
-            <div style={{ display: 'grid', gap: '0.75rem', maxWidth: '520px' }}>
-              <div style={{ background: 'var(--color-surface-lighter)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '0.9rem 1rem' }}>
-                <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem', fontWeight: 700 }}>CEO</div>
-                <div style={{ fontSize: '0.95rem', color: 'var(--color-text)', fontWeight: 800 }}>junti7@gmail.com</div>
-              </div>
-              <div style={{ background: 'var(--color-surface-lighter)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '0.9rem 1rem' }}>
-                <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem', fontWeight: 700 }}>VP</div>
-                <div style={{ fontSize: '0.95rem', color: 'var(--color-text)', fontWeight: 800 }}>fox_jazz@naver.com</div>
-              </div>
+            <div style={{ maxWidth: '520px' }}>
+              <form onSubmit={handleEmailUpdate} style={{ display: 'grid', gap: '0.75rem' }}>
+                <input
+                  type="email"
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  placeholder="email@example.com"
+                  style={{
+                    width: '100%',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '10px',
+                    padding: '0.9rem 1rem',
+                    fontSize: '0.95rem',
+                    background: 'var(--color-surface)',
+                    color: 'var(--color-text)',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="submit"
+                    disabled={emailSaving}
+                    style={{
+                      padding: '0.65rem 1rem',
+                      borderRadius: '10px',
+                      border: 'none',
+                      background: 'var(--color-accent)',
+                      color: '#fff',
+                      fontWeight: 800,
+                      cursor: emailSaving ? 'wait' : 'pointer',
+                    }}
+                  >
+                    {emailSaving ? '저장 중…' : '이메일 변경'}
+                  </button>
+                  {emailError && <span style={{ fontSize: '0.82rem', color: '#dc2626' }}>{emailError}</span>}
+                  {emailSuccess && <span style={{ fontSize: '0.82rem', color: '#059669' }}>{emailSuccess}</span>}
+                </div>
+              </form>
             </div>
           </div>
 

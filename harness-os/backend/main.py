@@ -5868,6 +5868,11 @@ class EduVpTrainingAccountLoginRequest(BaseModel):
     password: str = ""
 
 
+class EduVpTrainingAccountUpdateEmailRequest(BaseModel):
+    old_email: str = ""
+    new_email: str = ""
+
+
 def _edu_normalize_email(email: str) -> str:
     return (email or "").strip().lower()
 
@@ -9394,6 +9399,45 @@ def edu_vp_training_account_login(
         "customer_id": int(account["id"]),
         "email": str(account.get("email") or ""),
         "name": str(account.get("name") or ""),
+    }
+
+
+@app.post("/api/edu/vp-training/account/update-email")
+def edu_vp_training_account_update_email(
+    req: EduVpTrainingAccountUpdateEmailRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    _ensure_edu_case_schema()
+    old_email = _edu_normalize_email(req.old_email)
+    new_email = _edu_normalize_email(req.new_email)
+    if not old_email or not new_email:
+        raise HTTPException(400, "old_email and new_email are required")
+    if old_email == new_email:
+        return {"ok": True, "email": new_email, "account_updated": False}
+
+    account = _edu_load_account_row(old_email)
+    if not account:
+        return {"ok": True, "email": new_email, "account_updated": False}
+
+    conflict = _edu_load_account_row(new_email)
+    if conflict and int(conflict["id"]) != int(account["id"]):
+        raise HTTPException(409, "email already exists")
+
+    _edu_execute(
+        """
+        UPDATE edu_customers
+        SET email = %s,
+            last_active_at = NOW()
+        WHERE id = %s
+        """,
+        (new_email, int(account["id"])),
+        fetch=False,
+    )
+    return {
+        "ok": True,
+        "email": new_email,
+        "customer_id": int(account["id"]),
+        "account_updated": True,
     }
 
 
