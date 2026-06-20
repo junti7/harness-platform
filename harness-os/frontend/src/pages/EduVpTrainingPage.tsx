@@ -96,8 +96,12 @@ type CaseItem = {
   status?: string
   updated_at?: string
   progress_pct: number
+  case_label?: string
   flow_outline?: FlowItem[]
 }
+
+const VP_TRAINING_EMAIL = 'vp-training@harness.local'
+const VP_TRAINING_CASE_STORAGE_KEY = 'vp_training_case_id'
 
 const C = {
   ink: '#111827',
@@ -545,14 +549,9 @@ function StageCard({
 }
 
 export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
-  const [email, setEmail] = useState('')
   const [preferredLlm, setPreferredLlm] = useState('gpt')
   const [currentDevice, setCurrentDevice] = useState('android')
   const [desktopOs, setDesktopOs] = useState('windows')
-  const [aiExperience, setAiExperience] = useState('beginner')
-  const [biggestFriction, setBiggestFriction] = useState('')
-  const [learningGoal, setLearningGoal] = useState('')
-  const [forceNew, setForceNew] = useState(true)
   const [loading, setLoading] = useState(false)
   const [savingStage, setSavingStage] = useState<'week0' | 'week1' | null>(null)
   const [savingFeedbackStage, setSavingFeedbackStage] = useState<'week0' | 'week1' | null>(null)
@@ -560,12 +559,12 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
   const [caseId, setCaseId] = useState<number | null>(null)
   const [trainingState, setTrainingState] = useState<TrainingState | null>(null)
   const [caseHistory, setCaseHistory] = useState<CaseItem[]>([])
+  const [showCaseArchive, setShowCaseArchive] = useState(false)
   const [selectedStage, setSelectedStage] = useState<'week0' | 'week1'>('week0')
   const [showContinueFrom, setShowContinueFrom] = useState<'week0' | 'week1' | null>(null)
 
-  async function loadCases(targetEmail: string) {
-    if (!targetEmail.trim()) return
-    const res = await fetch(`${apiBase}/api/edu/vp-training/cases?email=${encodeURIComponent(targetEmail.trim())}`, {
+  async function loadCases() {
+    const res = await fetch(`${apiBase}/api/edu/vp-training/cases?email=${encodeURIComponent(VP_TRAINING_EMAIL)}`, {
       headers: { ...authHeaders() },
     })
     const data = await res.json()
@@ -580,15 +579,15 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({
-          case_id: targetCaseId ?? caseId,
-          email,
+          case_id: restart ? null : (targetCaseId ?? caseId),
+          email: VP_TRAINING_EMAIL,
           preferred_llm: preferredLlm,
           current_device: currentDevice,
           desktop_os: desktopOs,
-          ai_experience: aiExperience,
-          biggest_friction: biggestFriction,
-          learning_goal: learningGoal,
-          force_new: restart ?? forceNew,
+          ai_experience: 'beginner',
+          biggest_friction: '',
+          learning_goal: '',
+          force_new: restart ?? false,
         }),
       })
       const data = await res.json()
@@ -596,7 +595,8 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
       setCaseId(data.case_id)
       setTrainingState(data.training_state || null)
       setSelectedStage('week0')
-      await loadCases(email)
+      window.localStorage.setItem(VP_TRAINING_CASE_STORAGE_KEY, String(data.case_id))
+      if (showCaseArchive) await loadCases()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'VP training flow build failed')
     } finally {
@@ -618,7 +618,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
       if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
       setTrainingState(data.training_state || null)
       setShowContinueFrom(stage)
-      await loadCases(email)
+      if (showCaseArchive) await loadCases()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'stage save failed')
     } finally {
@@ -639,13 +639,22 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
       const data = await res.json()
       if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
       setTrainingState(data.training_state || null)
-      await loadCases(email)
+      if (showCaseArchive) await loadCases()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'feedback save failed')
     } finally {
       setSavingFeedbackStage(null)
     }
   }
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(VP_TRAINING_CASE_STORAGE_KEY)
+    if (!stored) return
+    const parsed = Number(stored)
+    if (!Number.isFinite(parsed) || parsed <= 0) return
+    setCaseId(parsed)
+    void buildTrainingSlice(parsed, false)
+  }, [])
 
   const stage = selectedStage === 'week0' ? trainingState?.week0 : trainingState?.week1
   const stageOrder: Array<'week0' | 'week1'> = ['week0', 'week1']
@@ -685,10 +694,6 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
         <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 24, padding: 18, display: 'grid', gap: 14 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
             <label style={{ display: 'grid', gap: 6 }}>
-              <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>이메일</span>
-              <input value={email} onChange={(e) => setEmail(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem' }} />
-            </label>
-            <label style={{ display: 'grid', gap: 6 }}>
               <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>Primary LLM</span>
               <select value={preferredLlm} onChange={(e) => setPreferredLlm(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', background: C.surface }}>
                 <option value="gpt">ChatGPT</option>
@@ -711,46 +716,36 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
                 <option value="mac">Mac</option>
               </select>
             </label>
-            <label style={{ display: 'grid', gap: 6 }}>
-              <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>현재 수준</span>
-              <select value={aiExperience} onChange={(e) => setAiExperience(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', background: C.surface }}>
-                <option value="beginner">완전 초보</option>
-                <option value="light">가끔 써봄</option>
-                <option value="weekly">주 1회 이상</option>
-              </select>
-            </label>
           </div>
-          <label style={{ display: 'grid', gap: 6 }}>
-            <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>지금 제일 막히는 지점</span>
-            <textarea value={biggestFriction} onChange={(e) => setBiggestFriction(e.target.value)} rows={3} placeholder="예: 무엇을 시켜야 할지 감이 안 오고, 영어처럼 보이면 바로 겁이 납니다." style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', lineHeight: 1.5, resize: 'vertical', boxSizing: 'border-box' }} />
-          </label>
-          <label style={{ display: 'grid', gap: 6 }}>
-            <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>만들고 싶은 변화</span>
-            <textarea value={learningGoal} onChange={(e) => setLearningGoal(e.target.value)} rows={3} placeholder="예: 답장 쓰기, 회의 메모 정리, 일정 정리 같은 일을 AI로 더 빨리 끝내고 싶습니다." style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', lineHeight: 1.5, resize: 'vertical', boxSizing: 'border-box' }} />
-          </label>
+          <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, color: C.muted, fontSize: '.92rem', lineHeight: 1.6 }}>
+            필수 입력은 기기 경로와 사용할 LLM뿐입니다. 진행 기록은 VP 전용 훈련 케이스에 계속 누적되며, 별도 이메일이나 자기평가를 먼저 적지 않아도 바로 시작할 수 있습니다.
+          </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.92rem', fontWeight: 700 }}>
-              <input type="checkbox" checked={forceNew} onChange={(e) => setForceNew(e.target.checked)} />
-              새로운 케이스로 다시 시작
-            </label>
-            <button type="button" onClick={() => void loadCases(email)} disabled={!email.trim()} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: !email.trim() ? 'not-allowed' : 'pointer' }}>
-              기존 케이스 불러오기
+            <button type="button" onClick={() => void buildTrainingSlice(caseId, false)} disabled={loading} style={{ background: '#111827', color: '#fff', border: 'none', borderRadius: 14, padding: '12px 16px', fontWeight: 800, cursor: loading ? 'wait' : 'pointer' }}>
+              {loading ? 'Day 플로우 생성 중…' : trainingState ? 'VP AI 훈련 이어서 하기' : 'VP AI 훈련 시작'}
             </button>
-            <button type="button" onClick={() => void buildTrainingSlice()} disabled={loading || !email.trim()} style={{ background: '#111827', color: '#fff', border: 'none', borderRadius: 14, padding: '12px 16px', fontWeight: 800, cursor: loading ? 'wait' : 'pointer' }}>
-              {loading ? 'Day 플로우 생성 중…' : 'VP AI 훈련 시작'}
+            <button type="button" onClick={() => void buildTrainingSlice(undefined, true)} disabled={loading} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: loading ? 'wait' : 'pointer' }}>
+              새 케이스로 다시 시작
+            </button>
+            <button type="button" onClick={() => {
+              const next = !showCaseArchive
+              setShowCaseArchive(next)
+              if (next) void loadCases()
+            }} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: 'pointer' }}>
+              {showCaseArchive ? '과거 케이스 숨기기' : '과거 케이스 보기'}
             </button>
           </div>
           {error && <div style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: 12, fontSize: '.9rem' }}>{error}</div>}
         </section>
 
-        {!!caseHistory.length && (
+        {showCaseArchive && !!caseHistory.length && (
           <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 24, padding: 18, display: 'grid', gap: 12 }}>
-            <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>저장된 케이스</div>
+            <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>과거 케이스</div>
             <div style={{ display: 'grid', gap: 10 }}>
               {caseHistory.map((item) => (
                 <div key={item.case_id} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, display: 'grid', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-                    <div style={{ fontWeight: 800, color: C.ink }}>case #{item.case_id}</div>
+                    <div style={{ fontWeight: 800, color: C.ink }}>{item.case_label || `케이스 ${item.case_id}`}</div>
                     <div style={{ color: C.faint, fontSize: '.84rem' }}>{item.updated_at || ''}</div>
                   </div>
                   {progressBar(item.progress_pct)}
@@ -796,35 +791,29 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
                 ))}
               </section>
 
-              <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 22, padding: 16, display: 'grid', gap: 12 }}>
-                <div style={{ fontSize: '.82rem', color: C.muted, fontWeight: 900 }}>FLOW OVERVIEW</div>
-                <FlowIllustration />
-                <div style={{ color: C.muted, fontSize: '.9rem', lineHeight: 1.6 }}>
-                  Duolingo처럼 지금 해야 할 1개 단계에만 집중하고, 필요하면 왼쪽 목차에서 언제든 이전 단계로 돌아가 다시 복습할 수 있게 설계했습니다.
-                </div>
-              </section>
-
-              <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 22, padding: 16, display: 'grid', gap: 12 }}>
-                <div style={{ fontSize: '.82rem', color: C.muted, fontWeight: 900 }}>PERSONA LIBRARY</div>
-                <div style={{ color: C.ink, fontWeight: 800 }}>현재 코어 페르소나: 주부/학부모</div>
-                <div style={{ color: C.muted, fontSize: '.88rem', lineHeight: 1.55 }}>
-                  {trainingState.persona_library?.unlock_rule}
-                </div>
-                <div style={{ display: 'grid', gap: 8 }}>
-                  {(trainingState.persona_library?.personas || []).map((item) => (
-                    <div key={item.key} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, opacity: trainingState.persona_library?.unlocked ? 1 : 0.72 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
-                        <div style={{ fontWeight: 800, color: C.ink }}>{item.label}</div>
-                        <div style={{ fontSize: '.76rem', color: trainingState.persona_library?.unlocked ? C.accent : C.faint, fontWeight: 800 }}>
-                          {trainingState.persona_library?.unlocked ? '추가 학습 가능' : '코어 완료 후 오픈'}
+              {trainingState.persona_library?.unlocked && (
+                <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 22, padding: 16, display: 'grid', gap: 12 }}>
+                  <div style={{ fontSize: '.82rem', color: C.muted, fontWeight: 900 }}>PERSONA LIBRARY</div>
+                  <div style={{ color: C.ink, fontWeight: 800 }}>현재 코어 페르소나: 주부/학부모</div>
+                  <div style={{ color: C.muted, fontSize: '.88rem', lineHeight: 1.55 }}>
+                    {trainingState.persona_library?.unlock_rule}
+                  </div>
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    {(trainingState.persona_library?.personas || []).map((item) => (
+                      <div key={item.key} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                          <div style={{ fontWeight: 800, color: C.ink }}>{item.label}</div>
+                          <div style={{ fontSize: '.76rem', color: C.accent, fontWeight: 800 }}>
+                            추가 학습 가능
+                          </div>
                         </div>
+                        <div style={{ color: C.faint, fontSize: '.8rem', marginTop: 4 }}>{item.group}</div>
+                        <div style={{ color: C.muted, fontSize: '.88rem', lineHeight: 1.5, marginTop: 6 }}>{item.description}</div>
                       </div>
-                      <div style={{ color: C.faint, fontSize: '.8rem', marginTop: 4 }}>{item.group}</div>
-                      <div style={{ color: C.muted, fontSize: '.88rem', lineHeight: 1.5, marginTop: 6 }}>{item.description}</div>
-                    </div>
-                  ))}
-                </div>
-              </section>
+                    ))}
+                  </div>
+                </section>
+              )}
             </aside>
 
             <StageCard

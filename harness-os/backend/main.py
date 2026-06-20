@@ -9349,13 +9349,22 @@ def edu_vp_training_cases(
     for row in rows:
         summary = row.get("summary_json") or {}
         progress = summary.get("progress") or {"pct": 0}
+        flow_outline = summary.get("flow_outline") or []
+        latest_stage_title = ""
+        for item in flow_outline:
+            if bool((item or {}).get("completed")):
+                latest_stage_title = str((item or {}).get("label") or "")
+        if not latest_stage_title and flow_outline:
+            latest_stage_title = str((flow_outline[0] or {}).get("label") or "")
+        case_label = f"{latest_stage_title or 'VP 훈련'} · 진행률 {int(progress.get('pct') or 0)}%"
         items.append(
             {
                 "case_id": int(row.get("case_id")),
                 "status": row.get("status"),
                 "updated_at": row.get("updated_at"),
                 "progress_pct": int(progress.get("pct") or 0),
-                "flow_outline": summary.get("flow_outline") or [],
+                "case_label": case_label,
+                "flow_outline": flow_outline,
             }
         )
     return {"ok": True, "cases": items}
