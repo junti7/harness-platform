@@ -1043,9 +1043,8 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       setShowCaseArchive(false)
       setSelectedStage('day0')
       setShowContinueFrom(null)
-      await buildTrainingSlice(undefined, true, safeEmail)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'case reset failed')
+      setError(err instanceof TypeError ? '전체 초기화 요청이 서버에 닿지 않았습니다. 잠시 후 다시 시도하세요.' : err instanceof Error ? err.message : 'case reset failed')
     } finally {
       setResettingCases(false)
     }
