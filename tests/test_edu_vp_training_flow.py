@@ -71,6 +71,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertTrue(card["external_reuse_safe"])
         self.assertEqual(len(card["evidence_cards"]), 1)
         self.assertEqual(len(card["sample_materials"]), 4)
+        self.assertGreaterEqual(len(card["scenario_bank"]), 10)
+        self.assertIn("학교 준비물 공지 정리", [item["title"] for item in card["scenario_bank"]])
         self.assertIn("직접 AI를 써봐야", card["evidence_cards"][0]["title"])
         self.assertEqual(mocked_bundle.call_count, 2)
         first_args, first_kwargs = mocked_bundle.call_args_list[0]

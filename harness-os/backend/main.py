@@ -7032,6 +7032,25 @@ def _edu_vp_recommended_learning(stage_key: str) -> list[dict[str, Any]]:
     return links
 
 
+def _edu_vp_home_scenarios() -> list[dict[str, str]]:
+    return [
+        {"title": "학교 준비물 공지 정리", "situation": "단톡방에 올라온 긴 학교 공지를 한눈에 보이게 정리해야 할 때", "prompt": "아래 학교 공지를 오늘 꼭 챙길 것, 이번 주 안에 챙길 것, 그냥 읽어둘 것으로 나눠 아주 쉽게 정리해줘."},
+        {"title": "학부모 단톡방 답장", "situation": "부담스럽지 않고 예의 있게 답장하고 싶을 때", "prompt": "너무 길지 않고 부드러운 한국어로 답장 1개만 써줘."},
+        {"title": "병원 예약 메모 정리", "situation": "아이, 부모, 가족 병원 일정이 섞여 헷갈릴 때", "prompt": "가족 병원 일정을 날짜순으로 다시 적어주고 준비물이 있으면 같이 적어줘."},
+        {"title": "학원 상담 질문 만들기", "situation": "학원 상담 전에 꼭 물어봐야 할 것을 빠르게 만들고 싶을 때", "prompt": "학원 상담 전에 꼭 물어봐야 할 질문 7개를 쉬운 말로 적어줘."},
+        {"title": "장보기 목록 정리", "situation": "냉장고 확인 없이 장을 보러 가면 자꾸 빠뜨릴 때", "prompt": "식재료를 채소, 냉동, 간식, 아침거리로 나눠 장보기 목록으로 정리해줘."},
+        {"title": "일주일 식단 초안", "situation": "매일 뭐 먹을지 고민하는 시간을 줄이고 싶을 때", "prompt": "집밥 기준으로 평일 5일 저녁 식단을 부담 없이 짜줘."},
+        {"title": "가계부 메모 정리", "situation": "카드값, 현금, 아이 관련 지출이 뒤섞여 있을 때", "prompt": "아래 지출 메모를 생활비, 교육비, 식비, 기타로 다시 나눠줘."},
+        {"title": "가족 여행 준비물", "situation": "아이 동반 여행 준비물 빠짐이 걱정될 때", "prompt": "어른과 아이를 나눠 여행 준비물을 체크리스트로 적어줘."},
+        {"title": "청소 순서 만들기", "situation": "한 번 청소하려고 하면 무엇부터 해야 할지 막막할 때", "prompt": "30분 안에 끝내는 집안 정리 순서를 1단계씩 적어줘."},
+        {"title": "남편/가족에게 부탁 메시지", "situation": "예민하지 않게 도와달라고 말하고 싶을 때", "prompt": "상대가 부담 없이 읽을 수 있게 부탁 메시지를 부드럽게 써줘."},
+        {"title": "아이 숙제 체크", "situation": "숙제, 준비물, 제출일을 섞어서 기억하기 어려울 때", "prompt": "숙제와 준비물을 오늘 할 일, 미리 할 일로 나눠 간단히 적어줘."},
+        {"title": "주말 가족 일정표", "situation": "가족 각자 일정이 섞여 주말이 더 바쁠 때", "prompt": "토요일과 일요일을 나눠 시간표처럼 다시 적어줘."},
+        {"title": "집안 행정서류 메모", "situation": "보험, 학교 서류, 주민센터 일을 자꾸 까먹을 때", "prompt": "아래 할 일을 마감이 급한 순서대로 정리해줘."},
+        {"title": "반찬/냉장고 소진 계획", "situation": "냉장고에 있는 재료를 못 쓰고 버릴 때", "prompt": "남은 재료를 먼저 쓰는 순서로 오늘과 내일 식사 아이디어를 적어줘."},
+    ]
+
+
 def _edu_vp_week0_materials(llm_label: str) -> list[dict[str, Any]]:
     return [
         _edu_vp_material_kit(
@@ -7161,6 +7180,7 @@ def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
         "sample_materials": _edu_vp_week1_materials(llm_label),
         "tutorial_steps": _edu_vp_tutorial_steps("week1", intake),
         "recommended_learning": _edu_vp_recommended_learning("week1"),
+        "scenario_bank": _edu_vp_home_scenarios(),
         "blocked_step_options": ["pick_scene", "ask_ai", "rewrite", "save_output"],
         "practice_prompt_template": f"지금 제일 부담되는 장면은 '{friction}'입니다. {goal}에 맞게, 초등학생도 이해할 수 있을 만큼 쉬운 한국어로 오늘 바로 쓸 초안 1개만 적어줘.",
         "evidence_bundle_id": f"vp-week1-{hashlib.sha1(query.encode('utf-8')).hexdigest()[:10]}",

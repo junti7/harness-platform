@@ -30,6 +30,7 @@ type TrainingStage = {
   required_action?: string
   proof_artifact_hint?: string
   pass_fail_rubric?: string[]
+  scenario_bank?: Array<{ title: string; situation: string; prompt: string }>
   sample_materials?: MaterialKit[]
   blocked_step_options?: string[]
   checklist?: Array<{ id: string; title: string; instruction: string; success_signal: string }>
@@ -266,6 +267,24 @@ function StageCard({
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {!!stage?.scenario_bank?.length && (
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>가정 주부 실전 시나리오 뱅크</div>
+          <div style={{ color: C.faint, fontSize: '.86rem', lineHeight: 1.55 }}>
+            아래 장면 중 하나를 그대로 골라 오늘 실습에 써도 됩니다. 생활 장면을 많이 넣어 두었으니, VP나 일반 고객 모두 바로 공감 가능한 출발점으로 쓸 수 있습니다.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
+            {stage.scenario_bank.map((item, index) => (
+              <div key={`${item.title}-${index}`} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, display: 'grid', gap: 8 }}>
+                <div style={{ fontWeight: 800, color: C.ink }}>{item.title}</div>
+                <div style={{ color: C.muted, fontSize: '.92rem', lineHeight: 1.55 }}>{item.situation}</div>
+                <div style={{ color: C.faint, fontSize: '.82rem', lineHeight: 1.5 }}>{item.prompt}</div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
