@@ -63,14 +63,16 @@ PATHS_STR="${PATHS[*]}"
 REBUILD_TRADING="no"
 REBUILD_FRONTEND="no"
 RELOAD_FE_PLIST="no"
+RELOAD_BACKEND="no"
 for p in "${PATHS[@]}"; do
   case "$p" in core/trading_universe.py|configs/trading/*|scripts/build_trading_universe.py) REBUILD_TRADING="yes";; esac
   # dist 빌드는 프론트 *소스* 변경 시에만(plist 만 바뀐 경우는 빌드 불필요)
   case "$p" in harness-os/frontend/src/*|harness-os/frontend/index.html|harness-os/frontend/public/*|harness-os/frontend/*.json|harness-os/frontend/*.ts|harness-os/frontend/*.js) REBUILD_FRONTEND="yes";; esac
   case "$p" in harness-os/launchd/com.harness.harness-os-frontend.plist) RELOAD_FE_PLIST="yes";; esac
+  case "$p" in harness-os/backend/*|harness-os/launchd/com.harness.harness-os-backend.plist) RELOAD_BACKEND="yes";; esac
 done
 
-ssh -o ConnectTimeout=20 "$SSH_HOST" "REPO='$REMOTE_REPO' PATHS='$PATHS_STR' REBUILD='$REBUILD_TRADING' REBUILD_FE='$REBUILD_FRONTEND' RELOAD_FE='$RELOAD_FE_PLIST' bash -s" <<'REMOTE'
+ssh -o ConnectTimeout=20 "$SSH_HOST" "REPO='$REMOTE_REPO' PATHS='$PATHS_STR' REBUILD='$REBUILD_TRADING' REBUILD_FE='$REBUILD_FRONTEND' RELOAD_FE='$RELOAD_FE_PLIST' RELOAD_BE='$RELOAD_BACKEND' bash -s" <<'REMOTE'
 set -euo pipefail
 cd "$REPO"
 read -r -a PATH_ARR <<< "$PATHS"
@@ -144,6 +146,24 @@ if [ "${RELOAD_FE:-no}" = "yes" ]; then
     echo "      ✓ 5173 서빙 중 (serve dist, launchd 관리)"
   else
     echo "      ✖ 5173 미서빙 — 프론트 agent 기동 실패. 로그: logs/harness-os-frontend.error.log. 중단."
+    exit 1
+  fi
+fi
+
+if [ "${RELOAD_BE:-no}" = "yes" ]; then
+  echo "  [4d] 백엔드 launchd reload"
+  AGENT="$HOME/Library/LaunchAgents/com.harness.harness-os-backend.plist"
+  sed "s|__ROOT__|$REPO|g" harness-os/launchd/com.harness.harness-os-backend.plist > "$AGENT"
+  UID_N=$(id -u)
+  launchctl bootout "gui/$UID_N/com.harness.harness-os-backend" >/dev/null 2>&1 || true
+  sleep 1
+  launchctl bootstrap "gui/$UID_N" "$AGENT"
+  sleep 2
+  if launchctl print "gui/$UID_N/com.harness.harness-os-backend" >/tmp/harness_backend_launchctl.log 2>&1; then
+    echo "      ✓ backend 재기동 완료"
+  else
+    echo "      ✖ backend 재기동 실패. 로그: logs/harness-os-backend.error.log. launchctl:"
+    tail -20 /tmp/harness_backend_launchctl.log || true
     exit 1
   fi
 fi
