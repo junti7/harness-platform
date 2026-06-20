@@ -7391,7 +7391,15 @@ def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
     friction = str(intake.get("biggest_friction") or "AI가 어렵고 막막함").strip()
     goal = str(intake.get("learning_goal") or "생활과 업무에서 바로 쓸 수 있는 첫 성공 만들기").strip()
     query = f"{friction} {goal} 학원 일정 학교 공지 가정통신문 병원 예약 엄마모임 가족모임"
-    bundle = _retrieve_evidence_bundle(query, "parent", k=4)
+    try:
+        bundle = _retrieve_evidence_bundle(query, "parent", k=4)
+    except Exception as exc:  # noqa: BLE001
+        _edu_runtime_event(
+            "vp_training_week1_bundle_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+        )
+        bundle = None
     evidence_cards: list[dict[str, Any]] = []
     if bundle:
         for item in (bundle.get("items") or [])[:3]:
@@ -9309,8 +9317,28 @@ def edu_vp_training_intake(
     current_state["case"] = payload["case"]
     current_state["intake"] = intake
     current_state["primary_llm_path"] = intake["preferred_llm"]
-    current_state["week0"] = _edu_vp_build_week0(intake)
-    current_state["week1"] = _edu_vp_build_week1(intake)
+    try:
+        current_state["week0"] = _edu_vp_build_week0(intake)
+        current_state["week1"] = _edu_vp_build_week1(intake)
+    except Exception as exc:  # noqa: BLE001
+        _edu_runtime_event(
+            "vp_training_state_build_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+            email=intake["email"][:120],
+        )
+        current_state["week0"] = _edu_vp_build_week0(intake)
+        fallback_week1 = _edu_vp_build_week1({
+            **intake,
+            "biggest_friction": "",
+            "learning_goal": "",
+        })
+        fallback_week1["evidence_cards"] = []
+        fallback_week1["recommended_learning"] = _edu_vp_recommended_learning("week1")
+        fallback_week1["home_life_recommended_learning"] = _edu_vp_home_recommended_learning()
+        fallback_week1["retrieval_mode"] = "fallback"
+        fallback_week1["fallback_used"] = True
+        current_state["week1"] = fallback_week1
     p0 = _edu_vp_stage_progress(current_state["week0"])
     p1 = _edu_vp_stage_progress(current_state["week1"])
     current_state["flow_outline"] = [
