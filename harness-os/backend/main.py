@@ -7650,7 +7650,7 @@ def _edu_vp_total_minutes(blocks: list[dict[str, Any]]) -> int:
     return total
 
 
-def _edu_vp_week0_materials(llm_label: str) -> list[dict[str, Any]]:
+def _edu_vp_day0_materials(llm_label: str) -> list[dict[str, Any]]:
     return [
         _edu_vp_material_kit(
             kit_id="day0-first-login-starter",
@@ -7666,7 +7666,7 @@ def _edu_vp_week0_materials(llm_label: str) -> list[dict[str, Any]]:
     ]
 
 
-def _edu_vp_week1_materials(llm_label: str) -> list[dict[str, Any]]:
+def _edu_vp_day1_materials(llm_label: str) -> list[dict[str, Any]]:
     return [
         _edu_vp_material_kit(
             kit_id="day1-school-notice-kit",
@@ -7695,10 +7695,10 @@ def _edu_vp_week1_materials(llm_label: str) -> list[dict[str, Any]]:
     ]
 
 
-def _edu_vp_build_week0(intake: dict[str, Any]) -> dict[str, Any]:
-    llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or "claude"))
-    current_device = _edu_vp_device_label(str(intake.get("current_device") or "iphone"))
-    desktop_os = _edu_vp_device_label(str(intake.get("desktop_os") or "mac"))
+def _edu_vp_build_day0(intake: dict[str, Any]) -> dict[str, Any]:
+    llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or "gemini"))
+    current_device = _edu_vp_device_label(str(intake.get("current_device") or "android"))
+    desktop_os = _edu_vp_device_label(str(intake.get("desktop_os") or "windows"))
     friction = str(intake.get("biggest_friction") or "처음 시작이 막막함").strip()
     goal = str(intake.get("learning_goal") or "생활에서 AI를 덜 무섭게 쓰기").strip()
     checklist = [
@@ -7738,7 +7738,7 @@ def _edu_vp_build_week0(intake: dict[str, Any]) -> dict[str, Any]:
         "schedule_blocks": schedule_blocks,
         "required_action": f"{llm_label}를 실제로 열고, 본인 고민을 한 문장으로 입력해 첫 답변 1개를 받는다.",
         "proof_artifact_hint": "AI가 답한 첫 문장 1개 또는 본인이 복사한 결과 1개를 붙여 넣으세요.",
-        "sample_materials": _edu_vp_week0_materials(llm_label),
+        "sample_materials": _edu_vp_day0_materials(llm_label),
         "tutorial_steps": _edu_vp_tutorial_steps("day0", intake),
         "recommended_learning": _edu_vp_recommended_learning("day0"),
         "pass_fail_rubric": [
@@ -7752,8 +7752,8 @@ def _edu_vp_build_week0(intake: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
-    llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or "claude"))
+def _edu_vp_build_day1(intake: dict[str, Any]) -> dict[str, Any]:
+    llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or "gemini"))
     friction = str(intake.get("biggest_friction") or "AI가 어렵고 막막함").strip()
     goal = str(intake.get("learning_goal") or "생활과 업무에서 바로 쓸 수 있는 첫 성공 만들기").strip()
     query = f"{friction} {goal} 학원 일정 학교 공지 가정통신문 병원 예약 엄마모임 가족모임"
@@ -7798,7 +7798,7 @@ def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
             "본인이 직접 문장을 다시 고쳤다",
             "전/후 결과를 남겼다",
         ],
-        "sample_materials": _edu_vp_week1_materials(llm_label),
+        "sample_materials": _edu_vp_day1_materials(llm_label),
         "tutorial_steps": _edu_vp_tutorial_steps("day1", intake),
         "recommended_learning": _edu_vp_recommended_learning("day1"),
         "home_life_recommended_learning": _edu_vp_home_recommended_learning(),
@@ -9724,8 +9724,8 @@ def edu_vp_training_intake(
     current_state["intake"] = intake
     current_state["primary_llm_path"] = intake["preferred_llm"]
     try:
-        current_state["day0"] = _edu_vp_build_week0(intake)
-        current_state["day1"] = _edu_vp_build_week1(intake)
+        current_state["day0"] = _edu_vp_build_day0(intake)
+        current_state["day1"] = _edu_vp_build_day1(intake)
     except Exception as exc:  # noqa: BLE001
         _edu_runtime_event(
             "vp_training_state_build_failed",
@@ -9733,8 +9733,8 @@ def edu_vp_training_intake(
             error=str(exc)[:240],
             email=intake["email"][:120],
         )
-        current_state["day0"] = _edu_vp_build_week0(intake)
-        fallback_day1 = _edu_vp_build_week1({
+        current_state["day0"] = _edu_vp_build_day0(intake)
+        fallback_day1 = _edu_vp_build_day1({
             **intake,
             "biggest_friction": "",
             "learning_goal": "",
@@ -10086,6 +10086,7 @@ def edu_vp_training_cases(
 ) -> dict[str, Any]:
     safe_email = _edu_normalize_email(email)
     _edu_vp_assert_access(request, safe_email)
+    _ensure_edu_case_schema()
     if not safe_email:
         return {"ok": True, "cases": []}
     rows = _edu_execute(
@@ -10105,7 +10106,10 @@ def edu_vp_training_cases(
             LIMIT 1
         ) s ON TRUE
         WHERE LOWER(COALESCE(cu.email, '')) = %s
-        ORDER BY c.updated_at DESC
+        ORDER BY
+            CASE WHEN s.summary_json IS NOT NULL THEN 0 ELSE 1 END,
+            c.updated_at DESC,
+            c.id DESC
         LIMIT 20
         """,
         (safe_email,),
@@ -10114,6 +10118,7 @@ def edu_vp_training_cases(
     items = []
     for row in rows:
         summary_raw = row.get("summary_json") or {}
+        has_training_state = isinstance(summary_raw, dict) and bool(summary_raw)
         summary = _edu_vp_normalize_state_keys(summary_raw) if isinstance(summary_raw, dict) else {}
         progress = summary.get("progress") or {"pct": 0}
         flow_outline = summary.get("flow_outline") or []
@@ -10132,6 +10137,7 @@ def edu_vp_training_cases(
                 "progress_pct": int(progress.get("pct") or 0),
                 "case_label": case_label,
                 "flow_outline": flow_outline,
+                "has_training_state": has_training_state,
             }
         )
     return {"ok": True, "cases": items}

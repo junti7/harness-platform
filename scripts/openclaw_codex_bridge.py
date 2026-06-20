@@ -9,9 +9,10 @@ import socket
 import subprocess
 import sys
 from contextlib import closing
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 # Ensure all Harness environment variables are loaded explicitly from the repo .env file
 from dotenv import load_dotenv
@@ -2150,9 +2151,10 @@ def command_request_cost_approval(args: argparse.Namespace) -> None:
 
 def command_dispatch_task_packet(args: argparse.Namespace) -> None:
     packet = build_packet(args)
+    default_providers = ["claude", "gemini", "copilot"]
     result = dispatch_packet(
         packet=packet,
-        providers=args.provider or ["claude", "gemini", "copilot"],
+        providers=args.provider or default_providers,
         output_dir=Path(args.output_dir),
         notify_route=args.notify_route,
     )
@@ -2787,7 +2789,7 @@ def build_parser() -> argparse.ArgumentParser:
     dispatch_parser.add_argument("task_kind")
     dispatch_parser.add_argument("title")
     dispatch_parser.add_argument("--objective", required=True)
-    dispatch_parser.add_argument("--provider", action="append", choices=["claude", "gemini", "copilot"])
+    dispatch_parser.add_argument("--provider", action="append", choices=["claude", "codex", "gemini", "copilot"])
     dispatch_parser.add_argument("--input-artifact", action="append")
     dispatch_parser.add_argument("--output-artifact", action="append")
     dispatch_parser.add_argument("--check", action="append")

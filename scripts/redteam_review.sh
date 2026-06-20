@@ -6,12 +6,12 @@
 #     이 래퍼는 모델별 read-only 모드를 강제해 그 사고를 구조적으로 막는다.
 #
 # 사용:
-#   scripts/redteam_review.sh <gemini|codex|copilot> <context-file> [추가 지시문]
-#   REDTEAM_PROMPT="...커스텀 지시..." scripts/redteam_review.sh gemini /tmp/x.diff
+#   scripts/redteam_review.sh <codex|copilot> <context-file> [추가 지시문]
+#   2026-06-30까지 Gemini red-team 호출은 API credit 0으로 차단한다.
 #
 # 예:
 #   git diff --cached > /tmp/x.diff
-#   scripts/redteam_review.sh gemini /tmp/x.diff
+#   scripts/redteam_review.sh codex /tmp/x.diff
 #   scripts/redteam_review.sh copilot /tmp/x.diff "특히 동시성/예외 안전성 집중"
 #
 # 출력: 모델 검토 결과 그대로. 관례상 마지막 줄에 "VERDICT: clear|block".
@@ -49,6 +49,12 @@ echo "▶ Red Team(read-only) | model=$MODEL | context=$CTX" >&2
 
 case "$MODEL" in
   gemini)
+    POLICY_TODAY="$(TZ=Asia/Seoul date +%Y-%m-%d)"
+    GEMINI_ENABLED="$(printf '%s' "${HARNESS_GEMINI_RED_TEAM_ENABLED:-}" | tr '[:upper:]' '[:lower:]')"
+    if [ "$POLICY_TODAY" \< "2026-07-01" ] || { [ "$GEMINI_ENABLED" != "1" ] && [ "$GEMINI_ENABLED" != "true" ] && [ "$GEMINI_ENABLED" != "yes" ] && [ "$GEMINI_ENABLED" != "on" ]; }; then
+      echo "✖ Gemini red-team is suspended until credit recovery is confirmed with HARNESS_GEMINI_RED_TEAM_ENABLED=true." >&2
+      exit 2
+    fi
     # --approval-mode plan = 전용 read-only 모드. context 는 stdin 으로(코드를 인자로 주면
     # Gemini 가 경로로 오인해 깨지는 이슈가 있어 stdin 권장).
     cat "$CTX" | gemini --approval-mode plan ${GEMINI_MODEL:+-m "$GEMINI_MODEL"} -p "$PROMPT"

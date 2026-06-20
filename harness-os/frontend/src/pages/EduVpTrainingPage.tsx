@@ -128,6 +128,7 @@ type CaseItem = {
   progress_pct: number
   case_label?: string
   flow_outline?: FlowItem[]
+  has_training_state?: boolean
 }
 
 const VP_TRAINING_CASE_STORAGE_KEY = 'vp_training_case_id'
@@ -879,14 +880,16 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
     setLoading(true)
     if (!options?.silentError) setError(null)
     try {
-      const url = new URL(`${apiBase}/api/edu/vp-training/session`)
-      url.searchParams.set('email', safeEmail)
-      if (targetCaseId != null) url.searchParams.set('case_id', String(targetCaseId))
-      const res = await fetch(url.toString(), { headers: trainingHeaders() })
+      const params = new URLSearchParams({ email: safeEmail })
+      if (targetCaseId != null) params.set('case_id', String(targetCaseId))
+      const res = await fetch(`${apiBase}/api/edu/vp-training/session?${params.toString()}`, { headers: trainingHeaders() })
       const { raw, data } = await readJsonSafe(res)
       const detail = typeof data.detail === 'string' ? data.detail : ''
       if (!res.ok) throw new Error(detail || raw || `HTTP ${res.status}`)
-      if (!data.exists) return false
+      if (!data.exists) {
+        if (targetCaseId != null && !options?.silentError) setError('이 케이스에는 복원 가능한 진행 기록이 없습니다.')
+        return false
+      }
       const nextCaseId = typeof data.case_id === 'number' ? data.case_id : Number(data.case_id)
       applyTrainingSession(safeEmail, nextCaseId, (data.training_state as TrainingState | null | undefined) || null)
       if (showCaseArchive) await loadCases(safeEmail, { silentError: true })
@@ -911,8 +914,9 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       let resolvedCaseId = restart ? null : (targetCaseId ?? caseId)
       if (!restart && resolvedCaseId == null) {
         const existingCases = await loadCases(safeEmail, { silentError: options?.silentError })
-        if (existingCases.length > 0) {
-          resolvedCaseId = existingCases[0].case_id
+        const restorableCase = existingCases.find((item) => item.has_training_state)
+        if (restorableCase) {
+          resolvedCaseId = restorableCase.case_id
         }
       }
       const res = await fetch(`${apiBase}/api/edu/vp-training/intake`, {
@@ -1056,26 +1060,44 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
     const activeCaseId = latestCaseIdRef.current
     if (!safeEmail || activeCaseId == null) return
     const payloadUiState = overrideUiState || latestUiStateRef.current
-    await fetch(`${apiBase}/api/edu/vp-training/session/sync`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...trainingHeaders() },
-      body: JSON.stringify({
-        case_id: activeCaseId,
-        email: safeEmail,
-        selected_stage: payloadUiState.selected_stage || selectedStage,
-        active_curriculum_index: payloadUiState.active_curriculum_index ?? activeCurriculumIndex,
-        show_case_archive: Boolean(payloadUiState.show_case_archive ?? showCaseArchive),
-        show_continue_from: payloadUiState.show_continue_from || '',
-        preferred_llm: payloadUiState.preferred_llm || preferredLlm,
-        current_device: payloadUiState.current_device || currentDevice,
-        desktop_os: payloadUiState.desktop_os || desktopOs,
-        stage_drafts: payloadUiState.stage_drafts || {},
-        client_seq: ++syncSeqRef.current,
-        event_type: eventType,
-        event_name: eventName,
-        event_payload: eventPayload || {},
-      }),
-    })
+    try {
+      const res = await fetch(`${apiBase}/api/edu/vp-training/session/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...trainingHeaders() },
+        body: JSON.stringify({
+          case_id: activeCaseId,
+          email: safeEmail,
+          selected_stage: payloadUiState.selected_stage || selectedStage,
+          active_curriculum_index: payloadUiState.active_curriculum_index ?? activeCurriculumIndex,
+          show_case_archive: Boolean(payloadUiState.show_case_archive ?? showCaseArchive),
+          show_continue_from: payloadUiState.show_continue_from || '',
+          preferred_llm: payloadUiState.preferred_llm || preferredLlm,
+          current_device: payloadUiState.current_device || currentDevice,
+          desktop_os: payloadUiState.desktop_os || desktopOs,
+          stage_drafts: payloadUiState.stage_drafts || {},
+          client_seq: ++syncSeqRef.current,
+          event_type: eventType,
+          event_name: eventName,
+          event_payload: eventPayload || {},
+        }),
+      })
+      const { data } = await readJsonSafe(res)
+      if (!res.ok) {
+        setError('진행 기록 저장에 실패했습니다. 새로고침하지 말고 잠시 후 다시 시도하세요.')
+        return
+      }
+      if (data.ignored_stale_sync && data.training_state) {
+        const nextCaseId = typeof data.case_id === 'number' ? data.case_id : Number(data.case_id)
+        const serverUiState = (data.ui_state || (data.training_state as TrainingState).ui_state || {}) as UiState
+        const serverSeq = Number(serverUiState.last_client_seq || 0)
+        if (Number.isFinite(nextCaseId) && latestCaseIdRef.current === nextCaseId && serverSeq >= syncSeqRef.current) {
+          applyTrainingSession(safeEmail, nextCaseId, data.training_state as TrainingState)
+        }
+      }
+    } catch {
+      setError('진행 기록 저장에 실패했습니다. 네트워크 상태를 확인하세요.')
+      return
+    }
   }
 
   function mergeUiState(patch: Partial<UiState>) {
@@ -1155,8 +1177,9 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       const resumed = await resumeTrainingSession(savedEmail, parsed != null && Number.isFinite(parsed) && parsed >= 0 ? parsed : null, { silentError: true })
       if (resumed) return
       const existingCases = await loadCases(savedEmail, { silentError: true })
-      if (existingCases.length > 0) {
-        await resumeTrainingSession(savedEmail, existingCases[0].case_id, { silentError: true })
+      for (const item of existingCases.filter((caseItem) => caseItem.has_training_state)) {
+        const fallbackResumed = await resumeTrainingSession(savedEmail, item.case_id, { silentError: true })
+        if (fallbackResumed) return
       }
     })()
   }, [])
@@ -1186,9 +1209,9 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       const resumed = await resumeTrainingSession(nextEmail, parsed != null && Number.isFinite(parsed) && parsed >= 0 ? parsed : null, { silentError: true })
       if (resumed) return
       const existingCases = await loadCases(nextEmail, { silentError: true })
-      if (existingCases.length > 0) {
-        await resumeTrainingSession(nextEmail, existingCases[0].case_id, { silentError: true })
-        return
+      for (const item of existingCases.filter((caseItem) => caseItem.has_training_state)) {
+        const fallbackResumed = await resumeTrainingSession(nextEmail, item.case_id, { silentError: true })
+        if (fallbackResumed) return
       }
       await buildTrainingSlice(undefined, false, nextEmail, { silentError: true })
     })()

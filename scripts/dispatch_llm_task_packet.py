@@ -4,9 +4,10 @@ import re
 import os
 import subprocess
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, ".")
 
@@ -20,6 +21,10 @@ PROVIDERS = {
     "claude": {
         "route": "agent_claude_strategy",
         "build_command": lambda prompt: [_find_cli("claude"), "-p", prompt],
+    },
+    "codex": {
+        "route": "agent_codex_review",
+        "build_command": lambda prompt: [_find_cli("codex"), "exec", "--skip-git-repo-check", "-s", "read-only", prompt],
     },
     "gemini": {
         "route": "agent_gemini_research",
@@ -47,6 +52,16 @@ def _slugify(text: str) -> str:
 
 def _timestamp() -> str:
     return datetime.now().strftime("%Y-%m-%d_%H%M%S")
+
+
+def _policy_today() -> date:
+    return datetime.now(ZoneInfo("Asia/Seoul")).date()
+
+
+def _gemini_red_team_enabled() -> bool:
+    if _policy_today() < date(2026, 7, 1):
+        return False
+    return os.getenv("HARNESS_GEMINI_RED_TEAM_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _task_prompt(packet: dict[str, Any], provider: str) -> str:
@@ -85,6 +100,12 @@ def dispatch_packet(packet: dict[str, Any], providers: list[str], output_dir: Pa
     ts = _timestamp()
     packet_path = output_dir / f"packet_{task_slug}_{ts}.json"
     _write_text(packet_path, json.dumps(packet, ensure_ascii=False, indent=2))
+
+    is_red_team = str(packet.get("task_kind") or "").lower() == "red_team"
+    if is_red_team and not _gemini_red_team_enabled():
+        providers = [provider for provider in providers if provider != "gemini"]
+    if is_red_team and len(set(providers)) < 2:
+        raise ValueError("red_team dispatch requires at least two non-Gemini providers through 2026-06-30")
 
     results: list[dict[str, Any]] = []
     for provider in providers:
@@ -167,9 +188,14 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     args = parser.parse_args()
 
-    providers = args.providers or ["claude", "gemini", "copilot"]
+    default_providers = ["claude", "gemini", "copilot"]
+    providers = args.providers or default_providers
     packet = build_packet(args)
-    result = dispatch_packet(packet, providers, args.output_dir, args.notify_route)
+    try:
+        result = dispatch_packet(packet, providers, args.output_dir, args.notify_route)
+    except ValueError as exc:
+        print(json.dumps({"status": "blocked", "reason": str(exc)}, ensure_ascii=False, indent=2))
+        return 2
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 

@@ -1,10 +1,12 @@
 import json
 import os
 import re
+import shutil
 import subprocess
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from core.approval import validate_approval, validate_decision
 from core.database import execute_query
@@ -19,6 +21,7 @@ PROVIDERS = {
     "codex": lambda prompt: [
         _find_cli("codex"), "exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "-C", str(PROJECT_ROOT), prompt
     ],
+    "copilot": lambda prompt: [_find_cli("copilot"), "-p", prompt, "--no-ask-user", "--silent"],
     "gemini": lambda prompt: [_find_cli("gemini"), "-p", prompt, "--skip-trust"],
 }
 
@@ -168,9 +171,10 @@ def _selected_providers() -> tuple[str, str]:
     if len(configured) >= 2:
         providers = configured[:2]
     elif Path(_find_cli("codex")).exists():
-        providers = ["codex", "gemini"]
+        providers = ["claude", "codex"]
     else:
-        providers = ["claude", "gemini"]
+        providers = ["claude", "copilot"]
+    providers = _without_suspended_gemini(providers, fallback=["claude", "codex", "copilot"])[:2]
 
     if len(set(providers)) != 2:
         raise ValueError("Red team requires two different providers")
@@ -182,17 +186,44 @@ def _selected_providers() -> tuple[str, str]:
 
 def _weekly_selected_providers() -> list[str]:
     configured = [item.strip() for item in os.getenv("HARNESS_WEEKLY_RED_TEAM_PROVIDERS", "").split(",") if item.strip()]
-    providers = configured or ["claude", "gemini", "codex"]
+    providers = configured or ["claude", "codex", "copilot"]
     unique = []
     for provider in providers:
         if provider not in unique:
             unique.append(provider)
+    unique = _without_suspended_gemini(unique, fallback=["claude", "codex", "copilot"])
     for provider in unique:
         if provider not in PROVIDERS:
             raise ValueError(f"Unsupported weekly red team provider: {provider}")
     if len(unique) < 3:
         raise ValueError("Weekly red team requires three distinct providers")
     return unique[:3]
+
+
+def _without_suspended_gemini(providers: list[str], fallback: list[str]) -> list[str]:
+    if _gemini_red_team_enabled():
+        return providers
+    selected = [provider for provider in providers if provider != "gemini" and _provider_available(provider)]
+    for provider in fallback:
+        if provider not in selected and _provider_available(provider):
+            selected.append(provider)
+    return selected
+
+
+def _policy_today() -> date:
+    return datetime.now(ZoneInfo("Asia/Seoul")).date()
+
+
+def _gemini_red_team_enabled() -> bool:
+    if _policy_today() < date(2026, 7, 1):
+        return False
+    return os.getenv("HARNESS_GEMINI_RED_TEAM_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _provider_available(provider: str) -> bool:
+    if provider not in PROVIDERS:
+        return False
+    return shutil.which(_find_cli(provider)) is not None or Path(_find_cli(provider)).exists()
 
 
 def _load_target(target_type: str, target_id: int) -> dict[str, Any]:

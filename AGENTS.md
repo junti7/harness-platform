@@ -254,11 +254,12 @@ Cross-LLM verification 의무:
 
 - Red Team review는 항상 *서로 다른 신뢰도 높은 LLM 최소 2개*로 수행한다.
 - 허용되는 조합 예: Claude + Gemini, Claude + GPT reasoning, Gemini + GPT reasoning.
+- Gemini API credit 0으로 인해 최소 2026-06-30까지 Gemini는 Red Team 자동/수동 호출 대상에서 제외한다. 2026-07-01 이후에도 `HARNESS_GEMINI_RED_TEAM_ENABLED=true`가 명시되기 전까지는 Gemini를 계속 제외한다. 이 기간의 기본 대체 조합은 Claude + Codex, CEO가 명시적으로 다중 검토를 요청한 경우 Claude + Codex + Copilot이다.
 - 동일 모델의 self-review나 반복 호출은 cross-verification으로 인정하지 않는다.
 - 두 모델이 충돌하면 third opinion (별도 reasoning model) 또는 인간(대표/부대표)에게 escalates 한다.
 - 검증 결과는 `red_team_clear` 또는 `red_team_block`으로 기록하고, 사용된 두 모델 이름과 prompt/output artifact path를 audit trail에 남긴다.
-- **정례 주간 red-team**은 예외 없이 Claude, Gemini, Codex 3개 모델을 사용한다.
-- 정례 주간 red-team의 기본 통과 기준은 **세 모델 중 최소 2개가 approve/clear** 하는 것이다.
+- 정례 주간 red-team은 자동 상시 게이트가 아니다. CEO가 명시적으로 주간 red-team을 요청한 경우에만 2026-06-30까지 Claude, Codex, Copilot 3개 모델을 사용한다.
+- CEO 요청으로 주간 red-team을 실행한 경우의 기본 통과 기준은 **세 모델 중 최소 2개가 approve/clear** 하는 것이다.
 - 한 모델이 block이어도 나머지 두 모델이 approve/clear이면 기본 verdict는 `red_team_clear`로 진행 가능하다.
 - 단, factual error, fabricated source, legal/regulatory risk, missing disclaimer 같은 non-negotiable finding은 2-of-3 다수결로 가볍게 무시하지 않는다. 이런 경우에는 대표 confirm 또는 추가 수정/재검토가 필요하다.
 - 일부 finding을 수용하지 않기로 할 경우, 대표의 `confirm`이 필요하며 rejected issue, rationale, residual risk를 memo에 남긴다.
@@ -267,8 +268,8 @@ Scope by artifact:
 
 | Artifact | Required Cross-LLM Pair (minimum) |
 | --- | --- |
-| Code change (Codex output) | Claude + (Gemini or GPT reasoning) |
-| MD doc revision | Claude + Gemini |
+| Code change (Codex output) | Claude + (Codex or Copilot; Gemini excluded through 2026-06-30) |
+| MD doc revision | Claude + Codex or Copilot through 2026-06-30; Gemini may resume after credit recovery |
 | Strategy/Investment memo | Claude + GPT reasoning |
 | Marketing copy / paid offer | Claude + GPT reasoning |
 | Legal review (advisory) | Legal Counsel + Red Team second view |
@@ -801,9 +802,9 @@ Pre-conditions for high-impact approvals:
 | **트레이딩 `capital_action_approve`** | 위 조건 전체 + **`turtle_gate_clear`** (또는 `turtle_gate_block` + `trading_turtle_override`) |
 | Multi-language publish | `qa_clear` (cross-LLM verified) + `legal_review_approve` per jurisdiction |
 
-정례 주간 red-team의 경우:
+CEO가 명시적으로 정례/주간 red-team을 요청한 경우:
 
-- `red_team_clear`는 Claude, Gemini, Codex 3개 중 **최소 2개 모델이 approve/clear** 하면 기본적으로 인정한다.
+- `red_team_clear`는 2026-06-30까지 Claude, Codex, Copilot 3개 중 **최소 2개 모델이 approve/clear** 하면 기본적으로 인정한다.
 - 세 모델 중 일부 이슈를 대표가 기각하고 진행하는 경우, status는 내부 memo상 `conditional_proceed`로 표기하고 대표 confirm 근거를 남긴다.
 
 ---
