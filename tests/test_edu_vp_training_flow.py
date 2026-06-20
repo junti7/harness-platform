@@ -37,6 +37,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("Week 0", card["title"])
         self.assertIn("Claude", card["required_action"])
         self.assertEqual(len(card["checklist"]), 4)
+        self.assertEqual(len(card["sample_materials"]), 1)
+        self.assertEqual(card["sample_materials"][0]["kit_id"], "week0-first-login-starter")
         self.assertEqual(card["blocked_step_options"], ["open_tool", "login_ok", "first_prompt", "copy_result"])
 
     def test_week1_contains_rag_lineage_and_evidence_cards(self):
@@ -68,12 +70,24 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertFalse(card["fallback_used"])
         self.assertTrue(card["external_reuse_safe"])
         self.assertEqual(len(card["evidence_cards"]), 1)
+        self.assertEqual(len(card["sample_materials"]), 4)
         self.assertIn("직접 AI를 써봐야", card["evidence_cards"][0]["title"])
         mocked_bundle.assert_called_once()
         args, kwargs = mocked_bundle.call_args
         self.assertIn("직장인 초보 AI 첫 사용", args[0])
         self.assertEqual(args[1], "worker")
         self.assertEqual(kwargs["k"], 4)
+
+    def test_material_zip_contains_expected_files(self):
+        filename, payload = self.mod._edu_vp_material_zip_bytes("week1-reply-kit")
+        self.assertEqual(filename, "week1-reply-kit.zip")
+        import zipfile
+        from io import BytesIO
+
+        with zipfile.ZipFile(BytesIO(payload)) as zf:
+            names = set(zf.namelist())
+        self.assertIn("01_받은메시지.txt", names)
+        self.assertIn("03_AI에게붙여넣을프롬프트.txt", names)
 
 
 if __name__ == "__main__":

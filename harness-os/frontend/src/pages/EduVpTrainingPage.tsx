@@ -10,6 +10,7 @@ type TrainingStage = {
   required_action?: string
   proof_artifact_hint?: string
   pass_fail_rubric?: string[]
+  sample_materials?: Array<{ kit_id: string; title: string; description: string; files: string[]; download_url: string }>
   blocked_step_options?: string[]
   checklist?: Array<{ id: string; title: string; instruction: string; success_signal: string }>
   practice_prompt_template?: string
@@ -23,6 +24,15 @@ type TrainingStage = {
   blocked_at_step?: string
   notes?: string
   completed?: boolean
+  vp_feedback?: {
+    empathy_score?: number
+    clarity_score?: number
+    motivation_score?: number
+    jargon_flag?: boolean
+    biggest_blocker?: string
+    freeform_feedback?: string
+    submitted_at?: string
+  }
 }
 
 type TrainingState = {
@@ -61,18 +71,48 @@ function StageCard({
   stage,
   stageKey,
   onSave,
+  onSaveFeedback,
   saving,
+  feedbackSaving,
+  apiBase,
+  authHeaders,
 }: {
   title: string
   stage: TrainingStage | undefined
   stageKey: 'week0' | 'week1'
   onSave: (stageKey: 'week0' | 'week1', payload: { proof_artifact: string; blocked_at_step: string; notes: string; completed: boolean }) => void
+  onSaveFeedback: (stageKey: 'week0' | 'week1', payload: { empathy_score: number; clarity_score: number; motivation_score: number; jargon_flag: boolean; biggest_blocker: string; freeform_feedback: string }) => void
   saving: boolean
+  feedbackSaving: boolean
+  apiBase: string
+  authHeaders: () => Record<string, string>
 }) {
   const [proof, setProof] = useState(stage?.proof_artifact || '')
   const [blocked, setBlocked] = useState(stage?.blocked_at_step || '')
   const [notes, setNotes] = useState(stage?.notes || '')
   const [completed, setCompleted] = useState(Boolean(stage?.completed))
+  const [empathyScore, setEmpathyScore] = useState(stage?.vp_feedback?.empathy_score || 3)
+  const [clarityScore, setClarityScore] = useState(stage?.vp_feedback?.clarity_score || 3)
+  const [motivationScore, setMotivationScore] = useState(stage?.vp_feedback?.motivation_score || 3)
+  const [jargonFlag, setJargonFlag] = useState(Boolean(stage?.vp_feedback?.jargon_flag))
+  const [biggestBlocker, setBiggestBlocker] = useState(stage?.vp_feedback?.biggest_blocker || '')
+  const [freeformFeedback, setFreeformFeedback] = useState(stage?.vp_feedback?.freeform_feedback || '')
+
+  async function downloadKit(downloadUrl: string, kitId: string) {
+    const res = await fetch(`${apiBase}${downloadUrl}`, {
+      headers: { ...authHeaders() },
+    })
+    if (!res.ok) throw new Error(`material download failed: ${res.status}`)
+    const blob = await res.blob()
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${kitId}.zip`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
+  }
 
   return (
     <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 18, padding: 18, display: 'grid', gap: 14 }}>
@@ -105,6 +145,28 @@ function StageCard({
         <div style={{ background: '#fefce8', border: `1px solid ${C.warn}`, borderRadius: 14, padding: 14 }}>
           <div style={{ fontSize: '.74rem', color: C.warn, fontWeight: 800, marginBottom: 6 }}>바로 써볼 프롬프트</div>
           <div style={{ fontSize: '.92rem', lineHeight: 1.6, color: C.ink, whiteSpace: 'pre-wrap' }}>{stage.practice_prompt_template}</div>
+        </div>
+      )}
+
+      {!!stage?.sample_materials?.length && (
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ fontSize: '.86rem', color: C.muted, fontWeight: 800 }}>실전 교보재</div>
+          {stage.sample_materials.map((item) => (
+            <div key={item.kit_id} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, display: 'grid', gap: 8 }}>
+              <div style={{ fontWeight: 800, color: C.ink }}>{item.title}</div>
+              <div style={{ color: C.muted, fontSize: '.9rem', lineHeight: 1.55 }}>{item.description}</div>
+              <div style={{ color: C.faint, fontSize: '.8rem', lineHeight: 1.5 }}>포함 파일: {item.files.join(', ')}</div>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => void downloadKit(item.download_url, item.kit_id)}
+                  style={{ display: 'inline-block', background: C.accent, color: '#fff', textDecoration: 'none', borderRadius: 12, padding: '10px 12px', fontSize: '.88rem', fontWeight: 800 }}
+                >
+                  샘플 파일 내려받기
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -199,6 +261,50 @@ function StageCard({
           {saving ? '저장 중…' : '이 단계 저장'}
         </button>
       </div>
+
+      <div style={{ display: 'grid', gap: 10, background: '#f8fafc', border: `1px solid ${C.border}`, borderRadius: 14, padding: 14 }}>
+        <div style={{ fontSize: '.86rem', color: C.muted, fontWeight: 800 }}>VP 피드백 메뉴</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ fontSize: '.82rem', color: C.muted, fontWeight: 700 }}>공감도</span>
+            <select value={empathyScore} onChange={(e) => setEmpathyScore(Number(e.target.value))} style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 10, background: C.surface }}>
+              {[1, 2, 3, 4, 5].map((score) => <option key={score} value={score}>{score}</option>)}
+            </select>
+          </label>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ fontSize: '.82rem', color: C.muted, fontWeight: 700 }}>명확성</span>
+            <select value={clarityScore} onChange={(e) => setClarityScore(Number(e.target.value))} style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 10, background: C.surface }}>
+              {[1, 2, 3, 4, 5].map((score) => <option key={score} value={score}>{score}</option>)}
+            </select>
+          </label>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ fontSize: '.82rem', color: C.muted, fontWeight: 700 }}>학습욕구</span>
+            <select value={motivationScore} onChange={(e) => setMotivationScore(Number(e.target.value))} style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 10, background: C.surface }}>
+              {[1, 2, 3, 4, 5].map((score) => <option key={score} value={score}>{score}</option>)}
+            </select>
+          </label>
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.ink, fontSize: '.9rem', fontWeight: 700 }}>
+          <input type="checkbox" checked={jargonFlag} onChange={(e) => setJargonFlag(e.target.checked)} />
+          영어/전문용어가 많아서 거슬렸다
+        </label>
+        <label style={{ display: 'grid', gap: 6 }}>
+          <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>가장 크게 막힌 지점</span>
+          <input value={biggestBlocker} onChange={(e) => setBiggestBlocker(e.target.value)} placeholder="예: 파일을 어디서 열어야 하는지 모르겠음" style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }} />
+        </label>
+        <label style={{ display: 'grid', gap: 6 }}>
+          <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>자유 피드백</span>
+          <textarea value={freeformFeedback} onChange={(e) => setFreeformFeedback(e.target.value)} rows={4} placeholder="어디가 좋았는지, 어디가 허세처럼 느껴졌는지, 무엇을 더 바꾸면 좋을지 적으세요." style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.92rem', lineHeight: 1.5, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+        </label>
+        <button
+          onClick={() => onSaveFeedback(stageKey, { empathy_score: empathyScore, clarity_score: clarityScore, motivation_score: motivationScore, jargon_flag: jargonFlag, biggest_blocker: biggestBlocker, freeform_feedback: freeformFeedback })}
+          disabled={feedbackSaving}
+          style={{ background: feedbackSaving ? C.border : '#0f766e', color: '#fff', border: 'none', borderRadius: 14, padding: '13px 16px', fontSize: '.95rem', fontWeight: 800, cursor: feedbackSaving ? 'wait' : 'pointer' }}
+        >
+          {feedbackSaving ? '피드백 저장 중…' : 'VP 피드백 저장'}
+        </button>
+        {stage?.vp_feedback?.submitted_at && <div style={{ fontSize: '.8rem', color: C.faint }}>최근 저장: {stage.vp_feedback.submitted_at}</div>}
+      </div>
     </section>
   )
 }
@@ -215,6 +321,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
   const [forceNew, setForceNew] = useState(true)
   const [loading, setLoading] = useState(false)
   const [savingStage, setSavingStage] = useState<'week0' | 'week1' | null>(null)
+  const [savingFeedbackStage, setSavingFeedbackStage] = useState<'week0' | 'week1' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [caseId, setCaseId] = useState<number | null>(null)
   const [trainingState, setTrainingState] = useState<TrainingState | null>(null)
@@ -271,6 +378,26 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
       setError(err instanceof Error ? err.message : 'stage save failed')
     } finally {
       setSavingStage(null)
+    }
+  }
+
+  async function saveFeedback(stage: 'week0' | 'week1', payload: { empathy_score: number; clarity_score: number; motivation_score: number; jargon_flag: boolean; biggest_blocker: string; freeform_feedback: string }) {
+    if (!caseId) return
+    setSavingFeedbackStage(stage)
+    setError(null)
+    try {
+      const res = await fetch(`${apiBase}/api/edu/vp-training/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ case_id: caseId, stage, ...payload }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
+      setTrainingState(data.training_state || null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'feedback save failed')
+    } finally {
+      setSavingFeedbackStage(null)
     }
   }
 
@@ -380,8 +507,8 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
           </section>
 
           <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
-            <StageCard title="Week 0" stage={trainingState.week0} stageKey="week0" onSave={saveStage} saving={savingStage === 'week0'} />
-            <StageCard title="Week 1" stage={trainingState.week1} stageKey="week1" onSave={saveStage} saving={savingStage === 'week1'} />
+            <StageCard title="Week 0" stage={trainingState.week0} stageKey="week0" onSave={saveStage} onSaveFeedback={saveFeedback} saving={savingStage === 'week0'} feedbackSaving={savingFeedbackStage === 'week0'} apiBase={apiBase} authHeaders={authHeaders} />
+            <StageCard title="Week 1" stage={trainingState.week1} stageKey="week1" onSave={saveStage} onSaveFeedback={saveFeedback} saving={savingStage === 'week1'} feedbackSaving={savingFeedbackStage === 'week1'} apiBase={apiBase} authHeaders={authHeaders} />
           </div>
         </div>
       )}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import logging
 import os
@@ -10,6 +11,7 @@ import sys
 import shlex
 import threading
 import time
+import zipfile
 import html
 import subprocess
 import shutil
@@ -5844,6 +5846,17 @@ class EduVpTrainingArtifactRequest(BaseModel):
     completed: bool = False
 
 
+class EduVpTrainingFeedbackRequest(BaseModel):
+    case_id: int
+    stage: str = "week0"
+    empathy_score: int = 0
+    clarity_score: int = 0
+    motivation_score: int = 0
+    jargon_flag: bool = False
+    biggest_blocker: str = ""
+    freeform_feedback: str = ""
+
+
 def _edu_normalize_email(email: str) -> str:
     return (email or "").strip().lower()
 
@@ -6946,6 +6959,61 @@ def _edu_vp_device_label(value: str) -> str:
     }.get(normalized, value or "기기")
 
 
+def _edu_vp_material_kit(*, kit_id: str, title: str, description: str, files: list[str]) -> dict[str, Any]:
+    return {
+        "kit_id": kit_id,
+        "title": title,
+        "description": description,
+        "files": files,
+        "download_url": f"/api/edu/vp-training/materials/{kit_id}",
+    }
+
+
+def _edu_vp_week0_materials(llm_label: str) -> list[dict[str, Any]]:
+    return [
+        _edu_vp_material_kit(
+            kit_id="week0-first-login-starter",
+            title="Week 0 스타터팩",
+            description=f"{llm_label}를 처음 켜는 사람도 그대로 따라 할 수 있는 첫 연습 파일 묶음입니다.",
+            files=[
+                "00_README_먼저_여세요.md",
+                "01_첫질문_복붙용.txt",
+                "02_성공예시_설명.txt",
+                "03_결과복사용_빈메모.txt",
+            ],
+        )
+    ]
+
+
+def _edu_vp_week1_materials(llm_label: str) -> list[dict[str, Any]]:
+    return [
+        _edu_vp_material_kit(
+            kit_id="week1-reply-kit",
+            title="답장 쓰기 실전팩",
+            description=f"{llm_label}에게 답장 초안을 맡기는 연습용 샘플입니다.",
+            files=["00_README_답장실전팩.md", "01_받은메시지.txt", "02_원하는답장조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
+        ),
+        _edu_vp_material_kit(
+            kit_id="week1-meeting-notes-kit",
+            title="회의 메모 정리 실전팩",
+            description="지저분한 메모를 읽기 쉬운 정리본으로 바꾸는 연습용 샘플입니다.",
+            files=["00_README_회의메모실전팩.md", "01_원본메모.txt", "02_정리조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
+        ),
+        _edu_vp_material_kit(
+            kit_id="week1-report-draft-kit",
+            title="보고 초안 만들기 실전팩",
+            description="짧은 사실 메모를 CEO 보고 초안으로 바꾸는 연습용 샘플입니다.",
+            files=["00_README_보고초안실전팩.md", "01_원재료메모.txt", "02_보고서조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
+        ),
+        _edu_vp_material_kit(
+            kit_id="week1-family-schedule-kit",
+            title="가족 일정 정리 실전팩",
+            description="흩어진 일정 메모를 한눈에 보이는 정리표로 바꾸는 연습용 샘플입니다.",
+            files=["00_README_가족일정실전팩.md", "01_흩어진일정메모.txt", "02_정리조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
+        ),
+    ]
+
+
 def _edu_vp_build_week0(intake: dict[str, Any]) -> dict[str, Any]:
     llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or "claude"))
     current_device = _edu_vp_device_label(str(intake.get("current_device") or "iphone"))
@@ -6982,6 +7050,7 @@ def _edu_vp_build_week0(intake: dict[str, Any]) -> dict[str, Any]:
         "title": "Week 0 · 환경 열기와 첫 성공",
         "required_action": f"{llm_label}를 실제로 열고, 본인 고민을 한 문장으로 입력해 첫 답변 1개를 받는다.",
         "proof_artifact_hint": "AI가 답한 첫 문장 1개 또는 본인이 복사한 결과 1개를 붙여 넣으세요.",
+        "sample_materials": _edu_vp_week0_materials(llm_label),
         "pass_fail_rubric": [
             "앱/브라우저를 실제로 열었다",
             "로그인 상태를 확인했다",
@@ -7023,6 +7092,7 @@ def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
             "본인이 직접 문장을 다시 고쳤다",
             "전/후 결과를 남겼다",
         ],
+        "sample_materials": _edu_vp_week1_materials(llm_label),
         "blocked_step_options": ["pick_scene", "ask_ai", "rewrite", "save_output"],
         "practice_prompt_template": f"지금 제일 부담되는 장면은 '{friction}'입니다. {goal}에 맞게, 초등학생도 이해할 수 있을 만큼 쉬운 한국어로 오늘 바로 쓸 초안 1개만 적어줘.",
         "evidence_bundle_id": f"vp-week1-{hashlib.sha1(query.encode('utf-8')).hexdigest()[:10]}",
@@ -8913,6 +8983,93 @@ def edu_vp_training_artifact(
         "case_id": case_id,
         "training_state": state,
     }
+
+
+@app.post("/api/edu/vp-training/feedback")
+def edu_vp_training_feedback(
+    req: EduVpTrainingFeedbackRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    case_id = int(req.case_id)
+    payload = _edu_load_case_payload(case_id)
+    state = _edu_vp_load_state(case_id) or _edu_vp_state_default(case_id, payload["customer"], payload["case"])
+    stage = req.stage if req.stage in {"week0", "week1"} else "week0"
+    section = dict(state.get(stage) or {})
+    section["vp_feedback"] = {
+        "empathy_score": max(1, min(5, int(req.empathy_score or 1))),
+        "clarity_score": max(1, min(5, int(req.clarity_score or 1))),
+        "motivation_score": max(1, min(5, int(req.motivation_score or 1))),
+        "jargon_flag": bool(req.jargon_flag),
+        "biggest_blocker": (req.biggest_blocker or "").strip(),
+        "freeform_feedback": (req.freeform_feedback or "").strip(),
+        "submitted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    state[stage] = section
+    state["customer"] = payload["customer"]
+    state["case"] = payload["case"]
+    state["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    _edu_vp_store_state(case_id, state)
+    return {"ok": True, "case_id": case_id, "training_state": state}
+
+
+def _edu_vp_material_zip_bytes(kit_id: str) -> tuple[str, bytes]:
+    bundles: dict[str, dict[str, str]] = {
+        "week0-first-login-starter": {
+            "00_README_먼저_여세요.md": "# Week 0 스타터팩\n\n이 묶음은 PC나 Mac이 낯선 사람을 위한 첫 연습 파일입니다.\n1. `01_첫질문_복붙용.txt`를 연다.\n2. 문장을 복사한다.\n3. AI 창에 붙여 넣는다.\n4. 나온 답 한 문장을 `03_결과복사용_빈메모.txt`에 붙여 넣는다.\n",
+            "01_첫질문_복붙용.txt": "나는 AI가 아직 낯설어. 오늘 처음 써보는 사람처럼 아주 쉬운 한국어로, 내가 지금 무엇을 하면 되는지 3줄만 알려줘.",
+            "02_성공예시_설명.txt": "성공 예시: 입력창이 보이고, 내 질문 아래에 AI 답변이 3~5줄 정도 뜬 상태.",
+            "03_결과복사용_빈메모.txt": "여기에 AI가 준 첫 답변 중 마음에 든 문장 1개를 붙여 넣으세요.\n",
+        },
+        "week1-reply-kit": {
+            "00_README_답장실전팩.md": "# 답장 쓰기 실전팩\n\n상대방 메시지에 부드럽고 짧게 답장하는 연습입니다.",
+            "01_받은메시지.txt": "안녕하세요. 내일 오전 회의 전에 지난주 요청드린 숫자 업데이트를 간단히 공유해주실 수 있을까요? 가능하시면 10시 전까지 부탁드립니다.",
+            "02_원하는답장조건.txt": "조건: 1) 공손한 한국어 2) 너무 길지 않게 3) 오늘 오후까지 보내겠다고 약속 4) 부담스러운 영어 표현 금지",
+            "03_AI에게붙여넣을프롬프트.txt": "아래 메시지에 대한 답장을 아주 쉬운 한국어로 1개 써줘. 너무 길지 않게, 공손하게, 오늘 오후까지 전달하겠다는 말이 꼭 들어가게 해줘.\n\n[받은 메시지]\n안녕하세요. 내일 오전 회의 전에 지난주 요청드린 숫자 업데이트를 간단히 공유해주실 수 있을까요? 가능하시면 10시 전까지 부탁드립니다.",
+            "04_좋은결과예시.txt": "안녕하세요. 말씀 주신 숫자 업데이트는 오늘 오후까지 정리해서 먼저 공유드리겠습니다. 내일 회의 전에 보실 수 있도록 준비해두겠습니다. 감사합니다.",
+        },
+        "week1-meeting-notes-kit": {
+            "00_README_회의메모실전팩.md": "# 회의 메모 정리 실전팩\n\n지저분한 메모를 '해야 할 일 / 결정된 일 / 확인할 일'로 나누는 연습입니다.",
+            "01_원본메모.txt": "광고 예산 이번주 안에 다시 보기, 디자인 시안 2개 중 B쪽 선호, 고객 인터뷰는 3명 더 필요, 다음 회의 금요일 오전 가능?",
+            "02_정리조건.txt": "조건: 1) 초등학생도 읽을 수 있을 만큼 쉬운 한국어 2) 해야 할 일 / 결정된 일 / 확인할 일 3칸으로 정리",
+            "03_AI에게붙여넣을프롬프트.txt": "아래 메모를 아주 쉬운 한국어로 정리해줘. 표처럼 보이게, '해야 할 일 / 결정된 일 / 확인할 일' 3칸으로 나눠줘.\n\n광고 예산 이번주 안에 다시 보기, 디자인 시안 2개 중 B쪽 선호, 고객 인터뷰는 3명 더 필요, 다음 회의 금요일 오전 가능?",
+            "04_좋은결과예시.txt": "해야 할 일: 광고 예산 다시 보기, 고객 인터뷰 3명 더 잡기\n결정된 일: 디자인 시안은 B안 선호\n확인할 일: 다음 회의를 금요일 오전에 할 수 있는지 확인",
+        },
+        "week1-report-draft-kit": {
+            "00_README_보고초안실전팩.md": "# 보고 초안 실전팩\n\n짧은 메모를 CEO가 바로 읽을 수 있는 3문장 보고로 바꾸는 연습입니다.",
+            "01_원재료메모.txt": "어제 문의 5건 들어옴. 그중 3건은 가격 질문. 2건은 설치가 어렵다는 말. 오늘은 설치 안내를 더 쉽게 바꿔볼 필요 있음.",
+            "02_보고서조건.txt": "조건: 1) 3문장만 2) 첫 문장은 사실 3) 둘째 문장은 의미 4) 셋째 문장은 다음 행동",
+            "03_AI에게붙여넣을프롬프트.txt": "아래 메모를 CEO에게 보내는 3문장 보고 초안으로 바꿔줘. 쉬운 한국어로만 써줘.\n\n어제 문의 5건 들어옴. 그중 3건은 가격 질문. 2건은 설치가 어렵다는 말. 오늘은 설치 안내를 더 쉽게 바꿔볼 필요 있음.",
+            "04_좋은결과예시.txt": "어제 고객 문의는 총 5건 들어왔고, 그중 3건은 가격 관련 질문이었습니다. 설치가 어렵다는 반응도 2건 있어 초기 사용 구간의 설명이 아직 부족하다는 뜻으로 보입니다. 오늘은 설치 안내 문구를 더 쉽게 바꾼 뒤 다시 반응을 확인하겠습니다.",
+        },
+        "week1-family-schedule-kit": {
+            "00_README_가족일정실전팩.md": "# 가족 일정 정리 실전팩\n\n흩어진 메모를 한눈에 보이는 일정표로 바꾸는 연습입니다.",
+            "01_흩어진일정메모.txt": "월 3시 치과, 화 준비물 제출, 수 7시 학원 상담, 금 도시락, 토 오전 가족모임",
+            "02_정리조건.txt": "조건: 1) 요일 순서대로 2) 빠뜨리기 쉬운 준비물은 따로 표시 3) 아주 쉬운 한국어",
+            "03_AI에게붙여넣을프롬프트.txt": "아래 일정을 요일 순서대로 정리해줘. 빠뜨리기 쉬운 준비물은 따로 표시해줘. 아주 쉬운 한국어로 써줘.\n\n월 3시 치과, 화 준비물 제출, 수 7시 학원 상담, 금 도시락, 토 오전 가족모임",
+            "04_좋은결과예시.txt": "월요일: 오후 3시 치과\n화요일: 준비물 제출 (준비물 미리 챙기기)\n수요일: 오후 7시 학원 상담\n금요일: 도시락 준비\n토요일: 오전 가족모임",
+        },
+    }
+    files = bundles.get(kit_id)
+    if not files:
+        raise HTTPException(status_code=404, detail="material kit not found")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for filename, content in files.items():
+            zf.writestr(filename, content)
+    return f"{kit_id}.zip", buf.getvalue()
+
+
+@app.get("/api/edu/vp-training/materials/{kit_id}")
+def edu_vp_training_materials_download(
+    kit_id: str,
+    _: None = Depends(_require_secret),
+) -> Response:
+    filename, payload = _edu_vp_material_zip_bytes(kit_id)
+    return Response(
+        content=payload,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/api/public/edu/resume")
