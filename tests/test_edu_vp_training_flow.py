@@ -41,6 +41,18 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(card["sample_materials"][0]["kit_id"], "week0-first-login-starter")
         self.assertEqual(card["blocked_step_options"], ["open_tool", "login_ok", "first_prompt", "copy_result"])
 
+    def test_persona_library_is_locked_until_core_track_completion(self):
+        locked = self.mod._edu_vp_persona_library(50)
+        unlocked = self.mod._edu_vp_persona_library(100)
+        self.assertFalse(locked["unlocked"])
+        self.assertTrue(unlocked["unlocked"])
+        labels = [item["label"] for item in unlocked["personas"]]
+        self.assertIn("직장인", labels)
+        self.assertIn("군인", labels)
+        self.assertIn("학생", labels)
+        self.assertIn("간호사", labels)
+        self.assertGreaterEqual(len(labels), 20)
+
     def test_week1_contains_rag_lineage_and_evidence_cards(self):
         fake_bundle = {
             "mode": "db_customer_facing",
@@ -64,7 +76,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             )
 
         self.assertIn("Claude", card["required_action"])
-        self.assertIn("답장 쓰기/회의 메모 정리/보고 초안 만들기/가족 일정 정리", card["required_action"])
+        self.assertIn("학원 일정 정리/학교 공지 요약/가정통신문 정리/병원 예약 정리/엄마모임과 가족모임 충돌 정리", card["required_action"])
         self.assertEqual(card["retrieval_mode"], "db_customer_facing")
         self.assertTrue(card["customer_facing_safe"])
         self.assertFalse(card["fallback_used"])
@@ -73,16 +85,21 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(len(card["sample_materials"]), 4)
         self.assertGreaterEqual(len(card["scenario_bank"]), 10)
         self.assertIn("학교 준비물 공지 정리", [item["title"] for item in card["scenario_bank"]])
+        self.assertGreaterEqual(len(card["home_life_recommended_learning"]), 1)
         self.assertIn("직접 AI를 써봐야", card["evidence_cards"][0]["title"])
-        self.assertEqual(mocked_bundle.call_count, 2)
+        self.assertEqual(mocked_bundle.call_count, 3)
         first_args, first_kwargs = mocked_bundle.call_args_list[0]
         second_args, second_kwargs = mocked_bundle.call_args_list[1]
-        self.assertIn("직장인 초보 AI 첫 사용", first_args[0])
-        self.assertEqual(first_args[1], "worker")
+        third_args, third_kwargs = mocked_bundle.call_args_list[2]
+        self.assertIn("학원 일정 학교 공지 가정통신문", first_args[0])
+        self.assertEqual(first_args[1], "parent")
         self.assertEqual(first_kwargs["k"], 4)
         self.assertIn("답장 회의메모 보고초안 일정정리", second_args[0])
         self.assertEqual(second_args[1], "worker")
         self.assertEqual(second_kwargs["k"], 4)
+        self.assertIn("네이버 맘카페 학원 일정", third_args[0])
+        self.assertEqual(third_args[1], "parent")
+        self.assertEqual(third_kwargs["k"], 6)
 
     def test_material_zip_contains_expected_files(self):
         filename, payload = self.mod._edu_vp_material_zip_bytes("week1-reply-kit")

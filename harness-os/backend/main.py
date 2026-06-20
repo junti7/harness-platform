@@ -6886,6 +6886,7 @@ def _edu_vp_state_default(case_id: int, customer: dict[str, Any], case_meta: dic
         "version": "week0-week1-v1",
         "phase_scope": "week0_week1",
         "track": "beginner_practice",
+        "active_persona": "homemaker_parent",
         "program_objective": "VP를 생활형 AI 초보 상태에서 출발시켜, 장기적으로 CEO 수준의 AI handling에 가까워지게 만든다.",
         "case_id": case_id,
         "customer": customer,
@@ -6982,6 +6983,46 @@ def _edu_vp_stage_progress(stage: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _edu_vp_persona_library(progress_pct: int) -> dict[str, Any]:
+    unlocked = progress_pct >= 100
+    personas = [
+        {"key": "office_worker", "label": "직장인", "group": "work", "description": "메일, 보고, 회의, 일정, 협업 중심"},
+        {"key": "soldier", "label": "군인", "group": "public_service", "description": "보고체계, 일정통제, 생활관 규율, 장비관리 중심"},
+        {"key": "student", "label": "학생", "group": "education", "description": "과제, 시험, 발표, 학교생활 중심"},
+        {"key": "job_seeker", "label": "취업준비생", "group": "career", "description": "자소서, 면접, 공고정리 중심"},
+        {"key": "teacher", "label": "교사", "group": "education", "description": "학급공지, 상담기록, 수업준비 중심"},
+        {"key": "professor", "label": "교수/강사", "group": "education", "description": "강의자료, 연구, 학생응대 중심"},
+        {"key": "nurse", "label": "간호사", "group": "healthcare", "description": "교대근무, 전달사항, 보호자응대 중심"},
+        {"key": "doctor", "label": "의사", "group": "healthcare", "description": "진료메모, 설명자료, 일정정리 중심"},
+        {"key": "care_worker", "label": "돌봄노동자", "group": "care", "description": "아동·노인 돌봄, 전달사항, 일정정리 중심"},
+        {"key": "small_business_owner", "label": "자영업자", "group": "business", "description": "고객응대, 매출관리, 재고, 홍보 중심"},
+        {"key": "retail_staff", "label": "판매직", "group": "service", "description": "고객응대, 재고, 교대메모 중심"},
+        {"key": "call_center_staff", "label": "상담직", "group": "service", "description": "문의응대, 스크립트, 민원정리 중심"},
+        {"key": "civil_servant", "label": "공무원", "group": "public_service", "description": "민원, 문서, 일정, 보고 중심"},
+        {"key": "factory_worker", "label": "생산직", "group": "operations", "description": "교대인수인계, 안전체크, 작업기록 중심"},
+        {"key": "driver", "label": "운전/배송직", "group": "operations", "description": "동선, 일정, 고객연락 중심"},
+        {"key": "freelancer", "label": "프리랜서", "group": "work", "description": "클라이언트응대, 견적, 일정, 자료정리 중심"},
+        {"key": "creator", "label": "크리에이터", "group": "creative", "description": "아이디어, 대본, 업로드계획 중심"},
+        {"key": "elderly_beginner", "label": "시니어 초보자", "group": "life", "description": "생활정보, 병원, 가족연락 중심"},
+        {"key": "newlywed", "label": "신혼부부", "group": "life", "description": "살림, 예산, 일정조율 중심"},
+        {"key": "single_parent", "label": "한부모 가정", "group": "life", "description": "아이 일정과 생계 일정 동시 관리 중심"},
+        {"key": "multicultural_family", "label": "다문화가정", "group": "life", "description": "번역, 학교소통, 생활행정 중심"},
+        {"key": "disabled_person", "label": "장애인 당사자", "group": "life", "description": "접근성, 병원, 행정, 이동 지원 중심"},
+        {"key": "guardian_of_disabled_child", "label": "장애아 보호자", "group": "care", "description": "치료, 학교, 행정, 돌봄 조율 중심"},
+        {"key": "entrepreneur", "label": "창업가", "group": "business", "description": "피치, 고객발굴, 운영, 채용 중심"},
+        {"key": "lawyer", "label": "법률직", "group": "professional", "description": "의견서, 일정, 쟁점정리 중심"},
+        {"key": "accountant", "label": "회계/세무직", "group": "professional", "description": "자료정리, 마감, 고객응대 중심"},
+        {"key": "researcher", "label": "연구자", "group": "professional", "description": "논문, 실험메모, 문헌정리 중심"},
+    ]
+    return {
+        "core_persona": "homemaker_parent",
+        "core_label": "주부/학부모",
+        "unlocked": unlocked,
+        "unlock_rule": "주부/학부모 core track 100% 완료 후 추가 페르소나 학습 오픈",
+        "personas": personas,
+    }
+
+
 def _edu_vp_tutorial_steps(stage_key: str, intake: dict[str, Any]) -> list[dict[str, Any]]:
     llm = _edu_vp_llm_label(str(intake.get("preferred_llm") or "gpt"))
     mobile = _edu_vp_device_label(str(intake.get("current_device") or "android"))
@@ -7006,7 +7047,7 @@ def _edu_vp_tutorial_steps(stage_key: str, intake: dict[str, Any]) -> list[dict[
             {"id": "handoff", "title": "모바일 → PC/Mac 이어하기", "body": "모바일에서 본 답변과 같은 내용을 PC/Mac에서 다시 열어본다. 같은 계정이면 대화가 이어지는지 확인한다."},
         ]
     return [
-        {"id": "mobile_scene", "title": f"{mobile}에서 장면 고르기", "body": "답장 쓰기, 회의 메모, 보고 초안, 가족 일정 중 오늘 가장 급한 1개를 고른다."},
+        {"id": "mobile_scene", "title": f"{mobile}에서 장면 고르기", "body": "학원 일정, 학교 공지, 가정통신문, 병원 예약, 엄마모임, 가족모임 중 오늘 가장 급한 1개를 먼저 고른다."},
         {"id": "mobile_try", "title": "모바일에서 초안 1개 받기", "body": f"{llm}에 샘플 파일 속 프롬프트를 붙여 넣고 초안 1개를 받는다."},
         {"id": "desktop_refine", "title": f"{desktop}에서 더 편하게 다듬기", "body": f"{desktop}에서 같은 대화를 열고, 받은 초안을 본인 말투에 맞게 다시 고친다."},
         {"id": "save_compare", "title": "전/후 결과 남기기", "body": "AI가 준 초안과 내가 고친 최종본을 같이 저장한다. 잘 안 떠오르면 Day 0로 돌아가 복붙 과정을 다시 연습한다."},
@@ -7032,11 +7073,32 @@ def _edu_vp_recommended_learning(stage_key: str) -> list[dict[str, Any]]:
     return links
 
 
+def _edu_vp_home_recommended_learning() -> list[dict[str, Any]]:
+    query = "네이버 맘카페 학원 일정 학사일정 가정통신문 진학 설명회 병원 진료 엄마 모임 가족 모임"
+    bundle = _retrieve_evidence_bundle(query, "parent", k=6) or {"items": [], "mode": "fallback"}
+    links: list[dict[str, Any]] = []
+    for item in (bundle.get("items") or [])[:6]:
+        url = str(item.get("url") or item.get("raw_data", {}).get("url") or "").strip() if isinstance(item, dict) else ""
+        links.append(
+            {
+                "title": str(item.get("title") or "학부모 추천 자료"),
+                "url": url,
+                "source_kind": str(item.get("source_kind") or "community_voice"),
+            }
+        )
+    return links
+
+
 def _edu_vp_home_scenarios() -> list[dict[str, str]]:
     return [
+        {"title": "학원 시간표 + 학교 일정 충돌", "situation": "형제자매 학원 시간, 학교 행사, 준비물이 한꺼번에 겹쳐 머리가 복잡할 때", "prompt": "아래 일정을 아이별로 나누고, 시간이 겹치는 부분과 오늘 당장 챙길 준비물을 따로 정리해줘."},
+        {"title": "가정통신문 핵심만 뽑기", "situation": "긴 가정통신문에서 제출일, 준비물, 비용만 빨리 보고 싶을 때", "prompt": "가정통신문에서 날짜, 준비물, 제출할 것, 돈 관련 내용만 표처럼 뽑아줘."},
+        {"title": "진학 설명회 메모 정리", "situation": "설명회에서 받아 적은 메모가 길고 뒤죽박죽일 때", "prompt": "아래 설명회 메모를 입시 일정, 준비할 것, 나중에 다시 볼 내용으로 나눠줘."},
+        {"title": "엄마모임과 가족모임 겹침 정리", "situation": "아이 친구 엄마들과의 약속, 친정/시댁 모임, 아이 행사까지 겹칠 때", "prompt": "누구와의 약속인지 구분해서 겹치는 시간과 먼저 조율해야 할 일만 정리해줘."},
         {"title": "학교 준비물 공지 정리", "situation": "단톡방에 올라온 긴 학교 공지를 한눈에 보이게 정리해야 할 때", "prompt": "아래 학교 공지를 오늘 꼭 챙길 것, 이번 주 안에 챙길 것, 그냥 읽어둘 것으로 나눠 아주 쉽게 정리해줘."},
         {"title": "학부모 단톡방 답장", "situation": "부담스럽지 않고 예의 있게 답장하고 싶을 때", "prompt": "너무 길지 않고 부드러운 한국어로 답장 1개만 써줘."},
-        {"title": "병원 예약 메모 정리", "situation": "아이, 부모, 가족 병원 일정이 섞여 헷갈릴 때", "prompt": "가족 병원 일정을 날짜순으로 다시 적어주고 준비물이 있으면 같이 적어줘."},
+        {"title": "병원 진료 + 학원 일정 함께 보기", "situation": "아이 병원 예약, 예방접종, 학원 시간, 숙제 제출이 섞여 있을 때", "prompt": "병원, 학원, 숙제 일정을 날짜순으로 다시 적고, 놓치면 안 되는 시간만 굵게 보이게 정리해줘."},
+        {"title": "형제자매 다른 학교 일정 합치기", "situation": "아이 둘 이상이면 학교 행사와 제출일이 계속 섞일 때", "prompt": "아이 이름별로 나눠서 이번 주 일정표를 다시 적어줘."},
         {"title": "학원 상담 질문 만들기", "situation": "학원 상담 전에 꼭 물어봐야 할 것을 빠르게 만들고 싶을 때", "prompt": "학원 상담 전에 꼭 물어봐야 할 질문 7개를 쉬운 말로 적어줘."},
         {"title": "장보기 목록 정리", "situation": "냉장고 확인 없이 장을 보러 가면 자꾸 빠뜨릴 때", "prompt": "식재료를 채소, 냉동, 간식, 아침거리로 나눠 장보기 목록으로 정리해줘."},
         {"title": "일주일 식단 초안", "situation": "매일 뭐 먹을지 고민하는 시간을 줄이고 싶을 때", "prompt": "집밥 기준으로 평일 5일 저녁 식단을 부담 없이 짜줘."},
@@ -7150,8 +7212,8 @@ def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
     llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or "claude"))
     friction = str(intake.get("biggest_friction") or "AI가 어렵고 막막함").strip()
     goal = str(intake.get("learning_goal") or "생활과 업무에서 바로 쓸 수 있는 첫 성공 만들기").strip()
-    query = f"{friction} {goal} 직장인 초보 AI 첫 사용 답장 회의메모 일정정리 보고초안"
-    bundle = _retrieve_evidence_bundle(query, "worker", k=4)
+    query = f"{friction} {goal} 학원 일정 학교 공지 가정통신문 병원 예약 엄마모임 가족모임"
+    bundle = _retrieve_evidence_bundle(query, "parent", k=4)
     evidence_cards: list[dict[str, Any]] = []
     if bundle:
         for item in (bundle.get("items") or [])[:3]:
@@ -7169,7 +7231,7 @@ def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
     customer_facing_safe = mode == "db_customer_facing"
     return {
         "title": "Day 1 · 생활 장면 1개를 AI로 덜 무섭게 바꾸기",
-        "required_action": f"{llm_label}에게 '답장 쓰기/회의 메모 정리/보고 초안 만들기/가족 일정 정리' 중 지금 제일 스트레스인 장면 1개를 설명하고, 쉬운 한국어 초안 1개를 받은 뒤 직접 고쳐본다.",
+        "required_action": f"{llm_label}에게 '학원 일정 정리/학교 공지 요약/가정통신문 정리/병원 예약 정리/엄마모임과 가족모임 충돌 정리' 중 지금 제일 스트레스인 장면 1개를 설명하고, 쉬운 한국어 초안 1개를 받은 뒤 직접 고쳐본다.",
         "proof_artifact_hint": "처음 결과와 본인이 고친 최종 결과를 둘 다 붙여 넣으세요.",
         "pass_fail_rubric": [
             "생활 장면 1개를 실제로 질문했다",
@@ -7180,6 +7242,7 @@ def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
         "sample_materials": _edu_vp_week1_materials(llm_label),
         "tutorial_steps": _edu_vp_tutorial_steps("week1", intake),
         "recommended_learning": _edu_vp_recommended_learning("week1"),
+        "home_life_recommended_learning": _edu_vp_home_recommended_learning(),
         "scenario_bank": _edu_vp_home_scenarios(),
         "blocked_step_options": ["pick_scene", "ask_ai", "rewrite", "save_output"],
         "practice_prompt_template": f"지금 제일 부담되는 장면은 '{friction}'입니다. {goal}에 맞게, 초등학생도 이해할 수 있을 만큼 쉬운 한국어로 오늘 바로 쓸 초안 1개만 적어줘.",
@@ -9024,6 +9087,7 @@ def edu_vp_training_intake(
         "total_stages": 2,
         "pct": round((int(p0["completed"]) + int(p1["completed"])) / 2 * 100),
     }
+    current_state["persona_library"] = _edu_vp_persona_library(int(current_state["progress"]["pct"]))
     current_state["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     _edu_vp_store_state(case_id, current_state)
     _edu_execute(
@@ -9076,6 +9140,7 @@ def edu_vp_training_artifact(
         "total_stages": 2,
         "pct": round((int(p0["completed"]) + int(p1["completed"])) / 2 * 100),
     }
+    state["persona_library"] = _edu_vp_persona_library(int(state["progress"]["pct"]))
     state["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     _edu_vp_store_state(case_id, state)
     _edu_execute(
@@ -9128,6 +9193,7 @@ def edu_vp_training_feedback(
         "total_stages": 2,
         "pct": round((int(p0["completed"]) + int(p1["completed"])) / 2 * 100),
     }
+    state["persona_library"] = _edu_vp_persona_library(int(state["progress"]["pct"]))
     state["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     _edu_vp_store_state(case_id, state)
     return {"ok": True, "case_id": case_id, "training_state": state}

@@ -37,6 +37,7 @@ type TrainingStage = {
   tutorial_steps?: TutorialStep[]
   practice_prompt_template?: string
   recommended_learning?: LearningLink[]
+  home_life_recommended_learning?: LearningLink[]
   evidence_bundle_id?: string
   retrieval_mode?: string
   customer_facing_safe?: boolean
@@ -68,8 +69,16 @@ type FlowItem = {
 type TrainingState = {
   program_objective?: string
   primary_llm_path?: string
+  active_persona?: string
   intake?: Record<string, string>
   progress?: { completed_stages: number; total_stages: number; pct: number }
+  persona_library?: {
+    core_persona: string
+    core_label: string
+    unlocked: boolean
+    unlock_rule: string
+    personas: Array<{ key: string; label: string; group: string; description: string }>
+  }
   flow_outline?: FlowItem[]
   week0?: TrainingStage
   week1?: TrainingStage
@@ -276,6 +285,12 @@ function StageCard({
           <div style={{ color: C.faint, fontSize: '.86rem', lineHeight: 1.55 }}>
             아래 장면 중 하나를 그대로 골라 오늘 실습에 써도 됩니다. 생활 장면을 많이 넣어 두었으니, VP나 일반 고객 모두 바로 공감 가능한 출발점으로 쓸 수 있습니다.
           </div>
+          <div style={{ background: C.accentSoft, border: `1px solid ${C.accent}`, borderRadius: 16, padding: 14 }}>
+            <div style={{ fontWeight: 900, color: C.ink, marginBottom: 6 }}>VP에게 가장 먼저 권하는 장면</div>
+            <div style={{ color: C.muted, fontSize: '.92rem', lineHeight: 1.6 }}>
+              학원 시간표와 학교 일정 충돌, 긴 가정통신문 핵심 뽑기, 진학 설명회 메모 정리, 엄마모임과 가족모임 시간 충돌 정리부터 먼저 해보는 것이 가장 현실적입니다.
+            </div>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
             {stage.scenario_bank.map((item, index) => (
               <div key={`${item.title}-${index}`} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, display: 'grid', gap: 8 }}>
@@ -285,6 +300,25 @@ function StageCard({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {!!stage?.home_life_recommended_learning?.length && (
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>맘카페/학부모 RAG 추천</div>
+          {stage.home_life_recommended_learning.map((item, index) => (
+            <div key={`${item.title}-${index}`} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14 }}>
+              <div style={{ fontWeight: 800, color: C.ink }}>{item.title}</div>
+              <div style={{ color: C.faint, fontSize: '.82rem', marginTop: 4 }}>{item.source_kind}</div>
+              {item.url ? (
+                <a href={item.url} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginTop: 8, color: C.accent, fontWeight: 800, textDecoration: 'none' }}>
+                  자료 열기
+                </a>
+              ) : (
+                <div style={{ color: C.faint, fontSize: '.82rem', marginTop: 8 }}>링크가 없는 내부 추천 자료</div>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
@@ -677,6 +711,28 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
                 <FlowIllustration />
                 <div style={{ color: C.muted, fontSize: '.9rem', lineHeight: 1.6 }}>
                   Duolingo처럼 지금 해야 할 1개 단계에만 집중하고, 필요하면 왼쪽 목차에서 언제든 이전 단계로 돌아가 다시 복습할 수 있게 설계했습니다.
+                </div>
+              </section>
+
+              <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 22, padding: 16, display: 'grid', gap: 12 }}>
+                <div style={{ fontSize: '.82rem', color: C.muted, fontWeight: 900 }}>PERSONA LIBRARY</div>
+                <div style={{ color: C.ink, fontWeight: 800 }}>현재 코어 페르소나: 주부/학부모</div>
+                <div style={{ color: C.muted, fontSize: '.88rem', lineHeight: 1.55 }}>
+                  {trainingState.persona_library?.unlock_rule}
+                </div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {(trainingState.persona_library?.personas || []).map((item) => (
+                    <div key={item.key} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, opacity: trainingState.persona_library?.unlocked ? 1 : 0.72 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                        <div style={{ fontWeight: 800, color: C.ink }}>{item.label}</div>
+                        <div style={{ fontSize: '.76rem', color: trainingState.persona_library?.unlocked ? C.accent : C.faint, fontWeight: 800 }}>
+                          {trainingState.persona_library?.unlocked ? '추가 학습 가능' : '코어 완료 후 오픈'}
+                        </div>
+                      </div>
+                      <div style={{ color: C.faint, fontSize: '.8rem', marginTop: 4 }}>{item.group}</div>
+                      <div style={{ color: C.muted, fontSize: '.88rem', lineHeight: 1.5, marginTop: 6 }}>{item.description}</div>
+                    </div>
+                  ))}
                 </div>
               </section>
             </aside>
