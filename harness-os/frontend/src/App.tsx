@@ -778,7 +778,7 @@ function App() {
       )}
 
         {activeView === 'edu-pilot' && (
-          <EduVpTrainingPage apiBase={API_BASE} authHeaders={authHeaders} />
+          <EduVpTrainingPage apiBase={API_BASE} authHeaders={authHeaders} currentRole={viewRole} />
         )}
 
         {activeView === 'edu-patterns' && (

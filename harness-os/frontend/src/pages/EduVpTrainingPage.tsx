@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 type Props = {
   apiBase: string
   authHeaders: () => Record<string, string>
+  currentRole?: 'ceo' | 'vp'
 }
 
 type MaterialKit = {
@@ -102,6 +103,31 @@ type CaseItem = {
 
 const VP_TRAINING_CASE_STORAGE_KEY = 'vp_training_case_id'
 const VP_TRAINING_AUTH_EMAIL_KEY = 'vp_training_auth_email'
+
+function roleDefaultEmail(role?: 'ceo' | 'vp') {
+  if (role === 'ceo') return 'junti7@gmail.com'
+  if (role === 'vp') return 'fox_jazz@naver.com'
+  return ''
+}
+
+function resolveTrainingEmail(role?: 'ceo' | 'vp') {
+  if (!role) return ''
+  try {
+    const raw = window.localStorage.getItem(`harness-settings-${role}`)
+    if (raw) {
+      const parsed = JSON.parse(raw) as { email?: string }
+      const savedEmail = String(parsed?.email || '').trim().toLowerCase()
+      if (savedEmail) return savedEmail
+    }
+  } catch {
+    // ignore parse failure and use default
+  }
+  return roleDefaultEmail(role)
+}
+
+function caseStorageKey(email: string) {
+  return `${VP_TRAINING_CASE_STORAGE_KEY}:${email}`
+}
 
 const C = {
   ink: '#111827',
@@ -563,7 +589,8 @@ function StageCard({
   )
 }
 
-export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
+export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) {
+  const embeddedMode = Boolean(currentRole)
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [authName, setAuthName] = useState('')
@@ -637,6 +664,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
   }
 
   function logoutTrainingAccount() {
+    if (embeddedMode) return
     setIsAuthenticated(false)
     setAuthEmail('')
     setAuthPassword('')
@@ -648,7 +676,9 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
     setSelectedStage('week0')
     setShowContinueFrom(null)
     window.localStorage.removeItem(VP_TRAINING_AUTH_EMAIL_KEY)
-    window.localStorage.removeItem(VP_TRAINING_CASE_STORAGE_KEY)
+    if (authEmail.trim()) {
+      window.localStorage.removeItem(caseStorageKey(authEmail.trim().toLowerCase()))
+    }
   }
 
   async function buildTrainingSlice(targetCaseId?: number | null, restart?: boolean, explicitEmail?: string) {
@@ -689,12 +719,15 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
       setCaseId(data.case_id)
       setTrainingState(data.training_state || null)
       setSelectedStage(resumeStageFromState(data.training_state || null))
-      window.localStorage.setItem(VP_TRAINING_CASE_STORAGE_KEY, String(data.case_id))
+      window.localStorage.setItem(caseStorageKey(safeEmail), String(data.case_id))
       if (showCaseArchive) await loadCases(safeEmail)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'VP training flow build failed'
       if (message.includes('case not found')) {
-        window.localStorage.removeItem(VP_TRAINING_CASE_STORAGE_KEY)
+        const staleEmail = (explicitEmail || authEmail).trim().toLowerCase()
+        if (staleEmail) {
+          window.localStorage.removeItem(caseStorageKey(staleEmail))
+        }
         if (!restart && (targetCaseId ?? caseId)) {
           await buildTrainingSlice(undefined, false, explicitEmail || authEmail)
           return
@@ -752,12 +785,17 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
   }
 
   useEffect(() => {
-    const savedEmail = window.localStorage.getItem(VP_TRAINING_AUTH_EMAIL_KEY)
+    const savedEmail = embeddedMode
+      ? resolveTrainingEmail(currentRole)
+      : window.localStorage.getItem(VP_TRAINING_AUTH_EMAIL_KEY)
     if (savedEmail) {
       setAuthEmail(savedEmail)
       setIsAuthenticated(true)
+      if (!embeddedMode) {
+        window.localStorage.setItem(VP_TRAINING_AUTH_EMAIL_KEY, savedEmail)
+      }
     }
-    const stored = window.localStorage.getItem(VP_TRAINING_CASE_STORAGE_KEY)
+    const stored = savedEmail ? window.localStorage.getItem(caseStorageKey(savedEmail)) : null
     const parsed = stored == null ? null : Number(stored)
     if (savedEmail && parsed != null && Number.isFinite(parsed) && parsed >= 0) {
       setCaseId(parsed)
@@ -766,15 +804,48 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
     }
     if (!savedEmail) return
     void (async () => {
-      const existingCases = await loadCases(savedEmail)
+        const existingCases = await loadCases(savedEmail)
+        if (existingCases.length > 0) {
+          const latestCaseId = existingCases[0].case_id
+          setCaseId(latestCaseId)
+          window.localStorage.setItem(caseStorageKey(savedEmail), String(latestCaseId))
+          await buildTrainingSlice(latestCaseId, false, savedEmail)
+        }
+      })()
+  }, [])
+
+  useEffect(() => {
+    if (!embeddedMode || !currentRole) return
+    const nextEmail = resolveTrainingEmail(currentRole)
+    if (!nextEmail) return
+    if (nextEmail === authEmail && isAuthenticated) return
+    setAuthEmail(nextEmail)
+    setIsAuthenticated(true)
+    setCaseId(null)
+    setTrainingState(null)
+    setCaseHistory([])
+    setSelectedStage('week0')
+    setShowCaseArchive(false)
+    setShowContinueFrom(null)
+    const stored = window.localStorage.getItem(caseStorageKey(nextEmail))
+    const parsed = stored == null ? null : Number(stored)
+    if (parsed != null && Number.isFinite(parsed) && parsed >= 0) {
+      setCaseId(parsed)
+      void buildTrainingSlice(parsed, false, nextEmail)
+      return
+    }
+    void (async () => {
+      const existingCases = await loadCases(nextEmail)
       if (existingCases.length > 0) {
         const latestCaseId = existingCases[0].case_id
         setCaseId(latestCaseId)
-        window.localStorage.setItem(VP_TRAINING_CASE_STORAGE_KEY, String(latestCaseId))
-        await buildTrainingSlice(latestCaseId, false, savedEmail)
+        window.localStorage.setItem(caseStorageKey(nextEmail), String(latestCaseId))
+        await buildTrainingSlice(latestCaseId, false, nextEmail)
+        return
       }
+      await buildTrainingSlice(undefined, false, nextEmail)
     })()
-  }, [])
+  }, [currentRole])
 
   useEffect(() => {
     if (isAuthenticated) void loadCases()
@@ -822,7 +893,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
         </section>
 
         <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 24, padding: 18, display: 'grid', gap: 14 }}>
-          {!isAuthenticated && (
+          {!embeddedMode && !isAuthenticated && (
             <div style={{ display: 'grid', gap: 12, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button type="button" onClick={() => setAuthMode('login')} style={{ background: authMode === 'login' ? '#111827' : C.bg, color: authMode === 'login' ? '#fff' : C.ink, border: `1px solid ${C.border}`, borderRadius: 12, padding: '10px 12px', fontWeight: 800, cursor: 'pointer' }}>
@@ -876,7 +947,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
             </label>
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            {!isAuthenticated ? (
+            {!embeddedMode && !isAuthenticated ? (
               <button type="button" onClick={() => void submitAuth()} disabled={authLoading} style={{ background: '#111827', color: '#fff', border: 'none', borderRadius: 14, padding: '12px 16px', fontWeight: 800, cursor: authLoading ? 'wait' : 'pointer' }}>
                 {authLoading ? '처리 중…' : authMode === 'login' ? '로그인' : '회원가입'}
               </button>
@@ -888,9 +959,11 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
                 <button type="button" onClick={() => void buildTrainingSlice(undefined, true)} disabled={loading} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: loading ? 'wait' : 'pointer' }}>
                   새 케이스로 다시 시작
                 </button>
-                <button type="button" onClick={logoutTrainingAccount} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: 'pointer' }}>
-                  다른 계정으로 전환
-                </button>
+                {!embeddedMode && (
+                  <button type="button" onClick={logoutTrainingAccount} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: 'pointer' }}>
+                    다른 계정으로 전환
+                  </button>
+                )}
               </>
             )}
             {isAuthenticated && hasCaseHistory && (
