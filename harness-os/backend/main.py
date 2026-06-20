@@ -9682,11 +9682,12 @@ def edu_vp_training_case_reset(
     )
     deleted_case_ids = [int(row["case_id"]) for row in rows if row.get("case_id") is not None]
     if deleted_case_ids:
-        _edu_execute(
-            "DELETE FROM edu_cases WHERE id = ANY(%s)",
-            (deleted_case_ids,),
-            fetch=False,
-        )
+        for case_id in deleted_case_ids:
+            _edu_execute(
+                "DELETE FROM edu_cases WHERE id = %s",
+                (case_id,),
+                fetch=False,
+            )
     return {
         "ok": True,
         "email": safe_email,

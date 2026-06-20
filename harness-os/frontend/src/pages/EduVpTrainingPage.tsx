@@ -799,8 +799,17 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ email: safeEmail }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
+      const raw = await res.text()
+      let data: Record<string, unknown> = {}
+      if (raw) {
+        try {
+          data = JSON.parse(raw) as Record<string, unknown>
+        } catch {
+          data = {}
+        }
+      }
+      const detail = typeof data.detail === 'string' ? data.detail : ''
+      if (!res.ok) throw new Error(detail || raw || `HTTP ${res.status}`)
       window.localStorage.removeItem(caseStorageKey(safeEmail))
       setCaseId(null)
       setTrainingState(null)
