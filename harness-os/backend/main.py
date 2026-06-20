@@ -7338,7 +7338,7 @@ def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
     customer_facing_safe = mode == "db_customer_facing"
     schedule_blocks = _edu_vp_schedule_blocks("week1")
     return {
-        "title": "Day 1 · 생활 장면 1개를 AI로 덜 무섭게 바꾸기",
+        "title": "Day 1 · 가정통신문과 학원 일정을 AI로 정리해보기",
         "learning_why": "오늘은 AI에게 막연히 말을 걸어보는 것이 아니라, 주부/학부모가 실제로 매일 겪는 공지·일정·답장 문제를 구조화해서 머리 부담을 줄이는 연습을 하는 날입니다.",
         "learning_outcome": "Day 1를 마치면 긴 가정통신문, 학원 일정 충돌, 진학 설명회 메모, 학부모 단톡방 답장 같은 재료를 AI로 첫 초안화하고, 내 말투에 맞게 다듬는 기본 루틴을 익히게 됩니다.",
         "estimated_minutes": _edu_vp_total_minutes(schedule_blocks),

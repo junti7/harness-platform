@@ -141,28 +141,27 @@ function TrainingHeroVisual() {
   )
 }
 
-function FlowIllustration() {
-  return (
-    <svg viewBox="0 0 520 120" style={{ width: '100%', height: 'auto', display: 'block' }} aria-hidden="true">
-      <rect x="0" y="0" width="520" height="120" rx="22" fill="#fff7ed" />
-      <circle cx="58" cy="60" r="22" fill="#111827" />
-      <text x="49" y="67" fill="#fff" fontSize="18" fontWeight="700">D0</text>
-      <path d="M84 60 H222" stroke="#fdba74" strokeWidth="8" strokeLinecap="round" />
-      <circle cx="260" cy="60" r="22" fill="#0f766e" />
-      <text x="251" y="67" fill="#fff" fontSize="18" fontWeight="700">D1</text>
-      <path d="M286 60 H430" stroke="#fdba74" strokeWidth="8" strokeLinecap="round" />
-      <rect x="438" y="38" width="46" height="44" rx="12" fill="#ffffff" stroke="#dbe4ee" strokeWidth="2" />
-      <text x="445" y="66" fill="#111827" fontSize="15" fontWeight="700">END</text>
-    </svg>
-  )
-}
-
 function progressBar(pct: number) {
   return (
     <div style={{ width: '100%', height: 10, background: '#e5e7eb', borderRadius: 999 }}>
       <div style={{ width: `${pct}%`, height: 10, background: C.progress, borderRadius: 999, transition: 'width 200ms ease' }} />
     </div>
   )
+}
+
+function curriculumActiveIndex(stageKey: 'week0' | 'week1', blockedAtStep?: string, completed?: boolean, blockCount?: number) {
+  if (completed && blockCount && blockCount > 0) return blockCount - 1
+  if (stageKey === 'week0') {
+    if (blockedAtStep === 'open_tool' || blockedAtStep === 'login_ok') return 2
+    if (blockedAtStep === 'first_prompt') return 3
+    if (blockedAtStep === 'copy_result') return 4
+    return 0
+  }
+  if (blockedAtStep === 'pick_scene') return 1
+  if (blockedAtStep === 'ask_ai') return 2
+  if (blockedAtStep === 'rewrite') return 3
+  if (blockedAtStep === 'save_output') return 5
+  return 0
 }
 
 function StageCard({
@@ -310,8 +309,6 @@ function StageCard({
           <div style={{ fontSize: '1rem', lineHeight: 1.65, color: C.ink, fontWeight: 700 }}>{stage.required_action}</div>
         </div>
       )}
-
-      <FlowIllustration />
 
       {!!stage?.tutorial_steps?.length && (
         <div style={{ display: 'grid', gap: 10 }}>
@@ -549,7 +546,7 @@ function StageCard({
 }
 
 export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
-  const [preferredLlm, setPreferredLlm] = useState('gpt')
+  const [preferredLlm, setPreferredLlm] = useState('gemini')
   const [currentDevice, setCurrentDevice] = useState('android')
   const [desktopOs, setDesktopOs] = useState('windows')
   const [loading, setLoading] = useState(false)
@@ -559,16 +556,22 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
   const [caseId, setCaseId] = useState<number | null>(null)
   const [trainingState, setTrainingState] = useState<TrainingState | null>(null)
   const [caseHistory, setCaseHistory] = useState<CaseItem[]>([])
+  const [hasCaseHistory, setHasCaseHistory] = useState(false)
   const [showCaseArchive, setShowCaseArchive] = useState(false)
   const [selectedStage, setSelectedStage] = useState<'week0' | 'week1'>('week0')
   const [showContinueFrom, setShowContinueFrom] = useState<'week0' | 'week1' | null>(null)
+  const [activeCurriculumIndex, setActiveCurriculumIndex] = useState(0)
 
   async function loadCases() {
     const res = await fetch(`${apiBase}/api/edu/vp-training/cases?email=${encodeURIComponent(VP_TRAINING_EMAIL)}`, {
       headers: { ...authHeaders() },
     })
     const data = await res.json()
-    if (res.ok) setCaseHistory(data.cases || [])
+    if (res.ok) {
+      const cases = data.cases || []
+      setCaseHistory(cases)
+      setHasCaseHistory(cases.length > 0)
+    }
   }
 
   async function buildTrainingSlice(targetCaseId?: number | null, restart?: boolean) {
@@ -656,10 +659,20 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
     void buildTrainingSlice(parsed, false)
   }, [])
 
+  useEffect(() => {
+    void loadCases()
+  }, [])
+
   const stage = selectedStage === 'week0' ? trainingState?.week0 : trainingState?.week1
-  const stageOrder: Array<'week0' | 'week1'> = ['week0', 'week1']
+  const week0Completed = Boolean(trainingState?.week0?.completed)
+  const stageOrder: Array<'week0' | 'week1'> = week0Completed ? ['week0', 'week1'] : ['week0']
   const currentIndex = stageOrder.indexOf(selectedStage)
   const nextStage = currentIndex >= 0 && currentIndex < stageOrder.length - 1 ? stageOrder[currentIndex + 1] : null
+
+  useEffect(() => {
+    const count = stage?.schedule_blocks?.length || 0
+    setActiveCurriculumIndex(curriculumActiveIndex(selectedStage, stage?.blocked_at_step, stage?.completed, count))
+  }, [selectedStage, stage?.blocked_at_step, stage?.completed, stage?.schedule_blocks?.length])
 
   let reminder: string | null = null
   if (selectedStage === 'week1' && trainingState?.week0 && !trainingState.week0.completed) {
@@ -694,7 +707,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
         <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 24, padding: 18, display: 'grid', gap: 14 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
             <label style={{ display: 'grid', gap: 6 }}>
-              <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>Primary LLM</span>
+              <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>사용할 AI</span>
               <select value={preferredLlm} onChange={(e) => setPreferredLlm(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', background: C.surface }}>
                 <option value="gpt">ChatGPT</option>
                 <option value="claude">Claude</option>
@@ -717,9 +730,6 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
               </select>
             </label>
           </div>
-          <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, color: C.muted, fontSize: '.92rem', lineHeight: 1.6 }}>
-            필수 입력은 기기 경로와 사용할 LLM뿐입니다. 진행 기록은 VP 전용 훈련 케이스에 계속 누적되며, 별도 이메일이나 자기평가를 먼저 적지 않아도 바로 시작할 수 있습니다.
-          </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <button type="button" onClick={() => void buildTrainingSlice(caseId, false)} disabled={loading} style={{ background: '#111827', color: '#fff', border: 'none', borderRadius: 14, padding: '12px 16px', fontWeight: 800, cursor: loading ? 'wait' : 'pointer' }}>
               {loading ? 'Day 플로우 생성 중…' : trainingState ? 'VP AI 훈련 이어서 하기' : 'VP AI 훈련 시작'}
@@ -727,13 +737,15 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
             <button type="button" onClick={() => void buildTrainingSlice(undefined, true)} disabled={loading} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: loading ? 'wait' : 'pointer' }}>
               새 케이스로 다시 시작
             </button>
-            <button type="button" onClick={() => {
-              const next = !showCaseArchive
-              setShowCaseArchive(next)
-              if (next) void loadCases()
-            }} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: 'pointer' }}>
-              {showCaseArchive ? '과거 케이스 숨기기' : '과거 케이스 보기'}
-            </button>
+            {hasCaseHistory && (
+              <button type="button" onClick={() => {
+                const next = !showCaseArchive
+                setShowCaseArchive(next)
+                if (next) void loadCases()
+              }} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: 'pointer' }}>
+                {showCaseArchive ? '과거 케이스 숨기기' : '과거 케이스 보기'}
+              </button>
+            )}
           </div>
           {error && <div style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: 12, fontSize: '.9rem' }}>{error}</div>}
         </section>
@@ -768,7 +780,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
                 {progressBar(trainingState.progress?.pct ?? 0)}
                 <div style={{ color: C.faint, fontSize: '.84rem' }}>case_id: {caseId} · 진행 내용은 자동 저장되어 언제든 다시 불러올 수 있습니다.</div>
                 {(trainingState.flow_outline || []).map((item) => (
-                  <button
+                  stageOrder.includes(item.key) ? <button
                     key={item.key}
                     type="button"
                     onClick={() => {
@@ -787,9 +799,38 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
                     <div style={{ fontWeight: 900, color: C.ink }}>{item.label}</div>
                     <div style={{ color: C.muted, fontSize: '.88rem', lineHeight: 1.45, marginTop: 4 }}>{item.title}</div>
                     <div style={{ color: C.faint, fontSize: '.8rem', marginTop: 6 }}>{item.completed ? '완료됨' : '복습 가능'} · {item.pct}%</div>
-                  </button>
+                  </button> : null
                 ))}
               </section>
+
+              {!!stage?.schedule_blocks?.length && (
+                <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 22, padding: 16, display: 'grid', gap: 12 }}>
+                  <div style={{ fontSize: '.82rem', color: C.muted, fontWeight: 900 }}>{selectedStage === 'week0' ? 'DAY 0 목차' : 'DAY 1 목차'}</div>
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    {stage.schedule_blocks.map((item, index) => (
+                      <button
+                        key={`${item.title}-${index}`}
+                        type="button"
+                        onClick={() => setActiveCurriculumIndex(index)}
+                        style={{
+                          textAlign: 'left',
+                          border: index === activeCurriculumIndex ? `2px solid ${C.accent}` : `1px solid ${C.border}`,
+                          background: index === activeCurriculumIndex ? C.accentSoft : C.bg,
+                          borderRadius: 14,
+                          padding: 12,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                          <div style={{ fontWeight: 800, color: C.ink }}>{index + 1}. {item.title}</div>
+                          <div style={{ fontSize: '.78rem', color: index === activeCurriculumIndex ? C.accent : C.faint, fontWeight: 800 }}>{item.minutes}분</div>
+                        </div>
+                        <div style={{ color: C.muted, fontSize: '.84rem', lineHeight: 1.45, marginTop: 4 }}>{item.goal}</div>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
 
               {trainingState.persona_library?.unlocked && (
                 <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 22, padding: 16, display: 'grid', gap: 12 }}>
