@@ -9599,7 +9599,8 @@ def edu_vp_training_cases(
     )
     items = []
     for row in rows:
-        summary = row.get("summary_json") or {}
+        summary_raw = row.get("summary_json") or {}
+        summary = summary_raw if isinstance(summary_raw, dict) else {}
         progress = summary.get("progress") or {"pct": 0}
         flow_outline = summary.get("flow_outline") or []
         latest_stage_title = ""

@@ -636,12 +636,13 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
     const res = await fetch(`${apiBase}/api/edu/vp-training/cases?email=${encodeURIComponent(safeEmail)}`, {
       headers: { ...authHeaders() },
     })
-    const data = await res.json()
+    const { raw, data } = await readJsonSafe(res)
     if (res.ok) {
-      const cases = data.cases || []
+      const cases = Array.isArray(data.cases) ? data.cases : []
       setCaseHistory(cases)
       return cases as CaseItem[]
     }
+    setError(typeof data.detail === 'string' ? data.detail : raw || 'case history load failed')
     return [] as CaseItem[]
   }
 
