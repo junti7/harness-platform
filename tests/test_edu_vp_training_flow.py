@@ -34,7 +34,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             }
         )
 
-        self.assertIn("Week 0", card["title"])
+        self.assertIn("Day 0", card["title"])
         self.assertIn("Claude", card["required_action"])
         self.assertEqual(len(card["checklist"]), 4)
         self.assertEqual(len(card["sample_materials"]), 1)
@@ -72,11 +72,15 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(len(card["evidence_cards"]), 1)
         self.assertEqual(len(card["sample_materials"]), 4)
         self.assertIn("직접 AI를 써봐야", card["evidence_cards"][0]["title"])
-        mocked_bundle.assert_called_once()
-        args, kwargs = mocked_bundle.call_args
-        self.assertIn("직장인 초보 AI 첫 사용", args[0])
-        self.assertEqual(args[1], "worker")
-        self.assertEqual(kwargs["k"], 4)
+        self.assertEqual(mocked_bundle.call_count, 2)
+        first_args, first_kwargs = mocked_bundle.call_args_list[0]
+        second_args, second_kwargs = mocked_bundle.call_args_list[1]
+        self.assertIn("직장인 초보 AI 첫 사용", first_args[0])
+        self.assertEqual(first_args[1], "worker")
+        self.assertEqual(first_kwargs["k"], 4)
+        self.assertIn("답장 회의메모 보고초안 일정정리", second_args[0])
+        self.assertEqual(second_args[1], "worker")
+        self.assertEqual(second_kwargs["k"], 4)
 
     def test_material_zip_contains_expected_files(self):
         filename, payload = self.mod._edu_vp_material_zip_bytes("week1-reply-kit")

@@ -26,7 +26,7 @@ const NAV_GROUPS: NavGroup[] = [
     id: 'education',
     label: '교육',
     items: [
-      { view: 'edu-pilot', label: 'VP AI 훈련 (Week 0/1)' },
+      { view: 'edu-pilot', label: 'VP AI 훈련' },
       { view: 'edu-patterns', label: '패턴 인텔리전스 관제' },
     ],
   },

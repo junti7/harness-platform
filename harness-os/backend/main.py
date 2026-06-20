@@ -6969,6 +6969,69 @@ def _edu_vp_material_kit(*, kit_id: str, title: str, description: str, files: li
     }
 
 
+def _edu_vp_stage_progress(stage: dict[str, Any]) -> dict[str, Any]:
+    checklist = list(stage.get("checklist") or [])
+    completed = bool(stage.get("completed"))
+    done = len(checklist) if completed else 0
+    total = len(checklist)
+    return {
+        "completed": completed,
+        "done": done,
+        "total": total,
+        "pct": 100 if total == 0 and completed else (round(done / total * 100) if total else 0),
+    }
+
+
+def _edu_vp_tutorial_steps(stage_key: str, intake: dict[str, Any]) -> list[dict[str, Any]]:
+    llm = _edu_vp_llm_label(str(intake.get("preferred_llm") or "gpt"))
+    mobile = _edu_vp_device_label(str(intake.get("current_device") or "android"))
+    desktop = _edu_vp_device_label(str(intake.get("desktop_os") or "windows"))
+    llm_mobile = {
+        "ChatGPT": f"{mobile}에서 ChatGPT 앱을 연다. 앱이 없으면 스토어에서 ChatGPT를 설치한다.",
+        "Claude": f"{mobile}에서 브라우저를 열고 claude.ai로 들어간다. 안내에 따라 로그인한다.",
+        "Gemini": f"{mobile}에서 Gemini 앱 또는 Google 앱의 Gemini 진입점을 연다.",
+        "로컬 모델": f"{mobile}에서는 로컬 모델 대신 내부에서 허용된 기본 AI 도구 진입점을 먼저 연다.",
+    }.get(llm, f"{mobile}에서 {llm}에 들어간다.")
+    llm_desktop = {
+        "ChatGPT": f"{desktop}에서 브라우저를 열고 chatgpt.com에 들어간다.",
+        "Claude": f"{desktop}에서 브라우저를 열고 claude.ai에 들어간다.",
+        "Gemini": f"{desktop}에서 브라우저를 열고 gemini.google.com에 들어간다.",
+        "로컬 모델": f"{desktop}에서 내부 로컬 모델 실행 경로를 연다.",
+    }.get(llm, f"{desktop}에서 {llm} 실행 화면을 연다.")
+    if stage_key == "week0":
+        return [
+            {"id": "mobile_open", "title": f"{mobile}에서 먼저 열기", "body": llm_mobile},
+            {"id": "mobile_prompt", "title": "모바일에서 첫 질문 보내기", "body": "복붙용 질문문을 그대로 붙여 넣고 답이 뜨는지 본다."},
+            {"id": "desktop_open", "title": f"{desktop}에서 다시 열기", "body": llm_desktop},
+            {"id": "handoff", "title": "모바일 → PC/Mac 이어하기", "body": "모바일에서 본 답변과 같은 내용을 PC/Mac에서 다시 열어본다. 같은 계정이면 대화가 이어지는지 확인한다."},
+        ]
+    return [
+        {"id": "mobile_scene", "title": f"{mobile}에서 장면 고르기", "body": "답장 쓰기, 회의 메모, 보고 초안, 가족 일정 중 오늘 가장 급한 1개를 고른다."},
+        {"id": "mobile_try", "title": "모바일에서 초안 1개 받기", "body": f"{llm}에 샘플 파일 속 프롬프트를 붙여 넣고 초안 1개를 받는다."},
+        {"id": "desktop_refine", "title": f"{desktop}에서 더 편하게 다듬기", "body": f"{desktop}에서 같은 대화를 열고, 받은 초안을 본인 말투에 맞게 다시 고친다."},
+        {"id": "save_compare", "title": "전/후 결과 남기기", "body": "AI가 준 초안과 내가 고친 최종본을 같이 저장한다. 잘 안 떠오르면 Day 0로 돌아가 복붙 과정을 다시 연습한다."},
+    ]
+
+
+def _edu_vp_recommended_learning(stage_key: str) -> list[dict[str, Any]]:
+    if stage_key == "week0":
+        query = "AI 첫 실행 로그인 첫 질문 모바일 PC handoff"
+    else:
+        query = "답장 회의메모 보고초안 일정정리 AI 초안 쉬운 한국어"
+    bundle = _retrieve_evidence_bundle(query, "worker", k=4) or {"items": [], "mode": "fallback"}
+    links: list[dict[str, Any]] = []
+    for item in (bundle.get("items") or [])[:4]:
+        url = str(item.get("url") or item.get("raw_data", {}).get("url") or "").strip() if isinstance(item, dict) else ""
+        links.append(
+            {
+                "title": str(item.get("title") or "추천 자료"),
+                "url": url,
+                "source_kind": str(item.get("source_kind") or "general_reference"),
+            }
+        )
+    return links
+
+
 def _edu_vp_week0_materials(llm_label: str) -> list[dict[str, Any]]:
     return [
         _edu_vp_material_kit(
@@ -7047,10 +7110,12 @@ def _edu_vp_build_week0(intake: dict[str, Any]) -> dict[str, Any]:
         },
     ]
     return {
-        "title": "Week 0 · 환경 열기와 첫 성공",
+        "title": "Day 0 · 환경 열기와 첫 성공",
         "required_action": f"{llm_label}를 실제로 열고, 본인 고민을 한 문장으로 입력해 첫 답변 1개를 받는다.",
         "proof_artifact_hint": "AI가 답한 첫 문장 1개 또는 본인이 복사한 결과 1개를 붙여 넣으세요.",
         "sample_materials": _edu_vp_week0_materials(llm_label),
+        "tutorial_steps": _edu_vp_tutorial_steps("week0", intake),
+        "recommended_learning": _edu_vp_recommended_learning("week0"),
         "pass_fail_rubric": [
             "앱/브라우저를 실제로 열었다",
             "로그인 상태를 확인했다",
@@ -7078,12 +7143,13 @@ def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
                     "source_kind": str(item.get("source_kind") or "general_reference"),
                     "cite": str(item.get("cite") or ""),
                     "snippet": body[:180],
+                    "url": str(item.get("url") or item.get("raw_data", {}).get("url") or "") if isinstance(item, dict) else "",
                 }
             )
     mode = (bundle or {}).get("mode") or "fallback"
     customer_facing_safe = mode == "db_customer_facing"
     return {
-        "title": "Week 1 · 생활 장면 1개를 AI로 덜 무섭게 바꾸기",
+        "title": "Day 1 · 생활 장면 1개를 AI로 덜 무섭게 바꾸기",
         "required_action": f"{llm_label}에게 '답장 쓰기/회의 메모 정리/보고 초안 만들기/가족 일정 정리' 중 지금 제일 스트레스인 장면 1개를 설명하고, 쉬운 한국어 초안 1개를 받은 뒤 직접 고쳐본다.",
         "proof_artifact_hint": "처음 결과와 본인이 고친 최종 결과를 둘 다 붙여 넣으세요.",
         "pass_fail_rubric": [
@@ -7093,6 +7159,8 @@ def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
             "전/후 결과를 남겼다",
         ],
         "sample_materials": _edu_vp_week1_materials(llm_label),
+        "tutorial_steps": _edu_vp_tutorial_steps("week1", intake),
+        "recommended_learning": _edu_vp_recommended_learning("week1"),
         "blocked_step_options": ["pick_scene", "ask_ai", "rewrite", "save_output"],
         "practice_prompt_template": f"지금 제일 부담되는 장면은 '{friction}'입니다. {goal}에 맞게, 초등학생도 이해할 수 있을 만큼 쉬운 한국어로 오늘 바로 쓸 초안 1개만 적어줘.",
         "evidence_bundle_id": f"vp-week1-{hashlib.sha1(query.encode('utf-8')).hexdigest()[:10]}",
@@ -8925,6 +8993,17 @@ def edu_vp_training_intake(
     current_state["primary_llm_path"] = intake["preferred_llm"]
     current_state["week0"] = _edu_vp_build_week0(intake)
     current_state["week1"] = _edu_vp_build_week1(intake)
+    p0 = _edu_vp_stage_progress(current_state["week0"])
+    p1 = _edu_vp_stage_progress(current_state["week1"])
+    current_state["flow_outline"] = [
+        {"key": "week0", "label": "Day 0", "title": current_state["week0"]["title"], "completed": p0["completed"], "pct": p0["pct"]},
+        {"key": "week1", "label": "Day 1", "title": current_state["week1"]["title"], "completed": p1["completed"], "pct": p1["pct"]},
+    ]
+    current_state["progress"] = {
+        "completed_stages": int(p0["completed"]) + int(p1["completed"]),
+        "total_stages": 2,
+        "pct": round((int(p0["completed"]) + int(p1["completed"])) / 2 * 100),
+    }
     current_state["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     _edu_vp_store_state(case_id, current_state)
     _edu_execute(
@@ -8966,6 +9045,17 @@ def edu_vp_training_artifact(
     state[stage] = section
     state["customer"] = payload["customer"]
     state["case"] = payload["case"]
+    p0 = _edu_vp_stage_progress(state.get("week0") or {})
+    p1 = _edu_vp_stage_progress(state.get("week1") or {})
+    state["flow_outline"] = [
+        {"key": "week0", "label": "Day 0", "title": (state.get("week0") or {}).get("title"), "completed": p0["completed"], "pct": p0["pct"]},
+        {"key": "week1", "label": "Day 1", "title": (state.get("week1") or {}).get("title"), "completed": p1["completed"], "pct": p1["pct"]},
+    ]
+    state["progress"] = {
+        "completed_stages": int(p0["completed"]) + int(p1["completed"]),
+        "total_stages": 2,
+        "pct": round((int(p0["completed"]) + int(p1["completed"])) / 2 * 100),
+    }
     state["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     _edu_vp_store_state(case_id, state)
     _edu_execute(
@@ -9007,9 +9097,67 @@ def edu_vp_training_feedback(
     state[stage] = section
     state["customer"] = payload["customer"]
     state["case"] = payload["case"]
+    p0 = _edu_vp_stage_progress(state.get("week0") or {})
+    p1 = _edu_vp_stage_progress(state.get("week1") or {})
+    state["flow_outline"] = [
+        {"key": "week0", "label": "Day 0", "title": (state.get("week0") or {}).get("title"), "completed": p0["completed"], "pct": p0["pct"]},
+        {"key": "week1", "label": "Day 1", "title": (state.get("week1") or {}).get("title"), "completed": p1["completed"], "pct": p1["pct"]},
+    ]
+    state["progress"] = {
+        "completed_stages": int(p0["completed"]) + int(p1["completed"]),
+        "total_stages": 2,
+        "pct": round((int(p0["completed"]) + int(p1["completed"])) / 2 * 100),
+    }
     state["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     _edu_vp_store_state(case_id, state)
     return {"ok": True, "case_id": case_id, "training_state": state}
+
+
+@app.get("/api/edu/vp-training/cases")
+def edu_vp_training_cases(
+    email: str,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    safe_email = _edu_normalize_email(email)
+    if not safe_email:
+        return {"ok": True, "cases": []}
+    rows = _edu_execute(
+        """
+        SELECT c.id AS case_id,
+               c.status,
+               c.updated_at,
+               s.summary_json
+        FROM edu_cases c
+        JOIN edu_customers cu ON cu.id = c.customer_id
+        LEFT JOIN LATERAL (
+            SELECT summary_json
+            FROM edu_case_snapshots s
+            WHERE s.case_id = c.id
+              AND COALESCE(s.summary_json->>'program', '') = 'vp_training'
+            ORDER BY s.id DESC
+            LIMIT 1
+        ) s ON TRUE
+        WHERE LOWER(COALESCE(cu.email, '')) = %s
+        ORDER BY c.updated_at DESC
+        LIMIT 20
+        """,
+        (safe_email,),
+        fetch=True,
+    )
+    items = []
+    for row in rows:
+        summary = row.get("summary_json") or {}
+        progress = summary.get("progress") or {"pct": 0}
+        items.append(
+            {
+                "case_id": int(row.get("case_id")),
+                "status": row.get("status"),
+                "updated_at": row.get("updated_at"),
+                "progress_pct": int(progress.get("pct") or 0),
+                "flow_outline": summary.get("flow_outline") or [],
+            }
+        )
+    return {"ok": True, "cases": items}
 
 
 def _edu_vp_material_zip_bytes(kit_id: str) -> tuple[str, bytes]:
