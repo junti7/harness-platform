@@ -884,7 +884,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
         <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: isMobile ? 20 : 26, padding: isMobile ? 16 : 22 }}>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1.2fr) minmax(280px, 0.8fr)', gap: isMobile ? 14 : 18, alignItems: 'center' }}>
             <div style={{ display: 'grid', gap: 12 }}>
-              <div style={{ fontSize: '.8rem', color: C.accent, fontWeight: 900, letterSpacing: '.08em' }}>VP TRAINING CENTER</div>
+              <div style={{ fontSize: '.8rem', color: C.accent, fontWeight: 900, letterSpacing: '.08em' }}>AI TRAINING CENTER</div>
               <p style={{ margin: 0, color: C.muted, lineHeight: isMobile ? 1.65 : 1.75, fontSize: isMobile ? '.95rem' : '1rem' }}>
                 본 화면은 명확한 목표를 향해 부대표님을 체계적으로 성장시키는 실전 훈련 플로우입니다. 일상적인 AI 활용의 기초 단계에서 출발하여, 궁극적으로 전문가 수준의 고도화된 AI 운용 역량을 갖추는 것을 목표로 합니다.
               </p>
