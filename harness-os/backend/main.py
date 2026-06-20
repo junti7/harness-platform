@@ -6996,9 +6996,9 @@ def _edu_vp_build_week0(intake: dict[str, Any]) -> dict[str, Any]:
 def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
     llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or "claude"))
     friction = str(intake.get("biggest_friction") or "AI가 어렵고 막막함").strip()
-    goal = str(intake.get("learning_goal") or "생활에서 바로 쓸 수 있는 첫 성공 만들기").strip()
-    query = f"{friction} {goal} 부모 초보 AI 첫 사용 학교 준비물 메시지 숙제 대화"
-    bundle = _retrieve_evidence_bundle(query, "parent", k=4)
+    goal = str(intake.get("learning_goal") or "생활과 업무에서 바로 쓸 수 있는 첫 성공 만들기").strip()
+    query = f"{friction} {goal} 직장인 초보 AI 첫 사용 답장 회의메모 일정정리 보고초안"
+    bundle = _retrieve_evidence_bundle(query, "worker", k=4)
     evidence_cards: list[dict[str, Any]] = []
     if bundle:
         for item in (bundle.get("items") or [])[:3]:
@@ -7015,7 +7015,7 @@ def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
     customer_facing_safe = mode == "db_customer_facing"
     return {
         "title": "Week 1 · 생활 장면 1개를 AI로 덜 무섭게 바꾸기",
-        "required_action": f"{llm_label}에게 '아이 학교 준비물/단톡방 답장/숙제 대화' 중 지금 제일 스트레스인 장면 1개를 설명하고, 쉬운 한국어 초안 1개를 받은 뒤 직접 고쳐본다.",
+        "required_action": f"{llm_label}에게 '답장 쓰기/회의 메모 정리/보고 초안 만들기/가족 일정 정리' 중 지금 제일 스트레스인 장면 1개를 설명하고, 쉬운 한국어 초안 1개를 받은 뒤 직접 고쳐본다.",
         "proof_artifact_hint": "처음 결과와 본인이 고친 최종 결과를 둘 다 붙여 넣으세요.",
         "pass_fail_rubric": [
             "생활 장면 1개를 실제로 질문했다",
@@ -7047,7 +7047,7 @@ def _edu_vp_prepare_case(
     else:
         payload = _edu_bootstrap_customer_case(
             EduPublicBootstrapRequest(
-                segment="parent",
+                segment="worker",
                 name=name,
                 email=email,
                 preferred_salutation="name" if (name or "").strip() else "neutral",

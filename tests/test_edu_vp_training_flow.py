@@ -30,7 +30,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
                 "current_device": "iphone",
                 "desktop_os": "mac",
                 "biggest_friction": "영어라서 무섭다",
-                "learning_goal": "학교 준비물 메시지를 덜 스트레스 받으며 정리하기",
+                "learning_goal": "업무 답장을 덜 스트레스 받으며 정리하기",
             }
         )
 
@@ -44,30 +44,36 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             "mode": "db_customer_facing",
             "items": [
                 {
-                    "title": "부모가 먼저 AI를 써봐야 자녀 대화가 달라진다",
+                    "title": "직접 AI를 써봐야 답장과 메모가 빨라진다",
                     "source_kind": "research_policy",
                     "cite": "출처: example",
-                    "body": "부모가 먼저 직접 AI를 써본 경험이 있어야 자녀와 감정 섞이지 않은 대화를 시작하기 쉽다는 내용입니다.",
+                    "body": "직접 AI를 써본 경험이 있어야 답장, 메모, 보고 초안을 더 덜 무섭게 시작할 수 있다는 내용입니다.",
                 }
             ],
         }
 
-        with patch.object(self.mod, "_retrieve_evidence_bundle", return_value=fake_bundle):
+        with patch.object(self.mod, "_retrieve_evidence_bundle", return_value=fake_bundle) as mocked_bundle:
             card = self.mod._edu_vp_build_week1(
                 {
                     "preferred_llm": "claude",
                     "biggest_friction": "뭘 질문해야 할지 모르겠다",
-                    "learning_goal": "단톡방 답장을 덜 부담스럽게 만들기",
+                    "learning_goal": "회의 메모와 답장을 덜 부담스럽게 만들기",
                 }
             )
 
         self.assertIn("Claude", card["required_action"])
+        self.assertIn("답장 쓰기/회의 메모 정리/보고 초안 만들기/가족 일정 정리", card["required_action"])
         self.assertEqual(card["retrieval_mode"], "db_customer_facing")
         self.assertTrue(card["customer_facing_safe"])
         self.assertFalse(card["fallback_used"])
         self.assertTrue(card["external_reuse_safe"])
         self.assertEqual(len(card["evidence_cards"]), 1)
-        self.assertIn("부모가 먼저 AI를 써봐야", card["evidence_cards"][0]["title"])
+        self.assertIn("직접 AI를 써봐야", card["evidence_cards"][0]["title"])
+        mocked_bundle.assert_called_once()
+        args, kwargs = mocked_bundle.call_args
+        self.assertIn("직장인 초보 AI 첫 사용", args[0])
+        self.assertEqual(args[1], "worker")
+        self.assertEqual(kwargs["k"], 4)
 
 
 if __name__ == "__main__":

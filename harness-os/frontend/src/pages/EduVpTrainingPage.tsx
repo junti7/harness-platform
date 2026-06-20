@@ -33,6 +33,14 @@ type TrainingState = {
   week1?: TrainingStage
 }
 
+const CEO_REVIEW_POINTS = [
+  '고정 목표가 흔들리지 않고 첫 화면에서 바로 보이는가',
+  'Week 0이 설명이 아니라 실제 행동 4단계로 보이는가',
+  'Week 1 장면이 VP 일상과 업무에 바로 닿는가',
+  'proof artifact / blocked step / notes가 저장되는가',
+  'RAG 근거가 비어 있더라도 retrieval mode가 투명하게 보이는가',
+]
+
 const C = {
   ink: '#0f172a',
   muted: '#475569',
@@ -336,7 +344,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
           </label>
           <label style={{ display: 'grid', gap: 6 }}>
             <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>이번 2주 안에 만들고 싶은 변화</span>
-            <textarea value={learningGoal} onChange={(e) => setLearningGoal(e.target.value)} rows={3} placeholder="예: 아이 학교 관련 메시지나 준비물을 AI로 덜 스트레스 받으며 정리해보고 싶어요." style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', lineHeight: 1.5, resize: 'vertical', boxSizing: 'border-box' }} />
+            <textarea value={learningGoal} onChange={(e) => setLearningGoal(e.target.value)} rows={3} placeholder="예: 답장 쓰기, 회의 메모 정리, 일정 정리 같은 일을 AI로 더 빨리 끝내고 싶어요." style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', lineHeight: 1.5, resize: 'vertical', boxSizing: 'border-box' }} />
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.92rem', fontWeight: 700 }}>
             <input type="checkbox" checked={forceNew} onChange={(e) => setForceNew(e.target.checked)} />
@@ -356,6 +364,18 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
               <span>case_id: <b style={{ color: C.ink }}>{caseId}</b></span>
               <span>primary_llm: <b style={{ color: C.ink }}>{trainingState.primary_llm_path}</b></span>
               <span>track: <b style={{ color: C.ink }}>beginner_practice</b></span>
+            </div>
+          </section>
+
+          <section style={{ background: '#fff7ed', border: '1px solid #fdba74', borderRadius: 18, padding: 16, display: 'grid', gap: 10 }}>
+            <div style={{ fontSize: '.78rem', color: '#c2410c', fontWeight: 900, letterSpacing: '.05em' }}>CEO REVIEW MODE</div>
+            <h2 style={{ margin: 0, fontSize: '1.05rem', color: C.ink }}>사전 테스트 때 바로 볼 검수 포인트</h2>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {CEO_REVIEW_POINTS.map((item) => (
+                <div key={item} style={{ background: '#ffffff', border: '1px solid #fed7aa', borderRadius: 12, padding: '10px 12px', fontSize: '.9rem', color: C.ink, lineHeight: 1.55 }}>
+                  {item}
+                </div>
+              ))}
             </div>
           </section>
 
