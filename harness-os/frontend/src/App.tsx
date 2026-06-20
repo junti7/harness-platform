@@ -39,6 +39,10 @@ function loadSession(): SessionData | null {
       localStorage.removeItem(SESSION_KEY)
       return null
     }
+    if (!s.authToken) {
+      localStorage.removeItem(SESSION_KEY)
+      return null
+    }
     return s
   } catch {
     return null

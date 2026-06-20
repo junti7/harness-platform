@@ -330,7 +330,7 @@ def _issue_role_auth_token(role: str) -> str:
     payload = {
         "role": role,
         "iat": int(time.time()),
-        "exp": int(time.time()) + 1800,
+        "exp": int(time.time()) + 7 * 24 * 3600,
     }
     encoded = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode("utf-8")).decode("ascii").rstrip("=")
     signature = hmac.new(_auth_token_secret().encode("utf-8"), encoded.encode("utf-8"), hashlib.sha256).hexdigest()
@@ -367,7 +367,7 @@ def _issue_edu_training_auth_token(email: str, customer_id: int) -> str:
         "email": _edu_normalize_email(email),
         "customer_id": int(customer_id),
         "iat": int(time.time()),
-        "exp": int(time.time()) + 1800,
+        "exp": int(time.time()) + 7 * 24 * 3600,
     }
     encoded = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode("utf-8")).decode("ascii").rstrip("=")
     signature = hmac.new(_auth_token_secret().encode("utf-8"), encoded.encode("utf-8"), hashlib.sha256).hexdigest()
@@ -414,6 +414,8 @@ def _edu_vp_assert_access(request: Request, target_email: str) -> None:
     training_auth = _request_edu_training_auth(request)
     training_email = _edu_normalize_email(str((training_auth or {}).get("email") or ""))
     safe_target_email = _edu_normalize_email(target_email)
+    if not safe_target_email:
+        raise HTTPException(400, "email is required")
     if not allowed_email and not training_email:
         raise HTTPException(401, "auth required")
     if allowed_email and safe_target_email and allowed_email != safe_target_email:

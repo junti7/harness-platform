@@ -1058,7 +1058,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
     const payloadUiState = overrideUiState || latestUiStateRef.current
     await fetch(`${apiBase}/api/edu/vp-training/session/sync`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      headers: { 'Content-Type': 'application/json', ...trainingHeaders() },
       body: JSON.stringify({
         case_id: activeCaseId,
         email: safeEmail,
