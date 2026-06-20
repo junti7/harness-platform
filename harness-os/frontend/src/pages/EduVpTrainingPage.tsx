@@ -129,6 +129,19 @@ function caseStorageKey(email: string) {
   return `${VP_TRAINING_CASE_STORAGE_KEY}:${email}`
 }
 
+async function readJsonSafe(res: Response) {
+  const raw = await res.text()
+  let data: Record<string, unknown> = {}
+  if (raw) {
+    try {
+      data = JSON.parse(raw) as Record<string, unknown>
+    } catch {
+      data = {}
+    }
+  }
+  return { raw, data }
+}
+
 const C = {
   ink: '#111827',
   muted: '#475569',
@@ -615,6 +628,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
   const [resettingCases, setResettingCases] = useState(false)
   const archivedCases = caseHistory.filter((item) => item.case_id !== caseId)
   const hasCaseHistory = archivedCases.length > 0
+  const hasStoredCases = caseHistory.length > 0
 
   async function loadCases(explicitEmail?: string) {
     const safeEmail = (explicitEmail || authEmail).trim().toLowerCase()
@@ -714,14 +728,17 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
           force_new: restart ?? false,
         }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
+      const { raw, data } = await readJsonSafe(res)
+      const detail = typeof data.detail === 'string' ? data.detail : ''
+      if (!res.ok) throw new Error(detail || raw || `HTTP ${res.status}`)
+      const nextCaseId = typeof data.case_id === 'number' ? data.case_id : Number(data.case_id)
+      const nextTrainingState = (data.training_state as TrainingState | null | undefined) || null
       setAuthEmail(safeEmail)
       setIsAuthenticated(true)
-      setCaseId(data.case_id)
-      setTrainingState(data.training_state || null)
-      setSelectedStage(resumeStageFromState(data.training_state || null))
-      window.localStorage.setItem(caseStorageKey(safeEmail), String(data.case_id))
+      setCaseId(nextCaseId)
+      setTrainingState(nextTrainingState)
+      setSelectedStage(resumeStageFromState(nextTrainingState))
+      window.localStorage.setItem(caseStorageKey(safeEmail), String(nextCaseId))
       if (showCaseArchive) await loadCases(safeEmail)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'VP training flow build failed'
@@ -799,15 +816,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ email: safeEmail }),
       })
-      const raw = await res.text()
-      let data: Record<string, unknown> = {}
-      if (raw) {
-        try {
-          data = JSON.parse(raw) as Record<string, unknown>
-        } catch {
-          data = {}
-        }
-      }
+      const { raw, data } = await readJsonSafe(res)
       const detail = typeof data.detail === 'string' ? data.detail : ''
       if (!res.ok) throw new Error(detail || raw || `HTTP ${res.status}`)
       window.localStorage.removeItem(caseStorageKey(safeEmail))
@@ -1002,9 +1011,11 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
                 <button type="button" onClick={() => void buildTrainingSlice(undefined, true)} disabled={loading || resettingCases} style={{ width: isMobile ? '100%' : undefined, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: loading || resettingCases ? 'wait' : 'pointer' }}>
                   새 케이스로 다시 시작
                 </button>
-                <button type="button" onClick={() => void resetAllCases()} disabled={loading || resettingCases} style={{ width: isMobile ? '100%' : undefined, background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: loading || resettingCases ? 'wait' : 'pointer' }}>
-                  {resettingCases ? '전체 초기화 중…' : '전체 초기화'}
-                </button>
+                {hasStoredCases && (
+                  <button type="button" onClick={() => void resetAllCases()} disabled={loading || resettingCases} style={{ width: isMobile ? '100%' : undefined, background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: loading || resettingCases ? 'wait' : 'pointer' }}>
+                    {resettingCases ? '전체 초기화 중…' : '전체 초기화'}
+                  </button>
+                )}
                 {!embeddedMode && (
                   <button type="button" onClick={logoutTrainingAccount} style={{ width: isMobile ? '100%' : undefined, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: 'pointer' }}>
                     다른 계정으로 전환
