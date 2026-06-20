@@ -5998,14 +5998,10 @@ def _edu_sync_table_id_sequence(table_name: str, column_name: str = "id") -> Non
         with conn.cursor() as cur:
             cur.execute(
                 sql.SQL(
-                    """
-                    SELECT setval(
-                        pg_get_serial_sequence(%s, %s),
-                        GREATEST(COALESCE((SELECT MAX({column}) FROM {table}), 0), 1),
-                        true
-                    )
-                )
-                    """
+                    "SELECT setval("
+                    "pg_get_serial_sequence(%s, %s), "
+                    "GREATEST(COALESCE((SELECT MAX({column}) FROM {table}), 0), 1), "
+                    "true)"
                 ).format(
                     column=sql.Identifier(column_name),
                     table=sql.Identifier("public", table_name),
