@@ -630,7 +630,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
   const hasCaseHistory = archivedCases.length > 0
   const hasStoredCases = caseHistory.length > 0
 
-  async function loadCases(explicitEmail?: string) {
+  async function loadCases(explicitEmail?: string, options?: { silentError?: boolean }) {
     const safeEmail = (explicitEmail || authEmail).trim().toLowerCase()
     if (!safeEmail) return [] as CaseItem[]
     const res = await fetch(`${apiBase}/api/edu/vp-training/cases?email=${encodeURIComponent(safeEmail)}`, {
@@ -642,7 +642,9 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       setCaseHistory(cases)
       return cases as CaseItem[]
     }
-    setError(typeof data.detail === 'string' ? data.detail : raw || 'case history load failed')
+    if (!options?.silentError) {
+      setError(typeof data.detail === 'string' ? data.detail : raw || 'case history load failed')
+    }
     return [] as CaseItem[]
   }
 
@@ -698,9 +700,9 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
     }
   }
 
-  async function buildTrainingSlice(targetCaseId?: number | null, restart?: boolean, explicitEmail?: string) {
+  async function buildTrainingSlice(targetCaseId?: number | null, restart?: boolean, explicitEmail?: string, options?: { silentError?: boolean }) {
     setLoading(true)
-    setError(null)
+    if (!options?.silentError) setError(null)
     try {
       const safeEmail = (explicitEmail || authEmail).trim().toLowerCase()
       if (!safeEmail) {
@@ -709,7 +711,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       }
       let resolvedCaseId = restart ? null : (targetCaseId ?? caseId)
       if (!restart && resolvedCaseId == null) {
-        const existingCases = await loadCases(safeEmail)
+        const existingCases = await loadCases(safeEmail, { silentError: options?.silentError })
         if (existingCases.length > 0) {
           resolvedCaseId = existingCases[0].case_id
         }
@@ -749,12 +751,17 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
           window.localStorage.removeItem(caseStorageKey(staleEmail))
         }
         if (!restart && (targetCaseId ?? caseId)) {
-          await buildTrainingSlice(undefined, false, explicitEmail || authEmail)
+          await buildTrainingSlice(undefined, false, explicitEmail || authEmail, options)
           return
         }
-        setError(null)
+        if (!options?.silentError) setError(null)
       } else {
-        setError(message)
+        if (!options?.silentError) {
+          setError(message)
+        } else {
+          setCaseId(null)
+          setTrainingState(null)
+        }
       }
     } finally {
       setLoading(false)
@@ -857,17 +864,17 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
     const parsed = stored == null ? null : Number(stored)
     if (savedEmail && parsed != null && Number.isFinite(parsed) && parsed >= 0) {
       setCaseId(parsed)
-      void buildTrainingSlice(parsed, false, savedEmail)
+      void buildTrainingSlice(parsed, false, savedEmail, { silentError: true })
       return
     }
     if (!savedEmail) return
     void (async () => {
-        const existingCases = await loadCases(savedEmail)
+        const existingCases = await loadCases(savedEmail, { silentError: true })
         if (existingCases.length > 0) {
           const latestCaseId = existingCases[0].case_id
           setCaseId(latestCaseId)
           window.localStorage.setItem(caseStorageKey(savedEmail), String(latestCaseId))
-          await buildTrainingSlice(latestCaseId, false, savedEmail)
+          await buildTrainingSlice(latestCaseId, false, savedEmail, { silentError: true })
         }
       })()
   }, [])
@@ -889,19 +896,19 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
     const parsed = stored == null ? null : Number(stored)
     if (parsed != null && Number.isFinite(parsed) && parsed >= 0) {
       setCaseId(parsed)
-      void buildTrainingSlice(parsed, false, nextEmail)
+      void buildTrainingSlice(parsed, false, nextEmail, { silentError: true })
       return
     }
     void (async () => {
-      const existingCases = await loadCases(nextEmail)
+      const existingCases = await loadCases(nextEmail, { silentError: true })
       if (existingCases.length > 0) {
         const latestCaseId = existingCases[0].case_id
         setCaseId(latestCaseId)
         window.localStorage.setItem(caseStorageKey(nextEmail), String(latestCaseId))
-        await buildTrainingSlice(latestCaseId, false, nextEmail)
+        await buildTrainingSlice(latestCaseId, false, nextEmail, { silentError: true })
         return
       }
-      await buildTrainingSlice(undefined, false, nextEmail)
+      await buildTrainingSlice(undefined, false, nextEmail, { silentError: true })
     })()
   }, [currentRole])
 
