@@ -164,6 +164,24 @@ function curriculumActiveIndex(stageKey: 'week0' | 'week1', blockedAtStep?: stri
   return 0
 }
 
+function stageHasWork(stage?: TrainingStage) {
+  if (!stage) return false
+  return Boolean(
+    stage.completed ||
+    (stage.proof_artifact || '').trim() ||
+    (stage.notes || '').trim() ||
+    (stage.blocked_at_step || '').trim() ||
+    stage.vp_feedback?.submitted_at,
+  )
+}
+
+function resumeStageFromState(state?: TrainingState | null): 'week0' | 'week1' {
+  if (!state) return 'week0'
+  if (stageHasWork(state.week1)) return 'week1'
+  if (state.week0?.completed) return 'week1'
+  return 'week0'
+}
+
 function StageCard({
   stage,
   stageKey,
@@ -571,18 +589,27 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
       const cases = data.cases || []
       setCaseHistory(cases)
       setHasCaseHistory(cases.length > 0)
+      return cases as CaseItem[]
     }
+    return [] as CaseItem[]
   }
 
   async function buildTrainingSlice(targetCaseId?: number | null, restart?: boolean) {
     setLoading(true)
     setError(null)
     try {
+      let resolvedCaseId = restart ? null : (targetCaseId ?? caseId)
+      if (!restart && !resolvedCaseId) {
+        const existingCases = await loadCases()
+        if (existingCases.length > 0) {
+          resolvedCaseId = existingCases[0].case_id
+        }
+      }
       const res = await fetch(`${apiBase}/api/edu/vp-training/intake`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({
-          case_id: restart ? null : (targetCaseId ?? caseId),
+          case_id: resolvedCaseId,
           email: VP_TRAINING_EMAIL,
           preferred_llm: preferredLlm,
           current_device: currentDevice,
@@ -597,11 +624,21 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
       if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
       setCaseId(data.case_id)
       setTrainingState(data.training_state || null)
-      setSelectedStage('week0')
+      setSelectedStage(resumeStageFromState(data.training_state || null))
       window.localStorage.setItem(VP_TRAINING_CASE_STORAGE_KEY, String(data.case_id))
       if (showCaseArchive) await loadCases()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'VP training flow build failed')
+      const message = err instanceof Error ? err.message : 'VP training flow build failed'
+      if (message.includes('case not found')) {
+        window.localStorage.removeItem(VP_TRAINING_CASE_STORAGE_KEY)
+        if (!restart && (targetCaseId ?? caseId)) {
+          await buildTrainingSlice(undefined, false)
+          return
+        }
+        setError(null)
+      } else {
+        setError(message)
+      }
     } finally {
       setLoading(false)
     }

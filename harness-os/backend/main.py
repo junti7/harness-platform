@@ -7379,7 +7379,56 @@ def _edu_vp_prepare_case(
     force_new: bool,
 ) -> dict[str, Any]:
     if case_id:
-        payload = _edu_load_case_payload(int(case_id))
+        try:
+            payload = _edu_load_case_payload(int(case_id))
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            payload = _edu_vp_prepare_case(
+                case_id=None,
+                name=name,
+                email=email,
+                preferred_llm=preferred_llm,
+                force_new=force_new,
+            )
+    elif not force_new:
+        rows = _edu_execute(
+            """
+            SELECT c.id
+            FROM edu_cases c
+            JOIN edu_customers cu ON cu.id = c.customer_id
+            LEFT JOIN LATERAL (
+                SELECT summary_json
+                FROM edu_case_snapshots s
+                WHERE s.case_id = c.id
+                  AND COALESCE(s.summary_json->>'program', '') = 'vp_training'
+                ORDER BY s.id DESC
+                LIMIT 1
+            ) s ON TRUE
+            WHERE LOWER(COALESCE(cu.email, '')) = %s
+            ORDER BY
+                CASE WHEN s.summary_json IS NOT NULL THEN 0 ELSE 1 END,
+                c.updated_at DESC,
+                c.id DESC
+            LIMIT 1
+            """,
+            (_edu_normalize_email(email),),
+            fetch=True,
+        )
+        if rows:
+            payload = _edu_load_case_payload(int(rows[0]["id"]))
+        else:
+            payload = _edu_bootstrap_customer_case(
+                EduPublicBootstrapRequest(
+                    segment="worker",
+                    name=name,
+                    email=email,
+                    preferred_salutation="name" if (name or "").strip() else "neutral",
+                    locale="ko-KR",
+                    preferred_llm=preferred_llm,
+                    force_new=False,
+                )
+            )
     else:
         payload = _edu_bootstrap_customer_case(
             EduPublicBootstrapRequest(
