@@ -24,6 +24,8 @@ from uuid import uuid4
 
 import httpx
 import anthropic
+import psycopg2
+from psycopg2 import sql
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -5988,6 +5990,36 @@ _EDU_SCHEMA_READY = False
 _EDU_SCHEMA_LOCK = threading.Lock()
 
 
+def _edu_sync_table_id_sequence(table_name: str, column_name: str = "id") -> None:
+    from core.database import get_connection
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                sql.SQL(
+                    """
+                    SELECT setval(
+                        pg_get_serial_sequence(%s, %s),
+                        GREATEST(COALESCE((SELECT MAX({column}) FROM {table}), 0), 1),
+                        true
+                    )
+                )
+                    """
+                ).format(
+                    column=sql.Identifier(column_name),
+                    table=sql.Identifier("public", table_name),
+                ),
+                (f"public.{table_name}", column_name),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def _ensure_edu_case_schema() -> None:
     global _EDU_SCHEMA_READY
     if _EDU_SCHEMA_READY:
@@ -6003,6 +6035,9 @@ def _ensure_edu_case_schema() -> None:
                 cur.execute(sql_text)
                 cur.execute("ALTER TABLE edu_customers ADD COLUMN IF NOT EXISTS password_hash TEXT")
             conn.commit()
+            _edu_sync_table_id_sequence("edu_customers")
+            _edu_sync_table_id_sequence("edu_cases")
+            _edu_sync_table_id_sequence("edu_case_turns")
             _EDU_SCHEMA_READY = True
         except Exception:
             conn.rollback()
@@ -6032,15 +6067,27 @@ def _edu_build_opener(segment: str) -> dict[str, Any]:
 
 
 def _edu_create_case(customer_id: int, segment: str) -> int:
-    row = _edu_execute(
-        """
-        INSERT INTO edu_cases (customer_id, status, current_phase, current_tone_level, last_turn_at)
-        VALUES (%s, 'intake', 'opening', 0, NOW())
-        RETURNING id
-        """,
-        (customer_id,),
-        fetch=True,
-    )[0]
+    try:
+        row = _edu_execute(
+            """
+            INSERT INTO edu_cases (customer_id, status, current_phase, current_tone_level, last_turn_at)
+            VALUES (%s, 'intake', 'opening', 0, NOW())
+            RETURNING id
+            """,
+            (customer_id,),
+            fetch=True,
+        )[0]
+    except psycopg2.errors.UniqueViolation:
+        _edu_sync_table_id_sequence("edu_cases")
+        row = _edu_execute(
+            """
+            INSERT INTO edu_cases (customer_id, status, current_phase, current_tone_level, last_turn_at)
+            VALUES (%s, 'intake', 'opening', 0, NOW())
+            RETURNING id
+            """,
+            (customer_id,),
+            fetch=True,
+        )[0]
     case_id = int(row["id"])
     opener = _edu_build_opener(segment)
     _edu_execute(
