@@ -251,6 +251,98 @@ def calc_turtle_signal(ib: IB, contract: Stock) -> dict | None:
         return None
 
 
+# ── 주문 생명주기 정합(reconcile) ─────────────────────────────────────────────
+
+def reconcile_pending_orders(ib: IB, state: dict, paper_account: str) -> dict:
+    """기존 `pending_orders` 를 **브로커 실제 상태와 대조**해 주문 생명주기를 정리한다.
+
+    배경(2026-06-20 ontology red team §3#2): 진입 주문은 미체결이면 `pending_orders` 에 적재되는데,
+    이후 어떤 실행에서도 reconcile 가 없어 ① 체결돼도 영영 pending 에 남고(→ exit 모니터는 positions
+    만 보므로 손절/청산이 안 걸림), ② 취소/거절되면 orphan 으로 남아 재진입을 영구 차단하고 대시보드를
+    오표시한다. 이 함수가 매 실행 초입에 정합한다(브로커 *읽기*만 — 주문을 새로 내거나 취소하지 않음):
+      - 브로커 포지션에 존재(=체결) → `positions` 로 승격(exit 모니터링 대상화) 후 pending 제거
+      - 여전히 live open order(openTrades) → status 갱신 후 유지
+      - 둘 다 아님(취소/거절/만료) → pending 에서 purge
+
+    반환: {"promoted", "purged", "kept": [...], "live_symbols": set} (live_symbols 는 재진입 중복방지 보강용).
+    """
+    pending = state.get("pending_orders") or {}
+    summary = {"promoted": [], "purged": [], "kept": [], "live_symbols": set()}
+    if not pending:
+        return summary
+
+    # 브로커 실제 상태 스냅샷
+    try:
+        broker_positions = {
+            p.contract.symbol: p
+            for p in ib.positions(account=paper_account)
+            if abs(float(getattr(p, "position", 0) or 0)) > 0
+        }
+    except Exception:
+        broker_positions = {}
+
+    # 세션 가시성 갭(다른 clientId/이전 세션 주문 누락) 방지를 위해 계정 전체 open order 를 끌어온다.
+    try:
+        ib.reqAllOpenOrders()
+        ib.sleep(1)
+    except Exception:
+        pass
+    live_by_id: dict[int, str] = {}      # orderId → status
+    live_symbols: set[str] = set()
+    try:
+        for tr in ib.openTrades():
+            o = getattr(tr, "order", None)
+            st = getattr(tr, "orderStatus", None)
+            con = getattr(tr, "contract", None)
+            if o is None:
+                continue
+            oid = getattr(o, "orderId", None)
+            status = (getattr(st, "status", "") if st is not None else "") or ""
+            sym = (getattr(con, "symbol", "") if con is not None else "") or ""
+            if oid is not None:
+                live_by_id[oid] = status
+            if sym:
+                live_symbols.add(sym)
+    except Exception:
+        pass
+    summary["live_symbols"] = live_symbols
+
+    for sym in list(pending.keys()):
+        meta = pending.get(sym)
+        if not isinstance(meta, dict):
+            pending.pop(sym, None)
+            summary["purged"].append(sym)
+            continue
+        oid = meta.get("order_id")
+
+        # 1) 체결되어 실제 포지션 → 승격(Turtle 파라미터 entry_price/atr/stop_loss 는 진입 시 값 유지,
+        #    수량만 실제 체결로 갱신). exit 모니터가 손절/청산을 걸 수 있게 된다.
+        if sym in broker_positions:
+            filled_qty = abs(float(getattr(broker_positions[sym], "position", meta.get("qty", 0)) or 0)) \
+                or meta.get("qty", 0)
+            promoted = {**meta, "status": "Filled", "qty": filled_qty, "filled_reconciled_at": now_iso()}
+            state.setdefault("positions", {})[sym] = promoted
+            pending.pop(sym, None)
+            summary["promoted"].append(sym)
+            log_entry({"ts": now_iso(), "action": "pending_filled_promoted", "symbol": sym,
+                       "order_id": oid, "qty": filled_qty})
+            continue
+
+        # 2) 아직 live open order → 유지(상태 갱신)
+        if (oid in live_by_id) or (sym in live_symbols):
+            meta["status"] = live_by_id.get(oid, meta.get("status")) or meta.get("status")
+            summary["kept"].append(sym)
+            continue
+
+        # 3) 포지션도 아니고 live order 도 아님 → 취소/거절/만료 → purge(orphan 제거)
+        pending.pop(sym, None)
+        summary["purged"].append(sym)
+        log_entry({"ts": now_iso(), "action": "pending_purged_stale", "symbol": sym,
+                   "order_id": oid, "last_status": meta.get("status")})
+
+    return summary
+
+
 # ── 메인 ──────────────────────────────────────────────────────────────────────
 
 def run(execute: bool = False) -> None:
@@ -294,6 +386,13 @@ def run(execute: bool = False) -> None:
     if not state.get("baseline"):
         state["baseline"] = {"nav": nav, "set_at": now_iso()}
         print(f"\n[베이스라인 설정] NAV ${nav:,.2f}")
+
+    # 주문 생명주기 정합: 기존 pending_orders 를 브로커 실상태와 맞춘다(체결→positions 승격,
+    # 취소/거절→purge). 신호 스캔 *전*에 해야 dedup 가드/MAX_POSITIONS 카운트가 실상태를 반영한다.
+    recon = reconcile_pending_orders(ib, state, paper_account)
+    if recon["promoted"] or recon["purged"] or recon["kept"]:
+        print(f"\n[pending 정합] 체결승격 {recon['promoted'] or '-'} | 미체결유지 {recon['kept'] or '-'} | 정리(취소/거절) {recon['purged'] or '-'}")
+    broker_open_symbols = recon["live_symbols"]
 
     # 현재 포지션
     positions = ib.positions(account=paper_account)
@@ -356,9 +455,12 @@ def run(execute: bool = False) -> None:
             print(f"     S2고점={curr_sym}{s2_high:.2f}({dist:+.1f}%) ATR={atr:.2f}{currency} (${atr_usd:.4f}) 수량={shares}주")
             print(f"     포지션={curr_sym}{pos_val_local:,.0f} (≈${pos_val_usd:,.0f}) 손절={curr_sym}{stop_loss:.2f}")
 
-            # 이미 보유 중이면 스킵
-            if sym in pos_symbols or sym in state["positions"] or sym in state["pending_orders"]:
-                print(f"     → 이미 보유 중 — 스킵")
+            # 이미 보유 중이면 스킵. broker_open_symbols(브로커 실시간 미체결 주문)도 포함해,
+            # 로컬 pending 이 어떤 이유로 누락돼도 같은 종목 *중복 주문*을 내지 않게 한다
+            # (ontology red team §3#2: 동일 주문 중복 전송 방지의 최종 가드).
+            if (sym in pos_symbols or sym in state["positions"]
+                    or sym in state["pending_orders"] or sym in broker_open_symbols):
+                print(f"     → 이미 보유/미체결 주문 존재 — 스킵")
                 continue
 
             # 최대 포지션 수 초과
