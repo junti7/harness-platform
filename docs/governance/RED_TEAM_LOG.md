@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-06-20 — IBKR 대기주문 UI를 실제 렌더 컴포넌트(TradingOpsCenter)에 연결 (1라운드, CEO confirm)
+
+- 대상: `harness-os/frontend/src/components/TradingOpsCenter.tsx`(`IbkrPendingOrder` 타입 + `pending_orders` 옵셔널 필드 + 메인 대시보드 IBKR 카드에 "대기 주문(미체결)" 미니 요약 블록) + `App.css`(`.ibkr-pending-*` 스타일).
+- 배경: 직전 PR(de495c5)은 pending_orders UI 를 **미마운트 컴포넌트** `IbkrTurtleMonitor.tsx`(어디서도 import 안 됨)에 넣어 화면에 안 보였다(대표 지적: "어느 메뉴에 어떤 UI인지 모르겠음"). 실제 렌더 경로는 App.tsx:435 의 `TradingOpsCenter`(메인 대시보드 "트레이딩 오퍼레이션 센터" 섹션, `/api/ibkr/monitor` 소비). backend/script/CSS/테스트는 정상이었고 **프론트 렌더만 잘못된 컴포넌트**였음.
+- 저자: Claude. 검토자(비저자, read-only): Codex + Copilot. **1라운드만**(CEO 2026-06-20 지시 "레드팀 평가는 1턴만").
+- 결과: **Codex clear**(read-only 가시화, []-fallback, side-effect 없음, 게이트/approval 무영향). **Copilot block** 2 MAJOR — **둘 다 인라인 반영**: ① `pending_orders ?? []` → `Array.isArray()` 가드(손상 non-array 가 메인 대시보드 .map/.some 죽이지 않게) ② React key `${symbol}-${order_id??na}` 충돌 가능(order_id null·동일종목 복수 대기) → key 에 index 추가(행 재사용 오표시 방지).
+- **CEO confirm (2026-06-20)**: 1라운드 cap 지시에 따라 추가 라운드 없이, Codex clear + Copilot 2 MAJOR 인라인 수정 반영분으로 머지. read-only UI, 비협상 사유 없음. Gemini CLI 영구 불가.
+- 검증: 프론트 `tsc -b && vite build` clean.
+
+---
+
 ## 2026-06-20 — IBKR 대기 주문(pending_orders) 대시보드 가시화 + 상태파일 손상 내성 (CEO confirm 머지)
 
 - 대상: `scripts/ibkr_turtle_monitor.py`(`assess_pending_order`/`_collect_pending_orders` 신규, run()/run_offline()/예외 fallback 에 `pending_orders` 추가, `load_state` 손상 shape 교정, `save_state` 원자화) + `scripts/ibkr_tws_paper_trader.py`(`load_state` 손상 shape 교정, `save_state` 원자화) + `harness-os/backend/main.py`(`_is_ibkr_monitor_result` pending_orders 컨테이너 검증, cold-start positions+pending 손상 내성, `_safe_state_keys` 헬퍼로 selection-flow runtime_state 강등) + `core/atomic_io.py`(공용 `atomic_write_json`, 신규) + 프론트 `IbkrTurtleMonitor.tsx`/`App.css`(대기주문 카드·배지·상태행 카운트) + 테스트 3종(`test_ibkr_pending_orders.py`/`test_atomic_io.py` 신규, `test_ibkr_monitor_cache_parse.py` 보강).

@@ -78,6 +78,23 @@ type IbkrOrder = {
   observed_at?: string
 }
 
+type IbkrPendingOrder = {
+  symbol: string
+  exchange: string
+  currency: string
+  region: string
+  qty: number
+  entry_ts: string
+  entry_price: number
+  stop_loss: number | null
+  atr: number | null
+  order_id: number | string | null
+  status: string
+  current_price: number | null
+  gap_to_entry_pct: number | null
+  age_hours: number | null
+}
+
 type IbkrMonitorData = {
   ok: boolean
   ts: string
@@ -85,6 +102,7 @@ type IbkrMonitorData = {
   gateway_connected: boolean
   account: IbkrAccount | null
   positions: IbkrPosition[]
+  pending_orders?: IbkrPendingOrder[]
   exit_signals: string[]
   entry_candidates: IbkrCandidate[]
   universe_source: string
@@ -756,6 +774,8 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
 
   const ibkrAccount = ibkrData?.account
   const ibkrPositions = ibkrData?.positions ?? []
+  // Array.isArray 가드(Red Team MAJOR): 손상된 non-array 가 와도 메인 대시보드 .map/.some 가 죽지 않게.
+  const ibkrPending = Array.isArray(ibkrData?.pending_orders) ? ibkrData.pending_orders : []
   const ibkrOrders = ibkrData?.recent_orders ?? []
   const ibkrCandidates = ibkrData?.entry_candidates ?? []
   const ibkrExitSignals = ibkrData?.exit_signals ?? []
@@ -1397,6 +1417,33 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
                       <ActionBadge action={pos.action} />
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* IBKR 대기 주문(미체결) 요약 — handoff: PreSubmitted/PendingSubmit 가시화 */}
+              {ibkrPending.length > 0 && (
+                <div className="ibkr-pos-summary ibkr-pending-summary" style={{ marginTop: '0.75rem' }}>
+                  <p className="data-label" style={{ marginBottom: '0.35rem' }}>
+                    대기 주문 <small>(미체결 진입 {ibkrPending.length}건)</small>
+                  </p>
+                  {ibkrPending.map((po, i) => {
+                    const stale = (po.age_hours ?? 0) >= 24
+                    return (
+                      <div key={`${po.symbol}-${po.order_id ?? 'na'}-${i}`} className={`ibkr-pos-row ${stale ? 'ibkr-pos-stale' : ''}`}>
+                        <span className="ibkr-pos-symbol">
+                          <strong>{po.symbol}</strong>
+                          {symbolNames[po.symbol] && <small>{symbolNames[po.symbol]}</small>}
+                        </span>
+                        <span className="ibkr-pending-detail">
+                          {po.qty}주 · {fmtLocalPrice(po.entry_price, po.currency)}
+                        </span>
+                        <span className="position-action-badge action-pending-badge">{po.status || '대기'}</span>
+                      </div>
+                    )
+                  })}
+                  {ibkrPending.some(po => (po.age_hours ?? 0) >= 24) && (
+                    <p className="ibkr-pending-stale-note">⚠ 24시간+ 미체결 — Gateway/주문 상태 확인</p>
+                  )}
                 </div>
               )}
 

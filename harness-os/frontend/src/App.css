@@ -6796,6 +6796,28 @@ button.mobile-detail-card:hover {
   margin-left: auto;
 }
 
+/* IBKR 대기 주문(미체결) 요약 */
+.ibkr-pending-summary .ibkr-pos-row {
+  background: rgba(37, 99, 235, 0.05);
+}
+.ibkr-pos-row.ibkr-pos-stale {
+  background: rgba(217, 119, 6, 0.06);
+  border: 1px solid rgba(217, 119, 6, 0.2);
+}
+.ibkr-pending-detail {
+  font-size: 0.72rem;
+  color: var(--text-muted, #475569);
+  margin-left: auto;
+  white-space: nowrap;
+}
+.ibkr-pending-summary .position-action-badge { flex-shrink: 0; }
+.ibkr-pending-stale-note {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--warning, #d97706);
+  margin: 0.1rem 0 0;
+}
+
 /* Turtle 준비도 그리드 */
 .turtle-readiness-grid {
   display: grid;
