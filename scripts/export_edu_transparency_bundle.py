@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import io
 import json
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from xml.sax.saxutils import escape
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -128,6 +131,10 @@ def _sample_rows(name: str, limit: int = 5) -> list[dict[str, Any]] | None:
     return _safe_query(f"SELECT * FROM {name} ORDER BY 1 DESC LIMIT {limit}")
 
 
+def _all_rows(name: str) -> list[dict[str, Any]] | None:
+    return _safe_query(f"SELECT * FROM {name} ORDER BY 1 DESC")
+
+
 def _view_definition(name: str) -> str | None:
     rows = _safe_query(
         """
@@ -212,6 +219,150 @@ ORDER BY
     id DESC
 LIMIT :limit
 """.strip()
+
+
+def _excel_column_name(index: int) -> str:
+    value = index + 1
+    chars: list[str] = []
+    while value:
+        value, remainder = divmod(value - 1, 26)
+        chars.append(chr(65 + remainder))
+    return "".join(reversed(chars))
+
+
+def _xlsx_cell_xml(row_idx: int, col_idx: int, value: Any) -> str:
+    cell_ref = f"{_excel_column_name(col_idx)}{row_idx}"
+    if value is None:
+        return f'<c r="{cell_ref}"/>'
+    if isinstance(value, bool):
+        return f'<c r="{cell_ref}" t="b"><v>{1 if value else 0}</v></c>'
+    if isinstance(value, int) and not isinstance(value, bool):
+        return f'<c r="{cell_ref}"><v>{value}</v></c>'
+    if isinstance(value, float):
+        if value != value or value in {float("inf"), float("-inf")}:
+            text = ""
+        else:
+            return f'<c r="{cell_ref}"><v>{value}</v></c>'
+    else:
+        if isinstance(value, (dict, list)):
+            text = json.dumps(value, ensure_ascii=False)
+        else:
+            text = str(value)
+    text = escape(text)
+    return f'<c r="{cell_ref}" t="inlineStr"><is><t xml:space="preserve">{text}</t></is></c>'
+
+
+def _worksheet_xml(rows: list[list[Any]]) -> str:
+    xml_rows: list[str] = []
+    for row_idx, row in enumerate(rows, start=1):
+        cells = "".join(_xlsx_cell_xml(row_idx, col_idx, value) for col_idx, value in enumerate(row))
+        xml_rows.append(f'<row r="{row_idx}">{cells}</row>')
+    sheet_data = "".join(xml_rows)
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        f"<sheetData>{sheet_data}</sheetData>"
+        "</worksheet>"
+    )
+
+
+def build_object_xlsx(name: str) -> bytes:
+    safe_name = str(name or "").strip()
+    if not safe_name:
+        raise ValueError("object name required")
+    obj_type = "view" if safe_name in EXPECTED_VIEWS else "table"
+    exists_rows = execute_query(
+        """
+        SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = %s
+        ) AS exists_table,
+        EXISTS (
+            SELECT 1
+            FROM pg_views
+            WHERE schemaname = 'public' AND viewname = %s
+        ) AS exists_view
+        """,
+        (safe_name, safe_name),
+        fetch=True,
+    )
+    exists = bool(exists_rows and (exists_rows[0]["exists_table"] or exists_rows[0]["exists_view"]))
+    if not exists:
+        raise ValueError(f"object not found: {safe_name}")
+
+    owner = (EXPECTED_TABLES.get(safe_name) or EXPECTED_VIEWS.get(safe_name) or {}).get("owner")
+    source_of_truth = (EXPECTED_TABLES.get(safe_name) or EXPECTED_VIEWS.get(safe_name) or {}).get("source_of_truth")
+    row_count = _row_count(safe_name)
+    columns = _columns(safe_name)
+    rows = _all_rows(safe_name) or []
+    row_columns = list(rows[0].keys()) if rows else [col["column_name"] for col in columns]
+
+    meta_sheet = [
+        ["field", "value"],
+        ["name", safe_name],
+        ["type", obj_type],
+        ["exists", exists],
+        ["expected", safe_name in EXPECTED_TABLES or safe_name in EXPECTED_VIEWS],
+        ["owner", owner or ""],
+        ["source_of_truth", source_of_truth or ""],
+        ["row_count", row_count if row_count is not None else ""],
+        ["exported_at_utc", datetime.now(timezone.utc).isoformat(timespec="seconds")],
+    ]
+    columns_sheet = [["idx", "column_name", "data_type", "is_nullable"]]
+    for index, column in enumerate(columns):
+        columns_sheet.append([index, column.get("column_name"), column.get("data_type"), column.get("is_nullable")])
+    rows_sheet = [row_columns]
+    for row in rows:
+        rows_sheet.append([row.get(column) for column in row_columns])
+
+    workbook_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        "<sheets>"
+        '<sheet name="meta" sheetId="1" r:id="rId1"/>'
+        '<sheet name="columns" sheetId="2" r:id="rId2"/>'
+        '<sheet name="rows" sheetId="3" r:id="rId3"/>'
+        "</sheets>"
+        "</workbook>"
+    )
+    workbook_rels_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+        '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>'
+        '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/>'
+        "</Relationships>"
+    )
+    root_rels_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+        "</Relationships>"
+    )
+    content_types_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        '<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        '<Override PartName="/xl/worksheets/sheet3.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        "</Types>"
+    )
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", content_types_xml)
+        zf.writestr("_rels/.rels", root_rels_xml)
+        zf.writestr("xl/workbook.xml", workbook_xml)
+        zf.writestr("xl/_rels/workbook.xml.rels", workbook_rels_xml)
+        zf.writestr("xl/worksheets/sheet1.xml", _worksheet_xml(meta_sheet))
+        zf.writestr("xl/worksheets/sheet2.xml", _worksheet_xml(columns_sheet))
+        zf.writestr("xl/worksheets/sheet3.xml", _worksheet_xml(rows_sheet))
+    return buffer.getvalue()
 
 
 def build_bundle() -> dict[str, Any]:

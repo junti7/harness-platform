@@ -26,6 +26,7 @@ from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request, Resp
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from fastapi.responses import FileResponse
+from fastapi.responses import Response as FastAPIResponse
 try:
     from openai import OpenAI
 except ImportError:  # pragma: no cover - optional runtime dependency
@@ -3464,6 +3465,28 @@ def get_edu_db_object(
         "sample_rows": _sample_rows(safe_name, max(1, min(limit, 100))) if exists else [],
         "definition": _view_definition(safe_name) if obj_type == "view" and exists else None,
     }
+
+
+@app.get("/api/admin/edu/db/object-export.xlsx")
+def get_edu_db_object_export_xlsx(
+    name: str,
+    _: None = Depends(_require_secret),
+) -> FastAPIResponse:
+    from scripts.export_edu_transparency_bundle import build_object_xlsx
+
+    safe_name = str(name or "").strip()
+    if not safe_name or not re.fullmatch(r"[A-Za-z0-9_]+", safe_name):
+        raise HTTPException(status_code=400, detail="invalid object name")
+    try:
+        payload = build_object_xlsx(safe_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    filename = f"{safe_name}_full_export.xlsx"
+    return FastAPIResponse(
+        content=payload,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/api/admin/edu/db/retrieval-debug")

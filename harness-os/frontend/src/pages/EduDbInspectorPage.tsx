@@ -107,6 +107,12 @@ function formatCellValue(value: unknown): string {
   }
 }
 
+function formatPreviewValue(value: unknown, maxLength = 160): string {
+  const text = formatCellValue(value).replace(/\s+/g, ' ').trim()
+  if (text.length <= maxLength) return text
+  return `${text.slice(0, maxLength - 1)}…`
+}
+
 function collectRowColumns(rows: any[]): string[] {
   const seen = new Set<string>()
   for (const row of rows) {
@@ -125,6 +131,7 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
   const [debugLoading, setDebugLoading] = useState(false)
+  const [downloadLoading, setDownloadLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('중학생 숙제할 때 AI 답부터 보는 아이를 부모가 어떻게 다뤄야 하나요?')
   const [segment, setSegment] = useState<'parent' | 'worker'>('parent')
@@ -197,6 +204,31 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
     }
   }
 
+  async function downloadFullObjectXlsx() {
+    if (!selectedName) return
+    setDownloadLoading(true)
+    try {
+      const res = await fetch(
+        `${apiBase}/api/admin/edu/db/object-export.xlsx?name=${encodeURIComponent(selectedName)}`,
+        { headers: authHeaders() },
+      )
+      if (!res.ok) throw new Error(`object export API ${res.status}`)
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${selectedName}_full_export.xlsx`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'object export failed')
+    } finally {
+      setDownloadLoading(false)
+    }
+  }
+
   const objectNames = [
     ...Object.keys(bundle?.tables || {}),
     ...Object.keys(bundle?.views || {}),
@@ -248,6 +280,29 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
     lineHeight: 1.55,
     overflow: 'auto',
   } as const
+  const scrollWrapStyle = {
+    width: '100%',
+    maxWidth: '100%',
+    overflowX: 'scroll',
+    overflowY: 'hidden',
+    WebkitOverflowScrolling: 'touch',
+    scrollbarGutter: 'stable both-edges',
+    paddingBottom: 4,
+  } as const
+  const headerCellStyle = {
+    textAlign: 'left' as const,
+    borderBottom: `1px solid ${palette.border}`,
+    padding: '8px 10px',
+    color: palette.textMuted,
+    fontWeight: 800,
+    whiteSpace: 'nowrap' as const,
+    background: palette.surfaceMuted,
+  }
+  const bodyCellStyle = {
+    borderBottom: `1px solid ${palette.borderSoft}`,
+    padding: '8px 10px',
+    verticalAlign: 'top' as const,
+  }
 
   return (
     <div style={{ display: 'grid', gap: 12, width: '100%', maxWidth: '100%' }}>
@@ -273,7 +328,7 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
               actual `{bundle?.actual_tables?.length ?? 0}` · missing tables `{(bundle?.missing_expected_tables || []).join(', ') || '(none)'}`
             </p>
           </div>
-          <div style={{ width: '100%', maxWidth: '100%', overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}>
+          <div style={scrollWrapStyle}>
             <table style={{ minWidth: 520, width: '100%', borderCollapse: 'collapse', fontSize: '.86rem', color: palette.text }}>
               <thead>
                 <tr>
@@ -311,37 +366,56 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
                 <h3 style={sectionTitleStyle}>{selectedName || '선택 없음'}</h3>
                 <p style={{ margin: '4px 0 0', color: palette.textSoft, fontSize: '.82rem' }}>raw structure + raw rows</p>
               </div>
-              {detailLoading && <div style={{ color: palette.textSoft, fontSize: '.86rem', fontWeight: 600 }}>불러오는 중…</div>}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => void downloadFullObjectXlsx()}
+                  disabled={!selectedName || downloadLoading}
+                  style={{
+                    border: `1px solid ${palette.border}`,
+                    borderRadius: 10,
+                    background: palette.surfaceMuted,
+                    color: palette.textStrong,
+                    padding: '10px 12px',
+                    fontWeight: 800,
+                    cursor: downloadLoading ? 'progress' : 'pointer',
+                  }}
+                >
+                  {downloadLoading ? 'xlsx 준비 중…' : 'Download full xlsx'}
+                </button>
+                {detailLoading && <div style={{ color: palette.textSoft, fontSize: '.86rem', fontWeight: 600 }}>불러오는 중…</div>}
+              </div>
             </div>
             {selectedObject?.error ? (
               <div style={{ color: '#b91c1c' }}>{selectedObject.error}</div>
             ) : (
               <div style={{ display: 'grid', gap: 12 }}>
                 {selectedMeta && (
-                  <div style={{ background: palette.surfaceMuted, border: `1px solid ${palette.borderSoft}`, borderRadius: 10, padding: '12px 14px' }}>
-                    <div style={{ fontSize: '.8rem', color: palette.textMuted, fontWeight: 800, marginBottom: 6 }}>{selectedMeta.label}</div>
+                  <div style={{ background: '#eff6ff', border: `1px solid #bfdbfe`, borderRadius: 10, padding: '12px 14px' }}>
+                    <div style={{ fontSize: '.76rem', color: '#1d4ed8', fontWeight: 900, letterSpacing: '.04em', marginBottom: 6 }}>OBJECT MEANING</div>
+                    <div style={{ fontSize: '.9rem', color: palette.textStrong, lineHeight: 1.55, marginBottom: 4, fontWeight: 800 }}>{selectedMeta.label}</div>
                     <div style={{ fontSize: '.9rem', color: palette.textStrong, lineHeight: 1.55, marginBottom: 8 }}>{selectedMeta.meaning}</div>
                     <div style={{ fontSize: '.85rem', color: palette.textSoft, lineHeight: 1.55 }}>분석 포인트: {selectedMeta.analyticsUse}</div>
                   </div>
                 )}
-                <div style={{ width: '100%', maxWidth: '100%', overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}>
+                <div style={scrollWrapStyle}>
                   <table style={{ minWidth: compactTableMinWidth, width: 'max-content', maxWidth: 'none', borderCollapse: 'collapse', fontSize: '.86rem', color: palette.text }}>
                     <thead>
                       <tr>
-                        <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>type</th>
-                        <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>exists</th>
-                        <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>row_count</th>
-                        <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>owner</th>
-                        <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>source_of_truth</th>
+                        <th style={headerCellStyle}>type</th>
+                        <th style={headerCellStyle}>exists</th>
+                        <th style={headerCellStyle}>row_count</th>
+                        <th style={headerCellStyle}>owner</th>
+                        <th style={headerCellStyle}>source_of_truth</th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr>
-                        <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px' }}>{selectedObject?.type ?? '-'}</td>
-                        <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px', fontWeight: 700 }}>{String(selectedObject?.exists ?? '-')}</td>
-                        <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px' }}>{String(selectedObject?.row_count ?? '-')}</td>
-                        <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px' }}>{selectedObject?.owner || 'n/a'}</td>
-                        <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px', color: palette.textSoft }}>{selectedObject?.source_of_truth || 'n/a'}</td>
+                        <td style={bodyCellStyle}>{selectedObject?.type ?? '-'}</td>
+                        <td style={{ ...bodyCellStyle, fontWeight: 700 }}>{String(selectedObject?.exists ?? '-')}</td>
+                        <td style={bodyCellStyle}>{String(selectedObject?.row_count ?? '-')}</td>
+                        <td style={bodyCellStyle}>{selectedObject?.owner || 'n/a'}</td>
+                        <td style={{ ...bodyCellStyle, color: palette.textSoft, minWidth: 320 }}>{selectedObject?.source_of_truth || 'n/a'}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -349,23 +423,23 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
 
                 <div>
                   <h4 style={sectionTitleStyle}>Columns dataframe</h4>
-                  <div style={{ width: '100%', maxWidth: '100%', overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', marginTop: 8 }}>
+                  <div style={{ ...scrollWrapStyle, marginTop: 8 }}>
                     <table style={{ minWidth: compactTableMinWidth, width: 'max-content', maxWidth: 'none', borderCollapse: 'collapse', fontSize: '.86rem', color: palette.text }}>
                       <thead>
                         <tr>
-                          <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>idx</th>
-                          <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>column</th>
-                          <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>type</th>
-                          <th style={{ textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>nullable</th>
+                          <th style={headerCellStyle}>idx</th>
+                          <th style={headerCellStyle}>column</th>
+                          <th style={headerCellStyle}>type</th>
+                          <th style={headerCellStyle}>nullable</th>
                         </tr>
                       </thead>
                       <tbody>
                         {(selectedObject?.columns || []).map((col: any, index: number) => (
                           <tr key={col.column_name}>
-                            <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px', color: palette.textSoft }}>{index}</td>
-                            <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px', fontFamily: 'monospace', color: palette.textStrong, fontWeight: 700 }}>{col.column_name}</td>
-                            <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px' }}>{col.data_type}</td>
-                            <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px' }}>{col.is_nullable}</td>
+                            <td style={{ ...bodyCellStyle, color: palette.textSoft }}>{index}</td>
+                            <td style={{ ...bodyCellStyle, fontFamily: 'monospace', color: palette.textStrong, fontWeight: 700 }}>{col.column_name}</td>
+                            <td style={bodyCellStyle}>{col.data_type}</td>
+                            <td style={bodyCellStyle}>{col.is_nullable}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -379,25 +453,20 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
                     <div style={{ color: palette.textSoft, fontSize: '.8rem' }}>row click to raw JSON</div>
                   </div>
                   {selectedSampleColumns.length > 0 ? (
-                    <div style={{ width: '100%', maxWidth: '100%', overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', marginTop: 8 }}>
+                    <div style={{ ...scrollWrapStyle, marginTop: 8 }}>
                       <table style={{ minWidth: rawTableMinWidth, width: 'max-content', maxWidth: 'none', borderCollapse: 'collapse', fontSize: '.84rem', color: palette.text }}>
                         <thead>
                           <tr>
-                            <th style={{ position: 'sticky', top: 0, background: palette.surfaceMuted, textAlign: 'left', borderBottom: `1px solid ${palette.border}`, padding: '8px 6px', color: palette.textMuted, fontWeight: 800 }}>idx</th>
+                            <th style={{ ...headerCellStyle, position: 'sticky', top: 0 }}>idx</th>
                             {selectedSampleColumns.map((column) => (
                               <th
                                 key={column}
                                 style={{
+                                  ...headerCellStyle,
                                   position: 'sticky',
                                   top: 0,
-                                  background: palette.surfaceMuted,
-                                  textAlign: 'left',
-                                  borderBottom: `1px solid ${palette.border}`,
-                                  padding: '8px 6px',
-                                  color: palette.textMuted,
-                                  fontWeight: 800,
                                   fontFamily: 'monospace',
-                                  whiteSpace: 'nowrap',
+                                  minWidth: column === 'raw_data' ? 420 : 180,
                                 }}
                               >
                                 {column}
@@ -414,11 +483,27 @@ export function EduDbInspectorPage({ apiBase, authHeaders }: Props) {
                                 onClick={() => setSelectedSampleRowIndex(rowIndex)}
                                 style={{ background: active ? '#dbeafe' : palette.surface, cursor: 'pointer' }}
                               >
-                                <td style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px', color: palette.textSoft }}>{rowIndex}</td>
+                                <td style={{ ...bodyCellStyle, color: palette.textSoft, whiteSpace: 'nowrap' }}>{rowIndex}</td>
                                 {selectedSampleColumns.map((column) => (
-                                <td key={`${rowIndex}-${column}`} style={{ borderBottom: `1px solid ${palette.borderSoft}`, padding: '8px 6px', verticalAlign: 'top', minWidth: 180 }}>
-                                  <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.42 }}>
-                                    {formatCellValue(row?.[column])}
+                                <td
+                                  key={`${rowIndex}-${column}`}
+                                  style={{
+                                    ...bodyCellStyle,
+                                    minWidth: column === 'raw_data' ? 420 : 180,
+                                    maxWidth: column === 'raw_data' ? 420 : 260,
+                                  }}
+                                  title={formatCellValue(row?.[column])}
+                                >
+                                  <div
+                                    style={{
+                                      whiteSpace: 'nowrap',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      lineHeight: 1.42,
+                                      fontFamily: column === 'raw_data' ? 'monospace' : 'inherit',
+                                    }}
+                                  >
+                                    {formatPreviewValue(row?.[column], column === 'raw_data' ? 220 : 120)}
                                   </div>
                                   </td>
                                 ))}
