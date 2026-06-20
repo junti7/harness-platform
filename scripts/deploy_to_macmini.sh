@@ -126,12 +126,16 @@ if [ "${RELOAD_FE:-no}" = "yes" ]; then
   AGENT="$HOME/Library/LaunchAgents/com.harness.harness-os-frontend.plist"
   sed "s|__ROOT__|$REPO|g" harness-os/launchd/com.harness.harness-os-frontend.plist > "$AGENT"
   UID_N=$(id -u)
+  # 레거시 중복 잡(com.harness.frontend, 5월 수동설치)이 5173 을 두고 경쟁하므로 함께 정리
+  launchctl bootout "gui/$UID_N/com.harness.frontend" >/dev/null 2>&1 || true
+  rm -f "$HOME/Library/LaunchAgents/com.harness.frontend.plist"
   launchctl bootout "gui/$UID_N/com.harness.harness-os-frontend" >/dev/null 2>&1 || true
-  # strictPort 5173 을 점유한 비-launchd orphan(과거 수동 serve/vite dev)이 있으면 새 agent 가 bind 못 하므로 정리
-  PORT_PIDS=$(lsof -nP -iTCP:5173 -sTCP:LISTEN -t 2>/dev/null || true)
-  if [ -n "$PORT_PIDS" ]; then echo "      5173 점유 프로세스 정리: $PORT_PIDS"; kill $PORT_PIDS 2>/dev/null || true; sleep 1; fi
+  sleep 1
+  # 5173 을 점유한 잔존 serve(과거 수동 인스턴스)가 있으면 새 agent 가 bind 못 하므로 정리
+  for pid in $(pgrep -f "/opt/homebrew/bin/serve" 2>/dev/null || true); do kill -9 "$pid" 2>/dev/null || true; done
+  sleep 1
+  # bootstrap 만으로 RunAtLoad 가 기동한다(kickstart -k 중복 호출은 더블 인스턴스 레이스를 유발하므로 쓰지 않음).
   launchctl bootstrap "gui/$UID_N" "$AGENT"
-  launchctl kickstart -k "gui/$UID_N/com.harness.harness-os-frontend" >/dev/null 2>&1 || true
   sleep 2
   if lsof -nP -iTCP:5173 -sTCP:LISTEN >/dev/null 2>&1; then
     echo "      ✓ 5173 서빙 중 (serve dist, launchd 관리)"

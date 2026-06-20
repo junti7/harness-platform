@@ -48,4 +48,15 @@ if [ -f "$legacy_backend" ]; then
   echo "removed: com.harness.backend (legacy)"
 fi
 
+# 레거시 com.harness.frontend (2026-05 수동 설치, untracked) 정리 — repo-tracked
+# com.harness.harness-os-frontend 와 동일하게 serve dist 를 5173 에 띄워 포트 충돌/중복
+# 인스턴스를 유발했다(2026-06-20). SoT 잡으로 일원화한다.
+legacy_frontend="$AGENT_DIR/com.harness.frontend.plist"
+if [ -f "$legacy_frontend" ]; then
+  launchctl bootout "gui/$(id -u)/com.harness.frontend" >/dev/null 2>&1 || \
+    launchctl unload "$legacy_frontend" >/dev/null 2>&1 || true
+  rm -f "$legacy_frontend"
+  echo "removed: com.harness.frontend (legacy)"
+fi
+
 echo "Harness-OS launchd services registered."

@@ -13,6 +13,7 @@
   - **BLOCKER/MAJOR ③(serve 미프로비저닝)**: plist 가 전역 `/opt/homebrew/bin/serve` 하드코딩하나 설치/검증 없음 → fresh/복구 머신 crash-loop. → **deploy [4c] preflight(미존재 시 `npm i -g serve` 안내 hard-fail) + register_launchd.sh preflight/문서 + package.json `serve:prod` 스크립트로 의존성 선언**.
 - **CEO confirm (2026-06-20)**: 1회 cap 지시에 따라 추가 라운드 없이, 두 모델 합의 3 BLOCKER 를 전부 루트 수정한 최종본으로 머지. 인프라 자동화 변경(거래/자본/외부발행 무관), 비협상 사유 없음. Gemini CLI 영구 불가.
 - 검증: `bash -n` OK, plist `plutil -lint` OK, staging 빌드(`npm run build -- --outDir dist.tmp`) 로컬 성공(index.html 생성). 배포 시 [4b]/[4c] 실제 실행으로 serve dist 전환 검증.
+- **배포 중 추가 발견(후속 커밋)**: ① 실제 프로덕션 프론트는 untracked 레거시 잡 `com.harness.frontend`(2026-05 수동설치)가 `serve dist`로 띄우고 있었고, repo-tracked `com.harness.harness-os-frontend`(구 npm dev)와 5173 을 두고 경쟁 → 더블 인스턴스. SoT 잡으로 일원화(레거시 bootout+plist 삭제, `register_launchd.sh`에 `com.harness.backend`처럼 레거시 frontend 정리 추가). ② [4c]의 `kickstart -k`가 bootstrap 직후 더블 인스턴스 레이스를 유발 → 제거(bootstrap+RunAtLoad 만으로 기동). 최종 프로덕션: 단일 managed `serve dist`(launchd PID==5173 listener), http 200.
 
 ---
 
