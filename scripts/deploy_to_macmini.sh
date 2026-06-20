@@ -8,7 +8,13 @@
 #
 # 절차: 0) 로컬 변경 push 확인 → 1) Mac Mini에서 백업 → 2) origin fetch
 #       → 3) 지정 경로만 `git checkout origin/main -- <paths>` → 4) (트레이딩이면) universe 재빌드
-#       → 5) origin과 diff=0 검증
+#       → 4b) (프론트 변경이면) `npm run build`로 dist 재생성 → 5) origin과 diff=0 검증
+#
+# 왜 프론트 빌드가 필요한가:
+#   프로덕션 프론트는 vite dev 가 아니라 `serve harness-os/frontend/dist`(정적 번들)로 서빙된다.
+#   소스만 checkout 하고 dist 를 다시 빌드하지 않으면 화면은 옛 번들 그대로다(2026-06-20 사고).
+#   harness-os/frontend/* 가 배포 대상에 있으면 Mac Mini 에서 자동으로 빌드한다. serve 는 파일을
+#   매 요청마다 새로 읽으므로 빌드 후 serve 재시작은 불필요하다.
 #
 # 사용:
 #   scripts/deploy_to_macmini.sh                       # 기본: 트레이딩 코드/config 일습
@@ -55,11 +61,16 @@ echo "  ✓ 모든 대상이 origin/main과 일치 (배포 가능)"
 echo "▶ Mac Mini($SSH_HOST:$REMOTE_REPO) 배포 시작"
 PATHS_STR="${PATHS[*]}"
 REBUILD_TRADING="no"
+REBUILD_FRONTEND="no"
+RELOAD_FE_PLIST="no"
 for p in "${PATHS[@]}"; do
   case "$p" in core/trading_universe.py|configs/trading/*|scripts/build_trading_universe.py) REBUILD_TRADING="yes";; esac
+  # dist 빌드는 프론트 *소스* 변경 시에만(plist 만 바뀐 경우는 빌드 불필요)
+  case "$p" in harness-os/frontend/src/*|harness-os/frontend/index.html|harness-os/frontend/public/*|harness-os/frontend/*.json|harness-os/frontend/*.ts|harness-os/frontend/*.js) REBUILD_FRONTEND="yes";; esac
+  case "$p" in harness-os/launchd/com.harness.harness-os-frontend.plist) RELOAD_FE_PLIST="yes";; esac
 done
 
-ssh -o ConnectTimeout=20 "$SSH_HOST" "REPO='$REMOTE_REPO' PATHS='$PATHS_STR' REBUILD='$REBUILD_TRADING' bash -s" <<'REMOTE'
+ssh -o ConnectTimeout=20 "$SSH_HOST" "REPO='$REMOTE_REPO' PATHS='$PATHS_STR' REBUILD='$REBUILD_TRADING' REBUILD_FE='$REBUILD_FRONTEND' RELOAD_FE='$RELOAD_FE_PLIST' bash -s" <<'REMOTE'
 set -euo pipefail
 cd "$REPO"
 read -r -a PATH_ARR <<< "$PATHS"
@@ -81,6 +92,53 @@ git checkout origin/main -- "${PATH_ARR[@]}"
 if [ "$REBUILD" = "yes" ]; then
   echo "  [4] trading universe 재빌드"
   PYTHONPATH=. .venv/bin/python scripts/build_trading_universe.py --domain physical_ai --skip-ko >/dev/null 2>&1 && echo "      재빌드 OK" || echo "      ⚠️ 재빌드 실패 — 수동 확인 필요"
+fi
+
+if [ "${REBUILD_FE:-no}" = "yes" ]; then
+  echo "  [4b] 프론트 빌드 (staging dist.tmp → 원자 swap; 실패 시 기존 dist 보존)"
+  # 핵심(Red Team 2026-06-20): 실시간 serve 가 읽는 dist 를 in-place 로 비우고 재생성하면
+  # ① 빌드 중 부분 산출물/404 ② 빌드 실패 시 dist 손상 위험이 있다. 그래서 dist.tmp 로 빌드하고
+  # index.html 생성 확인 후에만 원자에 가깝게 swap 한다. 빌드 실패 시 live dist 는 전혀 건드리지 않는다.
+  FE=harness-os/frontend
+  rm -rf "$FE/dist.tmp"
+  # npm run build = `tsc -b && vite build`; `-- --outDir dist.tmp` 는 vite build 에만 전달됨.
+  if ( cd "$FE" && PATH="/opt/homebrew/bin:$PATH" npm run build -- --outDir dist.tmp ) >/tmp/harness_fe_build.log 2>&1 \
+       && [ -f "$FE/dist.tmp/index.html" ]; then
+    rm -rf "$FE/dist.prev"
+    [ -d "$FE/dist" ] && mv "$FE/dist" "$FE/dist.prev"
+    mv "$FE/dist.tmp" "$FE/dist"
+    echo "      빌드 OK → $(grep -oE 'index-[^ ]*\.js' /tmp/harness_fe_build.log | head -1) (이전 번들은 dist.prev 로 롤백 보관)"
+  else
+    rm -rf "$FE/dist.tmp"
+    echo "      ✖ 프론트 빌드 실패 — 기존 dist 그대로 보존(화면 영향 없음). 로그 tail:"
+    tail -20 /tmp/harness_fe_build.log
+    exit 1
+  fi
+fi
+
+if [ "${RELOAD_FE:-no}" = "yes" ]; then
+  echo "  [4c] 프론트 launchd plist 재설치 + reload (serve dist 전환 실제 적용)"
+  SERVE_BIN=/opt/homebrew/bin/serve
+  if [ ! -x "$SERVE_BIN" ]; then
+    echo "      ✖ $SERVE_BIN 없음 — 프론트 정적 서버 의존성 미설치. 'npm i -g serve' 후 재배포. 중단."
+    exit 1
+  fi
+  AGENT="$HOME/Library/LaunchAgents/com.harness.harness-os-frontend.plist"
+  sed "s|__ROOT__|$REPO|g" harness-os/launchd/com.harness.harness-os-frontend.plist > "$AGENT"
+  UID_N=$(id -u)
+  launchctl bootout "gui/$UID_N/com.harness.harness-os-frontend" >/dev/null 2>&1 || true
+  # strictPort 5173 을 점유한 비-launchd orphan(과거 수동 serve/vite dev)이 있으면 새 agent 가 bind 못 하므로 정리
+  PORT_PIDS=$(lsof -nP -iTCP:5173 -sTCP:LISTEN -t 2>/dev/null || true)
+  if [ -n "$PORT_PIDS" ]; then echo "      5173 점유 프로세스 정리: $PORT_PIDS"; kill $PORT_PIDS 2>/dev/null || true; sleep 1; fi
+  launchctl bootstrap "gui/$UID_N" "$AGENT"
+  launchctl kickstart -k "gui/$UID_N/com.harness.harness-os-frontend" >/dev/null 2>&1 || true
+  sleep 2
+  if lsof -nP -iTCP:5173 -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "      ✓ 5173 서빙 중 (serve dist, launchd 관리)"
+  else
+    echo "      ✖ 5173 미서빙 — 프론트 agent 기동 실패. 로그: logs/harness-os-frontend.error.log. 중단."
+    exit 1
+  fi
 fi
 
 echo "  [5] origin 정합 검증 (각 0 기대)"

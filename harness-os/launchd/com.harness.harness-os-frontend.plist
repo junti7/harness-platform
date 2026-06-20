@@ -6,17 +6,16 @@
   <key>Label</key>
   <string>com.harness.harness-os-frontend</string>
 
+  <!-- 프로덕션은 빌드된 정적 번들(dist)을 `serve`로 서빙한다(dev 서버 아님).
+       deploy 시 npm run build 로 dist 를 생성하면 serve 가 매 요청마다 파일을 새로 읽어 그대로 내보낸다
+       (빌드 후 serve 재시작 불필요). 주의: dist 에 edu-pilot-app.html 등 별도 HTML 진입점이 있으므로
+       SPA fallback 플래그(-s)를 쓰면 그 진입점들이 깨진다 — 절대 추가하지 말 것. -->
   <key>ProgramArguments</key>
   <array>
-    <string>/opt/homebrew/bin/npm</string>
-    <string>run</string>
-    <string>dev</string>
-    <string>--</string>
-    <string>--host</string>
-    <string>0.0.0.0</string>
-    <string>--port</string>
+    <string>/opt/homebrew/bin/serve</string>
+    <string>__ROOT__/harness-os/frontend/dist</string>
+    <string>-p</string>
     <string>5173</string>
-    <string>--strictPort</string>
   </array>
 
   <key>WorkingDirectory</key>

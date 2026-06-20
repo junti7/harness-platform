@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-06-20 — 프론트 배포 자동 빌드 + launchd 를 serve dist 로 정합 (1라운드, CEO confirm)
+
+- 대상: `scripts/deploy_to_macmini.sh`(프론트 소스 변경 감지 시 Mac Mini `npm run build` + plist 변경 시 재설치/reload) + `harness-os/launchd/com.harness.harness-os-frontend.plist`(`npm run dev` → `serve dist`) + `harness-os/frontend/package.json`(`serve:prod` 스크립트) + `harness-os/scripts/register_launchd.sh`(serve 의존성 preflight/문서).
+- 배경: 프로덕션 프론트는 vite dev 가 아니라 `serve harness-os/frontend/dist`(정적 번들)로 서빙되는데(06/14부터 비-launchd orphan PID 900), deploy 는 소스만 checkout 하고 dist 를 재빌드하지 않아 모든 프론트 변경이 화면에 반영 안 됨(2026-06-20 IBKR 대기주문 UI 가 안 보인 근본 원인). 또 launchd plist 는 실제 서버와 불일치(`npm run dev`, strictPort 충돌로 crash-loop).
+- 저자: Claude. 검토자(비저자, read-only): Codex + Copilot. **1라운드만**(CEO 2026-06-20 "레드팀 평가는 1회로 제한").
+- 결과: **Codex block + Copilot block** — 두 모델 *동일 3건 합의*, 전부 인라인 반영:
+  - **BLOCKER ①(복구 안전성)**: in-place `vite build` 가 live dist 를 비우고 재생성 → 빌드 중 부분 서빙/404, 실패 시 dist 손상("옛 dist 보존" 주석 거짓). → **staging `dist.tmp` 빌드 후 index.html 확인 시에만 원자 swap, 실패 시 live dist 무손상 + dist.prev 롤백 보관**.
+  - **BLOCKER ②(plist 미적용)**: deploy 가 plist 파일만 checkout 하고 launchd reload 안 함 → 런타임은 옛 `npm run dev` 유지. → **[4c] 단계 추가: __ROOT__ 치환 재설치 + bootout/bootstrap/kickstart + 5173 점유 orphan 정리 + 서빙 검증(실패 시 hard-fail)**.
+  - **BLOCKER/MAJOR ③(serve 미프로비저닝)**: plist 가 전역 `/opt/homebrew/bin/serve` 하드코딩하나 설치/검증 없음 → fresh/복구 머신 crash-loop. → **deploy [4c] preflight(미존재 시 `npm i -g serve` 안내 hard-fail) + register_launchd.sh preflight/문서 + package.json `serve:prod` 스크립트로 의존성 선언**.
+- **CEO confirm (2026-06-20)**: 1회 cap 지시에 따라 추가 라운드 없이, 두 모델 합의 3 BLOCKER 를 전부 루트 수정한 최종본으로 머지. 인프라 자동화 변경(거래/자본/외부발행 무관), 비협상 사유 없음. Gemini CLI 영구 불가.
+- 검증: `bash -n` OK, plist `plutil -lint` OK, staging 빌드(`npm run build -- --outDir dist.tmp`) 로컬 성공(index.html 생성). 배포 시 [4b]/[4c] 실제 실행으로 serve dist 전환 검증.
+
+---
+
 ## 2026-06-20 — IBKR 대기주문 UI를 실제 렌더 컴포넌트(TradingOpsCenter)에 연결 (1라운드, CEO confirm)
 
 - 대상: `harness-os/frontend/src/components/TradingOpsCenter.tsx`(`IbkrPendingOrder` 타입 + `pending_orders` 옵셔널 필드 + 메인 대시보드 IBKR 카드에 "대기 주문(미체결)" 미니 요약 블록) + `App.css`(`.ibkr-pending-*` 스타일).
