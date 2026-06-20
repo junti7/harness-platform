@@ -27,9 +27,16 @@ type LearningLink = {
 
 type TrainingStage = {
   title?: string
+  learning_why?: string
+  learning_outcome?: string
+  estimated_minutes?: number
+  completion_rule?: string
+  foundation_concepts?: Array<{ title: string; body: string }>
+  schedule_blocks?: Array<{ title: string; minutes: number; goal: string }>
   required_action?: string
   proof_artifact_hint?: string
   pass_fail_rubric?: string[]
+  home_priority_missions?: Array<{ title: string; why: string; use_when: string; result_shape: string }>
   scenario_bank?: Array<{ title: string; situation: string; prompt: string }>
   sample_materials?: MaterialKit[]
   blocked_step_options?: string[]
@@ -229,6 +236,70 @@ function StageCard({
         </div>
       )}
 
+      {(stage?.estimated_minutes || stage?.completion_rule) && (
+        <div style={{ background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: 16, padding: 14, display: 'grid', gap: 8 }}>
+          <div style={{ fontSize: '.76rem', color: '#1d4ed8', fontWeight: 800 }}>권장 학습 분량</div>
+          {stage?.estimated_minutes ? (
+            <div style={{ fontSize: '1rem', lineHeight: 1.55, color: C.ink, fontWeight: 800 }}>이 Day는 약 {stage.estimated_minutes}분 분량으로 설계되었습니다.</div>
+          ) : null}
+          {stage?.completion_rule ? (
+            <div style={{ color: C.muted, fontSize: '.92rem', lineHeight: 1.6 }}>{stage.completion_rule}</div>
+          ) : null}
+        </div>
+      )}
+
+      {(stage?.learning_why || stage?.learning_outcome) && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
+          {stage?.learning_why ? (
+            <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14 }}>
+              <div style={{ fontSize: '.82rem', color: C.accent, fontWeight: 900, marginBottom: 6 }}>왜 이 Day를 하나</div>
+              <div style={{ color: C.ink, fontSize: '.95rem', lineHeight: 1.6 }}>{stage.learning_why}</div>
+            </div>
+          ) : null}
+          {stage?.learning_outcome ? (
+            <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14 }}>
+              <div style={{ fontSize: '.82rem', color: C.accent, fontWeight: 900, marginBottom: 6 }}>끝나면 무엇이 달라지나</div>
+              <div style={{ color: C.ink, fontSize: '.95rem', lineHeight: 1.6 }}>{stage.learning_outcome}</div>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {!!stage?.foundation_concepts?.length && (
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>먼저 알아야 할 기초지식</div>
+          <div style={{ color: C.faint, fontSize: '.86rem', lineHeight: 1.55 }}>
+            미션부터 밀어붙이지 않고, 지금부터 무엇을 왜 하는지 먼저 이해합니다. 기술 용어를 외우는 시간이 아니라 불안과 막막함을 줄이는 시간입니다.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
+            {stage.foundation_concepts.map((item, index) => (
+              <div key={`${item.title}-${index}`} style={{ background: '#f8fafc', border: `1px solid ${C.border}`, borderRadius: 16, padding: 14 }}>
+                <div style={{ fontWeight: 900, color: C.ink, marginBottom: 6 }}>{item.title}</div>
+                <div style={{ color: C.muted, fontSize: '.92rem', lineHeight: 1.6 }}>{item.body}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!!stage?.schedule_blocks?.length && (
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>오늘의 1시간+ 학습 플로우</div>
+          <div style={{ color: C.faint, fontSize: '.86rem', lineHeight: 1.55 }}>
+            아래 순서를 모두 따라가야 그날 학습이 끝난 것으로 봅니다. 중간에 한 미션만 하고 멈추지 않도록, 실제 학습 시간을 기준으로 설계했습니다.
+          </div>
+          {stage.schedule_blocks.map((item, index) => (
+            <div key={`${item.title}-${index}`} style={{ background: '#ffffff', border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, display: 'grid', gridTemplateColumns: '76px 1fr', gap: 12, alignItems: 'start' }}>
+              <div style={{ background: '#111827', color: '#ffffff', borderRadius: 12, padding: '8px 10px', textAlign: 'center', fontWeight: 900, fontSize: '.92rem' }}>{item.minutes}분</div>
+              <div>
+                <div style={{ fontWeight: 800, color: C.ink, marginBottom: 4 }}>{index + 1}. {item.title}</div>
+                <div style={{ color: C.muted, fontSize: '.92rem', lineHeight: 1.55 }}>{item.goal}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {stage?.required_action && (
         <div style={{ background: C.accentSoft, border: `1px solid ${C.accent}`, borderRadius: 16, padding: 14 }}>
           <div style={{ fontSize: '.76rem', color: C.accent, fontWeight: 800, marginBottom: 6 }}>오늘 바로 해야 할 일</div>
@@ -276,6 +347,25 @@ function StageCard({
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {!!stage?.home_priority_missions?.length && (
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>오늘 가장 먼저 해볼 생활형 미션</div>
+          <div style={{ color: C.faint, fontSize: '.86rem', lineHeight: 1.55 }}>
+            무엇부터 시작할지 막히면 아래 4개 중 하나를 그대로 고르면 됩니다. 주부/학부모가 가장 자주 부딪히는 장면만 먼저 추렸습니다.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
+            {stage.home_priority_missions.map((item, index) => (
+              <div key={`${item.title}-${index}`} style={{ background: '#fff7ed', border: '1px solid #fdba74', borderRadius: 16, padding: 14, display: 'grid', gap: 8 }}>
+                <div style={{ fontWeight: 900, color: C.ink }}>{item.title}</div>
+                <div style={{ color: C.muted, fontSize: '.9rem', lineHeight: 1.55 }}>{item.why}</div>
+                <div style={{ color: C.faint, fontSize: '.84rem', lineHeight: 1.5 }}>언제 쓰나: {item.use_when}</div>
+                <div style={{ color: C.faint, fontSize: '.84rem', lineHeight: 1.5 }}>결과 형태: {item.result_shape}</div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

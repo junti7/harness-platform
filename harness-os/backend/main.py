@@ -7057,11 +7057,15 @@ def _edu_vp_tutorial_steps(stage_key: str, intake: dict[str, Any]) -> list[dict[
 def _edu_vp_recommended_learning(stage_key: str) -> list[dict[str, Any]]:
     if stage_key == "week0":
         query = "AI 첫 실행 로그인 첫 질문 모바일 PC handoff"
+        segment = "worker"
+        limit = 4
     else:
-        query = "답장 회의메모 보고초안 일정정리 AI 초안 쉬운 한국어"
-    bundle = _retrieve_evidence_bundle(query, "worker", k=4) or {"items": [], "mode": "fallback"}
+        query = "학원 일정 학교 공지 가정통신문 병원 예약 엄마모임 가족모임 쉬운 한국어 AI 초안"
+        segment = "parent"
+        limit = 4
+    bundle = _retrieve_evidence_bundle(query, segment, k=limit) or {"items": [], "mode": "fallback"}
     links: list[dict[str, Any]] = []
-    for item in (bundle.get("items") or [])[:4]:
+    for item in (bundle.get("items") or [])[:limit]:
         url = str(item.get("url") or item.get("raw_data", {}).get("url") or "").strip() if isinstance(item, dict) else ""
         links.append(
             {
@@ -7113,6 +7117,102 @@ def _edu_vp_home_scenarios() -> list[dict[str, str]]:
     ]
 
 
+def _edu_vp_home_priority_missions() -> list[dict[str, str]]:
+    return [
+        {
+            "title": "학원 + 학교 일정 충돌부터 풀기",
+            "why": "주부/학부모가 가장 자주 겪는 '오늘 당장 정리해야 하는' 장면이라 첫 성공 체감이 빠릅니다.",
+            "use_when": "아이별 학원 시간, 학교 준비물, 행사 일정이 한꺼번에 섞였을 때",
+            "result_shape": "요일별 표 + 겹치는 시간 + 오늘 꼭 챙길 준비물",
+        },
+        {
+            "title": "긴 가정통신문 1분 요약",
+            "why": "길고 딱딱한 학교 문서를 쉬운 한국어로 바꾸는 경험이 AI 효용을 가장 직관적으로 보여줍니다.",
+            "use_when": "제출일, 준비물, 비용, 행사일이 긴 문장 속에 숨어 있을 때",
+            "result_shape": "날짜 / 준비물 / 제출할 것 / 비용 4칸 요약",
+        },
+        {
+            "title": "병원 예약과 가족 일정 같이 보기",
+            "why": "생활 일정은 하나만 따로 정리해도 소용이 없기 때문에 충돌 정리 경험이 중요합니다.",
+            "use_when": "병원, 학원, 가족모임, 숙제 제출이 같은 주에 겹칠 때",
+            "result_shape": "날짜순 일정표 + 놓치면 안 되는 시간 강조",
+        },
+        {
+            "title": "엄마모임/가족모임 답장 초안 받기",
+            "why": "부드럽고 부담 없는 한국어 답장을 빠르게 만드는 장면은 감정적 저항을 가장 잘 낮춥니다.",
+            "use_when": "정중하지만 길지 않게 답장을 보내고 싶을 때",
+            "result_shape": "상대를 배려하는 짧은 한국어 답장 1개",
+        },
+    ]
+
+
+def _edu_vp_foundation_concepts(stage_key: str, llm_label: str) -> list[dict[str, str]]:
+    if stage_key == "week0":
+        return [
+            {
+                "title": "LLM이란 무엇인가",
+                "body": f"{llm_label} 같은 도구는 사람이 다음에 할 말을 많이 배운 뒤, 지금 질문에 가장 그럴듯한 다음 답을 만들어주는 '문장 예측 엔진'에 가깝습니다. 사람처럼 이해한다고 단정하면 안 되지만, 설명·정리·초안 작성에서는 매우 유용합니다.",
+            },
+            {
+                "title": "생성형 AI는 왜 답이 매번 조금씩 다른가",
+                "body": "같은 질문이어도 표현이나 순서가 조금 달라질 수 있습니다. 그래서 중요한 것은 '한 번에 완벽한 답'이 아니라, 내가 다시 고치기 쉬운 첫 초안을 받는 것입니다.",
+            },
+            {
+                "title": "왜 모바일부터 시작하나",
+                "body": "VP는 일상 중간중간 휴대폰으로 먼저 쓰게 될 가능성이 큽니다. 가장 자주 손에 잡히는 기기에서 첫 성공을 만드는 것이 학습 저항을 가장 낮춥니다.",
+            },
+            {
+                "title": "AI에게 맡기면 안 되는 것",
+                "body": "계좌번호, 주민번호, 민감한 병원기록처럼 매우 민감한 정보는 그대로 넣지 않습니다. AI 답은 초안으로 보고, 중요한 일정·비용·제출일은 반드시 사람이 다시 확인합니다.",
+            },
+        ]
+    return [
+        {
+            "title": "AI는 비서가 아니라 초안 도우미다",
+            "body": "학원 일정이나 가정통신문을 AI에게 맡긴다고 해서 판단까지 대신하는 것은 아닙니다. AI는 복잡한 재료를 정리하고, 사람은 마지막 확인과 선택을 합니다.",
+        },
+        {
+            "title": "좋은 질문은 재료가 구체적이다",
+            "body": "막연히 '정리해줘'보다 '날짜, 준비물, 제출할 것만 뽑아줘'처럼 원하는 결과 모양을 같이 말할수록 훨씬 쓸 만한 답이 나옵니다.",
+        },
+        {
+            "title": "생활형 AI의 핵심은 시간 절약보다 머리 부담 줄이기다",
+            "body": "주부/학부모에게 중요한 것은 단순 속도보다, 복잡한 일정과 공지를 한 번에 정리해 심리적 혼잡을 낮추는 것입니다.",
+        },
+        {
+            "title": "AI 답은 그대로 쓰기보다 한 번 더 손본다",
+            "body": "좋은 활용은 'AI 초안 받기 → 내 말투로 다듬기 → 일정과 사실 확인'의 3단계입니다. 이 습관이 있어야 실제 생활에 안전하게 쓸 수 있습니다.",
+        },
+    ]
+
+
+def _edu_vp_schedule_blocks(stage_key: str) -> list[dict[str, Any]]:
+    if stage_key == "week0":
+        return [
+            {"title": "오리엔테이션", "minutes": 10, "goal": "오늘 무엇을 배우는지, 왜 모바일부터 시작하는지 이해한다."},
+            {"title": "기초 개념 익히기", "minutes": 15, "goal": "LLM, 생성형 AI, 초안 도우미 개념을 쉬운 말로 익힌다."},
+            {"title": "기기 진입 실습", "minutes": 15, "goal": "Android와 Windows PC에서 같은 AI 도구를 실제로 연다."},
+            {"title": "첫 질문 복붙 실습", "minutes": 15, "goal": "첫 질문을 보내고, 결과를 복사하고, 저장해본다."},
+            {"title": "정리와 복습", "minutes": 10, "goal": "어디가 막혔는지 기록하고 다음 날 준비를 한다."},
+        ]
+    return [
+        {"title": "왜 이 미션을 하는지 이해", "minutes": 10, "goal": "생활형 AI가 주부/학부모의 머리 부담을 어떻게 줄이는지 이해한다."},
+        {"title": "좋은 질문 구조 익히기", "minutes": 10, "goal": "원하는 결과 모양, 날짜, 준비물, 제출물처럼 재료를 구체화하는 법을 익힌다."},
+        {"title": "실전 교보재 1차 실습", "minutes": 20, "goal": "가정통신문 또는 학원/학교 일정 충돌 자료로 첫 초안을 받는다."},
+        {"title": "실전 교보재 2차 수정", "minutes": 15, "goal": "받은 초안을 VP 말투와 생활 리듬에 맞게 다시 고친다."},
+        {"title": "근거자료와 비교 복습", "minutes": 10, "goal": "추천 자료와 내 결과를 비교하며, 어떤 질문이 잘 먹히는지 감을 잡는다."},
+        {"title": "회고와 저장", "minutes": 10, "goal": "전/후 결과와 막힌 지점을 저장하고 다음 단계로 이어갈 준비를 한다."},
+        {"title": "추가 응용 1회", "minutes": 10, "goal": "같은 방식으로 병원 예약이나 학부모 단톡방 답장에 한 번 더 적용해본다."},
+        ]
+
+
+def _edu_vp_total_minutes(blocks: list[dict[str, Any]]) -> int:
+    total = 0
+    for block in blocks:
+        total += int(block.get("minutes") or 0)
+    return total
+
+
 def _edu_vp_week0_materials(llm_label: str) -> list[dict[str, Any]]:
     return [
         _edu_vp_material_kit(
@@ -7132,28 +7232,28 @@ def _edu_vp_week0_materials(llm_label: str) -> list[dict[str, Any]]:
 def _edu_vp_week1_materials(llm_label: str) -> list[dict[str, Any]]:
     return [
         _edu_vp_material_kit(
-            kit_id="week1-reply-kit",
-            title="답장 쓰기 실전팩",
-            description=f"{llm_label}에게 답장 초안을 맡기는 연습용 샘플입니다.",
-            files=["00_README_답장실전팩.md", "01_받은메시지.txt", "02_원하는답장조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
+            kit_id="week1-school-notice-kit",
+            title="가정통신문 정리 실전팩",
+            description=f"{llm_label}에게 긴 학교 공지를 쉬운 한국어 요약으로 바꾸게 하는 연습용 샘플입니다.",
+            files=["00_README_가정통신문실전팩.md", "01_가정통신문원문.txt", "02_정리조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
         ),
         _edu_vp_material_kit(
-            kit_id="week1-meeting-notes-kit",
-            title="회의 메모 정리 실전팩",
-            description="지저분한 메모를 읽기 쉬운 정리본으로 바꾸는 연습용 샘플입니다.",
-            files=["00_README_회의메모실전팩.md", "01_원본메모.txt", "02_정리조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
+            kit_id="week1-academy-conflict-kit",
+            title="학원/학교 일정 충돌 정리 실전팩",
+            description="형제자매 학원 시간과 학교 일정을 한 장으로 정리하는 연습용 샘플입니다.",
+            files=["00_README_학원학교충돌실전팩.md", "01_흩어진일정메모.txt", "02_정리조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
         ),
         _edu_vp_material_kit(
-            kit_id="week1-report-draft-kit",
-            title="보고 초안 만들기 실전팩",
-            description="짧은 사실 메모를 CEO 보고 초안으로 바꾸는 연습용 샘플입니다.",
-            files=["00_README_보고초안실전팩.md", "01_원재료메모.txt", "02_보고서조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
+            kit_id="week1-briefing-notes-kit",
+            title="진학 설명회 메모 정리 실전팩",
+            description="뒤죽박죽 적은 설명회 메모를 다시 읽기 쉬운 항목별 정리본으로 바꾸는 연습용 샘플입니다.",
+            files=["00_README_설명회메모실전팩.md", "01_설명회메모원본.txt", "02_정리조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
         ),
         _edu_vp_material_kit(
-            kit_id="week1-family-schedule-kit",
-            title="가족 일정 정리 실전팩",
-            description="흩어진 일정 메모를 한눈에 보이는 정리표로 바꾸는 연습용 샘플입니다.",
-            files=["00_README_가족일정실전팩.md", "01_흩어진일정메모.txt", "02_정리조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
+            kit_id="week1-parent-chat-reply-kit",
+            title="학부모 단톡방 답장 실전팩",
+            description="부담 없고 예의 있는 한국어 답장을 빠르게 만드는 연습용 샘플입니다.",
+            files=["00_README_학부모답장실전팩.md", "01_받은메시지.txt", "02_원하는답장조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
         ),
     ]
 
@@ -7190,8 +7290,15 @@ def _edu_vp_build_week0(intake: dict[str, Any]) -> dict[str, Any]:
             "success_signal": "복사한 문장 또는 저장한 메모가 남는다.",
         },
     ]
+    schedule_blocks = _edu_vp_schedule_blocks("week0")
     return {
         "title": "Day 0 · 환경 열기와 첫 성공",
+        "learning_why": "오늘은 미션을 많이 해결하는 날이 아니라, AI가 무엇인지 거의 모르는 상태에서도 '내가 실제로 들어가서 질문하고 결과를 저장할 수 있다'는 첫 성공을 만드는 날입니다.",
+        "learning_outcome": "Day 0를 마치면 LLM/생성형 AI를 무서운 기술 용어가 아니라, 생활 문제를 정리해주는 초안 도우미로 이해하고, 모바일과 PC에서 같은 도구를 여는 기본 동작을 몸으로 익히게 됩니다.",
+        "estimated_minutes": _edu_vp_total_minutes(schedule_blocks),
+        "completion_rule": "30초 만에 끝나는 미션이 아니라, 최소 약 65분 동안 기초 개념을 읽고, 실제 로그인과 첫 질문, 복사/저장, 복습 메모까지 모두 끝냈을 때 Day 0 완료로 봅니다.",
+        "foundation_concepts": _edu_vp_foundation_concepts("week0", llm_label),
+        "schedule_blocks": schedule_blocks,
         "required_action": f"{llm_label}를 실제로 열고, 본인 고민을 한 문장으로 입력해 첫 답변 1개를 받는다.",
         "proof_artifact_hint": "AI가 답한 첫 문장 1개 또는 본인이 복사한 결과 1개를 붙여 넣으세요.",
         "sample_materials": _edu_vp_week0_materials(llm_label),
@@ -7229,8 +7336,15 @@ def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
             )
     mode = (bundle or {}).get("mode") or "fallback"
     customer_facing_safe = mode == "db_customer_facing"
+    schedule_blocks = _edu_vp_schedule_blocks("week1")
     return {
         "title": "Day 1 · 생활 장면 1개를 AI로 덜 무섭게 바꾸기",
+        "learning_why": "오늘은 AI에게 막연히 말을 걸어보는 것이 아니라, 주부/학부모가 실제로 매일 겪는 공지·일정·답장 문제를 구조화해서 머리 부담을 줄이는 연습을 하는 날입니다.",
+        "learning_outcome": "Day 1를 마치면 긴 가정통신문, 학원 일정 충돌, 진학 설명회 메모, 학부모 단톡방 답장 같은 재료를 AI로 첫 초안화하고, 내 말투에 맞게 다듬는 기본 루틴을 익히게 됩니다.",
+        "estimated_minutes": _edu_vp_total_minutes(schedule_blocks),
+        "completion_rule": "한두 개 버튼만 누르면 끝나는 날이 아니라, 최소 약 85분 동안 기초 설명을 읽고, 실전 교보재 1회 이상 수행하고, 수정본과 회고까지 남겼을 때 Day 1 완료로 봅니다.",
+        "foundation_concepts": _edu_vp_foundation_concepts("week1", llm_label),
+        "schedule_blocks": schedule_blocks,
         "required_action": f"{llm_label}에게 '학원 일정 정리/학교 공지 요약/가정통신문 정리/병원 예약 정리/엄마모임과 가족모임 충돌 정리' 중 지금 제일 스트레스인 장면 1개를 설명하고, 쉬운 한국어 초안 1개를 받은 뒤 직접 고쳐본다.",
         "proof_artifact_hint": "처음 결과와 본인이 고친 최종 결과를 둘 다 붙여 넣으세요.",
         "pass_fail_rubric": [
@@ -7243,9 +7357,10 @@ def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
         "tutorial_steps": _edu_vp_tutorial_steps("week1", intake),
         "recommended_learning": _edu_vp_recommended_learning("week1"),
         "home_life_recommended_learning": _edu_vp_home_recommended_learning(),
+        "home_priority_missions": _edu_vp_home_priority_missions(),
         "scenario_bank": _edu_vp_home_scenarios(),
         "blocked_step_options": ["pick_scene", "ask_ai", "rewrite", "save_output"],
-        "practice_prompt_template": f"지금 제일 부담되는 장면은 '{friction}'입니다. {goal}에 맞게, 초등학생도 이해할 수 있을 만큼 쉬운 한국어로 오늘 바로 쓸 초안 1개만 적어줘.",
+        "practice_prompt_template": f"지금 제일 부담되는 생활 장면은 '{friction}'입니다. 예를 들어 학원 일정, 학교 공지, 가정통신문, 병원 예약, 엄마모임, 가족모임처럼 실제 집안일과 연결해서 생각하고 있습니다. {goal}에 맞게, 초등학생도 이해할 수 있을 만큼 쉬운 한국어로 오늘 바로 쓸 초안 1개만 적어줘.",
         "evidence_bundle_id": f"vp-week1-{hashlib.sha1(query.encode('utf-8')).hexdigest()[:10]}",
         "retrieval_mode": mode,
         "customer_facing_safe": customer_facing_safe,
@@ -9254,33 +9369,33 @@ def _edu_vp_material_zip_bytes(kit_id: str) -> tuple[str, bytes]:
             "02_성공예시_설명.txt": "성공 예시: 입력창이 보이고, 내 질문 아래에 AI 답변이 3~5줄 정도 뜬 상태.",
             "03_결과복사용_빈메모.txt": "여기에 AI가 준 첫 답변 중 마음에 든 문장 1개를 붙여 넣으세요.\n",
         },
-        "week1-reply-kit": {
-            "00_README_답장실전팩.md": "# 답장 쓰기 실전팩\n\n상대방 메시지에 부드럽고 짧게 답장하는 연습입니다.",
-            "01_받은메시지.txt": "안녕하세요. 내일 오전 회의 전에 지난주 요청드린 숫자 업데이트를 간단히 공유해주실 수 있을까요? 가능하시면 10시 전까지 부탁드립니다.",
-            "02_원하는답장조건.txt": "조건: 1) 공손한 한국어 2) 너무 길지 않게 3) 오늘 오후까지 보내겠다고 약속 4) 부담스러운 영어 표현 금지",
-            "03_AI에게붙여넣을프롬프트.txt": "아래 메시지에 대한 답장을 아주 쉬운 한국어로 1개 써줘. 너무 길지 않게, 공손하게, 오늘 오후까지 전달하겠다는 말이 꼭 들어가게 해줘.\n\n[받은 메시지]\n안녕하세요. 내일 오전 회의 전에 지난주 요청드린 숫자 업데이트를 간단히 공유해주실 수 있을까요? 가능하시면 10시 전까지 부탁드립니다.",
-            "04_좋은결과예시.txt": "안녕하세요. 말씀 주신 숫자 업데이트는 오늘 오후까지 정리해서 먼저 공유드리겠습니다. 내일 회의 전에 보실 수 있도록 준비해두겠습니다. 감사합니다.",
+        "week1-school-notice-kit": {
+            "00_README_가정통신문실전팩.md": "# 가정통신문 정리 실전팩\n\n긴 학교 공지에서 날짜, 준비물, 제출할 것, 비용만 뽑아내는 연습입니다.",
+            "01_가정통신문원문.txt": "3학년 학부모님께 안내드립니다. 다음 주 목요일에는 현장체험학습이 예정되어 있으며 오전 8시 30분까지 등교해야 합니다. 준비물은 도시락, 물, 모자, 편한 운동화입니다. 참가비 12,000원은 이번 주 금요일까지 스쿨뱅킹 계좌로 납부 부탁드립니다. 동의서는 수요일까지 꼭 제출해주시기 바랍니다.",
+            "02_정리조건.txt": "조건: 1) 초등학생도 이해할 만큼 쉬운 한국어 2) 날짜 / 준비물 / 제출할 것 / 비용 4칸으로 정리 3) 오늘 당장 챙길 것도 따로 표시",
+            "03_AI에게붙여넣을프롬프트.txt": "아래 가정통신문에서 날짜, 준비물, 제출할 것, 비용만 아주 쉽게 정리해줘. 오늘 당장 챙겨야 할 것도 따로 적어줘.\n\n3학년 학부모님께 안내드립니다. 다음 주 목요일에는 현장체험학습이 예정되어 있으며 오전 8시 30분까지 등교해야 합니다. 준비물은 도시락, 물, 모자, 편한 운동화입니다. 참가비 12,000원은 이번 주 금요일까지 스쿨뱅킹 계좌로 납부 부탁드립니다. 동의서는 수요일까지 꼭 제출해주시기 바랍니다.",
+            "04_좋은결과예시.txt": "날짜: 다음 주 목요일 오전 8시 30분까지 등교\n준비물: 도시락, 물, 모자, 편한 운동화\n제출할 것: 동의서 수요일까지 제출\n비용: 참가비 12,000원 금요일까지 납부\n오늘 당장 챙길 것: 동의서 위치 확인, 준비물 미리 메모",
         },
-        "week1-meeting-notes-kit": {
-            "00_README_회의메모실전팩.md": "# 회의 메모 정리 실전팩\n\n지저분한 메모를 '해야 할 일 / 결정된 일 / 확인할 일'로 나누는 연습입니다.",
-            "01_원본메모.txt": "광고 예산 이번주 안에 다시 보기, 디자인 시안 2개 중 B쪽 선호, 고객 인터뷰는 3명 더 필요, 다음 회의 금요일 오전 가능?",
-            "02_정리조건.txt": "조건: 1) 초등학생도 읽을 수 있을 만큼 쉬운 한국어 2) 해야 할 일 / 결정된 일 / 확인할 일 3칸으로 정리",
-            "03_AI에게붙여넣을프롬프트.txt": "아래 메모를 아주 쉬운 한국어로 정리해줘. 표처럼 보이게, '해야 할 일 / 결정된 일 / 확인할 일' 3칸으로 나눠줘.\n\n광고 예산 이번주 안에 다시 보기, 디자인 시안 2개 중 B쪽 선호, 고객 인터뷰는 3명 더 필요, 다음 회의 금요일 오전 가능?",
-            "04_좋은결과예시.txt": "해야 할 일: 광고 예산 다시 보기, 고객 인터뷰 3명 더 잡기\n결정된 일: 디자인 시안은 B안 선호\n확인할 일: 다음 회의를 금요일 오전에 할 수 있는지 확인",
+        "week1-academy-conflict-kit": {
+            "00_README_학원학교충돌실전팩.md": "# 학원/학교 일정 충돌 정리 실전팩\n\n형제자매 일정과 학교 준비물을 한 번에 정리하는 연습입니다.",
+            "01_흩어진일정메모.txt": "월: 첫째 영어학원 4시, 둘째 피아노 4시 30분 / 화: 학교 준비물 색연필 제출 / 수: 첫째 체육복, 둘째 받아쓰기 / 목: 둘째 치과 3시, 첫째 수학학원 3시 30분 / 금: 공개수업 10시",
+            "02_정리조건.txt": "조건: 1) 요일 순서대로 2) 아이별로 나눠서 3) 시간이 겹치거나 바로 준비해야 하는 것 표시 4) 쉬운 한국어",
+            "03_AI에게붙여넣을프롬프트.txt": "아래 메모를 요일 순서대로 다시 적어줘. 아이별로 나누고, 시간이 겹치는 부분과 오늘 바로 챙길 준비물은 따로 표시해줘.\n\n월: 첫째 영어학원 4시, 둘째 피아노 4시 30분 / 화: 학교 준비물 색연필 제출 / 수: 첫째 체육복, 둘째 받아쓰기 / 목: 둘째 치과 3시, 첫째 수학학원 3시 30분 / 금: 공개수업 10시",
+            "04_좋은결과예시.txt": "월요일: 첫째 영어학원 4시 / 둘째 피아노 4시 30분\n화요일: 학교 준비물 색연필 제출\n수요일: 첫째 체육복, 둘째 받아쓰기 준비\n목요일: 둘째 치과 3시 / 첫째 수학학원 3시 30분 (시간이 가까워 미리 이동 계획 필요)\n금요일: 공개수업 오전 10시\n오늘 바로 챙길 것: 색연필, 체육복, 받아쓰기 준비",
         },
-        "week1-report-draft-kit": {
-            "00_README_보고초안실전팩.md": "# 보고 초안 실전팩\n\n짧은 메모를 CEO가 바로 읽을 수 있는 3문장 보고로 바꾸는 연습입니다.",
-            "01_원재료메모.txt": "어제 문의 5건 들어옴. 그중 3건은 가격 질문. 2건은 설치가 어렵다는 말. 오늘은 설치 안내를 더 쉽게 바꿔볼 필요 있음.",
-            "02_보고서조건.txt": "조건: 1) 3문장만 2) 첫 문장은 사실 3) 둘째 문장은 의미 4) 셋째 문장은 다음 행동",
-            "03_AI에게붙여넣을프롬프트.txt": "아래 메모를 CEO에게 보내는 3문장 보고 초안으로 바꿔줘. 쉬운 한국어로만 써줘.\n\n어제 문의 5건 들어옴. 그중 3건은 가격 질문. 2건은 설치가 어렵다는 말. 오늘은 설치 안내를 더 쉽게 바꿔볼 필요 있음.",
-            "04_좋은결과예시.txt": "어제 고객 문의는 총 5건 들어왔고, 그중 3건은 가격 관련 질문이었습니다. 설치가 어렵다는 반응도 2건 있어 초기 사용 구간의 설명이 아직 부족하다는 뜻으로 보입니다. 오늘은 설치 안내 문구를 더 쉽게 바꾼 뒤 다시 반응을 확인하겠습니다.",
+        "week1-briefing-notes-kit": {
+            "00_README_설명회메모실전팩.md": "# 진학 설명회 메모 정리 실전팩\n\n길고 뒤섞인 설명회 메모를 일정, 준비물, 나중에 다시 볼 내용으로 나누는 연습입니다.",
+            "01_설명회메모원본.txt": "여름방학 전까지 독서기록 챙기기, 7월 12일 설명회 자료집 배부, 수학은 개념보다 오답정리 강조, 8월 모의평가 접수 확인, 상담 예약은 담임 통해 문의, 봉사시간도 체크",
+            "02_정리조건.txt": "조건: 1) 입시 일정 / 준비할 것 / 나중에 다시 볼 메모 3칸 2) 아주 쉬운 한국어 3) 이번 달 안에 할 일은 따로 표시",
+            "03_AI에게붙여넣을프롬프트.txt": "아래 설명회 메모를 아주 쉬운 한국어로 정리해줘. 입시 일정 / 준비할 것 / 나중에 다시 볼 메모로 나눠주고, 이번 달 안에 할 일은 따로 표시해줘.\n\n여름방학 전까지 독서기록 챙기기, 7월 12일 설명회 자료집 배부, 수학은 개념보다 오답정리 강조, 8월 모의평가 접수 확인, 상담 예약은 담임 통해 문의, 봉사시간도 체크",
+            "04_좋은결과예시.txt": "입시 일정: 7월 12일 설명회 자료집 배부, 8월 모의평가 접수 확인\n준비할 것: 여름방학 전까지 독서기록 챙기기, 봉사시간 체크, 상담 예약 문의\n나중에 다시 볼 메모: 수학은 개념보다 오답정리 강조\n이번 달 안에 할 일: 담임에게 상담 예약 문의, 독서기록 상태 확인",
         },
-        "week1-family-schedule-kit": {
-            "00_README_가족일정실전팩.md": "# 가족 일정 정리 실전팩\n\n흩어진 메모를 한눈에 보이는 일정표로 바꾸는 연습입니다.",
-            "01_흩어진일정메모.txt": "월 3시 치과, 화 준비물 제출, 수 7시 학원 상담, 금 도시락, 토 오전 가족모임",
-            "02_정리조건.txt": "조건: 1) 요일 순서대로 2) 빠뜨리기 쉬운 준비물은 따로 표시 3) 아주 쉬운 한국어",
-            "03_AI에게붙여넣을프롬프트.txt": "아래 일정을 요일 순서대로 정리해줘. 빠뜨리기 쉬운 준비물은 따로 표시해줘. 아주 쉬운 한국어로 써줘.\n\n월 3시 치과, 화 준비물 제출, 수 7시 학원 상담, 금 도시락, 토 오전 가족모임",
-            "04_좋은결과예시.txt": "월요일: 오후 3시 치과\n화요일: 준비물 제출 (준비물 미리 챙기기)\n수요일: 오후 7시 학원 상담\n금요일: 도시락 준비\n토요일: 오전 가족모임",
+        "week1-parent-chat-reply-kit": {
+            "00_README_학부모답장실전팩.md": "# 학부모 단톡방 답장 실전팩\n\n정중하지만 길지 않은 한국어 답장을 빠르게 만드는 연습입니다.",
+            "01_받은메시지.txt": "안녕하세요. 내일 공개수업 후에 간단히 반 대표 모임을 하려고 합니다. 시간 괜찮으실지, 혹시 준비해 오실 의견 있으시면 미리 알려주세요.",
+            "02_원하는답장조건.txt": "조건: 1) 부드러운 한국어 2) 너무 길지 않게 3) 참석 가능 여부 포함 4) 예민하거나 딱딱한 말투 금지",
+            "03_AI에게붙여넣을프롬프트.txt": "아래 메시지에 대한 답장을 아주 쉬운 한국어로 1개 써줘. 너무 길지 않게, 부드럽고 예의 있게, 참석 가능 여부가 들어가게 해줘.\n\n[받은 메시지]\n안녕하세요. 내일 공개수업 후에 간단히 반 대표 모임을 하려고 합니다. 시간 괜찮으실지, 혹시 준비해 오실 의견 있으시면 미리 알려주세요.",
+            "04_좋은결과예시.txt": "안녕하세요. 내일 공개수업 후 모임에 참석 가능합니다. 따로 준비해 갈 의견이 생기면 미리 말씀드리겠습니다. 감사합니다.",
         },
     }
     files = bundles.get(kit_id)

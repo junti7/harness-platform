@@ -36,6 +36,10 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertIn("Day 0", card["title"])
         self.assertIn("Claude", card["required_action"])
+        self.assertGreaterEqual(card["estimated_minutes"], 60)
+        self.assertGreaterEqual(len(card["foundation_concepts"]), 4)
+        self.assertGreaterEqual(len(card["schedule_blocks"]), 5)
+        self.assertIn("LLM", card["foundation_concepts"][0]["title"])
         self.assertEqual(len(card["checklist"]), 4)
         self.assertEqual(len(card["sample_materials"]), 1)
         self.assertEqual(card["sample_materials"][0]["kit_id"], "week0-first-login-starter")
@@ -77,12 +81,17 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertIn("Claude", card["required_action"])
         self.assertIn("학원 일정 정리/학교 공지 요약/가정통신문 정리/병원 예약 정리/엄마모임과 가족모임 충돌 정리", card["required_action"])
+        self.assertGreaterEqual(card["estimated_minutes"], 60)
+        self.assertGreaterEqual(len(card["foundation_concepts"]), 4)
+        self.assertGreaterEqual(len(card["schedule_blocks"]), 6)
         self.assertEqual(card["retrieval_mode"], "db_customer_facing")
         self.assertTrue(card["customer_facing_safe"])
         self.assertFalse(card["fallback_used"])
         self.assertTrue(card["external_reuse_safe"])
         self.assertEqual(len(card["evidence_cards"]), 1)
         self.assertEqual(len(card["sample_materials"]), 4)
+        self.assertEqual(card["sample_materials"][0]["kit_id"], "week1-school-notice-kit")
+        self.assertGreaterEqual(len(card["home_priority_missions"]), 4)
         self.assertGreaterEqual(len(card["scenario_bank"]), 10)
         self.assertIn("학교 준비물 공지 정리", [item["title"] for item in card["scenario_bank"]])
         self.assertGreaterEqual(len(card["home_life_recommended_learning"]), 1)
@@ -94,22 +103,22 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("학원 일정 학교 공지 가정통신문", first_args[0])
         self.assertEqual(first_args[1], "parent")
         self.assertEqual(first_kwargs["k"], 4)
-        self.assertIn("답장 회의메모 보고초안 일정정리", second_args[0])
-        self.assertEqual(second_args[1], "worker")
+        self.assertIn("학원 일정 학교 공지 가정통신문 병원 예약 엄마모임 가족모임", second_args[0])
+        self.assertEqual(second_args[1], "parent")
         self.assertEqual(second_kwargs["k"], 4)
         self.assertIn("네이버 맘카페 학원 일정", third_args[0])
         self.assertEqual(third_args[1], "parent")
         self.assertEqual(third_kwargs["k"], 6)
 
     def test_material_zip_contains_expected_files(self):
-        filename, payload = self.mod._edu_vp_material_zip_bytes("week1-reply-kit")
-        self.assertEqual(filename, "week1-reply-kit.zip")
+        filename, payload = self.mod._edu_vp_material_zip_bytes("week1-school-notice-kit")
+        self.assertEqual(filename, "week1-school-notice-kit.zip")
         import zipfile
         from io import BytesIO
 
         with zipfile.ZipFile(BytesIO(payload)) as zf:
             names = set(zf.namelist())
-        self.assertIn("01_받은메시지.txt", names)
+        self.assertIn("01_가정통신문원문.txt", names)
         self.assertIn("03_AI에게붙여넣을프롬프트.txt", names)
 
 
