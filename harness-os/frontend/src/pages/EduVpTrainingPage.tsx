@@ -1,0 +1,370 @@
+import { useState } from 'react'
+
+type Props = {
+  apiBase: string
+  authHeaders: () => Record<string, string>
+}
+
+type TrainingStage = {
+  title?: string
+  required_action?: string
+  proof_artifact_hint?: string
+  pass_fail_rubric?: string[]
+  blocked_step_options?: string[]
+  checklist?: Array<{ id: string; title: string; instruction: string; success_signal: string }>
+  practice_prompt_template?: string
+  evidence_bundle_id?: string
+  retrieval_mode?: string
+  customer_facing_safe?: boolean
+  fallback_used?: boolean
+  external_reuse_safe?: boolean
+  evidence_cards?: Array<{ title: string; source_kind: string; cite: string; snippet: string }>
+  proof_artifact?: string
+  blocked_at_step?: string
+  notes?: string
+  completed?: boolean
+}
+
+type TrainingState = {
+  program_objective?: string
+  primary_llm_path?: string
+  intake?: Record<string, string>
+  week0?: TrainingStage
+  week1?: TrainingStage
+}
+
+const C = {
+  ink: '#0f172a',
+  muted: '#475569',
+  faint: '#64748b',
+  accent: '#2563eb',
+  accentSoft: '#dbeafe',
+  surface: '#ffffff',
+  border: '#dbe4ee',
+  success: '#059669',
+  successSoft: '#d1fae5',
+  warn: '#d97706',
+  warnSoft: '#fef3c7',
+  bg: '#f8fafc',
+}
+
+function StageCard({
+  title,
+  stage,
+  stageKey,
+  onSave,
+  saving,
+}: {
+  title: string
+  stage: TrainingStage | undefined
+  stageKey: 'week0' | 'week1'
+  onSave: (stageKey: 'week0' | 'week1', payload: { proof_artifact: string; blocked_at_step: string; notes: string; completed: boolean }) => void
+  saving: boolean
+}) {
+  const [proof, setProof] = useState(stage?.proof_artifact || '')
+  const [blocked, setBlocked] = useState(stage?.blocked_at_step || '')
+  const [notes, setNotes] = useState(stage?.notes || '')
+  const [completed, setCompleted] = useState(Boolean(stage?.completed))
+
+  return (
+    <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 18, padding: 18, display: 'grid', gap: 14 }}>
+      <div>
+        <div style={{ fontSize: '.76rem', color: C.accent, fontWeight: 900, letterSpacing: '.04em', marginBottom: 6 }}>{title}</div>
+        <h3 style={{ margin: 0, fontSize: '1.1rem', lineHeight: 1.35, color: C.ink }}>{stage?.title || '준비 중'}</h3>
+      </div>
+
+      {stage?.required_action && (
+        <div style={{ background: C.accentSoft, border: `1px solid ${C.accent}`, borderRadius: 14, padding: 14 }}>
+          <div style={{ fontSize: '.74rem', color: C.accent, fontWeight: 800, marginBottom: 6 }}>이번 단계 목표</div>
+          <div style={{ fontSize: '.95rem', lineHeight: 1.6, color: C.ink, fontWeight: 700 }}>{stage.required_action}</div>
+        </div>
+      )}
+
+      {!!stage?.checklist?.length && (
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ fontSize: '.86rem', color: C.muted, fontWeight: 800 }}>실행 체크리스트</div>
+          {stage.checklist.map((item) => (
+            <div key={item.id} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: 12 }}>
+              <div style={{ fontWeight: 800, color: C.ink, marginBottom: 4 }}>{item.title}</div>
+              <div style={{ color: C.muted, fontSize: '.9rem', lineHeight: 1.55 }}>{item.instruction}</div>
+              <div style={{ color: C.faint, fontSize: '.8rem', lineHeight: 1.5, marginTop: 6 }}>잘 되면: {item.success_signal}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {stage?.practice_prompt_template && (
+        <div style={{ background: '#fefce8', border: `1px solid ${C.warn}`, borderRadius: 14, padding: 14 }}>
+          <div style={{ fontSize: '.74rem', color: C.warn, fontWeight: 800, marginBottom: 6 }}>바로 써볼 프롬프트</div>
+          <div style={{ fontSize: '.92rem', lineHeight: 1.6, color: C.ink, whiteSpace: 'pre-wrap' }}>{stage.practice_prompt_template}</div>
+        </div>
+      )}
+
+      {!!stage?.pass_fail_rubric?.length && (
+        <div>
+          <div style={{ fontSize: '.86rem', color: C.muted, fontWeight: 800, marginBottom: 8 }}>통과 기준</div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {stage.pass_fail_rubric.map((item) => (
+              <div key={item} style={{ fontSize: '.9rem', color: C.ink, lineHeight: 1.5, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12, padding: '8px 10px' }}>
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!!stage?.evidence_cards?.length && (
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: '.86rem', color: C.muted, fontWeight: 800 }}>Harness RAG 근거 묶음</div>
+            <div style={{ fontSize: '.76rem', color: C.faint }}>
+              mode={stage.retrieval_mode} · safe={String(stage.customer_facing_safe)} · fallback={String(stage.fallback_used)}
+            </div>
+          </div>
+          {stage.evidence_cards.map((item, idx) => (
+            <div key={`${item.title}-${idx}`} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: 12 }}>
+              <div style={{ fontWeight: 800, color: C.ink, marginBottom: 4 }}>{item.title}</div>
+              <div style={{ fontSize: '.78rem', color: C.accent, marginBottom: 6 }}>{item.source_kind}</div>
+              <div style={{ color: C.muted, fontSize: '.9rem', lineHeight: 1.55 }}>{item.snippet}</div>
+              {item.cite && <div style={{ color: C.faint, fontSize: '.78rem', lineHeight: 1.5, marginTop: 6 }}>{item.cite}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gap: 10 }}>
+        <label style={{ display: 'grid', gap: 6 }}>
+          <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>증거 결과물</span>
+          <textarea
+            value={proof}
+            onChange={(e) => setProof(e.target.value)}
+            rows={5}
+            placeholder={stage?.proof_artifact_hint || '실제로 만든 결과를 붙여 넣으세요.'}
+            style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.92rem', lineHeight: 1.5, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
+          />
+        </label>
+
+        <label style={{ display: 'grid', gap: 6 }}>
+          <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>어디서 막혔나</span>
+          <select
+            value={blocked}
+            onChange={(e) => setBlocked(e.target.value)}
+            style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.92rem', fontFamily: 'inherit', background: C.surface, boxSizing: 'border-box' }}
+          >
+            <option value="">막힌 단계 없음</option>
+            {(stage?.blocked_step_options || []).map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+        </label>
+
+        <label style={{ display: 'grid', gap: 6 }}>
+          <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>메모</span>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            placeholder="어려웠던 표현, 감정적으로 걸렸던 지점, 다시 해보고 싶은 점"
+            style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.92rem', lineHeight: 1.5, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
+          />
+        </label>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.ink, fontSize: '.9rem', fontWeight: 700 }}>
+          <input type="checkbox" checked={completed} onChange={(e) => setCompleted(e.target.checked)} />
+          이 단계는 실제로 해봤다
+        </label>
+
+        <button
+          onClick={() => onSave(stageKey, { proof_artifact: proof, blocked_at_step: blocked, notes, completed })}
+          disabled={saving}
+          style={{
+            background: saving ? C.border : C.accent,
+            color: '#fff',
+            border: 'none',
+            borderRadius: 14,
+            padding: '13px 16px',
+            fontSize: '.95rem',
+            fontWeight: 800,
+            cursor: saving ? 'wait' : 'pointer',
+          }}
+        >
+          {saving ? '저장 중…' : '이 단계 저장'}
+        </button>
+      </div>
+    </section>
+  )
+}
+
+export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [preferredLlm, setPreferredLlm] = useState('claude')
+  const [currentDevice, setCurrentDevice] = useState('iphone')
+  const [desktopOs, setDesktopOs] = useState('mac')
+  const [aiExperience, setAiExperience] = useState('beginner')
+  const [biggestFriction, setBiggestFriction] = useState('')
+  const [learningGoal, setLearningGoal] = useState('')
+  const [forceNew, setForceNew] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const [savingStage, setSavingStage] = useState<'week0' | 'week1' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [caseId, setCaseId] = useState<number | null>(null)
+  const [trainingState, setTrainingState] = useState<TrainingState | null>(null)
+
+  async function buildTrainingSlice() {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`${apiBase}/api/edu/vp-training/intake`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          case_id: caseId,
+          name,
+          email,
+          preferred_llm: preferredLlm,
+          current_device: currentDevice,
+          desktop_os: desktopOs,
+          ai_experience: aiExperience,
+          biggest_friction: biggestFriction,
+          learning_goal: learningGoal,
+          force_new: forceNew,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
+      setCaseId(data.case_id)
+      setTrainingState(data.training_state || null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'VP training flow build failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function saveStage(stage: 'week0' | 'week1', payload: { proof_artifact: string; blocked_at_step: string; notes: string; completed: boolean }) {
+    if (!caseId) return
+    setSavingStage(stage)
+    setError(null)
+    try {
+      const res = await fetch(`${apiBase}/api/edu/vp-training/artifact`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          case_id: caseId,
+          stage,
+          ...payload,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
+      setTrainingState(data.training_state || null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'stage save failed')
+    } finally {
+      setSavingStage(null)
+    }
+  }
+
+  return (
+    <div style={{ maxWidth: 980, margin: '0 auto', padding: '8px 10px 28px', color: C.ink }}>
+      <div style={{ display: 'grid', gap: 14, marginBottom: 18 }}>
+        <section style={{ background: `linear-gradient(135deg, ${C.accentSoft}, #eff6ff)`, border: `1px solid ${C.accent}`, borderRadius: 22, padding: 20 }}>
+          <div style={{ fontSize: '.78rem', color: C.accent, fontWeight: 900, letterSpacing: '.05em', marginBottom: 8 }}>ZERO-BASE VP TRAINING</div>
+          <h1 style={{ margin: 0, fontSize: '1.5rem', lineHeight: 1.3 }}>VP AI 훈련 · Week 0 / Week 1</h1>
+          <p style={{ margin: '10px 0 0', color: C.muted, lineHeight: 1.7, fontSize: '.98rem' }}>
+            이 화면은 기존 edu pilot의 떠도는 만담형 대화를 무시하고, 이미 정해진 목표를 향해 VP를 단계적으로 이동시키는 실제 훈련 플로우입니다.
+            목적은 생활형 AI 초보 상태에서 출발해, 장기적으로 CEO 수준의 AI handling에 가까워지는 것입니다.
+          </p>
+          {trainingState?.program_objective && (
+            <div style={{ marginTop: 12, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.92rem', lineHeight: 1.6 }}>
+              <strong style={{ display: 'block', marginBottom: 4 }}>현재 고정 목표</strong>
+              {trainingState.program_objective}
+            </div>
+          )}
+        </section>
+
+        <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 18, padding: 18, display: 'grid', gap: 14 }}>
+          <div>
+            <div style={{ fontSize: '.78rem', color: C.faint, marginBottom: 6 }}>FIRST COHORT SLICE</div>
+            <h2 style={{ margin: 0, fontSize: '1.15rem' }}>Week 0 + Week 1 + primary LLM 1개 + handoff 1개</h2>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>이름</span>
+              <input value={name} onChange={(e) => setName(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem' }} />
+            </label>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>이메일</span>
+              <input value={email} onChange={(e) => setEmail(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem' }} />
+            </label>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>Primary LLM</span>
+              <select value={preferredLlm} onChange={(e) => setPreferredLlm(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', background: C.surface }}>
+                <option value="claude">Claude</option>
+                <option value="gpt">ChatGPT</option>
+                <option value="gemini">Gemini</option>
+                <option value="local">로컬 모델</option>
+              </select>
+            </label>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>현재 모바일 기기</span>
+              <select value={currentDevice} onChange={(e) => setCurrentDevice(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', background: C.surface }}>
+                <option value="iphone">iPhone</option>
+                <option value="android">Android</option>
+              </select>
+            </label>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>PC / Mac 경로</span>
+              <select value={desktopOs} onChange={(e) => setDesktopOs(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', background: C.surface }}>
+                <option value="mac">Mac</option>
+                <option value="windows">Windows PC</option>
+              </select>
+            </label>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>현재 수준</span>
+              <select value={aiExperience} onChange={(e) => setAiExperience(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', background: C.surface }}>
+                <option value="beginner">완전 초보</option>
+                <option value="light">가끔 써봄</option>
+                <option value="weekly">주 1회 이상</option>
+              </select>
+            </label>
+          </div>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>지금 제일 막히는 지점</span>
+            <textarea value={biggestFriction} onChange={(e) => setBiggestFriction(e.target.value)} rows={3} placeholder="예: 영어라서 무섭고, 뭘 질문해야 할지도 모르겠어요." style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', lineHeight: 1.5, resize: 'vertical', boxSizing: 'border-box' }} />
+          </label>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>이번 2주 안에 만들고 싶은 변화</span>
+            <textarea value={learningGoal} onChange={(e) => setLearningGoal(e.target.value)} rows={3} placeholder="예: 아이 학교 관련 메시지나 준비물을 AI로 덜 스트레스 받으며 정리해보고 싶어요." style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', lineHeight: 1.5, resize: 'vertical', boxSizing: 'border-box' }} />
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.92rem', fontWeight: 700 }}>
+            <input type="checkbox" checked={forceNew} onChange={(e) => setForceNew(e.target.checked)} />
+            새 케이스로 다시 시작
+          </label>
+          <button onClick={() => void buildTrainingSlice()} disabled={loading || !email.trim()} style={{ background: loading ? C.border : C.accent, color: '#fff', border: 'none', borderRadius: 14, padding: '14px 18px', fontSize: '1rem', fontWeight: 800, cursor: loading ? 'wait' : 'pointer' }}>
+            {loading ? 'Week 0 / Week 1 생성 중…' : 'Week 0 / Week 1 플로우 만들기'}
+          </button>
+          {error && <div style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: 12, fontSize: '.9rem' }}>{error}</div>}
+        </section>
+      </div>
+
+      {trainingState && (
+        <div style={{ display: 'grid', gap: 16 }}>
+          <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 18, padding: 16 }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: '.84rem', color: C.muted }}>
+              <span>case_id: <b style={{ color: C.ink }}>{caseId}</b></span>
+              <span>primary_llm: <b style={{ color: C.ink }}>{trainingState.primary_llm_path}</b></span>
+              <span>track: <b style={{ color: C.ink }}>beginner_practice</b></span>
+            </div>
+          </section>
+
+          <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+            <StageCard title="Week 0" stage={trainingState.week0} stageKey="week0" onSave={saveStage} saving={savingStage === 'week0'} />
+            <StageCard title="Week 1" stage={trainingState.week1} stageKey="week1" onSave={saveStage} saving={savingStage === 'week1'} />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

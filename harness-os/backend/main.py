@@ -5822,6 +5822,28 @@ class EduMagicLinkRequest(BaseModel):
     force_new: bool = False
 
 
+class EduVpTrainingIntakeRequest(BaseModel):
+    case_id: int | None = None
+    name: str = ""
+    email: str = ""
+    preferred_llm: str = "claude"
+    current_device: str = "iphone"
+    desktop_os: str = "mac"
+    ai_experience: str = "beginner"
+    biggest_friction: str = ""
+    learning_goal: str = ""
+    force_new: bool = False
+
+
+class EduVpTrainingArtifactRequest(BaseModel):
+    case_id: int
+    stage: str = "week0"
+    proof_artifact: str = ""
+    blocked_at_step: str = ""
+    notes: str = ""
+    completed: bool = False
+
+
 def _edu_normalize_email(email: str) -> str:
     return (email or "").strip().lower()
 
@@ -6843,6 +6865,198 @@ def _edu_issue_magic_link(req: EduMagicLinkRequest) -> dict[str, Any]:
         "customer_id": customer_id,
         "force_new": force_new,
     }
+
+
+def _edu_vp_state_default(case_id: int, customer: dict[str, Any], case_meta: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "program": "vp_training",
+        "version": "week0-week1-v1",
+        "phase_scope": "week0_week1",
+        "track": "beginner_practice",
+        "program_objective": "VP를 생활형 AI 초보 상태에서 출발시켜, 장기적으로 CEO 수준의 AI handling에 가까워지게 만든다.",
+        "case_id": case_id,
+        "customer": customer,
+        "case": case_meta,
+        "intake": {},
+        "week0": {},
+        "week1": {},
+        "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+
+
+def _edu_vp_load_state(case_id: int) -> dict[str, Any] | None:
+    rows = _edu_execute(
+        """
+        SELECT summary_json
+        FROM edu_case_snapshots
+        WHERE case_id = %s
+          AND COALESCE(summary_json->>'program', '') = 'vp_training'
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (case_id,),
+        fetch=True,
+    )
+    if not rows:
+        return None
+    summary = rows[0].get("summary_json") or {}
+    return summary if isinstance(summary, dict) else None
+
+
+def _edu_vp_store_state(case_id: int, state: dict[str, Any]) -> None:
+    recommended_actions = []
+    for key in ("week0", "week1"):
+        section = state.get(key) or {}
+        required_action = str(section.get("required_action") or "").strip()
+        if required_action:
+            recommended_actions.append({"stage": key, "required_action": required_action})
+    _edu_execute(
+        """
+        INSERT INTO edu_case_snapshots
+            (case_id, summary_json, detected_patterns_json, recommended_next_questions_json, recommended_actions_json, offer_readiness_score)
+        VALUES (%s, %s::jsonb, '{}'::jsonb, '[]'::jsonb, %s::jsonb, 0)
+        """,
+        (
+            case_id,
+            json.dumps(state, ensure_ascii=False, default=str),
+            json.dumps(recommended_actions, ensure_ascii=False, default=str),
+        ),
+        fetch=False,
+    )
+
+
+def _edu_vp_llm_label(value: str) -> str:
+    normalized = _edu_normalize_llm(value)
+    return {
+        "claude": "Claude",
+        "gemini": "Gemini",
+        "gpt": "ChatGPT",
+        "local": "로컬 모델",
+        "auto": "기본 AI 도구",
+    }.get(normalized, "기본 AI 도구")
+
+
+def _edu_vp_device_label(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    return {
+        "iphone": "iPhone",
+        "android": "Android",
+        "mac": "Mac",
+        "windows": "Windows PC",
+    }.get(normalized, value or "기기")
+
+
+def _edu_vp_build_week0(intake: dict[str, Any]) -> dict[str, Any]:
+    llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or "claude"))
+    current_device = _edu_vp_device_label(str(intake.get("current_device") or "iphone"))
+    desktop_os = _edu_vp_device_label(str(intake.get("desktop_os") or "mac"))
+    friction = str(intake.get("biggest_friction") or "처음 시작이 막막함").strip()
+    goal = str(intake.get("learning_goal") or "생활에서 AI를 덜 무섭게 쓰기").strip()
+    checklist = [
+        {
+            "id": "open_tool",
+            "title": f"{llm_label} 열기",
+            "instruction": f"{current_device} 또는 {desktop_os}에서 {llm_label}의 앱이나 브라우저 화면을 실제로 연다.",
+            "success_signal": "입력창이 보인다.",
+        },
+        {
+            "id": "login_ok",
+            "title": "로그인 확인",
+            "instruction": "비밀번호를 다시 찾지 않고, 실제로 로그인된 상태까지 들어간다.",
+            "success_signal": "대화 시작 화면이 열린다.",
+        },
+        {
+            "id": "first_prompt",
+            "title": "첫 질문 1번 보내기",
+            "instruction": f"'{friction}' 또는 '{goal}'를 한 문장으로 적어 실제 질문을 1번 보낸다.",
+            "success_signal": "AI가 첫 답변을 준다.",
+        },
+        {
+            "id": "copy_result",
+            "title": "결과 복사 또는 저장",
+            "instruction": "답변 중 한 문장을 복사하거나 메모로 남긴다.",
+            "success_signal": "복사한 문장 또는 저장한 메모가 남는다.",
+        },
+    ]
+    return {
+        "title": "Week 0 · 환경 열기와 첫 성공",
+        "required_action": f"{llm_label}를 실제로 열고, 본인 고민을 한 문장으로 입력해 첫 답변 1개를 받는다.",
+        "proof_artifact_hint": "AI가 답한 첫 문장 1개 또는 본인이 복사한 결과 1개를 붙여 넣으세요.",
+        "pass_fail_rubric": [
+            "앱/브라우저를 실제로 열었다",
+            "로그인 상태를 확인했다",
+            "직접 질문을 1번 보냈다",
+            "결과를 복사하거나 저장했다",
+        ],
+        "blocked_step_options": ["open_tool", "login_ok", "first_prompt", "copy_result"],
+        "checklist": checklist,
+    }
+
+
+def _edu_vp_build_week1(intake: dict[str, Any]) -> dict[str, Any]:
+    llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or "claude"))
+    friction = str(intake.get("biggest_friction") or "AI가 어렵고 막막함").strip()
+    goal = str(intake.get("learning_goal") or "생활에서 바로 쓸 수 있는 첫 성공 만들기").strip()
+    query = f"{friction} {goal} 부모 초보 AI 첫 사용 학교 준비물 메시지 숙제 대화"
+    bundle = _retrieve_evidence_bundle(query, "parent", k=4)
+    evidence_cards: list[dict[str, Any]] = []
+    if bundle:
+        for item in (bundle.get("items") or [])[:3]:
+            body = str(item.get("body") or "").replace("\n", " ").strip()
+            evidence_cards.append(
+                {
+                    "title": str(item.get("title") or "근거 자료"),
+                    "source_kind": str(item.get("source_kind") or "general_reference"),
+                    "cite": str(item.get("cite") or ""),
+                    "snippet": body[:180],
+                }
+            )
+    mode = (bundle or {}).get("mode") or "fallback"
+    customer_facing_safe = mode == "db_customer_facing"
+    return {
+        "title": "Week 1 · 생활 장면 1개를 AI로 덜 무섭게 바꾸기",
+        "required_action": f"{llm_label}에게 '아이 학교 준비물/단톡방 답장/숙제 대화' 중 지금 제일 스트레스인 장면 1개를 설명하고, 쉬운 한국어 초안 1개를 받은 뒤 직접 고쳐본다.",
+        "proof_artifact_hint": "처음 결과와 본인이 고친 최종 결과를 둘 다 붙여 넣으세요.",
+        "pass_fail_rubric": [
+            "생활 장면 1개를 실제로 질문했다",
+            "AI 초안을 1개 받았다",
+            "본인이 직접 문장을 다시 고쳤다",
+            "전/후 결과를 남겼다",
+        ],
+        "blocked_step_options": ["pick_scene", "ask_ai", "rewrite", "save_output"],
+        "practice_prompt_template": f"지금 제일 부담되는 장면은 '{friction}'입니다. {goal}에 맞게, 초등학생도 이해할 수 있을 만큼 쉬운 한국어로 오늘 바로 쓸 초안 1개만 적어줘.",
+        "evidence_bundle_id": f"vp-week1-{hashlib.sha1(query.encode('utf-8')).hexdigest()[:10]}",
+        "retrieval_mode": mode,
+        "customer_facing_safe": customer_facing_safe,
+        "fallback_used": mode != "db_customer_facing",
+        "external_reuse_safe": customer_facing_safe,
+        "evidence_cards": evidence_cards,
+    }
+
+
+def _edu_vp_prepare_case(
+    *,
+    case_id: int | None,
+    name: str,
+    email: str,
+    preferred_llm: str,
+    force_new: bool,
+) -> dict[str, Any]:
+    if case_id:
+        payload = _edu_load_case_payload(int(case_id))
+    else:
+        payload = _edu_bootstrap_customer_case(
+            EduPublicBootstrapRequest(
+                segment="parent",
+                name=name,
+                email=email,
+                preferred_salutation="name" if (name or "").strip() else "neutral",
+                locale="ko-KR",
+                preferred_llm=preferred_llm,
+                force_new=force_new,
+            )
+        )
+    return payload
 
 
 def _edu_consume_magic_link(token: str) -> dict[str, Any]:
@@ -8609,6 +8823,96 @@ def edu_public_red_team_report(filename: str) -> Response:
 def edu_public_bootstrap(req: EduPublicBootstrapRequest) -> dict[str, Any]:
     """이메일 기준으로 고객을 식별하고, 이어보기 또는 새 케이스 시작을 지원한다."""
     return _edu_bootstrap_customer_case(req)
+
+
+@app.post("/api/edu/vp-training/intake")
+def edu_vp_training_intake(
+    req: EduVpTrainingIntakeRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    payload = _edu_vp_prepare_case(
+        case_id=req.case_id,
+        name=req.name,
+        email=req.email,
+        preferred_llm=req.preferred_llm,
+        force_new=bool(req.force_new),
+    )
+    case_id = int(payload["case"]["id"])
+    intake = {
+        "name": (req.name or "").strip(),
+        "email": _edu_normalize_email(req.email),
+        "preferred_llm": _edu_normalize_llm(req.preferred_llm),
+        "current_device": (req.current_device or "iphone").strip().lower(),
+        "desktop_os": (req.desktop_os or "mac").strip().lower(),
+        "ai_experience": (req.ai_experience or "beginner").strip().lower(),
+        "biggest_friction": (req.biggest_friction or "").strip(),
+        "learning_goal": (req.learning_goal or "").strip(),
+    }
+    current_state = _edu_vp_load_state(case_id) or _edu_vp_state_default(case_id, payload["customer"], payload["case"])
+    current_state["customer"] = payload["customer"]
+    current_state["case"] = payload["case"]
+    current_state["intake"] = intake
+    current_state["primary_llm_path"] = intake["preferred_llm"]
+    current_state["week0"] = _edu_vp_build_week0(intake)
+    current_state["week1"] = _edu_vp_build_week1(intake)
+    current_state["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    _edu_vp_store_state(case_id, current_state)
+    _edu_execute(
+        """
+        UPDATE edu_cases
+        SET status = 'vp_training_week0',
+            primary_concern = %s,
+            ai_usage_context = %s,
+            updated_at = NOW()
+        WHERE id = %s
+        """,
+        (intake["biggest_friction"][:400], intake["learning_goal"][:400], case_id),
+        fetch=False,
+    )
+    return {
+        "ok": True,
+        "case_id": case_id,
+        "customer": payload["customer"],
+        "case": payload["case"],
+        "training_state": current_state,
+    }
+
+
+@app.post("/api/edu/vp-training/artifact")
+def edu_vp_training_artifact(
+    req: EduVpTrainingArtifactRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    case_id = int(req.case_id)
+    payload = _edu_load_case_payload(case_id)
+    state = _edu_vp_load_state(case_id) or _edu_vp_state_default(case_id, payload["customer"], payload["case"])
+    stage = req.stage if req.stage in {"week0", "week1"} else "week0"
+    section = dict(state.get(stage) or {})
+    section["proof_artifact"] = (req.proof_artifact or "").strip()
+    section["blocked_at_step"] = (req.blocked_at_step or "").strip()
+    section["notes"] = (req.notes or "").strip()
+    section["completed"] = bool(req.completed)
+    section["saved_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    state[stage] = section
+    state["customer"] = payload["customer"]
+    state["case"] = payload["case"]
+    state["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    _edu_vp_store_state(case_id, state)
+    _edu_execute(
+        """
+        UPDATE edu_cases
+        SET status = %s,
+            updated_at = NOW()
+        WHERE id = %s
+        """,
+        ("vp_training_week1" if stage == "week1" and req.completed else f"{stage}_in_progress", case_id),
+        fetch=False,
+    )
+    return {
+        "ok": True,
+        "case_id": case_id,
+        "training_state": state,
+    }
 
 
 @app.get("/api/public/edu/resume")

@@ -21,7 +21,7 @@ import { PipelinePage } from './pages/PipelinePage'
 import { TradingDiaryPage } from './pages/TradingDiaryPage'
 import { OpenClawMonitorPage } from './pages/OpenClawMonitorPage'
 import { NewsCenterPage } from './pages/NewsCenterPage'
-import { EduPilotPage } from './pages/EduPilotPage'
+import { EduVpTrainingPage } from './pages/EduVpTrainingPage'
 import { EduPatternPage } from './pages/EduPatternPage'
 import { EduDbInspectorPage } from './pages/EduDbInspectorPage'
 
@@ -778,7 +778,7 @@ function App() {
       )}
 
         {activeView === 'edu-pilot' && (
-          <EduPilotPage apiBase={API_BASE} authHeaders={authHeaders} />
+          <EduVpTrainingPage apiBase={API_BASE} authHeaders={authHeaders} />
         )}
 
         {activeView === 'edu-patterns' && (
