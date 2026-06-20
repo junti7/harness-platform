@@ -107,6 +107,9 @@ if [ "${REBUILD_FE:-no}" = "yes" ]; then
     rm -rf "$FE/dist.prev"
     [ -d "$FE/dist" ] && mv "$FE/dist" "$FE/dist.prev"
     mv "$FE/dist.tmp" "$FE/dist"
+    # 빌드 provenance 스탬프: check_code_drift.py 가 이 커밋과 origin/main 프론트 소스를 비교해
+    # "프론트 변경됐는데 dist 미재빌드(stale)"를 매일 08:00 하드 감지한다.
+    git rev-parse origin/main > "$FE/dist/.build_commit" 2>/dev/null || true
     echo "      빌드 OK → $(grep -oE 'index-[^ ]*\.js' /tmp/harness_fe_build.log | head -1) (이전 번들은 dist.prev 로 롤백 보관)"
   else
     rm -rf "$FE/dist.tmp"

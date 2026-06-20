@@ -90,6 +90,50 @@ def _filter(paths: list[str]) -> list[str]:
     return out
 
 
+# 프론트 빌드 입력(이게 바뀌면 dist 를 재빌드해야 화면에 반영됨)
+FRONTEND_BUILD_INPUTS = [
+    "harness-os/frontend/src",
+    "harness-os/frontend/index.html",
+    "harness-os/frontend/package.json",
+    "harness-os/frontend/public",
+    "harness-os/frontend/vite.config.ts",
+]
+
+
+def detect_dist_staleness() -> dict | None:
+    """프로덕션 dist 가 origin/main 의 프론트 소스보다 오래됐는지(stale) 하드 감지.
+
+    배경(2026-06-20): 프론트는 빌드된 `dist/`를 `serve`가 서빙한다. 소스만 push 하고 dist 를
+    재빌드 안 하면 화면이 옛 번들로 고착된다. deploy 가 빌드 시 `dist/.build_commit`(=빌드된
+    origin/main 커밋)을 남기므로, 그 커밋이 origin/main 의 최신 프론트-소스 커밋을 포함하지
+    못하면 stale 이다. 스탬프가 없으면(미배포/dev 머신) 검사 불가로 보고 skip(오탐 방지).
+    """
+    root = _git("rev-parse", "--show-toplevel")
+    if not root:
+        return None
+    stamp = os.path.join(root, "harness-os", "frontend", "dist", ".build_commit")
+    if not os.path.exists(stamp):
+        return None
+    try:
+        with open(stamp, encoding="utf-8") as f:
+            built = f.read().strip()
+    except Exception:  # noqa: BLE001
+        return None
+    if not built:
+        return None
+    latest_fe = _git("rev-list", "-1", f"{REMOTE}/{BRANCH}", "--", *FRONTEND_BUILD_INPUTS)
+    if not latest_fe:
+        return None
+    # fresh: latest_fe 가 built 의 조상(또는 동일) → 빌드가 최신 프론트 변경을 포함
+    fresh = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", latest_fe, built],
+        capture_output=True,
+    ).returncode == 0
+    if fresh:
+        return None
+    return {"built": built[:8], "latest_frontend_commit": latest_fe[:8]}
+
+
 def detect_drift() -> dict:
     subprocess.run(["git", "fetch", REMOTE, "-q"], check=False)
     ref = f"{REMOTE}/{BRANCH}"
@@ -105,6 +149,7 @@ def detect_drift() -> dict:
     drift_untracked = _filter(untracked)
 
     host = _git("rev-parse", "--show-toplevel") or os.getcwd()
+    dist_stale = detect_dist_staleness()
     return {
         "ts": datetime.now(timezone.utc).isoformat(),
         "repo": host,
@@ -114,7 +159,8 @@ def detect_drift() -> dict:
         "ahead_behind": _git("rev-list", "--left-right", "--count", f"HEAD...{ref}"),
         "drift_tracked": drift_tracked,
         "drift_untracked": drift_untracked,
-        "has_drift": bool(drift_tracked or drift_untracked),
+        "dist_stale": dist_stale,
+        "has_drift": bool(drift_tracked or drift_untracked or dist_stale),
     }
 
 
@@ -177,6 +223,13 @@ def main() -> int:
     if r["drift_untracked"]:
         lines.append(f"  ⚠️ 커밋 안 된 새 코드(untracked) {len(r['drift_untracked'])}:")
         lines += [f"      - {p}" for p in r["drift_untracked"][:30]]
+    if r.get("dist_stale"):
+        ds = r["dist_stale"]
+        lines.append(
+            f"  ⚠️ 프론트 dist STALE — 빌드 커밋 {ds['built']} 가 최신 프론트 소스 "
+            f"{ds['latest_frontend_commit']} 를 미포함(화면에 옛 번들 서빙 중)."
+        )
+        lines.append("      조치: `scripts/deploy_to_macmini.sh harness-os/frontend/src/...` 로 dist 재빌드.")
     lines.append("  조치: 의도된 변경이면 commit+push, 아니면 `git checkout origin/main -- <path>`로 정합.")
     report = "\n".join(lines)
     print(report)

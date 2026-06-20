@@ -43,7 +43,12 @@ if [ -n "$remote_url" ]; then
 fi
 
 # [규칙 2] main 으로의 force-push 금지(공유 히스토리 보호).
+# [규칙 3] 프론트 빌드 입력 변경 감지 → 배포 시 dist 재빌드 리마인더(비차단).
+#   프로덕션 프론트는 빌드된 dist 를 serve 가 서빙하므로 push 만으로는 화면에 반영되지 않는다.
+#   push 자체는 정상 흐름(push→deploy)이라 차단하지 않고, 누락하기 쉬운 "재빌드 배포"를 환기한다.
+#   진짜 하드 가드는 Mac Mini 08:00 check_code_drift.py 의 dist STALE 감지(exit 1 + Slack)다.
 protected_ref="refs/heads/main"
+fe_changed=0
 while read -r local_ref local_sha remote_ref remote_sha; do
   [ "$remote_ref" = "$protected_ref" ] || continue
   # 삭제 push 차단
@@ -58,7 +63,21 @@ while read -r local_ref local_sha remote_ref remote_sha; do
       echo "  먼저 git fetch 후 ff 로 정렬하세요(공유 히스토리 보호)." >&2
       exit 1
     fi
+    # 규칙 3: 이 push 범위에 프론트 빌드 입력 변경이 있는지
+    if git diff --name-only "$remote_sha..$local_sha" 2>/dev/null \
+         | grep -qE '^harness-os/frontend/(src/|public/|index\.html|package\.json|vite\.config\.)'; then
+      fe_changed=1
+    fi
   fi
 done
+
+if [ "$fe_changed" = "1" ]; then
+  echo "────────────────────────────────────────────────────────────" >&2
+  echo "⚠ [pre-push] 프론트 소스 변경이 포함된 push 입니다(차단 아님)." >&2
+  echo "  프로덕션 프론트 = 빌드된 dist 를 serve 가 서빙 → push 만으로는 화면 미반영." >&2
+  echo "  필수: scripts/deploy_to_macmini.sh <변경된 harness-os/frontend 경로> 로 배포(자동 dist 재빌드)." >&2
+  echo "  미수행 시 Mac Mini 08:00 드리프트 가드가 'dist STALE' 로 경보합니다." >&2
+  echo "────────────────────────────────────────────────────────────" >&2
+fi
 
 exit 0

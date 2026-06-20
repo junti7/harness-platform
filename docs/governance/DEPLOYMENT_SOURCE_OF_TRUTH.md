@@ -37,7 +37,8 @@
 - **커밋하지 않은 코드를 프로덕션에서 라이브로 운영하지 않는다.** (git에 안 보이면 다음 사람이 덮어쓴다 → 유실)
 - 만성 dirty 트리 상태에서 **전체 `git pull` / `git checkout` / `git reset --hard`로 강제 동기화하지 않는다.** 미커밋 prod 작업을 파괴한다.
 - 서버 간 파일을 **scp/수동 복사로 배포하지 않는다.** 드리프트의 근원이다.
-- **프론트엔드를 `harness-os/frontend/` 루트에 빌드하지 않는다.** Vite 출력은 `dist/`만이며(`dist`는 gitignore됨), 백엔드는 `dist/`에서 서빙한다. 루트에 `index.html`(빌드본)·`assets/`·`favicon.svg` 등이 생기면 잘못된 outDir 빌드의 잔재다 — 루트 `index.html`은 항상 dev 소스(`/src/main.tsx`)여야 한다. 프론트 갱신은 prod에서 `cd harness-os/frontend && npm run build`(→`dist/`)로만 한다.
+- **프론트엔드를 `harness-os/frontend/` 루트에 빌드하지 않는다.** Vite 출력은 `dist/`만이며(`dist`는 gitignore됨). 루트에 `index.html`(빌드본)·`assets/`·`favicon.svg` 등이 생기면 잘못된 outDir 빌드의 잔재다 — 루트 `index.html`은 항상 dev 소스(`/src/main.tsx`)여야 한다.
+- **[프론트 서빙·빌드 — 사실 정정 2026-06-20]** 프로덕션 프론트는 **백엔드가 아니라 전역 `serve` 가 빌드된 `dist/` 를 5173 에 정적 서빙**한다(launchd `com.harness.harness-os-frontend` = `/opt/homebrew/bin/serve …/dist -p 5173`; vite dev 서버 아님). 백엔드(8000)는 API 만 담당한다. **프론트 소스를 commit·push 만 하고 dist 를 재빌드하지 않으면 화면은 옛 번들 그대로다(2026-06-20 사고).** 그래서 `scripts/deploy_to_macmini.sh` 가 프론트 소스(`harness-os/frontend/src` 등) 변경을 감지하면 Mac Mini 에서 **자동으로 `npm run build`(staging dist.tmp → 원자 swap, 빌드 실패 시 기존 dist 보존)** 하고, plist 변경 시 launchd 재설치/reload 까지 수행한다. 즉 **프론트 갱신은 수동 빌드가 아니라 deploy 스크립트로 일원화**됐다. `serve` 전역 바이너리는 프론트 런타임 의존성이다(`npm i -g serve`; deploy·register_launchd 가 preflight 검증).
 - MBP에서 commit만 하고 Mac Mini 선택 배포/청결 검증을 생략한 채 작업을 종료하지 않는다.
 - MBP 또는 Mac Mini에서 추적 파일 dirty를 "원래 그런 상태"로 정상화하지 않는다. 반복 dirty는 출력 경로, 런타임 저장 위치, `.gitignore` 설계 문제로 간주하고 구조적으로 제거한다.
 - **MBP 에서 OpenClaw 가 Slack DM 을 수신하게 두지 않는다.** MBP 에서 listener/gateway 를 수동 `nohup`, launchd, watchdog 로 살리는 행위는
