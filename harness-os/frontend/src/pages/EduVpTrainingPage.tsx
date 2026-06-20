@@ -100,8 +100,8 @@ type CaseItem = {
   flow_outline?: FlowItem[]
 }
 
-const VP_TRAINING_EMAIL = 'vp-training@harness.local'
 const VP_TRAINING_CASE_STORAGE_KEY = 'vp_training_case_id'
+const VP_TRAINING_AUTH_EMAIL_KEY = 'vp_training_auth_email'
 
 const C = {
   ink: '#111827',
@@ -564,6 +564,12 @@ function StageCard({
 }
 
 export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authName, setAuthName] = useState('')
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
+  const [authLoading, setAuthLoading] = useState(false)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [preferredLlm, setPreferredLlm] = useState('gemini')
   const [currentDevice, setCurrentDevice] = useState('android')
   const [desktopOs, setDesktopOs] = useState('windows')
@@ -574,33 +580,89 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
   const [caseId, setCaseId] = useState<number | null>(null)
   const [trainingState, setTrainingState] = useState<TrainingState | null>(null)
   const [caseHistory, setCaseHistory] = useState<CaseItem[]>([])
-  const [hasCaseHistory, setHasCaseHistory] = useState(false)
   const [showCaseArchive, setShowCaseArchive] = useState(false)
   const [selectedStage, setSelectedStage] = useState<'week0' | 'week1'>('week0')
   const [showContinueFrom, setShowContinueFrom] = useState<'week0' | 'week1' | null>(null)
   const [activeCurriculumIndex, setActiveCurriculumIndex] = useState(0)
+  const archivedCases = caseHistory.filter((item) => item.case_id !== caseId)
+  const hasCaseHistory = archivedCases.length > 0
 
-  async function loadCases() {
-    const res = await fetch(`${apiBase}/api/edu/vp-training/cases?email=${encodeURIComponent(VP_TRAINING_EMAIL)}`, {
+  async function loadCases(explicitEmail?: string) {
+    const safeEmail = (explicitEmail || authEmail).trim().toLowerCase()
+    if (!safeEmail) return [] as CaseItem[]
+    const res = await fetch(`${apiBase}/api/edu/vp-training/cases?email=${encodeURIComponent(safeEmail)}`, {
       headers: { ...authHeaders() },
     })
     const data = await res.json()
     if (res.ok) {
       const cases = data.cases || []
       setCaseHistory(cases)
-      setHasCaseHistory(cases.length > 0)
       return cases as CaseItem[]
     }
     return [] as CaseItem[]
   }
 
-  async function buildTrainingSlice(targetCaseId?: number | null, restart?: boolean) {
+  async function submitAuth() {
+    const safeEmail = authEmail.trim().toLowerCase()
+    if (!safeEmail || !authPassword.trim()) {
+      setError('이메일과 비밀번호를 입력하세요.')
+      return
+    }
+    setAuthLoading(true)
+    setError(null)
+    try {
+      const endpoint = authMode === 'login'
+        ? '/api/edu/vp-training/account/login'
+        : '/api/edu/vp-training/account/register'
+      const payload = authMode === 'login'
+        ? { email: safeEmail, password: authPassword }
+        : { email: safeEmail, password: authPassword, name: authName }
+      const res = await fetch(`${apiBase}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
+      setAuthEmail(safeEmail)
+      setIsAuthenticated(true)
+      window.localStorage.setItem(VP_TRAINING_AUTH_EMAIL_KEY, safeEmail)
+      setAuthPassword('')
+      await buildTrainingSlice(undefined, false, safeEmail)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'account auth failed')
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  function logoutTrainingAccount() {
+    setIsAuthenticated(false)
+    setAuthEmail('')
+    setAuthPassword('')
+    setAuthName('')
+    setCaseId(null)
+    setTrainingState(null)
+    setCaseHistory([])
+    setShowCaseArchive(false)
+    setSelectedStage('week0')
+    setShowContinueFrom(null)
+    window.localStorage.removeItem(VP_TRAINING_AUTH_EMAIL_KEY)
+    window.localStorage.removeItem(VP_TRAINING_CASE_STORAGE_KEY)
+  }
+
+  async function buildTrainingSlice(targetCaseId?: number | null, restart?: boolean, explicitEmail?: string) {
     setLoading(true)
     setError(null)
     try {
+      const safeEmail = (explicitEmail || authEmail).trim().toLowerCase()
+      if (!safeEmail) {
+        setLoading(false)
+        return
+      }
       let resolvedCaseId = restart ? null : (targetCaseId ?? caseId)
-      if (!restart && !resolvedCaseId) {
-        const existingCases = await loadCases()
+      if (!restart && resolvedCaseId == null) {
+        const existingCases = await loadCases(safeEmail)
         if (existingCases.length > 0) {
           resolvedCaseId = existingCases[0].case_id
         }
@@ -610,7 +672,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({
           case_id: resolvedCaseId,
-          email: VP_TRAINING_EMAIL,
+          email: safeEmail,
           preferred_llm: preferredLlm,
           current_device: currentDevice,
           desktop_os: desktopOs,
@@ -622,17 +684,19 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`)
+      setAuthEmail(safeEmail)
+      setIsAuthenticated(true)
       setCaseId(data.case_id)
       setTrainingState(data.training_state || null)
       setSelectedStage(resumeStageFromState(data.training_state || null))
       window.localStorage.setItem(VP_TRAINING_CASE_STORAGE_KEY, String(data.case_id))
-      if (showCaseArchive) await loadCases()
+      if (showCaseArchive) await loadCases(safeEmail)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'VP training flow build failed'
       if (message.includes('case not found')) {
         window.localStorage.removeItem(VP_TRAINING_CASE_STORAGE_KEY)
         if (!restart && (targetCaseId ?? caseId)) {
-          await buildTrainingSlice(undefined, false)
+          await buildTrainingSlice(undefined, false, explicitEmail || authEmail)
           return
         }
         setError(null)
@@ -645,7 +709,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
   }
 
   async function saveStage(stage: 'week0' | 'week1', payload: { proof_artifact: string; blocked_at_step: string; notes: string; completed: boolean }) {
-    if (!caseId) return
+    if (caseId == null) return
     setSavingStage(stage)
     setError(null)
     try {
@@ -667,7 +731,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
   }
 
   async function saveFeedback(stage: 'week0' | 'week1', payload: { empathy_score: number; clarity_score: number; motivation_score: number; biggest_blocker: string; freeform_feedback: string }) {
-    if (!caseId) return
+    if (caseId == null) return
     setSavingFeedbackStage(stage)
     setError(null)
     try {
@@ -688,17 +752,33 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
   }
 
   useEffect(() => {
+    const savedEmail = window.localStorage.getItem(VP_TRAINING_AUTH_EMAIL_KEY)
+    if (savedEmail) {
+      setAuthEmail(savedEmail)
+      setIsAuthenticated(true)
+    }
     const stored = window.localStorage.getItem(VP_TRAINING_CASE_STORAGE_KEY)
-    if (!stored) return
-    const parsed = Number(stored)
-    if (!Number.isFinite(parsed) || parsed <= 0) return
-    setCaseId(parsed)
-    void buildTrainingSlice(parsed, false)
+    const parsed = stored == null ? null : Number(stored)
+    if (savedEmail && parsed != null && Number.isFinite(parsed) && parsed >= 0) {
+      setCaseId(parsed)
+      void buildTrainingSlice(parsed, false, savedEmail)
+      return
+    }
+    if (!savedEmail) return
+    void (async () => {
+      const existingCases = await loadCases(savedEmail)
+      if (existingCases.length > 0) {
+        const latestCaseId = existingCases[0].case_id
+        setCaseId(latestCaseId)
+        window.localStorage.setItem(VP_TRAINING_CASE_STORAGE_KEY, String(latestCaseId))
+        await buildTrainingSlice(latestCaseId, false, savedEmail)
+      }
+    })()
   }, [])
 
   useEffect(() => {
-    void loadCases()
-  }, [])
+    if (isAuthenticated) void loadCases()
+  }, [isAuthenticated, authEmail])
 
   const stage = selectedStage === 'week0' ? trainingState?.week0 : trainingState?.week1
   const week0Completed = Boolean(trainingState?.week0?.completed)
@@ -742,6 +822,34 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
         </section>
 
         <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 24, padding: 18, display: 'grid', gap: 14 }}>
+          {!isAuthenticated && (
+            <div style={{ display: 'grid', gap: 12, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button type="button" onClick={() => setAuthMode('login')} style={{ background: authMode === 'login' ? '#111827' : C.bg, color: authMode === 'login' ? '#fff' : C.ink, border: `1px solid ${C.border}`, borderRadius: 12, padding: '10px 12px', fontWeight: 800, cursor: 'pointer' }}>
+                  로그인
+                </button>
+                <button type="button" onClick={() => setAuthMode('register')} style={{ background: authMode === 'register' ? '#111827' : C.bg, color: authMode === 'register' ? '#fff' : C.ink, border: `1px solid ${C.border}`, borderRadius: 12, padding: '10px 12px', fontWeight: 800, cursor: 'pointer' }}>
+                  회원가입
+                </button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>이메일</span>
+                  <input value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem' }} />
+                </label>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>비밀번호</span>
+                  <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem' }} />
+                </label>
+                {authMode === 'register' && (
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>이름</span>
+                    <input value={authName} onChange={(e) => setAuthName(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem' }} />
+                  </label>
+                )}
+              </div>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
             <label style={{ display: 'grid', gap: 6 }}>
               <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>사용할 AI</span>
@@ -768,13 +876,24 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
             </label>
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <button type="button" onClick={() => void buildTrainingSlice(caseId, false)} disabled={loading} style={{ background: '#111827', color: '#fff', border: 'none', borderRadius: 14, padding: '12px 16px', fontWeight: 800, cursor: loading ? 'wait' : 'pointer' }}>
-              {loading ? 'Day 플로우 생성 중…' : trainingState ? 'VP AI 훈련 이어서 하기' : 'VP AI 훈련 시작'}
-            </button>
-            <button type="button" onClick={() => void buildTrainingSlice(undefined, true)} disabled={loading} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: loading ? 'wait' : 'pointer' }}>
-              새 케이스로 다시 시작
-            </button>
-            {hasCaseHistory && (
+            {!isAuthenticated ? (
+              <button type="button" onClick={() => void submitAuth()} disabled={authLoading} style={{ background: '#111827', color: '#fff', border: 'none', borderRadius: 14, padding: '12px 16px', fontWeight: 800, cursor: authLoading ? 'wait' : 'pointer' }}>
+                {authLoading ? '처리 중…' : authMode === 'login' ? '로그인' : '회원가입'}
+              </button>
+            ) : (
+              <>
+                <button type="button" onClick={() => void buildTrainingSlice(caseId, false)} disabled={loading} style={{ background: '#111827', color: '#fff', border: 'none', borderRadius: 14, padding: '12px 16px', fontWeight: 800, cursor: loading ? 'wait' : 'pointer' }}>
+                  {loading ? 'Day 플로우 생성 중…' : trainingState ? 'VP AI 훈련 이어서 하기' : 'VP AI 훈련 시작'}
+                </button>
+                <button type="button" onClick={() => void buildTrainingSlice(undefined, true)} disabled={loading} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: loading ? 'wait' : 'pointer' }}>
+                  새 케이스로 다시 시작
+                </button>
+                <button type="button" onClick={logoutTrainingAccount} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, padding: '12px 14px', fontWeight: 800, cursor: 'pointer' }}>
+                  다른 계정으로 전환
+                </button>
+              </>
+            )}
+            {isAuthenticated && hasCaseHistory && (
               <button type="button" onClick={() => {
                 const next = !showCaseArchive
                 setShowCaseArchive(next)
@@ -787,11 +906,11 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
           {error && <div style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: 12, fontSize: '.9rem' }}>{error}</div>}
         </section>
 
-        {showCaseArchive && !!caseHistory.length && (
+        {isAuthenticated && showCaseArchive && !!archivedCases.length && (
           <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 24, padding: 18, display: 'grid', gap: 12 }}>
             <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>과거 케이스</div>
             <div style={{ display: 'grid', gap: 10 }}>
-              {caseHistory.map((item) => (
+              {archivedCases.map((item) => (
                 <div key={item.case_id} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, display: 'grid', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                     <div style={{ fontWeight: 800, color: C.ink }}>{item.case_label || `케이스 ${item.case_id}`}</div>
@@ -808,7 +927,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders }: Props) {
           </section>
         )}
 
-        {trainingState && (
+        {isAuthenticated && trainingState && (
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(250px, 300px) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
             <aside style={{ display: 'grid', gap: 14, position: 'sticky', top: 12 }}>
               <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 22, padding: 16, display: 'grid', gap: 12 }}>

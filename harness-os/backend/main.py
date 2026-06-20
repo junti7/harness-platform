@@ -5857,8 +5857,64 @@ class EduVpTrainingFeedbackRequest(BaseModel):
     freeform_feedback: str = ""
 
 
+class EduVpTrainingAccountRegisterRequest(BaseModel):
+    email: str = ""
+    password: str = ""
+    name: str = ""
+
+
+class EduVpTrainingAccountLoginRequest(BaseModel):
+    email: str = ""
+    password: str = ""
+
+
 def _edu_normalize_email(email: str) -> str:
     return (email or "").strip().lower()
+
+
+def _edu_hash_account_password(password: str, salt: bytes | None = None) -> str:
+    salt_bytes = salt or os.urandom(16)
+    iterations = 200_000
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt_bytes, iterations)
+    return "pbkdf2_sha256${iterations}${salt}${digest}".format(
+        iterations=iterations,
+        salt=base64.b64encode(salt_bytes).decode("ascii"),
+        digest=base64.b64encode(digest).decode("ascii"),
+    )
+
+
+def _edu_verify_account_password(password: str, encoded: str) -> bool:
+    raw = str(encoded or "").strip()
+    if not raw:
+        return False
+    try:
+        algo, iterations, salt_b64, digest_b64 = raw.split("$", 3)
+        if algo != "pbkdf2_sha256":
+            return False
+        salt = base64.b64decode(salt_b64.encode("ascii"))
+        expected = base64.b64decode(digest_b64.encode("ascii"))
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, int(iterations))
+        return hashlib.compare_digest(actual, expected)
+    except Exception:
+        return False
+
+
+def _edu_load_account_row(email: str) -> dict[str, Any] | None:
+    safe_email = _edu_normalize_email(email)
+    if not safe_email:
+        return None
+    rows = _edu_execute(
+        """
+        SELECT id, segment, name, email, preferred_salutation, locale, preferred_llm, password_hash
+        FROM edu_customers
+        WHERE lower(email) = %s
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (safe_email,),
+        fetch=True,
+    )
+    return rows[0] if rows else None
 
 
 def _edu_normalize_salutation(value: str) -> str:
@@ -5931,6 +5987,7 @@ def _ensure_edu_case_schema() -> None:
         try:
             with conn.cursor() as cur:
                 cur.execute(sql_text)
+                cur.execute("ALTER TABLE edu_customers ADD COLUMN IF NOT EXISTS password_hash TEXT")
             conn.commit()
             _EDU_SCHEMA_READY = True
         except Exception:
@@ -7378,7 +7435,7 @@ def _edu_vp_prepare_case(
     preferred_llm: str,
     force_new: bool,
 ) -> dict[str, Any]:
-    if case_id:
+    if case_id is not None:
         try:
             payload = _edu_load_case_payload(int(case_id))
         except HTTPException as exc:
@@ -9272,6 +9329,71 @@ def edu_vp_training_intake(
         "customer": payload["customer"],
         "case": payload["case"],
         "training_state": current_state,
+    }
+
+
+@app.post("/api/edu/vp-training/account/register")
+def edu_vp_training_account_register(
+    req: EduVpTrainingAccountRegisterRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    _ensure_edu_case_schema()
+    email = _edu_normalize_email(req.email)
+    password = str(req.password or "")
+    if not email:
+        raise HTTPException(400, "email is required")
+    if len(password) < 6:
+        raise HTTPException(400, "password must be at least 6 characters")
+    existing = _edu_load_account_row(email)
+    password_hash = _edu_hash_account_password(password)
+    if existing and str(existing.get("password_hash") or "").strip():
+        raise HTTPException(409, "account already exists")
+    if existing:
+        _edu_execute(
+            """
+            UPDATE edu_customers
+            SET name = CASE WHEN %s <> '' THEN %s ELSE name END,
+                password_hash = %s,
+                last_active_at = NOW()
+            WHERE id = %s
+            """,
+            ((req.name or "").strip(), (req.name or "").strip(), password_hash, int(existing["id"])),
+            fetch=False,
+        )
+        customer_id = int(existing["id"])
+    else:
+        inserted = _edu_execute(
+            """
+            INSERT INTO edu_customers (segment, name, email, preferred_salutation, locale, preferred_llm, login_channel, consent_version, last_active_at, password_hash)
+            VALUES ('worker', %s, %s, 'neutral', 'ko-KR', 'gemini', 'email_password', 'vp-training-v1', NOW(), %s)
+            RETURNING id
+            """,
+            ((req.name or "").strip(), email, password_hash),
+            fetch=True,
+        )[0]
+        customer_id = int(inserted["id"])
+    return {"ok": True, "customer_id": customer_id, "email": email}
+
+
+@app.post("/api/edu/vp-training/account/login")
+def edu_vp_training_account_login(
+    req: EduVpTrainingAccountLoginRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    _ensure_edu_case_schema()
+    account = _edu_load_account_row(req.email)
+    if not account or not _edu_verify_account_password(str(req.password or ""), str(account.get("password_hash") or "")):
+        raise HTTPException(401, "invalid credentials")
+    _edu_execute(
+        "UPDATE edu_customers SET last_active_at = NOW() WHERE id = %s",
+        (int(account["id"]),),
+        fetch=False,
+    )
+    return {
+        "ok": True,
+        "customer_id": int(account["id"]),
+        "email": str(account.get("email") or ""),
+        "name": str(account.get("name") or ""),
     }
 
 

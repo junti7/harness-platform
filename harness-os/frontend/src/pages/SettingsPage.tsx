@@ -647,6 +647,23 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase,
             </div>
           </div>
 
+          <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '1.5rem', alignItems: 'start', paddingBottom: '1.2rem', borderBottom: '1px solid var(--color-border)' }}>
+            <div>
+              <strong style={{ display: 'block', fontSize: '0.95rem' }}>교육 계정 이메일</strong>
+              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>VP AI 훈련 테스트 및 운영 시 사용할 기준 이메일입니다.</span>
+            </div>
+            <div style={{ display: 'grid', gap: '0.75rem', maxWidth: '520px' }}>
+              <div style={{ background: 'var(--color-surface-lighter)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '0.9rem 1rem' }}>
+                <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem', fontWeight: 700 }}>CEO</div>
+                <div style={{ fontSize: '0.95rem', color: 'var(--color-text)', fontWeight: 800 }}>junti7@gmail.com</div>
+              </div>
+              <div style={{ background: 'var(--color-surface-lighter)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '0.9rem 1rem' }}>
+                <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem', fontWeight: 700 }}>VP</div>
+                <div style={{ fontSize: '0.95rem', color: 'var(--color-text)', fontWeight: 800 }}>fox_jazz@naver.com</div>
+              </div>
+            </div>
+          </div>
+
           {/* 3. Refresh Interval */}
           <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '1.5rem', alignItems: 'center', paddingBottom: '1.2rem', borderBottom: '1px solid var(--color-border)' }}>
             <div>
