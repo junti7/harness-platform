@@ -69,7 +69,10 @@ for p in "${PATHS[@]}"; do
   # dist 빌드는 프론트 *소스* 변경 시에만(plist 만 바뀐 경우는 빌드 불필요)
   case "$p" in harness-os/frontend/src/*|harness-os/frontend/index.html|harness-os/frontend/public/*|harness-os/frontend/*.json|harness-os/frontend/*.ts|harness-os/frontend/*.js) REBUILD_FRONTEND="yes";; esac
   case "$p" in harness-os/launchd/com.harness.harness-os-frontend.plist) RELOAD_FE_PLIST="yes";; esac
-  case "$p" in harness-os/backend/*|harness-os/launchd/com.harness.harness-os-backend.plist) RELOAD_BACKEND="yes";; esac
+  # 백엔드(uvicorn)는 장기 프로세스라 import 한 모듈을 메모리에 고정한다. core/·scripts/ 를 배포해도
+  # reload 전엔 옛 코드로 동작한다(2026-06-21 사고: HARNESS_MIN_SCORE 변경이 백엔드에 미반영).
+  # 백엔드가 core/·scripts/ 에서 광범위하게 import 하므로, 이 둘이 바뀌면 백엔드도 reload 한다.
+  case "$p" in harness-os/backend/*|harness-os/launchd/com.harness.harness-os-backend.plist|core/*|scripts/*) RELOAD_BACKEND="yes";; esac
 done
 
 ssh -o ConnectTimeout=20 "$SSH_HOST" "REPO='$REMOTE_REPO' PATHS='$PATHS_STR' REBUILD='$REBUILD_TRADING' REBUILD_FE='$REBUILD_FRONTEND' RELOAD_FE='$RELOAD_FE_PLIST' RELOAD_BE='$RELOAD_BACKEND' bash -s" <<'REMOTE'
