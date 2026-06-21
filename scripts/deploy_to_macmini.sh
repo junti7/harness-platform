@@ -156,14 +156,28 @@ if [ "${RELOAD_BE:-no}" = "yes" ]; then
   sed "s|__ROOT__|$REPO|g" harness-os/launchd/com.harness.harness-os-backend.plist > "$AGENT"
   UID_N=$(id -u)
   launchctl bootout "gui/$UID_N/com.harness.harness-os-backend" >/dev/null 2>&1 || true
-  sleep 1
-  launchctl bootstrap "gui/$UID_N" "$AGENT"
-  sleep 2
-  if launchctl print "gui/$UID_N/com.harness.harness-os-backend" >/tmp/harness_backend_launchctl.log 2>&1; then
-    echo "      ✓ backend 재기동 완료"
+  # bootout 은 비동기 — 서비스가 실제로 사라질 때까지 대기해야 한다. sleep 1 후 bootstrap 하면
+  # 'Bootstrap failed: 5: Input/output error' 로 실패하고 백엔드가 내려간 채 남는다(2026-06-21 사고).
+  for _i in $(seq 1 20); do
+    launchctl print "gui/$UID_N/com.harness.harness-os-backend" >/dev/null 2>&1 || break
+    sleep 0.5
+  done
+  # bootstrap 재시도(EIO 일시 오류 내성)
+  for _i in 1 2 3; do
+    if launchctl bootstrap "gui/$UID_N" "$AGENT" 2>/tmp/harness_backend_launchctl.log; then break; fi
+    sleep 2
+  done
+  # 실제 서빙(8000) 확인 — launchctl 등록만으로는 부족(기동 실패해도 loaded 일 수 있음).
+  be_ok=0
+  for _i in $(seq 1 24); do
+    if curl -s -o /dev/null --max-time 3 http://127.0.0.1:8000/ 2>/dev/null; then be_ok=1; break; fi
+    sleep 1
+  done
+  if [ "$be_ok" = "1" ]; then
+    echo "      ✓ backend 재기동 완료(8000 서빙)"
   else
-    echo "      ✖ backend 재기동 실패. 로그: logs/harness-os-backend.error.log. launchctl:"
-    tail -20 /tmp/harness_backend_launchctl.log || true
+    echo "      ✖ backend 8000 미서빙 — 기동 실패. 로그: logs/harness-os-backend.error.log / launchctl:"
+    tail -20 /tmp/harness_backend_launchctl.log 2>/dev/null || true
     exit 1
   fi
 fi
