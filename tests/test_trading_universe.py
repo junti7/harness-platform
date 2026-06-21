@@ -180,6 +180,38 @@ class TradingUniverseTests(unittest.TestCase):
         self.assertEqual(source, "fallback")
         self.assertEqual([row["symbol"] for row in rows], ["NVDA"])
 
+    def test_min_score_gate_universe_json(self):
+        """min_score 게이트(2026-06-21 IBKR/Alpaca 통일): universe.json 경로에서 harness_score<문턱 배제."""
+        import json
+        import tempfile
+        from pathlib import Path
+        rows = [
+            {"symbol": "TSM", "brokers": ["alpaca", "ibkr"], "harness_score": 7},
+            {"symbol": "MU", "brokers": ["alpaca", "ibkr"], "harness_score": 6},
+            {"symbol": "000660", "brokers": ["ibkr"], "harness_score": 8},
+        ]
+        with tempfile.TemporaryDirectory() as d:
+            up = Path(d) / "universe.json"
+            up.write_text(json.dumps(rows), encoding="utf-8")
+            with patch("core.trading_universe.UNIVERSE_PATH", up):
+                # 게이트 없음: 전량
+                ibkr_all, _ = trading_universe.load_trading_universe(broker="ibkr")
+                self.assertEqual(sorted(r["symbol"] for r in ibkr_all), ["000660", "MU", "TSM"])
+                # ≥7 게이트: MU(6) 배제 — IBKR/Alpaca 동일하게 적용돼야
+                ibkr7, _ = trading_universe.load_trading_universe(broker="ibkr", min_score=7)
+                self.assertEqual(sorted(r["symbol"] for r in ibkr7), ["000660", "TSM"])
+                alp7, _ = trading_universe.load_trading_universe(broker="alpaca", min_score=7)
+                self.assertEqual(sorted(r["symbol"] for r in alp7), ["TSM"])  # 000660 은 alpaca 미거래
+
+    def test_min_score_not_applied_to_fallback(self):
+        """fallback(seed)은 harness_score 없음 → min_score 게이트 미적용(유니버스 비는 것 방지)."""
+        with patch("core.trading_universe.UNIVERSE_PATH") as mp:
+            mp.exists.return_value = False
+            fb = [{"symbol": "NVDA", "region": "US"}]
+            rows, source = trading_universe.load_trading_universe(broker="ibkr", fallback=fb, min_score=7)
+            self.assertEqual(source, "fallback")
+            self.assertEqual([r["symbol"] for r in rows], ["NVDA"])
+
 
 if __name__ == "__main__":
     unittest.main()

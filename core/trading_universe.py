@@ -167,8 +167,12 @@ def _alias_map(symbol: str, name: str) -> list[str]:
         "6981": ["murata", "murata manufacturing"],
         "6762": ["tdk", "tdk corporation"],
         "009150": ["삼성전기", "samsung electro-mechanics", "semco"],
-        "005930": ["삼성전자", "samsung electronics"],
-        "000660": ["sk하이닉스", "sk hynix", "hynix"],
+        # 삼성전자/SK하이닉스는 HBM/DRAM 직접 별칭을 MU(Micron)와 동일하게 부여한다(2026-06-21 재보정).
+        # 근거: SK하이닉스는 HBM 점유 1위, 삼성도 메모리 빅3 — HBM 리더가 'hbm' 직접별칭이 없어
+        # 0.7 할인 bridge 로만 잡혀 MU(6)보다 낮게(5) 점수받던 비대칭을 교정. "hbm/hbm3e/hbm4/
+        # high bandwidth memory/dram" 은 메모리-특정 비모호 용어라 직접귀속이 정확(범용 'memory' 는 제외).
+        "005930": ["삼성전자", "samsung electronics", "hbm", "hbm3e", "hbm4", "high bandwidth memory", "dram"],
+        "000660": ["sk하이닉스", "sk hynix", "hynix", "hbm", "hbm3e", "hbm4", "high bandwidth memory", "dram"],
         "042700": ["한미반도체", "hanmi semiconductor", "tc bonder"],
         "005380": ["현대차", "hyundai", "hyundai motor", "metaplant", "mobis robotics"],
         "8035": ["tokyo electron", "tel semiconductor"],
@@ -741,13 +745,29 @@ def enrich_universe_ko(output_path: Path = UNIVERSE_PATH) -> int:
     return changed
 
 
-def load_trading_universe(broker: str | None = None, fallback: list[dict[str, Any]] | None = None) -> tuple[list[dict[str, Any]], str]:
+# 진입 유니버스 점수 게이트(고확신만 매매). Alpaca·IBKR 양쪽이 동일 문턱을 쓰도록 단일 출처화
+# (2026-06-21 통일). 기존엔 Alpaca만 ≥7, IBKR은 무필터라 score 4~5 잡음까지 매매하는 비대칭이었음.
+HARNESS_MIN_SCORE = int(os.getenv("HARNESS_MIN_SCORE", "7"))
+
+
+def load_trading_universe(
+    broker: str | None = None,
+    fallback: list[dict[str, Any]] | None = None,
+    min_score: int | None = None,
+) -> tuple[list[dict[str, Any]], str]:
+    """broker 거래가능 종목 유니버스를 반환. min_score 지정 시 harness_score 게이트를 적용한다.
+
+    min_score 는 universe.json 경로에만 적용한다(거기에만 harness_score 가 있음). 정적 fallback
+    (seed)은 점수가 없으므로 전량 통과 — 비상시 유니버스가 비는 것을 막는다.
+    """
     if UNIVERSE_PATH.exists():
         try:
             data = json.loads(UNIVERSE_PATH.read_text(encoding="utf-8"))
             if isinstance(data, list) and data:
                 if broker:
                     data = [row for row in data if broker in row.get("brokers", [broker])]
+                if min_score is not None:
+                    data = [row for row in data if (row.get("harness_score") or 0) >= min_score]
                 return data, "universe.json"
         except Exception:
             pass

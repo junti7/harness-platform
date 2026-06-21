@@ -7,9 +7,9 @@
     "tickers": ["AVGO", "ANET", "MRVL", "COHR"],
     "weight": 0.58
   },
-  "high bandwidth memory|\\bhbm\\b|hbm3e|hbm4": {
+  "high bandwidth memory|\\bhbm\\b|hbm3e|hbm4|hbm4e": {
     "tickers": ["MU", "000660", "005930", "042700"],
-    "weight": 0.7
+    "weight": 0.85
   },
   "humanoid|optimus|robotaxi|industrial robot": {
     "tickers": ["TSLA", "6954", "SYM"],
@@ -51,9 +51,9 @@
     "tickers": ["NVDA", "VRT", "PWR", "ANET"],
     "weight": 0.51
   },
-  "memory bandwidth|dram scaling|memory bottleneck": {
+  "memory bandwidth|dram scaling|memory bottleneck|memory shortage|ai memory|dram price": {
     "tickers": ["MU", "000660", "005930"],
-    "weight": 0.57
+    "weight": 0.72
   },
   "semiconductor capital equipment|wafer fab equipment|chip manufacturing equipment": {
     "tickers": ["8035", "042700", "ASX", "TSM"],

@@ -22,9 +22,10 @@ from scripts.alpaca_paper_trading import (
 from core.trading_universe import load_trading_universe
 
 # Layer 1 선정 종목은 **동적 universe.json**을 단일 출처로 한다(2026-06-10 통합).
-# Alpaca는 US만 거래 가능 → broker="alpaca"로 US 종목만, harness_score ≥ 7만 채택.
+# Alpaca는 US만 거래 가능 → broker="alpaca"로 US 종목만, harness_score ≥ 문턱만 채택.
 # universe.json 부재/비어있으면 아래 정적 fallback(2026-05-28 수기 선정)을 쓴다.
-_HARNESS_MIN_SCORE = 7
+# 문턱은 core.trading_universe.HARNESS_MIN_SCORE 단일 출처(IBKR·Alpaca 동일, 2026-06-21 통일).
+from core.trading_universe import HARNESS_MIN_SCORE as _HARNESS_MIN_SCORE
 
 # (ticker, company_name, sector, harness_score, selection_reason)
 _STATIC_FALLBACK_META = [

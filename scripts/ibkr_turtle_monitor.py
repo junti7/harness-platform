@@ -356,7 +356,9 @@ def load_universe() -> tuple[list[dict], str]:
         )
         if universe:
             write_trading_universe(universe)
-    rows, source = load_trading_universe(broker="ibkr", fallback=UNIVERSE_FALLBACK)
+    # ≥7 게이트(2026-06-21 통일): Alpaca 와 동일 문턱. 신호 스캐너도 고확신 종목만 노출.
+    from core.trading_universe import HARNESS_MIN_SCORE
+    rows, source = load_trading_universe(broker="ibkr", fallback=UNIVERSE_FALLBACK, min_score=HARNESS_MIN_SCORE)
     return rows, source
 
 
