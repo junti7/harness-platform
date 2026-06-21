@@ -1476,7 +1476,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
 
         {isAuthenticated && trainingState && (
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(250px, 300px) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
-            <aside style={{ display: 'grid', gap: 14, position: isMobile ? 'static' : 'sticky', top: 12, order: isMobile ? 0 : 0 }}>
+            <aside style={{ display: 'grid', gap: 14, position: 'sticky', top: isMobile ? 8 : 12, alignSelf: 'start', maxHeight: isMobile ? 'calc(100dvh - 16px)' : 'calc(100dvh - 24px)', overflowY: 'auto', zIndex: 4, order: isMobile ? 0 : 0, paddingRight: isMobile ? 0 : 2 }}>
               <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 22, padding: 16, display: 'grid', gap: 12 }}>
                 <div style={{ fontSize: '.82rem', color: C.muted, fontWeight: 900 }}>FLOW MENU</div>
                 <div style={{ color: C.ink, fontWeight: 800 }}>전체 진행률 {trainingState.progress?.pct ?? 0}%</div>
@@ -1511,7 +1511,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
               {!!stage?.schedule_blocks?.length && (
                 <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 22, padding: 16, display: 'grid', gap: 12 }}>
                   <div style={{ fontSize: '.82rem', color: C.muted, fontWeight: 900 }}>{selectedStage === 'day0' ? 'DAY 0 목차' : 'DAY 1 목차'}</div>
-                  <div style={{ display: 'grid', gap: 8, maxHeight: isMobile ? undefined : 'calc(100vh - 360px)', overflowY: isMobile ? undefined : 'auto', paddingRight: isMobile ? undefined : 2 }}>
+                  <div style={{ display: 'grid', gap: 8, paddingRight: isMobile ? undefined : 2 }}>
                     {stage.schedule_blocks.map((item, index) => (
                       <button
                         id={curriculumNavId(selectedStage, index)}
