@@ -525,7 +525,7 @@ function StageCard({
       )}
 
       {stage?.required_action && (
-        <div id={stageKey === 'day0' ? curriculumDetailBlockId(stageKey, 3) : undefined} data-curriculum-anchor={stageKey === 'day0' ? '3' : undefined} style={{ scrollMarginTop: 18, background: C.accentSoft, border: `1px solid ${C.accent}`, borderRadius: 16, padding: 14 }}>
+        <div id={stageKey === 'day0' ? curriculumDetailBlockId(stageKey, 3) : undefined} data-curriculum-anchor={stageKey === 'day0' ? '3' : undefined} style={{ scrollMarginTop: 18, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14 }}>
           <div style={{ fontSize: '1.05rem', color: C.ink, fontWeight: 900, marginBottom: 6 }}>{stageKey === 'day0' ? curriculumHeading(stage, 3, '4. 첫 질문 복붙 실습') : '오늘 바로 해야 할 일'}</div>
           <div style={{ fontSize: '1rem', lineHeight: 1.65, color: C.ink, fontWeight: 700 }}>{stage.required_action}</div>
         </div>
