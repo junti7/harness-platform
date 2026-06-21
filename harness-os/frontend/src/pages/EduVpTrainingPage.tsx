@@ -751,6 +751,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
   const latestAuthEmailRef = useRef('')
   const latestCaseIdRef = useRef<number | null>(null)
   const syncSeqRef = useRef(0)
+  const curriculumScrollLockUntilRef = useRef(0)
   const archivedCases = caseHistory.filter((item) => item.case_id !== caseId)
   const hasCaseHistory = archivedCases.length > 0
   const hasStoredCases = caseHistory.length > 0
@@ -1284,6 +1285,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
 
     const syncCurriculumFromScroll = () => {
       frame = 0
+      if (Date.now() < curriculumScrollLockUntilRef.current) return
       let nextIndex = 0
       for (let index = 0; index < count; index += 1) {
         const block = document.getElementById(curriculumBlockId(selectedStage, index))
@@ -1508,12 +1510,15 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
                         key={`${item.title}-${index}`}
                         type="button"
                         onClick={() => {
+                          curriculumScrollLockUntilRef.current = Date.now() + 900
                           setActiveCurriculumIndex(index)
                           mergeUiState({ active_curriculum_index: index })
                           trackInteraction('select_curriculum_block', { index, day: selectedStage })
-                          window.setTimeout(() => {
-                            document.getElementById(curriculumBlockId(selectedStage, index))?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                          }, 0)
+                          window.requestAnimationFrame(() => {
+                            window.requestAnimationFrame(() => {
+                              document.getElementById(curriculumBlockId(selectedStage, index))?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                            })
+                          })
                         }}
                         style={{
                           textAlign: 'left',
