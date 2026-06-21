@@ -747,7 +747,10 @@ def enrich_universe_ko(output_path: Path = UNIVERSE_PATH) -> int:
 
 # 진입 유니버스 점수 게이트(고확신만 매매). Alpaca·IBKR 양쪽이 동일 문턱을 쓰도록 단일 출처화
 # (2026-06-21 통일). 기존엔 Alpaca만 ≥7, IBKR은 무필터라 score 4~5 잡음까지 매매하는 비대칭이었음.
-HARNESS_MIN_SCORE = int(os.getenv("HARNESS_MIN_SCORE", "7"))
+# 문턱=6(CEO 2026-06-21 확정): HBM/메모리 재보정 후 코어(MU·SK하이닉스·삼성)가 공정하게 6에 정렬됐고,
+# 6이 "핵심 테제(AI칩+메모리+HBM장비+패키징+쿨링)"와 "주변부(score 5: 전력·네트워크·산업자동화)"를
+# 가르는 경계라 6 채택. score 5↓ 잡음은 계속 배제. (env HARNESS_MIN_SCORE 로 조정 가능.)
+HARNESS_MIN_SCORE = int(os.getenv("HARNESS_MIN_SCORE", "6"))
 
 
 def load_trading_universe(

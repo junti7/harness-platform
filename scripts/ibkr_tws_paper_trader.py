@@ -155,7 +155,7 @@ def load_universe() -> list[dict]:
         )
         if universe:
             write_trading_universe(universe)
-    # ≥7 게이트(2026-06-21 통일): Alpaca 와 동일 문턱으로 고확신 종목만 매매(IBKR 무필터 폐지).
+    # 점수 게이트(2026-06-21 통일): Alpaca 와 동일 문턱(HARNESS_MIN_SCORE)으로 고확신 종목만 매매(IBKR 무필터 폐지).
     from core.trading_universe import HARNESS_MIN_SCORE
     rows, _ = load_trading_universe(broker="ibkr", min_score=HARNESS_MIN_SCORE)
     return rows
