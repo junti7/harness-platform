@@ -1315,11 +1315,14 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       frame = window.requestAnimationFrame(syncCurriculumFromScroll)
     }
 
+    const documentScrollOptions: AddEventListenerOptions = { capture: true, passive: true }
     window.addEventListener('scroll', scheduleSync, { passive: true })
+    document.addEventListener('scroll', scheduleSync, documentScrollOptions)
     window.addEventListener('resize', scheduleSync)
     scheduleSync()
     return () => {
       window.removeEventListener('scroll', scheduleSync)
+      document.removeEventListener('scroll', scheduleSync, true)
       window.removeEventListener('resize', scheduleSync)
       if (frame) window.cancelAnimationFrame(frame)
     }
