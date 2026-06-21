@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-06-21 — [사고/포스트모템] IBKR 상태파일 멀티-writer race → 체결 포지션 승격 revert (재발방지 강기록)
+
+- **증상**: IBKR 트레이더 실행 시 reconcile 이 *실제 체결된* SK하이닉스(000660, 93주)를 `pending_orders`→`positions` 로 승격하고 `pending_filled_promoted` 이벤트를 남겼으나, 직후 상태를 보면 000660 이 **다시 `pending` 으로 되돌아가** 있었다. 체결 포지션이 `positions` 에 안정적으로 안 박혀 **exit(손절) 모니터링에서 누락**되는 위험.
+- **근본 원인**: `docs/reports/ibkr_tws_positions.json` 을 **두 프로세스가 통째 read-modify-write**. 트레이더(`ibkr_tws_paper_trader`)가 승격 저장 → 동시에 백그라운드 모니터(`ibkr_turtle_monitor`, backend 가 `--json` 으로 5분마다 실행)가 *승격 전 stale 전체본*을 그대로 다시 써서 last-writer-wins 로 승격을 **revert**. 검증 중 호출한 API 가 모니터 백그라운드 실행을 트리거해 재현됨. (ontology red team §2② "싱크 갭" 의 구체적 발현.)
+- **수정**: `core.atomic_io.update_json_atomic(path, mutate)` 신규 — ① 전용 `.lock` 에 exclusive flock ② 락 안에서 디스크 최신본 재독 ③ `mutate` 로 호출자 *델타만* 적용 ④ 원자 교체. 트레이더/모니터 양쪽의 `save_state(state)` 통째쓰기를 델타 병합으로 교체:
+  - 트레이더: `pending_orders` 전체 소유 + 자기가 승격/체결한 `positions` 키만 set(모니터의 동시 청산 pop 보존).
+  - 모니터: `nav_history`·`signal_alerts`·`baseline` + 자기가 청산한 `positions` 키만 pop. **`pending_orders` 절대 안 씀.**
+- **재발방지(강제)**: `LLM_GROUND_RULES.md §2.7` 비협상 규칙(공유 상태파일 통째쓰기 금지, update_json_atomic 강제) + `*.lock` gitignore + 회귀가드 `tests/test_atomic_io.py`(델타 병합 no-clobber, 스레드 20개 lost-update 0, 모니터가 pending 미클로버).
+- 검증: 관련 테스트 통과(atomic_io 8 + reconcile 6). red-team: 미수행(2026-06-20 basic rule — CEO 주문 시에만).
+
+---
+
 ## 2026-06-20 — 프론트 배포 자동 빌드 + launchd 를 serve dist 로 정합 (1라운드, CEO confirm)
 
 - 대상: `scripts/deploy_to_macmini.sh`(프론트 소스 변경 감지 시 Mac Mini `npm run build` + plist 변경 시 재설치/reload) + `harness-os/launchd/com.harness.harness-os-frontend.plist`(`npm run dev` → `serve dist`) + `harness-os/frontend/package.json`(`serve:prod` 스크립트) + `harness-os/scripts/register_launchd.sh`(serve 의존성 preflight/문서).

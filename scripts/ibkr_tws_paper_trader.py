@@ -393,6 +393,9 @@ def run(execute: bool = False) -> None:
     if recon["promoted"] or recon["purged"] or recon["kept"]:
         print(f"\n[pending 정합] 체결승격 {recon['promoted'] or '-'} | 미체결유지 {recon['kept'] or '-'} | 정리(취소/거절) {recon['purged'] or '-'}")
     broker_open_symbols = recon["live_symbols"]
+    # 저장 시 모니터의 동시 청산(positions pop)을 덮지 않도록, *이번 실행에서 트레이더가 추가한*
+    # positions 키만 추적한다(reconcile 승격 + 즉시 체결 진입). pending_orders 는 트레이더 전적 소유.
+    added_positions: set[str] = set(recon["promoted"])
 
     # 현재 포지션
     positions = ib.positions(account=paper_account)
@@ -489,6 +492,8 @@ def run(execute: bool = False) -> None:
                     })
                     continue
                 target_bucket = "positions" if status == "filled" else "pending_orders"
+                if target_bucket == "positions":
+                    added_positions.add(sym)
                 state[target_bucket][sym] = {
                     "entry_ts": now_iso(),
                     "entry_price": price,
@@ -519,7 +524,24 @@ def run(execute: bool = False) -> None:
             print(f"  [{region}] {sym}: 중립 {curr_sym}{price:.2f} | S2고점 {curr_sym}{s2_high:.2f}({dist:+.1f}%)")
 
     state["last_run"] = now_iso()
-    save_state(state)
+    # 락 하에 디스크 최신본을 다시 읽어 트레이더 *델타만* 병합 저장(2026-06-21 multi-writer race
+    # 수정). 통째 save 는 모니터의 동시 변경(nav_history/청산)을 덮어쓰므로 금지.
+    from core.atomic_io import update_json_atomic
+
+    def _trader_persist(fresh: dict) -> None:
+        if not isinstance(fresh.get("positions"), dict):
+            fresh["positions"] = {}
+        # pending_orders 는 트레이더 전적 소유 → 자기 계산본으로 대체(reconcile/진입 반영본)
+        fresh["pending_orders"] = state.get("pending_orders", {}) if isinstance(state.get("pending_orders"), dict) else {}
+        # positions 는 *추가만*: 이번 실행에서 승격/체결한 키만 set(모니터의 동시 청산 pop 보존)
+        for sym in added_positions:
+            if sym in state.get("positions", {}):
+                fresh["positions"][sym] = state["positions"][sym]
+        if not fresh.get("baseline") and state.get("baseline"):
+            fresh["baseline"] = state["baseline"]
+        fresh["last_run"] = state.get("last_run")
+
+    update_json_atomic(STATE_PATH, _trader_persist)
     ib.disconnect()
 
     print(f"\n{'=' * 62}")

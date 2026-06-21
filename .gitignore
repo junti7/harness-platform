@@ -90,3 +90,6 @@ docs/reports/approval_intake.jsonl
 # 소스는 configs/trading/universe_seed.json + 수집 evidence. 추적 시 만성 dirty.
 # 스케줄 트레이더는 run_trading_cycle.py가 실행 전 항상 재빌드(Codex 확인). drift 가드도 제외.
 docs/trading/universe.json
+
+# 상태파일 멀티-writer 락(core.atomic_io.update_json_atomic) — 런타임 산출물
+*.lock

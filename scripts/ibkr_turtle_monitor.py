@@ -758,6 +758,24 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
     state = load_state()
     state.setdefault("positions", {})
 
+    # 저장 시 모니터가 소유하지 않은 필드(특히 pending_orders, 트레이더의 동시 추가 positions)를
+    # 덮어쓰지 않도록, 모니터가 *청산(pop)한* positions 키만 추적한다(2026-06-21 multi-writer race).
+    exited_positions: set[str] = set()
+
+    def _monitor_persist(fresh: dict) -> None:
+        """모니터 델타만 디스크 최신본에 병합. pending_orders 는 절대 건드리지 않는다(트레이더 소유)."""
+        if not isinstance(fresh.get("positions"), dict):
+            fresh["positions"] = {}
+        for sym in exited_positions:           # 모니터는 positions 를 청산(pop)만
+            fresh["positions"].pop(sym, None)
+        if isinstance(state.get("nav_history"), list):
+            fresh["nav_history"] = state["nav_history"]
+        if isinstance(state.get("signal_alerts"), dict):
+            fresh["signal_alerts"] = state["signal_alerts"]
+        if not fresh.get("baseline") and state.get("baseline"):
+            fresh["baseline"] = state["baseline"]
+        fresh["last_run"] = state.get("last_run")
+
     _p("=" * 62, json_mode)
     _p(f"IBKR Turtle Monitor — {'EXECUTE' if execute else 'DRY RUN'} | {ts}", json_mode)
     _p(f"Universe: {len(universe)} 종목 ({universe_source})", json_mode)
@@ -926,14 +944,16 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
                     "dry_run": False,
                 })
                 exited.append(sym)
-                # 상태에서 제거
+                # 상태에서 제거 + 락-병합 저장 시 fresh 에서도 pop 하도록 추적
                 state["positions"].pop(sym, None)
+                exited_positions.add(sym)
             except Exception as e:
                 _p(f"  {sym}: 매도 주문 실패: {e}", json_mode)
 
         if exited:
             state["last_run"] = now_iso()
-            save_state(state)
+            from core.atomic_io import update_json_atomic
+            update_json_atomic(STATE_PATH, _monitor_persist)
             slack_msg = (
                 f"[IBKR Turtle Monitor] EXIT 실행\n"
                 f"종목: {', '.join(exited)}\n"
@@ -1185,7 +1205,10 @@ def run(execute: bool = False, json_mode: bool = False) -> dict:
         # 최대 90일치 유지
         state["nav_history"] = history[-90:]
 
-    save_state(state)
+    # 락 하에 디스크 최신본을 재독해 모니터 델타만 병합(2026-06-21 race 수정). 통째 save 는
+    # 트레이더의 동시 pending→positions 승격을 stale pending 으로 revert 하므로 금지.
+    from core.atomic_io import update_json_atomic
+    update_json_atomic(STATE_PATH, _monitor_persist)
 
     # 프론트엔드 차트용 이력 (날짜 레이블 MM/DD로 변환)
     raw_history = state.get("nav_history", [])

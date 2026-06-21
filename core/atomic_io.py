@@ -13,13 +13,65 @@ overlap 안전을 위해 다른 writer 의 tmp 를 건드리는 일괄 정리는
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import shutil
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+
+
+def update_json_atomic(
+    path: Path,
+    mutate: "Callable[[dict], None]",
+    *,
+    indent: int = 2,
+    ensure_ascii: bool = False,
+) -> dict:
+    """파일 락 하에 **디스크 최신본**을 읽어 mutate(state) 적용 후 원자적으로 저장한다.
+
+    배경(2026-06-21 사고 — 절대 재발 금지): 같은 JSON 상태 파일(`ibkr_tws_positions.json`)을
+    여러 프로세스가 read-modify-write 하는데, 각자 *오래된 in-memory 전체본을 통째로 save* 하면
+    last-writer-wins 로 서로의 변경을 덮어쓴다. 실제로 IBKR 트레이더의 reconcile 이 체결된
+    SK하이닉스(000660)를 pending→positions 로 승격·저장했는데, 동시에 돈 모니터가 stale 한
+    pending(승격 전)을 통째로 다시 써서 승격을 **revert** → 체결 포지션이 손절 모니터링에서
+    누락되는 위험이 발생했다.
+
+    이 함수는 ① 동일 파일 전용 `.lock` 에 **exclusive flock** ② 락 안에서 *디스크 최신본 재독*
+    ③ `mutate` 로 **호출자의 델타만** 적용 ④ 원자적 교체(atomic_write_json) 로, 동시 writer 들의
+    변경이 서로를 덮어쓰지 않게 한다.
+
+    [mutate 계약 — 위반 시 race 부활]
+      - 받은 `state` 는 *디스크 최신본*이다. **자기 소유 필드/델타만** 적용한다.
+        예) 트레이더: 자기가 추가한 positions 키만 set, pending_orders(자기 소유) 갱신.
+            모니터: 자기가 청산한 positions 키만 pop, nav_history/signal_alerts(자기 소유) 갱신.
+      - **남이 소유한 필드를 통째로 대입하지 말 것**(예: 모니터가 pending_orders 를 쓰면 안 됨).
+      - 손상 shape 내성: state 가 dict 아니면 빈 dict 로 시작한다.
+
+    반환: 저장된 최종 dict(검증/로깅용).
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = str(path) + ".lock"
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            current = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+            if not isinstance(current, dict):
+                current = {}
+        except Exception:
+            current = {}
+        mutate(current)
+        atomic_write_json(path, current, indent=indent, ensure_ascii=ensure_ascii)
+        return current
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
 
 def atomic_write_json(path: Path, payload: Any, *, indent: int = 2, ensure_ascii: bool = False) -> None:
