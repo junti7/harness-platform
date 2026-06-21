@@ -4242,27 +4242,63 @@ def _paper_trade_flow_payload() -> dict[str, Any]:
         ("physical_ai",),
     )
 
+    # broker 귀속: trading_diary.jsonl·paper_trading_log.jsonl 은 Alpaca(turtle_auto_trader),
+    # ibkr_tws_paper_log.jsonl 은 IBKR(ibkr_tws_paper_trader) 가 각각 단일 출처로 기록한다.
+    # 기존엔 IBKR 로그가 표에 누락돼 모든 이벤트가 라벨 없는 Alpaca 였다(2026-06-21 UX 개선).
     diary_rows = _read_jsonl(PROJECT_ROOT / "docs" / "trading" / "trading_diary.jsonl", limit=200)
     log_rows = _read_jsonl(PROJECT_ROOT / "docs" / "reports" / "paper_trading_log.jsonl", limit=200)
+    ibkr_log_rows = _read_jsonl(PROJECT_ROOT / "docs" / "reports" / "ibkr_tws_paper_log.jsonl", limit=200)
     events: list[dict[str, Any]] = []
+
+    def _flow_fields(d: dict[str, Any]) -> dict[str, Any]:
+        """source row 스키마 차이를 흡수해 표 컬럼용 공통 필드로 정규화."""
+        if not isinstance(d, dict):
+            d = {}
+        return {
+            "side": d.get("side"),
+            "qty": d.get("shares") if d.get("shares") is not None else d.get("qty"),
+            "price": d.get("price") if d.get("price") is not None else d.get("entry_price"),
+            "system": d.get("system"),
+            "status": d.get("status"),
+            "stop_loss": d.get("stop_loss"),
+            "order_id": d.get("order_id"),
+            "scanned_count": d.get("scanned_count"),
+            "breakout_count": d.get("breakout_count"),
+            "currency": d.get("currency"),
+        }
 
     for row in diary_rows:
         events.append({
             "ts": row.get("timestamp"),
+            "broker": "alpaca",
             "kind": row.get("type"),
             "symbol": row.get("ticker"),
             "title": row.get("company_name") or row.get("summary") or row.get("note") or row.get("exit_reason") or row.get("type"),
             "detail": row,
             "source": "trading_diary",
+            **_flow_fields(row),
         })
     for row in log_rows:
         events.append({
             "ts": row.get("ts"),
+            "broker": "alpaca",
             "kind": row.get("action"),
             "symbol": row.get("symbol"),
             "title": row.get("status") or row.get("reason") or row.get("action"),
             "detail": row,
             "source": "paper_trading_log",
+            **_flow_fields(row),
+        })
+    for row in ibkr_log_rows:
+        events.append({
+            "ts": row.get("ts"),
+            "broker": "ibkr",
+            "kind": row.get("action"),
+            "symbol": row.get("symbol"),
+            "title": row.get("status") or row.get("reason") or row.get("action"),
+            "detail": row,
+            "source": "ibkr_tws_paper_log",
+            **_flow_fields(row),
         })
     events.sort(key=lambda row: row.get("ts") or "", reverse=True)
 
@@ -7362,13 +7398,15 @@ def _edu_vp_refresh_state(state: dict[str, Any]) -> dict[str, Any]:
     flow_outline: list[dict[str, Any]] = []
     if state["day0"].get("title"):
         flow_outline.append({"key": "day0", "label": "Day 0", "title": state["day0"]["title"], "completed": p0["completed"], "pct": p0["pct"]})
-    if state["day1"].get("title"):
+    if p0["completed"] and state["day1"].get("title"):
         flow_outline.append({"key": "day1", "label": "Day 1", "title": state["day1"]["title"], "completed": p1["completed"], "pct": p1["pct"]})
+    total_stages = 2 if p0["completed"] else 1
+    completed_stages = int(p0["completed"]) + (int(p1["completed"]) if p0["completed"] else 0)
     state["flow_outline"] = flow_outline
     state["progress"] = {
-        "completed_stages": int(p0["completed"]) + int(p1["completed"]),
-        "total_stages": 2,
-        "pct": round((int(p0["completed"]) + int(p1["completed"])) / 2 * 100),
+        "completed_stages": completed_stages,
+        "total_stages": total_stages,
+        "pct": round(completed_stages / total_stages * 100) if total_stages else 0,
     }
     state["persona_library"] = _edu_vp_persona_library(int(state["progress"]["pct"]))
     state["ui_state"] = _edu_vp_merge_ui_state(state)

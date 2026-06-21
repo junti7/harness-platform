@@ -183,10 +183,21 @@ type TradingSelectionFlow = {
   }>>
   trade_flow?: Array<{
     ts?: string
+    broker?: 'ibkr' | 'alpaca' | string
     kind?: string
     symbol?: string
     title?: string
     source?: string
+    side?: string | null
+    qty?: number | null
+    price?: number | null
+    system?: string | null
+    status?: string | null
+    stop_loss?: number | null
+    order_id?: string | number | null
+    scanned_count?: number | null
+    breakout_count?: number | null
+    currency?: string | null
     detail?: Record<string, unknown>
   }>
   runtime_state?: {
@@ -287,7 +298,10 @@ function flowEventLabel(kind?: string): string {
   if (key === 'enter') return '매수 주문 시도 (Order Entry, 주문 넣기 — 실제 주문 제출 단계)'
   if (key === 'exit') return '매도 주문 시도 (Order Exit, 청산 주문 넣기 — 실제 매도 제출 단계)'
   if (key === 'enter_rejected') return '주문 거절 (Order Rejected, 주문 실패 — 거래소나 증권사에서 받지 않음)'
+  if (key === 'enter_blocked_fx_unreliable') return '환율 신뢰불가 차단 (사이징 부정확 위험으로 진입 보류)'
   if (key === 'gate_blocked') return '안전장치 차단 (Gate Blocked, 규칙 위반 차단 — 그냥 사지 않음)'
+  if (key === 'pending_filled_promoted') return '체결 확정 (대기 주문이 체결돼 포지션으로 승격)'
+  if (key === 'pending_purged_stale') return '미체결 정리 (취소/거절/만료된 대기 주문 정리)'
   if (key === 'ceo_note') return '대표 메모 (CEO Note, 운영 메모 — 사람이 남긴 판단 기록)'
   if (key === 'research_update') return '리서치 갱신 (Research Update, 조사 결과 갱신 — 새로 수집된 판단 근거)'
   return kind || '이벤트'
@@ -295,8 +309,8 @@ function flowEventLabel(kind?: string): string {
 
 function flowEventTone(kind?: string): 'fresh' | 'aging' | 'stale' {
   const key = String(kind || '').toLowerCase()
-  if (['trade_entry', 'enter', 'research_update'].includes(key)) return 'fresh'
-  if (['trade_exit', 'exit', 'signal_scan', 'ceo_note'].includes(key)) return 'aging'
+  if (['trade_entry', 'enter', 'research_update', 'pending_filled_promoted'].includes(key)) return 'fresh'
+  if (['trade_exit', 'exit', 'signal_scan', 'ceo_note', 'pending_purged_stale'].includes(key)) return 'aging'
   return 'stale'
 }
 
@@ -308,10 +322,39 @@ function flowEventShortLabel(kind?: string): string {
   if (key === 'enter') return '주문 진입'
   if (key === 'exit') return '주문 청산'
   if (key === 'enter_rejected') return '주문 거절'
+  if (key === 'enter_blocked_fx_unreliable') return '환율 차단'
   if (key === 'gate_blocked') return '차단'
+  if (key === 'pending_filled_promoted') return '체결 확정'
+  if (key === 'pending_purged_stale') return '미체결 정리'
   if (key === 'ceo_note') return 'CEO 메모'
   if (key === 'research_update') return '리서치'
   return kind || '이벤트'
+}
+
+// ── 브로커 배지 ───────────────────────────────────────────────────────────────
+function BrokerBadge({ broker }: { broker?: string }) {
+  const key = String(broker || '').toLowerCase()
+  if (key === 'ibkr') return <span className="broker-badge broker-ibkr">IBKR</span>
+  if (key === 'alpaca') return <span className="broker-badge broker-alpaca">Alpaca</span>
+  return <span className="broker-badge broker-unknown">—</span>
+}
+
+// trade_flow 한 이벤트의 "방향·수량·가격" 요약 텍스트(side/qty/price 가 있을 때만)
+function flowSideLabel(side?: string | null): { text: string; cls: string } | null {
+  const s = String(side || '').toLowerCase()
+  if (s === 'buy') return { text: '매수', cls: 'pnl-pos' }
+  if (s === 'sell') return { text: '매도', cls: 'pnl-neg' }
+  return null
+}
+
+function flowStatusText(ev: { kind?: string; status?: string | null; scanned_count?: number | null; breakout_count?: number | null }): string {
+  // signal_scan 은 side/qty 가 없으니 스캔·돌파 수를 상태로 보여준다
+  if (String(ev.kind || '').toLowerCase() === 'signal_scan') {
+    const sc = ev.scanned_count
+    const bc = ev.breakout_count
+    if (sc != null) return `${sc}종목 스캔${bc != null ? ` · 돌파 ${bc}` : ''}`
+  }
+  return ev.status ? String(ev.status) : '—'
 }
 
 // ── 공통 서브 컴포넌트 ────────────────────────────────────────────────────────
@@ -587,6 +630,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
   const [resetStatus, setResetStatus] = useState<PaperResetStatus | null>(null)
   const [selectionFlow, setSelectionFlow] = useState<TradingSelectionFlow | null>(null)
   const [selectedFlowSymbol, setSelectedFlowSymbol] = useState<string | null>(null)
+  const [flowBroker, setFlowBroker] = useState<'all' | 'ibkr' | 'alpaca'>('all')
 
   // symbol→name 맵 (API에서 로드, ETF 보완)
   const [symbolNames, setSymbolNames] = useState<Record<string, string>>(ETF_NAMES)
@@ -1219,50 +1263,100 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
           <article className="panel">
             <div className="panel-head">
               <h3>매수·매도 흐름</h3>
-              <span className="data-meta">최근 80건</span>
+              <span className="data-meta">
+                {(() => {
+                  const all = selectionFlow.trade_flow ?? []
+                  const ib = all.filter(e => e.broker === 'ibkr').length
+                  const al = all.filter(e => e.broker === 'alpaca').length
+                  return `IBKR ${ib} · Alpaca ${al}`
+                })()}
+              </span>
             </div>
-            <p className="term-note">이 표는 조사, 신호 점검, 매수 시도, 매도 시도, 주문 거절, 사람 메모까지 시간순으로 보여줍니다.</p>
-            <div className="mobile-card-list trading-mobile-only">
-              {(selectionFlow.trade_flow ?? []).slice(0, 20).map((event, idx) => (
-                <article key={`mobile-flow-${event.ts ?? 'na'}-${event.kind ?? 'na'}-${idx}`} className="mobile-detail-card">
-                  <div className="mobile-card-head">
-                    <div>
-                      <strong>{event.symbol ?? '공통 이벤트'}</strong>
-                      <span>{event.ts ? event.ts.slice(5, 16).replace('T', ' ') : '—'}</span>
-                    </div>
-                    <span className={`freshness-chip ${flowEventTone(event.kind)}`} title={flowEventLabel(event.kind)}>{flowEventShortLabel(event.kind)}</span>
-                  </div>
-                  <div className="mobile-field-grid">
-                    <MobileField label="출처" value={event.source ?? '—'} tone="muted" />
-                    <MobileField label="세부" value={event.title ?? '설명 없음'} tone="muted" />
-                  </div>
-                </article>
+            <p className="term-note">조사·신호 점검·매수/매도 시도·주문 거절·체결·사람 메모를 시간순으로 보여줍니다. <strong>브로커(IBKR / Alpaca)</strong>를 각 행에 표시합니다.</p>
+            {/* 브로커 필터 */}
+            <div className="flow-broker-filter">
+              {([['all', '전체'], ['ibkr', 'IBKR'], ['alpaca', 'Alpaca']] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`flow-filter-chip ${flowBroker === key ? 'active' : ''} ${key !== 'all' ? `chip-${key}` : ''}`}
+                  onClick={() => setFlowBroker(key)}
+                >
+                  {label}
+                </button>
               ))}
             </div>
-            <div className="table-wrap trading-mobile-hide">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>시각</th>
-                    <th>종목</th>
-                    <th>이벤트</th>
-                    <th>출처</th>
-                    <th>세부</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(selectionFlow.trade_flow ?? []).slice(0, 30).map((event, idx) => (
-                    <tr key={`${event.ts ?? 'na'}-${event.kind ?? 'na'}-${idx}`}>
-                      <td className="data-meta">{event.ts ? event.ts.slice(5, 16).replace('T', ' ') : '—'}</td>
-                      <td>{event.symbol ? <SymbolCell symbol={event.symbol} /> : '—'}</td>
-                      <td><span className={`freshness-chip ${flowEventTone(event.kind)}`} title={flowEventLabel(event.kind)}>{flowEventShortLabel(event.kind)}</span></td>
-                      <td className="data-meta">{event.source ?? '—'}</td>
-                      <td className="sf-td-truncate data-meta" title={event.title ?? ''}>{event.title ?? '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {(() => {
+              const flowEvents = (selectionFlow.trade_flow ?? []).filter(
+                e => flowBroker === 'all' || e.broker === flowBroker
+              )
+              return (
+                <>
+                  <div className="mobile-card-list trading-mobile-only">
+                    {flowEvents.slice(0, 20).map((event, idx) => {
+                      const sideL = flowSideLabel(event.side)
+                      return (
+                        <article key={`mobile-flow-${event.ts ?? 'na'}-${event.kind ?? 'na'}-${idx}`} className="mobile-detail-card">
+                          <div className="mobile-card-head">
+                            <div>
+                              <span style={{ display: 'inline-flex', gap: '0.35rem', alignItems: 'center' }}>
+                                <BrokerBadge broker={event.broker} />
+                                <strong>{event.symbol ?? '공통'}</strong>
+                              </span>
+                              <span>{event.ts ? event.ts.slice(5, 16).replace('T', ' ') : '—'}</span>
+                            </div>
+                            <span className={`freshness-chip ${flowEventTone(event.kind)}`} title={flowEventLabel(event.kind)}>{flowEventShortLabel(event.kind)}</span>
+                          </div>
+                          <div className="mobile-field-grid">
+                            {sideL && <MobileField label="방향" value={<span className={sideL.cls}>{sideL.text}</span>} />}
+                            {event.qty != null && <MobileField label="수량" value={`${fmt(event.qty, 0)}주`} />}
+                            {event.price != null && <MobileField label="가격" value={fmtLocalPrice(event.price, event.currency ?? 'USD')} />}
+                            {event.system && <MobileField label="시스템" value={String(event.system)} tone="muted" />}
+                            <MobileField label="상태" value={flowStatusText(event)} tone="muted" />
+                          </div>
+                        </article>
+                      )
+                    })}
+                    {flowEvents.length === 0 && <p className="data-meta">표시할 이벤트가 없습니다.</p>}
+                  </div>
+                  <div className="table-wrap trading-mobile-hide">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>시각</th>
+                          <th>브로커</th>
+                          <th>종목</th>
+                          <th>이벤트</th>
+                          <th>방향</th>
+                          <th className="num">수량</th>
+                          <th className="num">가격</th>
+                          <th>시스템</th>
+                          <th>상태</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {flowEvents.slice(0, 40).map((event, idx) => {
+                          const sideL = flowSideLabel(event.side)
+                          return (
+                            <tr key={`${event.ts ?? 'na'}-${event.kind ?? 'na'}-${idx}`}>
+                              <td className="data-meta">{event.ts ? event.ts.slice(5, 16).replace('T', ' ') : '—'}</td>
+                              <td><BrokerBadge broker={event.broker} /></td>
+                              <td>{event.symbol ? <SymbolCell symbol={event.symbol} /> : '—'}</td>
+                              <td><span className={`freshness-chip ${flowEventTone(event.kind)}`} title={flowEventLabel(event.kind)}>{flowEventShortLabel(event.kind)}</span></td>
+                              <td>{sideL ? <span className={sideL.cls}>{sideL.text}</span> : <span className="data-meta">—</span>}</td>
+                              <td className="num">{event.qty != null ? fmt(event.qty, 0) : '—'}</td>
+                              <td className="num">{event.price != null ? fmtLocalPrice(event.price, event.currency ?? 'USD') : '—'}</td>
+                              <td className="data-meta">{event.system ?? '—'}</td>
+                              <td className="sf-td-truncate data-meta" title={event.title ?? ''}>{flowStatusText(event)}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )
+            })()}
           </article>
         </div>
       )}
