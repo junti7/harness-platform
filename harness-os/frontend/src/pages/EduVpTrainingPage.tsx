@@ -173,6 +173,14 @@ function lessonLabel(stageKey: StageKey) {
   return stageKey === 'day0' ? '첫날 수업' : '이번 수업'
 }
 
+function curriculumBlockId(stageKey: StageKey, index: number) {
+  return `${stageKey}-curriculum-${index}`
+}
+
+function curriculumNavId(stageKey: StageKey, index: number) {
+  return `${stageKey}-curriculum-nav-${index}`
+}
+
 async function readJsonSafe(res: Response) {
   const raw = await res.text()
   let data: Record<string, unknown> = {}
@@ -445,7 +453,7 @@ function StageCard({
             아래 순서를 모두 따라가야 그날 학습이 끝난 것으로 봅니다. 중간에 한 미션만 하고 멈추지 않도록, 실제 학습 시간을 기준으로 설계했습니다.
           </div>
           {stage.schedule_blocks.map((item, index) => (
-            <div id={`${stageKey}-curriculum-${index}`} key={`${item.title}-${index}`} style={{ scrollMarginTop: 18, background: '#ffffff', border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, display: 'grid', gridTemplateColumns: '76px 1fr', gap: 12, alignItems: 'start' }}>
+            <div id={curriculumBlockId(stageKey, index)} key={`${item.title}-${index}`} style={{ scrollMarginTop: 18, background: '#ffffff', border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, display: 'grid', gridTemplateColumns: '76px 1fr', gap: 12, alignItems: 'start' }}>
               <div style={{ background: '#111827', color: '#ffffff', borderRadius: 12, padding: '8px 10px', textAlign: 'center', fontWeight: 900, fontSize: '.92rem' }}>{item.minutes}분</div>
               <div>
                 <div style={{ fontWeight: 800, color: C.ink, marginBottom: 4 }}>{index + 1}. {item.title}</div>
@@ -1267,6 +1275,46 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
     setActiveCurriculumIndex(curriculumActiveIndex(selectedStage, stage?.blocked_at_step, stage?.completed, count))
   }, [selectedStage, stage?.blocked_at_step, stage?.completed, stage?.schedule_blocks?.length])
 
+  useEffect(() => {
+    const count = stage?.schedule_blocks?.length || 0
+    if (!count) return
+
+    let frame = 0
+    const anchorY = isMobile ? 96 : 128
+
+    const syncCurriculumFromScroll = () => {
+      frame = 0
+      let nextIndex = 0
+      for (let index = 0; index < count; index += 1) {
+        const block = document.getElementById(curriculumBlockId(selectedStage, index))
+        if (!block) continue
+        if (block.getBoundingClientRect().top <= anchorY) nextIndex = index
+      }
+
+      setActiveCurriculumIndex((prev) => {
+        if (prev === nextIndex) return prev
+        window.setTimeout(() => {
+          document.getElementById(curriculumNavId(selectedStage, nextIndex))?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+        }, 0)
+        return nextIndex
+      })
+    }
+
+    const scheduleSync = () => {
+      if (frame) return
+      frame = window.requestAnimationFrame(syncCurriculumFromScroll)
+    }
+
+    window.addEventListener('scroll', scheduleSync, { passive: true })
+    window.addEventListener('resize', scheduleSync)
+    scheduleSync()
+    return () => {
+      window.removeEventListener('scroll', scheduleSync)
+      window.removeEventListener('resize', scheduleSync)
+      if (frame) window.cancelAnimationFrame(frame)
+    }
+  }, [selectedStage, stage?.schedule_blocks?.length, isMobile])
+
   let reminder: string | null = null
   if (selectedStage === 'day1' && trainingState?.day0 && !trainingState.day0.completed) {
     reminder = 'Day 0의 첫 실행과 복붙 흐름이 아직 충분히 남지 않았습니다. 답이 잘 안 떠오르면 Day 0로 돌아가 첫 질문과 결과 저장부터 다시 연습하세요.'
@@ -1453,9 +1501,10 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
               {!!stage?.schedule_blocks?.length && (
                 <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 22, padding: 16, display: 'grid', gap: 12 }}>
                   <div style={{ fontSize: '.82rem', color: C.muted, fontWeight: 900 }}>{selectedStage === 'day0' ? 'DAY 0 목차' : 'DAY 1 목차'}</div>
-                  <div style={{ display: 'grid', gap: 8 }}>
+                  <div style={{ display: 'grid', gap: 8, maxHeight: isMobile ? undefined : 'calc(100vh - 360px)', overflowY: isMobile ? undefined : 'auto', paddingRight: isMobile ? undefined : 2 }}>
                     {stage.schedule_blocks.map((item, index) => (
                       <button
+                        id={curriculumNavId(selectedStage, index)}
                         key={`${item.title}-${index}`}
                         type="button"
                         onClick={() => {
@@ -1463,7 +1512,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
                           mergeUiState({ active_curriculum_index: index })
                           trackInteraction('select_curriculum_block', { index, day: selectedStage })
                           window.setTimeout(() => {
-                            document.getElementById(`${selectedStage}-curriculum-${index}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                            document.getElementById(curriculumBlockId(selectedStage, index))?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                           }, 0)
                         }}
                         style={{
