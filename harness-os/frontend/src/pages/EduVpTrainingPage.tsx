@@ -185,6 +185,11 @@ function curriculumNavId(stageKey: StageKey, index: number) {
   return `${stageKey}-curriculum-nav-${index}`
 }
 
+function curriculumHeading(stage: TrainingStage | undefined, index: number, fallback: string) {
+  const item = stage?.schedule_blocks?.[index]
+  return item ? `${index + 1}. ${item.title}` : fallback
+}
+
 function scrollCurriculumNavItemIntoView(stageKey: StageKey, index: number) {
   const item = document.getElementById(curriculumNavId(stageKey, index))
   const container = item?.parentElement
@@ -420,10 +425,14 @@ function StageCard({
   }
 
   return (
-    <section id={curriculumDetailBlockId(stageKey, 0)} style={{ scrollMarginTop: 18, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 24, padding: 20, display: 'grid', gap: 16 }}>
+    <section id={curriculumDetailBlockId(stageKey, 0)} data-curriculum-anchor="0" style={{ scrollMarginTop: 18, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 24, padding: 20, display: 'grid', gap: 16 }}>
       <div>
         <div style={{ fontSize: '.82rem', color: C.accent, fontWeight: 900, letterSpacing: '.05em', marginBottom: 6 }}>{stageKey === 'day0' ? 'DAY 0' : 'DAY 1'}</div>
         <h2 style={{ margin: 0, fontSize: '1.55rem', lineHeight: 1.3, color: '#000000' }}>{displayStageTitle(stage?.title)}</h2>
+      </div>
+      <div style={{ display: 'grid', gap: 6 }}>
+        <div style={{ fontSize: '1.05rem', color: C.ink, fontWeight: 900 }}>{curriculumHeading(stage, 0, '1. 오리엔테이션')}</div>
+        <div style={{ color: C.muted, fontSize: '.9rem', lineHeight: 1.55 }}>{stage?.schedule_blocks?.[0]?.goal || '오늘 무엇을 배우는지 먼저 확인합니다.'}</div>
       </div>
 
       {reminder && (
@@ -463,8 +472,8 @@ function StageCard({
       )}
 
       {!!stage?.foundation_concepts?.length && (
-        <div id={curriculumDetailBlockId(stageKey, 1)} style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
-          <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>먼저 알아야 할 기초지식</div>
+        <div id={curriculumDetailBlockId(stageKey, 1)} data-curriculum-anchor="1" style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
+          <div style={{ fontSize: '1.05rem', color: C.ink, fontWeight: 900 }}>{curriculumHeading(stage, 1, '2. 기초 개념 익히기')}</div>
           <div style={{ color: C.faint, fontSize: '.86rem', lineHeight: 1.55 }}>
             미션부터 밀어붙이지 않고, 지금부터 무엇을 왜 하는지 먼저 이해합니다. 기술 용어를 외우는 시간이 아니라 불안과 막막함을 줄이는 시간입니다.
           </div>
@@ -498,8 +507,8 @@ function StageCard({
       )}
 
       {!!stage?.tutorial_steps?.length && (
-        <div id={curriculumDetailBlockId(stageKey, 2)} style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
-          <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>튜토리얼</div>
+        <div id={stageKey === 'day0' ? curriculumDetailBlockId(stageKey, 2) : undefined} data-curriculum-anchor={stageKey === 'day0' ? '2' : undefined} style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
+          <div style={{ fontSize: '1.05rem', color: C.ink, fontWeight: 900 }}>{curriculumHeading(stage, 2, '3. 기기 진입 실습')}</div>
           {stage.tutorial_steps.map((item, index) => (
             <div key={item.id} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14 }}>
               <div style={{ fontWeight: 800, color: C.ink, marginBottom: 4 }}>{index + 1}. {item.title}</div>
@@ -510,8 +519,8 @@ function StageCard({
       )}
 
       {stage?.required_action && (
-        <div id={!stage.practice_prompt_template ? curriculumDetailBlockId(stageKey, 3) : undefined} style={{ scrollMarginTop: 18, background: C.accentSoft, border: `1px solid ${C.accent}`, borderRadius: 16, padding: 14 }}>
-          <div style={{ fontSize: '.76rem', color: C.accent, fontWeight: 800, marginBottom: 6 }}>오늘 바로 해야 할 일</div>
+        <div id={stageKey === 'day0' ? curriculumDetailBlockId(stageKey, 3) : undefined} data-curriculum-anchor={stageKey === 'day0' ? '3' : undefined} style={{ scrollMarginTop: 18, background: C.accentSoft, border: `1px solid ${C.accent}`, borderRadius: 16, padding: 14 }}>
+          <div style={{ fontSize: '1.05rem', color: C.ink, fontWeight: 900, marginBottom: 6 }}>{stageKey === 'day0' ? curriculumHeading(stage, 3, '4. 첫 질문 복붙 실습') : '오늘 바로 해야 할 일'}</div>
           <div style={{ fontSize: '1rem', lineHeight: 1.65, color: C.ink, fontWeight: 700 }}>{stage.required_action}</div>
         </div>
       )}
@@ -530,8 +539,8 @@ function StageCard({
       )}
 
       {!!stage?.sample_materials?.length && (
-        <div style={{ display: 'grid', gap: 10 }}>
-          <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>실전 교보재</div>
+        <div id={stageKey === 'day1' ? curriculumDetailBlockId(stageKey, 2) : undefined} data-curriculum-anchor={stageKey === 'day1' ? '2' : undefined} style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
+          <div style={{ fontSize: stageKey === 'day1' ? '1.05rem' : '.9rem', color: stageKey === 'day1' ? C.ink : C.muted, fontWeight: 900 }}>{stageKey === 'day1' ? curriculumHeading(stage, 2, '3. 실전 교보재 1차 실습') : '실전 교보재'}</div>
           {stage.sample_materials.map((item) => (
             <div key={item.kit_id} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, display: 'grid', gap: 8 }}>
               <div style={{ fontWeight: 800, color: C.ink }}>{item.title}</div>
@@ -545,6 +554,13 @@ function StageCard({
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {stage?.practice_prompt_template && (
+        <div id={stageKey === 'day1' ? curriculumDetailBlockId(stageKey, 3) : undefined} data-curriculum-anchor={stageKey === 'day1' ? '3' : undefined} style={{ scrollMarginTop: 18, background: '#fefce8', border: `1px solid ${C.warn}`, borderRadius: 16, padding: 14 }}>
+          <div style={{ fontSize: '1.05rem', color: C.ink, fontWeight: 900, marginBottom: 6 }}>{stageKey === 'day1' ? curriculumHeading(stage, 3, '4. 실전 교보재 2차 수정') : curriculumHeading(stage, 3, '4. 첫 질문 복붙 실습')}</div>
+          <div style={{ fontSize: '.95rem', lineHeight: 1.65, color: C.ink, whiteSpace: 'pre-wrap' }}>{stage.practice_prompt_template}</div>
         </div>
       )}
 
@@ -567,33 +583,9 @@ function StageCard({
         </div>
       )}
 
-      {!!stage?.scenario_bank?.length && (
-        <div style={{ display: 'grid', gap: 10 }}>
-          <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>가정 주부 실전 시나리오 뱅크</div>
-          <div style={{ color: C.faint, fontSize: '.86rem', lineHeight: 1.55 }}>
-            아래 장면 중 하나를 그대로 골라 오늘 실습에 써도 됩니다. 생활 장면을 많이 넣어 두었으니, VP나 일반 고객 모두 바로 공감 가능한 출발점으로 쓸 수 있습니다.
-          </div>
-          <div style={{ background: C.accentSoft, border: `1px solid ${C.accent}`, borderRadius: 16, padding: 14 }}>
-            <div style={{ fontWeight: 900, color: C.ink, marginBottom: 6 }}>VP에게 가장 먼저 권하는 장면</div>
-            <div style={{ color: C.muted, fontSize: '.92rem', lineHeight: 1.6 }}>
-              학원 시간표와 학교 일정 충돌, 긴 가정통신문 핵심 뽑기, 진학 설명회 메모 정리, 엄마모임과 가족모임 시간 충돌 정리부터 먼저 해보는 것이 가장 현실적입니다.
-            </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
-            {stage.scenario_bank.map((item, index) => (
-              <div key={`${item.title}-${index}`} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, display: 'grid', gap: 8 }}>
-                <div style={{ fontWeight: 800, color: C.ink }}>{item.title}</div>
-                <div style={{ color: C.muted, fontSize: '.92rem', lineHeight: 1.55 }}>{item.situation}</div>
-                <div style={{ color: C.faint, fontSize: '.82rem', lineHeight: 1.5 }}>{item.prompt}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {!!stage?.home_life_recommended_learning?.length && (
-        <div style={{ display: 'grid', gap: 10 }}>
-          <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>맘카페/학부모 RAG 추천</div>
+        <div id={stageKey === 'day1' ? curriculumDetailBlockId(stageKey, 4) : undefined} data-curriculum-anchor={stageKey === 'day1' ? '4' : undefined} style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
+          <div style={{ fontSize: stageKey === 'day1' ? '1.05rem' : '.9rem', color: stageKey === 'day1' ? C.ink : C.muted, fontWeight: 900 }}>{stageKey === 'day1' ? curriculumHeading(stage, 4, '5. 근거자료와 비교 복습') : '맘카페/학부모 RAG 추천'}</div>
           {stage.home_life_recommended_learning.map((item, index) => (
             <div key={`${item.title}-${index}`} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14 }}>
               <div style={{ fontWeight: 800, color: C.ink }}>{item.title}</div>
@@ -607,13 +599,6 @@ function StageCard({
               )}
             </div>
           ))}
-        </div>
-      )}
-
-      {stage?.practice_prompt_template && (
-        <div id={curriculumDetailBlockId(stageKey, 3)} style={{ scrollMarginTop: 18, background: '#fefce8', border: `1px solid ${C.warn}`, borderRadius: 16, padding: 14 }}>
-          <div style={{ fontSize: '.76rem', color: C.warn, fontWeight: 800, marginBottom: 6 }}>바로 붙여 넣을 프롬프트</div>
-          <div style={{ fontSize: '.95rem', lineHeight: 1.65, color: C.ink, whiteSpace: 'pre-wrap' }}>{stage.practice_prompt_template}</div>
         </div>
       )}
 
@@ -660,7 +645,8 @@ function StageCard({
         </div>
       )}
 
-      <div id={curriculumDetailBlockId(stageKey, 4)} style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
+      <div id={curriculumDetailBlockId(stageKey, stageKey === 'day0' ? 4 : 5)} data-curriculum-anchor={stageKey === 'day0' ? '4' : '5'} style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
+        <div style={{ fontSize: '1.05rem', color: C.ink, fontWeight: 900 }}>{curriculumHeading(stage, stageKey === 'day0' ? 4 : 5, stageKey === 'day0' ? '5. 정리와 복습' : '6. 회고와 저장')}</div>
         <label style={{ display: 'grid', gap: 6 }}>
           <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>증거 결과물</span>
           <textarea value={proof} onChange={(e) => setProof(e.target.value)} onKeyDown={(e) => onInteraction('proof_keydown', { key: e.key, field: 'proof_artifact' })} rows={5} placeholder={stage?.proof_artifact_hint || '실제로 만든 결과를 붙여 넣으세요.'} style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.92rem', lineHeight: 1.5, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
@@ -708,6 +694,30 @@ function StageCard({
           </div>
         )}
       </div>
+
+      {!!stage?.scenario_bank?.length && (
+        <div id={stageKey === 'day1' ? curriculumDetailBlockId(stageKey, 6) : undefined} data-curriculum-anchor={stageKey === 'day1' ? '6' : undefined} style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
+          <div style={{ fontSize: stageKey === 'day1' ? '1.05rem' : '.9rem', color: stageKey === 'day1' ? C.ink : C.muted, fontWeight: 900 }}>{stageKey === 'day1' ? curriculumHeading(stage, 6, '7. 추가 응용 1회') : '가정 주부 실전 시나리오 뱅크'}</div>
+          <div style={{ color: C.faint, fontSize: '.86rem', lineHeight: 1.55 }}>
+            아래 장면 중 하나를 그대로 골라 오늘 실습에 써도 됩니다. 생활 장면을 많이 넣어 두었으니, VP나 일반 고객 모두 바로 공감 가능한 출발점으로 쓸 수 있습니다.
+          </div>
+          <div style={{ background: C.accentSoft, border: `1px solid ${C.accent}`, borderRadius: 16, padding: 14 }}>
+            <div style={{ fontWeight: 900, color: C.ink, marginBottom: 6 }}>VP에게 가장 먼저 권하는 장면</div>
+            <div style={{ color: C.muted, fontSize: '.92rem', lineHeight: 1.6 }}>
+              학원 시간표와 학교 일정 충돌, 긴 가정통신문 핵심 뽑기, 진학 설명회 메모 정리, 엄마모임과 가족모임 시간 충돌 정리부터 먼저 해보는 것이 가장 현실적입니다.
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
+            {stage.scenario_bank.map((item, index) => (
+              <div key={`${item.title}-${index}`} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, display: 'grid', gap: 8 }}>
+                <div style={{ fontWeight: 800, color: C.ink }}>{item.title}</div>
+                <div style={{ color: C.muted, fontSize: '.92rem', lineHeight: 1.55 }}>{item.situation}</div>
+                <div style={{ color: C.faint, fontSize: '.82rem', lineHeight: 1.5 }}>{item.prompt}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gap: 10, background: '#f8fafc', border: `1px solid ${C.border}`, borderRadius: 16, padding: 14 }}>
         <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>VP 피드백 메뉴</div>
