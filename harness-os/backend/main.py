@@ -3173,26 +3173,17 @@ def _ibkr_etf_check_payload(candidates_limit: int = 6) -> dict[str, Any]:
 
     wl = _load_etf_whitelist()
     preflight = safe_check_connectivity()
-
-    # CP API가 없어도 TWS/IB Gateway(port 4002)가 열려있으면 ok=True 처리
-    import socket as _sock_check
-    _tws_connected = False
-    try:
-        with _sock_check.create_connection(("127.0.0.1", 4002), timeout=1.0):
-            _tws_connected = True
-    except Exception:
-        pass
-    if _tws_connected and not preflight.get("ok"):
-        preflight = dict(preflight)
-        preflight["ok"] = True
-        preflight["tws_fallback"] = True
-        preflight["auth"] = {"authenticated": True}
+    # 종목해석(conid)은 CP(Client Portal) 게이트웨이가 *실제로 인증된* 경우에만 시도한다.
+    # 과거 버그(2026-06-21): TWS 4002 가 열려있으면 auth=True 로 위장하는 fallback 이 있었는데,
+    # 실제 secdef_search 는 여전히 죽은 CP 포트(:5001)에 연결돼 raw '[Errno 61] Connection refused'
+    # 가 화면에 그대로 노출됐다. 위장 fallback 제거 + CP 미가동 시 명확한 안내로 대체.
+    cp_authenticated = bool(preflight.get("ok")) and ((preflight.get("auth") or {}).get("authenticated") is True)
 
     payload: dict[str, Any] = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "whitelist_path": wl.get("path"),
         "preflight": preflight,
-        "gateway_connected": preflight.get("ok", False),
+        "gateway_connected": cp_authenticated,
         "results": [],
         "summary": {
             "items_total": len(wl.get("items") or []),
@@ -3202,10 +3193,26 @@ def _ibkr_etf_check_payload(candidates_limit: int = 6) -> dict[str, Any]:
         },
     }
 
-    if not preflight.get("ok"):
-        return payload
-    auth = preflight.get("auth") or {}
-    if auth.get("authenticated") is not True:
+    if not cp_authenticated:
+        # CP 게이트웨이 미가동/미인증 → raw errno 대신 명확한 안내. (이 확인 기능 전용 서비스이며
+        # 자동매매가 쓰는 TWS/IB Gateway(:4002)와는 별개다.)
+        import socket as _sock_check
+        _tws_open = False
+        try:
+            with _sock_check.create_connection(("127.0.0.1", 4002), timeout=1.0):
+                _tws_open = True
+        except Exception:
+            pass
+        payload["cp_gateway_required"] = True
+        payload["error"] = (
+            "IBKR Client Portal Gateway(:5001)에 연결할 수 없어 해외 ETF 종목(conid) 확인을 건너뜁니다 — "
+            "이 확인 기능은 CP 게이트웨이 가동이 필요합니다. "
+            + (
+                "자동매매용 TWS/IB Gateway(:4002)는 정상이라 매매에는 영향이 없습니다."
+                if _tws_open
+                else "자동매매용 TWS/IB Gateway(:4002)도 현재 미연결입니다."
+            )
+        )
         return payload
 
     client = IbkrCpClient()
