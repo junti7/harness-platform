@@ -181,6 +181,14 @@ function curriculumNavId(stageKey: StageKey, index: number) {
   return `${stageKey}-curriculum-nav-${index}`
 }
 
+function scrollCurriculumNavItemIntoView(stageKey: StageKey, index: number) {
+  const item = document.getElementById(curriculumNavId(stageKey, index))
+  const container = item?.parentElement
+  if (!item || !container || container.scrollHeight <= container.clientHeight) return
+  const nextTop = item.offsetTop - container.clientHeight / 2 + item.clientHeight / 2
+  container.scrollTo({ top: Math.max(0, nextTop), behavior: 'smooth' })
+}
+
 async function readJsonSafe(res: Response) {
   const raw = await res.text()
   let data: Record<string, unknown> = {}
@@ -1296,7 +1304,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       setActiveCurriculumIndex((prev) => {
         if (prev === nextIndex) return prev
         window.setTimeout(() => {
-          document.getElementById(curriculumNavId(selectedStage, nextIndex))?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+          scrollCurriculumNavItemIntoView(selectedStage, nextIndex)
         }, 0)
         return nextIndex
       })
@@ -1516,7 +1524,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
                           trackInteraction('select_curriculum_block', { index, day: selectedStage })
                           window.requestAnimationFrame(() => {
                             window.requestAnimationFrame(() => {
-                              document.getElementById(curriculumBlockId(selectedStage, index))?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                              document.getElementById(curriculumBlockId(selectedStage, index))?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                             })
                           })
                         }}
