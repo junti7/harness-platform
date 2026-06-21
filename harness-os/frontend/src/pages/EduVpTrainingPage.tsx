@@ -189,6 +189,26 @@ function scrollCurriculumNavItemIntoView(stageKey: StageKey, index: number) {
   container.scrollTo({ top: Math.max(0, nextTop), behavior: 'smooth' })
 }
 
+function scrollCurriculumBlockToTop(stageKey: StageKey, index: number) {
+  const target = document.getElementById(curriculumBlockId(stageKey, index))
+  if (!target) return
+  const offset = 24
+  let parent = target.parentElement
+  while (parent && parent !== document.body) {
+    const style = window.getComputedStyle(parent)
+    const canScroll = /(auto|scroll)/.test(`${style.overflowY}${style.overflow}`) && parent.scrollHeight > parent.clientHeight
+    if (canScroll) {
+      const parentRect = parent.getBoundingClientRect()
+      const targetRect = target.getBoundingClientRect()
+      parent.scrollTo({ top: parent.scrollTop + targetRect.top - parentRect.top - offset, behavior: 'smooth' })
+      return
+    }
+    parent = parent.parentElement
+  }
+  const targetTop = target.getBoundingClientRect().top + window.scrollY - offset
+  window.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' })
+}
+
 async function readJsonSafe(res: Response) {
   const raw = await res.text()
   let data: Record<string, unknown> = {}
@@ -1569,7 +1589,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
                           trackInteraction('select_curriculum_block', { index, day: selectedStage })
                           window.requestAnimationFrame(() => {
                             window.requestAnimationFrame(() => {
-                              document.getElementById(curriculumBlockId(selectedStage, index))?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                              scrollCurriculumBlockToTop(selectedStage, index)
                             })
                           })
                         }}
