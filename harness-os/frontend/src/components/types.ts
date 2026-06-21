@@ -566,6 +566,8 @@ export type IbkrCheckPayload = {
     } | null
   }>
   error?: string
+  cp_gateway_required?: boolean
+  gateway_connected?: boolean
 }
 
 // ── Alpaca Paper Trading ──────────────────────────────────────────────────────

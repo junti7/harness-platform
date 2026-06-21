@@ -335,40 +335,54 @@ export function TradingApiMonitor({ tradingApi, apiBase, authHeaders }: Props) {
       {ibkrCheck && (
         <article className="panel watchlist-panel">
           <h3>해외 ETF 종목 확인 결과</h3>
-          <div className="split-2">
-            <div>
-              <p className="data-label">높은 신뢰도</p>
-              <p className="data-value ok">{ibkrCheck.summary.resolved_high_confidence}</p>
-            </div>
-            <div>
-              <p className="data-label">낮음 / 미해결</p>
-              <p className={`data-value ${ibkrCheck.summary.unresolved > 0 ? 'warn' : ''}`}>
-                {ibkrCheck.summary.resolved_low_confidence + ibkrCheck.summary.unresolved}
+          {ibkrCheck.cp_gateway_required ? (
+            /* CP(Client Portal) 게이트웨이 미가동 — 빨간 '오류'가 아니라 중립 정보 톤(매매 무관). */
+            <div className="etf-check-dormant">
+              <span className="etf-check-chip">CP 게이트웨이 필요 · 현재 비활성</span>
+              <p className="data-meta">
+                이 확인 기능은 IBKR Client Portal Gateway가 있어야 동작합니다.
+                <strong> 자동매매(TWS/IB Gateway)와는 무관하며 매매에는 영향이 없습니다.</strong>
               </p>
+              <p className="data-meta">확인 대기 항목: {ibkrCheck.summary.items_total}개 ETF</p>
             </div>
-          </div>
-          <ul className="data-list">
-            <li>총 항목 수: {ibkrCheck.summary.items_total}</li>
-            <li>사전 검증 성공: {boolLabel(ibkrCheck.preflight.ok && (ibkrCheck.preflight.auth?.authenticated ?? ibkrCheck.preflight.authenticated) === true)}</li>
-            {(ibkrCheck.error ?? ibkrCheck.preflight.error) && <li className="data-warn">오류: {ibkrCheck.error ?? ibkrCheck.preflight.error}</li>}
-          </ul>
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead><tr><th>항목</th><th>쿼리</th><th>후보 수</th><th>최적 매핑</th><th>거래소</th><th>신뢰도</th></tr></thead>
-              <tbody>
-                {ibkrCheck.results.map((r, i) => (
-                  <tr key={`${r.item.id ?? r.item.query ?? 'ibkr'}-${i}`}>
-                    <td>{r.item.id ?? r.item.name_hint ?? '없음'}</td>
-                    <td>{r.item.query ?? '없음'}</td>
-                    <td>{r.candidate_count}</td>
-                    <td>{r.best?.symbol ?? r.best?.conid ?? '미해결'}</td>
-                    <td>{r.best?.exchange ?? r.item.exchange_hint ?? '없음'}</td>
-                    <td>{r.best?.confidence ?? '없음'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          ) : (
+            <>
+              <div className="split-2">
+                <div>
+                  <p className="data-label">높은 신뢰도</p>
+                  <p className="data-value ok">{ibkrCheck.summary.resolved_high_confidence}</p>
+                </div>
+                <div>
+                  <p className="data-label">낮음 / 미해결</p>
+                  <p className={`data-value ${ibkrCheck.summary.unresolved > 0 ? 'warn' : ''}`}>
+                    {ibkrCheck.summary.resolved_low_confidence + ibkrCheck.summary.unresolved}
+                  </p>
+                </div>
+              </div>
+              <ul className="data-list">
+                <li>총 항목 수: {ibkrCheck.summary.items_total}</li>
+                <li>사전 검증 성공: {boolLabel(ibkrCheck.preflight.ok && (ibkrCheck.preflight.auth?.authenticated ?? ibkrCheck.preflight.authenticated) === true)}</li>
+                {(ibkrCheck.error ?? ibkrCheck.preflight.error) && <li className="data-warn">오류: {ibkrCheck.error ?? ibkrCheck.preflight.error}</li>}
+              </ul>
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead><tr><th>항목</th><th>쿼리</th><th>후보 수</th><th>최적 매핑</th><th>거래소</th><th>신뢰도</th></tr></thead>
+                  <tbody>
+                    {ibkrCheck.results.map((r, i) => (
+                      <tr key={`${r.item.id ?? r.item.query ?? 'ibkr'}-${i}`}>
+                        <td>{r.item.id ?? r.item.name_hint ?? '없음'}</td>
+                        <td>{r.item.query ?? '없음'}</td>
+                        <td>{r.candidate_count}</td>
+                        <td>{r.best?.symbol ?? r.best?.conid ?? '미해결'}</td>
+                        <td>{r.best?.exchange ?? r.item.exchange_hint ?? '없음'}</td>
+                        <td>{r.best?.confidence ?? '없음'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </article>
       )}
     </section>
