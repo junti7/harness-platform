@@ -754,14 +754,17 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
   const [selectedStage, setSelectedStage] = useState<StageKey>('day0')
   const [showContinueFrom, setShowContinueFrom] = useState<StageKey | null>(null)
   const [activeCurriculumIndex, setActiveCurriculumIndex] = useState(0)
-  const [navigatorOffset, setNavigatorOffset] = useState(0)
   const [resettingCases, setResettingCases] = useState(false)
+  const navigatorRef = useRef<HTMLElement | null>(null)
   const latestUiStateRef = useRef<UiState>({})
   const latestAuthEmailRef = useRef('')
   const latestCaseIdRef = useRef<number | null>(null)
   const syncSeqRef = useRef(0)
   const curriculumScrollLockUntilRef = useRef(0)
   const observedContentScrollTopRef = useRef(0)
+  const navigatorTargetOffsetRef = useRef(0)
+  const navigatorDisplayOffsetRef = useRef(0)
+  const navigatorAnimationFrameRef = useRef(0)
   const archivedCases = caseHistory.filter((item) => item.case_id !== caseId)
   const hasCaseHistory = archivedCases.length > 0
   const hasStoredCases = caseHistory.length > 0
@@ -1312,13 +1315,31 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       })
     }
 
-    const updateNavigatorOffset = () => {
+    const animateNavigatorOffset = () => {
+      navigatorAnimationFrameRef.current = 0
+      const node = navigatorRef.current
+      if (!node) return
+      const current = navigatorDisplayOffsetRef.current
+      const target = navigatorTargetOffsetRef.current
+      const next = current + (target - current) * 0.16
+      navigatorDisplayOffsetRef.current = Math.abs(target - next) < 0.5 ? target : next
+      node.style.transform = isMobile ? '' : `translate3d(0, ${navigatorDisplayOffsetRef.current}px, 0)`
+      if (Math.abs(target - navigatorDisplayOffsetRef.current) >= 0.5) {
+        navigatorAnimationFrameRef.current = window.requestAnimationFrame(animateNavigatorOffset)
+      }
+    }
+
+    const updateNavigatorTarget = () => {
       if (isMobile) {
-        setNavigatorOffset(0)
+        navigatorTargetOffsetRef.current = 0
+        navigatorDisplayOffsetRef.current = 0
+        if (navigatorRef.current) navigatorRef.current.style.transform = ''
         return
       }
-      const nextOffset = Math.max(0, Math.min(520, observedContentScrollTopRef.current * 0.32))
-      setNavigatorOffset((prev) => (Math.abs(prev - nextOffset) < 2 ? prev : nextOffset))
+      navigatorTargetOffsetRef.current = Math.max(0, Math.min(520, observedContentScrollTopRef.current * 0.32))
+      if (!navigatorAnimationFrameRef.current) {
+        navigatorAnimationFrameRef.current = window.requestAnimationFrame(animateNavigatorOffset)
+      }
     }
 
     const scheduleSync = (event?: Event) => {
@@ -1327,7 +1348,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       observedContentScrollTopRef.current = Math.max(window.scrollY || 0, document.documentElement.scrollTop || 0, targetScrollTop)
       if (frame) return
       frame = window.requestAnimationFrame(() => {
-        updateNavigatorOffset()
+        updateNavigatorTarget()
         syncCurriculumFromScroll()
       })
     }
@@ -1342,6 +1363,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       document.removeEventListener('scroll', scheduleSync, true)
       window.removeEventListener('resize', scheduleSync)
       if (frame) window.cancelAnimationFrame(frame)
+      if (navigatorAnimationFrameRef.current) window.cancelAnimationFrame(navigatorAnimationFrameRef.current)
     }
   }, [selectedStage, stage?.schedule_blocks?.length, isMobile])
 
@@ -1496,7 +1518,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
 
         {isAuthenticated && trainingState && (
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(250px, 300px) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
-            <aside style={{ display: 'grid', gap: 14, position: 'sticky', top: isMobile ? 8 : 12, alignSelf: 'start', maxHeight: isMobile ? 'calc(100dvh - 16px)' : 'calc(100dvh - 24px)', overflowY: 'auto', zIndex: 4, order: isMobile ? 0 : 0, paddingRight: isMobile ? 0 : 2, transform: isMobile ? undefined : `translateY(${navigatorOffset}px)`, transition: 'transform 160ms ease-out' }}>
+            <aside ref={navigatorRef} style={{ display: 'grid', gap: 14, position: 'sticky', top: isMobile ? 8 : 12, alignSelf: 'start', maxHeight: isMobile ? 'calc(100dvh - 16px)' : 'calc(100dvh - 24px)', overflowY: 'auto', zIndex: 4, order: isMobile ? 0 : 0, paddingRight: isMobile ? 0 : 2, willChange: 'transform' }}>
               <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 22, padding: 16, display: 'grid', gap: 12 }}>
                 <div style={{ fontSize: '.82rem', color: C.muted, fontWeight: 900 }}>FLOW MENU</div>
                 <div style={{ color: C.ink, fontWeight: 800 }}>전체 진행률 {trainingState.progress?.pct ?? 0}%</div>
