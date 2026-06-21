@@ -165,6 +165,14 @@ function sessionCacheKey(email: string) {
   return `${VP_TRAINING_SESSION_CACHE_KEY}:${email}`
 }
 
+function displayStageTitle(title?: string) {
+  return String(title || '').replace(/^Day\s+\d+\s*[·.]\s*/i, '').trim() || '준비 중'
+}
+
+function lessonLabel(stageKey: StageKey) {
+  return stageKey === 'day0' ? '첫날 수업' : '이번 수업'
+}
+
 async function readJsonSafe(res: Response) {
   const raw = await res.text()
   let data: Record<string, unknown> = {}
@@ -282,6 +290,7 @@ function stageHasWork(stage?: TrainingStage) {
 function resumeStageFromState(state?: TrainingState | null): StageKey {
   const normalized = normalizeTrainingState(state)
   if (!normalized) return 'day0'
+  if (!normalized.day0?.completed) return 'day0'
   if (normalized.ui_state?.selected_stage === 'day1') return 'day1'
   if (stageHasWork(normalized.day1)) return 'day1'
   if (normalized.day0?.completed) return 'day1'
@@ -373,7 +382,7 @@ function StageCard({
     <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 24, padding: 20, display: 'grid', gap: 16 }}>
       <div>
         <div style={{ fontSize: '.82rem', color: C.accent, fontWeight: 900, letterSpacing: '.05em', marginBottom: 6 }}>{stageKey === 'day0' ? 'DAY 0' : 'DAY 1'}</div>
-        <h2 style={{ margin: 0, fontSize: '1.55rem', lineHeight: 1.3, color: '#000000' }}>{stage?.title || '준비 중'}</h2>
+        <h2 style={{ margin: 0, fontSize: '1.55rem', lineHeight: 1.3, color: '#000000' }}>{displayStageTitle(stage?.title)}</h2>
       </div>
 
       {reminder && (
@@ -387,7 +396,7 @@ function StageCard({
         <div style={{ background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: 16, padding: 14, display: 'grid', gap: 8 }}>
           <div style={{ fontSize: '.76rem', color: '#1d4ed8', fontWeight: 800 }}>권장 학습 분량</div>
           {stage?.estimated_minutes ? (
-            <div style={{ fontSize: '1rem', lineHeight: 1.55, color: C.ink, fontWeight: 800 }}>이 Day는 약 {stage.estimated_minutes}분 분량으로 설계되었습니다.</div>
+            <div style={{ fontSize: '1rem', lineHeight: 1.55, color: C.ink, fontWeight: 800 }}>{lessonLabel(stageKey)}은 약 {stage.estimated_minutes}분 분량으로 설계되었습니다.</div>
           ) : null}
           {stage?.completion_rule ? (
             <div style={{ color: C.muted, fontSize: '.92rem', lineHeight: 1.6 }}>{stage.completion_rule}</div>
@@ -399,7 +408,7 @@ function StageCard({
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
           {stage?.learning_why ? (
             <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14 }}>
-              <div style={{ fontSize: '.82rem', color: C.accent, fontWeight: 900, marginBottom: 6 }}>왜 이 Day를 하나</div>
+              <div style={{ fontSize: '.82rem', color: C.accent, fontWeight: 900, marginBottom: 6 }}>왜 이 과정을 하나</div>
               <div style={{ color: C.ink, fontSize: '.95rem', lineHeight: 1.6 }}>{stage.learning_why}</div>
             </div>
           ) : null}
@@ -436,7 +445,7 @@ function StageCard({
             아래 순서를 모두 따라가야 그날 학습이 끝난 것으로 봅니다. 중간에 한 미션만 하고 멈추지 않도록, 실제 학습 시간을 기준으로 설계했습니다.
           </div>
           {stage.schedule_blocks.map((item, index) => (
-            <div key={`${item.title}-${index}`} style={{ background: '#ffffff', border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, display: 'grid', gridTemplateColumns: '76px 1fr', gap: 12, alignItems: 'start' }}>
+            <div id={`${stageKey}-curriculum-${index}`} key={`${item.title}-${index}`} style={{ scrollMarginTop: 18, background: '#ffffff', border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, display: 'grid', gridTemplateColumns: '76px 1fr', gap: 12, alignItems: 'start' }}>
               <div style={{ background: '#111827', color: '#ffffff', borderRadius: 12, padding: '8px 10px', textAlign: 'center', fontWeight: 900, fontSize: '.92rem' }}>{item.minutes}분</div>
               <div>
                 <div style={{ fontWeight: 800, color: C.ink, marginBottom: 4 }}>{index + 1}. {item.title}</div>
@@ -758,7 +767,13 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
 
   function applyTrainingSession(email: string, nextCaseId: number, nextTrainingStateRaw: TrainingState | null | undefined) {
     const nextTrainingState = normalizeTrainingState(nextTrainingStateRaw) || null
-    const nextUiState = nextTrainingState?.ui_state || {}
+    const day0Done = Boolean(nextTrainingState?.day0?.completed)
+    const rawUiState = nextTrainingState?.ui_state || {}
+    const nextUiState: UiState = {
+      ...rawUiState,
+      selected_stage: day0Done ? (rawUiState.selected_stage || resumeStageFromState(nextTrainingState)) : 'day0',
+      show_continue_from: day0Done ? (rawUiState.show_continue_from || '') : '',
+    }
     const nextStage = nextUiState.selected_stage || resumeStageFromState(nextTrainingState)
     setAuthEmail(email)
     setIsAuthenticated(true)
@@ -1429,7 +1444,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
                     }}
                   >
                     <div style={{ fontWeight: 900, color: C.ink }}>{item.label}</div>
-                    <div style={{ color: C.muted, fontSize: '.88rem', lineHeight: 1.45, marginTop: 4 }}>{item.title}</div>
+                    <div style={{ color: C.muted, fontSize: '.88rem', lineHeight: 1.45, marginTop: 4 }}>{displayStageTitle(item.title)}</div>
                     <div style={{ color: C.faint, fontSize: '.8rem', marginTop: 6 }}>{item.completed ? '완료됨' : '복습 가능'} · {item.pct}%</div>
                   </button> : null
                 ))}
@@ -1447,6 +1462,9 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
                           setActiveCurriculumIndex(index)
                           mergeUiState({ active_curriculum_index: index })
                           trackInteraction('select_curriculum_block', { index, day: selectedStage })
+                          window.setTimeout(() => {
+                            document.getElementById(`${selectedStage}-curriculum-${index}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                          }, 0)
                         }}
                         style={{
                           textAlign: 'left',
