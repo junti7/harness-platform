@@ -177,6 +177,10 @@ function curriculumBlockId(stageKey: StageKey, index: number) {
   return `${stageKey}-curriculum-${index}`
 }
 
+function curriculumDetailBlockId(stageKey: StageKey, index: number) {
+  return `${stageKey}-curriculum-detail-${index}`
+}
+
 function curriculumNavId(stageKey: StageKey, index: number) {
   return `${stageKey}-curriculum-nav-${index}`
 }
@@ -190,7 +194,8 @@ function scrollCurriculumNavItemIntoView(stageKey: StageKey, index: number) {
 }
 
 function scrollCurriculumBlockToTop(stageKey: StageKey, index: number) {
-  const target = document.getElementById(curriculumBlockId(stageKey, index))
+  const target = document.getElementById(curriculumDetailBlockId(stageKey, index))
+    || document.getElementById(curriculumBlockId(stageKey, index))
   if (!target) return
   const offset = 24
   let parent = target.parentElement
@@ -415,7 +420,7 @@ function StageCard({
   }
 
   return (
-    <section style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 24, padding: 20, display: 'grid', gap: 16 }}>
+    <section id={curriculumDetailBlockId(stageKey, 0)} style={{ scrollMarginTop: 18, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 24, padding: 20, display: 'grid', gap: 16 }}>
       <div>
         <div style={{ fontSize: '.82rem', color: C.accent, fontWeight: 900, letterSpacing: '.05em', marginBottom: 6 }}>{stageKey === 'day0' ? 'DAY 0' : 'DAY 1'}</div>
         <h2 style={{ margin: 0, fontSize: '1.55rem', lineHeight: 1.3, color: '#000000' }}>{displayStageTitle(stage?.title)}</h2>
@@ -458,7 +463,7 @@ function StageCard({
       )}
 
       {!!stage?.foundation_concepts?.length && (
-        <div style={{ display: 'grid', gap: 10 }}>
+        <div id={curriculumDetailBlockId(stageKey, 1)} style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
           <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>먼저 알아야 할 기초지식</div>
           <div style={{ color: C.faint, fontSize: '.86rem', lineHeight: 1.55 }}>
             미션부터 밀어붙이지 않고, 지금부터 무엇을 왜 하는지 먼저 이해합니다. 기술 용어를 외우는 시간이 아니라 불안과 막막함을 줄이는 시간입니다.
@@ -481,7 +486,7 @@ function StageCard({
             아래 순서를 모두 따라가야 그날 학습이 끝난 것으로 봅니다. 중간에 한 미션만 하고 멈추지 않도록, 실제 학습 시간을 기준으로 설계했습니다.
           </div>
           {stage.schedule_blocks.map((item, index) => (
-            <div id={curriculumBlockId(stageKey, index)} key={`${item.title}-${index}`} style={{ scrollMarginTop: 18, background: '#ffffff', border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, display: 'grid', gridTemplateColumns: '76px 1fr', gap: 12, alignItems: 'start' }}>
+            <div id={curriculumBlockId(stageKey, index)} key={`${item.title}-${index}`} style={{ background: '#ffffff', border: `1px solid ${C.border}`, borderRadius: 16, padding: 14, display: 'grid', gridTemplateColumns: '76px 1fr', gap: 12, alignItems: 'start' }}>
               <div style={{ background: '#111827', color: '#ffffff', borderRadius: 12, padding: '8px 10px', textAlign: 'center', fontWeight: 900, fontSize: '.92rem' }}>{item.minutes}분</div>
               <div>
                 <div style={{ fontWeight: 800, color: C.ink, marginBottom: 4 }}>{index + 1}. {item.title}</div>
@@ -492,15 +497,8 @@ function StageCard({
         </div>
       )}
 
-      {stage?.required_action && (
-        <div style={{ background: C.accentSoft, border: `1px solid ${C.accent}`, borderRadius: 16, padding: 14 }}>
-          <div style={{ fontSize: '.76rem', color: C.accent, fontWeight: 800, marginBottom: 6 }}>오늘 바로 해야 할 일</div>
-          <div style={{ fontSize: '1rem', lineHeight: 1.65, color: C.ink, fontWeight: 700 }}>{stage.required_action}</div>
-        </div>
-      )}
-
       {!!stage?.tutorial_steps?.length && (
-        <div style={{ display: 'grid', gap: 10 }}>
+        <div id={curriculumDetailBlockId(stageKey, 2)} style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
           <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>튜토리얼</div>
           {stage.tutorial_steps.map((item, index) => (
             <div key={item.id} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14 }}>
@@ -511,8 +509,15 @@ function StageCard({
         </div>
       )}
 
+      {stage?.required_action && (
+        <div id={curriculumDetailBlockId(stageKey, 3)} style={{ scrollMarginTop: 18, background: C.accentSoft, border: `1px solid ${C.accent}`, borderRadius: 16, padding: 14 }}>
+          <div style={{ fontSize: '.76rem', color: C.accent, fontWeight: 800, marginBottom: 6 }}>오늘 바로 해야 할 일</div>
+          <div style={{ fontSize: '1rem', lineHeight: 1.65, color: C.ink, fontWeight: 700 }}>{stage.required_action}</div>
+        </div>
+      )}
+
       {!!stage?.checklist?.length && (
-        <div style={{ display: 'grid', gap: 10 }}>
+        <div id={curriculumDetailBlockId(stageKey, 4)} style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
           <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>체크리스트</div>
           {stage.checklist.map((item) => (
             <div key={item.id} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14 }}>
@@ -1321,7 +1326,8 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       if (Date.now() < curriculumScrollLockUntilRef.current) return
       let nextIndex = 0
       for (let index = 0; index < count; index += 1) {
-        const block = document.getElementById(curriculumBlockId(selectedStage, index))
+        const block = document.getElementById(curriculumDetailBlockId(selectedStage, index))
+          || document.getElementById(curriculumBlockId(selectedStage, index))
         if (!block) continue
         if (block.getBoundingClientRect().top <= anchorY) nextIndex = index
       }
