@@ -1336,7 +1336,10 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
         if (navigatorRef.current) navigatorRef.current.style.transform = ''
         return
       }
-      navigatorTargetOffsetRef.current = Math.max(0, Math.min(520, observedContentScrollTopRef.current * 0.32))
+      const pageScrollable = Math.max(0, document.documentElement.scrollHeight - window.innerHeight)
+      const navigatorScrollable = Math.max(0, document.documentElement.scrollHeight - (navigatorRef.current?.offsetHeight || 0) - 48)
+      const maxOffset = Math.max(0, Math.min(pageScrollable, navigatorScrollable))
+      navigatorTargetOffsetRef.current = Math.max(0, Math.min(maxOffset, observedContentScrollTopRef.current))
       if (!navigatorAnimationFrameRef.current) {
         navigatorAnimationFrameRef.current = window.requestAnimationFrame(animateNavigatorOffset)
       }
