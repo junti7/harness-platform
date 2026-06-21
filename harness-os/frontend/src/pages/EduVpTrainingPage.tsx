@@ -219,6 +219,12 @@ function scrollCurriculumBlockToTop(stageKey: StageKey, index: number) {
   window.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' })
 }
 
+function curriculumContentStartY(stageKey: StageKey) {
+  const firstBlock = document.getElementById(curriculumDetailBlockId(stageKey, 0))
+  if (!firstBlock) return 0
+  return firstBlock.getBoundingClientRect().top + window.scrollY
+}
+
 async function readJsonSafe(res: Response) {
   const raw = await res.text()
   let data: Record<string, unknown> = {}
@@ -1384,7 +1390,9 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
     const scheduleSync = (event?: Event) => {
       const target = event?.target as Element | Document | null
       const targetScrollTop = target && 'scrollTop' in target ? Number((target as Element).scrollTop || 0) : 0
-      observedContentScrollTopRef.current = Math.max(window.scrollY || 0, document.documentElement.scrollTop || 0, targetScrollTop)
+      const pageScrollTop = Math.max(window.scrollY || 0, document.documentElement.scrollTop || 0)
+      const contentScrollTop = Math.max(0, pageScrollTop - curriculumContentStartY(selectedStage))
+      observedContentScrollTopRef.current = Math.max(contentScrollTop, targetScrollTop)
       if (frame) return
       frame = window.requestAnimationFrame(() => {
         updateNavigatorTarget()
