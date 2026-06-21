@@ -510,14 +510,14 @@ function StageCard({
       )}
 
       {stage?.required_action && (
-        <div id={curriculumDetailBlockId(stageKey, 3)} style={{ scrollMarginTop: 18, background: C.accentSoft, border: `1px solid ${C.accent}`, borderRadius: 16, padding: 14 }}>
+        <div id={!stage.practice_prompt_template ? curriculumDetailBlockId(stageKey, 3) : undefined} style={{ scrollMarginTop: 18, background: C.accentSoft, border: `1px solid ${C.accent}`, borderRadius: 16, padding: 14 }}>
           <div style={{ fontSize: '.76rem', color: C.accent, fontWeight: 800, marginBottom: 6 }}>오늘 바로 해야 할 일</div>
           <div style={{ fontSize: '1rem', lineHeight: 1.65, color: C.ink, fontWeight: 700 }}>{stage.required_action}</div>
         </div>
       )}
 
       {!!stage?.checklist?.length && (
-        <div id={curriculumDetailBlockId(stageKey, 4)} style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
+        <div style={{ display: 'grid', gap: 10 }}>
           <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>체크리스트</div>
           {stage.checklist.map((item) => (
             <div key={item.id} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14 }}>
@@ -611,7 +611,7 @@ function StageCard({
       )}
 
       {stage?.practice_prompt_template && (
-        <div style={{ background: '#fefce8', border: `1px solid ${C.warn}`, borderRadius: 16, padding: 14 }}>
+        <div id={curriculumDetailBlockId(stageKey, 3)} style={{ scrollMarginTop: 18, background: '#fefce8', border: `1px solid ${C.warn}`, borderRadius: 16, padding: 14 }}>
           <div style={{ fontSize: '.76rem', color: C.warn, fontWeight: 800, marginBottom: 6 }}>바로 붙여 넣을 프롬프트</div>
           <div style={{ fontSize: '.95rem', lineHeight: 1.65, color: C.ink, whiteSpace: 'pre-wrap' }}>{stage.practice_prompt_template}</div>
         </div>
@@ -660,7 +660,7 @@ function StageCard({
         </div>
       )}
 
-      <div style={{ display: 'grid', gap: 10 }}>
+      <div id={curriculumDetailBlockId(stageKey, 4)} style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
         <label style={{ display: 'grid', gap: 6 }}>
           <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>증거 결과물</span>
           <textarea value={proof} onChange={(e) => setProof(e.target.value)} onKeyDown={(e) => onInteraction('proof_keydown', { key: e.key, field: 'proof_artifact' })} rows={5} placeholder={stage?.proof_artifact_hint || '실제로 만든 결과를 붙여 넣으세요.'} style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.92rem', lineHeight: 1.5, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
