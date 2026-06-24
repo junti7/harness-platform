@@ -120,11 +120,13 @@ export type TrainingUiState = {
 
 export type TrainingState = {
   case?: { id?: number; case_label?: string } & Record<string, unknown>
+  customer?: { name?: string; segment?: string; preferred_llm?: string } & Record<string, unknown>
   day0?: TrainingStage
   day1?: TrainingStage
   flow_outline?: FlowOutlineItem[]
   progress?: TrainingProgress
   ui_state?: TrainingUiState
+  personalized_curriculum?: PersonalizedCurriculum
 }
 
 export type SessionResult =
@@ -216,6 +218,8 @@ export type PersonalizedCurriculum = {
   ok: boolean
   available: boolean
   total_evidence?: number
+  attrs?: CurriculumAttrs
+  source?: string
   segment: string | null
   base_pool: string
   order: CurriculumOrderItem[]
