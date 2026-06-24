@@ -88,6 +88,7 @@
   --color-warning-soft: var(--warning-soft);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
+  --color-border-strong: var(--border-strong);
 
   /* radius scale derived from --radius (rounded.sm/md/lg) */
   --radius-sm: 4px;

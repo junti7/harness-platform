@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { ApiError } from '@/lib/api'
 import { clearSession, loadSession, saveSession, type Session } from '@/lib/session'
 import {
+  deleteCase,
   listCases,
   loginAccount,
   registerAccount,
@@ -114,6 +115,18 @@ function App() {
     setView('training')
   }, [])
 
+  const handleDelete = useCallback(
+    async (caseId: number) => {
+      if (!session) return
+      try {
+        await deleteCase(session.email, caseId)
+      } finally {
+        await refreshCases(session.email)
+      }
+    },
+    [session, refreshCases],
+  )
+
   const handleLogout = useCallback(() => {
     clearSession()
     setSession(null)
@@ -134,7 +147,13 @@ function App() {
   }
 
   if (view === 'training' && selectedCaseId != null) {
-    return <TrainingScreen caseId={selectedCaseId} onBack={() => setView('cases')} />
+    return (
+      <TrainingScreen
+        caseId={selectedCaseId}
+        email={session.email}
+        onBack={() => setView('cases')}
+      />
+    )
   }
 
   return (
@@ -145,6 +164,7 @@ function App() {
       onSelect={handleSelect}
       onNew={handleNew}
       onLogout={handleLogout}
+      onDelete={handleDelete}
     />
   )
 }
