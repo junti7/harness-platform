@@ -50,19 +50,111 @@ export async function listCases(email: string): Promise<TrainingCase[]> {
   return r.cases ?? []
 }
 
-/** 새 훈련 케이스 시작(intake force_new). 인테이크 상세값은 추후 화면에서 수집. */
-export async function startNewCase(email: string, name: string): Promise<void> {
-  await vpPost(VP_TRAINING.intake, {
+const CURRICULUM_ATTRS_STORAGE_KEY = 'vp_curriculum_attrs'
+
+const DEFAULT_CURRICULUM_ATTRS: CurriculumAttrs = {
+  llm: 'chatgpt',
+  level: 'beginner',
+  motivation: 'work',
+  env: 'mobile',
+  job: '학부모',
+}
+
+export function loadSavedCurriculumAttrs(): CurriculumAttrs {
+  try {
+    const raw = localStorage.getItem(CURRICULUM_ATTRS_STORAGE_KEY)
+    if (raw) return { ...DEFAULT_CURRICULUM_ATTRS, ...(JSON.parse(raw) as CurriculumAttrs) }
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_CURRICULUM_ATTRS
+}
+
+function intakeLlm(attrs: CurriculumAttrs): string {
+  const v = String(attrs.llm || '').toLowerCase()
+  if (v.includes('gemini') || v.includes('제미나이')) return 'gemini'
+  if (v.includes('claude') || v.includes('클로드')) return 'claude'
+  if (v.includes('gpt') || v.includes('chatgpt') || v.includes('챗')) return 'gpt'
+  return 'auto'
+}
+
+function intakeSegment(attrs: CurriculumAttrs): 'parent' | 'worker' {
+  const job = String(attrs.job || '').toLowerCase()
+  return job.includes('학부모') || job.includes('parent') || job.includes('주부') ? 'parent' : 'worker'
+}
+
+function intakeDevice(attrs: CurriculumAttrs): string {
+  return attrs.env === 'pc' ? 'mac' : 'iphone'
+}
+
+function intakeGoal(attrs: CurriculumAttrs): string {
+  if (attrs.motivation === 'child_study') return '아이 공부와 숙제에 AI를 안전하게 활용하기'
+  if (attrs.motivation === 'writing') return '글쓰기와 문장 정리에 AI를 활용하기'
+  if (attrs.motivation === 'daily') return '일상 일정과 생활 정리에 AI를 활용하기'
+  return '업무와 반복 작업에 AI를 활용하기'
+}
+
+function intakeFriction(attrs: CurriculumAttrs): string {
+  const llm = intakeLlm(attrs) === 'gemini' ? 'Gemini' : intakeLlm(attrs) === 'claude' ? 'Claude' : 'ChatGPT'
+  if (attrs.motivation === 'child_study') return `${llm}로 아이 숙제와 학습을 어디까지 도와도 되는지 막막함`
+  if (attrs.motivation === 'writing') return `${llm}로 글 초안을 어떻게 시작해야 할지 막막함`
+  if (attrs.motivation === 'daily') return `${llm}로 생활 메모와 일정을 어떻게 정리할지 막막함`
+  return `${llm} 업무 활용을 어디서부터 시작해야 할지 막막함`
+}
+
+function curriculumAttrsToIntake(email: string, name: string, attrs: CurriculumAttrs, caseId?: number) {
+  return {
+    case_id: caseId,
     email,
     name,
-    preferred_llm: 'claude',
-    current_device: 'iphone',
+    preferred_llm: intakeLlm(attrs),
+    segment: intakeSegment(attrs),
+    current_device: intakeDevice(attrs),
     desktop_os: 'mac',
-    ai_experience: 'beginner',
-    biggest_friction: '',
-    learning_goal: '',
+    ai_experience: attrs.level || 'beginner',
+    biggest_friction: intakeFriction(attrs),
+    learning_goal: intakeGoal(attrs),
+  }
+}
+
+/** 새 훈련 케이스 시작(intake force_new). 맞춤 커리큘럼 선택값을 intake 에 주입한다. */
+export async function startNewCase(email: string, name: string): Promise<number | null> {
+  const attrs = loadSavedCurriculumAttrs()
+  const r = await vpPost<{ ok: boolean; case_id?: number }>(VP_TRAINING.intake, {
+    ...curriculumAttrsToIntake(email, name, attrs),
     force_new: true,
   })
+  return typeof r.case_id === 'number' ? r.case_id : null
+}
+
+/** 기존 케이스를 현재 맞춤 커리큘럼 선택값으로 재생성/동기화한다. */
+export async function rebuildCaseFromSavedCurriculum(
+  email: string,
+  caseId: number,
+  name = '',
+): Promise<TrainingState> {
+  const attrs = loadSavedCurriculumAttrs()
+  const r = await vpPost<{ training_state: TrainingState }>(VP_TRAINING.intake, {
+    ...curriculumAttrsToIntake(email, name, attrs, caseId),
+    force_new: false,
+  })
+  return r.training_state
+}
+
+export function trainingStateMatchesSavedCurriculum(state: TrainingState): boolean {
+  const attrs = loadSavedCurriculumAttrs()
+  const expectedLlm = intakeLlm(attrs)
+  const expectedSegment = intakeSegment(attrs)
+  const expectedDevice = intakeDevice(attrs)
+  const expectedLevel = attrs.level || 'beginner'
+  const actualIntake = state.intake ?? {}
+  const actualSegment = String(state.personalized_curriculum?.segment || state.customer?.segment || '')
+  return (
+    String(actualIntake.preferred_llm || '') === expectedLlm &&
+    String(actualIntake.current_device || '') === expectedDevice &&
+    String(actualIntake.ai_experience || '') === expectedLevel &&
+    actualSegment === expectedSegment
+  )
 }
 
 /** 케이스를 완전 삭제(되돌릴 수 없음). 백엔드에서 edu_cases 행을 DELETE 한다. */
@@ -121,6 +213,7 @@ export type TrainingUiState = {
 export type TrainingState = {
   case?: { id?: number; case_label?: string } & Record<string, unknown>
   customer?: { name?: string; segment?: string; preferred_llm?: string } & Record<string, unknown>
+  intake?: Record<string, string>
   day0?: TrainingStage
   day1?: TrainingStage
   flow_outline?: FlowOutlineItem[]

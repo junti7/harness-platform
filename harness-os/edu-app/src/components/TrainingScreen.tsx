@@ -13,9 +13,12 @@ import {
 import { ApiError } from '@/lib/api'
 import {
   fetchSession,
+  rebuildCaseFromSavedCurriculum,
   saveStageArtifact,
   syncSession,
+  trainingStateMatchesSavedCurriculum,
   type ChecklistItem,
+  type CurriculumHighlight,
   type PersonalizedCurriculum,
   type StageKey,
   type TrainingStage,
@@ -93,13 +96,13 @@ function PersonalizedDay0Block({
   curriculum: PersonalizedCurriculum
   learnerName: string
 }) {
+  const [selectedHighlight, setSelectedHighlight] = useState<CurriculumHighlight | null>(null)
   if (!curriculum.available) return null
   const attrs = curriculum.attrs ?? {}
   const fresh = curriculum.fresh_note
   const concern = curriculum.top_concerns[0]?.concern
   const topTopics = curriculum.order.slice(0, 3)
   const highlights = curriculum.highlights.slice(0, 2)
-  const overlays = curriculum.overlay.slice(0, 2)
   return (
     <section className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
       <div className="mb-3 flex items-start justify-between gap-3">
@@ -139,25 +142,59 @@ function PersonalizedDay0Block({
       {highlights.length ? (
         <div className="mt-3 grid gap-2">
           {highlights.map((h) => (
-            <article key={`${h.title}-${h.days_ago}`} className="rounded-[12px] border border-border bg-card p-3">
+            <button
+              type="button"
+              key={`${h.title}-${h.days_ago}`}
+              onClick={() => setSelectedHighlight(h)}
+              className="rounded-[12px] border border-border bg-card p-3 text-left transition active:scale-[0.99]"
+            >
               <div className="mb-1 flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold text-accent-cyan">{ageLabel(h.days_ago)} 자료</span>
-                {h.models[0] ? (
-                  <span className="shrink-0 text-[11px] font-medium text-text-faint">{h.models[0]}</span>
-                ) : null}
+                <span className="text-[11px] font-semibold text-accent-cyan">관련 자료</span>
+                <span className="shrink-0 text-[11px] font-medium text-primary">자세히 보기</span>
               </div>
               <p className="line-clamp-2 text-xs font-medium leading-relaxed text-ink">{h.title}</p>
-            </article>
+            </button>
           ))}
         </div>
       ) : null}
 
-      <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-text-faint">
-        <span>
-          근거 {fresh.pool_total}개 중 최근 30일 {fresh.recent_30d}개
-        </span>
-        {overlays.length ? <span>{overlays.map((o) => o.model).join(' · ')} 최신 신호</span> : null}
-      </div>
+      {selectedHighlight ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-ink-strong/40 px-4 pb-4"
+          onClick={() => setSelectedHighlight(null)}
+        >
+          <div
+            className="w-full max-w-[480px] rounded-2xl border border-border bg-card p-5 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-accent-cyan">
+              {ageLabel(selectedHighlight.days_ago)} 확인한 관련 자료
+            </div>
+            <h3 className="mb-3 text-base font-bold leading-snug text-ink-strong">{selectedHighlight.title}</h3>
+            {selectedHighlight.concern ? (
+              <p className="mb-3 text-sm leading-relaxed text-text-muted">
+                이 자료는 현재 선택한 상황과 가까운 고민인 ‘{selectedHighlight.concern}’ 흐름에서 올라온 항목입니다.
+              </p>
+            ) : null}
+            {selectedHighlight.models.length ? (
+              <div className="mb-4 flex flex-wrap gap-1.5">
+                {selectedHighlight.models.map((m) => (
+                  <span key={m} className="rounded-full bg-secondary px-2.5 py-1 text-[11px] font-semibold text-text-muted">
+                    {m}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setSelectedHighlight(null)}
+              className="flex h-11 w-full items-center justify-center rounded-[10px] bg-primary text-sm font-semibold text-primary-foreground"
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }
@@ -196,9 +233,14 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           setLoading(false)
           return
         }
-        seqRef.current = Math.max(seqRef.current, Number(r.state.ui_state?.last_client_seq ?? 0))
-        setState(r.state)
-        hydrateStageInputs(r.state, pickStage(r.state))
+        let nextState = r.state
+        if (!trainingStateMatchesSavedCurriculum(nextState)) {
+          nextState = await rebuildCaseFromSavedCurriculum(email, caseId, String(nextState.customer?.name || ''))
+        }
+        if (!alive) return
+        seqRef.current = Math.max(seqRef.current, Number(nextState.ui_state?.last_client_seq ?? 0))
+        setState(nextState)
+        hydrateStageInputs(nextState, pickStage(nextState))
         setLoading(false)
       } catch (e) {
         if (!alive) return

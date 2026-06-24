@@ -5983,6 +5983,7 @@ class EduVpTrainingIntakeRequest(BaseModel):
     name: str = ""
     email: str = ""
     preferred_llm: str = "claude"
+    segment: str = "worker"
     current_device: str = "iphone"
     desktop_os: str = "mac"
     ai_experience: str = "beginner"
@@ -6123,6 +6124,12 @@ def _edu_normalize_locale(value: str) -> str:
 
 def _edu_normalize_llm(value: str) -> str:
     v = (value or "").strip().lower()
+    if v in {"chatgpt", "챗gpt", "챗지피티"}:
+        return "gpt"
+    if v in {"제미나이", "google gemini"}:
+        return "gemini"
+    if v in {"클로드"}:
+        return "claude"
     return v if v in {"auto", "claude", "gemini", "gpt", "local"} else "auto"
 
 
@@ -7486,6 +7493,7 @@ def _edu_vp_attach_personalized_curriculum(state: dict[str, Any], payload: dict[
         res["total_evidence"] = len(rows)
         res["source"] = "edu_curriculum_evidence"
         state["personalized_curriculum"] = res
+        state["day0"] = _edu_vp_apply_curriculum_to_day0(state.get("day0") or {}, intake, res)
     except Exception as exc:  # noqa: BLE001
         logging.getLogger("uvicorn.error").warning("edu vp session curriculum unavailable: %s", exc)
         _edu_runtime_event(
@@ -7495,6 +7503,80 @@ def _edu_vp_attach_personalized_curriculum(state: dict[str, Any], payload: dict[
             case_id=payload.get("case", {}).get("id") if isinstance(payload.get("case"), dict) else None,
         )
     return state
+
+
+def _edu_vp_apply_curriculum_to_day0(
+    day0: dict[str, Any],
+    intake: dict[str, Any],
+    curriculum: dict[str, Any],
+) -> dict[str, Any]:
+    """Blend personalized curriculum evidence into the actual Day 0 learning tasks."""
+    day0 = dict(day0 or {})
+    llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or (curriculum.get("attrs") or {}).get("llm") or "gpt"))
+    segment = str(curriculum.get("segment") or "")
+    role_label = "학부모" if segment == "parent" else "직장인"
+    concern = str(((curriculum.get("top_concerns") or [{}])[0] or {}).get("concern") or "").strip()
+    highlight = str(((curriculum.get("highlights") or [{}])[0] or {}).get("title") or "").strip()
+    top_topics = [str(item.get("topic") or "") for item in (curriculum.get("order") or [])[:3] if item.get("topic")]
+    focus = concern or highlight or str(intake.get("biggest_friction") or "오늘 가장 막막한 장면").strip()
+    topic_text = ", ".join(top_topics[:2]) if top_topics else "첫 질문/기본 사용"
+
+    day0["learning_why"] = (
+        f"오늘은 일반적인 AI 입문이 아니라, {role_label} 사용자의 최근 관심 흐름인 "
+        f"'{focus}'에서 출발합니다. 자료수집 커리큘럼이 우선순위를 {topic_text} 쪽으로 잡았기 때문에, "
+        f"{llm_label}를 여는 즉시 내 상황에 맞는 첫 질문을 보내고 결과를 저장하는 데 집중합니다."
+    )
+    day0["required_action"] = (
+        f"{llm_label}를 실제로 열고, '{focus}'를 내 상황 한 문장으로 바꿔 첫 질문을 보낸 뒤 "
+        "답변 중 바로 쓸 만한 문장 1개를 저장한다."
+    )
+    day0["proof_artifact_hint"] = (
+        f"'{focus}'에 대해 {llm_label}가 답한 문장 1개와, 내가 실제로 쓰겠다고 고른 이유를 붙여 넣으세요."
+    )
+
+    checklist = list(day0.get("checklist") or [])
+    if checklist:
+        for item in checklist:
+            if item.get("id") == "first_prompt":
+                item["title"] = "내 상황 첫 질문 보내기"
+                item["instruction"] = (
+                    f"'{focus}'를 그대로 복사하지 말고, 내 집/업무 상황에 맞게 한 문장으로 바꿔 {llm_label}에 보낸다."
+                )
+                item["success_signal"] = "내 상황을 반영한 답변이 나온다."
+            elif item.get("id") == "copy_result":
+                item["title"] = "쓸 문장 1개 고르고 저장"
+                item["instruction"] = "답변 전체를 저장하지 말고, 오늘 바로 쓸 수 있는 문장 1개만 골라 메모한다."
+                item["success_signal"] = "선택한 문장과 선택 이유가 남는다."
+            elif item.get("id") == "open_tool":
+                item["title"] = f"{llm_label} 열기"
+        day0["checklist"] = checklist
+
+    blocks = list(day0.get("schedule_blocks") or [])
+    if blocks:
+        if len(blocks) > 0:
+            blocks[0] = {**blocks[0], "goal": f"오늘은 '{focus}' 장면에서 시작한다는 것을 확인한다."}
+        if len(blocks) > 3:
+            blocks[3] = {**blocks[3], "goal": f"{llm_label}에 '{focus}' 기반 첫 질문을 보내고 쓸 문장 1개를 고른다."}
+        if len(blocks) > 4:
+            blocks[4] = {**blocks[4], "goal": "선택한 문장이 왜 쓸 만했는지 짧게 기록하고 다음 날 실전 미션으로 이어간다."}
+        day0["schedule_blocks"] = blocks
+
+    tutorial_steps = list(day0.get("tutorial_steps") or [])
+    for item in tutorial_steps:
+        if item.get("id") == "mobile_prompt":
+            item["title"] = "내 상황 질문 보내기"
+            item["body"] = f"복붙용 질문 대신 '{focus}'를 내 말로 바꿔 {llm_label}에 보낸다."
+    if tutorial_steps:
+        day0["tutorial_steps"] = tutorial_steps
+
+    day0["personalization_applied"] = {
+        "role": role_label,
+        "llm": llm_label,
+        "focus": focus,
+        "topics": top_topics,
+        "highlight": highlight,
+    }
+    return day0
 
 
 def _edu_vp_llm_label(value: str) -> str:
@@ -7942,8 +8024,10 @@ def _edu_vp_prepare_case(
     name: str,
     email: str,
     preferred_llm: str,
+    segment: str,
     force_new: bool,
 ) -> dict[str, Any]:
+    safe_segment = segment if segment in {"parent", "worker"} else "worker"
     if case_id is not None:
         try:
             payload = _edu_load_case_payload(int(case_id))
@@ -7955,6 +8039,7 @@ def _edu_vp_prepare_case(
                 name=name,
                 email=email,
                 preferred_llm=preferred_llm,
+                segment=safe_segment,
                 force_new=force_new,
             )
     elif not force_new:
@@ -7986,7 +8071,7 @@ def _edu_vp_prepare_case(
         else:
             payload = _edu_bootstrap_customer_case(
                 EduPublicBootstrapRequest(
-                    segment="worker",
+                    segment=safe_segment,
                     name=name,
                     email=email,
                     preferred_salutation="name" if (name or "").strip() else "neutral",
@@ -7998,7 +8083,7 @@ def _edu_vp_prepare_case(
     else:
         payload = _edu_bootstrap_customer_case(
             EduPublicBootstrapRequest(
-                segment="worker",
+                segment=safe_segment,
                 name=name,
                 email=email,
                 preferred_salutation="name" if (name or "").strip() else "neutral",
@@ -8007,6 +8092,22 @@ def _edu_vp_prepare_case(
                 force_new=force_new,
             )
         )
+    customer = payload.get("customer") or {}
+    customer_id = customer.get("id")
+    if customer_id is not None:
+        _edu_execute(
+            """
+            UPDATE edu_customers
+            SET segment = %s,
+                preferred_llm = %s,
+                name = CASE WHEN %s <> '' THEN %s ELSE name END,
+                last_active_at = NOW()
+            WHERE id = %s
+            """,
+            (safe_segment, _edu_normalize_llm(preferred_llm), (name or "").strip(), (name or "").strip(), int(customer_id)),
+            fetch=False,
+        )
+        payload = _edu_load_case_payload(int(payload["case"]["id"]))
     return payload
 
 
@@ -9825,6 +9926,7 @@ def edu_vp_training_intake(
         name=req.name,
         email=req.email,
         preferred_llm=req.preferred_llm,
+        segment=req.segment,
         force_new=bool(req.force_new),
     )
     case_id = int(payload["case"]["id"])

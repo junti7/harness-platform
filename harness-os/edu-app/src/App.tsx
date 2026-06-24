@@ -103,8 +103,12 @@ function App() {
     if (!session) return
     setCasesLoading(true)
     try {
-      await startNewCase(session.email, session.name)
+      const newCaseId = await startNewCase(session.email, session.name)
       await refreshCases(session.email)
+      if (newCaseId != null) {
+        setSelectedCaseId(newCaseId)
+        setView('training')
+      }
     } catch (e) {
       console.error('startNewCase failed', e)
       setCasesLoading(false)
