@@ -6053,6 +6053,15 @@ class EduVpTrainingSessionSyncRequest(BaseModel):
     event_payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class EduVpTrainingCurriculumRequest(BaseModel):
+    email: str = ""
+    llm: str = ""
+    level: str = ""        # beginner | intermediate | advanced
+    motivation: str = ""   # work | child_study | daily | writing
+    env: str = ""          # mobile | pc | voice
+    job: str = ""          # 학부모/직장인 ... (→ segment)
+
+
 def _edu_normalize_email(email: str) -> str:
     return (email or "").strip().lower()
 
@@ -9856,6 +9865,33 @@ def edu_vp_training_session(
         "case": payload["case"],
         "training_state": state,
     }
+
+
+@app.post("/api/edu/vp-training/curriculum")
+def edu_vp_training_curriculum(
+    request: Request,
+    req: EduVpTrainingCurriculumRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    """개인화 커리큘럼 — 미리 적재된 evidence 풀을 사용자 속성으로 요청 시점 재편(파이프라인 무재실행).
+
+    edu_curriculum_evidence 가 아직 없으면(파이프라인 미가동 환경) 빈 결과를 graceful 반환한다.
+    """
+    if req.email:
+        _edu_vp_assert_access(request, req.email)
+    from core.edu_curriculum import personalize, load_evidence_rows
+    try:
+        rows = load_evidence_rows()
+    except Exception as exc:  # 테이블 미존재 등 — 빈 결과로 폴백
+        logging.getLogger("uvicorn.error").warning("edu curriculum evidence unavailable: %s", exc)
+        return {"ok": True, "available": False, "order": [], "overlay": [],
+                "base_pool": "", "segment": None}
+    res = personalize(rows, llm=req.llm, level=req.level, motivation=req.motivation,
+                      env=req.env, job=req.job)
+    res["ok"] = True
+    res["available"] = bool(rows)
+    res["total_evidence"] = len(rows)
+    return res
 
 
 @app.post("/api/edu/vp-training/session/sync")
