@@ -27,6 +27,7 @@ export const VP_TRAINING = {
   sessionSync: '/api/edu/vp-training/session/sync',
   intake: '/api/edu/vp-training/intake',
   artifact: '/api/edu/vp-training/artifact',
+  curriculum: '/api/edu/vp-training/curriculum',
   feedback: '/api/edu/vp-training/feedback',
   materials: (kitId: string) => `/api/edu/vp-training/materials/${encodeURIComponent(kitId)}`,
 } as const

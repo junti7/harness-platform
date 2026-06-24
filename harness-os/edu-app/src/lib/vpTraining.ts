@@ -187,3 +187,40 @@ export async function saveStageArtifact(input: {
   })
   return r.training_state
 }
+
+// ── 개인화 커리큘럼 ──────────────────────────────────────────────
+export type CurriculumAttrs = {
+  llm?: string
+  level?: '' | 'beginner' | 'intermediate' | 'advanced'
+  motivation?: '' | 'work' | 'child_study' | 'daily' | 'writing'
+  env?: '' | 'mobile' | 'pc' | 'voice'
+  job?: string
+}
+
+export type CurriculumOrderItem = { topic: string; weight: number }
+export type CurriculumOverlayItem = { model: string; freshness: number }
+
+export type PersonalizedCurriculum = {
+  ok: boolean
+  available: boolean
+  total_evidence?: number
+  segment: string | null
+  base_pool: string
+  order: CurriculumOrderItem[]
+  overlay: CurriculumOverlayItem[]
+}
+
+/** 요청 시점에 evidence 풀을 속성으로 재편한 커리큘럼을 받는다(파이프라인 무재실행). */
+export async function fetchPersonalizedCurriculum(
+  email: string,
+  attrs: CurriculumAttrs,
+): Promise<PersonalizedCurriculum> {
+  return vpPost<PersonalizedCurriculum>(VP_TRAINING.curriculum, {
+    email,
+    llm: attrs.llm ?? '',
+    level: attrs.level ?? '',
+    motivation: attrs.motivation ?? '',
+    env: attrs.env ?? '',
+    job: attrs.job ?? '',
+  })
+}

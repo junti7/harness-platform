@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { AlertTriangle, ChevronRight, GraduationCap, Loader2, LogOut, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, ChevronRight, GraduationCap, Loader2, LogOut, Plus, Sparkles, Trash2 } from 'lucide-react'
 import type { TrainingCase } from '@/lib/vpTraining'
 
 /*
@@ -15,6 +15,7 @@ export type CaseSelectScreenProps = {
   onNew: () => void
   onLogout: () => void
   onDelete: (caseId: number) => Promise<void>
+  onOpenCurriculum: () => void
 }
 
 type Tone = 'success' | 'primary' | 'neutral'
@@ -48,6 +49,7 @@ export default function CaseSelectScreen({
   onNew,
   onLogout,
   onDelete,
+  onOpenCurriculum,
 }: CaseSelectScreenProps) {
   const [menuFor, setMenuFor] = useState<TrainingCase | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -121,6 +123,14 @@ export default function CaseSelectScreen({
         className="mb-5 flex h-13 items-center justify-center gap-2 rounded-[12px] bg-primary py-3.5 text-[15px] font-semibold text-primary-foreground shadow-sm transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <Plus size={18} strokeWidth={2.4} />새 훈련 시작
+      </button>
+
+      <button
+        type="button"
+        onClick={onOpenCurriculum}
+        className="mb-5 flex items-center justify-center gap-2 rounded-[12px] border border-accent-cyan/30 bg-accent-cyan/10 py-3 text-[14px] font-semibold text-ink transition hover:bg-accent-cyan/20"
+      >
+        <Sparkles size={16} className="text-accent-cyan" />맞춤 커리큘럼 미리보기
       </button>
 
       {loading ? (

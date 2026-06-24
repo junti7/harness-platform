@@ -12,13 +12,14 @@ import {
 import AuthScreen from '@/components/AuthScreen'
 import CaseSelectScreen from '@/components/CaseSelectScreen'
 import TrainingScreen from '@/components/TrainingScreen'
+import CurriculumScreen from '@/components/CurriculumScreen'
 
 /*
  * 컨테이너 골격. 화면(AuthScreen/CaseSelectScreen/TrainingScreen)은 v0 출력으로 교체되며,
  * 로그인 세션 · 라우팅 · api 배선 · 에러 처리는 이 파일이 담당한다.
  */
 
-type View = 'auth' | 'cases' | 'training'
+type View = 'auth' | 'cases' | 'training' | 'curriculum'
 
 function errMessage(e: unknown): string {
   if (e instanceof ApiError) {
@@ -156,6 +157,10 @@ function App() {
     )
   }
 
+  if (view === 'curriculum') {
+    return <CurriculumScreen email={session.email} onBack={() => setView('cases')} />
+  }
+
   return (
     <CaseSelectScreen
       userName={session.name}
@@ -165,6 +170,7 @@ function App() {
       onNew={handleNew}
       onLogout={handleLogout}
       onDelete={handleDelete}
+      onOpenCurriculum={() => setView('curriculum')}
     />
   )
 }
