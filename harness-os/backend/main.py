@@ -6079,7 +6079,7 @@ def _edu_verify_account_password(password: str, encoded: str) -> bool:
         salt = base64.b64decode(salt_b64.encode("ascii"))
         expected = base64.b64decode(digest_b64.encode("ascii"))
         actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, int(iterations))
-        return hashlib.compare_digest(actual, expected)
+        return hmac.compare_digest(actual, expected)
     except Exception:
         return False
 
