@@ -67,6 +67,16 @@ LLM_ALIASES: dict[str, list[str]] = {
     "뤼튼": ["뤼튼", "wrtn"],
 }
 
+AI_TERMS = (
+    "ai", "chatgpt", "gpt", "gemini", "claude", "인공지능", "생성형", "챗gpt", "챗지피티",
+    "人工知能", "生成ai", "inteligencia artificial",
+)
+EDU_TERMS = (
+    "교육", "학습", "공부", "숙제", "학생", "아이", "자녀", "부모", "학부모", "학교", "교사", "수업", "교과서",
+    "education", "learning", "student", "school", "teacher", "classroom", "homework", "parent", "parents",
+    "教育", "勉強", "学習", "子供", "学生", "父母", "家長", "教育", "pendidikan", "educacao", "educação",
+)
+
 
 def _as_list(v: Any) -> list[str]:
     if isinstance(v, list):
@@ -102,6 +112,21 @@ def _media_kind(source: str, url: str) -> str:
     if "rss" in blob or "blog" in blob or "newsletter" in blob or url:
         return "article"
     return "reference"
+
+
+def _has_any(text: str, terms: tuple[str, ...]) -> bool:
+    low = text.lower()
+    return any(term.lower() in low for term in terms)
+
+
+def _video_source_is_relevant(r: dict[str, Any]) -> bool:
+    source = str(r.get("source") or "")
+    url = str(r.get("url") or "")
+    if _media_kind(source, url) != "video":
+        return True
+    raw_title = str(r.get("raw_title") or "")
+    # 정제 body/final_title/query 는 LLM 재작성 또는 검색어일 수 있으므로 YouTube URL 검증에는 쓰지 않는다.
+    return _has_any(raw_title, AI_TERMS) and _has_any(raw_title, EDU_TERMS)
 
 
 def personalize(
@@ -179,6 +204,8 @@ def personalize(
         source = str(r.get("source") or "")
         url = str(r.get("url") or "")
         body = str(r.get("body") or "")
+        if _media_kind(source, url) == "video" and not _video_source_is_relevant(r):
+            return False
         return bool(url or body or _media_kind(source, url) in {"video", "paper", "article"})
 
     content_pool = [r for r in rows if (not seg) or r.get("segment") == seg]
@@ -199,6 +226,8 @@ def personalize(
     # (1) 요즘 같은 분들의 실제 고민 — collect_query 빈도 상위
     concern_count: dict[str, int] = {}
     for r in content_pool:
+        if not _video_source_is_relevant(r):
+            continue
         q = (r.get("collect_query") or "").strip()
         if q:
             concern_count[q] = concern_count.get(q, 0) + 1
@@ -210,6 +239,10 @@ def personalize(
         {order[0]["topic"]} if order else set())
     cand = []
     for r in content_pool:
+        if not _video_source_is_relevant(r):
+            continue
+        if not (str(r.get("url") or "").strip() or str(r.get("body") or "").strip()):
+            continue
         title = (r.get("title") or "").strip()
         if not title:
             continue
@@ -238,22 +271,26 @@ def personalize(
     highlights = []
     seen_titles: set[str] = set()
     for r in cand:
-        t = (r.get("title") or "").strip()
+        source = (r.get("source") or "").strip()
+        url = (r.get("url") or "").strip()
+        kind = _media_kind(source, url)
+        raw_title = str(r.get("raw_title") or "").strip()
+        generated_title = (r.get("title") or "").strip()
+        t = raw_title if kind == "video" and raw_title else generated_title
         key = t[:30]
         if key in seen_titles:
             continue
         seen_titles.add(key)
         body = str(r.get("body") or "").strip()
-        source = (r.get("source") or "").strip()
-        url = (r.get("url") or "").strip()
         highlights.append({
             "title": t,
+            "generated_title": generated_title if generated_title != t else "",
             "days_ago": _age_days(r.get("item_created_at"), now),
             "models": _as_list(r.get("model_tags"))[:3],
             "concern": (r.get("collect_query") or "").strip(),
             "source": source,
             "url": url,
-            "media_kind": _media_kind(source, url),
+            "media_kind": kind,
             "refined_id": r.get("refined_id"),
             "body": body[:4000],
             "excerpt": body[:700],
@@ -305,6 +342,10 @@ def load_evidence_rows() -> list[dict[str, Any]]:
             e.collect_query,
             e.refined_id,
             e.source,
+            rs.raw_data->>'title' AS raw_title,
+            rs.raw_data->>'description' AS raw_description,
+            rs.raw_data->>'query' AS raw_query,
+            rs.raw_data->>'channel' AS raw_channel,
             COALESCE(
                 NULLIF(rs.raw_data->>'body', ''),
                 NULLIF(rs.raw_data->>'content', ''),

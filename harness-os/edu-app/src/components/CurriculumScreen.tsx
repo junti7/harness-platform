@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Clock, Loader2, MessageCircleQuestion, PlayCircle, Sparkles, TrendingUp } from 'lucide-react'
 import {
   fetchPersonalizedCurriculum,
@@ -144,8 +144,11 @@ function openSourceUrl(url?: string) {
 
 export default function CurriculumScreen({ email, onBack }: CurriculumScreenProps) {
   const [attrs, setAttrs] = useState<CurriculumAttrs>(() => loadAttrs())
+  const [debouncedAttrs, setDebouncedAttrs] = useState<CurriculumAttrs>(() => loadAttrs())
   const [data, setData] = useState<PersonalizedCurriculum | null>(null)
+  const hasDataRef = useRef(false)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // 선택 변경 시 localStorage 에 저장(다시 들어와도 복원).
@@ -158,23 +161,38 @@ export default function CurriculumScreen({ email, onBack }: CurriculumScreenProp
   }, [attrs])
 
   useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedAttrs(attrs), 700)
+    return () => window.clearTimeout(timer)
+  }, [attrs])
+
+  useEffect(() => {
     let cancelled = false
     void (async () => {
-      setLoading(true)
+      if (hasDataRef.current) {
+        setRefreshing(true)
+      } else {
+        setLoading(true)
+      }
       setError(null)
       try {
-        const r = await fetchPersonalizedCurriculum(email, attrs)
-        if (!cancelled) setData(r)
+        const r = await fetchPersonalizedCurriculum(email, debouncedAttrs)
+        if (!cancelled) {
+          hasDataRef.current = true
+          setData(r)
+        }
       } catch {
         if (!cancelled) setError('커리큘럼을 불러오지 못했습니다.')
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+          setRefreshing(false)
+        }
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [email, attrs])
+  }, [email, debouncedAttrs])
 
   const maxW = data?.order?.length ? Math.max(...data.order.map((o) => o.weight)) : 1
 
@@ -255,6 +273,7 @@ export default function CurriculumScreen({ email, onBack }: CurriculumScreenProp
                 <b>{freshLabel(data.fresh_note.newest_days_ago)}</b> 분석 · 최근 30일{' '}
                 {data.fresh_note.recent_30d}건 반영
               </span>
+              {refreshing ? <Loader2 size={14} className="ml-auto animate-spin text-accent-cyan" /> : null}
             </div>
           )}
 
