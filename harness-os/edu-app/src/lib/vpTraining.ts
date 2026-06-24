@@ -199,6 +199,18 @@ export type CurriculumAttrs = {
 
 export type CurriculumOrderItem = { topic: string; weight: number }
 export type CurriculumOverlayItem = { model: string; freshness: number }
+export type CurriculumConcern = { concern: string; count: number }
+export type CurriculumHighlight = {
+  title: string
+  days_ago: number
+  models: string[]
+  concern: string
+}
+export type CurriculumFreshNote = {
+  pool_total: number
+  recent_30d: number
+  newest_days_ago: number | null
+}
 
 export type PersonalizedCurriculum = {
   ok: boolean
@@ -208,6 +220,9 @@ export type PersonalizedCurriculum = {
   base_pool: string
   order: CurriculumOrderItem[]
   overlay: CurriculumOverlayItem[]
+  top_concerns: CurriculumConcern[]
+  highlights: CurriculumHighlight[]
+  fresh_note: CurriculumFreshNote
 }
 
 /** 요청 시점에 evidence 풀을 속성으로 재편한 커리큘럼을 받는다(파이프라인 무재실행). */

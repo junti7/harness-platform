@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Loader2, Sparkles, TrendingUp } from 'lucide-react'
+import { ArrowLeft, Clock, Loader2, MessageCircleQuestion, Sparkles, TrendingUp } from 'lucide-react'
 import {
   fetchPersonalizedCurriculum,
   type CurriculumAttrs,
@@ -7,10 +7,10 @@ import {
 } from '@/lib/vpTraining'
 
 /*
- * CurriculumScreen — 맞춤 커리큘럼 미리보기 (모바일 우선).
- * 사용자가 속성(LLM·수준·동기·환경·직업)을 바꾸면 백엔드가 미리 적재된 evidence 풀을
- * 요청 시점에 재편(파이프라인 무재실행)해 학습 순서를 즉시 다시 보여준다.
- * Props 는 컨테이너(App.tsx)와의 계약이다.
+ * CurriculumScreen — 맞춤 커리큘럼 (모바일 우선).
+ * 사용자가 속성을 바꾸면 백엔드가 미리 적재된 evidence 풀을 요청 시점에 재편(파이프라인 무재실행).
+ * 추상 라벨이 아니라 수집 데이터의 *구체적 알맹이*(실제 고민·최신 관련글·내 도구 신호)를 보여줘
+ * "내 상황을 안다 / 최신이다" 라는 감을 만든다. 선택 상태는 localStorage 에 저장/복원한다.
  */
 export type CurriculumScreenProps = {
   email: string
@@ -45,6 +45,25 @@ const JOBS: Opt<string>[] = [
   { value: '학부모', label: '학부모' },
   { value: '직장인', label: '직장인' },
 ]
+
+const STORE_KEY = 'vp_curriculum_attrs'
+const DEFAULT_ATTRS: CurriculumAttrs = {
+  llm: 'chatgpt',
+  level: 'beginner',
+  motivation: 'work',
+  env: 'mobile',
+  job: '학부모',
+}
+
+function loadAttrs(): CurriculumAttrs {
+  try {
+    const raw = localStorage.getItem(STORE_KEY)
+    if (raw) return { ...DEFAULT_ATTRS, ...(JSON.parse(raw) as CurriculumAttrs) }
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_ATTRS
+}
 
 function Selector<T extends string>({
   label,
@@ -81,22 +100,30 @@ function Selector<T extends string>({
   )
 }
 
+function freshLabel(d: number | null): string {
+  if (d == null) return ''
+  if (d <= 0) return '오늘 들어온 자료까지'
+  if (d === 1) return '어제 들어온 자료까지'
+  return `${d}일 전 자료까지`
+}
+
 export default function CurriculumScreen({ email, onBack }: CurriculumScreenProps) {
-  const [attrs, setAttrs] = useState<CurriculumAttrs>({
-    llm: 'chatgpt',
-    level: 'beginner',
-    motivation: 'work',
-    env: 'mobile',
-    job: '학부모',
-  })
+  const [attrs, setAttrs] = useState<CurriculumAttrs>(() => loadAttrs())
   const [data, setData] = useState<PersonalizedCurriculum | null>(null)
-  // 초기/속성변경 로딩은 effect 내 async 경로에서만 setState 하도록 lazy 초기값을 true 로 둔다.
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // 선택 변경 시 localStorage 에 저장(다시 들어와도 복원).
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(attrs))
+    } catch {
+      /* ignore */
+    }
+  }, [attrs])
+
   useEffect(() => {
     let cancelled = false
-    // setState 는 effect 동기 본문이 아니라 async IIFE 안에서만 호출(react-hooks/set-state-in-effect 회피).
     void (async () => {
       setLoading(true)
       setError(null)
@@ -161,17 +188,76 @@ export default function CurriculumScreen({ email, onBack }: CurriculumScreenProp
       ) : !data?.available ? (
         <div className="rounded-[12px] border border-border bg-card px-4 py-6 text-center text-sm text-text-muted">
           아직 커리큘럼 데이터가 준비되지 않았습니다.
-          <br />
-          (수집·정제 파이프라인 적재 후 표시됩니다)
         </div>
       ) : (
         <>
+          {/* 최신성 배지 — "방금까지 반영" 신뢰감 */}
+          {data.fresh_note?.newest_days_ago != null && (
+            <div className="mb-4 flex items-center gap-2 rounded-[12px] border border-accent-cyan/30 bg-accent-cyan/10 px-3.5 py-2.5 text-[13px] text-ink">
+              <Clock size={15} className="text-accent-cyan" />
+              <span>
+                <b>{freshLabel(data.fresh_note.newest_days_ago)}</b> 분석 · 최근 30일{' '}
+                {data.fresh_note.recent_30d}건 반영
+              </span>
+            </div>
+          )}
+
+          {/* 요즘 같은 분들의 실제 고민 — "내 얘기네" */}
+          {data.top_concerns?.length > 0 && (
+            <section className="mb-5">
+              <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-text-faint">
+                <MessageCircleQuestion size={14} />요즘 같은 분들이 가장 많이 찾는 고민
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {data.top_concerns.slice(0, 6).map((c) => (
+                  <span
+                    key={c.concern}
+                    className="rounded-full border border-border bg-secondary px-3 py-1 text-[12.5px] font-medium text-ink"
+                  >
+                    {c.concern}
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* 최근 들어온 관련 글 — 구체·신선 */}
+          {data.highlights?.length > 0 && (
+            <section className="mb-6">
+              <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-text-faint">
+                <Sparkles size={14} className="text-accent-cyan" />최근 들어온, 내 상황과 맞는 자료
+              </div>
+              <ul className="flex flex-col gap-2">
+                {data.highlights.map((h, i) => (
+                  <li
+                    key={`${h.title}-${i}`}
+                    className="flex flex-col gap-1.5 rounded-[12px] border border-border bg-card px-3.5 py-3"
+                  >
+                    <span className="text-[14px] font-medium leading-snug text-ink">{h.title}</span>
+                    <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]">
+                      <span className="rounded-full bg-accent-cyan/15 px-2 py-0.5 font-semibold text-accent-cyan">
+                        {h.days_ago <= 0 ? '오늘' : `${h.days_ago}일 전`}
+                      </span>
+                      {h.concern && <span className="text-text-faint">관심사 · {h.concern}</span>}
+                      {h.models.slice(0, 2).map((m) => (
+                        <span key={m} className="text-text-faint">
+                          #{m}
+                        </span>
+                      ))}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {/* 맞춤 학습 순서 */}
           <div className="mb-3 flex items-center justify-between text-xs text-text-faint">
             <span>맞춤 학습 순서</span>
             <span>기준 풀: {data.base_pool}</span>
           </div>
           <ol className="flex flex-col gap-2">
-            {data.order.slice(0, 10).map((o, i) => (
+            {data.order.slice(0, 8).map((o, i) => (
               <li
                 key={o.topic}
                 className="flex items-center gap-3 rounded-[12px] border border-border bg-card px-3.5 py-3"
@@ -195,7 +281,7 @@ export default function CurriculumScreen({ email, onBack }: CurriculumScreenProp
           {data.overlay.length > 0 && (
             <div className="mt-6">
               <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-text-faint">
-                <TrendingUp size={14} />당신의 도구 기준 최신 신호
+                <TrendingUp size={14} />당신의 도구({attrs.llm || '전체'}) 기준 최신 신호
               </div>
               <div className="flex flex-wrap gap-2">
                 {data.overlay.slice(0, 6).map((o) => (
