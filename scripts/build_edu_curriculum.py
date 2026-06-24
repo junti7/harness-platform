@@ -88,6 +88,43 @@ MODEL_TAG = re.compile(
     r"클로드|제미나이|챗gpt|copilot|뤼튼|midjourney|미드저니|dall-?e|달리)", re.I)
 
 
+# ── 개인화(personalize) 속성 → 버킷 가중치 ───────────────────────────────────
+# 요청 시점에 '미리 만들어 둔 evidence 풀'을 재가중/재정렬하는 순수 함수용 가중치(파이프라인 재실행 X).
+# 곱셈 가중: 1.0=중립, >1=상단으로, <1=하단으로. 없는 버킷은 1.0.
+LEVEL_WEIGHTS: dict[str, dict[str, float]] = {
+    "beginner": {  # 왕초보: 온보딩·기초·안전을 앞으로, 고급은 뒤로
+        "가입/설치/첫 접속": 3.0, "첫 질문/기본 사용": 2.5, "도구 선택/소개": 1.3,
+        "프롬프트 기초": 1.5, "무료/유료 요금제": 1.5, "주의점/한계(환각·개인정보)": 1.4,
+        "기법-눈높이 설명": 1.3, "자동화/GPTs/챗봇": 0.2, "기법-출력 형식 지정": 0.8,
+    },
+    "intermediate": {  # 중급: 프롬프트 기법 강화, 온보딩 약화
+        "프롬프트 기초": 1.3, "기법-역할 부여": 1.4, "기법-예시/구체화": 1.4,
+        "기법-출력 형식 지정": 1.4, "후속질문/맥락 이어가기": 1.3,
+        "가입/설치/첫 접속": 0.3, "첫 질문/기본 사용": 0.6,
+    },
+    "advanced": {  # 고급: 자동화·맥락 운용, 온보딩 거의 제거
+        "자동화/GPTs/챗봇": 2.5, "후속질문/맥락 이어가기": 1.5, "기법-역할 부여": 1.2,
+        "가입/설치/첫 접속": 0.1, "첫 질문/기본 사용": 0.2, "도구 선택/소개": 0.5,
+    },
+}
+MOTIVATION_WEIGHTS: dict[str, dict[str, float]] = {
+    "work": {"활용-업무": 2.5, "기법-출력 형식 지정": 1.3},
+    "child_study": {"활용-학습/숙제": 2.5, "기법-눈높이 설명": 1.8},
+    "daily": {"활용-일상": 2.5},
+    "writing": {"활용-글쓰기/자기계발": 2.5},
+}
+ENV_WEIGHTS: dict[str, dict[str, float]] = {
+    "mobile": {"음성/모바일/앱": 2.0},
+    "voice": {"음성/모바일/앱": 2.5},
+    "pc": {},
+}
+# 직업/연령 자유입력 → 원천 segment 매핑(데이터에 존재하는 값: parent|worker)
+JOB_TO_SEGMENT = {
+    "parent": "parent", "학부모": "parent", "주부": "parent", "엄마": "parent", "아빠": "parent",
+    "worker": "worker", "직장인": "worker", "회사원": "worker", "사무직": "worker",
+}
+
+
 def _has(t: str, sigs: list[str]) -> bool:
     return any(s in t for s in sigs)
 
@@ -113,15 +150,24 @@ def _ensure_table() -> None:
             model_tags       JSONB NOT NULL DEFAULT '[]'::jsonb,
             item_created_at  TIMESTAMP,               -- 원천 신선도 기준(filtered_signals.created_at)
             ingested_at      TIMESTAMP NOT NULL DEFAULT now(),
-            score            DOUBLE PRECISION
+            score            DOUBLE PRECISION,
+            segment          TEXT,                    -- 원천 수집 세그먼트(parent|worker|None) — 개인화용
+            collect_query    TEXT                     -- 원천 수집 쿼리(동기/맥락 단서) — 개인화용
         )
         """
     )
+    # 기존 테이블에 개인화 컬럼 추가(이미 존재하면 무시). raw_signals.raw_data 의 segment/query 를
+    # evidence 로 carry 해 요청 시점 개인화(연령/직업/동기 재가중)를 가능케 한다.
+    for col in ("segment TEXT", "collect_query TEXT"):
+        execute_query(f"ALTER TABLE edu_curriculum_evidence ADD COLUMN IF NOT EXISTS {col}")
     execute_query(
         "CREATE INDEX IF NOT EXISTS idx_ece_created ON edu_curriculum_evidence (item_created_at)"
     )
     execute_query(
         "CREATE INDEX IF NOT EXISTS idx_ece_klass ON edu_curriculum_evidence (klass)"
+    )
+    execute_query(
+        "CREATE INDEX IF NOT EXISTS idx_ece_segment ON edu_curriculum_evidence (segment)"
     )
 
 
@@ -168,15 +214,35 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         print("[curriculum:ingest] 부트스트랩(테이블 비어있음): edu 정제분 전체를 id 순으로 1회 적재한다 "
               "— 이후로는 refined_outputs.id 증분만 처리(분류 통과분만 INSERT 되므로 실제 쓰기는 소량)")
 
+    # 개인화 보강: 기존 행 중 segment 미채움분을 raw_signals 조인으로 1회 backfill(idempotent).
+    # 채울 수 있는 행만 갱신하고, 비-Naver(segment 없음) 행은 NULL 로 남는다(재시도 무해·소량).
+    backfilled = execute_query(
+        """
+        UPDATE edu_curriculum_evidence e
+        SET segment = rs.raw_data->>'segment',
+            collect_query = rs.raw_data->>'query'
+        FROM refined_outputs r
+        JOIN filtered_signals f ON r.filtered_signal_id = f.id
+        JOIN raw_signals rs ON f.raw_signal_id = rs.id
+        WHERE e.refined_id = r.id
+          AND e.segment IS NULL
+          AND rs.raw_data->>'segment' IS NOT NULL
+        """)
+    # (UPDATE 는 fetch 없음 — 영향 행수는 굳이 세지 않는다)
+
     # 늦은 Tier3 정제까지 포착하려 r.id(도착 순서) 기준 증분. id 는 유일·단조라 '>' 로 충분.
     # 행당 upsert 는 execute_query(호출마다 commit)로 개별 커밋되지만, ASC 처리 + r.id>wm 재실행이
     # 중단 지점부터 빠짐없이 이어받아 partial-commit 을 자가복구한다(content_hash 재upsert 는 무해).
+    # segment/collect_query 는 raw_signals 를 LEFT JOIN 해 함께 가져온다(없으면 NULL).
     rows = execute_query(
         """
         SELECT r.id AS refined_id, r.final_title, r.final_body,
-               f.source, f.created_at, f.content_hash, f.score
+               f.source, f.created_at, f.content_hash, f.score,
+               rs.raw_data->>'segment' AS segment,
+               rs.raw_data->>'query'   AS collect_query
         FROM refined_outputs r
         JOIN filtered_signals f ON r.filtered_signal_id = f.id
+        LEFT JOIN raw_signals rs ON f.raw_signal_id = rs.id
         WHERE f.domain = %s AND r.id > %s
         ORDER BY r.id ASC
         """, (DOMAIN, wm), fetch=True) or []
@@ -194,8 +260,9 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         execute_query(
             """
             INSERT INTO edu_curriculum_evidence
-                (content_hash, refined_id, source, title, klass, buckets, model_tags, item_created_at, score)
-            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
+                (content_hash, refined_id, source, title, klass, buckets, model_tags,
+                 item_created_at, score, segment, collect_query)
+            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s)
             ON CONFLICT (content_hash) DO UPDATE SET
                 refined_id = EXCLUDED.refined_id,
                 source = EXCLUDED.source,
@@ -204,12 +271,14 @@ def cmd_ingest(args: argparse.Namespace) -> int:
                 buckets = EXCLUDED.buckets,
                 model_tags = EXCLUDED.model_tags,
                 item_created_at = EXCLUDED.item_created_at,
-                score = EXCLUDED.score
+                score = EXCLUDED.score,
+                segment = EXCLUDED.segment,
+                collect_query = EXCLUDED.collect_query
             """,
             (ch, r["refined_id"], r["source"], title[:500], c["klass"],
              json.dumps(c["buckets"], ensure_ascii=False),
              json.dumps(c["model_tags"], ensure_ascii=False),
-             r["created_at"], r["score"]),
+             r["created_at"], r["score"], r["segment"], r["collect_query"]),
         )
         upserts += 1
 
@@ -354,16 +423,117 @@ def cmd_build(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_personalize(args: argparse.Namespace) -> int:
+    """개인화 레이어 프로토타입 — 요청 시점에 evidence 풀을 사용자 속성으로 재가중/재정렬.
+
+    파이프라인을 재실행하지 않는다. 미리 적재된 풀을 읽어 in-memory 로 순식간에 재편한다.
+    속성: --llm --level --motivation --env --job(→segment).
+    """
+    _ensure_table()
+    seg = JOB_TO_SEGMENT.get((args.job or "").strip().lower()) if args.job else None
+
+    rows = execute_query(
+        "SELECT klass, buckets, model_tags, item_created_at, segment FROM edu_curriculum_evidence",
+        fetch=True) or []
+
+    def _buckets(r):
+        b = r["buckets"]
+        return b if isinstance(b, list) else json.loads(b or "[]")
+
+    def _models(r):
+        m = r["model_tags"]
+        return m if isinstance(m, list) else json.loads(m or "[]")
+
+    ever = [r for r in rows if r["klass"] == "evergreen"]
+    # 기준 가중치 = 세그먼트별 합의빈도(데이터 충분 시), 아니면 글로벌. 이게 segment carry 의 핵심 효용.
+    seg_rows = [r for r in ever if r["segment"] == seg] if seg else []
+    use_seg = len(seg_rows) >= 20
+    base_pool = seg_rows if use_seg else ever
+    base: dict[str, float] = defaultdict(float)
+    for r in base_pool:
+        for b in _buckets(r):
+            base[b] += 1.0
+
+    # 속성 곱셈 가중
+    mults: list[dict[str, float]] = []
+    if args.level in LEVEL_WEIGHTS:
+        mults.append(LEVEL_WEIGHTS[args.level])
+    if args.motivation in MOTIVATION_WEIGHTS:
+        mults.append(MOTIVATION_WEIGHTS[args.motivation])
+    if args.env in ENV_WEIGHTS:
+        mults.append(ENV_WEIGHTS[args.env])
+
+    scored: list[tuple[float, str]] = []
+    for b in BUCKETS:
+        w = base.get(b, 0.0)
+        if w <= 0:
+            continue
+        for mp in mults:
+            w *= mp.get(b, 1.0)
+        scored.append((w, b))
+    scored.sort(key=lambda x: -x[0])
+
+    # 오버레이: 사용자 LLM 으로 필터(없으면 전체). freshness decay 점수.
+    now = datetime.now(timezone.utc)
+    per = [r for r in rows if r["klass"] == "perishable"]
+    mscore: dict[str, float] = defaultdict(float)
+    for r in per:
+        c = r["item_created_at"]
+        if c and c.tzinfo is None:
+            c = c.replace(tzinfo=timezone.utc)
+        age = (now - c).days if c else 999
+        if age > WINDOW_DAYS:
+            continue
+        wt = math.pow(0.5, age / HALFLIFE_DAYS)
+        for m in _models(r):
+            mscore[m] += wt
+    llm = (args.llm or "").lower().replace(" ", "")
+    user_models = [(m, s) for m, s in sorted(mscore.items(), key=lambda x: -x[1])
+                   if not llm or llm in m or m in llm]
+
+    # ── 출력 ──
+    print("=" * 60)
+    print("개인화 커리큘럼 (요청 시점 재편, evidence 풀 무재실행)")
+    print("=" * 60)
+    print(f"입력 속성: llm={args.llm} · level={args.level} · motivation={args.motivation} "
+          f"· env={args.env} · job={args.job}(segment={seg or '미지정'})")
+    print(f"기준 풀: {'세그먼트('+seg+') '+str(len(seg_rows))+'건' if use_seg else '글로벌 '+str(len(ever))+'건'}"
+          f"{'' if use_seg or not seg else ' (세그먼트 표본<20 → 글로벌로 폴백)'}")
+    print()
+    print("── 맞춤 학습 순서 (상위 10) ──")
+    for i, (w, b) in enumerate(scored[:10], 1):
+        print(f"  {i:2}. {b}   [w={w:.0f}]")
+    print()
+    if user_models:
+        print(f"── 당신의 도구 기준 최신 팩트 ({args.llm or '전체'}) ──")
+        for m, s in user_models[:5]:
+            print(f"   {m}: freshness {s:.2f}")
+    else:
+        print(f"── '{args.llm}' 관련 최신 perishable 신호가 최근 {WINDOW_DAYS}일 내 없음 "
+              "(글로벌 오버레이로 폴백 권장) ──")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="edu 입문 커리큘럼 freshness 파이프라인")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("ingest", help="정제 SoT 증분 분류·적재 (daily)")
     sub.add_parser("build", help="누적 evidence → 두 층 커리큘럼 산출 (weekly)")
+    pp = sub.add_parser("personalize", help="사용자 속성으로 커리큘럼 재편 (요청 시점, 프로토타입)")
+    pp.add_argument("--llm", default="", help="현재 사용 LLM (예: chatgpt, 제미나이, 클로드)")
+    pp.add_argument("--level", default="", choices=["", "beginner", "intermediate", "advanced"],
+                    help="LLM 사용 수준")
+    pp.add_argument("--motivation", default="", choices=["", "work", "child_study", "daily", "writing"],
+                    help="학습 동기")
+    pp.add_argument("--env", default="", choices=["", "mobile", "pc", "voice"], help="사용 환경")
+    pp.add_argument("--job", default="", help="직업/역할 자유입력 (예: 직장인, 학부모)")
     args = ap.parse_args()
     if args.cmd == "ingest":
         return cmd_ingest(args)
     if args.cmd == "build":
         return cmd_build(args)
+    if args.cmd == "personalize":
+        return cmd_personalize(args)
     return 1
 
 
