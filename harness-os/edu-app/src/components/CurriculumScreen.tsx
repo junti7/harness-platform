@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Clock, Loader2, MessageCircleQuestion, Sparkles, TrendingUp } from 'lucide-react'
+import { ArrowLeft, Clock, Loader2, MessageCircleQuestion, PlayCircle, Sparkles, TrendingUp } from 'lucide-react'
 import {
   fetchPersonalizedCurriculum,
   type CurriculumAttrs,
@@ -45,6 +45,12 @@ const JOBS: Opt<string>[] = [
   { value: '학부모', label: '학부모' },
   { value: '직장인', label: '직장인' },
 ]
+const MEDIA: Opt<NonNullable<CurriculumAttrs['media_preference']>>[] = [
+  { value: 'mixed', label: '혼합' },
+  { value: 'video', label: '영상' },
+  { value: 'visual', label: '이미지' },
+  { value: 'text', label: '글' },
+]
 
 const STORE_KEY = 'vp_curriculum_attrs'
 const DEFAULT_ATTRS: CurriculumAttrs = {
@@ -53,6 +59,9 @@ const DEFAULT_ATTRS: CurriculumAttrs = {
   motivation: 'work',
   env: 'mobile',
   job: '학부모',
+  learning_goal: '',
+  biggest_friction: '',
+  media_preference: 'mixed',
 }
 
 function loadAttrs(): CurriculumAttrs {
@@ -105,6 +114,32 @@ function freshLabel(d: number | null): string {
   if (d <= 0) return '오늘 들어온 자료까지'
   if (d === 1) return '어제 들어온 자료까지'
   return `${d}일 전 자료까지`
+}
+
+function youtubeVideoId(url?: string): string {
+  if (!url) return ''
+  try {
+    const u = new URL(url)
+    if (u.hostname.includes('youtu.be')) return u.pathname.replace('/', '')
+    if (u.hostname.includes('youtube.com')) return u.searchParams.get('v') ?? ''
+  } catch {
+    return ''
+  }
+  return ''
+}
+
+function openSourceUrl(url?: string) {
+  if (!url) return
+  const videoId = youtubeVideoId(url)
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+  if (videoId && isMobile) {
+    window.location.href = `youtube://watch?v=${videoId}`
+    window.setTimeout(() => {
+      window.open(url, '_blank', 'noopener,noreferrer')
+    }, 900)
+    return
+  }
+  window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 export default function CurriculumScreen({ email, onBack }: CurriculumScreenProps) {
@@ -174,6 +209,27 @@ export default function CurriculumScreen({ email, onBack }: CurriculumScreenProp
         <Selector label="학습 동기" value={attrs.motivation ?? 'work'} options={MOTIVATIONS} onChange={(v) => set('motivation', v)} />
         <Selector label="사용 환경" value={attrs.env ?? 'mobile'} options={ENVS} onChange={(v) => set('env', v)} />
         <Selector label="역할" value={attrs.job ?? '학부모'} options={JOBS} onChange={(v) => set('job', v)} />
+        <Selector label="선호 자료" value={attrs.media_preference ?? 'mixed'} options={MEDIA} onChange={(v) => set('media_preference', v)} />
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-semibold text-text-faint">도달 목표</span>
+          <textarea
+            value={attrs.learning_goal ?? ''}
+            onChange={(e) => set('learning_goal', e.target.value)}
+            rows={3}
+            placeholder="예: 왕초보에서 시작해 3개월 안에 업무 자동화까지, 하루 15분씩 영상과 실습 위주로 배우고 싶어요."
+            className="resize-none rounded-[12px] border border-border bg-card px-3 py-2.5 text-sm leading-relaxed text-ink outline-none focus:border-primary"
+          />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-semibold text-text-faint">지금 가장 막히는 장면</span>
+          <textarea
+            value={attrs.biggest_friction ?? ''}
+            onChange={(e) => set('biggest_friction', e.target.value)}
+            rows={3}
+            placeholder="예: Gemini를 켜도 첫 질문을 어떻게 써야 할지 모르겠고, 아이 숙제에 어디까지 써도 되는지 불안해요."
+            className="resize-none rounded-[12px] border border-border bg-card px-3 py-2.5 text-sm leading-relaxed text-ink outline-none focus:border-primary"
+          />
+        </label>
       </div>
 
       {loading ? (
@@ -236,8 +292,17 @@ export default function CurriculumScreen({ email, onBack }: CurriculumScreenProp
                     <span className="text-[14px] font-medium leading-snug text-ink">{h.title}</span>
                     <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]">
                       <span className="rounded-full bg-accent-cyan/15 px-2 py-0.5 font-semibold text-accent-cyan">
-                        {h.days_ago <= 0 ? '오늘' : `${h.days_ago}일 전`}
+                        {h.media_kind === 'video' ? '영상' : h.media_kind === 'paper' ? '논문/근거' : '자료'}
                       </span>
+                      {h.url && (
+                        <button
+                          type="button"
+                          onClick={() => openSourceUrl(h.url)}
+                          className="inline-flex items-center gap-1 font-semibold text-primary"
+                        >
+                          {h.media_kind === 'video' ? 'YouTube 열기' : '바로 열기'} <PlayCircle size={12} />
+                        </button>
+                      )}
                       {h.concern && <span className="text-text-faint">관심사 · {h.concern}</span>}
                       {h.models.slice(0, 2).map((m) => (
                         <span key={m} className="text-text-faint">

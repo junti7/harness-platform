@@ -5990,6 +5990,7 @@ class EduVpTrainingIntakeRequest(BaseModel):
     ai_experience: str = "beginner"
     biggest_friction: str = ""
     learning_goal: str = ""
+    media_preference: str = "mixed"
     force_new: bool = False
 
 
@@ -6062,6 +6063,9 @@ class EduVpTrainingCurriculumRequest(BaseModel):
     motivation: str = ""   # work | child_study | daily | writing
     env: str = ""          # mobile | pc | voice
     job: str = ""          # 학부모/직장인 ... (→ segment)
+    learning_goal: str = ""
+    biggest_friction: str = ""
+    media_preference: str = "mixed"
 
 
 def _edu_normalize_email(email: str) -> str:
@@ -7489,6 +7493,7 @@ def _edu_vp_attach_personalized_curriculum(state: dict[str, Any], payload: dict[
             motivation=motivation,
             env=env,
             job=segment,
+            media_preference=str(intake.get("media_preference") or "mixed"),
         )
         res["ok"] = True
         res["available"] = True
@@ -7566,10 +7571,11 @@ def _edu_vp_build_dynamic_curriculum_path(
     while len(path) < target_length and depth < target_length + 10:
         depth_topics = topics if depth == 0 else [t for t in topics if not ("가입/설치" in t or "첫 접속" in t)]
         depth_topics = depth_topics or topics
-        for raw_concern in concerns:
-            for topic in depth_topics:
+        for round_idx in range(max(1, len(concerns))):
+            for topic_idx, topic in enumerate(depth_topics):
                 if len(path) >= target_length:
                     break
+                raw_concern = concerns[(topic_idx + round_idx + depth) % len(concerns)]
                 raw_highlight = highlights[(len(path) // max(1, len(depth_topics) * len(concerns))) % len(highlights)]
                 dedup_key = (topic, raw_concern, depth)
                 if dedup_key in seen:
@@ -7586,8 +7592,6 @@ def _edu_vp_build_dynamic_curriculum_path(
                     llm_label=llm_label,
                     role_label=role_label,
                 ))
-            if len(path) >= target_length:
-                break
         depth += 1
 
     if len(path) < target_length:
@@ -10255,6 +10259,7 @@ def edu_vp_training_intake(
         "ai_experience": (req.ai_experience or "beginner").strip().lower(),
         "biggest_friction": (req.biggest_friction or "").strip(),
         "learning_goal": (req.learning_goal or "").strip(),
+        "media_preference": (req.media_preference or "mixed").strip().lower(),
     }
     current_state = _edu_vp_load_state(case_id) or _edu_vp_state_default(case_id, payload["customer"], payload["case"])
     current_state = _edu_vp_normalize_state_keys(current_state)
@@ -10373,7 +10378,12 @@ def edu_vp_training_curriculum(
         return {"ok": True, "available": False, "order": [], "overlay": [],
                 "base_pool": "", "segment": None}
     res = personalize(rows, llm=req.llm, level=req.level, motivation=req.motivation,
-                      env=req.env, job=req.job)
+                      env=req.env, job=req.job, media_preference=req.media_preference)
+    res["user_intent"] = {
+        "learning_goal": str(req.learning_goal or "").strip(),
+        "biggest_friction": str(req.biggest_friction or "").strip(),
+        "media_preference": str(req.media_preference or "mixed").strip() or "mixed",
+    }
     res["ok"] = True
     res["available"] = bool(rows)
     res["total_evidence"] = len(rows)

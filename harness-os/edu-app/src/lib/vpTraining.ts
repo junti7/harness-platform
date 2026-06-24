@@ -58,6 +58,9 @@ const DEFAULT_CURRICULUM_ATTRS: CurriculumAttrs = {
   motivation: 'work',
   env: 'mobile',
   job: '학부모',
+  learning_goal: '',
+  biggest_friction: '',
+  media_preference: 'mixed',
 }
 
 export function loadSavedCurriculumAttrs(): CurriculumAttrs {
@@ -88,6 +91,8 @@ function intakeDevice(attrs: CurriculumAttrs): string {
 }
 
 function intakeGoal(attrs: CurriculumAttrs): string {
+  const custom = String(attrs.learning_goal || '').trim()
+  if (custom) return custom
   if (attrs.motivation === 'child_study') return '아이 공부와 숙제에 AI를 안전하게 활용하기'
   if (attrs.motivation === 'writing') return '글쓰기와 문장 정리에 AI를 활용하기'
   if (attrs.motivation === 'daily') return '일상 일정과 생활 정리에 AI를 활용하기'
@@ -95,6 +100,8 @@ function intakeGoal(attrs: CurriculumAttrs): string {
 }
 
 function intakeFriction(attrs: CurriculumAttrs): string {
+  const custom = String(attrs.biggest_friction || '').trim()
+  if (custom) return custom
   const llm = intakeLlm(attrs) === 'gemini' ? 'Gemini' : intakeLlm(attrs) === 'claude' ? 'Claude' : 'ChatGPT'
   if (attrs.motivation === 'child_study') return `${llm}로 아이 숙제와 학습을 어디까지 도와도 되는지 막막함`
   if (attrs.motivation === 'writing') return `${llm}로 글 초안을 어떻게 시작해야 할지 막막함`
@@ -114,6 +121,7 @@ function curriculumAttrsToIntake(email: string, name: string, attrs: CurriculumA
     ai_experience: attrs.level || 'beginner',
     biggest_friction: intakeFriction(attrs),
     learning_goal: intakeGoal(attrs),
+    media_preference: attrs.media_preference || 'mixed',
   }
 }
 
@@ -147,12 +155,16 @@ export function trainingStateMatchesSavedCurriculum(state: TrainingState): boole
   const expectedSegment = intakeSegment(attrs)
   const expectedDevice = intakeDevice(attrs)
   const expectedLevel = attrs.level || 'beginner'
+  const expectedGoal = intakeGoal(attrs)
+  const expectedFriction = intakeFriction(attrs)
   const actualIntake = state.intake ?? {}
   const actualSegment = String(state.personalized_curriculum?.segment || state.customer?.segment || '')
   return (
     String(actualIntake.preferred_llm || '') === expectedLlm &&
     String(actualIntake.current_device || '') === expectedDevice &&
     String(actualIntake.ai_experience || '') === expectedLevel &&
+    String(actualIntake.learning_goal || '') === expectedGoal &&
+    String(actualIntake.biggest_friction || '') === expectedFriction &&
     actualSegment === expectedSegment
   )
 }
@@ -218,6 +230,14 @@ export type DynamicCurriculumItem = {
   mission: string
 }
 
+export type AdaptiveCurriculumMeta = {
+  target_length: number
+  active_length: number
+  skipped_count: number
+  skipped_items_sample?: { candidate: string; reason: string }[]
+  basis?: Record<string, unknown>
+}
+
 export type TrainingUiState = {
   selected_stage?: StageKey
   active_curriculum_index?: number
@@ -234,6 +254,7 @@ export type TrainingState = {
   progress?: TrainingProgress
   ui_state?: TrainingUiState
   dynamic_curriculum_path?: DynamicCurriculumItem[]
+  adaptive_curriculum_meta?: AdaptiveCurriculumMeta
   personalized_curriculum?: PersonalizedCurriculum
 }
 
@@ -305,6 +326,9 @@ export type CurriculumAttrs = {
   motivation?: '' | 'work' | 'child_study' | 'daily' | 'writing'
   env?: '' | 'mobile' | 'pc' | 'voice'
   job?: string
+  learning_goal?: string
+  biggest_friction?: string
+  media_preference?: '' | 'text' | 'video' | 'visual' | 'mixed'
 }
 
 export type CurriculumOrderItem = { topic: string; weight: number }
@@ -315,6 +339,12 @@ export type CurriculumHighlight = {
   days_ago: number
   models: string[]
   concern: string
+  source?: string
+  url?: string
+  refined_id?: number
+  body?: string
+  excerpt?: string
+  media_kind?: 'video' | 'paper' | 'article' | 'reference' | string
 }
 export type CurriculumFreshNote = {
   pool_total: number
@@ -335,6 +365,11 @@ export type PersonalizedCurriculum = {
   top_concerns: CurriculumConcern[]
   highlights: CurriculumHighlight[]
   fresh_note: CurriculumFreshNote
+  user_intent?: {
+    learning_goal?: string
+    biggest_friction?: string
+    media_preference?: string
+  }
 }
 
 /** 요청 시점에 evidence 풀을 속성으로 재편한 커리큘럼을 받는다(파이프라인 무재실행). */
@@ -349,5 +384,8 @@ export async function fetchPersonalizedCurriculum(
     motivation: attrs.motivation ?? '',
     env: attrs.env ?? '',
     job: attrs.job ?? '',
+    learning_goal: attrs.learning_goal ?? '',
+    biggest_friction: attrs.biggest_friction ?? '',
+    media_preference: attrs.media_preference ?? 'mixed',
   })
 }

@@ -5,8 +5,12 @@ import {
   Check,
   ChevronDown,
   Clock,
+  ExternalLink,
   Loader2,
   Lock,
+  Newspaper,
+  PlayCircle,
+  ScrollText,
   Sparkles,
   Target,
 } from 'lucide-react'
@@ -90,6 +94,45 @@ function ageLabel(days?: number | null): string {
   return `${days}일 전`
 }
 
+function mediaLabel(kind?: string): string {
+  if (kind === 'video') return '영상'
+  if (kind === 'paper') return '논문/근거'
+  if (kind === 'article') return '글/RSS'
+  return '자료'
+}
+
+function MediaIcon({ kind }: { kind?: string }) {
+  if (kind === 'video') return <PlayCircle size={16} />
+  if (kind === 'paper') return <ScrollText size={16} />
+  return <Newspaper size={16} />
+}
+
+function youtubeVideoId(url?: string): string {
+  if (!url) return ''
+  try {
+    const u = new URL(url)
+    if (u.hostname.includes('youtu.be')) return u.pathname.replace('/', '')
+    if (u.hostname.includes('youtube.com')) return u.searchParams.get('v') ?? ''
+  } catch {
+    return ''
+  }
+  return ''
+}
+
+function openSourceUrl(url?: string) {
+  if (!url) return
+  const videoId = youtubeVideoId(url)
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+  if (videoId && isMobile) {
+    window.location.href = `youtube://watch?v=${videoId}`
+    window.setTimeout(() => {
+      window.open(url, '_blank', 'noopener,noreferrer')
+    }, 900)
+    return
+  }
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
 function PersonalizedDay0Block({
   curriculum,
   learnerName,
@@ -103,7 +146,7 @@ function PersonalizedDay0Block({
   const fresh = curriculum.fresh_note
   const concern = curriculum.top_concerns[0]?.concern
   const topTopics = curriculum.order.slice(0, 3)
-  const highlights = curriculum.highlights.slice(0, 2)
+  const highlights = curriculum.highlights.slice(0, 12)
   return (
     <section className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
       <div className="mb-3 flex items-start justify-between gap-3">
@@ -143,18 +186,39 @@ function PersonalizedDay0Block({
       {highlights.length ? (
         <div className="mt-3 grid gap-2">
           {highlights.map((h) => (
-            <button
-              type="button"
+            <div
               key={`${h.title}-${h.days_ago}`}
-              onClick={() => setSelectedHighlight(h)}
-              className="rounded-[12px] border border-border bg-card p-3 text-left transition active:scale-[0.99]"
+              className="rounded-[12px] border border-border bg-card p-3 text-left"
             >
               <div className="mb-1 flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold text-accent-cyan">관련 자료</span>
-                <span className="shrink-0 text-[11px] font-medium text-primary">자세히 보기</span>
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent-cyan">
+                  <MediaIcon kind={h.media_kind} />{mediaLabel(h.media_kind)}
+                </span>
+                <span className="shrink-0 text-[11px] font-medium text-text-faint">{ageLabel(h.days_ago)}</span>
               </div>
               <p className="line-clamp-2 text-xs font-medium leading-relaxed text-ink">{h.title}</p>
-            </button>
+              {h.excerpt ? (
+                <p className="mt-1.5 line-clamp-2 text-[11px] leading-relaxed text-text-faint">{h.excerpt}</p>
+              ) : null}
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedHighlight(h)}
+                  className="h-8 rounded-[9px] border border-border px-3 text-[11px] font-semibold text-ink"
+                >
+                  {h.media_kind === 'video' ? '스크립트 요약' : '원문 보기'}
+                </button>
+                {h.url ? (
+                  <button
+                    type="button"
+                    onClick={() => openSourceUrl(h.url)}
+                    className="inline-flex h-8 items-center gap-1 rounded-[9px] bg-primary px-3 text-[11px] font-semibold text-primary-foreground"
+                  >
+                    {h.media_kind === 'video' ? 'YouTube 열기' : '링크 열기'} <ExternalLink size={12} />
+                  </button>
+                ) : null}
+              </div>
+            </div>
           ))}
         </div>
       ) : null}
@@ -165,18 +229,45 @@ function PersonalizedDay0Block({
           onClick={() => setSelectedHighlight(null)}
         >
           <div
-            className="w-full max-w-[480px] rounded-2xl border border-border bg-card p-5 shadow-lg"
+            className="max-h-[86dvh] w-full max-w-[480px] overflow-y-auto rounded-2xl border border-border bg-card p-5 shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-accent-cyan">
-              {ageLabel(selectedHighlight.days_ago)} 확인한 관련 자료
+              {selectedHighlight.media_kind === 'video' ? '스크립트 요약' : mediaLabel(selectedHighlight.media_kind)} ·{' '}
+              {ageLabel(selectedHighlight.days_ago)} 확인
             </div>
             <h3 className="mb-3 text-base font-bold leading-snug text-ink-strong">{selectedHighlight.title}</h3>
+            {selectedHighlight.source || selectedHighlight.url ? (
+              <div className="mb-3 rounded-[12px] bg-secondary px-3 py-2 text-xs leading-relaxed text-text-muted">
+                {selectedHighlight.source ? <div>출처: {selectedHighlight.source}</div> : null}
+                {selectedHighlight.url ? (
+                  <button
+                    type="button"
+                    onClick={() => openSourceUrl(selectedHighlight.url)}
+                    className="mt-1 inline-flex items-center gap-1 font-semibold text-primary"
+                  >
+                    {selectedHighlight.media_kind === 'video' ? 'YouTube 앱/영상 열기' : '원본 링크 열기'}{' '}
+                    <ExternalLink size={12} />
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             {selectedHighlight.concern ? (
               <p className="mb-3 text-sm leading-relaxed text-text-muted">
                 이 자료는 현재 선택한 상황과 가까운 고민인 ‘{selectedHighlight.concern}’ 흐름에서 올라온 항목입니다.
               </p>
             ) : null}
+            {selectedHighlight.body || selectedHighlight.excerpt ? (
+              <div className="mb-4 whitespace-pre-wrap rounded-[12px] border border-border bg-secondary/70 p-3 text-sm leading-relaxed text-ink">
+                {selectedHighlight.body || selectedHighlight.excerpt}
+              </div>
+            ) : (
+              <p className="mb-4 rounded-[12px] border border-border bg-secondary/70 p-3 text-sm leading-relaxed text-text-muted">
+                {selectedHighlight.media_kind === 'video'
+                  ? '이 영상은 아직 스크립트/요약 본문이 적재되지 않았습니다. YouTube에서 영상을 바로 확인할 수 있습니다.'
+                  : '이 항목은 제목과 링크 중심으로 수집된 자료입니다. 원본 링크에서 전체 내용을 바로 확인할 수 있습니다.'}
+              </p>
+            )}
             {selectedHighlight.models.length ? (
               <div className="mb-4 flex flex-wrap gap-1.5">
                 {selectedHighlight.models.map((m) => (
@@ -200,23 +291,87 @@ function PersonalizedDay0Block({
   )
 }
 
-function DynamicPathPreview({ items }: { items: DynamicCurriculumItem[] }) {
-  const preview = items.slice(0, 5)
-  if (!preview.length) return null
+function DynamicPathPreview({
+  items,
+  meta,
+}: {
+  items: DynamicCurriculumItem[]
+  meta?: TrainingState['adaptive_curriculum_meta']
+}) {
+  const [open, setOpen] = useState(false)
+  if (!items.length) return null
+  const topicCount = new Set(items.map((item) => item.topic)).size
+  const concernCount = new Set(items.map((item) => item.concern)).size
+  const activeLength = meta?.active_length ?? items.length
   return (
     <section className="rounded-2xl border border-border bg-card p-4">
-      <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-text-faint">
-        <Sparkles size={13} className="text-accent-cyan" />생성된 다음 경로
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-text-faint">
+            <Sparkles size={13} className="text-accent-cyan" />전체 커리큘럼 구조
+          </div>
+          <p className="text-sm font-semibold text-ink-strong">
+            {activeLength.toLocaleString()}단계 · {topicCount}개 주제 · {concernCount}개 실제 고민
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="shrink-0 rounded-[10px] bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"
+        >
+          전체 보기
+        </button>
       </div>
-      <ol className="flex flex-col gap-2">
-        {preview.map((item) => (
-          <li key={item.key} className="rounded-[12px] bg-secondary px-3 py-2.5">
-            <div className="text-xs font-semibold text-primary">Day {item.day} · {item.topic}</div>
-            <div className="mt-0.5 text-sm font-medium leading-snug text-ink">{item.concern}</div>
-            <div className="mt-1 line-clamp-2 text-xs leading-relaxed text-text-faint">{item.mission}</div>
-          </li>
-        ))}
-      </ol>
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="rounded-[12px] bg-secondary px-2 py-2">
+          <div className="text-base font-bold text-ink">{activeLength.toLocaleString()}</div>
+          <div className="text-[10px] font-medium text-text-faint">단계</div>
+        </div>
+        <div className="rounded-[12px] bg-secondary px-2 py-2">
+          <div className="text-base font-bold text-ink">{topicCount}</div>
+          <div className="text-[10px] font-medium text-text-faint">주제</div>
+        </div>
+        <div className="rounded-[12px] bg-secondary px-2 py-2">
+          <div className="text-base font-bold text-ink">{meta?.skipped_count ?? 0}</div>
+          <div className="text-[10px] font-medium text-text-faint">스킵</div>
+        </div>
+      </div>
+      {open ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-ink-strong/40 px-4 pb-4"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            className="max-h-[88dvh] w-full max-w-[480px] overflow-hidden rounded-2xl border border-border bg-card shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-border p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-accent-cyan">개인화 전체 과정</div>
+              <h3 className="mt-1 text-base font-bold text-ink-strong">
+                {activeLength.toLocaleString()}단계가 수집 자료와 목표에 따라 생성됨
+              </h3>
+            </div>
+            <ol className="max-h-[68dvh] overflow-y-auto p-3">
+              {items.map((item) => (
+                <li key={item.key} className="mb-2 rounded-[12px] bg-secondary px-3 py-2.5">
+                  <div className="text-xs font-semibold text-primary">Day {item.day} · {item.topic}</div>
+                  <div className="mt-0.5 text-sm font-medium leading-snug text-ink">{item.concern}</div>
+                  <div className="mt-1 text-xs leading-relaxed text-text-faint">{item.mission}</div>
+                </li>
+              ))}
+            </ol>
+            <div className="border-t border-border p-3">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="flex h-11 w-full items-center justify-center rounded-[10px] bg-primary text-sm font-semibold text-primary-foreground"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }
@@ -449,7 +604,9 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           <PersonalizedDay0Block curriculum={personalizedCurriculum} learnerName={learnerName} />
         ) : null}
 
-        {dynamicPath.length ? <DynamicPathPreview items={dynamicPath} /> : null}
+        {dynamicPath.length ? (
+          <DynamicPathPreview items={dynamicPath} meta={state?.adaptive_curriculum_meta} />
+        ) : null}
 
         {/* 왜 배우나요 (접이식) */}
         {current?.learning_why || current?.learning_outcome ? (

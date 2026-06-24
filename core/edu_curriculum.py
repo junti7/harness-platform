@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from typing import Any
 
 WINDOW_DAYS = 30        # 신선 오버레이 윈도우
@@ -91,6 +92,18 @@ def _age_days(created: Any, now: datetime) -> int:
     return (now - created).days
 
 
+def _media_kind(source: str, url: str) -> str:
+    blob = f"{source} {url}".lower()
+    host = urlparse(url).netloc.lower() if url else ""
+    if "youtube" in blob or "youtu.be" in host:
+        return "video"
+    if "arxiv" in blob or "semanticscholar" in blob or "scholar" in blob or "pubmed" in blob or "eric" in blob:
+        return "paper"
+    if "rss" in blob or "blog" in blob or "newsletter" in blob or url:
+        return "article"
+    return "reference"
+
+
 def personalize(
     rows: list[dict[str, Any]],
     *,
@@ -99,6 +112,7 @@ def personalize(
     motivation: str = "",
     env: str = "",
     job: str = "",
+    media_preference: str = "mixed",
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """evidence 풀(rows)을 속성으로 재편. rows 각 항목: klass, buckets, model_tags, item_created_at, segment.
@@ -161,9 +175,26 @@ def personalize(
     # ── '감흥' 레이어: 추상 라벨이 아니라 수집 데이터의 구체적 알맹이 ──────────────
     # 콘텐츠 풀 = 세그먼트의 *모든* 행(evergreen+perishable). 가중 기준풀(base_pool, evergreen)과 달리
     # 실제 고민·최신글을 끌어오는 용도라 신선한 perishable 도 포함한다.
+    def _row_has_media(r: dict[str, Any]) -> bool:
+        source = str(r.get("source") or "")
+        url = str(r.get("url") or "")
+        body = str(r.get("body") or "")
+        return bool(url or body or _media_kind(source, url) in {"video", "paper", "article"})
+
     content_pool = [r for r in rows if (not seg) or r.get("segment") == seg]
     if seg and len(content_pool) < SEGMENT_MIN_ROWS:
         content_pool = rows
+    media_pool = [r for r in rows if _row_has_media(r)]
+    if media_pool:
+        merged: list[dict[str, Any]] = []
+        seen_row_keys: set[str] = set()
+        for r in [*content_pool, *media_pool]:
+            key = str(r.get("refined_id") or r.get("title") or id(r))
+            if key in seen_row_keys:
+                continue
+            seen_row_keys.add(key)
+            merged.append(r)
+        content_pool = merged
 
     # (1) 요즘 같은 분들의 실제 고민 — collect_query 빈도 상위
     concern_count: dict[str, int] = {}
@@ -186,7 +217,24 @@ def personalize(
             continue
         cand.append(r)
     # 최신순(나이 오름차순). datetime/str 혼합 비교를 피하려 _age_days 정수 키로 정렬.
-    cand.sort(key=lambda r: _age_days(r.get("item_created_at"), now))
+    pref = (media_preference or "mixed").strip().lower()
+
+    def _highlight_rank(r: dict[str, Any]) -> tuple[int, int, int, int]:
+        source = str(r.get("source") or "")
+        url = str(r.get("url") or "")
+        kind = _media_kind(source, url)
+        body = str(r.get("body") or "")
+        preferred = int(
+            (pref == "video" and kind == "video")
+            or (pref == "text" and kind in {"article", "paper"})
+            or (pref == "visual" and kind == "video")
+            or pref == "mixed"
+        )
+        media_bonus = int(bool(url)) + int(bool(body)) + int(kind in {"video", "paper", "article"})
+        segment_bonus = int((not seg) or r.get("segment") == seg)
+        return (-preferred, -media_bonus, -segment_bonus, _age_days(r.get("item_created_at"), now))
+
+    cand.sort(key=_highlight_rank)
     highlights = []
     seen_titles: set[str] = set()
     for r in cand:
@@ -195,13 +243,22 @@ def personalize(
         if key in seen_titles:
             continue
         seen_titles.add(key)
+        body = str(r.get("body") or "").strip()
+        source = (r.get("source") or "").strip()
+        url = (r.get("url") or "").strip()
         highlights.append({
             "title": t,
             "days_ago": _age_days(r.get("item_created_at"), now),
             "models": _as_list(r.get("model_tags"))[:3],
             "concern": (r.get("collect_query") or "").strip(),
+            "source": source,
+            "url": url,
+            "media_kind": _media_kind(source, url),
+            "refined_id": r.get("refined_id"),
+            "body": body[:4000],
+            "excerpt": body[:700],
         })
-        if len(highlights) >= 5:
+        if len(highlights) >= 12:
             break
 
     # (3) 최신성 노트 — 최근 글이 며칠 전 들어왔나(신뢰·생동감)
@@ -214,7 +271,14 @@ def personalize(
     }
 
     return {
-        "attrs": {"llm": llm, "level": level, "motivation": motivation, "env": env, "job": job},
+        "attrs": {
+            "llm": llm,
+            "level": level,
+            "motivation": motivation,
+            "env": env,
+            "job": job,
+            "media_preference": media_preference,
+        },
         "segment": seg,
         "base_pool": (f"segment:{seg}:{len(seg_rows)}" if use_seg
                       else f"global:{len(ever)}") + ("" if (use_seg or not seg) else " (fallback)"),
@@ -230,6 +294,33 @@ def load_evidence_rows() -> list[dict[str, Any]]:
     """edu_curriculum_evidence 전체를 개인화에 필요한 컬럼만 읽어온다."""
     from core.database import execute_query
     return execute_query(
-        "SELECT klass, buckets, model_tags, item_created_at, segment, title, collect_query "
-        "FROM edu_curriculum_evidence",
+        """
+        SELECT
+            e.klass,
+            e.buckets,
+            e.model_tags,
+            e.item_created_at,
+            e.segment,
+            e.title,
+            e.collect_query,
+            e.refined_id,
+            e.source,
+            COALESCE(
+                NULLIF(rs.raw_data->>'body', ''),
+                NULLIF(rs.raw_data->>'content', ''),
+                NULLIF(rs.raw_data->>'text', ''),
+                NULLIF(rs.raw_data->>'description', ''),
+                NULLIF(r.final_body, ''),
+                NULLIF(f.summary, '')
+            ) AS body,
+            COALESCE(
+                NULLIF(rs.raw_data->>'url', ''),
+                NULLIF(rs.raw_data->>'link', ''),
+                NULLIF(rs.raw_data->>'source_url', '')
+            ) AS url
+        FROM edu_curriculum_evidence e
+        LEFT JOIN refined_outputs r ON r.id = e.refined_id
+        LEFT JOIN filtered_signals f ON f.id = r.filtered_signal_id
+        LEFT JOIN raw_signals rs ON rs.id = f.raw_signal_id
+        """,
         fetch=True) or []
