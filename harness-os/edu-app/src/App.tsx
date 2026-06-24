@@ -123,13 +123,18 @@ function App() {
   const handleDelete = useCallback(
     async (caseId: number) => {
       if (!session) return
+      const previousCases = cases
+      setCases((prev) => prev.filter((c) => c.case_id !== caseId))
       try {
         await deleteCase(session.email, caseId)
+      } catch (e) {
+        setCases(previousCases)
+        throw e
       } finally {
         await refreshCases(session.email)
       }
     },
-    [session, refreshCases],
+    [session, cases, refreshCases],
   )
 
   const handleLogout = useCallback(() => {

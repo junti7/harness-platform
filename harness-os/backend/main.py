@@ -10840,10 +10840,6 @@ def edu_vp_training_case_delete(
     if not rows:
         raise HTTPException(404, "case not found")
     row = rows[0]
-    status = str(row.get("status") or "")
-    program = str(row.get("program") or "")
-    if program not in {"", "vp_training"} and not status.startswith("vp_training"):
-        raise HTTPException(400, "only vp training cases can be deleted from this endpoint")
     customer_id = int(row["customer_id"])
     _edu_execute(
         "DELETE FROM edu_cases WHERE id = %s AND customer_id = %s",

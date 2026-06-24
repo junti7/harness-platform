@@ -53,6 +53,7 @@ export default function CaseSelectScreen({
 }: CaseSelectScreenProps) {
   const [menuFor, setMenuFor] = useState<TrainingCase | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const timerRef = useRef<number | null>(null)
   const longPressedRef = useRef(false)
   // 누르기 시작 좌표 — 임계값을 넘는 '실제 스크롤/드래그' 일 때만 취소한다.
@@ -100,11 +101,13 @@ export default function CaseSelectScreen({
   async function confirmDelete() {
     if (!menuFor || deleting) return
     setDeleting(true)
+    setDeleteError(null)
     try {
       await onDelete(menuFor.case_id)
       setMenuFor(null)
     } catch (e) {
       console.error('deleteCase failed', e)
+      setDeleteError('삭제하지 못했어요. 잠시 후 다시 시도해주세요.')
     } finally {
       setDeleting(false)
     }
@@ -185,6 +188,7 @@ export default function CaseSelectScreen({
                     onPointerCancel={clearTimer}
                     onContextMenu={(e) => {
                       e.preventDefault()
+                      setDeleteError(null)
                       setMenuFor(c)
                     }}
                     style={{ WebkitTouchCallout: 'none' }}
@@ -234,7 +238,10 @@ export default function CaseSelectScreen({
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-ink-strong/40 px-4 pb-4"
           onClick={() => {
-            if (!deleting) setMenuFor(null)
+            if (!deleting) {
+              setDeleteError(null)
+              setMenuFor(null)
+            }
           }}
         >
           <div
@@ -257,7 +264,10 @@ export default function CaseSelectScreen({
             <div className="flex gap-2.5">
               <button
                 type="button"
-                onClick={() => setMenuFor(null)}
+                onClick={() => {
+                  setDeleteError(null)
+                  setMenuFor(null)
+                }}
                 disabled={deleting}
                 className="h-12 flex-1 rounded-[10px] border border-border bg-card text-[15px] font-semibold text-ink transition hover:bg-secondary disabled:opacity-50"
               >
@@ -273,6 +283,11 @@ export default function CaseSelectScreen({
                 {deleting ? '삭제 중…' : '완전 삭제'}
               </button>
             </div>
+            {deleteError ? (
+              <p className="mt-3 rounded-[10px] bg-danger-soft px-3 py-2 text-sm font-medium text-danger">
+                {deleteError}
+              </p>
+            ) : null}
           </div>
         </div>
       ) : null}
