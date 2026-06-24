@@ -28,6 +28,29 @@ type LearningLink = {
   source_kind: string
 }
 
+type PersonalizedCurriculum = {
+  ok?: boolean
+  available?: boolean
+  attrs?: {
+    llm?: string
+    level?: string
+    motivation?: string
+    env?: string
+    job?: string
+  }
+  segment?: string | null
+  base_pool?: string
+  order?: Array<{ topic: string; weight: number }>
+  overlay?: Array<{ model: string; freshness: number }>
+  top_concerns?: Array<{ concern: string; count: number }>
+  highlights?: Array<{ title: string; days_ago: number; models: string[]; concern: string }>
+  fresh_note?: {
+    pool_total: number
+    recent_30d: number
+    newest_days_ago: number | null
+  }
+}
+
 type TrainingStage = {
   title?: string
   learning_why?: string
@@ -107,6 +130,8 @@ type TrainingState = {
   primary_llm_path?: string
   active_persona?: string
   intake?: Record<string, string>
+  customer?: { name?: string; segment?: string; preferred_llm?: string } & Record<string, unknown>
+  personalized_curriculum?: PersonalizedCurriculum
   progress?: { completed_stages: number; total_stages: number; pct: number }
   persona_library?: {
     core_persona: string
@@ -223,6 +248,99 @@ function curriculumContentStartY(stageKey: StageKey) {
   const firstBlock = document.getElementById(curriculumDetailBlockId(stageKey, 0))
   if (!firstBlock) return 0
   return firstBlock.getBoundingClientRect().top + window.scrollY
+}
+
+function personalizedLlmLabel(value?: string) {
+  const normalized = String(value || '').toLowerCase()
+  if (normalized.includes('gpt') || normalized.includes('chatgpt')) return 'ChatGPT'
+  if (normalized.includes('claude')) return 'Claude'
+  if (normalized.includes('gemini')) return 'Gemini'
+  return 'AI 도구'
+}
+
+function personalizedLevelLabel(value?: string) {
+  if (value === 'advanced') return '고급'
+  if (value === 'intermediate') return '중급'
+  return '왕초보'
+}
+
+function personalizedSegmentLabel(value?: string | null) {
+  if (value === 'parent') return '학부모'
+  if (value === 'worker') return '직장인'
+  return '사용자'
+}
+
+function personalizedAgeLabel(days?: number | null) {
+  if (days === null || days === undefined || days >= 900) return '최근'
+  if (days <= 0) return '오늘'
+  if (days === 1) return '어제'
+  return `${days}일 전`
+}
+
+function PersonalizedCurriculumCard({
+  curriculum,
+  learnerName,
+}: {
+  curriculum?: PersonalizedCurriculum
+  learnerName: string
+}) {
+  if (!curriculum?.available || !curriculum.fresh_note) return null
+  const attrs = curriculum.attrs || {}
+  const fresh = curriculum.fresh_note
+  const concern = curriculum.top_concerns?.[0]?.concern
+  const topics = (curriculum.order || []).slice(0, 3)
+  const highlights = (curriculum.highlights || []).slice(0, 2)
+  const overlays = (curriculum.overlay || []).slice(0, 2)
+  return (
+    <section style={{ background: '#f0fdfa', border: `1px solid ${C.accent}`, borderRadius: 20, padding: 16, display: 'grid', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
+          <div style={{ color: C.accent, fontSize: '.78rem', fontWeight: 900, letterSpacing: '.08em' }}>PERSONALIZED DAY 0</div>
+          <div style={{ color: C.ink, fontSize: '1.05rem', fontWeight: 900, lineHeight: 1.45 }}>
+            {learnerName}님 상황({personalizedSegmentLabel(curriculum.segment)} · {personalizedLlmLabel(attrs.llm)} · {personalizedLevelLabel(attrs.level)}) 기준으로 오늘 시작점을 다시 잡았습니다.
+          </div>
+        </div>
+        <div style={{ background: '#ffffff', color: C.accent, border: `1px solid ${C.border}`, borderRadius: 999, padding: '7px 10px', fontSize: '.78rem', fontWeight: 900 }}>
+          {personalizedAgeLabel(fresh.newest_days_ago)} evidence 반영
+        </div>
+      </div>
+
+      <div style={{ color: C.muted, fontSize: '.95rem', lineHeight: 1.65 }}>
+        {concern
+          ? `같은 세그먼트에서 최근 많이 들어온 "${concern}" 흐름을 보고, 설치 설명보다 첫 질문 성공과 바로 쓸 수 있는 결과 저장에 무게를 둡니다.`
+          : '최근 evidence 풀을 기준으로, 설치 설명보다 첫 질문 성공과 바로 쓸 수 있는 결과 저장에 무게를 둡니다.'}
+      </div>
+
+      {!!topics.length && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {topics.map((item) => (
+            <span key={item.topic} style={{ background: '#ffffff', border: `1px solid ${C.border}`, borderRadius: 999, padding: '7px 10px', color: C.ink, fontSize: '.8rem', fontWeight: 800 }}>
+              {item.topic}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {!!highlights.length && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
+          {highlights.map((item) => (
+            <div key={`${item.title}-${item.days_ago}`} style={{ background: '#ffffff', border: `1px solid ${C.border}`, borderRadius: 16, padding: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
+                <span style={{ color: C.accent, fontSize: '.76rem', fontWeight: 900 }}>{personalizedAgeLabel(item.days_ago)} 자료</span>
+                {item.models?.[0] ? <span style={{ color: C.faint, fontSize: '.76rem', fontWeight: 700 }}>{item.models[0]}</span> : null}
+              </div>
+              <div style={{ color: C.ink, fontSize: '.9rem', fontWeight: 800, lineHeight: 1.45 }}>{item.title}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', color: C.faint, fontSize: '.8rem', fontWeight: 700 }}>
+        <span>근거 {fresh.pool_total}개 중 최근 30일 {fresh.recent_30d}개</span>
+        {overlays.length ? <span>{overlays.map((item) => item.model).join(' · ')} 최신 신호</span> : null}
+      </div>
+    </section>
+  )
 }
 
 async function readJsonSafe(res: Response) {
@@ -353,6 +471,8 @@ function StageCard({
   stage,
   stageKey,
   draft,
+  personalizedCurriculum,
+  learnerName,
   onSave,
   onSaveFeedback,
   onDraftChange,
@@ -368,6 +488,8 @@ function StageCard({
   stage: TrainingStage | undefined
   stageKey: StageKey
   draft?: UiStageDraft
+  personalizedCurriculum?: PersonalizedCurriculum
+  learnerName: string
   onSave: (stageKey: StageKey, payload: { proof_artifact: string; blocked_at_step: string; notes: string; completed: boolean }) => void
   onSaveFeedback: (stageKey: StageKey, payload: { empathy_score: number; clarity_score: number; motivation_score: number; biggest_blocker: string; freeform_feedback: string }) => void
   onDraftChange: (stageKey: StageKey, draft: UiStageDraft) => void
@@ -436,6 +558,11 @@ function StageCard({
         <div style={{ fontSize: '.82rem', color: C.accent, fontWeight: 900, letterSpacing: '.05em', marginBottom: 6 }}>{stageKey === 'day0' ? 'DAY 0' : 'DAY 1'}</div>
         <h2 style={{ margin: 0, fontSize: '1.55rem', lineHeight: 1.3, color: '#000000' }}>{displayStageTitle(stage?.title)}</h2>
       </div>
+
+      {stageKey === 'day0' && (
+        <PersonalizedCurriculumCard curriculum={personalizedCurriculum} learnerName={learnerName} />
+      )}
+
       <div style={{ display: 'grid', gap: 6 }}>
         <div style={{ fontSize: '1.05rem', color: C.ink, fontWeight: 900 }}>{curriculumHeading(stage, 0, '1. 오리엔테이션')}</div>
         <div style={{ color: C.muted, fontSize: '.9rem', lineHeight: 1.55 }}>{stage?.schedule_blocks?.[0]?.goal || '오늘 무엇을 배우는지 먼저 확인합니다.'}</div>
@@ -1667,6 +1794,8 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
                 stage={stage}
                 stageKey={selectedStage}
                 draft={uiState.stage_drafts?.[selectedStage]}
+                personalizedCurriculum={trainingState.personalized_curriculum}
+                learnerName={String(trainingState.customer?.name || authEmail || '오늘의 학습자')}
                 onSave={saveStage}
                 onSaveFeedback={saveFeedback}
                 onDraftChange={updateStageDraft}
