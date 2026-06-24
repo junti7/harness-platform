@@ -1,0 +1,127 @@
+/*
+ * Harness edu-app (App #2 · VP 훈련 pilot)
+ * 단일 디자인 출처는 /DESIGN.md 다. 아래 토큰은 DESIGN.md 값을 1:1 매핑한 것이며,
+ * 임의 색/간격을 추가하지 말고 DESIGN.md 를 먼저 수정한 뒤 여기에 반영한다.
+ * shadcn/ui 호환 시맨틱 변수(--background, --primary 등)도 같은 토큰으로 채운다.
+ */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* --- DESIGN.md palette (raw tokens) --- */
+  --ink-strong: #0f172a;
+  --ink: #111827;
+  --text-muted: #475569;
+  --text-faint: #64748b;
+  --accent: #2563eb;
+  --accent-soft: #dbeafe;
+  --accent-cyan: #0ea5e9;
+  --surface: #ffffff;
+  --surface-muted: #f8fafc;
+  --background-elevated: #f4f7fb;
+  --gridline: #e5edf5;
+  --success: #059669;
+  --success-soft: #d1fae5;
+  --warning: #d97706;
+  --warning-soft: #fef3c7;
+  --danger: #dc2626;
+  --danger-soft: #fee2e2;
+  --info-soft: #eff6ff;
+  --border-strong: #cbd5e1;
+
+  /* --- shadcn/ui semantic variables (mapped to DESIGN tokens) --- */
+  --radius: 0.875rem; /* rounded.lg = 14px */
+  --background: #f8fafc;
+  --foreground: #111827;
+  --card: #ffffff;
+  --card-foreground: #111827;
+  --popover: #ffffff;
+  --popover-foreground: #111827;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f7fb;
+  --secondary-foreground: #111827;
+  --muted: #f8fafc;
+  --muted-foreground: #475569;
+  --accent-color: #dbeafe;
+  --accent-foreground: #0f172a;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #2563eb;
+}
+
+@theme inline {
+  /* shadcn semantic colors */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent-color);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* DESIGN.md extras (status/brand) usable as utilities, e.g. text-success */
+  --color-ink-strong: var(--ink-strong);
+  --color-ink: var(--ink);
+  --color-text-muted: var(--text-muted);
+  --color-text-faint: var(--text-faint);
+  --color-accent-cyan: var(--accent-cyan);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+
+  /* radius scale derived from --radius (rounded.sm/md/lg) */
+  --radius-sm: 4px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+
+  /* typography */
+  --font-sans: 'Pretendard Variable', Pretendard, 'Inter', -apple-system,
+    BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Segoe UI', sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    word-break: keep-all;
+    line-break: strict;
+    letter-spacing: -0.01em;
+    min-height: 100dvh;
+  }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    font-family: var(--font-sans);
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+  }
+  #root {
+    min-height: 100dvh;
+  }
+}
