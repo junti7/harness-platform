@@ -16,6 +16,7 @@ import {
   saveStageArtifact,
   syncSession,
   type ChecklistItem,
+  type PersonalizedCurriculum,
   type StageKey,
   type TrainingStage,
   type TrainingState,
@@ -56,6 +57,109 @@ function pickStage(st: TrainingState): StageKey {
   const want = st.ui_state?.selected_stage
   if (want === 'day1' && st.day0?.completed) return 'day1'
   return 'day0'
+}
+
+function llmLabel(value?: string): string {
+  const v = (value ?? '').toLowerCase()
+  if (v.includes('gpt') || v.includes('chatgpt')) return 'ChatGPT'
+  if (v.includes('claude')) return 'Claude'
+  if (v.includes('gemini')) return 'Gemini'
+  return 'AI 도구'
+}
+
+function levelLabel(value?: string): string {
+  if (value === 'advanced') return '고급'
+  if (value === 'intermediate') return '중급'
+  return '왕초보'
+}
+
+function segmentLabel(value?: string | null): string {
+  if (value === 'parent') return '학부모'
+  if (value === 'worker') return '직장인'
+  return '사용자'
+}
+
+function ageLabel(days?: number | null): string {
+  if (days === null || days === undefined || days >= 900) return '최근'
+  if (days <= 0) return '오늘'
+  if (days === 1) return '어제'
+  return `${days}일 전`
+}
+
+function PersonalizedDay0Block({
+  curriculum,
+  learnerName,
+}: {
+  curriculum: PersonalizedCurriculum
+  learnerName: string
+}) {
+  if (!curriculum.available) return null
+  const attrs = curriculum.attrs ?? {}
+  const fresh = curriculum.fresh_note
+  const concern = curriculum.top_concerns[0]?.concern
+  const topTopics = curriculum.order.slice(0, 3)
+  const highlights = curriculum.highlights.slice(0, 2)
+  const overlays = curriculum.overlay.slice(0, 2)
+  return (
+    <section className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-primary">
+            <Sparkles size={13} />맞춤 시작점
+          </div>
+          <p className="text-sm font-semibold leading-relaxed text-ink-strong">
+            {learnerName}님 상황({segmentLabel(curriculum.segment)} · {llmLabel(attrs.llm)} ·{' '}
+            {levelLabel(attrs.level)})에 맞춰 Day 0를 다시 잡았어요.
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full bg-card px-2.5 py-1 text-[11px] font-semibold text-primary shadow-sm">
+          {ageLabel(fresh.newest_days_ago)} 반영
+        </span>
+      </div>
+
+      <p className="text-sm leading-relaxed text-text-muted">
+        {concern
+          ? `같은 분들이 최근 많이 묻는 '${concern}' 흐름을 먼저 보고, 설치보다 첫 질문 성공에 무게를 둡니다.`
+          : '같은 세그먼트의 최근 evidence를 기준으로 첫 질문 성공에 무게를 둡니다.'}
+      </p>
+
+      {topTopics.length ? (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {topTopics.map((item) => (
+            <span
+              key={item.topic}
+              className="rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-semibold text-text-muted"
+            >
+              {item.topic}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {highlights.length ? (
+        <div className="mt-3 grid gap-2">
+          {highlights.map((h) => (
+            <article key={`${h.title}-${h.days_ago}`} className="rounded-[12px] border border-border bg-card p-3">
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold text-accent-cyan">{ageLabel(h.days_ago)} 자료</span>
+                {h.models[0] ? (
+                  <span className="shrink-0 text-[11px] font-medium text-text-faint">{h.models[0]}</span>
+                ) : null}
+              </div>
+              <p className="line-clamp-2 text-xs font-medium leading-relaxed text-ink">{h.title}</p>
+            </article>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-text-faint">
+        <span>
+          근거 {fresh.pool_total}개 중 최근 30일 {fresh.recent_30d}개
+        </span>
+        {overlays.length ? <span>{overlays.map((o) => o.model).join(' · ')} 최신 신호</span> : null}
+      </div>
+    </section>
+  )
 }
 
 export default function TrainingScreen({ caseId, email, onBack }: TrainingScreenProps) {
@@ -210,6 +314,9 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const doneCount = items.filter((it) => checked[it.id]).length
   const day1Locked = !state?.day0?.completed
   const overallPct = Math.min(100, Math.max(0, Math.round(state?.progress?.pct ?? 0)))
+  const learnerName = String(state?.customer?.name || '오늘의 학습자')
+  const personalizedCurriculum =
+    stage === 'day0' && state?.personalized_curriculum?.available ? state.personalized_curriculum : null
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 py-7">
@@ -272,6 +379,10 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
             </span>
           ) : null}
         </div>
+
+        {personalizedCurriculum ? (
+          <PersonalizedDay0Block curriculum={personalizedCurriculum} learnerName={learnerName} />
+        ) : null}
 
         {/* 왜 배우나요 (접이식) */}
         {current?.learning_why || current?.learning_outcome ? (

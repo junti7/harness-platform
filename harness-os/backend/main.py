@@ -7430,6 +7430,73 @@ def _edu_vp_refresh_state(state: dict[str, Any]) -> dict[str, Any]:
     return state
 
 
+def _edu_vp_curriculum_motivation(segment: str, intake: dict[str, Any]) -> str:
+    text = f"{intake.get('learning_goal') or ''} {intake.get('biggest_friction') or ''}".lower()
+    if any(k in text for k in ("글", "쓰기", "문장", "메일", "보고서", "copy", "writing")):
+        return "writing"
+    if any(k in text for k in ("숙제", "공부", "학습", "아이", "학교", "학원", "child", "study")):
+        return "child_study"
+    if any(k in text for k in ("업무", "회사", "회의", "직장", "work", "office")):
+        return "work"
+    return "child_study" if segment == "parent" else "work"
+
+
+def _edu_vp_attach_personalized_curriculum(state: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    """Attach request-time curriculum personalization without persisting it into snapshots."""
+    state = dict(state or {})
+    intake = state.get("intake") or {}
+    customer = payload.get("customer") or {}
+    segment = str(customer.get("segment") or "worker").strip().lower()
+    try:
+        from core.edu_curriculum import (
+            DEVICE_TO_ENV,
+            EXPERIENCE_TO_LEVEL,
+            load_evidence_rows,
+            personalize,
+        )
+
+        rows = load_evidence_rows()
+        if not rows:
+            return state
+        current_device = str(
+            (state.get("ui_state") or {}).get("current_device")
+            or intake.get("current_device")
+            or intake.get("desktop_os")
+            or ""
+        ).strip().lower()
+        preferred_llm = str(
+            (state.get("ui_state") or {}).get("preferred_llm")
+            or intake.get("preferred_llm")
+            or customer.get("preferred_llm")
+            or ""
+        ).strip()
+        level = EXPERIENCE_TO_LEVEL.get(str(intake.get("ai_experience") or "").strip().lower(), "")
+        env = DEVICE_TO_ENV.get(current_device, "")
+        motivation = _edu_vp_curriculum_motivation(segment, intake)
+        res = personalize(
+            rows,
+            llm=preferred_llm,
+            level=level,
+            motivation=motivation,
+            env=env,
+            job=segment,
+        )
+        res["ok"] = True
+        res["available"] = True
+        res["total_evidence"] = len(rows)
+        res["source"] = "edu_curriculum_evidence"
+        state["personalized_curriculum"] = res
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger("uvicorn.error").warning("edu vp session curriculum unavailable: %s", exc)
+        _edu_runtime_event(
+            "vp_training_personalized_curriculum_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+            case_id=payload.get("case", {}).get("id") if isinstance(payload.get("case"), dict) else None,
+        )
+    return state
+
+
 def _edu_vp_llm_label(value: str) -> str:
     normalized = _edu_normalize_llm(value)
     return {
@@ -9825,7 +9892,7 @@ def edu_vp_training_intake(
         "case_id": case_id,
         "customer": payload["customer"],
         "case": payload["case"],
-        "training_state": current_state,
+        "training_state": _edu_vp_attach_personalized_curriculum(current_state, payload),
     }
 
 
@@ -9850,6 +9917,7 @@ def edu_vp_training_session(
     state["case"] = payload["case"]
     state = _edu_vp_refresh_state(state)
     _edu_vp_store_state(resolved_case_id, state)
+    response_state = _edu_vp_attach_personalized_curriculum(state, payload)
     _edu_vp_append_event(
         case_id=resolved_case_id,
         email=_edu_normalize_email(email),
@@ -9863,7 +9931,7 @@ def edu_vp_training_session(
         "case_id": resolved_case_id,
         "customer": payload["customer"],
         "case": payload["case"],
-        "training_state": state,
+        "training_state": response_state,
     }
 
 
