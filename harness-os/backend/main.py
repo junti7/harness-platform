@@ -5,6 +5,7 @@ import hmac
 import io
 import json
 import logging
+import math
 import os
 import re
 import secrets
@@ -7423,7 +7424,8 @@ def _edu_vp_refresh_state(state: dict[str, Any]) -> dict[str, Any]:
         flow_outline.append({"key": "day0", "label": "Day 0", "title": state["day0"]["title"], "completed": p0["completed"], "pct": p0["pct"]})
     if p0["completed"] and state["day1"].get("title"):
         flow_outline.append({"key": "day1", "label": "Day 1", "title": state["day1"]["title"], "completed": p1["completed"], "pct": p1["pct"]})
-    total_stages = 2 if p0["completed"] else 1
+    adaptive_total = int((state.get("adaptive_curriculum_meta") or {}).get("active_length") or 0)
+    total_stages = adaptive_total if adaptive_total > 0 else (2 if p0["completed"] else 1)
     completed_stages = int(p0["completed"]) + (int(p1["completed"]) if p0["completed"] else 0)
     state["flow_outline"] = flow_outline
     state["progress"] = {
@@ -7493,9 +7495,12 @@ def _edu_vp_attach_personalized_curriculum(state: dict[str, Any], payload: dict[
         res["total_evidence"] = len(rows)
         res["source"] = "edu_curriculum_evidence"
         state["personalized_curriculum"] = res
-        state["dynamic_curriculum_path"] = _edu_vp_build_dynamic_curriculum_path(intake, res, total_days=1001)
+        path, planner_meta = _edu_vp_build_dynamic_curriculum_path(intake, res)
+        state["dynamic_curriculum_path"] = path
+        state["adaptive_curriculum_meta"] = planner_meta
         state["day0"] = _edu_vp_apply_curriculum_to_day0(state.get("day0") or {}, intake, res)
         state["day1"] = _edu_vp_apply_curriculum_path_stage(state.get("day1") or {}, state["dynamic_curriculum_path"], index=1)
+        state["progress"] = _edu_vp_adaptive_progress(state)
     except Exception as exc:  # noqa: BLE001
         logging.getLogger("uvicorn.error").warning("edu vp session curriculum unavailable: %s", exc)
         _edu_runtime_event(
@@ -7507,17 +7512,30 @@ def _edu_vp_attach_personalized_curriculum(state: dict[str, Any], payload: dict[
     return state
 
 
+def _edu_vp_adaptive_progress(state: dict[str, Any]) -> dict[str, Any]:
+    active_length = int((state.get("adaptive_curriculum_meta") or {}).get("active_length") or 0)
+    if active_length <= 0:
+        return state.get("progress") or {"completed_stages": 0, "total_stages": 1, "pct": 0}
+    completed = int(bool((state.get("day0") or {}).get("completed"))) + int(bool((state.get("day1") or {}).get("completed")))
+    completed = min(completed, active_length)
+    return {
+        "completed_stages": completed,
+        "total_stages": active_length,
+        "pct": round(completed / active_length * 100) if active_length else 0,
+    }
+
+
 def _edu_vp_build_dynamic_curriculum_path(
     intake: dict[str, Any],
     curriculum: dict[str, Any],
-    *,
-    total_days: int,
-) -> list[dict[str, Any]]:
-    """Generate an evidence-driven learning path; no fixed Day-N syllabus."""
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Generate an adaptive evidence-driven learning path; no fixed Day-N syllabus."""
     llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or (curriculum.get("attrs") or {}).get("llm") or "gpt"))
     segment = str(curriculum.get("segment") or "")
     role_label = "학부모" if segment == "parent" else "직장인"
-    topics = [str(item.get("topic") or "") for item in (curriculum.get("order") or []) if item.get("topic")]
+    topic_rows = [item for item in (curriculum.get("order") or []) if item.get("topic")]
+    topics = [str(item.get("topic") or "") for item in topic_rows]
+    topic_weight = {str(item.get("topic") or ""): float(item.get("weight") or 0.0) for item in topic_rows}
     concerns = [str(item.get("concern") or "") for item in (curriculum.get("top_concerns") or []) if item.get("concern")]
     highlights = [str(item.get("title") or "") for item in (curriculum.get("highlights") or []) if item.get("title")]
     overlays = [str(item.get("model") or "") for item in (curriculum.get("overlay") or []) if item.get("model")]
@@ -7528,43 +7546,186 @@ def _edu_vp_build_dynamic_curriculum_path(
     if not highlights:
         highlights = concerns
 
+    target_length = _edu_vp_adaptive_target_length(
+        intake=intake,
+        curriculum=curriculum,
+        topics=topics,
+        concerns=concerns,
+        highlights=highlights,
+    )
+    max_weight = max(topic_weight.values()) if topic_weight else 1.0
+    min_topic_weight = max_weight * 0.03
+    weak_topics = [topic for topic in topics if topic_weight.get(topic, 0.0) and topic_weight.get(topic, 0.0) < min_topic_weight]
+    topics = [topic for topic in topics if topic not in set(weak_topics)] or topics[:1]
     path: list[dict[str, Any]] = []
-    for idx in range(max(1, total_days)):
-        topic = topics[idx % len(topics)]
-        concern = concerns[idx % len(concerns)]
-        highlight = highlights[idx % len(highlights)]
-        overlay = overlays[idx % len(overlays)] if overlays else llm_label
-        depth = idx // max(1, len(topics))
-        verb = _edu_vp_curriculum_depth_verb(depth)
-        path.append({
-            "key": f"day{idx}",
-            "day": idx,
-            "title": f"Day {idx} · {topic}",
-            "topic": topic,
-            "concern": concern,
-            "highlight": highlight,
-            "model_signal": overlay,
-            "role": role_label,
-            "llm": llm_label,
-            "depth": depth,
-            "mission": f"{llm_label}로 '{concern}'를 {topic} 관점에서 {verb}하고, 실제로 쓸 결과 1개를 남긴다.",
-            "checklist": [
-                {
-                    "id": f"day{idx}_scene",
-                    "title": "오늘 장면 고정",
-                    "instruction": f"최근 수집 데이터에서 연결된 장면 '{concern}'를 내 상황 한 문장으로 바꾼다.",
-                    "success_signal": "내 상황 문장 1개가 남는다.",
-                },
-                _edu_vp_curriculum_topic_step(topic=topic, focus=concern, llm_label=llm_label, index=idx + 1),
-                {
-                    "id": f"day{idx}_save",
-                    "title": "결과 저장",
-                    "instruction": f"'{highlight}' 자료와 비교해 오늘 바로 쓸 문장이나 체크리스트 1개를 고른다.",
-                    "success_signal": "결과 1개와 선택 이유가 남는다.",
-                },
-            ],
+    skipped: list[dict[str, Any]] = [
+        {"candidate": topic, "reason": "weak_evidence_weight"} for topic in weak_topics[:80]
+    ]
+    seen: set[tuple[str, str, int]] = set()
+    depth = 0
+    while len(path) < target_length and depth < target_length + 10:
+        depth_topics = topics if depth == 0 else [t for t in topics if not ("가입/설치" in t or "첫 접속" in t)]
+        depth_topics = depth_topics or topics
+        for raw_concern in concerns:
+            for topic in depth_topics:
+                if len(path) >= target_length:
+                    break
+                raw_highlight = highlights[(len(path) // max(1, len(depth_topics) * len(concerns))) % len(highlights)]
+                dedup_key = (topic, raw_concern, depth)
+                if dedup_key in seen:
+                    continue
+                seen.add(dedup_key)
+                idx = len(path)
+                path.append(_edu_vp_curriculum_path_item(
+                    idx=idx,
+                    depth=depth,
+                    topic=topic,
+                    raw_concern=raw_concern,
+                    raw_highlight=raw_highlight,
+                    overlays=overlays,
+                    llm_label=llm_label,
+                    role_label=role_label,
+                ))
+            if len(path) >= target_length:
+                break
+        depth += 1
+
+    if len(path) < target_length:
+        skipped.append({
+            "candidate": "target_length",
+            "reason": f"insufficient_unique_candidates:{len(path)}/{target_length}",
         })
-    return path
+
+    meta = {
+        "target_length": target_length,
+        "active_length": len(path),
+        "skipped_count": len(skipped),
+        "skipped_items_sample": skipped[:80],
+        "basis": {
+            "goal": str(intake.get("learning_goal") or ""),
+            "level": str(intake.get("ai_experience") or ""),
+            "segment": segment,
+            "topic_count": len(topics),
+            "concern_count": len(concerns),
+            "highlight_count": len(highlights),
+            "recent_30d": (curriculum.get("fresh_note") or {}).get("recent_30d"),
+        },
+    }
+    return path, meta
+
+
+def _edu_vp_curriculum_path_item(
+    *,
+    idx: int,
+    depth: int,
+    topic: str,
+    raw_concern: str,
+    raw_highlight: str,
+    overlays: list[str],
+    llm_label: str,
+    role_label: str,
+) -> dict[str, Any]:
+    concern = _edu_vp_align_text_to_llm(raw_concern, llm_label)
+    highlight = _edu_vp_align_text_to_llm(raw_highlight, llm_label)
+    overlay = overlays[idx % len(overlays)] if overlays else llm_label
+    verb = _edu_vp_curriculum_depth_verb(depth)
+    return {
+        "key": f"day{idx}",
+        "day": idx,
+        "title": f"Day {idx} · {topic}",
+        "topic": topic,
+        "concern": concern,
+        "source_concern": raw_concern,
+        "highlight": highlight,
+        "source_highlight": raw_highlight,
+        "model_signal": overlay,
+        "role": role_label,
+        "llm": llm_label,
+        "depth": depth,
+        "mission": f"{llm_label}로 '{concern}'를 {topic} 관점에서 {verb}하고, 실제로 쓸 결과 1개를 남긴다.",
+        "checklist": [
+            {
+                "id": f"day{idx}_scene",
+                "title": "오늘 장면 고정",
+                "instruction": f"최근 수집 데이터에서 연결된 장면 '{concern}'를 내 상황 한 문장으로 바꾼다.",
+                "success_signal": "내 상황 문장 1개가 남는다.",
+            },
+            _edu_vp_curriculum_topic_step(topic=topic, focus=concern, llm_label=llm_label, index=idx + 1),
+            {
+                "id": f"day{idx}_save",
+                "title": "결과 저장",
+                "instruction": f"'{highlight}' 자료와 비교해 오늘 바로 쓸 문장이나 체크리스트 1개를 고른다.",
+                "success_signal": "결과 1개와 선택 이유가 남는다.",
+            },
+        ],
+    }
+
+
+def _edu_vp_adaptive_target_length(
+    *,
+    intake: dict[str, Any],
+    curriculum: dict[str, Any],
+    topics: list[str],
+    concerns: list[str],
+    highlights: list[str],
+) -> int:
+    goal_text = f"{intake.get('learning_goal') or ''} {intake.get('biggest_friction') or ''}".lower()
+    level = str(intake.get("ai_experience") or "beginner").lower()
+    recent = int((curriculum.get("fresh_note") or {}).get("recent_30d") or 0)
+    evidence_breadth = max(1, len(topics)) * max(1, len(concerns))
+    evidence_depth = max(1, min(12, math.ceil(max(1, recent) / 20)))
+
+    explicit_target = 0
+    m = re.search(r"(\d{1,4})\s*(?:단계|일|day|days|step|steps)", goal_text)
+    if m:
+        explicit_target = max(1, min(1500, int(m.group(1))))
+
+    if explicit_target:
+        goal_base = explicit_target
+    elif any(k in goal_text for k in ("전문가", "고도", "마스터", "자동화", "수익", "사업", "1000", "천")):
+        goal_base = 1000
+    elif any(k in goal_text for k in ("업무", "실무", "회사", "보고", "반복", "100", "백")):
+        goal_base = 100
+    elif any(k in goal_text for k in ("기초", "처음", "왕초보", "입문", "10", "열")):
+        goal_base = 10
+    else:
+        goal_base = {"beginner": 24, "intermediate": 80, "advanced": 180}.get(level, 24)
+
+    data_capacity = evidence_breadth * evidence_depth
+    if explicit_target:
+        target = goal_base
+    else:
+        # 명시 길이가 없을 때만 evidence breadth/depth 로 확장한다.
+        target = max(goal_base, min(data_capacity, 1500))
+    return max(1, min(1500, int(target)))
+
+
+def _edu_vp_align_text_to_llm(text: str, llm_label: str) -> str:
+    """Keep evidence meaning but prevent user-facing tool mismatch."""
+    safe = str(text or "")
+    if not safe:
+        return safe
+    return re.sub(r"ChatGPT|챗GPT|챗지피티|Gemini|제미나이|Claude|클로드", llm_label, safe, flags=re.IGNORECASE)
+
+
+def _edu_vp_curriculum_skip_reason(
+    *,
+    topic: str,
+    concern: str,
+    depth: int,
+    topic_weight: float,
+    min_topic_weight: float,
+    seen: set[tuple[str, str, int]],
+) -> str:
+    if not topic.strip() or not concern.strip():
+        return "missing_topic_or_concern"
+    if (topic, concern, depth) in seen:
+        return "duplicate_same_depth"
+    if topic_weight and topic_weight < min_topic_weight:
+        return "weak_evidence_weight"
+    if depth > 0 and ("가입/설치" in topic or "첫 접속" in topic):
+        return "foundation_topic_after_initial_depth"
+    return ""
 
 
 def _edu_vp_curriculum_depth_verb(depth: int) -> str:
@@ -7608,8 +7769,8 @@ def _edu_vp_apply_curriculum_to_day0(
     llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or (curriculum.get("attrs") or {}).get("llm") or "gpt"))
     segment = str(curriculum.get("segment") or "")
     role_label = "학부모" if segment == "parent" else "직장인"
-    concern = str(((curriculum.get("top_concerns") or [{}])[0] or {}).get("concern") or "").strip()
-    highlight = str(((curriculum.get("highlights") or [{}])[0] or {}).get("title") or "").strip()
+    concern = _edu_vp_align_text_to_llm(str(((curriculum.get("top_concerns") or [{}])[0] or {}).get("concern") or "").strip(), llm_label)
+    highlight = _edu_vp_align_text_to_llm(str(((curriculum.get("highlights") or [{}])[0] or {}).get("title") or "").strip(), llm_label)
     top_topics = [str(item.get("topic") or "") for item in (curriculum.get("order") or [])[:4] if item.get("topic")]
     focus = concern or highlight or str(intake.get("biggest_friction") or "오늘 가장 막막한 장면").strip()
     topic_text = ", ".join(top_topics[:2]) if top_topics else "첫 질문/기본 사용"
