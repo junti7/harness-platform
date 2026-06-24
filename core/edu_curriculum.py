@@ -158,6 +158,61 @@ def personalize(
                for m, s in sorted(mscore.items(), key=lambda x: -x[1])
                if _llm_match(m)]
 
+    # ── '감흥' 레이어: 추상 라벨이 아니라 수집 데이터의 구체적 알맹이 ──────────────
+    # 콘텐츠 풀 = 세그먼트의 *모든* 행(evergreen+perishable). 가중 기준풀(base_pool, evergreen)과 달리
+    # 실제 고민·최신글을 끌어오는 용도라 신선한 perishable 도 포함한다.
+    content_pool = [r for r in rows if (not seg) or r.get("segment") == seg]
+    if seg and len(content_pool) < SEGMENT_MIN_ROWS:
+        content_pool = rows
+
+    # (1) 요즘 같은 분들의 실제 고민 — collect_query 빈도 상위
+    concern_count: dict[str, int] = {}
+    for r in content_pool:
+        q = (r.get("collect_query") or "").strip()
+        if q:
+            concern_count[q] = concern_count.get(q, 0) + 1
+    top_concerns = [{"concern": q, "count": c}
+                    for q, c in sorted(concern_count.items(), key=lambda x: -x[1])[:6]]
+
+    # (2) 최근 들어온 관련 글 — 동기(motivation) 버킷에 맞고 최신순. title 중복 제거.
+    focus_topics = set(MOTIVATION_WEIGHTS.get(motivation, {}).keys()) or (
+        {order[0]["topic"]} if order else set())
+    cand = []
+    for r in content_pool:
+        title = (r.get("title") or "").strip()
+        if not title:
+            continue
+        if focus_topics and not (set(_as_list(r.get("buckets"))) & focus_topics):
+            continue
+        cand.append(r)
+    # 최신순(나이 오름차순). datetime/str 혼합 비교를 피하려 _age_days 정수 키로 정렬.
+    cand.sort(key=lambda r: _age_days(r.get("item_created_at"), now))
+    highlights = []
+    seen_titles: set[str] = set()
+    for r in cand:
+        t = (r.get("title") or "").strip()
+        key = t[:30]
+        if key in seen_titles:
+            continue
+        seen_titles.add(key)
+        highlights.append({
+            "title": t,
+            "days_ago": _age_days(r.get("item_created_at"), now),
+            "models": _as_list(r.get("model_tags"))[:3],
+            "concern": (r.get("collect_query") or "").strip(),
+        })
+        if len(highlights) >= 5:
+            break
+
+    # (3) 최신성 노트 — 최근 글이 며칠 전 들어왔나(신뢰·생동감)
+    ages = [_age_days(r.get("item_created_at"), now) for r in content_pool if r.get("item_created_at")]
+    recent_30 = sum(1 for a in ages if a <= WINDOW_DAYS)
+    fresh_note = {
+        "pool_total": len(content_pool),
+        "recent_30d": recent_30,
+        "newest_days_ago": min(ages) if ages else None,
+    }
+
     return {
         "attrs": {"llm": llm, "level": level, "motivation": motivation, "env": env, "job": job},
         "segment": seg,
@@ -165,6 +220,9 @@ def personalize(
                       else f"global:{len(ever)}") + ("" if (use_seg or not seg) else " (fallback)"),
         "order": order,
         "overlay": overlay,
+        "top_concerns": top_concerns,
+        "highlights": highlights,
+        "fresh_note": fresh_note,
     }
 
 
@@ -172,5 +230,6 @@ def load_evidence_rows() -> list[dict[str, Any]]:
     """edu_curriculum_evidence 전체를 개인화에 필요한 컬럼만 읽어온다."""
     from core.database import execute_query
     return execute_query(
-        "SELECT klass, buckets, model_tags, item_created_at, segment FROM edu_curriculum_evidence",
+        "SELECT klass, buckets, model_tags, item_created_at, segment, title, collect_query "
+        "FROM edu_curriculum_evidence",
         fetch=True) or []
