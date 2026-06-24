@@ -230,10 +230,23 @@ export type DynamicCurriculumItem = {
   mission: string
 }
 
+export type AdaptiveCurriculumModule = {
+  module: number
+  title: string
+  topic: string
+  start_day: number
+  end_day: number
+  lesson_count: number
+  concerns: string[]
+  sample_missions: string[]
+  outcome: string
+}
+
 export type AdaptiveCurriculumMeta = {
   target_length: number
   active_length: number
   skipped_count: number
+  modules?: AdaptiveCurriculumModule[]
   skipped_items_sample?: { candidate: string; reason: string }[]
   basis?: Record<string, unknown>
 }
@@ -336,6 +349,9 @@ export type CurriculumOverlayItem = { model: string; freshness: number }
 export type CurriculumConcern = { concern: string; count: number }
 export type CurriculumHighlight = {
   title: string
+  generated_title?: string
+  original_title?: string
+  language?: string
   days_ago: number
   models: string[]
   concern: string
@@ -343,6 +359,8 @@ export type CurriculumHighlight = {
   url?: string
   refined_id?: number
   body?: string
+  script_text?: string
+  script_label?: string
   excerpt?: string
   media_kind?: 'video' | 'paper' | 'article' | 'reference' | string
 }

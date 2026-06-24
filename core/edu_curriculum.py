@@ -76,6 +76,10 @@ EDU_TERMS = (
     "education", "learning", "student", "school", "teacher", "classroom", "homework", "parent", "parents",
     "教育", "勉強", "学習", "子供", "学生", "父母", "家長", "教育", "pendidikan", "educacao", "educação",
 )
+SCRIPT_KEYS = (
+    "transcript", "transcripts", "script", "subtitle", "subtitles", "captions", "caption",
+    "auto_caption", "automatic_captions",
+)
 
 
 def _as_list(v: Any) -> list[str]:
@@ -127,6 +131,83 @@ def _video_source_is_relevant(r: dict[str, Any]) -> bool:
     raw_title = str(r.get("raw_title") or "")
     # 정제 body/final_title/query 는 LLM 재작성 또는 검색어일 수 있으므로 YouTube URL 검증에는 쓰지 않는다.
     return _has_any(raw_title, AI_TERMS) and _has_any(raw_title, EDU_TERMS)
+
+
+def _detect_language(text: str) -> str:
+    if any("\uac00" <= ch <= "\ud7a3" for ch in text):
+        return "ko"
+    if any("\u3040" <= ch <= "\u30ff" for ch in text):
+        return "ja"
+    if any("\u4e00" <= ch <= "\u9fff" for ch in text):
+        return "zh"
+    if text:
+        return "other"
+    return ""
+
+
+def _flatten_json_text(value: Any, *, depth: int = 0) -> list[str]:
+    if depth > 3 or value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, list):
+        out: list[str] = []
+        for item in value[:12]:
+            out.extend(_flatten_json_text(item, depth=depth + 1))
+        return out
+    if isinstance(value, dict):
+        preferred = [
+            "final_title", "hook", "what_changed", "why_it_matters", "practical_tip",
+            "parent_action", "summary", "content", "body", "text", "takeaway",
+        ]
+        out: list[str] = []
+        for key in preferred:
+            if key in value:
+                out.extend(_flatten_json_text(value[key], depth=depth + 1))
+        if out:
+            return out
+        for item in list(value.values())[:12]:
+            out.extend(_flatten_json_text(item, depth=depth + 1))
+        return out
+    return []
+
+
+def _clean_body_text(body: str) -> str:
+    raw = (body or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return raw
+    seen: set[str] = set()
+    lines: list[str] = []
+    for line in _flatten_json_text(parsed):
+        line = " ".join(line.split())
+        if not line or line in seen:
+            continue
+        seen.add(line)
+        lines.append(line)
+    return "\n\n".join(lines)
+
+
+def _raw_script_text(r: dict[str, Any]) -> str:
+    for key in SCRIPT_KEYS:
+        value = r.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, list):
+            pieces = []
+            for item in value:
+                if isinstance(item, str):
+                    pieces.append(item)
+                elif isinstance(item, dict):
+                    pieces.append(str(item.get("text") or item.get("caption") or ""))
+            text = " ".join(p.strip() for p in pieces if p.strip())
+            if text:
+                return text
+    return ""
 
 
 def personalize(
@@ -275,16 +356,32 @@ def personalize(
         url = (r.get("url") or "").strip()
         kind = _media_kind(source, url)
         raw_title = str(r.get("raw_title") or "").strip()
+        raw_description = str(r.get("raw_description") or "").strip()
         generated_title = (r.get("title") or "").strip()
-        t = raw_title if kind == "video" and raw_title else generated_title
+        language = _detect_language(raw_title)
+        t = generated_title if kind == "video" and language not in {"", "ko"} and generated_title else (
+            raw_title if kind == "video" and raw_title else generated_title
+        )
         key = t[:30]
         if key in seen_titles:
             continue
         seen_titles.add(key)
         body = str(r.get("body") or "").strip()
+        refined_body = str(r.get("refined_body") or "").strip()
+        script_source = _raw_script_text(r)
+        script_text = script_source or _clean_body_text(refined_body) or _clean_body_text(body) or raw_description
+        script_label = (
+            "한국어 번역 스크립트" if kind == "video" and language not in {"", "ko"} and script_source
+            else "한국어 정제 전문" if kind == "video" and language not in {"", "ko"}
+            else "스크립트 전문" if kind == "video" and script_source
+            else "정제 전문" if kind == "video"
+            else "원문"
+        )
         highlights.append({
             "title": t,
             "generated_title": generated_title if generated_title != t else "",
+            "original_title": raw_title if raw_title and raw_title != t else "",
+            "language": language,
             "days_ago": _age_days(r.get("item_created_at"), now),
             "models": _as_list(r.get("model_tags"))[:3],
             "concern": (r.get("collect_query") or "").strip(),
@@ -293,7 +390,9 @@ def personalize(
             "media_kind": kind,
             "refined_id": r.get("refined_id"),
             "body": body[:4000],
-            "excerpt": body[:700],
+            "script_text": script_text[:8000],
+            "script_label": script_label,
+            "excerpt": script_text[:700] if script_text else body[:700],
         })
         if len(highlights) >= 12:
             break
@@ -346,12 +445,16 @@ def load_evidence_rows() -> list[dict[str, Any]]:
             rs.raw_data->>'description' AS raw_description,
             rs.raw_data->>'query' AS raw_query,
             rs.raw_data->>'channel' AS raw_channel,
+            rs.raw_data->>'transcript' AS transcript,
+            rs.raw_data->>'subtitles' AS subtitles,
+            rs.raw_data->>'captions' AS captions,
+            r.final_body AS refined_body,
             COALESCE(
                 NULLIF(rs.raw_data->>'body', ''),
                 NULLIF(rs.raw_data->>'content', ''),
                 NULLIF(rs.raw_data->>'text', ''),
-                NULLIF(rs.raw_data->>'description', ''),
                 NULLIF(r.final_body, ''),
+                NULLIF(rs.raw_data->>'description', ''),
                 NULLIF(f.summary, '')
             ) AS body,
             COALESCE(

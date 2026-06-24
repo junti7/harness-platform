@@ -7551,12 +7551,14 @@ def _edu_vp_build_dynamic_curriculum_path(
     if not highlights:
         highlights = concerns
 
+    explicit_target = _edu_vp_explicit_target_length(intake)
     target_length = _edu_vp_adaptive_target_length(
         intake=intake,
         curriculum=curriculum,
         topics=topics,
         concerns=concerns,
         highlights=highlights,
+        explicit_target=explicit_target,
     )
     max_weight = max(topic_weight.values()) if topic_weight else 1.0
     min_topic_weight = max_weight * 0.03
@@ -7600,11 +7602,13 @@ def _edu_vp_build_dynamic_curriculum_path(
             "reason": f"insufficient_unique_candidates:{len(path)}/{target_length}",
         })
 
+    modules = _edu_vp_curriculum_modules(path, explicit_target=bool(explicit_target))
     meta = {
         "target_length": target_length,
         "active_length": len(path),
         "skipped_count": len(skipped),
         "skipped_items_sample": skipped[:80],
+        "modules": modules,
         "basis": {
             "goal": str(intake.get("learning_goal") or ""),
             "level": str(intake.get("ai_experience") or ""),
@@ -7616,6 +7620,80 @@ def _edu_vp_build_dynamic_curriculum_path(
         },
     }
     return path, meta
+
+
+def _edu_vp_curriculum_modules(path: list[dict[str, Any]], *, explicit_target: bool) -> list[dict[str, Any]]:
+    if not path:
+        return []
+    module_count = min(24 if explicit_target else 12, max(1, math.ceil(len(path) / 12)))
+    chunk_size = max(1, math.ceil(len(path) / module_count))
+    modules: list[dict[str, Any]] = []
+    for start in range(0, len(path), chunk_size):
+        chunk = path[start:start + chunk_size]
+        topic_counts: dict[str, int] = {}
+        concerns: list[str] = []
+        missions: list[str] = []
+        for item in chunk:
+            topic = str(item.get("topic") or "기타")
+            topic_counts[topic] = topic_counts.get(topic, 0) + 1
+            concern = str(item.get("concern") or "")
+            if concern and concern not in concerns and len(concerns) < 4:
+                concerns.append(concern)
+            mission = str(item.get("mission") or "")
+            if mission and len(missions) < 2:
+                missions.append(mission)
+        topic = sorted(topic_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+        modules.append({
+            "topic": topic,
+            "start_day": int(chunk[0].get("day") or 0),
+            "end_day": int(chunk[-1].get("day") or 0),
+            "lesson_count": len(chunk),
+            "concerns": concerns,
+            "sample_missions": missions,
+        })
+    for idx, mod in enumerate(modules, start=1):
+        phase_title, phase_outcome = _edu_vp_module_phase(idx, str(mod.get("topic") or ""), mod.get("concerns") or [])
+        mod["module"] = idx
+        mod["title"] = f"Module {idx} · {phase_title}"
+        mod["outcome"] = phase_outcome
+    return modules[:24 if explicit_target else 12]
+
+
+def _edu_vp_module_phase(index: int, topic: str, concerns: list[str]) -> tuple[str, str]:
+    focus = str(concerns[0] if concerns else "내 상황")
+    phases = [
+        ("첫 성공 만들기", f"'{focus}'를 Gemini 첫 질문으로 바꾸고 쓸 만한 답변 1개를 저장한다."),
+        ("도구와 사용 장면 고정", "Gemini/ChatGPT/Claude 중 내 상황에 맞는 도구 선택 기준과 사용 장면을 구분한다."),
+        ("아이 학습 도움선 정하기", f"'{focus}'에서 부모가 도와도 되는 부분과 아이가 직접 해야 하는 부분을 나눈다."),
+        ("좋은 질문 템플릿 만들기", "같은 고민을 반복해서 물을 수 있는 질문 틀, 조건, 금지사항을 만든다."),
+        ("환각과 개인정보 방어", "AI 답변을 그대로 믿지 않고 사실 확인, 개인정보 제거, 출처 확인 루틴을 만든다."),
+        ("영상/글 자료로 관점 넓히기", "수집된 영상, 글, 논문 자료를 보고 내 상황에 적용할 점과 버릴 점을 구분한다."),
+        ("결과물 다듬기", "AI 초안을 내 말투와 목적에 맞게 수정하고 가족/업무에서 바로 쓸 형태로 저장한다."),
+        ("반복 루틴화", "자주 반복되는 장면을 체크리스트, 메모, 재사용 프롬프트로 바꾼다."),
+        ("응용 장면 확장", "숙제, 글쓰기, 일정, 업무처럼 다른 장면으로 같은 방법을 옮겨본다."),
+        ("검증과 회고", "잘 된 답변과 위험한 답변을 비교해 다음 질문 기준을 업데이트한다."),
+        ("자동화 후보 선별", "사람이 판단해야 할 일과 자동화해도 되는 반복 작업을 분리한다."),
+        ("나만의 운영 방식 완성", "앞 단계 결과를 모아 매주 반복 가능한 개인 AI 사용 루틴으로 만든다."),
+    ]
+    title, outcome = phases[(index - 1) % len(phases)]
+    if topic and index > len(phases):
+        outcome = f"{outcome} 이번 구간의 주요 자료 축은 '{topic}'입니다."
+    return title, outcome
+
+
+def _edu_vp_module_outcome(topic: str, concerns: list[str]) -> str:
+    focus = str(concerns[0] if concerns else "내 상황")
+    if "학습" in topic or "숙제" in topic:
+        return f"'{focus}'를 아이 학습에 바로 쓸 질문, 검토 기준, 부모 개입선으로 정리한다."
+    if "주의점" in topic or "한계" in topic:
+        return f"'{focus}'에서 환각, 개인정보, 과의존 위험을 걸러내는 확인 루틴을 만든다."
+    if "도구" in topic:
+        return f"Gemini/ChatGPT/Claude 중 내 상황에 맞는 도구 선택 기준을 실제 자료로 비교한다."
+    if "첫 질문" in topic or "프롬프트" in topic:
+        return f"'{focus}'를 첫 질문, 후속 질문, 결과 저장까지 이어지는 사용 루틴으로 만든다."
+    if "자동화" in topic:
+        return f"반복되는 장면을 자동화 후보와 사람이 확인해야 할 지점으로 나눈다."
+    return f"'{focus}'를 {topic} 관점에서 실제 결과물 1개로 바꾼다."
 
 
 def _edu_vp_curriculum_path_item(
@@ -7672,6 +7750,7 @@ def _edu_vp_adaptive_target_length(
     topics: list[str],
     concerns: list[str],
     highlights: list[str],
+    explicit_target: int = 0,
 ) -> int:
     goal_text = f"{intake.get('learning_goal') or ''} {intake.get('biggest_friction') or ''}".lower()
     level = str(intake.get("ai_experience") or "beginner").lower()
@@ -7679,15 +7758,12 @@ def _edu_vp_adaptive_target_length(
     evidence_breadth = max(1, len(topics)) * max(1, len(concerns))
     evidence_depth = max(1, min(12, math.ceil(max(1, recent) / 20)))
 
-    explicit_target = 0
-    m = re.search(r"(\d{1,4})\s*(?:단계|일|day|days|step|steps)", goal_text)
-    if m:
-        explicit_target = max(1, min(1500, int(m.group(1))))
-
     if explicit_target:
         goal_base = explicit_target
-    elif any(k in goal_text for k in ("전문가", "고도", "마스터", "자동화", "수익", "사업", "1000", "천")):
+    elif any(k in goal_text for k in ("전문가", "고도", "마스터", "1000", "천")):
         goal_base = 1000
+    elif any(k in goal_text for k in ("자동화", "수익", "사업")):
+        goal_base = 160
     elif any(k in goal_text for k in ("업무", "실무", "회사", "보고", "반복", "100", "백")):
         goal_base = 100
     elif any(k in goal_text for k in ("기초", "처음", "왕초보", "입문", "10", "열")):
@@ -7699,9 +7775,18 @@ def _edu_vp_adaptive_target_length(
     if explicit_target:
         target = goal_base
     else:
-        # 명시 길이가 없을 때만 evidence breadth/depth 로 확장한다.
-        target = max(goal_base, min(data_capacity, 1500))
+        # 명시 길이가 없을 때는 evidence가 많아도 무의미한 day 나열로 폭증시키지 않는다.
+        implicit_cap = {"beginner": 60, "intermediate": 160, "advanced": 360}.get(level, 80)
+        target = max(goal_base, min(data_capacity, implicit_cap))
     return max(1, min(1500, int(target)))
+
+
+def _edu_vp_explicit_target_length(intake: dict[str, Any]) -> int:
+    goal_text = f"{intake.get('learning_goal') or ''} {intake.get('biggest_friction') or ''}".lower()
+    m = re.search(r"(\d{1,4})\s*(?:단계|일|day|days|step|steps)", goal_text)
+    if m:
+        return max(1, min(1500, int(m.group(1))))
+    return 0
 
 
 def _edu_vp_align_text_to_llm(text: str, llm_label: str) -> str:

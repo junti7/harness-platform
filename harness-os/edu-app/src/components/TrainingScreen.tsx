@@ -107,6 +107,14 @@ function MediaIcon({ kind }: { kind?: string }) {
   return <Newspaper size={16} />
 }
 
+function languageLabel(value?: string): string {
+  if (value === 'ko') return '한국어'
+  if (value === 'ja') return '일본어'
+  if (value === 'zh') return '중국어'
+  if (value) return '외국어'
+  return ''
+}
+
 function youtubeVideoId(url?: string): string {
   if (!url) return ''
   try {
@@ -197,6 +205,11 @@ function PersonalizedDay0Block({
                 <span className="shrink-0 text-[11px] font-medium text-text-faint">{ageLabel(h.days_ago)}</span>
               </div>
               <p className="line-clamp-2 text-xs font-medium leading-relaxed text-ink">{h.title}</p>
+              {h.original_title ? (
+                <p className="mt-1 line-clamp-1 text-[11px] leading-relaxed text-text-faint">
+                  원제: {h.original_title}
+                </p>
+              ) : null}
               {h.excerpt ? (
                 <p className="mt-1.5 line-clamp-2 text-[11px] leading-relaxed text-text-faint">{h.excerpt}</p>
               ) : null}
@@ -206,7 +219,7 @@ function PersonalizedDay0Block({
                   onClick={() => setSelectedHighlight(h)}
                   className="h-8 rounded-[9px] border border-border px-3 text-[11px] font-semibold text-ink"
                 >
-                  {h.media_kind === 'video' ? '스크립트 요약' : '원문 보기'}
+                  {h.media_kind === 'video' ? h.script_label || '스크립트 전문' : '원문 보기'}
                 </button>
                 {h.url ? (
                   <button
@@ -233,10 +246,17 @@ function PersonalizedDay0Block({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-accent-cyan">
-              {selectedHighlight.media_kind === 'video' ? '스크립트 요약' : mediaLabel(selectedHighlight.media_kind)} ·{' '}
-              {ageLabel(selectedHighlight.days_ago)} 확인
+              {selectedHighlight.media_kind === 'video'
+                ? selectedHighlight.script_label || '스크립트 전문'
+                : mediaLabel(selectedHighlight.media_kind)}{' '}
+              · {ageLabel(selectedHighlight.days_ago)} 확인
             </div>
             <h3 className="mb-3 text-base font-bold leading-snug text-ink-strong">{selectedHighlight.title}</h3>
+            {selectedHighlight.original_title ? (
+              <p className="mb-3 rounded-[12px] bg-secondary px-3 py-2 text-xs leading-relaxed text-text-muted">
+                원제({languageLabel(selectedHighlight.language)}): {selectedHighlight.original_title}
+              </p>
+            ) : null}
             {selectedHighlight.source || selectedHighlight.url ? (
               <div className="mb-3 rounded-[12px] bg-secondary px-3 py-2 text-xs leading-relaxed text-text-muted">
                 {selectedHighlight.source ? <div>출처: {selectedHighlight.source}</div> : null}
@@ -257,14 +277,14 @@ function PersonalizedDay0Block({
                 이 자료는 현재 선택한 상황과 가까운 고민인 ‘{selectedHighlight.concern}’ 흐름에서 올라온 항목입니다.
               </p>
             ) : null}
-            {selectedHighlight.body || selectedHighlight.excerpt ? (
+            {selectedHighlight.script_text || selectedHighlight.body || selectedHighlight.excerpt ? (
               <div className="mb-4 whitespace-pre-wrap rounded-[12px] border border-border bg-secondary/70 p-3 text-sm leading-relaxed text-ink">
-                {selectedHighlight.body || selectedHighlight.excerpt}
+                {selectedHighlight.script_text || selectedHighlight.body || selectedHighlight.excerpt}
               </div>
             ) : (
               <p className="mb-4 rounded-[12px] border border-border bg-secondary/70 p-3 text-sm leading-relaxed text-text-muted">
                 {selectedHighlight.media_kind === 'video'
-                  ? '이 영상은 아직 스크립트/요약 본문이 적재되지 않았습니다. YouTube에서 영상을 바로 확인할 수 있습니다.'
+                  ? '이 영상은 아직 스크립트 전문이 적재되지 않았습니다. YouTube에서 영상을 바로 확인할 수 있습니다.'
                   : '이 항목은 제목과 링크 중심으로 수집된 자료입니다. 원본 링크에서 전체 내용을 바로 확인할 수 있습니다.'}
               </p>
             )}
@@ -303,6 +323,7 @@ function DynamicPathPreview({
   const topicCount = new Set(items.map((item) => item.topic)).size
   const concernCount = new Set(items.map((item) => item.concern)).size
   const activeLength = meta?.active_length ?? items.length
+  const modules = meta?.modules ?? []
   return (
     <section className="rounded-2xl border border-border bg-card p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -311,7 +332,7 @@ function DynamicPathPreview({
             <Sparkles size={13} className="text-accent-cyan" />전체 커리큘럼 구조
           </div>
           <p className="text-sm font-semibold text-ink-strong">
-            {activeLength.toLocaleString()}단계 · {topicCount}개 주제 · {concernCount}개 실제 고민
+            {activeLength.toLocaleString()}단계 · {modules.length || topicCount}개 모듈 · {concernCount}개 실제 고민
           </p>
         </div>
         <button
@@ -328,8 +349,8 @@ function DynamicPathPreview({
           <div className="text-[10px] font-medium text-text-faint">단계</div>
         </div>
         <div className="rounded-[12px] bg-secondary px-2 py-2">
-          <div className="text-base font-bold text-ink">{topicCount}</div>
-          <div className="text-[10px] font-medium text-text-faint">주제</div>
+          <div className="text-base font-bold text-ink">{modules.length || topicCount}</div>
+          <div className="text-[10px] font-medium text-text-faint">모듈</div>
         </div>
         <div className="rounded-[12px] bg-secondary px-2 py-2">
           <div className="text-base font-bold text-ink">{meta?.skipped_count ?? 0}</div>
@@ -352,13 +373,35 @@ function DynamicPathPreview({
               </h3>
             </div>
             <ol className="max-h-[68dvh] overflow-y-auto p-3">
-              {items.map((item) => (
-                <li key={item.key} className="mb-2 rounded-[12px] bg-secondary px-3 py-2.5">
-                  <div className="text-xs font-semibold text-primary">Day {item.day} · {item.topic}</div>
-                  <div className="mt-0.5 text-sm font-medium leading-snug text-ink">{item.concern}</div>
-                  <div className="mt-1 text-xs leading-relaxed text-text-faint">{item.mission}</div>
+              {(modules.length ? modules : []).map((mod) => (
+                <li key={`${mod.module}-${mod.topic}`} className="mb-2 rounded-[12px] bg-secondary px-3 py-3">
+                  <div className="text-xs font-semibold text-primary">
+                    {mod.title} · Day {mod.start_day}-{mod.end_day}
+                  </div>
+                  <div className="mt-1 text-sm font-semibold leading-snug text-ink">{mod.outcome}</div>
+                  {mod.concerns?.length ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {mod.concerns.map((c) => (
+                        <span key={c} className="rounded-full bg-card px-2 py-0.5 text-[10px] font-medium text-text-muted">
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {mod.sample_missions?.length ? (
+                    <div className="mt-2 text-xs leading-relaxed text-text-faint">{mod.sample_missions[0]}</div>
+                  ) : null}
                 </li>
               ))}
+              {!modules.length
+                ? items.slice(0, 24).map((item) => (
+                    <li key={item.key} className="mb-2 rounded-[12px] bg-secondary px-3 py-2.5">
+                      <div className="text-xs font-semibold text-primary">Day {item.day} · {item.topic}</div>
+                      <div className="mt-0.5 text-sm font-medium leading-snug text-ink">{item.concern}</div>
+                      <div className="mt-1 text-xs leading-relaxed text-text-faint">{item.mission}</div>
+                    </li>
+                  ))
+                : null}
             </ol>
             <div className="border-t border-border p-3">
               <button
