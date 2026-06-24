@@ -7493,7 +7493,9 @@ def _edu_vp_attach_personalized_curriculum(state: dict[str, Any], payload: dict[
         res["total_evidence"] = len(rows)
         res["source"] = "edu_curriculum_evidence"
         state["personalized_curriculum"] = res
+        state["dynamic_curriculum_path"] = _edu_vp_build_dynamic_curriculum_path(intake, res, total_days=1001)
         state["day0"] = _edu_vp_apply_curriculum_to_day0(state.get("day0") or {}, intake, res)
+        state["day1"] = _edu_vp_apply_curriculum_path_stage(state.get("day1") or {}, state["dynamic_curriculum_path"], index=1)
     except Exception as exc:  # noqa: BLE001
         logging.getLogger("uvicorn.error").warning("edu vp session curriculum unavailable: %s", exc)
         _edu_runtime_event(
@@ -7503,6 +7505,97 @@ def _edu_vp_attach_personalized_curriculum(state: dict[str, Any], payload: dict[
             case_id=payload.get("case", {}).get("id") if isinstance(payload.get("case"), dict) else None,
         )
     return state
+
+
+def _edu_vp_build_dynamic_curriculum_path(
+    intake: dict[str, Any],
+    curriculum: dict[str, Any],
+    *,
+    total_days: int,
+) -> list[dict[str, Any]]:
+    """Generate an evidence-driven learning path; no fixed Day-N syllabus."""
+    llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or (curriculum.get("attrs") or {}).get("llm") or "gpt"))
+    segment = str(curriculum.get("segment") or "")
+    role_label = "학부모" if segment == "parent" else "직장인"
+    topics = [str(item.get("topic") or "") for item in (curriculum.get("order") or []) if item.get("topic")]
+    concerns = [str(item.get("concern") or "") for item in (curriculum.get("top_concerns") or []) if item.get("concern")]
+    highlights = [str(item.get("title") or "") for item in (curriculum.get("highlights") or []) if item.get("title")]
+    overlays = [str(item.get("model") or "") for item in (curriculum.get("overlay") or []) if item.get("model")]
+    if not topics:
+        topics = ["첫 질문/기본 사용"]
+    if not concerns:
+        concerns = [str(intake.get("biggest_friction") or "오늘 가장 막막한 장면").strip()]
+    if not highlights:
+        highlights = concerns
+
+    path: list[dict[str, Any]] = []
+    for idx in range(max(1, total_days)):
+        topic = topics[idx % len(topics)]
+        concern = concerns[idx % len(concerns)]
+        highlight = highlights[idx % len(highlights)]
+        overlay = overlays[idx % len(overlays)] if overlays else llm_label
+        depth = idx // max(1, len(topics))
+        verb = _edu_vp_curriculum_depth_verb(depth)
+        path.append({
+            "key": f"day{idx}",
+            "day": idx,
+            "title": f"Day {idx} · {topic}",
+            "topic": topic,
+            "concern": concern,
+            "highlight": highlight,
+            "model_signal": overlay,
+            "role": role_label,
+            "llm": llm_label,
+            "depth": depth,
+            "mission": f"{llm_label}로 '{concern}'를 {topic} 관점에서 {verb}하고, 실제로 쓸 결과 1개를 남긴다.",
+            "checklist": [
+                {
+                    "id": f"day{idx}_scene",
+                    "title": "오늘 장면 고정",
+                    "instruction": f"최근 수집 데이터에서 연결된 장면 '{concern}'를 내 상황 한 문장으로 바꾼다.",
+                    "success_signal": "내 상황 문장 1개가 남는다.",
+                },
+                _edu_vp_curriculum_topic_step(topic=topic, focus=concern, llm_label=llm_label, index=idx + 1),
+                {
+                    "id": f"day{idx}_save",
+                    "title": "결과 저장",
+                    "instruction": f"'{highlight}' 자료와 비교해 오늘 바로 쓸 문장이나 체크리스트 1개를 고른다.",
+                    "success_signal": "결과 1개와 선택 이유가 남는다.",
+                },
+            ],
+        })
+    return path
+
+
+def _edu_vp_curriculum_depth_verb(depth: int) -> str:
+    cycle = ["처음 실행", "정리", "비교", "수정", "자동화 후보로 확장", "검증", "반복 루틴화"]
+    return cycle[depth % len(cycle)]
+
+
+def _edu_vp_apply_curriculum_path_stage(stage: dict[str, Any], path: list[dict[str, Any]], *, index: int) -> dict[str, Any]:
+    if index >= len(path):
+        return stage
+    item = path[index]
+    stage = dict(stage or {})
+    stage["title"] = item["title"]
+    stage["learning_why"] = (
+        f"이 단계는 고정 커리큘럼이 아니라 최근 수집 데이터의 '{item['topic']}' 우선순위와 "
+        f"'{item['concern']}' 관심 흐름에서 생성되었습니다."
+    )
+    stage["learning_outcome"] = f"{item['llm']}를 사용해 {item['role']} 상황의 실제 결과물 1개를 남깁니다."
+    stage["required_action"] = item["mission"]
+    stage["proof_artifact_hint"] = "오늘 생성한 결과 1개와 왜 쓸 만한지 한 줄 평가를 붙여 넣으세요."
+    stage["checklist"] = item["checklist"]
+    stage["schedule_blocks"] = [
+        {"title": "수집 데이터 장면 확인", "minutes": 8, "goal": f"'{item['concern']}'가 왜 오늘 장면인지 확인한다."},
+        {"title": item["topic"], "minutes": 20, "goal": item["mission"]},
+        {"title": "결과 비교와 저장", "minutes": 10, "goal": f"'{item['highlight']}' 자료와 비교해 쓸 결과 1개를 저장한다."},
+    ]
+    stage["estimated_minutes"] = _edu_vp_total_minutes(stage["schedule_blocks"])
+    stage["completion_rule"] = "생성된 맞춤 체크리스트를 수행하고 결과 1개를 저장하면 완료입니다."
+    stage["blocked_step_options"] = [step["id"] for step in item["checklist"]]
+    stage["dynamic_curriculum_item"] = item
+    return stage
 
 
 def _edu_vp_apply_curriculum_to_day0(
@@ -7517,7 +7610,7 @@ def _edu_vp_apply_curriculum_to_day0(
     role_label = "학부모" if segment == "parent" else "직장인"
     concern = str(((curriculum.get("top_concerns") or [{}])[0] or {}).get("concern") or "").strip()
     highlight = str(((curriculum.get("highlights") or [{}])[0] or {}).get("title") or "").strip()
-    top_topics = [str(item.get("topic") or "") for item in (curriculum.get("order") or [])[:3] if item.get("topic")]
+    top_topics = [str(item.get("topic") or "") for item in (curriculum.get("order") or [])[:4] if item.get("topic")]
     focus = concern or highlight or str(intake.get("biggest_friction") or "오늘 가장 막막한 장면").strip()
     topic_text = ", ".join(top_topics[:2]) if top_topics else "첫 질문/기본 사용"
 
@@ -7526,6 +7619,7 @@ def _edu_vp_apply_curriculum_to_day0(
         f"'{focus}'에서 출발합니다. 자료수집 커리큘럼이 우선순위를 {topic_text} 쪽으로 잡았기 때문에, "
         f"{llm_label}를 여는 즉시 내 상황에 맞는 첫 질문을 보내고 결과를 저장하는 데 집중합니다."
     )
+    day0["title"] = f"Day 0 · {top_topics[0] if top_topics else focus}"
     day0["required_action"] = (
         f"{llm_label}를 실제로 열고, '{focus}'를 내 상황 한 문장으로 바꿔 첫 질문을 보낸 뒤 "
         "답변 중 바로 쓸 만한 문장 1개를 저장한다."
@@ -7534,32 +7628,48 @@ def _edu_vp_apply_curriculum_to_day0(
         f"'{focus}'에 대해 {llm_label}가 답한 문장 1개와, 내가 실제로 쓰겠다고 고른 이유를 붙여 넣으세요."
     )
 
-    checklist = list(day0.get("checklist") or [])
-    if checklist:
-        for item in checklist:
-            if item.get("id") == "first_prompt":
-                item["title"] = "내 상황 첫 질문 보내기"
-                item["instruction"] = (
-                    f"'{focus}'를 그대로 복사하지 말고, 내 집/업무 상황에 맞게 한 문장으로 바꿔 {llm_label}에 보낸다."
-                )
-                item["success_signal"] = "내 상황을 반영한 답변이 나온다."
-            elif item.get("id") == "copy_result":
-                item["title"] = "쓸 문장 1개 고르고 저장"
-                item["instruction"] = "답변 전체를 저장하지 말고, 오늘 바로 쓸 수 있는 문장 1개만 골라 메모한다."
-                item["success_signal"] = "선택한 문장과 선택 이유가 남는다."
-            elif item.get("id") == "open_tool":
-                item["title"] = f"{llm_label} 열기"
-        day0["checklist"] = checklist
+    dynamic_topics = top_topics or ["첫 질문/기본 사용", "주의점/한계(환각·개인정보)"]
+    checklist = [
+        {
+            "id": "open_tool",
+            "title": f"{llm_label} 열기",
+            "instruction": f"{role_label} 역할에서 오늘 쓸 도구를 {llm_label}로 고정하고 입력창까지 연다.",
+            "success_signal": f"{llm_label} 입력창이 보인다.",
+        },
+        {
+            "id": "focus_scene",
+            "title": "오늘 장면 고정",
+            "instruction": f"자료수집에서 올라온 '{focus}'를 내 실제 상황 한 문장으로 바꾼다.",
+            "success_signal": "내 상황 문장 1개가 남는다.",
+        },
+    ]
+    for index, topic in enumerate(dynamic_topics[:3], start=1):
+        checklist.append(_edu_vp_curriculum_topic_step(topic=topic, focus=focus, llm_label=llm_label, index=index))
+    checklist.append(
+        {
+            "id": "save_output",
+            "title": "쓸 결과 1개 저장",
+            "instruction": "답변 전체가 아니라 오늘 바로 쓸 문장이나 체크리스트 1개를 고르고 왜 골랐는지 적는다.",
+            "success_signal": "선택한 결과와 선택 이유가 남는다.",
+        }
+    )
+    day0["checklist"] = checklist
 
-    blocks = list(day0.get("schedule_blocks") or [])
-    if blocks:
-        if len(blocks) > 0:
-            blocks[0] = {**blocks[0], "goal": f"오늘은 '{focus}' 장면에서 시작한다는 것을 확인한다."}
-        if len(blocks) > 3:
-            blocks[3] = {**blocks[3], "goal": f"{llm_label}에 '{focus}' 기반 첫 질문을 보내고 쓸 문장 1개를 고른다."}
-        if len(blocks) > 4:
-            blocks[4] = {**blocks[4], "goal": "선택한 문장이 왜 쓸 만했는지 짧게 기록하고 다음 날 실전 미션으로 이어간다."}
-        day0["schedule_blocks"] = blocks
+    blocks = [
+        {"title": "맞춤 장면 확인", "minutes": 8, "goal": f"자료수집 커리큘럼이 오늘 '{focus}'에서 시작한 이유를 확인한다."},
+        {"title": f"{llm_label} 실행", "minutes": 10, "goal": f"{llm_label} 입력창을 열고 같은 도구로 끝까지 진행한다."},
+    ]
+    for topic in dynamic_topics[:3]:
+        blocks.append({
+            "title": topic,
+            "minutes": 12,
+            "goal": _edu_vp_curriculum_topic_goal(topic=topic, focus=focus, llm_label=llm_label),
+        })
+    blocks.append({"title": "결과 저장과 회고", "minutes": 10, "goal": "내가 실제로 쓸 결과 1개와 다음에 다시 물어볼 점 1개를 남긴다."})
+    day0["schedule_blocks"] = blocks
+    day0["estimated_minutes"] = _edu_vp_total_minutes(blocks)
+    day0["completion_rule"] = "화면에 표시된 맞춤 체크리스트를 모두 수행하고, 마지막에 실제로 쓸 결과 1개를 남겼을 때 완료로 봅니다."
+    day0["blocked_step_options"] = [item["id"] for item in checklist]
 
     tutorial_steps = list(day0.get("tutorial_steps") or [])
     for item in tutorial_steps:
@@ -7577,6 +7687,51 @@ def _edu_vp_apply_curriculum_to_day0(
         "highlight": highlight,
     }
     return day0
+
+
+def _edu_vp_curriculum_topic_step(*, topic: str, focus: str, llm_label: str, index: int) -> dict[str, str]:
+    topic_lower = topic.lower()
+    if "주의" in topic or "한계" in topic or "개인정보" in topic:
+        instruction = f"{llm_label} 답변에서 사실 확인이 필요한 부분과 넣으면 안 되는 개인정보를 각각 1개씩 표시한다."
+        success = "확인할 점과 제외할 민감정보가 구분된다."
+    elif "학습" in topic or "숙제" in topic:
+        instruction = f"'{focus}'를 아이가 이해할 말과 보호자가 확인할 말로 나누어 달라고 {llm_label}에 요청한다."
+        success = "아이용 설명과 보호자 확인 항목이 나뉜다."
+    elif "업무" in topic:
+        instruction = f"'{focus}'를 업무 메모, 실행 목록, 확인 질문으로 나누어 달라고 {llm_label}에 요청한다."
+        success = "실행 가능한 업무 목록이 나온다."
+    elif "글쓰기" in topic:
+        instruction = f"'{focus}'를 짧은 초안과 더 부드러운 표현 2가지로 바꿔 달라고 {llm_label}에 요청한다."
+        success = "바로 고칠 수 있는 초안이 나온다."
+    elif "모바일" in topic or "음성" in topic or "앱" in topic:
+        instruction = f"모바일에서 '{focus}'를 음성 또는 짧은 문장으로 입력하고 답변이 유지되는지 확인한다."
+        success = "모바일 입력과 답변 저장이 된다."
+    elif "도구" in topic or "소개" in topic:
+        instruction = f"오늘은 여러 도구를 비교하지 않고 {llm_label} 하나로 '{focus}'를 해결해 본다."
+        success = f"{llm_label} 하나로 첫 결과가 나온다."
+    else:
+        instruction = f"'{focus}'를 {topic} 관점에서 다시 물어보고, 이전 답보다 나아진 점 1개를 고른다."
+        success = "이전 답보다 나아진 점이 기록된다."
+    return {
+        "id": f"topic_{index}",
+        "title": topic,
+        "instruction": instruction,
+        "success_signal": success,
+    }
+
+
+def _edu_vp_curriculum_topic_goal(*, topic: str, focus: str, llm_label: str) -> str:
+    if "주의" in topic or "한계" in topic or "개인정보" in topic:
+        return f"'{focus}' 답변을 그대로 믿지 않고 확인할 점과 민감정보 제외 기준을 잡는다."
+    if "학습" in topic or "숙제" in topic:
+        return f"'{focus}'를 아이 설명과 보호자 확인 항목으로 나누어 본다."
+    if "업무" in topic:
+        return f"'{focus}'를 실행 목록과 확인 질문으로 바꾼다."
+    if "글쓰기" in topic:
+        return f"'{focus}'를 바로 고칠 수 있는 초안으로 만든다."
+    if "모바일" in topic or "음성" in topic or "앱" in topic:
+        return f"모바일에서 {llm_label}로 같은 흐름을 끝까지 수행한다."
+    return f"{topic} 관점으로 '{focus}'를 다시 질문하고 결과 차이를 확인한다."
 
 
 def _edu_vp_llm_label(value: str) -> str:

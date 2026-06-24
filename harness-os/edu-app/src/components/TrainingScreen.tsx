@@ -19,6 +19,7 @@ import {
   trainingStateMatchesSavedCurriculum,
   type ChecklistItem,
   type CurriculumHighlight,
+  type DynamicCurriculumItem,
   type PersonalizedCurriculum,
   type StageKey,
   type TrainingStage,
@@ -199,6 +200,27 @@ function PersonalizedDay0Block({
   )
 }
 
+function DynamicPathPreview({ items }: { items: DynamicCurriculumItem[] }) {
+  const preview = items.slice(0, 5)
+  if (!preview.length) return null
+  return (
+    <section className="rounded-2xl border border-border bg-card p-4">
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-text-faint">
+        <Sparkles size={13} className="text-accent-cyan" />생성된 다음 경로
+      </div>
+      <ol className="flex flex-col gap-2">
+        {preview.map((item) => (
+          <li key={item.key} className="rounded-[12px] bg-secondary px-3 py-2.5">
+            <div className="text-xs font-semibold text-primary">Day {item.day} · {item.topic}</div>
+            <div className="mt-0.5 text-sm font-medium leading-snug text-ink">{item.concern}</div>
+            <div className="mt-1 line-clamp-2 text-xs leading-relaxed text-text-faint">{item.mission}</div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+
 export default function TrainingScreen({ caseId, email, onBack }: TrainingScreenProps) {
   const [state, setState] = useState<TrainingState | null>(null)
   const [exists, setExists] = useState(true)
@@ -359,6 +381,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const learnerName = String(state?.customer?.name || '오늘의 학습자')
   const personalizedCurriculum =
     stage === 'day0' && state?.personalized_curriculum?.available ? state.personalized_curriculum : null
+  const dynamicPath = stage === 'day0' ? state?.dynamic_curriculum_path ?? [] : []
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 py-7">
@@ -425,6 +448,8 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         {personalizedCurriculum ? (
           <PersonalizedDay0Block curriculum={personalizedCurriculum} learnerName={learnerName} />
         ) : null}
+
+        {dynamicPath.length ? <DynamicPathPreview items={dynamicPath} /> : null}
 
         {/* 왜 배우나요 (접이식) */}
         {current?.learning_why || current?.learning_outcome ? (

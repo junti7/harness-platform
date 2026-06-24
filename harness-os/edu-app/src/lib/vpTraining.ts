@@ -204,6 +204,20 @@ export type TrainingProgress = {
   pct: number
 }
 
+export type DynamicCurriculumItem = {
+  key: string
+  day: number
+  title: string
+  topic: string
+  concern: string
+  highlight: string
+  model_signal: string
+  role: string
+  llm: string
+  depth: number
+  mission: string
+}
+
 export type TrainingUiState = {
   selected_stage?: StageKey
   active_curriculum_index?: number
@@ -219,6 +233,7 @@ export type TrainingState = {
   flow_outline?: FlowOutlineItem[]
   progress?: TrainingProgress
   ui_state?: TrainingUiState
+  dynamic_curriculum_path?: DynamicCurriculumItem[]
   personalized_curriculum?: PersonalizedCurriculum
 }
 
