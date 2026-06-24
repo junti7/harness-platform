@@ -55,22 +55,37 @@ export default function CaseSelectScreen({
   const [deleting, setDeleting] = useState(false)
   const timerRef = useRef<number | null>(null)
   const longPressedRef = useRef(false)
+  // 누르기 시작 좌표 — 임계값을 넘는 '실제 스크롤/드래그' 일 때만 취소한다.
+  // (이전엔 onPointerMove 마다 무조건 취소해, 손가락 미세 흔들림에도 long-press 가 즉시 깨졌다.)
+  const startPosRef = useRef<{ x: number; y: number } | null>(null)
+  const MOVE_CANCEL_PX = 12
 
   function clearTimer() {
     if (timerRef.current !== null) {
       window.clearTimeout(timerRef.current)
       timerRef.current = null
     }
+    startPosRef.current = null
   }
 
-  function startPress(c: TrainingCase) {
+  function startPress(c: TrainingCase, e: React.PointerEvent) {
     longPressedRef.current = false
     clearTimer()
+    startPosRef.current = { x: e.clientX, y: e.clientY }
     timerRef.current = window.setTimeout(() => {
       longPressedRef.current = true
       if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(12)
       setMenuFor(c)
     }, LONG_PRESS_MS)
+  }
+
+  // 임계값(MOVE_CANCEL_PX)을 넘는 이동(스크롤/드래그)일 때만 long-press 취소.
+  function handleMove(e: React.PointerEvent) {
+    const s = startPosRef.current
+    if (!s) return
+    if (Math.abs(e.clientX - s.x) > MOVE_CANCEL_PX || Math.abs(e.clientY - s.y) > MOVE_CANCEL_PX) {
+      clearTimer()
+    }
   }
 
   function handleClick(caseId: number) {
@@ -163,10 +178,10 @@ export default function CaseSelectScreen({
                   <button
                     type="button"
                     onClick={() => handleClick(c.case_id)}
-                    onPointerDown={() => startPress(c)}
+                    onPointerDown={(e) => startPress(c, e)}
                     onPointerUp={clearTimer}
                     onPointerLeave={clearTimer}
-                    onPointerMove={clearTimer}
+                    onPointerMove={handleMove}
                     onPointerCancel={clearTimer}
                     onContextMenu={(e) => {
                       e.preventDefault()
