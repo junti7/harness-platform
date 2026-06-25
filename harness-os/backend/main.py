@@ -7602,7 +7602,7 @@ def _edu_vp_build_dynamic_curriculum_path(
             "reason": f"insufficient_unique_candidates:{len(path)}/{target_length}",
         })
 
-    modules = _edu_vp_curriculum_modules(path, explicit_target=bool(explicit_target))
+    modules = _edu_vp_curriculum_modules(path, explicit_target=bool(explicit_target), llm_label=llm_label)
     meta = {
         "target_length": target_length,
         "active_length": len(path),
@@ -7622,7 +7622,7 @@ def _edu_vp_build_dynamic_curriculum_path(
     return path, meta
 
 
-def _edu_vp_curriculum_modules(path: list[dict[str, Any]], *, explicit_target: bool) -> list[dict[str, Any]]:
+def _edu_vp_curriculum_modules(path: list[dict[str, Any]], *, explicit_target: bool, llm_label: str) -> list[dict[str, Any]]:
     if not path:
         return []
     module_count = min(24 if explicit_target else 12, max(1, math.ceil(len(path) / 12)))
@@ -7652,18 +7652,23 @@ def _edu_vp_curriculum_modules(path: list[dict[str, Any]], *, explicit_target: b
             "sample_missions": missions,
         })
     for idx, mod in enumerate(modules, start=1):
-        phase_title, phase_outcome = _edu_vp_module_phase(idx, str(mod.get("topic") or ""), mod.get("concerns") or [])
+        phase_title, phase_outcome = _edu_vp_module_phase(
+            idx,
+            str(mod.get("topic") or ""),
+            mod.get("concerns") or [],
+            llm_label=llm_label,
+        )
         mod["module"] = idx
-        mod["title"] = f"Module {idx} · {phase_title}"
+        mod["title"] = f"모듈 {idx} · {phase_title}"
         mod["outcome"] = phase_outcome
     return modules[:24 if explicit_target else 12]
 
 
-def _edu_vp_module_phase(index: int, topic: str, concerns: list[str]) -> tuple[str, str]:
+def _edu_vp_module_phase(index: int, topic: str, concerns: list[str], *, llm_label: str) -> tuple[str, str]:
     focus = str(concerns[0] if concerns else "내 상황")
     phases = [
-        ("첫 성공 만들기", f"'{focus}'를 Gemini 첫 질문으로 바꾸고 쓸 만한 답변 1개를 저장한다."),
-        ("도구와 사용 장면 고정", "Gemini/ChatGPT/Claude 중 내 상황에 맞는 도구 선택 기준과 사용 장면을 구분한다."),
+        ("첫 성공 만들기", f"'{focus}'를 {llm_label} 첫 질문으로 바꾸고 쓸 만한 답변 1개를 저장한다."),
+        ("도구와 사용 장면 고정", f"{llm_label}를 어떤 장면에 쓸지 정하고, 다른 도구로 옮길 때의 기준만 짧게 남긴다."),
         ("아이 학습 도움선 정하기", f"'{focus}'에서 부모가 도와도 되는 부분과 아이가 직접 해야 하는 부분을 나눈다."),
         ("좋은 질문 템플릿 만들기", "같은 고민을 반복해서 물을 수 있는 질문 틀, 조건, 금지사항을 만든다."),
         ("환각과 개인정보 방어", "AI 답변을 그대로 믿지 않고 사실 확인, 개인정보 제거, 출처 확인 루틴을 만든다."),

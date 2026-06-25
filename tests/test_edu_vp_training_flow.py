@@ -57,6 +57,24 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("간호사", labels)
         self.assertGreaterEqual(len(labels), 20)
 
+    def test_adaptive_curriculum_modules_use_selected_llm_label(self):
+        path = [
+            {
+                "day": idx,
+                "topic": "Claude 업무 활용",
+                "concern": "업무 답장 부담",
+                "mission": f"Claude로 업무 답장 부담을 정리한다 {idx}",
+            }
+            for idx in range(12)
+        ]
+
+        modules = self.mod._edu_vp_curriculum_modules(path, explicit_target=False, llm_label="Claude")
+
+        self.assertEqual(modules[0]["title"], "모듈 1 · 첫 성공 만들기")
+        self.assertIn("Claude 첫 질문", modules[0]["outcome"])
+        self.assertNotIn("Gemini 첫 질문", modules[0]["outcome"])
+        self.assertEqual(modules[0]["lesson_count"], 12)
+
     def test_day1_contains_rag_lineage_and_evidence_cards(self):
         fake_bundle = {
             "mode": "db_customer_facing",

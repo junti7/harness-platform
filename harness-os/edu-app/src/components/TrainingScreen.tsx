@@ -405,7 +405,7 @@ function DynamicPathPreview({
             <Sparkles size={13} className="text-accent-cyan" />전체 커리큘럼 구조
           </div>
           <p className="text-sm font-semibold text-ink-strong">
-            {activeLength.toLocaleString()}단계 · {modules.length || topicCount}개 모듈 · {concernCount}개 실제 고민
+            {activeLength.toLocaleString()}개 실습 · {modules.length || topicCount}개 모듈 · {concernCount}개 실제 고민
           </p>
         </div>
         <button
@@ -419,7 +419,7 @@ function DynamicPathPreview({
       <div className="grid grid-cols-3 gap-2 text-center">
         <div className="rounded-[12px] bg-secondary px-2 py-2">
           <div className="text-base font-bold text-ink">{activeLength.toLocaleString()}</div>
-          <div className="text-[10px] font-medium text-text-faint">단계</div>
+          <div className="text-[10px] font-medium text-text-faint">실습</div>
         </div>
         <div className="rounded-[12px] bg-secondary px-2 py-2">
           <div className="text-base font-bold text-ink">{modules.length || topicCount}</div>
@@ -442,14 +442,14 @@ function DynamicPathPreview({
             <div className="border-b border-border p-4">
               <div className="text-xs font-semibold uppercase tracking-wide text-accent-cyan">개인화 전체 과정</div>
               <h3 className="mt-1 text-base font-bold text-ink-strong">
-                {activeLength.toLocaleString()}단계가 수집 자료와 목표에 따라 생성됨
+                {activeLength.toLocaleString()}개 실습이 수집 자료와 목표에 따라 생성됨
               </h3>
             </div>
             <ol className="max-h-[68dvh] overflow-y-auto p-3">
               {(modules.length ? modules : []).map((mod) => (
                 <li key={`${mod.module}-${mod.topic}`} className="mb-2 rounded-[12px] bg-secondary px-3 py-3">
                   <div className="text-xs font-semibold text-primary">
-                    {mod.title} · Day {mod.start_day}-{mod.end_day}
+                    {mod.title} · {mod.lesson_count}개 실습
                   </div>
                   <div className="mt-1 text-sm font-semibold leading-snug text-ink">{mod.outcome}</div>
                   {mod.concerns?.length ? (
