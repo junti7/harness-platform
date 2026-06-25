@@ -86,6 +86,9 @@ WORK_TERMS = (
 GENERIC_QUERY_TERMS = (
     "ai", "챗gpt", "chatgpt", "gpt", "생성형", "인공지능", "사용", "활용", "방법", "교육", "강의", "강사",
 )
+SEARCH_SNIPPET_SOURCES = (
+    "naver", "cafe.naver.com", "blog.naver.com", "kin.naver.com",
+)
 SCRIPT_KEYS = (
     "transcript", "transcripts", "script", "subtitle", "subtitles", "captions", "caption",
     "auto_caption", "automatic_captions",
@@ -170,12 +173,25 @@ def _source_match_text(r: dict[str, Any]) -> str:
     ]))
 
 
+def _source_title_text(r: dict[str, Any]) -> str:
+    return _norm_match_text(str(r.get("raw_title") or ""))
+
+
+def _uses_search_snippet_source(r: dict[str, Any]) -> bool:
+    blob = _norm_match_text(f"{r.get('source') or ''} {r.get('url') or ''}")
+    return any(src in blob for src in SEARCH_SNIPPET_SOURCES)
+
+
 def _source_relevance(r: dict[str, Any], *, motivation: str = "") -> dict[str, Any]:
     source_text = _source_match_text(r)
+    title_text = _source_title_text(r)
     query_terms = _important_query_terms(str(r.get("collect_query") or ""))
     has_ai = _has_any(source_text, AI_TERMS)
     has_edu = _has_any(source_text, EDU_TERMS)
     query_hits = [term for term in query_terms if term in source_text]
+    title_has_ai = _has_any(title_text, AI_TERMS)
+    title_query_hits = [term for term in query_terms if term in title_text]
+    snippet_source = _uses_search_snippet_source(r)
 
     score = 0.0
     reasons: list[str] = []
@@ -193,18 +209,30 @@ def _source_relevance(r: dict[str, Any], *, motivation: str = "") -> dict[str, A
 
     if motivation == "child_study":
         child_match = _has_any(source_text, CHILD_STUDY_TERMS)
+        title_child_match = _has_any(title_text, CHILD_STUDY_TERMS)
         if child_match:
             score += 0.25
             reasons.append("child_study_match")
+        if snippet_source:
+            if query_terms and not title_query_hits:
+                return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "source_title_query_mismatch"]}
+            if not (title_has_ai and title_child_match):
+                return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "source_title_missing_child_ai_context"]}
         if query_terms and not query_hits:
             return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "query_context_mismatch"]}
         if not (has_ai and child_match):
             return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "missing_child_ai_context"]}
     elif motivation == "work":
         work_match = _has_any(source_text, WORK_TERMS)
+        title_work_match = _has_any(title_text, WORK_TERMS)
         if work_match:
             score += 0.25
             reasons.append("work_match")
+        if snippet_source:
+            if query_terms and not title_query_hits:
+                return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "source_title_query_mismatch"]}
+            if not (title_has_ai and (title_work_match or _has_any(title_text, EDU_TERMS))):
+                return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "source_title_missing_work_ai_context"]}
         if query_terms and not query_hits:
             return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "query_context_mismatch"]}
         if not (has_ai and (work_match or has_edu)):
