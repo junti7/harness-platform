@@ -23,8 +23,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
     def setUpClass(cls):
         cls.mod = _load_backend_main()
 
-    def test_week0_builds_deterministic_checklist(self):
-        card = self.mod._edu_vp_build_week0(
+    def test_day0_builds_deterministic_checklist(self):
+        card = self.mod._edu_vp_build_day0(
             {
                 "preferred_llm": "claude",
                 "current_device": "iphone",
@@ -42,7 +42,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("LLM", card["foundation_concepts"][0]["title"])
         self.assertEqual(len(card["checklist"]), 4)
         self.assertEqual(len(card["sample_materials"]), 1)
-        self.assertEqual(card["sample_materials"][0]["kit_id"], "week0-first-login-starter")
+        self.assertEqual(card["sample_materials"][0]["kit_id"], "day0-first-login-starter")
         self.assertEqual(card["blocked_step_options"], ["open_tool", "login_ok", "first_prompt", "copy_result"])
 
     def test_persona_library_is_locked_until_core_track_completion(self):
@@ -57,7 +57,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("간호사", labels)
         self.assertGreaterEqual(len(labels), 20)
 
-    def test_week1_contains_rag_lineage_and_evidence_cards(self):
+    def test_day1_contains_rag_lineage_and_evidence_cards(self):
         fake_bundle = {
             "mode": "db_customer_facing",
             "items": [
@@ -71,7 +71,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         }
 
         with patch.object(self.mod, "_retrieve_evidence_bundle", return_value=fake_bundle) as mocked_bundle:
-            card = self.mod._edu_vp_build_week1(
+            card = self.mod._edu_vp_build_day1(
                 {
                     "preferred_llm": "claude",
                     "biggest_friction": "뭘 질문해야 할지 모르겠다",
@@ -90,7 +90,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertTrue(card["external_reuse_safe"])
         self.assertEqual(len(card["evidence_cards"]), 1)
         self.assertEqual(len(card["sample_materials"]), 4)
-        self.assertEqual(card["sample_materials"][0]["kit_id"], "week1-school-notice-kit")
+        self.assertEqual(card["sample_materials"][0]["kit_id"], "day1-school-notice-kit")
         self.assertGreaterEqual(len(card["home_priority_missions"]), 4)
         self.assertGreaterEqual(len(card["scenario_bank"]), 10)
         self.assertIn("학교 준비물 공지 정리", [item["title"] for item in card["scenario_bank"]])
@@ -111,8 +111,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(third_kwargs["k"], 6)
 
     def test_material_zip_contains_expected_files(self):
-        filename, payload = self.mod._edu_vp_material_zip_bytes("week1-school-notice-kit")
-        self.assertEqual(filename, "week1-school-notice-kit.zip")
+        filename, payload = self.mod._edu_vp_material_zip_bytes("day1-school-notice-kit")
+        self.assertEqual(filename, "day1-school-notice-kit.zip")
         import zipfile
         from io import BytesIO
 
