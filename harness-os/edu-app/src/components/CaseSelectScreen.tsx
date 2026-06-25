@@ -100,14 +100,15 @@ export default function CaseSelectScreen({
 
   async function confirmDelete() {
     if (!menuFor || deleting) return
+    const caseId = menuFor.case_id
     setDeleting(true)
     setDeleteError(null)
+    setMenuFor(null)
     try {
-      await onDelete(menuFor.case_id)
-      setMenuFor(null)
+      await onDelete(caseId)
     } catch (e) {
       console.error('deleteCase failed', e)
-      setDeleteError('삭제하지 못했어요. 잠시 후 다시 시도해주세요.')
+      setDeleteError('삭제하지 못했어요. 새로고침 후 다시 시도해주세요.')
     } finally {
       setDeleting(false)
     }

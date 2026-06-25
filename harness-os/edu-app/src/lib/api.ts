@@ -15,6 +15,7 @@
 
 const API_BASE = import.meta.env.VITE_HARNESS_OS_API_BASE ?? ''
 const SECRET = import.meta.env.VITE_HARNESS_SECRET ?? ''
+const REQUEST_TIMEOUT_MS = 12_000
 
 export const VP_TRAINING = {
   accountRegister: '/api/edu/vp-training/account/register',
@@ -56,6 +57,21 @@ export class ApiError extends Error {
   }
 }
 
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new ApiError(408, '요청 시간이 초과되었습니다. 다시 시도해주세요.')
+    }
+    throw e
+  } finally {
+    window.clearTimeout(timeout)
+  }
+}
+
 async function parse<T>(res: Response): Promise<T> {
   const text = await res.text()
   const data = text ? JSON.parse(text) : null
@@ -78,13 +94,13 @@ export async function vpGet<T = unknown>(
     if (v !== undefined) qs.set(k, String(v))
   }
   const url = `${API_BASE}${path}${qs.toString() ? `?${qs}` : ''}`
-  const res = await fetch(url, { headers: authHeaders() })
+  const res = await fetchWithTimeout(url, { headers: authHeaders() })
   return parse<T>(res)
 }
 
 /** POST(JSON) 헬퍼. */
 export async function vpPost<T = unknown>(path: string, body: unknown = {}): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetchWithTimeout(`${API_BASE}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body),

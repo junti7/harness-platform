@@ -8539,6 +8539,7 @@ def _edu_vp_latest_case_payload(email: str, case_id: int | None = None) -> dict[
             LIMIT 1
         ) s ON TRUE
         WHERE LOWER(COALESCE(cu.email, '')) = %s
+          AND c.status <> 'deleted'
         ORDER BY
             CASE WHEN s.summary_json IS NOT NULL THEN 0 ELSE 1 END,
             c.updated_at DESC,
@@ -10768,6 +10769,7 @@ def edu_vp_training_cases(
             LIMIT 1
         ) s ON TRUE
         WHERE LOWER(COALESCE(cu.email, '')) = %s
+          AND c.status <> 'deleted'
         ORDER BY
             CASE WHEN s.summary_json IS NOT NULL THEN 0 ELSE 1 END,
             c.updated_at DESC,
@@ -10842,12 +10844,18 @@ def edu_vp_training_case_delete(
     row = rows[0]
     customer_id = int(row["customer_id"])
     _edu_execute(
-        "DELETE FROM edu_cases WHERE id = %s AND customer_id = %s",
+        """
+        UPDATE edu_cases
+        SET status = 'deleted',
+            current_phase = 'deleted',
+            updated_at = NOW()
+        WHERE id = %s AND customer_id = %s
+        """,
         (case_id, customer_id),
         fetch=False,
     )
     remaining_rows = _edu_execute(
-        "SELECT COUNT(*) AS cnt FROM edu_cases WHERE customer_id = %s",
+        "SELECT COUNT(*) AS cnt FROM edu_cases WHERE customer_id = %s AND status <> 'deleted'",
         (customer_id,),
         fetch=True,
     )
@@ -10883,6 +10891,7 @@ def edu_vp_training_case_reset(
             LIMIT 1
         ) snap ON TRUE
         WHERE LOWER(COALESCE(cu.email, '')) = %s
+          AND c.status <> 'deleted'
           AND (
               COALESCE(snap.program, '') IN ('', 'vp_training')
               OR c.status LIKE 'vp_training%%'
@@ -10895,7 +10904,13 @@ def edu_vp_training_case_reset(
     if deleted_case_ids:
         for case_id in deleted_case_ids:
             _edu_execute(
-                "DELETE FROM edu_cases WHERE id = %s",
+                """
+                UPDATE edu_cases
+                SET status = 'deleted',
+                    current_phase = 'deleted',
+                    updated_at = NOW()
+                WHERE id = %s
+                """,
                 (case_id,),
                 fetch=False,
             )
