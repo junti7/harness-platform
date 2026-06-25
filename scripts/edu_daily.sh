@@ -38,7 +38,7 @@ echo "[edu_daily] 4/5 Tier3 정제 + RAG 인덱스"
 $PY scripts/run_edu_tier3_parallel.py --workers 4 --shard 0/1 --min-score 0.1 --cost-every 20 2>&1 \
   | grep -E "정제 대상|완료: 정제|RAG 인덱스|일일 비용" || true
 
-echo "[edu_daily] 5/5 입문 커리큘럼 freshness — 증분 적재(daily) + 산출(월요일/신규모델 감지 시)"
+echo "[edu_daily] 5/5 입문 커리큘럼 freshness — 증분 적재 + trusted 항아리 선별 + 산출"
 # 정제 SoT 증분만 분류해 edu_curriculum_evidence 에 upsert(0.x초).
 # build 트리거는 stdout 문자열이 아니라 ingest 의 *exit code* 로 판정한다(red-team MAJOR):
 #   0=정상, 10=신규 모델/버전 신호 등장(→ 그날 즉시 build 핫픽스), 그 외=실패.
@@ -50,7 +50,13 @@ if PYTHONPATH=. $PY scripts/build_edu_curriculum.py ingest; then ING_RC=0; else 
 if [ "$ING_RC" -ne 0 ] && [ "$ING_RC" -ne 10 ]; then
   echo "[edu_daily] ⚠️ 커리큘럼 ingest 실패(exit=$ING_RC) — evidence 적재 누락 가능. build 스킵"
   CURRICULUM_FAILED=1
-elif [ "$(date +%u)" = "1" ] || [ "$ING_RC" -eq 10 ]; then
+else
+  if ! PYTHONPATH=. $PY scripts/build_edu_curriculum.py curate; then
+    echo "[edu_daily] ⚠️ 커리큘럼 trusted evidence 선별 실패 — 고객 노출 자료 갱신 안 됨"
+    CURRICULUM_FAILED=1
+  fi
+fi
+if [ "$CURRICULUM_FAILED" -eq 0 ] && { [ "$(date +%u)" = "1" ] || [ "$ING_RC" -eq 10 ]; }; then
   # ingest 성공(0/10) 시에만 build. 실패한 evidence 로 canonical 산출물을 갱신하지 않는다.
   if ! PYTHONPATH=. $PY scripts/build_edu_curriculum.py build; then
     echo "[edu_daily] ⚠️ 커리큘럼 build 실패 — 산출물(runtime/edu_curriculum.json) 갱신 안 됨"
