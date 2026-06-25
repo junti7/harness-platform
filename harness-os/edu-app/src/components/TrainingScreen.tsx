@@ -149,12 +149,14 @@ function PersonalizedDay0Block({
   learnerName: string
 }) {
   const [selectedHighlight, setSelectedHighlight] = useState<CurriculumHighlight | null>(null)
+  const [highlightsOpen, setHighlightsOpen] = useState(false)
   if (!curriculum.available) return null
   const attrs = curriculum.attrs ?? {}
   const fresh = curriculum.fresh_note
   const concern = curriculum.top_concerns[0]?.concern
   const topTopics = curriculum.order.slice(0, 3)
   const highlights = curriculum.highlights.slice(0, 12)
+  const mediaTypes = Array.from(new Set(highlights.map((h) => mediaLabel(h.media_kind)))).slice(0, 3)
   return (
     <section className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
       <div className="mb-3 flex items-start justify-between gap-3">
@@ -192,47 +194,82 @@ function PersonalizedDay0Block({
       ) : null}
 
       {highlights.length ? (
-        <div className="mt-3 grid gap-2">
-          {highlights.map((h) => (
-            <div
-              key={`${h.title}-${h.days_ago}`}
-              className="rounded-[12px] border border-border bg-card p-3 text-left"
-            >
-              <div className="mb-1 flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent-cyan">
-                  <MediaIcon kind={h.media_kind} />{mediaLabel(h.media_kind)}
+        <div className="mt-3 rounded-[12px] border border-border bg-card">
+          <button
+            type="button"
+            onClick={() => setHighlightsOpen((v) => !v)}
+            aria-expanded={highlightsOpen}
+            className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left"
+          >
+            <div className="min-w-0">
+              <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold text-primary">
+                  관련 자료 {highlights.length}개
                 </span>
-                <span className="shrink-0 text-[11px] font-medium text-text-faint">{ageLabel(h.days_ago)}</span>
-              </div>
-              <p className="line-clamp-2 text-xs font-medium leading-relaxed text-ink">{h.title}</p>
-              {h.original_title ? (
-                <p className="mt-1 line-clamp-1 text-[11px] leading-relaxed text-text-faint">
-                  원제: {h.original_title}
-                </p>
-              ) : null}
-              {h.excerpt ? (
-                <p className="mt-1.5 line-clamp-2 text-[11px] leading-relaxed text-text-faint">{h.excerpt}</p>
-              ) : null}
-              <div className="mt-2 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedHighlight(h)}
-                  className="h-8 rounded-[9px] border border-border px-3 text-[11px] font-semibold text-ink"
-                >
-                  {h.media_kind === 'video' ? h.script_label || '스크립트 전문' : '원문 보기'}
-                </button>
-                {h.url ? (
-                  <button
-                    type="button"
-                    onClick={() => openSourceUrl(h.url)}
-                    className="inline-flex h-8 items-center gap-1 rounded-[9px] bg-primary px-3 text-[11px] font-semibold text-primary-foreground"
-                  >
-                    {h.media_kind === 'video' ? 'YouTube 열기' : '링크 열기'} <ExternalLink size={12} />
-                  </button>
+                <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold text-text-muted">
+                  {ageLabel(fresh.newest_days_ago)} 기준
+                </span>
+                {mediaTypes.length ? (
+                  <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold text-text-muted">
+                    {mediaTypes.join(' · ')}
+                  </span>
                 ) : null}
               </div>
+              <p className="line-clamp-2 text-xs leading-relaxed text-text-muted">
+                {concern
+                  ? `이 안에는 '${concern}'와 가까운 최근 자료, 원문/영상 링크, 짧은 발췌가 들어있어요.`
+                  : '이 안에는 현재 학습 순서와 가까운 최근 자료, 원문/영상 링크, 짧은 발췌가 들어있어요.'}
+              </p>
             </div>
-          ))}
+            <ChevronDown
+              size={17}
+              className={`shrink-0 text-text-faint transition ${highlightsOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+          {highlightsOpen ? (
+            <div className="grid gap-2 border-t border-border p-3">
+              {highlights.map((h) => (
+                <div
+                  key={`${h.title}-${h.days_ago}`}
+                  className="rounded-[12px] border border-border bg-card p-3 text-left"
+                >
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent-cyan">
+                      <MediaIcon kind={h.media_kind} />{mediaLabel(h.media_kind)}
+                    </span>
+                    <span className="shrink-0 text-[11px] font-medium text-text-faint">{ageLabel(h.days_ago)}</span>
+                  </div>
+                  <p className="line-clamp-2 text-xs font-medium leading-relaxed text-ink">{h.title}</p>
+                  {h.original_title ? (
+                    <p className="mt-1 line-clamp-1 text-[11px] leading-relaxed text-text-faint">
+                      원제: {h.original_title}
+                    </p>
+                  ) : null}
+                  {h.excerpt ? (
+                    <p className="mt-1.5 line-clamp-2 text-[11px] leading-relaxed text-text-faint">{h.excerpt}</p>
+                  ) : null}
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedHighlight(h)}
+                      className="h-8 rounded-[9px] border border-border px-3 text-[11px] font-semibold text-ink"
+                    >
+                      {h.media_kind === 'video' ? h.script_label || '스크립트 전문' : '원문 보기'}
+                    </button>
+                    {h.url ? (
+                      <button
+                        type="button"
+                        onClick={() => openSourceUrl(h.url)}
+                        className="inline-flex h-8 items-center gap-1 rounded-[9px] bg-primary px-3 text-[11px] font-semibold text-primary-foreground"
+                      >
+                        {h.media_kind === 'video' ? 'YouTube 열기' : '링크 열기'} <ExternalLink size={12} />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
