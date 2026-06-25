@@ -19,6 +19,9 @@ def _row(**overrides):
         "raw_body": "",
         "url": "https://blog.naver.com/sbk8004/224312216722",
         "body": "ChatGPT로 숙제하는 아이를 어떻게 지도할지 요약합니다.",
+        "trust_status": "trusted",
+        "trust_score": 0.92,
+        "trust_reasons": ["source_title_matches_ai_education"],
     }
     base.update(overrides)
     return base
@@ -76,3 +79,6 @@ def test_personalize_keeps_child_study_article_and_uses_source_title():
     assert res["highlights"][0]["title"] == row["raw_title"]
     assert res["highlights"][0]["generated_title"] == row["title"]
     assert res["highlights"][0]["relevance_score"] >= 0.65
+    assert res["highlights"][0]["trust_status"] == "trusted"
+    assert res["highlights"][0]["trust_score"] == 0.92
+    assert res["highlights"][0]["trust_reasons"] == ["source_title_matches_ai_education"]

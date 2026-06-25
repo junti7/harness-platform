@@ -38,8 +38,10 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_DIR = ROOT / "runtime"
 OUT_JSON = RUNTIME_DIR / "edu_curriculum.json"
 OUT_MD = RUNTIME_DIR / "edu_curriculum_brief.md"
+TRUST_AUDIT_JSON = RUNTIME_DIR / "edu_curriculum_trust_audit.json"
+TRUST_AUDIT_MD = RUNTIME_DIR / "edu_curriculum_trust_audit.md"
 
-from core.database import execute_query  # noqa: E402
+from core.database import execute_query, get_connection  # noqa: E402
 
 DOMAIN = "edu_consulting"
 WINDOW_DAYS = 30        # 오버레이 신선 윈도우
@@ -159,6 +161,24 @@ def _ensure_table() -> None:
         )
         """
     )
+    execute_query(
+        """
+        CREATE TABLE IF NOT EXISTS edu_curriculum_evidence_reviews (
+            content_hash      TEXT PRIMARY KEY,
+            refined_id        INTEGER,
+            source            TEXT,
+            title             TEXT,
+            raw_title         TEXT,
+            url               TEXT,
+            segment           TEXT,
+            collect_query     TEXT,
+            review_status     TEXT NOT NULL,
+            trust_score       DOUBLE PRECISION NOT NULL,
+            trust_reasons     JSONB NOT NULL DEFAULT '[]'::jsonb,
+            reviewed_at       TIMESTAMP NOT NULL DEFAULT now()
+        )
+        """
+    )
     for col in (
         "trust_status TEXT NOT NULL DEFAULT 'trusted'",
         "trust_score DOUBLE PRECISION NOT NULL DEFAULT 0",
@@ -171,6 +191,12 @@ def _ensure_table() -> None:
     )
     execute_query(
         "CREATE INDEX IF NOT EXISTS idx_ecte_segment ON edu_curriculum_trusted_evidence (segment)"
+    )
+    execute_query(
+        "CREATE INDEX IF NOT EXISTS idx_ecerv_status ON edu_curriculum_evidence_reviews (review_status)"
+    )
+    execute_query(
+        "CREATE INDEX IF NOT EXISTS idx_ecerv_segment ON edu_curriculum_evidence_reviews (segment)"
     )
 
 
@@ -220,6 +246,91 @@ def _trust_review(row: dict[str, Any]) -> dict[str, Any]:
         "raw_body": row.get("raw_body"),
         "collect_query": row.get("collect_query"),
     }, motivation=_row_motivation(row))
+
+
+def _review_status(review: dict[str, Any]) -> str:
+    return "trusted" if review["ok"] else "quarantined"
+
+
+def _json_default(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
+
+
+def _write_trust_audit(
+    reviews: list[tuple[dict[str, Any], dict[str, Any]]],
+    *,
+    dry_run: bool,
+    sample_limit: int,
+) -> None:
+    counts: dict[str, int] = defaultdict(int)
+    reason_counts: dict[str, int] = defaultdict(int)
+    source_counts: dict[str, int] = defaultdict(int)
+    samples: list[dict[str, Any]] = []
+
+    for row, review in reviews:
+        status = _review_status(review)
+        counts[status] += 1
+        source_counts[str(row.get("source") or "unknown")] += 1
+        for reason in review.get("reasons") or []:
+            reason_counts[str(reason)] += 1
+        if status != "trusted" and len(samples) < sample_limit:
+            samples.append({
+                "content_hash": row.get("content_hash"),
+                "refined_id": row.get("refined_id"),
+                "source": row.get("source"),
+                "title": row.get("title"),
+                "raw_title": row.get("raw_title"),
+                "url": row.get("url"),
+                "segment": row.get("segment"),
+                "collect_query": row.get("collect_query"),
+                "trust_score": review.get("score"),
+                "trust_reasons": review.get("reasons") or [],
+            })
+
+    payload = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "dry_run": dry_run,
+        "total": len(reviews),
+        "counts": dict(sorted(counts.items())),
+        "top_reasons": [
+            {"reason": reason, "count": count}
+            for reason, count in sorted(reason_counts.items(), key=lambda item: -item[1])[:20]
+        ],
+        "top_sources": [
+            {"source": source, "count": count}
+            for source, count in sorted(source_counts.items(), key=lambda item: -item[1])[:20]
+        ],
+        "quarantine_samples": samples,
+    }
+
+    lines = [
+        "# Edu Curriculum Trust Audit",
+        "",
+        f"- generated_at: {payload['generated_at']}",
+        f"- dry_run: {str(dry_run).lower()}",
+        f"- total: {payload['total']}",
+        f"- trusted: {counts.get('trusted', 0)}",
+        f"- quarantined: {counts.get('quarantined', 0)}",
+        "",
+        "## Top Reasons",
+    ]
+    if payload["top_reasons"]:
+        for item in payload["top_reasons"]:
+            lines.append(f"- {item['reason']}: {item['count']}")
+    else:
+        lines.append("- none")
+    lines += ["", "## Quarantine Samples"]
+    if samples:
+        for item in samples:
+            reasons = ", ".join(item["trust_reasons"])
+            lines.append(f"- refined_id={item['refined_id']} · {item['source']} · {item['raw_title']} · score={item['trust_score']} · {reasons}")
+    else:
+        lines.append("- none")
+
+    _atomic_write(TRUST_AUDIT_JSON, json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default))
+    _atomic_write(TRUST_AUDIT_MD, "\n".join(lines))
 
 
 def _classify(title: str, body: str) -> dict[str, Any] | None:
@@ -514,40 +625,77 @@ def cmd_curate(args: argparse.Namespace) -> int:
     rejected = [(r, rv) for r, rv in reviews if not rv["ok"]]
 
     if not args.dry_run:
-        execute_query("TRUNCATE edu_curriculum_trusted_evidence")
-        for row, review in trusted:
-            execute_query(
-                """
-                INSERT INTO edu_curriculum_trusted_evidence
-                    (content_hash, refined_id, source, title, klass, buckets, model_tags,
-                     item_created_at, score, segment, collect_query, trust_status, trust_score, trust_reasons)
-                VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s, 'trusted', %s, %s::jsonb)
-                ON CONFLICT (content_hash) DO UPDATE SET
-                    refined_id = EXCLUDED.refined_id,
-                    source = EXCLUDED.source,
-                    title = EXCLUDED.title,
-                    klass = EXCLUDED.klass,
-                    buckets = EXCLUDED.buckets,
-                    model_tags = EXCLUDED.model_tags,
-                    item_created_at = EXCLUDED.item_created_at,
-                    score = EXCLUDED.score,
-                    segment = EXCLUDED.segment,
-                    collect_query = EXCLUDED.collect_query,
-                    trust_status = EXCLUDED.trust_status,
-                    trust_score = EXCLUDED.trust_score,
-                    trust_reasons = EXCLUDED.trust_reasons,
-                    curated_at = now()
-                """,
-                (
-                    row["content_hash"], row["refined_id"], row["source"], row["title"], row["klass"],
-                    json.dumps(row["buckets"] if isinstance(row["buckets"], list) else json.loads(row["buckets"] or "[]"), ensure_ascii=False),
-                    json.dumps(row["model_tags"] if isinstance(row["model_tags"], list) else json.loads(row["model_tags"] or "[]"), ensure_ascii=False),
-                    row["item_created_at"], row["score"], row["segment"], row["collect_query"],
-                    review["score"], json.dumps(review["reasons"], ensure_ascii=False),
-                ),
-            )
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                for row, review in reviews:
+                    cur.execute(
+                        """
+                        INSERT INTO edu_curriculum_evidence_reviews
+                            (content_hash, refined_id, source, title, raw_title, url, segment, collect_query,
+                             review_status, trust_score, trust_reasons)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                        ON CONFLICT (content_hash) DO UPDATE SET
+                            refined_id = EXCLUDED.refined_id,
+                            source = EXCLUDED.source,
+                            title = EXCLUDED.title,
+                            raw_title = EXCLUDED.raw_title,
+                            url = EXCLUDED.url,
+                            segment = EXCLUDED.segment,
+                            collect_query = EXCLUDED.collect_query,
+                            review_status = EXCLUDED.review_status,
+                            trust_score = EXCLUDED.trust_score,
+                            trust_reasons = EXCLUDED.trust_reasons,
+                            reviewed_at = now()
+                        """,
+                        (
+                            row["content_hash"], row["refined_id"], row["source"], row["title"],
+                            row.get("raw_title"), row.get("url"), row.get("segment"), row.get("collect_query"),
+                            _review_status(review), review["score"], json.dumps(review["reasons"], ensure_ascii=False),
+                        ),
+                    )
+                cur.execute("TRUNCATE edu_curriculum_trusted_evidence")
+                for row, review in trusted:
+                    cur.execute(
+                        """
+                        INSERT INTO edu_curriculum_trusted_evidence
+                            (content_hash, refined_id, source, title, klass, buckets, model_tags,
+                             item_created_at, score, segment, collect_query, trust_status, trust_score, trust_reasons)
+                        VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s, 'trusted', %s, %s::jsonb)
+                        ON CONFLICT (content_hash) DO UPDATE SET
+                            refined_id = EXCLUDED.refined_id,
+                            source = EXCLUDED.source,
+                            title = EXCLUDED.title,
+                            klass = EXCLUDED.klass,
+                            buckets = EXCLUDED.buckets,
+                            model_tags = EXCLUDED.model_tags,
+                            item_created_at = EXCLUDED.item_created_at,
+                            score = EXCLUDED.score,
+                            segment = EXCLUDED.segment,
+                            collect_query = EXCLUDED.collect_query,
+                            trust_status = EXCLUDED.trust_status,
+                            trust_score = EXCLUDED.trust_score,
+                            trust_reasons = EXCLUDED.trust_reasons,
+                            curated_at = now()
+                        """,
+                        (
+                            row["content_hash"], row["refined_id"], row["source"], row["title"], row["klass"],
+                            json.dumps(row["buckets"] if isinstance(row["buckets"], list) else json.loads(row["buckets"] or "[]"), ensure_ascii=False),
+                            json.dumps(row["model_tags"] if isinstance(row["model_tags"], list) else json.loads(row["model_tags"] or "[]"), ensure_ascii=False),
+                            row["item_created_at"], row["score"], row["segment"], row["collect_query"],
+                            review["score"], json.dumps(review["reasons"], ensure_ascii=False),
+                        ),
+                    )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
+    _write_trust_audit(reviews, dry_run=args.dry_run, sample_limit=max(args.sample_rejections, 10))
     print(f"[curriculum:curate] 후보 {len(rows)}건 → trusted {len(trusted)}건 / rejected {len(rejected)}건")
+    print(f"[curriculum:curate] audit → {TRUST_AUDIT_JSON.relative_to(ROOT)}, {TRUST_AUDIT_MD.relative_to(ROOT)}")
     if args.sample_rejections and rejected:
         print("[curriculum:curate] rejected sample")
         for row, review in rejected[:args.sample_rejections]:

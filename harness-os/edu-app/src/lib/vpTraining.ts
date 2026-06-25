@@ -359,6 +359,9 @@ export type CurriculumHighlight = {
   url?: string
   relevance_score?: number
   relevance_reasons?: string[]
+  trust_status?: 'trusted' | 'quarantined' | string
+  trust_score?: number
+  trust_reasons?: string[]
   refined_id?: number
   body?: string
   script_text?: string

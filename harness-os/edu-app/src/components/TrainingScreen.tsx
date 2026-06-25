@@ -11,6 +11,7 @@ import {
   Newspaper,
   PlayCircle,
   ScrollText,
+  ShieldCheck,
   Sparkles,
   Target,
 } from 'lucide-react'
@@ -79,6 +80,15 @@ function levelLabel(value?: string): string {
   if (value === 'advanced') return '고급'
   if (value === 'intermediate') return '중급'
   return '왕초보'
+}
+
+function trustScoreLabel(value?: number): string {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '검수 통과'
+  return `검수 ${Math.round(value * 100)}%`
+}
+
+function trustReasons(highlight: CurriculumHighlight): string[] {
+  return (highlight.trust_reasons?.length ? highlight.trust_reasons : highlight.relevance_reasons ?? []).slice(0, 2)
 }
 
 function segmentLabel(value?: string | null): string {
@@ -239,6 +249,19 @@ function PersonalizedDay0Block({
                     </span>
                     <span className="shrink-0 text-[11px] font-medium text-text-faint">{ageLabel(h.days_ago)}</span>
                   </div>
+                  <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold text-primary">
+                      <ShieldCheck size={11} />{trustScoreLabel(h.trust_score ?? h.relevance_score)}
+                    </span>
+                    {trustReasons(h).map((reason) => (
+                      <span
+                        key={reason}
+                        className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold text-text-muted"
+                      >
+                        {reason}
+                      </span>
+                    ))}
+                  </div>
                   <p className="line-clamp-2 text-xs font-medium leading-relaxed text-ink">{h.title}</p>
                   {h.original_title ? (
                     <p className="mt-1 line-clamp-1 text-[11px] leading-relaxed text-text-faint">
@@ -296,6 +319,19 @@ function PersonalizedDay0Block({
             ) : null}
             {selectedHighlight.source || selectedHighlight.url ? (
               <div className="mb-3 rounded-[12px] bg-secondary px-3 py-2 text-xs leading-relaxed text-text-muted">
+                <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-0.5 text-[10px] font-semibold text-primary">
+                    <ShieldCheck size={11} />{trustScoreLabel(selectedHighlight.trust_score ?? selectedHighlight.relevance_score)}
+                  </span>
+                  {trustReasons(selectedHighlight).map((reason) => (
+                    <span
+                      key={reason}
+                      className="rounded-full bg-card px-2 py-0.5 text-[10px] font-semibold text-text-muted"
+                    >
+                      {reason}
+                    </span>
+                  ))}
+                </div>
                 {selectedHighlight.source ? <div>출처: {selectedHighlight.source}</div> : null}
                 {selectedHighlight.url ? (
                   <button
