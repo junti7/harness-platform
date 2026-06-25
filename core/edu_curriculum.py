@@ -207,6 +207,10 @@ def _source_relevance(r: dict[str, Any], *, motivation: str = "") -> dict[str, A
 
     score = 0.0
     reasons: list[str] = []
+
+    def _score() -> float:
+        return round(min(score, 1.0), 2)
+
     if has_ai:
         score += 0.35
         reasons.append("ai_source_match")
@@ -227,15 +231,15 @@ def _source_relevance(r: dict[str, Any], *, motivation: str = "") -> dict[str, A
             reasons.append("child_study_match")
         if snippet_source:
             if query_terms and not title_query_hits:
-                return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "source_title_query_mismatch"]}
+                return {"ok": False, "score": _score(), "reasons": [*reasons, "source_title_query_mismatch"]}
             if not (title_has_ai and title_child_match):
-                return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "source_title_missing_child_ai_context"]}
+                return {"ok": False, "score": _score(), "reasons": [*reasons, "source_title_missing_child_ai_context"]}
             if _has_any(title_text, PROVIDER_TITLE_TERMS) and not _has_any(title_text, DIRECT_PARENT_VALUE_TERMS):
-                return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "provider_or_promo_source_title"]}
+                return {"ok": False, "score": _score(), "reasons": [*reasons, "provider_or_promo_source_title"]}
         if query_terms and not query_hits:
-            return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "query_context_mismatch"]}
+            return {"ok": False, "score": _score(), "reasons": [*reasons, "query_context_mismatch"]}
         if not (has_ai and child_match):
-            return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "missing_child_ai_context"]}
+            return {"ok": False, "score": _score(), "reasons": [*reasons, "missing_child_ai_context"]}
     elif motivation == "work":
         work_match = _has_any(source_text, WORK_TERMS)
         title_work_match = _has_any(title_text, WORK_TERMS)
@@ -244,19 +248,19 @@ def _source_relevance(r: dict[str, Any], *, motivation: str = "") -> dict[str, A
             reasons.append("work_match")
         if snippet_source:
             if query_terms and not title_query_hits:
-                return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "source_title_query_mismatch"]}
+                return {"ok": False, "score": _score(), "reasons": [*reasons, "source_title_query_mismatch"]}
             if not (title_has_ai and (title_work_match or _has_any(title_text, EDU_TERMS))):
-                return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "source_title_missing_work_ai_context"]}
+                return {"ok": False, "score": _score(), "reasons": [*reasons, "source_title_missing_work_ai_context"]}
         if query_terms and not query_hits:
-            return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "query_context_mismatch"]}
+            return {"ok": False, "score": _score(), "reasons": [*reasons, "query_context_mismatch"]}
         if not (has_ai and (work_match or has_edu)):
-            return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "missing_work_ai_context"]}
+            return {"ok": False, "score": _score(), "reasons": [*reasons, "missing_work_ai_context"]}
     else:
         if not (has_ai and has_edu):
-            return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "missing_ai_education_context"]}
+            return {"ok": False, "score": _score(), "reasons": [*reasons, "missing_ai_education_context"]}
 
     ok = score >= 0.65
-    return {"ok": ok, "score": round(score, 2), "reasons": reasons if ok else [*reasons, "low_relevance_score"]}
+    return {"ok": ok, "score": _score(), "reasons": reasons if ok else [*reasons, "low_relevance_score"]}
 
 
 def _detect_language(text: str) -> str:
