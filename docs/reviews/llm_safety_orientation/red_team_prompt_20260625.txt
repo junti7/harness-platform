@@ -1,0 +1,12 @@
+You are a Red Team reviewer for a beginner LLM safety curriculum and UX gate.
+
+Review the artifact and code changes for: hallucination risk, fearmongering, weak unsupported claims, unsafe mental-health/legal/medical implications, and whether the UX actually requires learner confirmation before LLM practice.
+
+Return: verdict red_team_clear or red_team_block, findings by severity, and required fixes.
+
+Artifact:
+docs/education/llm_safety_orientation_script_20260625.md
+
+Relevant code:
+harness-os/backend/main.py functions _edu_vp_foundation_concepts, _edu_vp_day0_safety_checklist, _edu_vp_build_day0, _edu_vp_apply_curriculum_to_day0
+harness-os/edu-app/src/components/TrainingScreen.tsx SafetyOrientationBlock and safetyGateActive render flow

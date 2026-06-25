@@ -7291,6 +7291,7 @@ def _edu_vp_ui_state_default(state: dict[str, Any]) -> dict[str, Any]:
             "day0": _edu_vp_stage_draft_from_stage(state.get("day0")),
             "day1": _edu_vp_stage_draft_from_stage(state.get("day1")),
         },
+        "safety_confirmed": {},
         "last_client_seq": 0,
         "last_event": {},
         "last_synced_at": state.get("updated_at") or datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -7314,6 +7315,11 @@ def _edu_vp_merge_ui_state(state: dict[str, Any], incoming: dict[str, Any] | Non
         for field in ("selected_stage", "active_curriculum_index", "show_case_archive", "show_continue_from", "preferred_llm", "current_device", "desktop_os", "last_client_seq"):
             if field in incoming and incoming[field] is not None:
                 ui_state[field] = incoming[field]
+        if isinstance(incoming.get("safety_confirmed"), dict):
+            current_safety = ui_state.get("safety_confirmed") or {}
+            if not isinstance(current_safety, dict):
+                current_safety = {}
+            ui_state["safety_confirmed"] = {**current_safety, **incoming["safety_confirmed"]}
         if isinstance(incoming.get("stage_drafts"), dict):
             merged_stage_drafts = ui_state.get("stage_drafts") or {}
             for stage_key in ("day0", "day1"):
@@ -7331,9 +7337,28 @@ def _edu_vp_merge_ui_state(state: dict[str, Any], incoming: dict[str, Any] | Non
     ui_state["preferred_llm"] = _edu_normalize_llm(str(ui_state.get("preferred_llm") or "gemini"))
     ui_state["current_device"] = str(ui_state.get("current_device") or "android").strip().lower()
     ui_state["desktop_os"] = str(ui_state.get("desktop_os") or "windows").strip().lower()
+    safety_confirmed = ui_state.get("safety_confirmed") or {}
+    ui_state["safety_confirmed"] = safety_confirmed if isinstance(safety_confirmed, dict) else {}
     ui_state["last_client_seq"] = max(0, int(ui_state.get("last_client_seq") or 0))
     ui_state["last_synced_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     return ui_state
+
+
+def _edu_vp_safety_confirmation_from_event(state: dict[str, Any], event_name: str, event_payload: dict[str, Any] | None) -> dict[str, bool] | None:
+    if event_name != "safety_orientation_confirmed" or not isinstance(event_payload, dict):
+        return None
+    stage = str(event_payload.get("stage") or "day0")
+    if stage != "day0":
+        return None
+    confirmed_ids = {str(item) for item in (event_payload.get("confirmed_check_ids") or []) if str(item).strip()}
+    required_ids = {
+        str(item.get("id"))
+        for item in (state.get("day0") or {}).get("checklist", [])
+        if isinstance(item, dict) and str(item.get("id") or "").startswith("understand_")
+    }
+    if required_ids and required_ids.issubset(confirmed_ids):
+        return {"day0": True}
+    return None
 
 
 def _edu_vp_append_event(
@@ -7884,7 +7909,7 @@ def _edu_vp_apply_curriculum_to_day0(
     )
 
     dynamic_topics = top_topics or ["첫 질문/기본 사용", "주의점/한계(환각·개인정보)"]
-    checklist = [
+    checklist = _edu_vp_day0_safety_checklist(llm_label) + [
         {
             "id": "open_tool",
             "title": f"{llm_label} 열기",
@@ -7911,6 +7936,9 @@ def _edu_vp_apply_curriculum_to_day0(
     day0["checklist"] = checklist
 
     blocks = [
+        {"title": "AI 노출 리스크 이해", "minutes": 12, "goal": "다정한 답변, 과신, 정서 의존, 개인정보 입력 위험을 먼저 이해한다."},
+        {"title": "LLM 작동 원리 확인", "minutes": 13, "goal": "문장 패턴 기반 생성 도구라는 점을 확인하고 실습 경계를 정한다."},
+        {"title": "안전 사용 기준 확인", "minutes": 10, "goal": "초안으로만 보기, 민감정보 제외, 중요 사실 재확인 원칙을 체크한다."},
         {"title": "맞춤 장면 확인", "minutes": 8, "goal": f"자료수집 커리큘럼이 오늘 '{focus}'에서 시작한 이유를 확인한다."},
         {"title": f"{llm_label} 실행", "minutes": 10, "goal": f"{llm_label} 입력창을 열고 같은 도구로 끝까지 진행한다."},
     ]
@@ -8200,20 +8228,24 @@ def _edu_vp_foundation_concepts(stage_key: str, llm_label: str) -> list[dict[str
     if stage_key == "day0":
         return [
             {
-                "title": "LLM이란 무엇인가",
-                "body": f"{llm_label} 같은 도구는 사람이 다음에 할 말을 많이 배운 뒤, 지금 질문에 가장 그럴듯한 다음 답을 만들어주는 '문장 예측 엔진'에 가깝습니다. 사람처럼 이해한다고 단정하면 안 되지만, 설명·정리·초안 작성에서는 매우 유용합니다.",
+                "title": "AI는 다정해 보여도 사람의 판단자가 아니다",
+                "body": f"{llm_label} 같은 LLM은 사용자의 말투와 감정에 맞춰 자연스럽게 답합니다. 그래서 위로, 확신, 친밀감이 실제 사람의 이해처럼 느껴질 수 있습니다. 하지만 AI는 사용자의 삶을 책임지는 보호자나 전문가가 아니며, 정서적으로 힘든 결정을 대신 맡기면 판단이 흔들릴 수 있습니다.",
             },
             {
-                "title": "생성형 AI는 왜 답이 매번 조금씩 다른가",
-                "body": "같은 질문이어도 표현이나 순서가 조금 달라질 수 있습니다. 그래서 중요한 것은 '한 번에 완벽한 답'이 아니라, 내가 다시 고치기 쉬운 첫 초안을 받는 것입니다.",
+                "title": "LLM은 원리를 알면 덜 위험해진다",
+                "body": f"{llm_label}는 사람처럼 경험을 이해해서 답하는 것이 아니라, 많은 문장 패턴을 바탕으로 지금 대화에서 이어질 법한 말을 생성합니다. 답이 부드럽고 자신 있어 보여도 사실, 의도, 맥락, 위험도를 스스로 보증하지 못합니다.",
             },
             {
-                "title": "왜 모바일부터 시작하나",
-                "body": "VP는 일상 중간중간 휴대폰으로 먼저 쓰게 될 가능성이 큽니다. 가장 자주 손에 잡히는 기기에서 첫 성공을 만드는 것이 학습 저항을 가장 낮춥니다.",
+                "title": "잘못 노출될 때 생길 수 있는 피해",
+                "body": "AI와 오래 대화하다 보면 답을 검증하지 않고 믿거나, 힘든 감정을 AI에게만 털어놓으며 과도하게 의존하거나, 민감한 개인정보를 넣거나, 가족·의사·전문가와 상의해야 할 문제를 혼자 AI에게만 맡길 수 있습니다. 미성년자이거나 급한 위기·큰 불안을 겪는 상황이라면 믿을 만한 사람이나 적절한 전문가에게 함께 도움을 요청해야 합니다.",
             },
             {
-                "title": "AI에게 맡기면 안 되는 것",
-                "body": "계좌번호, 주민번호, 민감한 병원기록처럼 매우 민감한 정보는 그대로 넣지 않습니다. AI 답은 초안으로 보고, 중요한 일정·비용·제출일은 반드시 사람이 다시 확인합니다.",
+                "title": "안전한 사용의 세 가지 기준",
+                "body": "AI 답은 초안으로만 봅니다. 계좌번호, 주민번호, 민감한 병원기록, 아이의 상세 개인정보는 그대로 넣지 않습니다. 중요한 일정·비용·제출일·건강·법률·돈 문제는 반드시 사람이 원문이나 전문가를 다시 확인합니다.",
+            },
+            {
+                "title": "이해 확인 후에만 실습으로 들어간다",
+                "body": "오늘의 첫 실습은 AI에게 마음을 맡기는 연습이 아니라, 생활 자료를 정리하는 초안 도구로 제한해서 써보는 연습입니다. 위 내용을 이해했다는 확인이 끝난 뒤에만 실제 질문 보내기로 넘어갑니다.",
             },
         ]
     return [
@@ -8239,8 +8271,9 @@ def _edu_vp_foundation_concepts(stage_key: str, llm_label: str) -> list[dict[str
 def _edu_vp_schedule_blocks(stage_key: str) -> list[dict[str, Any]]:
     if stage_key == "day0":
         return [
-            {"title": "오리엔테이션", "minutes": 10, "goal": "오늘 무엇을 배우는지, 왜 모바일부터 시작하는지 이해한다."},
-            {"title": "기초 개념 익히기", "minutes": 15, "goal": "LLM, 생성형 AI, 초안 도우미 개념을 쉬운 말로 익힌다."},
+            {"title": "AI 노출 리스크 이해", "minutes": 12, "goal": "다정한 답변, 과신, 정서 의존, 개인정보 입력 위험을 먼저 이해한다."},
+            {"title": "LLM 작동 원리 확인", "minutes": 13, "goal": "LLM이 사람처럼 이해하는 존재가 아니라 문장 패턴 기반 생성 도구임을 확인한다."},
+            {"title": "안전 사용 기준 확인", "minutes": 10, "goal": "초안으로만 보기, 민감정보 제외, 중요 사실 재확인 원칙을 체크한다."},
             {"title": "기기 진입 실습", "minutes": 15, "goal": "Android와 Windows PC에서 같은 AI 도구를 실제로 연다."},
             {"title": "첫 질문 복붙 실습", "minutes": 15, "goal": "첫 질문을 보내고, 결과를 복사하고, 저장해본다."},
             {"title": "정리와 복습", "minutes": 10, "goal": "어디가 막혔는지 기록하고 다음 날 준비를 한다."},
@@ -8279,6 +8312,29 @@ def _edu_vp_day0_materials(llm_label: str) -> list[dict[str, Any]]:
     ]
 
 
+def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
+    return [
+        {
+            "id": "understand_not_human",
+            "title": "AI가 사람이 아니라는 점 확인",
+            "instruction": f"{llm_label}의 답이 다정해도 실제 이해, 책임, 보호자 판단을 대신하지 않는다는 점을 확인한다.",
+            "success_signal": "AI 답을 사람의 판단이나 애정 표현으로 받아들이지 않는다.",
+        },
+        {
+            "id": "understand_generation",
+            "title": "문장 생성 원리 확인",
+            "instruction": "LLM은 많은 문장 패턴을 바탕으로 이어질 법한 답을 만들며, 사실 여부를 자동 보증하지 못한다는 점을 확인한다.",
+            "success_signal": "그럴듯한 답과 검증된 사실을 구분한다.",
+        },
+        {
+            "id": "understand_boundaries",
+            "title": "개인정보와 고위험 판단 경계 확인",
+            "instruction": "민감한 개인정보, 건강·법률·돈·아이 안전 문제는 그대로 입력하지 않고 사람 확인을 거친다.",
+            "success_signal": "AI에게 맡길 일과 사람이 확인할 일을 나눌 수 있다.",
+        },
+    ]
+
+
 def _edu_vp_day1_materials(llm_label: str) -> list[dict[str, Any]]:
     return [
         _edu_vp_material_kit(
@@ -8314,7 +8370,7 @@ def _edu_vp_build_day0(intake: dict[str, Any]) -> dict[str, Any]:
     desktop_os = _edu_vp_device_label(str(intake.get("desktop_os") or "windows"))
     friction = str(intake.get("biggest_friction") or "처음 시작이 막막함").strip()
     goal = str(intake.get("learning_goal") or "생활에서 AI를 덜 무섭게 쓰기").strip()
-    checklist = [
+    checklist = _edu_vp_day0_safety_checklist(llm_label) + [
         {
             "id": "open_tool",
             "title": f"{llm_label} 열기",
@@ -8343,10 +8399,10 @@ def _edu_vp_build_day0(intake: dict[str, Any]) -> dict[str, Any]:
     schedule_blocks = _edu_vp_schedule_blocks("day0")
     return {
         "title": "Day 0 · 환경 열기와 첫 성공",
-        "learning_why": "오늘은 미션을 많이 해결하는 날이 아니라, AI가 무엇인지 거의 모르는 상태에서도 '내가 실제로 들어가서 질문하고 결과를 저장할 수 있다'는 첫 성공을 만드는 날입니다.",
-        "learning_outcome": "Day 0를 마치면 LLM/생성형 AI를 무서운 기술 용어가 아니라, 생활 문제를 정리해주는 초안 도우미로 이해하고, 모바일과 PC에서 같은 도구를 여는 기본 동작을 몸으로 익히게 됩니다.",
+        "learning_why": "오늘은 AI를 바로 믿고 쓰는 날이 아니라, 잘못 노출될 때의 피해와 LLM의 작동 원리를 먼저 이해한 뒤 생활 문제를 정리하는 초안 도구로 제한해 써보는 날입니다.",
+        "learning_outcome": "Day 0를 마치면 LLM/생성형 AI가 사람처럼 판단하는 존재가 아니라 문장 생성 도구라는 점을 이해하고, 안전 경계를 지키면서 모바일과 PC에서 첫 질문을 보내는 기본 동작을 익히게 됩니다.",
         "estimated_minutes": _edu_vp_total_minutes(schedule_blocks),
-        "completion_rule": "30초 만에 끝나는 미션이 아니라, 최소 약 65분 동안 기초 개념을 읽고, 실제 로그인과 첫 질문, 복사/저장, 복습 메모까지 모두 끝냈을 때 Day 0 완료로 봅니다.",
+        "completion_rule": "30초 만에 끝나는 미션이 아니라, 최소 약 75분 동안 AI 노출 리스크, LLM 작동 원리, 안전 사용 기준을 확인하고, 실제 로그인과 첫 질문, 복사/저장, 복습 메모까지 모두 끝냈을 때 Day 0 완료로 봅니다.",
         "foundation_concepts": _edu_vp_foundation_concepts("day0", llm_label),
         "schedule_blocks": schedule_blocks,
         "required_action": f"{llm_label}를 실제로 열고, 본인 고민을 한 문장으로 입력해 첫 답변 1개를 받는다.",
@@ -8355,12 +8411,14 @@ def _edu_vp_build_day0(intake: dict[str, Any]) -> dict[str, Any]:
         "tutorial_steps": _edu_vp_tutorial_steps("day0", intake),
         "recommended_learning": _edu_vp_recommended_learning("day0"),
         "pass_fail_rubric": [
+            "AI가 사람이 아니라 문장 생성 도구라는 점을 이해했다",
+            "민감정보와 고위험 판단 경계를 확인했다",
             "앱/브라우저를 실제로 열었다",
             "로그인 상태를 확인했다",
             "직접 질문을 1번 보냈다",
             "결과를 복사하거나 저장했다",
         ],
-        "blocked_step_options": ["open_tool", "login_ok", "first_prompt", "copy_result"],
+        "blocked_step_options": [item["id"] for item in checklist],
         "checklist": checklist,
     }
 
@@ -10512,6 +10570,7 @@ def edu_vp_training_session_sync(
             "ui_state": current_ui_state if isinstance(current_ui_state, dict) else {},
             "training_state": state,
         }
+    safety_confirmation = _edu_vp_safety_confirmation_from_event(state, req.event_name, req.event_payload)
     state["ui_state"] = _edu_vp_merge_ui_state(
         state,
         {
@@ -10523,6 +10582,7 @@ def edu_vp_training_session_sync(
             "current_device": req.current_device,
             "desktop_os": req.desktop_os,
             "stage_drafts": req.stage_drafts,
+            "safety_confirmed": safety_confirmation,
             "last_client_seq": incoming_seq,
             "last_event": {
                 "event_type": req.event_type,
@@ -10548,7 +10608,8 @@ def edu_vp_training_session_sync(
             "event_payload": req.event_payload,
         },
     )
-    return {"ok": True, "case_id": case_id, "ui_state": state.get("ui_state") or {}, "training_state": state}
+    response_state = _edu_vp_attach_personalized_curriculum(state, payload)
+    return {"ok": True, "case_id": case_id, "ui_state": state.get("ui_state") or {}, "training_state": response_state}
 
 
 @app.post("/api/edu/vp-training/account/register")
@@ -10674,6 +10735,10 @@ def edu_vp_training_artifact(
     state = _edu_vp_load_state(case_id) or _edu_vp_state_default(case_id, payload["customer"], payload["case"])
     state = _edu_vp_normalize_state_keys(state)
     stage = req.stage if req.stage in {"day0", "day1"} else "day0"
+    if stage == "day0" and req.completed:
+        safety_confirmed = ((state.get("ui_state") or {}).get("safety_confirmed") or {}) if isinstance(state.get("ui_state"), dict) else {}
+        if not (isinstance(safety_confirmed, dict) and bool(safety_confirmed.get("day0"))):
+            raise HTTPException(status_code=400, detail="day0_safety_confirmation_required")
     section = dict(state.get(stage) or {})
     section["proof_artifact"] = (req.proof_artifact or "").strip()
     section["blocked_at_step"] = (req.blocked_at_step or "").strip()
@@ -10702,10 +10767,11 @@ def edu_vp_training_artifact(
         ("vp_training_day1" if stage == "day1" and req.completed else f"{stage}_in_progress", case_id),
         fetch=False,
     )
+    response_state = _edu_vp_attach_personalized_curriculum(state, payload)
     return {
         "ok": True,
         "case_id": case_id,
-        "training_state": state,
+        "training_state": response_state,
     }
 
 

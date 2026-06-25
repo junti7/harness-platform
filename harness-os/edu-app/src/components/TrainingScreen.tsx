@@ -501,6 +501,124 @@ function DynamicPathPreview({
   )
 }
 
+function SafetyOrientationBlock({
+  stage,
+  checked,
+  saving,
+  error,
+  onToggle,
+  onReady,
+}: {
+  stage: TrainingStage
+  checked: Record<string, boolean>
+  saving: boolean
+  error?: string | null
+  onToggle: (id: string) => void
+  onReady: () => void
+}) {
+  const concepts = stage.foundation_concepts ?? []
+  const blocks = stage.schedule_blocks ?? []
+  const safetyItems = stageChecklist(stage).filter((item) => item.id.startsWith('understand_'))
+  const ready = safetyItems.length > 0 && safetyItems.every((item) => checked[item.id])
+
+  return (
+    <section className="rounded-2xl border border-danger/20 bg-danger-soft/45 p-4">
+      <div className="mb-3 flex items-start gap-2.5">
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-card text-danger">
+          <ShieldCheck size={18} />
+        </span>
+        <div className="min-w-0">
+          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-danger">실습 전 안전 확인</div>
+          <h2 className="text-base font-bold leading-snug text-ink-strong">AI를 쓰기 전에 먼저 알아야 할 것</h2>
+          <p className="mt-1 text-sm leading-relaxed text-text-muted">
+            LLM은 다정하게 답할 수 있지만 사람의 판단, 보호, 책임을 대신하지 않습니다. 아래 내용을 확인한 뒤
+            실제 질문 실습으로 넘어갑니다.
+          </p>
+        </div>
+      </div>
+
+      {concepts.length ? (
+        <div className="grid gap-2">
+          {concepts.map((concept) => (
+            <div key={concept.title} className="rounded-[12px] border border-border bg-card p-3">
+              <div className="text-sm font-semibold text-ink">{concept.title}</div>
+              <p className="mt-1 text-xs leading-relaxed text-text-muted">{concept.body}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {blocks.length ? (
+        <div className="mt-3 rounded-[12px] border border-border bg-card p-3">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-faint">오늘의 순서</div>
+          <ol className="grid gap-2">
+            {blocks.slice(0, 4).map((block) => (
+              <li key={block.title} className="flex gap-2 text-xs leading-relaxed text-text-muted">
+                <span className="mt-0.5 shrink-0 font-semibold text-primary">{block.minutes ?? '-'}분</span>
+                <span>
+                  <span className="font-semibold text-ink">{block.title}</span>
+                  {block.goal ? ` · ${block.goal}` : ''}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
+
+      {safetyItems.length ? (
+        <div className="mt-3 grid gap-2">
+          {safetyItems.map((item) => {
+            const on = Boolean(checked[item.id])
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onToggle(item.id)}
+                className="flex w-full items-start gap-3 rounded-[12px] border border-border bg-card p-3 text-left transition active:scale-[0.99]"
+              >
+                <span
+                  className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition ${
+                    on ? 'border-primary bg-primary text-primary-foreground' : 'border-border-strong'
+                  }`}
+                >
+                  {on ? <Check size={14} strokeWidth={3} /> : null}
+                </span>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="text-sm font-semibold text-ink">{item.title}</span>
+                  {item.instruction ? (
+                    <span className="text-xs leading-relaxed text-text-faint">{item.instruction}</span>
+                  ) : null}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="mt-3 flex items-start gap-2 rounded-[10px] bg-danger-soft px-3.5 py-3 text-sm text-danger">
+          <AlertCircle size={17} className="mt-0.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={onReady}
+        disabled={!ready || saving}
+        className="mt-3 flex h-11 w-full items-center justify-center rounded-[10px] bg-primary text-sm font-semibold text-primary-foreground transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {saving ? '확인 저장 중…' : '이해했습니다. 실습으로 이동'}
+      </button>
+      {!ready ? (
+        <p className="mt-2 text-center text-xs leading-relaxed text-text-faint">
+          세 가지 확인을 모두 체크하면 실제 LLM 실습이 열립니다.
+        </p>
+      ) : null}
+    </section>
+  )
+}
+
 export default function TrainingScreen({ caseId, email, onBack }: TrainingScreenProps) {
   const [state, setState] = useState<TrainingState | null>(null)
   const [exists, setExists] = useState(true)
@@ -510,6 +628,8 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const [proof, setProof] = useState('')
   const [checked, setChecked] = useState<Record<string, boolean>>({})
   const [whyOpen, setWhyOpen] = useState(false)
+  const [safetyReady, setSafetyReady] = useState(false)
+  const [safetySyncing, setSafetySyncing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const seqRef = useRef(0)
@@ -520,6 +640,8 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     setProof(String(st[next]?.proof_artifact ?? ''))
     setChecked({})
     setWhyOpen(false)
+    setSafetyReady(Boolean(st[next]?.completed || st.ui_state?.safety_confirmed?.[next]))
+    setSafetySyncing(false)
     setNotice(null)
   }
 
@@ -572,6 +694,32 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
 
   function toggleCheck(id: string) {
     setChecked((prev) => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  function confirmSafetyOrientation() {
+    if (!state || safetySyncing) return
+    const confirmedCheckIds = stageChecklist(current).filter((item) => item.id.startsWith('understand_') && checked[item.id]).map((item) => item.id)
+    setSafetySyncing(true)
+    setError(null)
+    seqRef.current += 1
+    void syncSession({
+      caseId,
+      email,
+      selectedStage: stage,
+      clientSeq: seqRef.current,
+      eventName: 'safety_orientation_confirmed',
+      eventPayload: { stage, confirmed_check_ids: confirmedCheckIds },
+    })
+      .then((next) => {
+        setState(next)
+        setSafetyReady(Boolean(next.ui_state?.safety_confirmed?.[stage] || next[stage]?.completed))
+      })
+      .catch((e) => {
+        console.error('safety confirmation sync failed', e)
+        setError(errMsg(e))
+        setSafetyReady(false)
+      })
+      .finally(() => setSafetySyncing(false))
   }
 
   async function completeStage() {
@@ -656,12 +804,14 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const current = state?.[stage]
   const items = stageChecklist(current)
   const doneCount = items.filter((it) => checked[it.id]).length
+  const allChecked = items.length === 0 || doneCount === items.length
   const day1Locked = !state?.day0?.completed
   const overallPct = Math.min(100, Math.max(0, Math.round(state?.progress?.pct ?? 0)))
   const learnerName = String(state?.customer?.name || '오늘의 학습자')
   const personalizedCurriculum =
     stage === 'day0' && state?.personalized_curriculum?.available ? state.personalized_curriculum : null
   const dynamicPath = stage === 'day0' ? state?.dynamic_curriculum_path ?? [] : []
+  const safetyGateActive = stage === 'day0' && !safetyReady && !current?.completed
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 py-7">
@@ -725,11 +875,22 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           ) : null}
         </div>
 
-        {personalizedCurriculum ? (
+        {safetyGateActive && current ? (
+          <SafetyOrientationBlock
+            stage={current}
+            checked={checked}
+            saving={safetySyncing}
+            error={error}
+            onToggle={toggleCheck}
+            onReady={confirmSafetyOrientation}
+          />
+        ) : null}
+
+        {!safetyGateActive && personalizedCurriculum ? (
           <PersonalizedDay0Block curriculum={personalizedCurriculum} learnerName={learnerName} />
         ) : null}
 
-        {dynamicPath.length ? (
+        {!safetyGateActive && dynamicPath.length ? (
           <DynamicPathPreview items={dynamicPath} meta={state?.adaptive_curriculum_meta} />
         ) : null}
 
@@ -759,7 +920,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         ) : null}
 
         {/* 오늘의 미션 */}
-        {current?.required_action ? (
+        {!safetyGateActive && current?.required_action ? (
           <div className="rounded-2xl border border-border bg-accent/40 p-4">
             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-accent-cyan">
               <Sparkles size={13} />오늘의 미션
@@ -769,7 +930,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         ) : null}
 
         {/* 체크리스트 */}
-        {items.length > 0 ? (
+        {!safetyGateActive && items.length > 0 ? (
           <div className="flex flex-col gap-2.5">
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-ink">단계 체크리스트</span>
@@ -811,6 +972,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         ) : null}
 
         {/* 증거물 + 완료 */}
+        {!safetyGateActive ? (
         <div className="flex flex-col gap-2.5">
           <label className="text-sm font-semibold text-ink" htmlFor="proof">
             결과 붙여넣기
@@ -840,7 +1002,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           <button
             type="button"
             onClick={completeStage}
-            disabled={saving || !proof.trim()}
+            disabled={saving || !proof.trim() || !allChecked}
             className="mt-1 flex h-12 items-center justify-center gap-2 rounded-[10px] bg-primary text-[15px] font-semibold text-primary-foreground transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving ? <Loader2 size={18} className="animate-spin" /> : null}
@@ -848,8 +1010,11 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           </button>
           {!proof.trim() ? (
             <p className="text-center text-xs text-text-faint">결과를 한 줄이라도 붙여넣으면 완료할 수 있어요.</p>
+          ) : !allChecked ? (
+            <p className="text-center text-xs text-text-faint">체크리스트를 모두 확인하면 완료할 수 있어요.</p>
           ) : null}
         </div>
+        ) : null}
       </div>
     </div>
   )

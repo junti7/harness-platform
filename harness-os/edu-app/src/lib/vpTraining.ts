@@ -193,6 +193,8 @@ export type TrainingStage = {
   learning_outcome?: string
   estimated_minutes?: number
   completion_rule?: string
+  foundation_concepts?: Array<{ title: string; body: string }>
+  schedule_blocks?: Array<{ title: string; minutes?: number; goal?: string }>
   required_action?: string
   proof_artifact_hint?: string
   pass_fail_rubric?: string[]
@@ -254,6 +256,7 @@ export type AdaptiveCurriculumMeta = {
 export type TrainingUiState = {
   selected_stage?: StageKey
   active_curriculum_index?: number
+  safety_confirmed?: Record<string, boolean>
   last_client_seq?: number
 }
 

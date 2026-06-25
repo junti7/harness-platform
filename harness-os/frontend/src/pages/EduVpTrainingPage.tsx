@@ -119,6 +119,7 @@ type UiState = {
   preferred_llm?: string
   current_device?: string
   desktop_os?: string
+  safety_confirmed?: Record<string, boolean>
   stage_drafts?: Partial<Record<StageKey, UiStageDraft>>
   last_client_seq?: number
   last_event?: Record<string, unknown>
@@ -367,6 +368,7 @@ const C = {
   bg: '#f8fafc',
   warn: '#d97706',
   warnSoft: '#fff7ed',
+  danger: '#dc2626',
   progress: '#111827',
 }
 
@@ -477,9 +479,12 @@ function StageCard({
   onSaveFeedback,
   onDraftChange,
   onInteraction,
+  safetyConfirmed,
+  onSafetyConfirm,
   onContinue,
   saving,
   feedbackSaving,
+  safetySaving,
   apiBase,
   authHeaders,
   showContinue,
@@ -494,9 +499,12 @@ function StageCard({
   onSaveFeedback: (stageKey: StageKey, payload: { empathy_score: number; clarity_score: number; motivation_score: number; biggest_blocker: string; freeform_feedback: string }) => void
   onDraftChange: (stageKey: StageKey, draft: UiStageDraft) => void
   onInteraction: (eventName: string, payload?: Record<string, unknown>) => void
+  safetyConfirmed: boolean
+  onSafetyConfirm: (stageKey: StageKey, confirmedCheckIds: string[]) => void
   onContinue: () => void
   saving: boolean
   feedbackSaving: boolean
+  safetySaving: boolean
   apiBase: string
   authHeaders: () => Record<string, string>
   showContinue: boolean
@@ -511,6 +519,10 @@ function StageCard({
   const [motivationScore, setMotivationScore] = useState(draft?.motivation_score ?? stage?.vp_feedback?.motivation_score ?? 3)
   const [biggestBlocker, setBiggestBlocker] = useState(draft?.biggest_blocker ?? stage?.vp_feedback?.biggest_blocker ?? '')
   const [freeformFeedback, setFreeformFeedback] = useState(draft?.freeform_feedback ?? stage?.vp_feedback?.freeform_feedback ?? '')
+  const [safetyChecked, setSafetyChecked] = useState<Record<string, boolean>>({})
+  const safetyItems = (stage?.checklist || []).filter((item) => item.id.startsWith('understand_'))
+  const safetyGateActive = stageKey === 'day0' && !stage?.completed && !safetyConfirmed
+  const safetyReady = safetyItems.length > 0 && safetyItems.every((item) => safetyChecked[item.id])
 
   useEffect(() => {
     setProof(draft?.proof_artifact ?? stage?.proof_artifact ?? '')
@@ -559,7 +571,7 @@ function StageCard({
         <h2 style={{ margin: 0, fontSize: '1.55rem', lineHeight: 1.3, color: '#000000' }}>{displayStageTitle(stage?.title)}</h2>
       </div>
 
-      {stageKey === 'day0' && (
+      {stageKey === 'day0' && !safetyGateActive && (
         <PersonalizedCurriculumCard curriculum={personalizedCurriculum} learnerName={learnerName} />
       )}
 
@@ -639,7 +651,38 @@ function StageCard({
         </div>
       )}
 
-      {!!stage?.tutorial_steps?.length && (
+      {safetyGateActive && (
+        <div style={{ background: '#fef2f2', border: `1px solid ${C.danger}`, borderRadius: 16, padding: 14, display: 'grid', gap: 10 }}>
+          <div style={{ fontSize: '1.05rem', color: C.ink, fontWeight: 900 }}>실습 전 안전 확인</div>
+          <div style={{ color: C.muted, fontSize: '.92rem', lineHeight: 1.6 }}>
+            AI가 사람이 아니라 문장 생성 도구라는 점과 개인정보·고위험 판단 경계를 확인해야 실습을 시작할 수 있습니다.
+          </div>
+          {safetyItems.map((item) => (
+            <label key={item.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 12 }}>
+              <input
+                type="checkbox"
+                checked={Boolean(safetyChecked[item.id])}
+                onChange={(e) => setSafetyChecked((prev) => ({ ...prev, [item.id]: e.target.checked }))}
+                style={{ marginTop: 4 }}
+              />
+              <span>
+                <span style={{ display: 'block', fontWeight: 800, color: C.ink }}>{item.title}</span>
+                <span style={{ display: 'block', color: C.muted, fontSize: '.9rem', lineHeight: 1.55 }}>{item.instruction}</span>
+              </span>
+            </label>
+          ))}
+          <button
+            type="button"
+            onClick={() => onSafetyConfirm(stageKey, safetyItems.filter((item) => safetyChecked[item.id]).map((item) => item.id))}
+            disabled={!safetyReady || safetySaving}
+            style={{ background: !safetyReady || safetySaving ? '#cbd5e1' : '#111827', color: '#fff', border: 'none', borderRadius: 14, padding: '13px 16px', fontWeight: 800, cursor: !safetyReady || safetySaving ? 'not-allowed' : 'pointer' }}
+          >
+            {safetySaving ? '확인 저장 중…' : '이해했습니다. 실습 열기'}
+          </button>
+        </div>
+      )}
+
+      {!safetyGateActive && !!stage?.tutorial_steps?.length && (
         <div id={stageKey === 'day0' ? curriculumDetailBlockId(stageKey, 2) : undefined} data-curriculum-anchor={stageKey === 'day0' ? '2' : undefined} style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
           <div style={{ fontSize: '1.05rem', color: C.ink, fontWeight: 900 }}>{curriculumHeading(stage, 2, '3. 기기 진입 실습')}</div>
           {stage.tutorial_steps.map((item, index) => (
@@ -651,14 +694,14 @@ function StageCard({
         </div>
       )}
 
-      {stage?.required_action && (
+      {!safetyGateActive && stage?.required_action && (
         <div id={stageKey === 'day0' ? curriculumDetailBlockId(stageKey, 3) : undefined} data-curriculum-anchor={stageKey === 'day0' ? '3' : undefined} style={{ scrollMarginTop: 18, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 14 }}>
           <div style={{ fontSize: '1.05rem', color: C.ink, fontWeight: 900, marginBottom: 6 }}>{stageKey === 'day0' ? curriculumHeading(stage, 3, '4. 첫 질문 복붙 실습') : '오늘 바로 해야 할 일'}</div>
           <div style={{ fontSize: '1rem', lineHeight: 1.65, color: C.ink, fontWeight: 700 }}>{stage.required_action}</div>
         </div>
       )}
 
-      {!!stage?.checklist?.length && (
+      {!safetyGateActive && !!stage?.checklist?.length && (
         <div style={{ display: 'grid', gap: 10 }}>
           <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>체크리스트</div>
           {stage.checklist.map((item) => (
@@ -671,7 +714,7 @@ function StageCard({
         </div>
       )}
 
-      {!!stage?.sample_materials?.length && (
+      {!safetyGateActive && !!stage?.sample_materials?.length && (
         <div id={stageKey === 'day1' ? curriculumDetailBlockId(stageKey, 2) : undefined} data-curriculum-anchor={stageKey === 'day1' ? '2' : undefined} style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
           <div style={{ fontSize: stageKey === 'day1' ? '1.05rem' : '.9rem', color: stageKey === 'day1' ? C.ink : C.muted, fontWeight: 900 }}>{stageKey === 'day1' ? curriculumHeading(stage, 2, '3. 실전 교보재 1차 실습') : '실전 교보재'}</div>
           {stage.sample_materials.map((item) => (
@@ -690,14 +733,14 @@ function StageCard({
         </div>
       )}
 
-      {stage?.practice_prompt_template && (
+      {!safetyGateActive && stage?.practice_prompt_template && (
         <div id={stageKey === 'day1' ? curriculumDetailBlockId(stageKey, 3) : undefined} data-curriculum-anchor={stageKey === 'day1' ? '3' : undefined} style={{ scrollMarginTop: 18, background: '#fefce8', border: `1px solid ${C.warn}`, borderRadius: 16, padding: 14 }}>
           <div style={{ fontSize: '1.05rem', color: C.ink, fontWeight: 900, marginBottom: 6 }}>{stageKey === 'day1' ? curriculumHeading(stage, 3, '4. 실전 교보재 2차 수정') : curriculumHeading(stage, 3, '4. 첫 질문 복붙 실습')}</div>
           <div style={{ fontSize: '.95rem', lineHeight: 1.65, color: C.ink, whiteSpace: 'pre-wrap' }}>{stage.practice_prompt_template}</div>
         </div>
       )}
 
-      {!!stage?.home_priority_missions?.length && (
+      {!safetyGateActive && !!stage?.home_priority_missions?.length && (
         <div style={{ display: 'grid', gap: 10 }}>
           <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>오늘 가장 먼저 해볼 생활형 미션</div>
           <div style={{ color: C.faint, fontSize: '.86rem', lineHeight: 1.55 }}>
@@ -716,7 +759,7 @@ function StageCard({
         </div>
       )}
 
-      {!!stage?.home_life_recommended_learning?.length && (
+      {!safetyGateActive && !!stage?.home_life_recommended_learning?.length && (
         <div id={stageKey === 'day1' ? curriculumDetailBlockId(stageKey, 4) : undefined} data-curriculum-anchor={stageKey === 'day1' ? '4' : undefined} style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
           <div style={{ fontSize: stageKey === 'day1' ? '1.05rem' : '.9rem', color: stageKey === 'day1' ? C.ink : C.muted, fontWeight: 900 }}>{stageKey === 'day1' ? curriculumHeading(stage, 4, '5. 근거자료와 비교 복습') : '맘카페/학부모 RAG 추천'}</div>
           {stage.home_life_recommended_learning.map((item, index) => (
@@ -735,7 +778,7 @@ function StageCard({
         </div>
       )}
 
-      {!!stage?.recommended_learning?.length && (
+      {!safetyGateActive && !!stage?.recommended_learning?.length && (
         <div style={{ display: 'grid', gap: 10 }}>
           <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>RAG 추천 자료</div>
           {stage.recommended_learning.map((item, index) => (
@@ -754,7 +797,7 @@ function StageCard({
         </div>
       )}
 
-      {!!stage?.evidence_cards?.length && (
+      {!safetyGateActive && !!stage?.evidence_cards?.length && (
         <div style={{ display: 'grid', gap: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ fontSize: '.9rem', color: C.muted, fontWeight: 900 }}>근거 묶음</div>
@@ -778,6 +821,7 @@ function StageCard({
         </div>
       )}
 
+      {!safetyGateActive && (
       <div id={curriculumDetailBlockId(stageKey, stageKey === 'day0' ? 4 : 5)} data-curriculum-anchor={stageKey === 'day0' ? '4' : '5'} style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
         <div style={{ fontSize: '1.05rem', color: C.ink, fontWeight: 900 }}>{curriculumHeading(stage, stageKey === 'day0' ? 4 : 5, stageKey === 'day0' ? '5. 정리와 복습' : '6. 회고와 저장')}</div>
         <label style={{ display: 'grid', gap: 6 }}>
@@ -827,8 +871,9 @@ function StageCard({
           </div>
         )}
       </div>
+      )}
 
-      {!!stage?.scenario_bank?.length && (
+      {!safetyGateActive && !!stage?.scenario_bank?.length && (
         <div id={stageKey === 'day1' ? curriculumDetailBlockId(stageKey, 6) : undefined} data-curriculum-anchor={stageKey === 'day1' ? '6' : undefined} style={{ scrollMarginTop: 18, display: 'grid', gap: 10 }}>
           <div style={{ fontSize: stageKey === 'day1' ? '1.05rem' : '.9rem', color: stageKey === 'day1' ? C.ink : C.muted, fontWeight: 900 }}>{stageKey === 'day1' ? curriculumHeading(stage, 6, '7. 추가 응용 1회') : '가정 주부 실전 시나리오 뱅크'}</div>
           <div style={{ color: C.faint, fontSize: '.86rem', lineHeight: 1.55 }}>
@@ -913,6 +958,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
   const [loading, setLoading] = useState(false)
   const [savingStage, setSavingStage] = useState<StageKey | null>(null)
   const [savingFeedbackStage, setSavingFeedbackStage] = useState<StageKey | null>(null)
+  const [savingSafetyStage, setSavingSafetyStage] = useState<StageKey | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [caseId, setCaseId] = useState<number | null>(null)
   const [trainingState, setTrainingState] = useState<TrainingState | null>(null)
@@ -1299,10 +1345,28 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
         if (Number.isFinite(nextCaseId) && latestCaseIdRef.current === nextCaseId && serverSeq >= syncSeqRef.current) {
           applyTrainingSession(safeEmail, nextCaseId, data.training_state as TrainingState)
         }
+      } else if (data.training_state) {
+        const nextCaseId = typeof data.case_id === 'number' ? data.case_id : Number(data.case_id)
+        if (Number.isFinite(nextCaseId) && latestCaseIdRef.current === nextCaseId) {
+          applyTrainingSession(safeEmail, nextCaseId, data.training_state as TrainingState)
+        }
       }
     } catch (err) {
       console.warn('VP training session sync network failure', err)
       return
+    }
+  }
+
+  async function confirmSafety(stage: StageKey, confirmedCheckIds: string[]) {
+    if (savingSafetyStage || stage !== 'day0') return
+    setSavingSafetyStage(stage)
+    setError(null)
+    try {
+      await syncSessionState('ui_sync', 'safety_orientation_confirmed', { stage, confirmed_check_ids: confirmedCheckIds })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'safety confirmation failed')
+    } finally {
+      setSavingSafetyStage(null)
     }
   }
 
@@ -1800,6 +1864,8 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
                 onSaveFeedback={saveFeedback}
                 onDraftChange={updateStageDraft}
                 onInteraction={trackInteraction}
+                safetyConfirmed={Boolean(uiState.safety_confirmed?.[selectedStage])}
+                onSafetyConfirm={confirmSafety}
                 onContinue={() => {
                   if (nextStage) {
                     setSelectedStage(nextStage)
@@ -1810,6 +1876,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
                 }}
                 saving={savingStage === selectedStage}
                 feedbackSaving={savingFeedbackStage === selectedStage}
+                safetySaving={savingSafetyStage === selectedStage}
                 apiBase={apiBase}
                 authHeaders={authHeaders}
                 showContinue={showContinueFrom === selectedStage && Boolean(nextStage)}
