@@ -7640,7 +7640,7 @@ def _edu_vp_curriculum_modules(path: list[dict[str, Any]], *, explicit_target: b
             if concern and concern not in concerns and len(concerns) < 4:
                 concerns.append(concern)
             mission = str(item.get("mission") or "")
-            if mission and len(missions) < 2:
+            if mission and len(missions) < 3:
                 missions.append(mission)
         topic = sorted(topic_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
         modules.append({

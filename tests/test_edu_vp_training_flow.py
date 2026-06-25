@@ -74,6 +74,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("Claude 첫 질문", modules[0]["outcome"])
         self.assertNotIn("Gemini 첫 질문", modules[0]["outcome"])
         self.assertEqual(modules[0]["lesson_count"], 12)
+        self.assertEqual(len(modules[0]["sample_missions"]), 3)
 
     def test_day1_contains_rag_lineage_and_evidence_cards(self):
         fake_bundle = {
