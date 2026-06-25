@@ -80,6 +80,18 @@ CHILD_STUDY_TERMS = (
     "숙제", "공부", "학습", "학생", "초등", "중등", "중학생", "고등", "고등학생", "아이", "자녀", "부모", "학부모",
     "학교", "수업", "학원", "homework", "student", "child", "children", "parent", "parents", "school", "classroom",
 )
+CHILD_TITLE_TERMS = (
+    "숙제", "초등", "초등학생", "중등", "중학생", "고등학생", "학생", "아이", "우리아이", "우리 아이",
+    "자녀", "부모", "학부모", "엄마", "아빠", "청소년", "homework", "student", "child", "children", "parent",
+)
+PROVIDER_TITLE_TERMS = (
+    "강사", "강의", "출강", "교육청", "도서관", "진흥원", "대학교", "학원", "모집", "자격", "자격증",
+    "전문적 학습공동체", "무료자격", "체험단", "협찬", "후기", "수강생 모집",
+)
+DIRECT_PARENT_VALUE_TERMS = (
+    "숙제", "활용법", "가이드", "부모", "학부모", "자녀", "우리 아이", "우리아이", "말려야", "알아야",
+    "homework", "guide", "parent",
+)
 WORK_TERMS = (
     "업무", "회사", "회의", "보고서", "메일", "답장", "직장", "직장인", "사무", "work", "office", "meeting", "email",
 )
@@ -209,7 +221,7 @@ def _source_relevance(r: dict[str, Any], *, motivation: str = "") -> dict[str, A
 
     if motivation == "child_study":
         child_match = _has_any(source_text, CHILD_STUDY_TERMS)
-        title_child_match = _has_any(title_text, CHILD_STUDY_TERMS)
+        title_child_match = _has_any(title_text, CHILD_TITLE_TERMS)
         if child_match:
             score += 0.25
             reasons.append("child_study_match")
@@ -218,6 +230,8 @@ def _source_relevance(r: dict[str, Any], *, motivation: str = "") -> dict[str, A
                 return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "source_title_query_mismatch"]}
             if not (title_has_ai and title_child_match):
                 return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "source_title_missing_child_ai_context"]}
+            if _has_any(title_text, PROVIDER_TITLE_TERMS) and not _has_any(title_text, DIRECT_PARENT_VALUE_TERMS):
+                return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "provider_or_promo_source_title"]}
         if query_terms and not query_hits:
             return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "query_context_mismatch"]}
         if not (has_ai and child_match):
@@ -555,6 +569,7 @@ def load_evidence_rows() -> list[dict[str, Any]]:
     return execute_query(
         """
         SELECT
+            e.content_hash,
             e.klass,
             e.buckets,
             e.model_tags,
