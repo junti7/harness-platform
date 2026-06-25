@@ -89,8 +89,9 @@ MODEL_TAG = re.compile(
 
 
 # 개인화 가중치/로직은 core.edu_curriculum 단일 출처를 쓴다(CLI·백엔드 공용, drift 방지).
-from core.edu_curriculum import personalize as _personalize  # noqa: E402
+from core.edu_curriculum import _media_kind as _media_kind  # noqa: E402
 from core.edu_curriculum import _source_relevance as _source_relevance  # noqa: E402
+from core.edu_curriculum import personalize as _personalize  # noqa: E402
 
 
 def _has(t: str, sigs: list[str]) -> bool:
@@ -137,6 +138,88 @@ def _ensure_table() -> None:
     execute_query(
         "CREATE INDEX IF NOT EXISTS idx_ece_segment ON edu_curriculum_evidence (segment)"
     )
+    execute_query(
+        """
+        CREATE TABLE IF NOT EXISTS edu_curriculum_trusted_evidence (
+            content_hash      TEXT PRIMARY KEY,
+            refined_id        INTEGER,
+            source            TEXT,
+            title             TEXT,
+            klass             TEXT NOT NULL,
+            buckets           JSONB NOT NULL DEFAULT '[]'::jsonb,
+            model_tags        JSONB NOT NULL DEFAULT '[]'::jsonb,
+            item_created_at   TIMESTAMP,
+            score             DOUBLE PRECISION,
+            segment           TEXT,
+            collect_query     TEXT,
+            trust_status      TEXT NOT NULL DEFAULT 'trusted',
+            trust_score       DOUBLE PRECISION NOT NULL,
+            trust_reasons     JSONB NOT NULL DEFAULT '[]'::jsonb,
+            curated_at        TIMESTAMP NOT NULL DEFAULT now()
+        )
+        """
+    )
+    for col in (
+        "trust_status TEXT NOT NULL DEFAULT 'trusted'",
+        "trust_score DOUBLE PRECISION NOT NULL DEFAULT 0",
+        "trust_reasons JSONB NOT NULL DEFAULT '[]'::jsonb",
+        "curated_at TIMESTAMP NOT NULL DEFAULT now()",
+    ):
+        execute_query(f"ALTER TABLE edu_curriculum_trusted_evidence ADD COLUMN IF NOT EXISTS {col}")
+    execute_query(
+        "CREATE INDEX IF NOT EXISTS idx_ecte_status ON edu_curriculum_trusted_evidence (trust_status)"
+    )
+    execute_query(
+        "CREATE INDEX IF NOT EXISTS idx_ecte_segment ON edu_curriculum_trusted_evidence (segment)"
+    )
+
+
+def _row_motivation(row: dict[str, Any]) -> str:
+    segment = str(row.get("segment") or "")
+    return "child_study" if segment == "parent" else "work" if segment == "worker" else ""
+
+
+def _trusted_candidate_rows() -> list[dict[str, Any]]:
+    return execute_query(
+        """
+        SELECT e.content_hash, e.refined_id, e.source, e.title, e.klass, e.buckets, e.model_tags,
+               e.item_created_at, e.score, e.segment, e.collect_query,
+               rs.raw_data->>'title' AS raw_title,
+               rs.raw_data->>'description' AS raw_description,
+               COALESCE(
+                   NULLIF(rs.raw_data->>'body', ''),
+                   NULLIF(rs.raw_data->>'content', ''),
+                   NULLIF(rs.raw_data->>'text', '')
+               ) AS raw_body,
+               COALESCE(
+                   NULLIF(rs.raw_data->>'url', ''),
+                   NULLIF(rs.raw_data->>'link', ''),
+                   NULLIF(rs.raw_data->>'source_url', '')
+               ) AS url
+        FROM edu_curriculum_evidence e
+        LEFT JOIN refined_outputs r ON r.id = e.refined_id
+        LEFT JOIN filtered_signals f ON f.id = r.filtered_signal_id
+        LEFT JOIN raw_signals rs ON rs.id = f.raw_signal_id
+        ORDER BY e.item_created_at DESC NULLS LAST, e.refined_id DESC NULLS LAST
+        """,
+        fetch=True,
+    ) or []
+
+
+def _trust_review(row: dict[str, Any]) -> dict[str, Any]:
+    source = str(row.get("source") or "")
+    url = str(row.get("url") or "")
+    kind = _media_kind(source, url)
+    if kind == "video":
+        return {"ok": True, "score": 1.0, "reasons": ["video_prechecked"]}
+    return _source_relevance({
+        "source": source,
+        "url": url,
+        "raw_title": row.get("raw_title"),
+        "raw_description": row.get("raw_description"),
+        "raw_body": row.get("raw_body"),
+        "collect_query": row.get("collect_query"),
+    }, motivation=_row_motivation(row))
 
 
 def _classify(title: str, body: str) -> dict[str, Any] | None:
@@ -214,7 +297,12 @@ def cmd_ingest(args: argparse.Namespace) -> int:
                    NULLIF(rs.raw_data->>'body', ''),
                    NULLIF(rs.raw_data->>'content', ''),
                    NULLIF(rs.raw_data->>'text', '')
-               ) AS raw_body
+               ) AS raw_body,
+               COALESCE(
+                   NULLIF(rs.raw_data->>'url', ''),
+                   NULLIF(rs.raw_data->>'link', ''),
+                   NULLIF(rs.raw_data->>'source_url', '')
+               ) AS url
         FROM refined_outputs r
         JOIN filtered_signals f ON r.filtered_signal_id = f.id
         LEFT JOIN raw_signals rs ON f.raw_signal_id = rs.id
@@ -234,6 +322,8 @@ def cmd_ingest(args: argparse.Namespace) -> int:
             continue
         motivation = "child_study" if r["segment"] == "parent" else "work" if r["segment"] == "worker" else ""
         rel = _source_relevance({
+            "source": r["source"],
+            "url": r["url"],
             "raw_title": r["raw_title"],
             "raw_description": r["raw_description"],
             "raw_body": r["raw_body"],
@@ -323,7 +413,7 @@ def cmd_build(args: argparse.Namespace) -> int:
     _ensure_table()
     now = datetime.now(timezone.utc)
     rows = execute_query(
-        "SELECT klass, buckets, model_tags, item_created_at FROM edu_curriculum_evidence",
+        "SELECT klass, buckets, model_tags, item_created_at FROM edu_curriculum_trusted_evidence WHERE trust_status = 'trusted'",
         fetch=True) or []
     ever = [r for r in rows if r["klass"] == "evergreen"]
     per = [r for r in rows if r["klass"] == "perishable"]
@@ -407,6 +497,72 @@ def cmd_build(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_curate(args: argparse.Namespace) -> int:
+    """고객 노출용 trusted evidence 항아리를 재생성한다.
+
+    edu_curriculum_evidence 는 원재료 후보 풀이고, VP/고객 화면은 이 명령이 통과시킨
+    edu_curriculum_trusted_evidence 만 읽는다.
+    """
+    _ensure_table()
+    rows = _trusted_candidate_rows()
+    reviews: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for row in rows:
+        review = _trust_review(row)
+        reviews.append((row, review))
+
+    trusted = [(r, rv) for r, rv in reviews if rv["ok"]]
+    rejected = [(r, rv) for r, rv in reviews if not rv["ok"]]
+
+    if not args.dry_run:
+        execute_query("TRUNCATE edu_curriculum_trusted_evidence")
+        for row, review in trusted:
+            execute_query(
+                """
+                INSERT INTO edu_curriculum_trusted_evidence
+                    (content_hash, refined_id, source, title, klass, buckets, model_tags,
+                     item_created_at, score, segment, collect_query, trust_status, trust_score, trust_reasons)
+                VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s, 'trusted', %s, %s::jsonb)
+                ON CONFLICT (content_hash) DO UPDATE SET
+                    refined_id = EXCLUDED.refined_id,
+                    source = EXCLUDED.source,
+                    title = EXCLUDED.title,
+                    klass = EXCLUDED.klass,
+                    buckets = EXCLUDED.buckets,
+                    model_tags = EXCLUDED.model_tags,
+                    item_created_at = EXCLUDED.item_created_at,
+                    score = EXCLUDED.score,
+                    segment = EXCLUDED.segment,
+                    collect_query = EXCLUDED.collect_query,
+                    trust_status = EXCLUDED.trust_status,
+                    trust_score = EXCLUDED.trust_score,
+                    trust_reasons = EXCLUDED.trust_reasons,
+                    curated_at = now()
+                """,
+                (
+                    row["content_hash"], row["refined_id"], row["source"], row["title"], row["klass"],
+                    json.dumps(row["buckets"] if isinstance(row["buckets"], list) else json.loads(row["buckets"] or "[]"), ensure_ascii=False),
+                    json.dumps(row["model_tags"] if isinstance(row["model_tags"], list) else json.loads(row["model_tags"] or "[]"), ensure_ascii=False),
+                    row["item_created_at"], row["score"], row["segment"], row["collect_query"],
+                    review["score"], json.dumps(review["reasons"], ensure_ascii=False),
+                ),
+            )
+
+    print(f"[curriculum:curate] 후보 {len(rows)}건 → trusted {len(trusted)}건 / rejected {len(rejected)}건")
+    if args.sample_rejections and rejected:
+        print("[curriculum:curate] rejected sample")
+        for row, review in rejected[:args.sample_rejections]:
+            print(json.dumps({
+                "refined_id": row.get("refined_id"),
+                "source": row.get("source"),
+                "title": row.get("title"),
+                "raw_title": row.get("raw_title"),
+                "url": row.get("url"),
+                "trust_score": review["score"],
+                "reasons": review["reasons"],
+            }, ensure_ascii=False))
+    return 0
+
+
 def cmd_personalize(args: argparse.Namespace) -> int:
     """개인화 레이어 프로토타입 — 요청 시점에 evidence 풀을 사용자 속성으로 재가중/재정렬.
 
@@ -415,7 +571,7 @@ def cmd_personalize(args: argparse.Namespace) -> int:
     """
     _ensure_table()
     rows = execute_query(
-        "SELECT klass, buckets, model_tags, item_created_at, segment FROM edu_curriculum_evidence",
+        "SELECT klass, buckets, model_tags, item_created_at, segment FROM edu_curriculum_trusted_evidence WHERE trust_status = 'trusted'",
         fetch=True) or []
     res = _personalize(rows, llm=args.llm, level=args.level, motivation=args.motivation,
                        env=args.env, job=args.job)
@@ -447,6 +603,9 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("ingest", help="정제 SoT 증분 분류·적재 (daily)")
     sub.add_parser("build", help="누적 evidence → 두 층 커리큘럼 산출 (weekly)")
+    cp = sub.add_parser("curate", help="고객 노출용 trusted evidence 항아리 재생성")
+    cp.add_argument("--dry-run", action="store_true", help="테이블을 쓰지 않고 통과/탈락 개수만 출력")
+    cp.add_argument("--sample-rejections", type=int, default=0, help="탈락 샘플 출력 개수")
     pp = sub.add_parser("personalize", help="사용자 속성으로 커리큘럼 재편 (요청 시점, 프로토타입)")
     pp.add_argument("--llm", default="", help="현재 사용 LLM (예: chatgpt, 제미나이, 클로드)")
     pp.add_argument("--level", default="", choices=["", "beginner", "intermediate", "advanced"],
@@ -460,6 +619,8 @@ def main() -> int:
         return cmd_ingest(args)
     if args.cmd == "build":
         return cmd_build(args)
+    if args.cmd == "curate":
+        return cmd_curate(args)
     if args.cmd == "personalize":
         return cmd_personalize(args)
     return 1

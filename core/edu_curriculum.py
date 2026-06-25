@@ -564,7 +564,7 @@ def personalize(
 
 
 def load_evidence_rows() -> list[dict[str, Any]]:
-    """edu_curriculum_evidence 전체를 개인화에 필요한 컬럼만 읽어온다."""
+    """고객 노출용 trusted evidence 만 개인화에 필요한 컬럼으로 읽어온다."""
     from core.database import execute_query
     return execute_query(
         """
@@ -605,9 +605,10 @@ def load_evidence_rows() -> list[dict[str, Any]]:
                 NULLIF(rs.raw_data->>'link', ''),
                 NULLIF(rs.raw_data->>'source_url', '')
             ) AS url
-        FROM edu_curriculum_evidence e
+        FROM edu_curriculum_trusted_evidence e
         LEFT JOIN refined_outputs r ON r.id = e.refined_id
         LEFT JOIN filtered_signals f ON f.id = r.filtered_signal_id
         LEFT JOIN raw_signals rs ON rs.id = f.raw_signal_id
+        WHERE e.trust_status = 'trusted'
         """,
         fetch=True) or []

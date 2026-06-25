@@ -38,6 +38,22 @@ def test_personalize_filters_article_when_source_context_mismatches_query():
     assert res["highlights"] == []
 
 
+def test_personalize_filters_provider_promo_even_when_snippet_mentions_students():
+    res = personalize(
+        [_row(
+            raw_description="초등학생과 중학생을 위한 챗GPT 사용 교육 후기입니다.",
+        )],
+        llm="chatgpt",
+        level="beginner",
+        motivation="child_study",
+        env="pc",
+        job="parent",
+        now=datetime(2026, 6, 25, tzinfo=timezone.utc),
+    )
+
+    assert res["highlights"] == []
+
+
 def test_personalize_keeps_child_study_article_and_uses_source_title():
     row = _row(
         refined_id=2,
