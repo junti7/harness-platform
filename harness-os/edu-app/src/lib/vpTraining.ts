@@ -357,6 +357,8 @@ export type CurriculumHighlight = {
   concern: string
   source?: string
   url?: string
+  relevance_score?: number
+  relevance_reasons?: string[]
   refined_id?: number
   body?: string
   script_text?: string

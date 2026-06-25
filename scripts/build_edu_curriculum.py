@@ -90,6 +90,7 @@ MODEL_TAG = re.compile(
 
 # 개인화 가중치/로직은 core.edu_curriculum 단일 출처를 쓴다(CLI·백엔드 공용, drift 방지).
 from core.edu_curriculum import personalize as _personalize  # noqa: E402
+from core.edu_curriculum import _source_relevance as _source_relevance  # noqa: E402
 
 
 def _has(t: str, sigs: list[str]) -> bool:
@@ -206,7 +207,14 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         SELECT r.id AS refined_id, r.final_title, r.final_body,
                f.source, f.created_at, f.content_hash, f.score,
                rs.raw_data->>'segment' AS segment,
-               rs.raw_data->>'query'   AS collect_query
+               rs.raw_data->>'query'   AS collect_query,
+               rs.raw_data->>'title' AS raw_title,
+               rs.raw_data->>'description' AS raw_description,
+               COALESCE(
+                   NULLIF(rs.raw_data->>'body', ''),
+                   NULLIF(rs.raw_data->>'content', ''),
+                   NULLIF(rs.raw_data->>'text', '')
+               ) AS raw_body
         FROM refined_outputs r
         JOIN filtered_signals f ON r.filtered_signal_id = f.id
         LEFT JOIN raw_signals rs ON f.raw_signal_id = rs.id
@@ -223,6 +231,15 @@ def cmd_ingest(args: argparse.Namespace) -> int:
             continue
         c = _classify(title, body)
         if c is None:
+            continue
+        motivation = "child_study" if r["segment"] == "parent" else "work" if r["segment"] == "worker" else ""
+        rel = _source_relevance({
+            "raw_title": r["raw_title"],
+            "raw_description": r["raw_description"],
+            "raw_body": r["raw_body"],
+            "collect_query": r["collect_query"],
+        }, motivation=motivation)
+        if not rel["ok"]:
             continue
         execute_query(
             """

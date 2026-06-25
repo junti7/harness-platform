@@ -76,6 +76,16 @@ EDU_TERMS = (
     "education", "learning", "student", "school", "teacher", "classroom", "homework", "parent", "parents",
     "教育", "勉強", "学習", "子供", "学生", "父母", "家長", "教育", "pendidikan", "educacao", "educação",
 )
+CHILD_STUDY_TERMS = (
+    "숙제", "공부", "학습", "학생", "초등", "중등", "중학생", "고등", "고등학생", "아이", "자녀", "부모", "학부모",
+    "학교", "수업", "학원", "homework", "student", "child", "children", "parent", "parents", "school", "classroom",
+)
+WORK_TERMS = (
+    "업무", "회사", "회의", "보고서", "메일", "답장", "직장", "직장인", "사무", "work", "office", "meeting", "email",
+)
+GENERIC_QUERY_TERMS = (
+    "ai", "챗gpt", "chatgpt", "gpt", "생성형", "인공지능", "사용", "활용", "방법", "교육", "강의", "강사",
+)
 SCRIPT_KEYS = (
     "transcript", "transcripts", "script", "subtitle", "subtitles", "captions", "caption",
     "auto_caption", "automatic_captions",
@@ -131,6 +141,80 @@ def _video_source_is_relevant(r: dict[str, Any]) -> bool:
     raw_title = str(r.get("raw_title") or "")
     # 정제 body/final_title/query 는 LLM 재작성 또는 검색어일 수 있으므로 YouTube URL 검증에는 쓰지 않는다.
     return _has_any(raw_title, AI_TERMS) and _has_any(raw_title, EDU_TERMS)
+
+
+def _norm_match_text(text: str) -> str:
+    return " ".join(str(text or "").lower().replace("·", " ").replace("｜", " ").split())
+
+
+def _important_query_terms(query: str) -> list[str]:
+    tokens: list[str] = []
+    for raw in _norm_match_text(query).replace("/", " ").replace("-", " ").split():
+        token = raw.strip(".,!?()[]{}'\"“”‘’")
+        if len(token) < 2:
+            continue
+        if token in GENERIC_QUERY_TERMS:
+            continue
+        if any(g in token for g in GENERIC_QUERY_TERMS) and len(token) <= 4:
+            continue
+        tokens.append(token)
+    return tokens[:4]
+
+
+def _source_match_text(r: dict[str, Any]) -> str:
+    # 노출 링크 검증에는 LLM이 재작성한 final_title/final_body를 쓰지 않는다.
+    return _norm_match_text(" ".join([
+        str(r.get("raw_title") or ""),
+        str(r.get("raw_description") or ""),
+        str(r.get("raw_body") or ""),
+    ]))
+
+
+def _source_relevance(r: dict[str, Any], *, motivation: str = "") -> dict[str, Any]:
+    source_text = _source_match_text(r)
+    query_terms = _important_query_terms(str(r.get("collect_query") or ""))
+    has_ai = _has_any(source_text, AI_TERMS)
+    has_edu = _has_any(source_text, EDU_TERMS)
+    query_hits = [term for term in query_terms if term in source_text]
+
+    score = 0.0
+    reasons: list[str] = []
+    if has_ai:
+        score += 0.35
+        reasons.append("ai_source_match")
+    if has_edu:
+        score += 0.2
+        reasons.append("education_source_match")
+    if query_terms:
+        query_score = min(0.25, 0.12 * len(query_hits))
+        score += query_score
+        if query_hits:
+            reasons.append("query_terms_match")
+
+    if motivation == "child_study":
+        child_match = _has_any(source_text, CHILD_STUDY_TERMS)
+        if child_match:
+            score += 0.25
+            reasons.append("child_study_match")
+        if query_terms and not query_hits:
+            return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "query_context_mismatch"]}
+        if not (has_ai and child_match):
+            return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "missing_child_ai_context"]}
+    elif motivation == "work":
+        work_match = _has_any(source_text, WORK_TERMS)
+        if work_match:
+            score += 0.25
+            reasons.append("work_match")
+        if query_terms and not query_hits:
+            return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "query_context_mismatch"]}
+        if not (has_ai and (work_match or has_edu)):
+            return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "missing_work_ai_context"]}
+    else:
+        if not (has_ai and has_edu):
+            return {"ok": False, "score": round(score, 2), "reasons": [*reasons, "missing_ai_education_context"]}
+
+    ok = score >= 0.65
+    return {"ok": ok, "score": round(score, 2), "reasons": reasons if ok else [*reasons, "low_relevance_score"]}
 
 
 def _detect_language(text: str) -> str:
@@ -322,6 +406,10 @@ def personalize(
     for r in content_pool:
         if not _video_source_is_relevant(r):
             continue
+        if _media_kind(str(r.get("source") or ""), str(r.get("url") or "")) != "video":
+            rel = _source_relevance(r, motivation=motivation)
+            if not rel["ok"]:
+                continue
         if not (str(r.get("url") or "").strip() or str(r.get("body") or "").strip()):
             continue
         title = (r.get("title") or "").strip()
@@ -359,8 +447,13 @@ def personalize(
         raw_description = str(r.get("raw_description") or "").strip()
         generated_title = (r.get("title") or "").strip()
         language = _detect_language(raw_title)
+        relevance = _source_relevance(r, motivation=motivation) if kind != "video" else {
+            "ok": True,
+            "score": 1.0,
+            "reasons": ["video_title_match"],
+        }
         t = generated_title if kind == "video" and language not in {"", "ko"} and generated_title else (
-            raw_title if kind == "video" and raw_title else generated_title
+            raw_title or generated_title
         )
         key = t[:30]
         if key in seen_titles:
@@ -388,6 +481,8 @@ def personalize(
             "source": source,
             "url": url,
             "media_kind": kind,
+            "relevance_score": relevance["score"],
+            "relevance_reasons": relevance["reasons"],
             "refined_id": r.get("refined_id"),
             "body": body[:4000],
             "script_text": script_text[:8000],
@@ -443,6 +538,11 @@ def load_evidence_rows() -> list[dict[str, Any]]:
             e.source,
             rs.raw_data->>'title' AS raw_title,
             rs.raw_data->>'description' AS raw_description,
+            COALESCE(
+                NULLIF(rs.raw_data->>'body', ''),
+                NULLIF(rs.raw_data->>'content', ''),
+                NULLIF(rs.raw_data->>'text', '')
+            ) AS raw_body,
             rs.raw_data->>'query' AS raw_query,
             rs.raw_data->>'channel' AS raw_channel,
             rs.raw_data->>'transcript' AS transcript,
