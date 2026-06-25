@@ -7361,6 +7361,20 @@ def _edu_vp_safety_confirmation_from_event(state: dict[str, Any], event_name: st
     return None
 
 
+def _edu_vp_unlock_day0_practice(state: dict[str, Any]) -> dict[str, Any]:
+    day0 = dict(state.get("day0") or {})
+    practice = _edu_vp_day0_practice_payload(state.get("intake") or {})
+    custom_practice = day0.get("post_safety_practice") or {}
+    if isinstance(custom_practice, dict):
+        practice = {**practice, **custom_practice}
+    for key in ("title", "schedule_blocks", "estimated_minutes", "required_action", "proof_artifact_hint", "sample_materials", "tutorial_steps", "checklist", "blocked_step_options", "pass_fail_rubric"):
+        if key in practice:
+            day0[key] = practice[key]
+    day0["safety_confirmed"] = True
+    state["day0"] = day0
+    return state
+
+
 def _edu_vp_append_event(
     *,
     case_id: int | None,
@@ -7896,20 +7910,13 @@ def _edu_vp_apply_curriculum_to_day0(
 
     day0["learning_why"] = (
         f"오늘은 일반적인 AI 입문이 아니라, {role_label} 사용자의 최근 관심 흐름인 "
-        f"'{focus}'에서 출발합니다. 자료수집 커리큘럼이 우선순위를 {topic_text} 쪽으로 잡았기 때문에, "
-        f"{llm_label}를 여는 즉시 내 상황에 맞는 첫 질문을 보내고 결과를 저장하는 데 집중합니다."
-    )
-    day0["title"] = f"Day 0 · {top_topics[0] if top_topics else focus}"
-    day0["required_action"] = (
-        f"{llm_label}를 실제로 열고, '{focus}'를 내 상황 한 문장으로 바꿔 첫 질문을 보낸 뒤 "
-        "답변 중 바로 쓸 만한 문장 1개를 저장한다."
-    )
-    day0["proof_artifact_hint"] = (
-        f"'{focus}'에 대해 {llm_label}가 답한 문장 1개와, 내가 실제로 쓰겠다고 고른 이유를 붙여 넣으세요."
+        f"'{focus}'를 실습에 쓰기 전 AI 노출 리스크와 LLM 작동 원리를 먼저 확인합니다. "
+        f"자료수집 커리큘럼은 이후 실습 우선순위를 {topic_text} 쪽으로 잡았습니다."
     )
 
     dynamic_topics = top_topics or ["첫 질문/기본 사용", "주의점/한계(환각·개인정보)"]
-    checklist = _edu_vp_day0_safety_checklist(llm_label) + [
+    safety_checklist = _edu_vp_day0_safety_checklist(llm_label)
+    practice_checklist = [
         {
             "id": "open_tool",
             "title": f"{llm_label} 열기",
@@ -7924,8 +7931,8 @@ def _edu_vp_apply_curriculum_to_day0(
         },
     ]
     for index, topic in enumerate(dynamic_topics[:3], start=1):
-        checklist.append(_edu_vp_curriculum_topic_step(topic=topic, focus=focus, llm_label=llm_label, index=index))
-    checklist.append(
+        practice_checklist.append(_edu_vp_curriculum_topic_step(topic=topic, focus=focus, llm_label=llm_label, index=index))
+    practice_checklist.append(
         {
             "id": "save_output",
             "title": "쓸 결과 1개 저장",
@@ -7933,12 +7940,13 @@ def _edu_vp_apply_curriculum_to_day0(
             "success_signal": "선택한 결과와 선택 이유가 남는다.",
         }
     )
-    day0["checklist"] = checklist
+    day0["checklist"] = safety_checklist
 
     blocks = [
         {"title": "AI 노출 리스크 이해", "minutes": 12, "goal": "다정한 답변, 과신, 정서 의존, 개인정보 입력 위험을 먼저 이해한다."},
         {"title": "LLM 작동 원리 확인", "minutes": 13, "goal": "문장 패턴 기반 생성 도구라는 점을 확인하고 실습 경계를 정한다."},
-        {"title": "안전 사용 기준 확인", "minutes": 10, "goal": "초안으로만 보기, 민감정보 제외, 중요 사실 재확인 원칙을 체크한다."},
+        {"title": "동조와 안전장치 한계 확인", "minutes": 12, "goal": "AI의 공감·칭찬·동조가 현실 검증을 대신하지 못하고, 안전장치도 완벽하지 않다는 점을 확인한다."},
+        {"title": "안전 사용 기준 확인", "minutes": 10, "goal": "초안으로만 보기, 민감정보 제외, 중요 사실 재확인, 큰 결정 전 사람 확인 원칙을 체크한다."},
         {"title": "맞춤 장면 확인", "minutes": 8, "goal": f"자료수집 커리큘럼이 오늘 '{focus}'에서 시작한 이유를 확인한다."},
         {"title": f"{llm_label} 실행", "minutes": 10, "goal": f"{llm_label} 입력창을 열고 같은 도구로 끝까지 진행한다."},
     ]
@@ -7949,18 +7957,39 @@ def _edu_vp_apply_curriculum_to_day0(
             "goal": _edu_vp_curriculum_topic_goal(topic=topic, focus=focus, llm_label=llm_label),
         })
     blocks.append({"title": "결과 저장과 회고", "minutes": 10, "goal": "내가 실제로 쓸 결과 1개와 다음에 다시 물어볼 점 1개를 남긴다."})
-    day0["schedule_blocks"] = blocks
-    day0["estimated_minutes"] = _edu_vp_total_minutes(blocks)
-    day0["completion_rule"] = "화면에 표시된 맞춤 체크리스트를 모두 수행하고, 마지막에 실제로 쓸 결과 1개를 남겼을 때 완료로 봅니다."
-    day0["blocked_step_options"] = [item["id"] for item in checklist]
+    if day0.get("safety_confirmed"):
+        day0["schedule_blocks"] = blocks
+        day0["estimated_minutes"] = _edu_vp_total_minutes(blocks)
+    else:
+        day0["schedule_blocks"] = _edu_vp_schedule_blocks("day0")
+        day0["estimated_minutes"] = _edu_vp_total_minutes(day0["schedule_blocks"])
+    day0["completion_rule"] = "먼저 안전 확인을 완료해야 맞춤 실습이 열립니다. 서버가 이해 확인을 저장한 뒤에만 실제 질문과 결과 저장으로 넘어갑니다."
+    day0["blocked_step_options"] = [item["id"] for item in safety_checklist]
 
-    tutorial_steps = list(day0.get("tutorial_steps") or [])
+    practice = dict(day0.get("post_safety_practice") or {})
+    tutorial_steps = list(practice.get("tutorial_steps") or _edu_vp_tutorial_steps("day0", intake))
     for item in tutorial_steps:
         if item.get("id") == "mobile_prompt":
             item["title"] = "내 상황 질문 보내기"
             item["body"] = f"복붙용 질문 대신 '{focus}'를 내 말로 바꿔 {llm_label}에 보낸다."
-    if tutorial_steps:
-        day0["tutorial_steps"] = tutorial_steps
+    if day0.get("safety_confirmed"):
+        day0["post_safety_practice"] = {
+            **practice,
+            "title": f"Day 0 · {top_topics[0] if top_topics else focus}",
+            "required_action": (
+                f"{llm_label}를 실제로 열고, '{focus}'를 내 상황 한 문장으로 바꿔 첫 질문을 보낸 뒤 "
+                "답변 중 바로 쓸 만한 문장 1개를 저장한다."
+            ),
+            "proof_artifact_hint": (
+                f"'{focus}'에 대해 {llm_label}가 답한 문장 1개와, 내가 실제로 쓰겠다고 고른 이유를 붙여 넣으세요."
+            ),
+            "sample_materials": practice.get("sample_materials") or _edu_vp_day0_materials(llm_label),
+            "tutorial_steps": tutorial_steps,
+            "schedule_blocks": blocks,
+            "estimated_minutes": _edu_vp_total_minutes(blocks),
+            "checklist": practice_checklist,
+            "blocked_step_options": [item["id"] for item in practice_checklist],
+        }
 
     day0["personalization_applied"] = {
         "role": role_label,
@@ -7969,6 +7998,8 @@ def _edu_vp_apply_curriculum_to_day0(
         "topics": top_topics,
         "highlight": highlight,
     }
+    if day0.get("safety_confirmed"):
+        return _edu_vp_unlock_day0_practice({"day0": day0, "intake": intake})["day0"]
     return day0
 
 
@@ -8237,11 +8268,23 @@ def _edu_vp_foundation_concepts(stage_key: str, llm_label: str) -> list[dict[str
             },
             {
                 "title": "잘못 노출될 때 생길 수 있는 피해",
-                "body": "AI와 오래 대화하다 보면 답을 검증하지 않고 믿거나, 힘든 감정을 AI에게만 털어놓으며 과도하게 의존하거나, 민감한 개인정보를 넣거나, 가족·의사·전문가와 상의해야 할 문제를 혼자 AI에게만 맡길 수 있습니다. 미성년자이거나 급한 위기·큰 불안을 겪는 상황이라면 믿을 만한 사람이나 적절한 전문가에게 함께 도움을 요청해야 합니다.",
+                "body": "AI와 오래 대화하다 보면 답을 검증하지 않고 믿거나, 힘든 감정을 AI에게만 털어놓으며 과도하게 의존하거나, 민감한 개인정보를 넣거나, 가족·의사·전문가와 상의해야 할 문제를 혼자 AI에게만 맡길 수 있습니다. 수면, 식사, 돈, 직장, 가족 상의 같은 현실의 브레이크가 무너지면 즉시 멈춰야 합니다.",
             },
             {
-                "title": "안전한 사용의 세 가지 기준",
-                "body": "AI 답은 초안으로만 봅니다. 계좌번호, 주민번호, 민감한 병원기록, 아이의 상세 개인정보는 그대로 넣지 않습니다. 중요한 일정·비용·제출일·건강·법률·돈 문제는 반드시 사람이 원문이나 전문가를 다시 확인합니다.",
+                "title": "항상 내 편인 말은 안전 신호가 아니다",
+                "body": "AI는 사용자가 계속 대화하고 싶도록 공감, 칭찬, 동조를 매우 잘 할 수 있습니다. '너는 특별하다', '네 판단이 맞다', '크게 성공할 수 있다'처럼 기분 좋은 확신이 반복될수록 현실 검증을 더 해야 합니다.",
+            },
+            {
+                "title": "안전장치가 있어도 완벽하지 않다",
+                "body": "AI 서비스에는 위험한 답을 줄이기 위한 안전장치가 있지만, 대화가 길어지거나 표현이 바뀌면 부적절한 답이 나올 수 있습니다. 그래서 사용자가 스스로 경계를 세우고, 위험한 주제는 AI 대화 밖의 사람에게 연결해야 합니다.",
+            },
+            {
+                "title": "아이와 캐릭터 챗봇은 별도 보호가 필요하다",
+                "body": "아이들은 AI 캐릭터가 거절하지 않고 원하는 대로 반응하는 경험에 쉽게 빠질 수 있습니다. 미성년자가 비밀 고민, 선정적 상황극, 자해·위험 행동, 장시간 몰입을 AI와 나누고 있다면 보호자가 사용 시간, 대화 주제, 도움 요청 경로를 함께 확인해야 합니다.",
+            },
+            {
+                "title": "안전한 사용의 네 가지 기준",
+                "body": "AI 답은 초안으로만 봅니다. 민감정보는 그대로 넣지 않습니다. 중요한 일정·비용·제출일·건강·법률·돈 문제는 반드시 원문이나 전문가를 다시 확인합니다. 마음이 급해져 큰 결정을 바로 실행하고 싶을수록 가족, 동료, 전문가에게 먼저 보여줍니다.",
             },
             {
                 "title": "이해 확인 후에만 실습으로 들어간다",
@@ -8273,10 +8316,10 @@ def _edu_vp_schedule_blocks(stage_key: str) -> list[dict[str, Any]]:
         return [
             {"title": "AI 노출 리스크 이해", "minutes": 12, "goal": "다정한 답변, 과신, 정서 의존, 개인정보 입력 위험을 먼저 이해한다."},
             {"title": "LLM 작동 원리 확인", "minutes": 13, "goal": "LLM이 사람처럼 이해하는 존재가 아니라 문장 패턴 기반 생성 도구임을 확인한다."},
-            {"title": "안전 사용 기준 확인", "minutes": 10, "goal": "초안으로만 보기, 민감정보 제외, 중요 사실 재확인 원칙을 체크한다."},
-            {"title": "기기 진입 실습", "minutes": 15, "goal": "Android와 Windows PC에서 같은 AI 도구를 실제로 연다."},
-            {"title": "첫 질문 복붙 실습", "minutes": 15, "goal": "첫 질문을 보내고, 결과를 복사하고, 저장해본다."},
-            {"title": "정리와 복습", "minutes": 10, "goal": "어디가 막혔는지 기록하고 다음 날 준비를 한다."},
+            {"title": "동조와 안전장치 한계 확인", "minutes": 12, "goal": "AI의 공감·칭찬·동조가 현실 검증을 대신하지 못하고, 안전장치도 완벽하지 않다는 점을 확인한다."},
+            {"title": "안전 사용 기준 확인", "minutes": 10, "goal": "초안으로만 보기, 민감정보 제외, 중요 사실 재확인, 큰 결정 전 사람 확인 원칙을 체크한다."},
+            {"title": "현실 브레이크 점검", "minutes": 8, "goal": "수면, 식사, 돈, 직장, 가족 상의가 무너지는 신호가 보이면 AI 사용을 멈추고 사람에게 연결한다."},
+            {"title": "이해 확인 저장", "minutes": 5, "goal": "네 가지 안전 확인을 완료하고 서버에 저장한 뒤에만 실습으로 이동한다."},
         ]
     return [
         {"title": "왜 이 미션을 하는지 이해", "minutes": 10, "goal": "생활형 AI가 주부/학부모의 머리 부담을 어떻게 줄이는지 이해한다."},
@@ -8312,6 +8355,62 @@ def _edu_vp_day0_materials(llm_label: str) -> list[dict[str, Any]]:
     ]
 
 
+def _edu_vp_day0_practice_payload(intake: dict[str, Any]) -> dict[str, Any]:
+    llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or "gemini"))
+    current_device = _edu_vp_device_label(str(intake.get("current_device") or "android"))
+    desktop_os = _edu_vp_device_label(str(intake.get("desktop_os") or "windows"))
+    friction = str(intake.get("biggest_friction") or "처음 시작이 막막함").strip()
+    goal = str(intake.get("learning_goal") or "생활에서 AI를 덜 무섭게 쓰기").strip()
+    checklist = [
+        {
+            "id": "open_tool",
+            "title": f"{llm_label} 열기",
+            "instruction": f"{current_device} 또는 {desktop_os}에서 {llm_label}의 앱이나 브라우저 화면을 실제로 연다.",
+            "success_signal": "입력창이 보인다.",
+        },
+        {
+            "id": "login_ok",
+            "title": "로그인 확인",
+            "instruction": "비밀번호를 다시 찾지 않고, 실제로 로그인된 상태까지 들어간다.",
+            "success_signal": "대화 시작 화면이 열린다.",
+        },
+        {
+            "id": "first_prompt",
+            "title": "첫 질문 1번 보내기",
+            "instruction": f"'{friction}' 또는 '{goal}'를 한 문장으로 적어 실제 질문을 1번 보낸다.",
+            "success_signal": "AI가 첫 답변을 준다.",
+        },
+        {
+            "id": "copy_result",
+            "title": "결과 복사 또는 저장",
+            "instruction": "답변 중 한 문장을 복사하거나 메모로 남긴다.",
+            "success_signal": "복사한 문장 또는 저장한 메모가 남는다.",
+        },
+    ]
+    schedule_blocks = _edu_vp_schedule_blocks("day0") + [
+        {"title": "기기 진입 실습", "minutes": 15, "goal": f"{current_device}와 {desktop_os}에서 같은 AI 도구를 실제로 연다."},
+        {"title": "첫 질문 복붙 실습", "minutes": 15, "goal": "첫 질문을 보내고, 결과를 복사하고, 저장해본다."},
+        {"title": "정리와 복습", "minutes": 10, "goal": "어디가 막혔는지 기록하고 다음 날 준비를 한다."},
+    ]
+    return {
+        "title": "Day 0 · 환경 열기와 첫 성공",
+        "schedule_blocks": schedule_blocks,
+        "estimated_minutes": _edu_vp_total_minutes(schedule_blocks),
+        "required_action": f"{llm_label}를 실제로 열고, 본인 고민을 한 문장으로 입력해 첫 답변 1개를 받는다.",
+        "proof_artifact_hint": "AI가 답한 첫 문장 1개 또는 본인이 복사한 결과 1개를 붙여 넣으세요.",
+        "sample_materials": _edu_vp_day0_materials(llm_label),
+        "tutorial_steps": _edu_vp_tutorial_steps("day0", intake),
+        "checklist": checklist,
+        "blocked_step_options": [item["id"] for item in checklist],
+        "pass_fail_rubric": [
+            "앱/브라우저를 실제로 열었다",
+            "로그인 상태를 확인했다",
+            "직접 질문을 1번 보냈다",
+            "결과를 복사하거나 저장했다",
+        ],
+    }
+
+
 def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     return [
         {
@@ -8331,6 +8430,12 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
             "title": "개인정보와 고위험 판단 경계 확인",
             "instruction": "민감한 개인정보, 건강·법률·돈·아이 안전 문제는 그대로 입력하지 않고 사람 확인을 거친다.",
             "success_signal": "AI에게 맡길 일과 사람이 확인할 일을 나눌 수 있다.",
+        },
+        {
+            "id": "understand_sycophancy",
+            "title": "동조와 과속 신호 확인",
+            "instruction": "AI가 계속 맞장구치거나 큰 확신을 줄수록 수면, 식사, 돈, 가족 상의, 직장 같은 현실 신호를 먼저 확인한다.",
+            "success_signal": "기분 좋은 확신과 현실 검증을 구분한다.",
         },
     ]
 
@@ -8366,60 +8471,29 @@ def _edu_vp_day1_materials(llm_label: str) -> list[dict[str, Any]]:
 
 def _edu_vp_build_day0(intake: dict[str, Any]) -> dict[str, Any]:
     llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or "gemini"))
-    current_device = _edu_vp_device_label(str(intake.get("current_device") or "android"))
-    desktop_os = _edu_vp_device_label(str(intake.get("desktop_os") or "windows"))
-    friction = str(intake.get("biggest_friction") or "처음 시작이 막막함").strip()
-    goal = str(intake.get("learning_goal") or "생활에서 AI를 덜 무섭게 쓰기").strip()
-    checklist = _edu_vp_day0_safety_checklist(llm_label) + [
-        {
-            "id": "open_tool",
-            "title": f"{llm_label} 열기",
-            "instruction": f"{current_device} 또는 {desktop_os}에서 {llm_label}의 앱이나 브라우저 화면을 실제로 연다.",
-            "success_signal": "입력창이 보인다.",
-        },
-        {
-            "id": "login_ok",
-            "title": "로그인 확인",
-            "instruction": "비밀번호를 다시 찾지 않고, 실제로 로그인된 상태까지 들어간다.",
-            "success_signal": "대화 시작 화면이 열린다.",
-        },
-        {
-            "id": "first_prompt",
-            "title": "첫 질문 1번 보내기",
-            "instruction": f"'{friction}' 또는 '{goal}'를 한 문장으로 적어 실제 질문을 1번 보낸다.",
-            "success_signal": "AI가 첫 답변을 준다.",
-        },
-        {
-            "id": "copy_result",
-            "title": "결과 복사 또는 저장",
-            "instruction": "답변 중 한 문장을 복사하거나 메모로 남긴다.",
-            "success_signal": "복사한 문장 또는 저장한 메모가 남는다.",
-        },
-    ]
+    safety_checklist = _edu_vp_day0_safety_checklist(llm_label)
     schedule_blocks = _edu_vp_schedule_blocks("day0")
     return {
-        "title": "Day 0 · 환경 열기와 첫 성공",
+        "title": "Day 0 · AI 안전 이해와 작동 원리 확인",
         "learning_why": "오늘은 AI를 바로 믿고 쓰는 날이 아니라, 잘못 노출될 때의 피해와 LLM의 작동 원리를 먼저 이해한 뒤 생활 문제를 정리하는 초안 도구로 제한해 써보는 날입니다.",
-        "learning_outcome": "Day 0를 마치면 LLM/생성형 AI가 사람처럼 판단하는 존재가 아니라 문장 생성 도구라는 점을 이해하고, 안전 경계를 지키면서 모바일과 PC에서 첫 질문을 보내는 기본 동작을 익히게 됩니다.",
+        "learning_outcome": "이 구간을 마치면 LLM/생성형 AI가 사람처럼 판단하는 존재가 아니라 문장 생성 도구라는 점을 이해하고, AI의 동조·확신·안전장치 한계를 확인한 뒤 실습으로 넘어갈 준비를 마치게 됩니다.",
         "estimated_minutes": _edu_vp_total_minutes(schedule_blocks),
-        "completion_rule": "30초 만에 끝나는 미션이 아니라, 최소 약 75분 동안 AI 노출 리스크, LLM 작동 원리, 안전 사용 기준을 확인하고, 실제 로그인과 첫 질문, 복사/저장, 복습 메모까지 모두 끝냈을 때 Day 0 완료로 봅니다.",
+        "completion_rule": "먼저 AI 노출 리스크, LLM 작동 원리, 동조와 안전장치 한계, 안전 사용 기준을 확인합니다. 서버가 이해 확인을 저장한 뒤에만 실제 로그인과 첫 질문 실습이 열립니다.",
         "foundation_concepts": _edu_vp_foundation_concepts("day0", llm_label),
         "schedule_blocks": schedule_blocks,
-        "required_action": f"{llm_label}를 실제로 열고, 본인 고민을 한 문장으로 입력해 첫 답변 1개를 받는다.",
-        "proof_artifact_hint": "AI가 답한 첫 문장 1개 또는 본인이 복사한 결과 1개를 붙여 넣으세요.",
-        "sample_materials": _edu_vp_day0_materials(llm_label),
-        "tutorial_steps": _edu_vp_tutorial_steps("day0", intake),
+        "required_action": "AI가 사람처럼 느껴지는 이유, LLM의 문장 생성 원리, 동조·과속 위험, 개인정보와 고위험 판단 경계를 먼저 확인한다.",
+        "proof_artifact_hint": "안전 확인을 마친 뒤 실습이 열리면 결과를 붙여 넣으세요.",
+        "sample_materials": [],
+        "tutorial_steps": [],
         "recommended_learning": _edu_vp_recommended_learning("day0"),
         "pass_fail_rubric": [
             "AI가 사람이 아니라 문장 생성 도구라는 점을 이해했다",
             "민감정보와 고위험 판단 경계를 확인했다",
-            "앱/브라우저를 실제로 열었다",
-            "로그인 상태를 확인했다",
-            "직접 질문을 1번 보냈다",
-            "결과를 복사하거나 저장했다",
+            "AI의 동조와 큰 확신을 현실 검증과 구분했다",
+            "안전 확인 저장 후에만 실습으로 이동했다",
         ],
-        "blocked_step_options": [item["id"] for item in checklist],
-        "checklist": checklist,
+        "blocked_step_options": [item["id"] for item in safety_checklist],
+        "checklist": safety_checklist,
     }
 
 
@@ -10487,6 +10561,8 @@ def edu_vp_training_session(
     state = _edu_vp_normalize_state_keys(state)
     state["customer"] = payload["customer"]
     state["case"] = payload["case"]
+    if bool(((state.get("ui_state") or {}).get("safety_confirmed") or {}).get("day0")):
+        state = _edu_vp_unlock_day0_practice(state)
     state = _edu_vp_refresh_state(state)
     _edu_vp_store_state(resolved_case_id, state)
     response_state = _edu_vp_attach_personalized_curriculum(state, payload)
@@ -10593,6 +10669,8 @@ def edu_vp_training_session_sync(
             },
         },
     )
+    if safety_confirmation:
+        state = _edu_vp_unlock_day0_practice(state)
     state = _edu_vp_refresh_state(state)
     _edu_vp_store_state(case_id, state)
     _edu_vp_append_event(

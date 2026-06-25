@@ -35,18 +35,19 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         )
 
         self.assertIn("Day 0", card["title"])
-        self.assertIn("Claude", card["required_action"])
+        self.assertNotIn("첫 답변", card["required_action"])
+        self.assertNotIn("post_safety_practice", card)
         self.assertGreaterEqual(card["estimated_minutes"], 60)
         self.assertGreaterEqual(len(card["foundation_concepts"]), 4)
         self.assertGreaterEqual(len(card["schedule_blocks"]), 5)
         self.assertIn("사람의 판단자", card["foundation_concepts"][0]["title"])
         self.assertIn("LLM", card["foundation_concepts"][1]["title"])
-        self.assertEqual(len(card["checklist"]), 7)
+        self.assertEqual(len(card["checklist"]), 4)
         self.assertEqual(card["checklist"][0]["id"], "understand_not_human")
         self.assertEqual(card["checklist"][1]["id"], "understand_generation")
         self.assertEqual(card["checklist"][2]["id"], "understand_boundaries")
-        self.assertEqual(len(card["sample_materials"]), 1)
-        self.assertEqual(card["sample_materials"][0]["kit_id"], "day0-first-login-starter")
+        self.assertEqual(card["checklist"][3]["id"], "understand_sycophancy")
+        self.assertEqual(card["sample_materials"], [])
         self.assertEqual(card["blocked_step_options"], [item["id"] for item in card["checklist"]])
 
     def test_ui_state_preserves_safety_confirmation(self):
@@ -83,12 +84,22 @@ class EduVpTrainingFlowTests(unittest.TestCase):
                     "understand_not_human",
                     "understand_generation",
                     "understand_boundaries",
+                    "understand_sycophancy",
                 ],
             },
         )
 
         self.assertIsNone(forged)
         self.assertEqual(confirmed, {"day0": True})
+
+    def test_safety_confirmation_unlocks_day0_practice(self):
+        state = {"intake": {"preferred_llm": "claude"}, "day0": self.mod._edu_vp_build_day0({"preferred_llm": "claude"})}
+        unlocked = self.mod._edu_vp_unlock_day0_practice(state)
+
+        self.assertTrue(unlocked["day0"]["safety_confirmed"])
+        self.assertIn("Claude", unlocked["day0"]["required_action"])
+        self.assertEqual(unlocked["day0"]["checklist"][0]["id"], "open_tool")
+        self.assertEqual(unlocked["day0"]["sample_materials"][0]["kit_id"], "day0-first-login-starter")
 
     def test_personalized_day0_preserves_safety_gate_order(self):
         day0 = self.mod._edu_vp_build_day0({"preferred_llm": "claude"})
@@ -107,11 +118,28 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(personalized["checklist"][0]["id"], "understand_not_human")
         self.assertEqual(personalized["checklist"][1]["id"], "understand_generation")
         self.assertEqual(personalized["checklist"][2]["id"], "understand_boundaries")
-        self.assertEqual([block["title"] for block in personalized["schedule_blocks"][:3]], [
+        self.assertEqual(personalized["checklist"][3]["id"], "understand_sycophancy")
+        self.assertNotIn("post_safety_practice", personalized)
+        self.assertEqual([block["title"] for block in personalized["schedule_blocks"][:4]], [
             "AI 노출 리스크 이해",
             "LLM 작동 원리 확인",
+            "동조와 안전장치 한계 확인",
             "안전 사용 기준 확인",
         ])
+        confirmed_day0 = {**day0, "safety_confirmed": True}
+        confirmed_personalized = self.mod._edu_vp_apply_curriculum_to_day0(
+            confirmed_day0,
+            {"preferred_llm": "claude", "biggest_friction": "업무 답장 부담"},
+            {
+                "segment": "worker",
+                "attrs": {"llm": "claude"},
+                "top_concerns": [{"concern": "업무 답장 부담"}],
+                "order": [{"topic": "업무 활용"}],
+                "highlights": [{"title": "업무 답장 예시"}],
+            },
+        )
+        self.assertIn("Claude", confirmed_personalized["required_action"])
+        self.assertEqual(confirmed_personalized["checklist"][0]["id"], "open_tool")
 
     def test_persona_library_is_locked_until_core_track_completion(self):
         locked = self.mod._edu_vp_persona_library(50)

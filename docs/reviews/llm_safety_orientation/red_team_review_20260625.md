@@ -59,3 +59,23 @@ Because Claude output was not recovered, this memo should not be represented as 
 ## Residual Risk
 
 The system can verify that the user clicked all required confirmation items; it cannot prove the user truly read or understood the material. This is acceptable for the current training UX but should be paired with VP/human observation for high-risk learner groups.
+
+## Transcript Update Review
+
+After the President provided the time-coded Korean transcript, the script was updated to cover additional risk patterns:
+
+- AI sycophancy / always-on agreement and praise.
+- Unsafe acceleration into real-world decisions such as money, work, business, and family-impacting choices.
+- Guardrail limitations without reproducing bypass methods.
+- Minors and character chatbot exposure.
+- Reality-brake signals: sleep, food, money, work, and family consultation.
+
+Additional implementation hardening:
+
+- Default Day 0 backend payload is now safety-only.
+- Practice content is not shipped as `post_safety_practice` before confirmation.
+- Practice schedule and first-prompt copy are generated only after backend validation of `confirmed_check_ids`.
+
+Copilot CLI final verdict after transcript update: `red_team_clear`
+
+Blockers: none.
