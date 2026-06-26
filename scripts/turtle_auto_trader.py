@@ -34,6 +34,7 @@ from scripts.alpaca_paper_trading import (
 )
 from scripts.trading_diary import log_trade_entry, log_trade_exit, log_signal_scan
 from scripts.harness_turtle_scan import HARNESS_UNIVERSE_META as _UNIVERSE_META
+from core.atomic_io import update_json_atomic
 
 _UNIVERSE_INFO: dict[str, dict] = {
     t: {"company_name": cn, "sector": s, "harness_score": sc, "selection_reason": r}
@@ -60,6 +61,11 @@ UNIVERSE = (
 )
 
 MAX_POSITIONS = int(os.getenv("PAPER_TRADING_MAX_POSITIONS", "6"))
+
+# P0(2026-06-27 red_team_block 후속): 체결 확인 / 상주 손절 운영 파라미터
+FILL_TIMEOUT_S = int(os.getenv("PAPER_FILL_TIMEOUT_S", "90"))   # 시장가 주문 체결 대기 상한(초)
+FILL_POLL_S = float(os.getenv("PAPER_FILL_POLL_S", "3"))        # 체결 폴링 간격(초)
+STOP_TIF = os.getenv("PAPER_STOP_TIF", "gtc")                   # 상주 손절 주문 time_in_force
 
 _HEADERS = {
     "APCA-API-KEY-ID": ALPACA_KEY,
@@ -88,9 +94,26 @@ def load_state() -> dict:
     return {"turtle_positions": {}, "last_run": None}
 
 
-def save_state(state: dict) -> None:
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps(state, indent=2, ensure_ascii=False))
+# P0 — state 원자화(Red Team 2026-06-27 MAJOR / 메모리 state_file_multiwriter_lock).
+# 통째쓰기(save_state) 금지. 모든 변경은 update_json_atomic 으로 *자기 소유 델타*(turtle_positions
+# 의 단일 키, last_run)만 적용한다. 이로써 동시 reader/writer 의 lost-update·torn-read 를 차단한다.
+
+def state_set_position(symbol: str, data: dict) -> None:
+    def _m(s: dict) -> None:
+        s.setdefault("turtle_positions", {})[symbol] = data
+    update_json_atomic(STATE_PATH, _m)
+
+
+def state_pop_position(symbol: str) -> None:
+    def _m(s: dict) -> None:
+        s.setdefault("turtle_positions", {}).pop(symbol, None)
+    update_json_atomic(STATE_PATH, _m)
+
+
+def state_set_last_run(ts: str) -> None:
+    def _m(s: dict) -> None:
+        s["last_run"] = ts
+    update_json_atomic(STATE_PATH, _m)
 
 
 def _alpaca_post(path: str, body: dict) -> dict:
@@ -102,12 +125,57 @@ def _alpaca_post(path: str, body: dict) -> dict:
     return r.json()
 
 
+def _alpaca_get(path: str) -> dict:
+    url = f"{ALPACA_BASE_URL}/{path.lstrip('/')}"
+    r = requests.get(url, headers=_HEADERS, timeout=15)
+    if not r.ok:
+        raise RuntimeError(f"Alpaca GET {r.status_code}: {r.text[:300]}")
+    return r.json() if r.text else {}
+
+
 def _alpaca_delete(path: str) -> dict:
     url = f"{ALPACA_BASE_URL}/{path.lstrip('/')}"
     r = requests.delete(url, headers=_HEADERS, timeout=15)
     if not r.ok:
         raise RuntimeError(f"Alpaca DELETE {r.status_code}: {r.text[:300]}")
     return r.json() if r.text else {}
+
+
+def cancel_order(order_id: str) -> None:
+    """상주 손절 등 미체결 주문을 취소(이미 체결/소멸이면 무시)."""
+    if not order_id:
+        return
+    try:
+        _alpaca_delete(f"/orders/{order_id}")
+    except Exception:
+        pass
+
+
+def wait_for_fill(order_id: str, timeout_s: int = FILL_TIMEOUT_S,
+                  poll_s: float = FILL_POLL_S) -> tuple[str, float, float]:
+    """P0 — 체결 확인 게이트.
+
+    주문이 terminal 상태(filled/canceled/rejected/expired)가 되거나 timeout 까지 폴링한다.
+    반환 (status, filled_qty, filled_avg_price). '제출=체결' 가정을 제거해 부분체결·거절·미체결을
+    실제 브로커 상태로 확인한 뒤에만 내부 원장/상주손절을 갱신하게 한다(Red Team 2026-06-27 BLOCKER).
+    """
+    import time
+    deadline = time.monotonic() + timeout_s
+    last: dict = {}
+    terminal = {"filled", "canceled", "cancelled", "rejected", "expired", "done_for_day"}
+    while True:
+        try:
+            last = _alpaca_get(f"/orders/{order_id}")
+        except Exception as e:
+            last = {"status": "unknown", "error": str(e)}
+        if str(last.get("status")) in terminal:
+            break
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(poll_s)
+    fq = float(last.get("filled_qty") or 0)
+    fp = float(last.get("filled_avg_price")) if last.get("filled_avg_price") else 0.0
+    return str(last.get("status", "unknown")), fq, fp
 
 
 def post_slack(text: str) -> None:
@@ -222,33 +290,78 @@ def enter_position(symbol: str, gate: dict, signal: dict, dry_run: bool, state: 
                 "type": "market",
                 "time_in_force": "day",
             })
-            entry["order_id"] = order.get("id", "")[:16]
-            entry["status"] = "submitted"
-            # 상태 기록
-            state["turtle_positions"][symbol] = {
+            order_id = order.get("id", "")
+            entry["order_id"] = order_id[:16]
+
+            # P0 — 체결 확인 게이트: '제출'이 아니라 '체결'을 확인한 뒤에만 원장/손절을 갱신.
+            status, filled_qty, fill_price = wait_for_fill(order_id)
+            entry["order_status"] = status
+            entry["filled_qty"] = filled_qty
+            if filled_qty <= 0:
+                # 미체결/거절 — 내부 원장에 포지션을 만들지 않는다(유령 포지션 방지).
+                entry["status"] = "not_filled"
+                log_entry(entry)
+                return entry
+
+            # 실제 체결가 기준으로 손절가를 확정(고정 stop — 이후 ATR 재계산으로 흔들지 않음).
+            fill_price = fill_price or signal["current_price"]
+            stop_loss = round(fill_price - TURTLE_STOP_MULT * signal["atr"], 2)
+            qty_i = int(filled_qty)
+
+            # P0 — 손절 상주화: 체결 직후 브로커에 stop 매도 주문을 상주시켜, 실행 주기 사이
+            # 갭다운/장애에도 장중 손절이 발동되게 한다(Red Team 2026-06-27 BLOCKER).
+            stop_order_id = ""
+            try:
+                so = _alpaca_post("/orders", {
+                    "symbol": symbol,
+                    "qty": str(qty_i),
+                    "side": "sell",
+                    "type": "stop",
+                    "stop_price": str(stop_loss),
+                    "time_in_force": STOP_TIF,
+                })
+                stop_order_id = so.get("id", "")
+            except Exception as se:
+                entry["stop_order_error"] = str(se)
+
+            entry["status"] = "filled"
+            entry["fill_price"] = fill_price
+            entry["stop_loss"] = stop_loss
+            entry["stop_order_id"] = stop_order_id[:16]
+
+            # 상태 기록 (원자적 델타 — 자기 키만)
+            state_set_position(symbol, {
                 "entry_ts": entry["ts"],
                 "system": gate["system"],
-                "entry_price": signal["current_price"],
+                "entry_price": fill_price,
                 "atr": signal["atr"],
-                "stop_loss": gate["stop_loss"],
-                "qty": qty,
+                "stop_loss": stop_loss,
+                "qty": qty_i,
                 "side": "buy",
+                "stop_order_id": stop_order_id,
+            })
+            # in-memory state 도 동기화(같은 run 내 후속 로직 일관성)
+            state.setdefault("turtle_positions", {})[symbol] = {
+                "entry_ts": entry["ts"], "system": gate["system"],
+                "entry_price": fill_price, "atr": signal["atr"],
+                "stop_loss": stop_loss, "qty": qty_i, "side": "buy",
+                "stop_order_id": stop_order_id,
             }
-            # 거래 일기 기록 (기업명·섹터·선정 사유 포함)
+            # 거래 일기 기록 (기업명·섹터·선정 사유 포함) — 실제 체결가/수량 기준
             _info = _UNIVERSE_INFO.get(symbol, {})
             log_trade_entry(
                 ticker=symbol,
                 side=entry["side"],
-                shares=qty,
-                price=signal["current_price"],
+                shares=qty_i,
+                price=fill_price,
                 atr=signal["atr"],
-                stop_loss=gate["stop_loss"],
+                stop_loss=stop_loss,
                 system=gate["system"],
                 signal=signal["signal"],
                 sector=_info.get("sector", ""),
                 harness_score=_info.get("harness_score", 0),
                 selection_reason=_info.get("selection_reason", ""),
-                note=f"Turtle {gate['system']} 브레이크아웃 자동 진입 | 리스크 {gate['risk_pct']:.3f}%",
+                note=f"Turtle {gate['system']} 브레이크아웃 자동 진입 | 상주손절 {'OK' if stop_order_id else 'FAIL'}",
             )
         except Exception as e:
             entry["status"] = "error"
@@ -278,10 +391,93 @@ def _check_exit_signal(symbol: str, system: str) -> tuple[bool, str]:
     return False, "hold"
 
 
+def reconcile_positions(positions: list, state: dict, dry_run: bool) -> list[dict]:
+    """P0 — 브로커 ↔ 내부 원장 정합화(Red Team 2026-06-27 BLOCKER 2건).
+
+    ① 고아 입양: 브로커에 보유 중인 turtle 유니버스 종목이 state 에 없으면 입양해 손절/청산 관리에
+       편입한다(없으면 상주 손절도 건다). 수동/비유니버스 포지션은 건드리지 않는다.
+    ② 유령 정리: state 에는 있으나 브로커에 없는 종목은 상주 손절이 이미 발동(또는 외부 청산)된
+       것으로 보고, 잔여 손절 주문을 취소하고 원장에서 제거(로그)한다.
+    """
+    actions: list[dict] = []
+    universe_set = {s.strip().upper() for s in UNIVERSE}
+    broker = {p["symbol"]: p for p in positions if "error" not in p}
+    tracked_syms = set(state.get("turtle_positions", {}).keys())
+
+    # ① 고아 입양
+    for sym, pos in broker.items():
+        if sym in tracked_syms:
+            continue
+        if sym.upper() not in universe_set:
+            continue  # 수동/비유니버스 포지션은 관리 안 함(기존 정책 보존)
+        entry = pos.get("entry_price") or pos.get("current_price") or 0
+        atr = pos.get("atr") or 0
+        if not atr:
+            try:
+                bars = _get_bars(sym, days=TURTLE_ATR_PERIOD + 5)
+                atr = _calc_atr(bars, TURTLE_ATR_PERIOD) if len(bars) >= TURTLE_ATR_PERIOD + 1 else 0
+            except Exception:
+                atr = 0
+        stop = round(entry - TURTLE_STOP_MULT * atr, 2) if atr > 0 else None
+        stop_order_id = ""
+        if not dry_run and stop and stop > 0:
+            try:
+                so = _alpaca_post("/orders", {
+                    "symbol": sym, "qty": str(int(pos["qty"])), "side": "sell",
+                    "type": "stop", "stop_price": str(stop), "time_in_force": STOP_TIF,
+                })
+                stop_order_id = so.get("id", "")
+            except Exception:
+                pass
+        rec = {
+            "entry_ts": now_iso(), "system": "S2",
+            "entry_price": entry, "atr": atr, "stop_loss": stop,
+            "qty": int(pos["qty"]), "side": "buy", "stop_order_id": stop_order_id,
+            "adopted": True,
+        }
+        if not dry_run:
+            state_set_position(sym, rec)
+        state.setdefault("turtle_positions", {})[sym] = rec
+        act = {"ts": now_iso(), "action": "adopt_orphan", "symbol": sym,
+               "stop_loss": stop, "qty": int(pos["qty"]), "dry_run": dry_run,
+               "stop_order_id": stop_order_id[:16]}
+        log_entry(act)
+        actions.append(act)
+
+    # ② 유령 정리
+    for sym in list(tracked_syms):
+        if sym in broker:
+            continue
+        tracked = state.get("turtle_positions", {}).get(sym, {})
+        if not dry_run:
+            cancel_order(tracked.get("stop_order_id", ""))
+            try:
+                log_trade_exit(
+                    ticker=sym, side="sell", shares=int(tracked.get("qty", 0) or 0),
+                    price=tracked.get("stop_loss") or tracked.get("entry_price") or 0,
+                    entry_price=tracked.get("entry_price", 0),
+                    exit_reason="reconcile_stop_filled",
+                    note="브로커 미보유 — 상주 손절 발동/외부 청산으로 추정, 원장 정합화",
+                )
+            except Exception:
+                pass
+            state_pop_position(sym)
+        state.get("turtle_positions", {}).pop(sym, None)
+        act = {"ts": now_iso(), "action": "ghost_reconcile", "symbol": sym,
+               "dry_run": dry_run, "note": "state had position, broker did not"}
+        log_entry(act)
+        actions.append(act)
+
+    return actions
+
+
 def manage_positions(positions: list, state: dict, dry_run: bool) -> list[dict]:
     """기존 Turtle 포지션 손절/청산 관리."""
     actions = []
-    turtle_syms = set(state["turtle_positions"].keys())
+    # P0 — 먼저 브로커↔원장 정합화(고아 입양/유령 정리)
+    actions.extend(reconcile_positions(positions, state, dry_run))
+
+    turtle_syms = set(state.get("turtle_positions", {}).keys())
 
     for pos in positions:
         if "error" in pos:
@@ -292,14 +488,16 @@ def manage_positions(positions: list, state: dict, dry_run: bool) -> list[dict]:
 
         tracked = state["turtle_positions"][sym]
         cp = pos["current_price"]
-        stop = pos.get("stop_loss") or tracked.get("stop_loss")
+        # P0 — 고정 손절 사용: get_positions 가 매번 현재 ATR 로 재계산한 stop 이 아니라, 진입 시
+        # 확정한 tracked stop 을 쓴다(Red Team 2026-06-27: ATR 재계산으로 stop 이 흔들리는 문제).
+        stop = tracked.get("stop_loss")
         system = tracked.get("system", "S2")
 
         reason = None
 
-        # 손절 체크
-        if stop and cp < stop:
-            reason = f"stop_loss_hit (${cp:.2f} < stop ${stop:.2f})"
+        # 손절 체크 (백업 — 1차 방어선은 브로커 상주 손절. `<=` 로 정확 터치도 포함)
+        if stop and cp <= stop:
+            reason = f"stop_loss_hit (${cp:.2f} <= stop ${stop:.2f})"
 
         # 청산 신호 체크
         if not reason:
@@ -322,6 +520,8 @@ def manage_positions(positions: list, state: dict, dry_run: bool) -> list[dict]:
             }
             if not dry_run:
                 try:
+                    # 상주 손절 주문을 먼저 취소(중복 매도 방지) 후 시장가 청산.
+                    cancel_order(tracked.get("stop_order_id", ""))
                     order = _alpaca_post("/orders", {
                         "symbol": sym,
                         "qty": str(int(pos["qty"])),
@@ -329,20 +529,27 @@ def manage_positions(positions: list, state: dict, dry_run: bool) -> list[dict]:
                         "type": "market",
                         "time_in_force": "day",
                     })
-                    action["order_id"] = order.get("id", "")[:16]
-                    action["status"] = "submitted"
-                    # 거래 일기 기록 (청산)
+                    order_id = order.get("id", "")
+                    action["order_id"] = order_id[:16]
+                    # 체결 확인 후 실제 체결가로 기록
+                    status, filled_qty, fill_price = wait_for_fill(order_id)
+                    action["order_status"] = status
+                    action["filled_qty"] = filled_qty
+                    exit_price = fill_price or cp
+                    action["status"] = "filled" if filled_qty > 0 else "not_filled"
+                    # 거래 일기 기록 (청산) — 실제 체결가
                     exit_reason_key = "stop_loss" if "stop_loss" in reason else "exit_signal_s2" if "exit_signal" in reason else "manual"
                     log_trade_exit(
                         ticker=sym,
                         side="sell",
-                        shares=int(pos["qty"]),
-                        price=cp,
+                        shares=int(filled_qty or pos["qty"]),
+                        price=exit_price,
                         entry_price=tracked.get("entry_price", cp),
                         exit_reason=exit_reason_key,
                         note=reason,
                     )
-                    del state["turtle_positions"][sym]
+                    state_pop_position(sym)
+                    state.get("turtle_positions", {}).pop(sym, None)
                 except Exception as e:
                     action["status"] = "error"
                     action["error"] = str(e)
@@ -384,12 +591,19 @@ def run(execute: bool = False) -> dict:
 
     # 3. 기존 Turtle 포지션 관리 (손절/청산)
     print("\n── 포지션 관리 ──")
-    exit_actions = manage_positions(positions, state, dry_run)
+    mgmt_actions = manage_positions(positions, state, dry_run)
+    status = "실행" if not dry_run else "DRY-RUN"
+    exit_actions = [a for a in mgmt_actions if a.get("action") == "exit"]
+    reconcile_acts = [a for a in mgmt_actions if a.get("action") in ("adopt_orphan", "ghost_reconcile")]
+    for a in reconcile_acts:
+        if a["action"] == "adopt_orphan":
+            print(f"  [{status}] ADOPT {a['symbol']} — 고아 입양 stop=${a.get('stop_loss')}")
+        else:
+            print(f"  [{status}] RECONCILE {a['symbol']} — 유령 정리(브로커 미보유)")
     if exit_actions:
         for a in exit_actions:
-            status = "실행" if not dry_run else "DRY-RUN"
-            print(f"  [{status}] EXIT {a['symbol']} — {a['reason']} | P&L: {a.get('unrealized_pnl_pct',0):+.2f}%")
-    else:
+            print(f"  [{status}] EXIT {a['symbol']} — {a['reason']} | P&L: {a.get('unrealized_pnl_pct',0) or 0:+.2f}%")
+    elif not reconcile_acts:
         print("  청산 대상 없음")
 
     # 4. 신호 스캔 및 진입
@@ -447,8 +661,10 @@ def run(execute: bool = False) -> dict:
         entered.append(result)
 
     # 5. 상태 저장 + 신호 스캔 일기 기록
+    # P0 — 통째쓰기 금지. enter/manage 가 이미 각자 델타를 원자적으로 저장했으므로
+    # 여기서는 last_run 만 원자적으로 갱신한다(다른 writer 필드 보존).
     state["last_run"] = now_iso()
-    save_state(state)
+    state_set_last_run(state["last_run"])
     try:
         all_signals = []
         for sym in UNIVERSE:
