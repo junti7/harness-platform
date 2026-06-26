@@ -43,7 +43,9 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("AI와 LLM", card["foundation_concepts"][0]["title"])
         self.assertIn("Large Language Model", card["foundation_concepts"][0]["body"])
         self.assertIn("비 오는 날 아이 준비물", card["foundation_concepts"][0]["body"])
-        self.assertIn("GPT", card["foundation_concepts"][1]["title"])
+        self.assertIn("생성형 AI", card["foundation_concepts"][1]["title"])
+        self.assertIn("Claude", card["foundation_concepts"][1]["body"])
+        self.assertIn("Gemini", card["foundation_concepts"][1]["body"])
         self.assertIn("Generative Pre-trained Transformer", card["foundation_concepts"][1]["body"])
         self.assertIn("comprehension_check", card["foundation_concepts"][0])
         self.assertIn("question_prompt", card["foundation_concepts"][0])
@@ -124,7 +126,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         )
 
         with (
-            patch.object(self.mod, "_edu_generate_text", return_value=("질문 맥락에 맞춘 쉬운 답변입니다.", {"prompt_token_count": 10, "candidates_token_count": 8}, "gemini-test")) as mocked_generate,
+            patch.object(self.mod, "_edu_generate_text", return_value=("틀린 준비물을 말할 수 있는 이유는 AI가 실제 공지를 확인하는 것이 아니라 말의 가능성을 고르기 때문입니다.", {"prompt_token_count": 10, "candidates_token_count": 8}, "gemini-test")) as mocked_generate,
             patch.object(self.mod, "_edu_log_llm_cost") as mocked_cost,
         ):
             answer, model, usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
@@ -132,11 +134,45 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         prompt = mocked_generate.call_args.args[0]
         self.assertIn("왜 틀린 준비물을", prompt)
         self.assertIn("현재 단락 설명", prompt)
-        self.assertEqual(answer, "질문 맥락에 맞춘 쉬운 답변입니다.")
+        self.assertIn("틀린 준비물", answer)
         self.assertEqual(model, "gemini-test")
         self.assertEqual(usage["prompt_token_count"], 10)
         self.assertFalse(fallback_used)
         mocked_cost.assert_called_once()
+
+    def test_safety_coach_retries_when_answer_repeats_source_example(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=123,
+            stage="day0",
+            concept_id="safety_concept_ai_llm_words",
+            concept_title="먼저 말부터 정리하기: AI와 LLM",
+            concept_body="비 오는 날 아이 준비물 알려줘 우산, 장화, 여벌 양말 학교 공지나 실제 날씨",
+            question="다음 글에 이어질 조사는 어떻게 추측하나요?",
+        )
+        first = (
+            "비 오는 날 아이 준비물 알려줘라고 쓰면 우산, 장화, 여벌 양말처럼 답합니다. "
+            "학교 공지나 실제 날씨는 사람이 봐야 합니다."
+        )
+        second = (
+            "조사는 앞말이 문장에서 하는 일을 보고 고릅니다. 예를 들어 '학교 __ 갔다'에서는 "
+            "장소로 향한다는 뜻이 자연스러워 '에'가 잘 맞습니다."
+        )
+
+        with (
+            patch.object(self.mod, "_edu_generate_text", side_effect=[
+                (first, {"prompt_token_count": 10, "candidates_token_count": 8}, "gemini-test"),
+                (second, {"prompt_token_count": 12, "candidates_token_count": 9}, "gemini-test"),
+            ]) as mocked_generate,
+            patch.object(self.mod, "_edu_log_llm_cost"),
+        ):
+            answer, model, _usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
+
+        self.assertEqual(mocked_generate.call_count, 2)
+        self.assertIn("조사는", answer)
+        self.assertIn("학교 __ 갔다", answer)
+        self.assertNotIn("우산, 장화, 여벌 양말", answer)
+        self.assertEqual(model, "gemini-test")
+        self.assertFalse(fallback_used)
 
     def test_safety_confirmation_unlocks_day0_practice(self):
         state = {"intake": {"preferred_llm": "claude"}, "day0": self.mod._edu_vp_build_day0({"preferred_llm": "claude"})}

@@ -560,8 +560,8 @@ function SafetyOrientationBlock({
           <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-danger">실습 전 안전 확인</div>
           <h2 className="text-base font-bold leading-snug text-ink-strong">AI를 쓰기 전에 먼저 알아야 할 것</h2>
           <p className="mt-1 text-sm leading-relaxed text-text-muted">
-            먼저 AI, LLM, GPT가 무엇인지 아주 쉬운 말로 확인합니다. 각 단락을 읽고 이해했는지 표시하거나,
-            헷갈리는 점을 적어 질문으로 남긴 뒤 실제 질문 실습으로 넘어갑니다.
+            먼저 AI, LLM(큰 언어 모델), 생성형 AI가 무엇인지 아주 쉬운 말로 확인합니다. 각 단락을 읽고
+            이해했는지 표시하거나, 헷갈리는 점을 적어 질문으로 남긴 뒤 실제 질문 실습으로 넘어갑니다.
           </p>
         </div>
       </div>

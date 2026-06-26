@@ -8305,10 +8305,10 @@ def _edu_vp_foundation_concepts(stage_key: str, llm_label: str) -> list[dict[str
             },
             {
                 "id": "safety_concept_transformer_origin",
-                "title": "GPT는 어디서 시작됐나",
-                "body": "오늘 쓰는 ChatGPT 같은 도구는 Transformer라는 방법에서 크게 발전했습니다. 이 방법은 2017년 'Attention Is All You Need'라는 논문으로 널리 알려졌고, OpenAI는 이 원리를 이용해 GPT라는 모델을 만들었습니다. GPT는 Generative Pre-trained Transformer의 줄임말입니다. 쉽게 말해, 먼저 많은 글로 말의 규칙을 배운 뒤, 사용자의 질문을 보고 답을 만들어내는 Transformer입니다.",
-                "comprehension_check": "GPT가 Transformer 원리를 이용해 만들어진 언어 모델 계열이라는 점을 이해했어요.",
-                "question_prompt": "Transformer, GPT, OpenAI 관계가 헷갈리면 여기에 적어주세요.",
+                "title": "생성형 AI는 어떻게 시작됐나",
+                "body": "오늘 쓰는 ChatGPT, Claude, Gemini 같은 생성형 AI는 Transformer라는 방법에서 크게 발전했습니다. 이 방법은 2017년 'Attention Is All You Need'라는 논문으로 널리 알려졌고, 이후 OpenAI의 GPT 계열, Anthropic의 Claude, Google의 Gemini처럼 여러 회사가 각자 모델을 발전시켰습니다. GPT는 Generative Pre-trained Transformer의 줄임말입니다. 여기서 중요한 점은 회사 이름이 아니라 공통 원리입니다. 먼저 많은 글로 말의 규칙을 배우고, 사용자의 질문을 보고 답을 만들어내는 방식입니다.",
+                "comprehension_check": "ChatGPT, Claude, Gemini 같은 생성형 AI가 Transformer 계열 원리에서 발전했다는 점을 이해했어요.",
+                "question_prompt": "생성형 AI, Transformer, ChatGPT/Claude/Gemini 관계가 헷갈리면 여기에 적어주세요.",
             },
             {
                 "id": "safety_concept_attention",
@@ -8518,16 +8518,25 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
 
 def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
     title = concept_title or "이 단락"
+    q = question.strip()
+    if "조사" in q and ("추측" in q or "이어질" in q or "다음" in q):
+        return (
+            "조사는 앞말의 역할을 보고 고릅니다. 예를 들어 '학교' 뒤에는 '에', '에서', '가'가 올 수 있지만, "
+            "'학교 __ 갔다'라면 장소로 향한다는 뜻이 자연스러워서 '에'가 더 그럴듯합니다. "
+            "LLM은 이런 예문을 아주 많이 본 뒤, 지금 문장과 비슷한 경우에 많이 이어졌던 조사를 고릅니다. "
+            "그래서 문법 선생님처럼 규칙을 이해해서 보증하는 것이 아니라, 많이 본 말의 흐름을 바탕으로 고르는 것입니다."
+        )
     if "AI와 LLM" in title:
         return (
             "AI는 큰 이름이고, LLM은 그중에서 말을 만드는 AI입니다. "
             "예를 들어 '비 오는 날 준비물 알려줘'라고 쓰면, LLM은 비와 준비물에 어울리는 말을 이어 붙여 "
             "'우산, 장화, 여벌 양말' 같은 답을 만듭니다. 다만 실제 공지나 날씨는 사람이 다시 확인해야 합니다."
         )
-    if "GPT" in title:
+    if "생성형 AI" in title or "GPT" in title:
         return (
-            "GPT는 OpenAI가 만든 언어 모델 계열 이름입니다. 많은 글로 말의 흐름을 먼저 배운 뒤, "
-            "사용자 질문을 보고 다음에 올 말을 이어 붙입니다. 그래서 똑똑해 보여도 사람처럼 경험하거나 책임지지는 않습니다."
+            "생성형 AI는 새 글, 그림, 답변처럼 무언가를 만들어내는 AI입니다. "
+            "ChatGPT가 유명해서 GPT라는 말을 자주 듣지만, Claude와 Gemini도 같은 큰 흐름 안의 생성형 AI입니다. "
+            "핵심은 회사 이름이 아니라 많은 예시를 보고 새 답을 만드는 방식입니다."
         )
     if "Transformer" in title:
         return (
@@ -8547,14 +8556,16 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
     question = _edu_neutralize(req.question, cap=700)
     concept_title = _edu_neutralize(req.concept_title, cap=160)
     concept_body = _edu_neutralize(req.concept_body, cap=1400)
-    prompt = (
+    base_prompt = (
         "너는 Harness VP 훈련의 AI 안전 오리엔테이션 코치다.\n"
         "사용자는 AI/LLM 왕초보다. 초등학교 1학년도 이해할 만큼 쉬운 한국어로 답하라.\n"
         "규칙:\n"
         "- 사용자 질문의 구체적 맥락에 직접 답한다.\n"
+        "- [현재 단락 설명]을 그대로 요약하거나 복붙하지 않는다. 사용자가 이미 읽은 본문을 반복하면 실패다.\n"
+        "- 먼저 질문 속 핵심 단어를 짚고, 그 질문에 대한 새 설명과 새 예시를 낸다.\n"
         "- 고정 FAQ처럼 같은 답을 반복하지 않는다.\n"
         "- 4~6문장으로 짧게 답한다.\n"
-        "- 반드시 생활 예시 1개를 포함한다.\n"
+        "- 반드시 [현재 단락 설명]에 없는 새 생활 예시 1개를 포함한다.\n"
         "- AI를 사람, 친구, 전문가, 보호자처럼 표현하지 않는다.\n"
         "- 자해, 건강, 법률, 돈, 아이 안전 등 고위험 신호가 있으면 AI 답변 대신 실제 사람/전문가/긴급 도움을 연결하라고 말한다.\n"
         "- 모르면 모른다고 말하고, 실습 전 확인해야 할 기준을 제시한다.\n\n"
@@ -8563,16 +8574,38 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         f"[사용자 질문 또는 피드백]\n{question}\n\n"
         "위 질문에 맞는 코치 답변만 출력하라."
     )
+    retry_prompt = (
+        f"{base_prompt}\n\n"
+        "이전 답변이 단락 본문을 반복했거나 질문에 직접 답하지 못했다. "
+        "이번에는 본문 예시를 쓰지 말고, 사용자 질문의 핵심에 바로 답하라."
+    )
     try:
-        raw, usage, used_model = _edu_generate_text(
-            prompt,
-            max_output_tokens=420,
-            timeout_seconds=20,
-            response_mime_type="text/plain",
-        )
-        answer = re.sub(r"```(?:text)?", "", raw or "").strip().rstrip("`").strip()
-        if not answer:
-            raise ValueError("empty safety coach answer")
+        usage: dict[str, int] = {}
+        used_model = ""
+        answer = ""
+        for attempt, prompt in enumerate((base_prompt, retry_prompt), start=1):
+            raw, usage, used_model = _edu_generate_text(
+                prompt,
+                max_output_tokens=420,
+                timeout_seconds=20,
+                response_mime_type="text/plain",
+            )
+            answer = re.sub(r"```(?:text)?", "", raw or "").strip().rstrip("`").strip()
+            if not answer:
+                raise ValueError("empty safety coach answer")
+            overlap_terms = [
+                "비 오는 날 아이 준비물",
+                "우산, 장화, 여벌 양말",
+                "학교 공지나 실제 날씨",
+            ]
+            repeats_source_example = any(term in answer for term in overlap_terms if term in concept_body)
+            question_terms = [token for token in re.findall(r"[가-힣A-Za-z0-9]+", question) if len(token) >= 2]
+            addresses_question = not question_terms or any(token in answer for token in question_terms[:5])
+            if not repeats_source_example and addresses_question:
+                break
+            if attempt == 2:
+                answer = _edu_vp_safety_coach_fallback(concept_title, question)
+                used_model = f"{used_model}+quality_fallback"
         _edu_log_llm_cost(usage, used_model)
         return answer[:1600], used_model, usage, False
     except Exception as exc:  # noqa: BLE001
