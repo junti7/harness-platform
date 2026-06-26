@@ -32,7 +32,8 @@ for name in \
   com.harness.ibkr-auto-trader \
   com.harness.paper-reset-watch \
   com.harness.trading-runtime-guard \
-  com.harness.post-open-verification; do
+  com.harness.post-open-verification \
+  com.harness.reboot-login-alert; do
   src="$PLIST_DIR/$name.plist"
   dst="$AGENT_DIR/$name.plist"
   sed "s|__ROOT__|$ROOT|g" "$src" >"$dst"

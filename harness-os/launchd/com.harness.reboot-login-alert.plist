@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.harness.reboot-login-alert</string>
+
+  <!-- gui LaunchAgent: GUI 로그인 시 1회 실행(RunAtLoad). 재부팅 직후 로그인 여부는
+       스크립트가 uptime 으로 판별해 스팸을 방지한다. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__ROOT__/scripts/reboot_login_alert.sh</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>__ROOT__/logs/reboot-login-alert.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>__ROOT__/logs/reboot-login-alert.err.log</string>
+</dict>
+</plist>
