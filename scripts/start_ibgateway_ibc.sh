@@ -9,7 +9,10 @@
 #     (SSH로 직접 실행하면 GUI 세션 밖이라 HeadlessException 발생 — 운영 경로 아님.)
 #  3) GUI 세션 자체가 없으면(재부팅 후 자동 로그인 OFF 등) 어떤 방법으로도 구동 불가 → 명시 경고.
 
-PROJ="/Users/juntae.park/projects/harness-platform"
+# PROJ는 스크립트 위치에서 유도한다(머신별 사용자명/홈 하드코딩 금지 — MBP=juntae.park,
+# Mac Mini=juntaepark 처럼 사용자명이 다르면 하드코딩 경로가 깨진다).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJ="$(dirname "$SCRIPT_DIR")"
 LOG="$PROJ/docs/reports/ibgateway_ibc.log"
 # IBC 런처의 raw stdout/stderr 전용(설정 파싱 진단·계정ID 등 민감정보 분리). runtime/은 .gitignore 대상.
 IBC_RAW_LOG="$PROJ/runtime/ibgateway_ibc_raw.log"
@@ -92,11 +95,14 @@ fi
 IBC_LAUNCHER="$(resolve_ibc_launcher)"
 GW_APP="$(resolve_gateway_app)"
 
-# GUI(Aqua) 세션 존재 확인 — 없으면 게이트웨이 구동 자체가 불가(HeadlessException)
+# GUI(Aqua) 세션 존재 확인 — 없으면 게이트웨이 구동 자체가 불가(HeadlessException).
+# 비교 대상은 이 잡을 실행한 사용자(launchd gui/<uid>)다. 사용자명을 하드코딩하면
+# 머신마다 달라 깨지므로 현재 사용자($EXPECTED_USER)와 콘솔 GUI 사용자 일치 여부로 판단한다.
+EXPECTED_USER="$(id -un)"
 CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null)
-if [ "$CONSOLE_USER" != "juntae.park" ]; then
-    log "[ERROR] 콘솔 GUI 세션에 juntae.park 없음(현재: '$CONSOLE_USER') — Aqua 세션 부재. 게이트웨이 구동 불가."
-    write_status "offline" "Mac Mini에 juntaepark GUI 로그인이 없어 IB Gateway를 띄울 수 없습니다(재부팅 후 자동 로그인 OFF 등). 화면공유로 GUI 로그인이 필요합니다."
+if [ "$CONSOLE_USER" != "$EXPECTED_USER" ]; then
+    log "[ERROR] 콘솔 GUI 세션에 $EXPECTED_USER 없음(현재: '$CONSOLE_USER') — Aqua 세션 부재. 게이트웨이 구동 불가."
+    write_status "offline" "Mac Mini에 $EXPECTED_USER GUI 로그인이 없어 IB Gateway를 띄울 수 없습니다(재부팅 후 자동 로그인 OFF 등). 화면공유로 GUI 로그인이 필요합니다."
     slack '{"text":"🚨 *[IB Gateway]* Aqua GUI 세션 없음 — Mac Mini 화면 GUI 로그인 필요(이 상태에선 자동매매 불가)"}'
     exit 1
 fi
