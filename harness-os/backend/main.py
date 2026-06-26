@@ -7375,6 +7375,26 @@ def _edu_vp_unlock_day0_practice(state: dict[str, Any]) -> dict[str, Any]:
     return state
 
 
+def _edu_vp_day0_safety_confirmed(state: dict[str, Any]) -> bool:
+    safety_confirmed = (state.get("ui_state") or {}).get("safety_confirmed") or {}
+    return bool(safety_confirmed.get("day0")) if isinstance(safety_confirmed, dict) else False
+
+
+def _edu_vp_migrate_unconfirmed_day0_safety(state: dict[str, Any]) -> dict[str, Any]:
+    """Reset legacy unconfirmed Day 0 snapshots to the safety-orientation gate."""
+    state = _edu_vp_normalize_state_keys(state)
+    if _edu_vp_day0_safety_confirmed(state):
+        return state
+    intake = state.get("intake") or {}
+    migrated_day0 = _edu_vp_build_day0(intake if isinstance(intake, dict) else {})
+    migrated_day0["legacy_safety_migration"] = {
+        "reason": "unconfirmed_day0_rebuilt_for_safety_orientation",
+        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    state["day0"] = migrated_day0
+    return state
+
+
 def _edu_vp_append_event(
     *,
     case_id: int | None,
@@ -7458,6 +7478,7 @@ def _edu_vp_store_state(case_id: int, state: dict[str, Any]) -> None:
 
 def _edu_vp_refresh_state(state: dict[str, Any]) -> dict[str, Any]:
     state = _edu_vp_normalize_state_keys(state)
+    state = _edu_vp_migrate_unconfirmed_day0_safety(state)
     state["day0"] = state.get("day0") or {}
     state["day1"] = state.get("day1") or {}
     p0 = _edu_vp_stage_progress(state["day0"])
@@ -7496,6 +7517,7 @@ def _edu_vp_curriculum_motivation(segment: str, intake: dict[str, Any]) -> str:
 def _edu_vp_attach_personalized_curriculum(state: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     """Attach request-time curriculum personalization without persisting it into snapshots."""
     state = dict(state or {})
+    state = _edu_vp_migrate_unconfirmed_day0_safety(state)
     intake = state.get("intake") or {}
     customer = payload.get("customer") or {}
     segment = str(customer.get("segment") or "worker").strip().lower()
@@ -10635,6 +10657,7 @@ def edu_vp_training_session_sync(
     state = _edu_vp_normalize_state_keys(state)
     state["customer"] = payload["customer"]
     state["case"] = payload["case"]
+    state = _edu_vp_migrate_unconfirmed_day0_safety(state)
     current_ui_state = state.get("ui_state") or {}
     current_seq = int(current_ui_state.get("last_client_seq") or 0) if isinstance(current_ui_state, dict) else 0
     incoming_seq = max(0, int(req.client_seq or 0))

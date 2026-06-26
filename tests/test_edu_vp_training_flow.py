@@ -101,6 +101,41 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(unlocked["day0"]["checklist"][0]["id"], "open_tool")
         self.assertEqual(unlocked["day0"]["sample_materials"][0]["kit_id"], "day0-first-login-starter")
 
+    def test_refresh_migrates_legacy_unconfirmed_day0_to_safety_gate(self):
+        legacy_state = {
+            "intake": {"preferred_llm": "claude", "current_device": "iphone", "desktop_os": "mac"},
+            "day0": {
+                "title": "Day 0 · 환경 열기와 첫 성공",
+                "required_action": "Claude를 실제로 열고 첫 답변을 저장한다.",
+                "proof_artifact_hint": "첫 답변을 붙여 넣으세요.",
+                "sample_materials": [{"kit_id": "day0-first-login-starter"}],
+                "tutorial_steps": [{"id": "mobile_prompt", "title": "첫 질문 보내기"}],
+                "checklist": [{"id": "open_tool", "title": "Claude 열기"}],
+                "blocked_step_options": ["open_tool"],
+                "completed": True,
+            },
+            "day1": {"title": "Day 1 · 집안일 적용", "completed": False},
+            "ui_state": {"safety_confirmed": {}},
+        }
+
+        refreshed = self.mod._edu_vp_refresh_state(legacy_state)
+        day0 = refreshed["day0"]
+
+        self.assertEqual(day0["title"], "Day 0 · AI 안전 이해와 작동 원리 확인")
+        self.assertNotIn("첫 답변", day0["required_action"])
+        self.assertEqual([item["id"] for item in day0["checklist"]], [
+            "understand_not_human",
+            "understand_generation",
+            "understand_boundaries",
+            "understand_sycophancy",
+        ])
+        self.assertEqual(day0["sample_materials"], [])
+        self.assertEqual(day0["tutorial_steps"], [])
+        self.assertNotIn("post_safety_practice", day0)
+        self.assertFalse(day0.get("completed"))
+        self.assertEqual(refreshed["flow_outline"][0]["key"], "day0")
+        self.assertEqual(refreshed["flow_outline"], [refreshed["flow_outline"][0]])
+
     def test_personalized_day0_preserves_safety_gate_order(self):
         day0 = self.mod._edu_vp_build_day0({"preferred_llm": "claude"})
         personalized = self.mod._edu_vp_apply_curriculum_to_day0(
