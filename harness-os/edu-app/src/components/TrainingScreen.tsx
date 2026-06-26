@@ -47,8 +47,15 @@ export type TrainingScreenProps = {
 
 const STAGE_ORDER: StageKey[] = ['day0', 'day1']
 const STAGE_LABEL: Record<StageKey, string> = { day0: 'Day 0', day1: 'Day 1' }
+const SAFETY_COACH_ANSWER_VERSION = '2026-06-27-question-specific-v2'
 type SafetyConceptFeedback = Record<string, string>
-type SafetyCoachAnswers = Record<string, { answer: string; model?: string; fallbackUsed?: boolean }>
+type SafetyCoachAnswers = Record<string, {
+  answer: string
+  model?: string
+  fallbackUsed?: boolean
+  question?: string
+  version?: string
+}>
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) {
@@ -122,6 +129,19 @@ function MediaIcon({ kind }: { kind?: string }) {
 
 function conceptId(concept: NonNullable<TrainingStage['foundation_concepts']>[number], index: number): string {
   return concept.id || `safety_concept_${index}`
+}
+
+function currentSafetyCoachAnswers(raw: unknown, feedback: SafetyConceptFeedback): SafetyCoachAnswers {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: SafetyCoachAnswers = {}
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+    const item = value as SafetyCoachAnswers[string]
+    if (item.version !== SAFETY_COACH_ANSWER_VERSION) continue
+    if (item.question && feedback[id] && item.question.trim() !== feedback[id].trim()) continue
+    if (typeof item.answer === 'string' && item.answer.trim()) out[id] = item
+  }
+  return out
 }
 
 function languageLabel(value?: string): string {
@@ -755,16 +775,12 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     const draft = st.ui_state?.stage_drafts?.[next]
     const feedback = draft?.safety_concept_feedback
     const answers = draft?.safety_coach_answers
-    setConceptFeedback(
+    const nextFeedback =
       feedback && typeof feedback === 'object' && !Array.isArray(feedback)
         ? (feedback as SafetyConceptFeedback)
-        : {},
-    )
-    setCoachAnswers(
-      answers && typeof answers === 'object' && !Array.isArray(answers)
-        ? (answers as SafetyCoachAnswers)
-        : {},
-    )
+        : {}
+    setConceptFeedback(nextFeedback)
+    setCoachAnswers(currentSafetyCoachAnswers(answers, nextFeedback))
     setCoachLoading({})
     setCoachErrors({})
     setWhyOpen(false)
@@ -826,6 +842,14 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
 
   function updateConceptFeedback(id: string, value: string) {
     setConceptFeedback((prev) => ({ ...prev, [id]: value }))
+    setCoachAnswers((prev) => {
+      const current = prev[id]
+      if (!current) return prev
+      if ((current.question ?? '').trim() === value.trim()) return prev
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
     setCoachErrors((prev) => ({ ...prev, [id]: '' }))
   }
 
@@ -848,6 +872,8 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           answer: res.answer,
           model: res.model,
           fallbackUsed: Boolean(res.fallback_used),
+          question,
+          version: SAFETY_COACH_ANSWER_VERSION,
         }
         const nextAnswers = { ...coachAnswers, [id]: answerRecord }
         setCoachAnswers(nextAnswers)
@@ -866,6 +892,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
             answer: res.answer,
             model: res.model,
             fallback_used: Boolean(res.fallback_used),
+            answer_version: SAFETY_COACH_ANSWER_VERSION,
           },
           stageDrafts: {
             [stage]: {
