@@ -324,6 +324,32 @@ export async function syncSession(input: {
   return r.training_state
 }
 
+export type SafetyCoachResponse = {
+  answer: string
+  model?: string
+  fallback_used?: boolean
+}
+
+export async function askSafetyCoach(input: {
+  caseId: number
+  email: string
+  stage: StageKey
+  conceptId: string
+  conceptTitle: string
+  conceptBody: string
+  question: string
+}): Promise<SafetyCoachResponse> {
+  return vpPost<SafetyCoachResponse>(VP_TRAINING.safetyCoach, {
+    case_id: input.caseId,
+    email: input.email,
+    stage: input.stage,
+    concept_id: input.conceptId,
+    concept_title: input.conceptTitle,
+    concept_body: input.conceptBody,
+    question: input.question,
+  })
+}
+
 /** 단계 완료/증거물 커밋. day0 completed=true 면 day1 이 해금된다. */
 export async function saveStageArtifact(input: {
   caseId: number

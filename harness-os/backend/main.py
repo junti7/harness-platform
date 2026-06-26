@@ -6056,6 +6056,16 @@ class EduVpTrainingSessionSyncRequest(BaseModel):
     event_payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class EduVpTrainingSafetyCoachRequest(BaseModel):
+    case_id: int
+    email: str = ""
+    stage: str = "day0"
+    concept_id: str = ""
+    concept_title: str = ""
+    concept_body: str = ""
+    question: str = ""
+
+
 class EduVpTrainingCurriculumRequest(BaseModel):
     email: str = ""
     llm: str = ""
@@ -8289,7 +8299,7 @@ def _edu_vp_foundation_concepts(stage_key: str, llm_label: str) -> list[dict[str
             {
                 "id": "safety_concept_ai_llm_words",
                 "title": "먼저 말부터 정리하기: AI와 LLM",
-                "body": "AI는 사람이 만든 똑똑한 컴퓨터 도구를 넓게 부르는 말입니다. LLM은 Large Language Model의 줄임말이고, 한국어로는 큰 언어 모델입니다. 아주 많은 글을 읽고 말의 이어짐을 배운 AI라서, 질문을 받으면 다음에 올 법한 말을 한 글자씩 이어 붙여 답을 만듭니다.",
+                "body": "AI는 사람이 만든 똑똑한 컴퓨터 도구를 넓게 부르는 말입니다. LLM은 Large Language Model의 줄임말이고, 한국어로는 큰 언어 모델입니다. 아주 많은 글을 읽고 말의 이어짐을 배운 AI라서, 질문을 받으면 다음에 올 법한 말을 한 글자씩 이어 붙여 답을 만듭니다. 예를 들어 사용자가 '비 오는 날 아이 준비물 알려줘'라고 쓰면, LLM은 '비', '아이', '준비물' 같은 말을 보고 '우산, 장화, 여벌 양말'처럼 이어질 가능성이 높은 답을 만듭니다. 그래서 답이 그럴듯해도 학교 공지나 실제 날씨처럼 원문 확인이 필요한 것은 사람이 다시 봐야 합니다.",
                 "comprehension_check": "LLM이 사람 이름이 아니라 '큰 언어 모델'이라는 도구 이름임을 이해했어요.",
                 "question_prompt": "AI와 LLM이 어떻게 다른지 헷갈리면 여기에 적어주세요.",
             },
@@ -8504,6 +8514,75 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
             "success_signal": "기분 좋은 확신과 현실 검증을 구분한다.",
         },
     ]
+
+
+def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
+    title = concept_title or "이 단락"
+    if "AI와 LLM" in title:
+        return (
+            "AI는 큰 이름이고, LLM은 그중에서 말을 만드는 AI입니다. "
+            "예를 들어 '비 오는 날 준비물 알려줘'라고 쓰면, LLM은 비와 준비물에 어울리는 말을 이어 붙여 "
+            "'우산, 장화, 여벌 양말' 같은 답을 만듭니다. 다만 실제 공지나 날씨는 사람이 다시 확인해야 합니다."
+        )
+    if "GPT" in title:
+        return (
+            "GPT는 OpenAI가 만든 언어 모델 계열 이름입니다. 많은 글로 말의 흐름을 먼저 배운 뒤, "
+            "사용자 질문을 보고 다음에 올 말을 이어 붙입니다. 그래서 똑똑해 보여도 사람처럼 경험하거나 책임지지는 않습니다."
+        )
+    if "Transformer" in title:
+        return (
+            "Transformer는 문장에서 중요한 말을 찾아 서로 연결하는 방법입니다. "
+            "책을 읽으며 중요한 단어에 형광펜을 칠하고, 그 단어들끼리 연결해 뜻을 잡는 모습과 비슷합니다."
+        )
+    if question.strip():
+        return (
+            f"질문해 주신 부분은 '{title}'을 이해하는 데 중요한 지점입니다. "
+            "핵심은 AI 답을 사람의 이해나 책임으로 보지 않고, 먼저 초안으로만 쓰는 것입니다. "
+            "헷갈리는 동안은 체크하지 말고, 실제 실습 전에 사람에게도 한 번 설명해 보세요."
+        )
+    return "질문을 조금 더 구체적으로 적어주시면, 그 부분에 맞춰 쉬운 예로 다시 설명할 수 있습니다."
+
+
+def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -> tuple[str, str, dict[str, int], bool]:
+    question = _edu_neutralize(req.question, cap=700)
+    concept_title = _edu_neutralize(req.concept_title, cap=160)
+    concept_body = _edu_neutralize(req.concept_body, cap=1400)
+    prompt = (
+        "너는 Harness VP 훈련의 AI 안전 오리엔테이션 코치다.\n"
+        "사용자는 AI/LLM 왕초보다. 초등학교 1학년도 이해할 만큼 쉬운 한국어로 답하라.\n"
+        "규칙:\n"
+        "- 사용자 질문의 구체적 맥락에 직접 답한다.\n"
+        "- 고정 FAQ처럼 같은 답을 반복하지 않는다.\n"
+        "- 4~6문장으로 짧게 답한다.\n"
+        "- 반드시 생활 예시 1개를 포함한다.\n"
+        "- AI를 사람, 친구, 전문가, 보호자처럼 표현하지 않는다.\n"
+        "- 자해, 건강, 법률, 돈, 아이 안전 등 고위험 신호가 있으면 AI 답변 대신 실제 사람/전문가/긴급 도움을 연결하라고 말한다.\n"
+        "- 모르면 모른다고 말하고, 실습 전 확인해야 할 기준을 제시한다.\n\n"
+        f"[현재 단락 제목]\n{concept_title}\n\n"
+        f"[현재 단락 설명]\n{concept_body}\n\n"
+        f"[사용자 질문 또는 피드백]\n{question}\n\n"
+        "위 질문에 맞는 코치 답변만 출력하라."
+    )
+    try:
+        raw, usage, used_model = _edu_generate_text(
+            prompt,
+            max_output_tokens=420,
+            timeout_seconds=20,
+            response_mime_type="text/plain",
+        )
+        answer = re.sub(r"```(?:text)?", "", raw or "").strip().rstrip("`").strip()
+        if not answer:
+            raise ValueError("empty safety coach answer")
+        _edu_log_llm_cost(usage, used_model)
+        return answer[:1600], used_model, usage, False
+    except Exception as exc:  # noqa: BLE001
+        _edu_runtime_event(
+            "vp_training_safety_coach_fallback",
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+            concept_title=concept_title[:120],
+        )
+        return _edu_vp_safety_coach_fallback(concept_title, question), "fallback", {}, True
 
 
 def _edu_vp_day1_materials(llm_label: str) -> list[dict[str, Any]]:
@@ -10865,6 +10944,51 @@ def edu_vp_training_account_update_email(
         "customer_id": int(account["id"]),
         "account_updated": True,
         "training_auth_token": _issue_edu_training_auth_token(new_email, int(account["id"])),
+    }
+
+
+@app.post("/api/edu/vp-training/safety-coach")
+def edu_vp_training_safety_coach(
+    request: Request,
+    req: EduVpTrainingSafetyCoachRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    _ensure_edu_case_schema()
+    _edu_public_gate(request)
+    case_id = int(req.case_id)
+    payload = _edu_load_case_payload(case_id)
+    owner_email = _edu_normalize_email(str(payload["customer"].get("email") or ""))
+    caller_email = _edu_normalize_email(req.email)
+    if caller_email and caller_email != owner_email:
+        raise HTTPException(403, "forbidden")
+    _edu_vp_assert_access(request, owner_email)
+    question = (req.question or "").strip()
+    if len(question) < 2:
+        raise HTTPException(400, "question is required")
+    answer, model_name, usage, fallback_used = _edu_vp_generate_safety_coach_answer(req)
+    log_payload = {
+        "stage": req.stage if req.stage in {"day0", "day1"} else "day0",
+        "concept_id": (req.concept_id or "")[:120],
+        "concept_title": (req.concept_title or "")[:240],
+        "concept_body": (req.concept_body or "")[:1800],
+        "question": question[:1200],
+        "answer": answer[:1800],
+        "model": model_name,
+        "usage": usage,
+        "fallback_used": fallback_used,
+    }
+    _edu_vp_append_event(
+        case_id=case_id,
+        email=owner_email,
+        event_type="safety_coach",
+        event_name="safety_question_answered",
+        payload=log_payload,
+    )
+    return {
+        "ok": True,
+        "answer": answer,
+        "model": model_name,
+        "fallback_used": fallback_used,
     }
 
 

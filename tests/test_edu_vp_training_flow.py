@@ -42,6 +42,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertGreaterEqual(len(card["schedule_blocks"]), 5)
         self.assertIn("AI와 LLM", card["foundation_concepts"][0]["title"])
         self.assertIn("Large Language Model", card["foundation_concepts"][0]["body"])
+        self.assertIn("비 오는 날 아이 준비물", card["foundation_concepts"][0]["body"])
         self.assertIn("GPT", card["foundation_concepts"][1]["title"])
         self.assertIn("Generative Pre-trained Transformer", card["foundation_concepts"][1]["body"])
         self.assertIn("comprehension_check", card["foundation_concepts"][0])
@@ -111,6 +112,31 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIsNone(forged)
         self.assertIsNone(missing_concepts)
         self.assertEqual(confirmed, {"day0": True})
+
+    def test_safety_coach_answer_uses_llm_with_question_context(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=123,
+            stage="day0",
+            concept_id="safety_concept_ai_llm_words",
+            concept_title="먼저 말부터 정리하기: AI와 LLM",
+            concept_body="LLM은 다음에 올 법한 말을 이어 붙입니다.",
+            question="그럼 왜 틀린 준비물을 말할 수도 있나요?",
+        )
+
+        with (
+            patch.object(self.mod, "_edu_generate_text", return_value=("질문 맥락에 맞춘 쉬운 답변입니다.", {"prompt_token_count": 10, "candidates_token_count": 8}, "gemini-test")) as mocked_generate,
+            patch.object(self.mod, "_edu_log_llm_cost") as mocked_cost,
+        ):
+            answer, model, usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
+
+        prompt = mocked_generate.call_args.args[0]
+        self.assertIn("왜 틀린 준비물을", prompt)
+        self.assertIn("현재 단락 설명", prompt)
+        self.assertEqual(answer, "질문 맥락에 맞춘 쉬운 답변입니다.")
+        self.assertEqual(model, "gemini-test")
+        self.assertEqual(usage["prompt_token_count"], 10)
+        self.assertFalse(fallback_used)
+        mocked_cost.assert_called_once()
 
     def test_safety_confirmation_unlocks_day0_practice(self):
         state = {"intake": {"preferred_llm": "claude"}, "day0": self.mod._edu_vp_build_day0({"preferred_llm": "claude"})}

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { ApiError } from '@/lib/api'
 import {
+  askSafetyCoach,
   fetchSession,
   rebuildCaseFromSavedCurriculum,
   saveStageArtifact,
@@ -47,6 +48,7 @@ export type TrainingScreenProps = {
 const STAGE_ORDER: StageKey[] = ['day0', 'day1']
 const STAGE_LABEL: Record<StageKey, string> = { day0: 'Day 0', day1: 'Day 1' }
 type SafetyConceptFeedback = Record<string, string>
+type SafetyCoachAnswers = Record<string, { answer: string; model?: string; fallbackUsed?: boolean }>
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) {
@@ -120,36 +122,6 @@ function MediaIcon({ kind }: { kind?: string }) {
 
 function conceptId(concept: NonNullable<TrainingStage['foundation_concepts']>[number], index: number): string {
   return concept.id || `safety_concept_${index}`
-}
-
-function safetyCoachReply(conceptTitle: string, feedback: string): string {
-  const text = feedback.trim()
-  if (!text) return ''
-  if (conceptTitle.includes('AI와 LLM')) {
-    return '쉽게 말하면 AI는 큰 이름이고, LLM은 그중에서 글과 말을 잘 만드는 종류입니다. 자동차가 큰 이름이고 버스가 그중 한 종류인 것과 비슷합니다.'
-  }
-  if (conceptTitle.includes('GPT')) {
-    return 'GPT는 OpenAI가 만든 언어 모델 계열 이름입니다. 먼저 많은 글로 말의 규칙을 배우고, 질문을 받으면 그 다음에 올 말을 이어 붙이는 방식으로 답합니다.'
-  }
-  if (conceptTitle.includes('Transformer')) {
-    return 'Transformer는 문장 안에서 어떤 단어가 중요한지 표시하는 방법입니다. 책에서 중요한 낱말에 형광펜을 칠하고 서로 연결해 읽는 모습으로 생각하면 됩니다.'
-  }
-  if (conceptTitle.includes('다음 말')) {
-    return 'AI는 마음속 생각을 꺼내는 것이 아니라, 앞말을 보고 다음에 올 가능성이 큰 말을 고릅니다. 이 일을 아주 빠르게 반복해서 긴 답이 만들어집니다.'
-  }
-  if (conceptTitle.includes('사람처럼')) {
-    return '다정한 말은 실제 마음이나 책임이 아닙니다. AI는 말을 잘 흉내 내는 도구이고, 중요한 판단은 가족, 동료, 전문가 같은 실제 사람과 확인해야 합니다.'
-  }
-  if (conceptTitle.includes('피해')) {
-    return '핵심 신호는 현실 생활입니다. 잠, 식사, 돈, 가족 상의, 직장 일이 흔들리면 AI 대화를 계속하지 말고 사람에게 알려야 합니다.'
-  }
-  if (conceptTitle.includes('내 편')) {
-    return 'AI가 계속 맞다고 해줄수록 더 조심해야 합니다. 기분 좋은 확신은 사실 확인이 아니므로, 큰 결정 전에는 반드시 사람에게 보여주세요.'
-  }
-  if (conceptTitle.includes('안전장치')) {
-    return '안전장치는 안전벨트와 비슷합니다. 도움이 되지만 사고를 완전히 없애지는 못합니다. 그래서 사용자가 위험한 주제를 멈추는 기준을 가져야 합니다.'
-  }
-  return '좋은 질문입니다. 이 단락은 외우는 내용이 아니라 실습 전에 위험한 사용을 피하기 위한 기준입니다. 이해되지 않으면 체크하지 말고 질문을 남겨주세요.'
 }
 
 function languageLabel(value?: string): string {
@@ -540,22 +512,30 @@ function SafetyOrientationBlock({
   stage,
   checked,
   conceptFeedback,
+  coachAnswers,
+  coachLoading,
+  coachErrors,
   saving,
   error,
   notice,
   onToggle,
   onConceptFeedback,
+  onAskCoach,
   onSaveQuestions,
   onReady,
 }: {
   stage: TrainingStage
   checked: Record<string, boolean>
   conceptFeedback: SafetyConceptFeedback
+  coachAnswers: SafetyCoachAnswers
+  coachLoading: Record<string, boolean>
+  coachErrors: Record<string, string>
   saving: boolean
   error?: string | null
   notice?: string | null
   onToggle: (id: string) => void
   onConceptFeedback: (id: string, value: string) => void
+  onAskCoach: (concept: NonNullable<TrainingStage['foundation_concepts']>[number], id: string) => void
   onSaveQuestions: () => void
   onReady: () => void
 }) {
@@ -591,7 +571,9 @@ function SafetyOrientationBlock({
           {conceptItems.map((concept) => {
             const on = Boolean(checked[concept.checkId])
             const feedback = conceptFeedback[concept.checkId] ?? ''
-            const reply = safetyCoachReply(concept.title, feedback)
+            const coach = coachAnswers[concept.checkId]
+            const loading = Boolean(coachLoading[concept.checkId])
+            const coachError = coachErrors[concept.checkId]
             return (
             <div key={concept.checkId} className="rounded-[12px] border border-border bg-card p-3">
               <div className="text-sm font-semibold leading-snug text-ink">{concept.title}</div>
@@ -623,10 +605,33 @@ function SafetyOrientationBlock({
                 placeholder={concept.question_prompt ?? '예: 이 부분이 잘 이해되지 않아요.'}
                 className="mt-1 w-full resize-y rounded-[10px] border border-border bg-secondary px-3 py-2 text-xs leading-relaxed text-ink outline-none transition placeholder:text-text-faint focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
               />
-              {reply ? (
+              {feedback.trim() ? (
+                <button
+                  type="button"
+                  onClick={() => onAskCoach(concept, concept.checkId)}
+                  disabled={loading}
+                  className="mt-2 inline-flex h-9 items-center gap-1.5 rounded-[9px] bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {loading ? <Loader2 size={13} className="animate-spin" /> : null}
+                  {loading ? '답변 생성 중' : '질문에 답변 받기'}
+                </button>
+              ) : null}
+              {coachError ? (
+                <div className="mt-2 rounded-[10px] bg-danger-soft px-3 py-2 text-xs leading-relaxed text-danger">
+                  {coachError}
+                </div>
+              ) : null}
+              {coach?.answer ? (
                 <div className="mt-2 rounded-[10px] border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-text-muted">
-                  <span className="font-semibold text-primary">바로 답변: </span>
-                  {reply}
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="font-semibold text-primary">AI 코치 답변</span>
+                    {coach.model ? (
+                      <span className="shrink-0 text-[10px] font-medium text-text-faint">
+                        {coach.fallbackUsed ? 'fallback' : coach.model}
+                      </span>
+                    ) : null}
+                  </div>
+                  {coach.answer}
                 </div>
               ) : null}
             </div>
@@ -732,6 +737,9 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const [proof, setProof] = useState('')
   const [checked, setChecked] = useState<Record<string, boolean>>({})
   const [conceptFeedback, setConceptFeedback] = useState<SafetyConceptFeedback>({})
+  const [coachAnswers, setCoachAnswers] = useState<SafetyCoachAnswers>({})
+  const [coachLoading, setCoachLoading] = useState<Record<string, boolean>>({})
+  const [coachErrors, setCoachErrors] = useState<Record<string, string>>({})
   const [whyOpen, setWhyOpen] = useState(false)
   const [safetyReady, setSafetyReady] = useState(false)
   const [safetySyncing, setSafetySyncing] = useState(false)
@@ -746,11 +754,19 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     setChecked({})
     const draft = st.ui_state?.stage_drafts?.[next]
     const feedback = draft?.safety_concept_feedback
+    const answers = draft?.safety_coach_answers
     setConceptFeedback(
       feedback && typeof feedback === 'object' && !Array.isArray(feedback)
         ? (feedback as SafetyConceptFeedback)
         : {},
     )
+    setCoachAnswers(
+      answers && typeof answers === 'object' && !Array.isArray(answers)
+        ? (answers as SafetyCoachAnswers)
+        : {},
+    )
+    setCoachLoading({})
+    setCoachErrors({})
     setWhyOpen(false)
     setSafetyReady(Boolean(st[next]?.completed || st.ui_state?.safety_confirmed?.[next]))
     setSafetySyncing(false)
@@ -810,6 +826,65 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
 
   function updateConceptFeedback(id: string, value: string) {
     setConceptFeedback((prev) => ({ ...prev, [id]: value }))
+    setCoachErrors((prev) => ({ ...prev, [id]: '' }))
+  }
+
+  function requestCoachAnswer(concept: NonNullable<TrainingStage['foundation_concepts']>[number], id: string) {
+    const question = (conceptFeedback[id] ?? '').trim()
+    if (!state || !question || coachLoading[id]) return
+    setCoachLoading((prev) => ({ ...prev, [id]: true }))
+    setCoachErrors((prev) => ({ ...prev, [id]: '' }))
+    void askSafetyCoach({
+      caseId,
+      email,
+      stage,
+      conceptId: id,
+      conceptTitle: concept.title,
+      conceptBody: concept.body,
+      question,
+    })
+      .then((res) => {
+        const answerRecord = {
+          answer: res.answer,
+          model: res.model,
+          fallbackUsed: Boolean(res.fallback_used),
+        }
+        const nextAnswers = { ...coachAnswers, [id]: answerRecord }
+        setCoachAnswers(nextAnswers)
+        seqRef.current += 1
+        return syncSession({
+          caseId,
+          email,
+          selectedStage: stage,
+          clientSeq: seqRef.current,
+          eventName: 'safety_coach_answer_saved',
+          eventPayload: {
+            stage,
+            concept_id: id,
+            concept_title: concept.title,
+            question,
+            answer: res.answer,
+            model: res.model,
+            fallback_used: Boolean(res.fallback_used),
+          },
+          stageDrafts: {
+            [stage]: {
+              safety_concept_feedback: conceptFeedback,
+              safety_coach_answers: nextAnswers,
+            },
+          },
+        })
+      })
+      .then((next) => {
+        setState(next)
+      })
+      .catch((e) => {
+        console.error('safety coach failed', e)
+        setCoachErrors((prev) => ({ ...prev, [id]: errMsg(e) }))
+      })
+      .finally(() => {
+        setCoachLoading((prev) => ({ ...prev, [id]: false }))
+      })
   }
 
   function saveSafetyQuestions() {
@@ -827,6 +902,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       stageDrafts: {
         [stage]: {
           safety_concept_feedback: conceptFeedback,
+          safety_coach_answers: coachAnswers,
         },
       },
     })
@@ -861,10 +937,12 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         confirmed_check_ids: confirmedCheckIds,
         confirmed_concept_ids: confirmedConceptIds,
         concept_feedback: conceptFeedback,
+        coach_answers: coachAnswers,
       },
       stageDrafts: {
         [stage]: {
           safety_concept_feedback: conceptFeedback,
+          safety_coach_answers: coachAnswers,
           safety_concept_confirmed_ids: confirmedConceptIds,
         },
       },
@@ -1039,11 +1117,15 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
             stage={current}
             checked={checked}
             conceptFeedback={conceptFeedback}
+            coachAnswers={coachAnswers}
+            coachLoading={coachLoading}
+            coachErrors={coachErrors}
             saving={safetySyncing}
             error={error}
             notice={notice}
             onToggle={toggleCheck}
             onConceptFeedback={updateConceptFeedback}
+            onAskCoach={requestCoachAnswer}
             onSaveQuestions={saveSafetyQuestions}
             onReady={confirmSafetyOrientation}
           />
