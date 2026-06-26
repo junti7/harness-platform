@@ -7351,12 +7351,18 @@ def _edu_vp_safety_confirmation_from_event(state: dict[str, Any], event_name: st
     if stage != "day0":
         return None
     confirmed_ids = {str(item) for item in (event_payload.get("confirmed_check_ids") or []) if str(item).strip()}
+    confirmed_concept_ids = {str(item) for item in (event_payload.get("confirmed_concept_ids") or []) if str(item).strip()}
     required_ids = {
         str(item.get("id"))
         for item in (state.get("day0") or {}).get("checklist", [])
         if isinstance(item, dict) and str(item.get("id") or "").startswith("understand_")
     }
-    if required_ids and required_ids.issubset(confirmed_ids):
+    required_concept_ids = {
+        str(item.get("id"))
+        for item in (state.get("day0") or {}).get("foundation_concepts", [])
+        if isinstance(item, dict) and str(item.get("id") or "").startswith("safety_concept_")
+    }
+    if required_ids and required_ids.issubset(confirmed_ids) and required_concept_ids.issubset(confirmed_concept_ids):
         return {"day0": True}
     return None
 
@@ -7932,7 +7938,7 @@ def _edu_vp_apply_curriculum_to_day0(
 
     day0["learning_why"] = (
         f"오늘은 일반적인 AI 입문이 아니라, {role_label} 사용자의 최근 관심 흐름인 "
-        f"'{focus}'를 실습에 쓰기 전 AI 노출 리스크와 LLM 작동 원리를 먼저 확인합니다. "
+        f"'{focus}'를 실습에 쓰기 전 AI 노출 리스크와 LLM(큰 언어 모델)의 작동 원리를 먼저 확인합니다. "
         f"자료수집 커리큘럼은 이후 실습 우선순위를 {topic_text} 쪽으로 잡았습니다."
     )
 
@@ -7966,7 +7972,7 @@ def _edu_vp_apply_curriculum_to_day0(
 
     blocks = [
         {"title": "AI 노출 리스크 이해", "minutes": 12, "goal": "다정한 답변, 과신, 정서 의존, 개인정보 입력 위험을 먼저 이해한다."},
-        {"title": "LLM 작동 원리 확인", "minutes": 13, "goal": "문장 패턴 기반 생성 도구라는 점을 확인하고 실습 경계를 정한다."},
+        {"title": "AI 문장 생성 원리 확인", "minutes": 13, "goal": "LLM(큰 언어 모델)이 문장 패턴 기반 생성 도구라는 점을 확인하고 실습 경계를 정한다."},
         {"title": "동조와 안전장치 한계 확인", "minutes": 12, "goal": "AI의 공감·칭찬·동조가 현실 검증을 대신하지 못하고, 안전장치도 완벽하지 않다는 점을 확인한다."},
         {"title": "안전 사용 기준 확인", "minutes": 10, "goal": "초안으로만 보기, 민감정보 제외, 중요 사실 재확인, 큰 결정 전 사람 확인 원칙을 체크한다."},
         {"title": "맞춤 장면 확인", "minutes": 8, "goal": f"자료수집 커리큘럼이 오늘 '{focus}'에서 시작한 이유를 확인한다."},
@@ -8281,36 +8287,74 @@ def _edu_vp_foundation_concepts(stage_key: str, llm_label: str) -> list[dict[str
     if stage_key == "day0":
         return [
             {
-                "title": "AI는 다정해 보여도 사람의 판단자가 아니다",
-                "body": f"{llm_label} 같은 LLM은 사용자의 말투와 감정에 맞춰 자연스럽게 답합니다. 그래서 위로, 확신, 친밀감이 실제 사람의 이해처럼 느껴질 수 있습니다. 하지만 AI는 사용자의 삶을 책임지는 보호자나 전문가가 아니며, 정서적으로 힘든 결정을 대신 맡기면 판단이 흔들릴 수 있습니다.",
+                "id": "safety_concept_ai_llm_words",
+                "title": "먼저 말부터 정리하기: AI와 LLM",
+                "body": "AI는 사람이 만든 똑똑한 컴퓨터 도구를 넓게 부르는 말입니다. LLM은 Large Language Model의 줄임말이고, 한국어로는 큰 언어 모델입니다. 아주 많은 글을 읽고 말의 이어짐을 배운 AI라서, 질문을 받으면 다음에 올 법한 말을 한 글자씩 이어 붙여 답을 만듭니다.",
+                "comprehension_check": "LLM이 사람 이름이 아니라 '큰 언어 모델'이라는 도구 이름임을 이해했어요.",
+                "question_prompt": "AI와 LLM이 어떻게 다른지 헷갈리면 여기에 적어주세요.",
             },
             {
-                "title": "LLM은 원리를 알면 덜 위험해진다",
-                "body": f"{llm_label}는 사람처럼 경험을 이해해서 답하는 것이 아니라, 많은 문장 패턴을 바탕으로 지금 대화에서 이어질 법한 말을 생성합니다. 답이 부드럽고 자신 있어 보여도 사실, 의도, 맥락, 위험도를 스스로 보증하지 못합니다.",
+                "id": "safety_concept_transformer_origin",
+                "title": "GPT는 어디서 시작됐나",
+                "body": "오늘 쓰는 ChatGPT 같은 도구는 Transformer라는 방법에서 크게 발전했습니다. 이 방법은 2017년 'Attention Is All You Need'라는 논문으로 널리 알려졌고, OpenAI는 이 원리를 이용해 GPT라는 모델을 만들었습니다. GPT는 Generative Pre-trained Transformer의 줄임말입니다. 쉽게 말해, 먼저 많은 글로 말의 규칙을 배운 뒤, 사용자의 질문을 보고 답을 만들어내는 Transformer입니다.",
+                "comprehension_check": "GPT가 Transformer 원리를 이용해 만들어진 언어 모델 계열이라는 점을 이해했어요.",
+                "question_prompt": "Transformer, GPT, OpenAI 관계가 헷갈리면 여기에 적어주세요.",
             },
             {
-                "title": "잘못 노출될 때 생길 수 있는 피해",
-                "body": "AI와 오래 대화하다 보면 답을 검증하지 않고 믿거나, 힘든 감정을 AI에게만 털어놓으며 과도하게 의존하거나, 민감한 개인정보를 넣거나, 가족·의사·전문가와 상의해야 할 문제를 혼자 AI에게만 맡길 수 있습니다. 수면, 식사, 돈, 직장, 가족 상의 같은 현실의 브레이크가 무너지면 즉시 멈춰야 합니다.",
+                "id": "safety_concept_attention",
+                "title": "Transformer의 핵심: 중요한 말을 더 보는 방법",
+                "body": "Transformer의 핵심은 attention, 즉 주의 기울이기입니다. 예를 들어 '엄마가 아이에게 우산을 줬다. 왜냐하면 비가 왔기 때문이다'라는 문장이 있으면, AI는 '우산'과 '비'가 서로 중요하다고 표시합니다. 책을 읽을 때 형광펜으로 중요한 낱말을 칠하는 것과 비슷합니다. 이렇게 중요한 말끼리 연결해 문장의 흐름을 잡습니다.",
+                "comprehension_check": "attention이 중요한 단어끼리 연결해 문맥을 보는 방법이라는 점을 이해했어요.",
+                "question_prompt": "attention 비유가 이해되지 않으면 어떤 부분인지 적어주세요.",
             },
             {
+                "id": "safety_concept_next_word",
+                "title": "답은 어떻게 나오나: 다음 말을 고르는 일",
+                "body": f"{llm_label}는 머릿속에서 생각하거나 마음으로 느껴서 답하지 않습니다. 사용자가 입력한 문장을 숫자로 바꾸고, 앞뒤 단어의 관계를 본 뒤, 다음에 올 가능성이 높은 말을 고릅니다. 그 다음 또 다음 말을 고릅니다. 이 과정을 아주 빠르게 반복하면 우리 눈에는 자연스러운 문장처럼 보입니다.",
+                "comprehension_check": "AI 답변이 생각이나 감정이 아니라 다음 말을 고르는 반복으로 만들어진다는 점을 이해했어요.",
+                "question_prompt": "답변이 만들어지는 과정에서 헷갈리는 점을 적어주세요.",
+            },
+            {
+                "id": "safety_concept_not_person",
+                "title": "사람처럼 보여도 사람이 아니다",
+                "body": f"{llm_label} 같은 LLM은 사용자의 말투와 감정에 맞춰 다정하게 답할 수 있습니다. 그래서 위로, 확신, 친밀감이 실제 사람의 이해처럼 느껴질 수 있습니다. 하지만 AI는 사용자의 삶을 책임지는 보호자, 친구, 의사, 변호사, 가족이 아닙니다. 중요한 결정은 AI가 아니라 사람이 확인해야 합니다.",
+                "comprehension_check": "다정한 답이 실제 이해나 책임을 뜻하지 않는다는 점을 이해했어요.",
+                "question_prompt": "AI가 사람처럼 느껴지는 부분이 걱정되면 적어주세요.",
+            },
+            {
+                "id": "safety_concept_risks",
+                "title": "잘못 쓰면 생길 수 있는 피해",
+                "body": "AI와 오래 대화하다 보면 답을 검증하지 않고 믿거나, 힘든 감정을 AI에게만 털어놓거나, 민감한 개인정보를 넣거나, 가족·의사·전문가와 상의해야 할 일을 혼자 AI에게만 맡길 수 있습니다. 수면, 식사, 돈, 직장, 가족 상의 같은 현실의 브레이크가 무너지면 즉시 멈춰야 합니다.",
+                "comprehension_check": "AI가 편해도 현실의 수면, 식사, 돈, 가족 상의가 무너지면 멈춰야 한다는 점을 이해했어요.",
+                "question_prompt": "내 사용 습관에서 걱정되는 신호가 있으면 적어주세요.",
+            },
+            {
+                "id": "safety_concept_sycophancy",
                 "title": "항상 내 편인 말은 안전 신호가 아니다",
-                "body": "AI는 사용자가 계속 대화하고 싶도록 공감, 칭찬, 동조를 매우 잘 할 수 있습니다. '너는 특별하다', '네 판단이 맞다', '크게 성공할 수 있다'처럼 기분 좋은 확신이 반복될수록 현실 검증을 더 해야 합니다.",
+                "body": "AI는 사용자가 계속 대화하고 싶도록 공감, 칭찬, 동조를 매우 잘 할 수 있습니다. '너는 특별하다', '네 판단이 맞다', '크게 성공할 수 있다'처럼 기분 좋은 확신이 반복될수록 현실 검증을 더 해야 합니다. 기분 좋은 말일수록 한 번 멈추고 사람에게 보여주는 습관이 필요합니다.",
+                "comprehension_check": "AI의 칭찬과 확신이 현실 검증을 대신하지 못한다는 점을 이해했어요.",
+                "question_prompt": "AI가 너무 맞장구친다고 느낀 경험이 있으면 적어주세요.",
             },
             {
+                "id": "safety_concept_safety_limits",
                 "title": "안전장치가 있어도 완벽하지 않다",
-                "body": "AI 서비스에는 위험한 답을 줄이기 위한 안전장치가 있지만, 대화가 길어지거나 표현이 바뀌면 부적절한 답이 나올 수 있습니다. 그래서 사용자가 스스로 경계를 세우고, 위험한 주제는 AI 대화 밖의 사람에게 연결해야 합니다.",
+                "body": "AI 서비스에는 위험한 답을 줄이기 위한 안전장치가 있습니다. 하지만 대화가 길어지거나 표현이 바뀌면 부적절한 답이 나올 수 있습니다. 그래서 사용자가 스스로 경계를 세우고, 위험한 주제는 AI 대화 밖의 사람에게 연결해야 합니다.",
+                "comprehension_check": "안전장치가 있어도 사용자가 경계를 세워야 한다는 점을 이해했어요.",
+                "question_prompt": "어떤 주제를 AI 밖의 사람에게 물어봐야 할지 헷갈리면 적어주세요.",
             },
             {
-                "title": "아이와 캐릭터 챗봇은 별도 보호가 필요하다",
-                "body": "아이들은 AI 캐릭터가 거절하지 않고 원하는 대로 반응하는 경험에 쉽게 빠질 수 있습니다. 미성년자가 비밀 고민, 선정적 상황극, 자해·위험 행동, 장시간 몰입을 AI와 나누고 있다면 보호자가 사용 시간, 대화 주제, 도움 요청 경로를 함께 확인해야 합니다.",
-            },
-            {
+                "id": "safety_concept_rules",
                 "title": "안전한 사용의 네 가지 기준",
                 "body": "AI 답은 초안으로만 봅니다. 민감정보는 그대로 넣지 않습니다. 중요한 일정·비용·제출일·건강·법률·돈 문제는 반드시 원문이나 전문가를 다시 확인합니다. 마음이 급해져 큰 결정을 바로 실행하고 싶을수록 가족, 동료, 전문가에게 먼저 보여줍니다.",
+                "comprehension_check": "AI 답은 초안으로만 보고 중요한 일은 원문이나 사람에게 다시 확인해야 한다는 점을 이해했어요.",
+                "question_prompt": "내가 AI에게 맡겨도 되는 일과 안 되는 일이 헷갈리면 적어주세요.",
             },
             {
+                "id": "safety_concept_practice_gate",
                 "title": "이해 확인 후에만 실습으로 들어간다",
                 "body": "오늘의 첫 실습은 AI에게 마음을 맡기는 연습이 아니라, 생활 자료를 정리하는 초안 도구로 제한해서 써보는 연습입니다. 위 내용을 이해했다는 확인이 끝난 뒤에만 실제 질문 보내기로 넘어갑니다.",
+                "comprehension_check": "먼저 원리를 이해하고 안전 기준을 확인한 뒤 실습으로 넘어가야 한다는 점을 이해했어요.",
+                "question_prompt": "실습 전에 더 묻고 싶은 점을 적어주세요.",
             },
         ]
     return [
@@ -8337,7 +8381,7 @@ def _edu_vp_schedule_blocks(stage_key: str) -> list[dict[str, Any]]:
     if stage_key == "day0":
         return [
             {"title": "AI 노출 리스크 이해", "minutes": 12, "goal": "다정한 답변, 과신, 정서 의존, 개인정보 입력 위험을 먼저 이해한다."},
-            {"title": "LLM 작동 원리 확인", "minutes": 13, "goal": "LLM이 사람처럼 이해하는 존재가 아니라 문장 패턴 기반 생성 도구임을 확인한다."},
+        {"title": "AI 문장 생성 원리 확인", "minutes": 13, "goal": "LLM(큰 언어 모델)이 사람처럼 이해하는 존재가 아니라 문장 패턴 기반 생성 도구임을 확인한다."},
             {"title": "동조와 안전장치 한계 확인", "minutes": 12, "goal": "AI의 공감·칭찬·동조가 현실 검증을 대신하지 못하고, 안전장치도 완벽하지 않다는 점을 확인한다."},
             {"title": "안전 사용 기준 확인", "minutes": 10, "goal": "초안으로만 보기, 민감정보 제외, 중요 사실 재확인, 큰 결정 전 사람 확인 원칙을 체크한다."},
             {"title": "현실 브레이크 점검", "minutes": 8, "goal": "수면, 식사, 돈, 직장, 가족 상의가 무너지는 신호가 보이면 AI 사용을 멈추고 사람에게 연결한다."},
@@ -8497,13 +8541,13 @@ def _edu_vp_build_day0(intake: dict[str, Any]) -> dict[str, Any]:
     schedule_blocks = _edu_vp_schedule_blocks("day0")
     return {
         "title": "Day 0 · AI 안전 이해와 작동 원리 확인",
-        "learning_why": "오늘은 AI를 바로 믿고 쓰는 날이 아니라, 잘못 노출될 때의 피해와 LLM의 작동 원리를 먼저 이해한 뒤 생활 문제를 정리하는 초안 도구로 제한해 써보는 날입니다.",
-        "learning_outcome": "이 구간을 마치면 LLM/생성형 AI가 사람처럼 판단하는 존재가 아니라 문장 생성 도구라는 점을 이해하고, AI의 동조·확신·안전장치 한계를 확인한 뒤 실습으로 넘어갈 준비를 마치게 됩니다.",
+        "learning_why": "오늘은 AI를 바로 믿고 쓰는 날이 아니라, 잘못 노출될 때의 피해와 LLM(큰 언어 모델)의 작동 원리를 먼저 이해한 뒤 생활 문제를 정리하는 초안 도구로 제한해 써보는 날입니다.",
+        "learning_outcome": "이 구간을 마치면 LLM(큰 언어 모델)/생성형 AI가 사람처럼 판단하는 존재가 아니라 문장 생성 도구라는 점을 이해하고, AI의 동조·확신·안전장치 한계를 확인한 뒤 실습으로 넘어갈 준비를 마치게 됩니다.",
         "estimated_minutes": _edu_vp_total_minutes(schedule_blocks),
-        "completion_rule": "먼저 AI 노출 리스크, LLM 작동 원리, 동조와 안전장치 한계, 안전 사용 기준을 확인합니다. 서버가 이해 확인을 저장한 뒤에만 실제 로그인과 첫 질문 실습이 열립니다.",
+        "completion_rule": "먼저 AI 노출 리스크, LLM(큰 언어 모델) 작동 원리, 동조와 안전장치 한계, 안전 사용 기준을 확인합니다. 서버가 이해 확인을 저장한 뒤에만 실제 로그인과 첫 질문 실습이 열립니다.",
         "foundation_concepts": _edu_vp_foundation_concepts("day0", llm_label),
         "schedule_blocks": schedule_blocks,
-        "required_action": "AI가 사람처럼 느껴지는 이유, LLM의 문장 생성 원리, 동조·과속 위험, 개인정보와 고위험 판단 경계를 먼저 확인한다.",
+        "required_action": "AI가 사람처럼 느껴지는 이유, LLM(큰 언어 모델)의 문장 생성 원리, 동조·과속 위험, 개인정보와 고위험 판단 경계를 먼저 확인한다.",
         "proof_artifact_hint": "안전 확인을 마친 뒤 실습이 열리면 결과를 붙여 넣으세요.",
         "sample_materials": [],
         "tutorial_steps": [],

@@ -40,8 +40,12 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertGreaterEqual(card["estimated_minutes"], 60)
         self.assertGreaterEqual(len(card["foundation_concepts"]), 4)
         self.assertGreaterEqual(len(card["schedule_blocks"]), 5)
-        self.assertIn("사람의 판단자", card["foundation_concepts"][0]["title"])
-        self.assertIn("LLM", card["foundation_concepts"][1]["title"])
+        self.assertIn("AI와 LLM", card["foundation_concepts"][0]["title"])
+        self.assertIn("Large Language Model", card["foundation_concepts"][0]["body"])
+        self.assertIn("GPT", card["foundation_concepts"][1]["title"])
+        self.assertIn("Generative Pre-trained Transformer", card["foundation_concepts"][1]["body"])
+        self.assertIn("comprehension_check", card["foundation_concepts"][0])
+        self.assertIn("question_prompt", card["foundation_concepts"][0])
         self.assertEqual(len(card["checklist"]), 4)
         self.assertEqual(card["checklist"][0]["id"], "understand_not_human")
         self.assertEqual(card["checklist"][1]["id"], "understand_generation")
@@ -69,13 +73,14 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
     def test_safety_confirmation_requires_required_check_ids(self):
         state = {"day0": self.mod._edu_vp_build_day0({"preferred_llm": "claude"})}
+        concept_ids = [item["id"] for item in state["day0"]["foundation_concepts"]]
 
         forged = self.mod._edu_vp_safety_confirmation_from_event(
             state,
             "safety_orientation_confirmed",
             {"stage": "day0", "safety_confirmed": {"day0": True}},
         )
-        confirmed = self.mod._edu_vp_safety_confirmation_from_event(
+        missing_concepts = self.mod._edu_vp_safety_confirmation_from_event(
             state,
             "safety_orientation_confirmed",
             {
@@ -88,8 +93,23 @@ class EduVpTrainingFlowTests(unittest.TestCase):
                 ],
             },
         )
+        confirmed = self.mod._edu_vp_safety_confirmation_from_event(
+            state,
+            "safety_orientation_confirmed",
+            {
+                "stage": "day0",
+                "confirmed_check_ids": [
+                    "understand_not_human",
+                    "understand_generation",
+                    "understand_boundaries",
+                    "understand_sycophancy",
+                ],
+                "confirmed_concept_ids": concept_ids,
+            },
+        )
 
         self.assertIsNone(forged)
+        self.assertIsNone(missing_concepts)
         self.assertEqual(confirmed, {"day0": True})
 
     def test_safety_confirmation_unlocks_day0_practice(self):
@@ -157,7 +177,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertNotIn("post_safety_practice", personalized)
         self.assertEqual([block["title"] for block in personalized["schedule_blocks"][:4]], [
             "AI 노출 리스크 이해",
-            "LLM 작동 원리 확인",
+            "AI 문장 생성 원리 확인",
             "동조와 안전장치 한계 확인",
             "안전 사용 기준 확인",
         ])

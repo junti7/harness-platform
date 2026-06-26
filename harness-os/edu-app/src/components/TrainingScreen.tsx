@@ -46,6 +46,7 @@ export type TrainingScreenProps = {
 
 const STAGE_ORDER: StageKey[] = ['day0', 'day1']
 const STAGE_LABEL: Record<StageKey, string> = { day0: 'Day 0', day1: 'Day 1' }
+type SafetyConceptFeedback = Record<string, string>
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) {
@@ -115,6 +116,40 @@ function MediaIcon({ kind }: { kind?: string }) {
   if (kind === 'video') return <PlayCircle size={16} />
   if (kind === 'paper') return <ScrollText size={16} />
   return <Newspaper size={16} />
+}
+
+function conceptId(concept: NonNullable<TrainingStage['foundation_concepts']>[number], index: number): string {
+  return concept.id || `safety_concept_${index}`
+}
+
+function safetyCoachReply(conceptTitle: string, feedback: string): string {
+  const text = feedback.trim()
+  if (!text) return ''
+  if (conceptTitle.includes('AI와 LLM')) {
+    return '쉽게 말하면 AI는 큰 이름이고, LLM은 그중에서 글과 말을 잘 만드는 종류입니다. 자동차가 큰 이름이고 버스가 그중 한 종류인 것과 비슷합니다.'
+  }
+  if (conceptTitle.includes('GPT')) {
+    return 'GPT는 OpenAI가 만든 언어 모델 계열 이름입니다. 먼저 많은 글로 말의 규칙을 배우고, 질문을 받으면 그 다음에 올 말을 이어 붙이는 방식으로 답합니다.'
+  }
+  if (conceptTitle.includes('Transformer')) {
+    return 'Transformer는 문장 안에서 어떤 단어가 중요한지 표시하는 방법입니다. 책에서 중요한 낱말에 형광펜을 칠하고 서로 연결해 읽는 모습으로 생각하면 됩니다.'
+  }
+  if (conceptTitle.includes('다음 말')) {
+    return 'AI는 마음속 생각을 꺼내는 것이 아니라, 앞말을 보고 다음에 올 가능성이 큰 말을 고릅니다. 이 일을 아주 빠르게 반복해서 긴 답이 만들어집니다.'
+  }
+  if (conceptTitle.includes('사람처럼')) {
+    return '다정한 말은 실제 마음이나 책임이 아닙니다. AI는 말을 잘 흉내 내는 도구이고, 중요한 판단은 가족, 동료, 전문가 같은 실제 사람과 확인해야 합니다.'
+  }
+  if (conceptTitle.includes('피해')) {
+    return '핵심 신호는 현실 생활입니다. 잠, 식사, 돈, 가족 상의, 직장 일이 흔들리면 AI 대화를 계속하지 말고 사람에게 알려야 합니다.'
+  }
+  if (conceptTitle.includes('내 편')) {
+    return 'AI가 계속 맞다고 해줄수록 더 조심해야 합니다. 기분 좋은 확신은 사실 확인이 아니므로, 큰 결정 전에는 반드시 사람에게 보여주세요.'
+  }
+  if (conceptTitle.includes('안전장치')) {
+    return '안전장치는 안전벨트와 비슷합니다. 도움이 되지만 사고를 완전히 없애지는 못합니다. 그래서 사용자가 위험한 주제를 멈추는 기준을 가져야 합니다.'
+  }
+  return '좋은 질문입니다. 이 단락은 외우는 내용이 아니라 실습 전에 위험한 사용을 피하기 위한 기준입니다. 이해되지 않으면 체크하지 말고 질문을 남겨주세요.'
 }
 
 function languageLabel(value?: string): string {
@@ -504,22 +539,36 @@ function DynamicPathPreview({
 function SafetyOrientationBlock({
   stage,
   checked,
+  conceptFeedback,
   saving,
   error,
+  notice,
   onToggle,
+  onConceptFeedback,
+  onSaveQuestions,
   onReady,
 }: {
   stage: TrainingStage
   checked: Record<string, boolean>
+  conceptFeedback: SafetyConceptFeedback
   saving: boolean
   error?: string | null
+  notice?: string | null
   onToggle: (id: string) => void
+  onConceptFeedback: (id: string, value: string) => void
+  onSaveQuestions: () => void
   onReady: () => void
 }) {
   const concepts = stage.foundation_concepts ?? []
   const blocks = stage.schedule_blocks ?? []
   const safetyItems = stageChecklist(stage).filter((item) => item.id.startsWith('understand_'))
-  const ready = safetyItems.length > 0 && safetyItems.every((item) => checked[item.id])
+  const conceptItems = concepts.map((concept, index) => ({ ...concept, checkId: conceptId(concept, index) }))
+  const ready =
+    safetyItems.length > 0 &&
+    safetyItems.every((item) => checked[item.id]) &&
+    conceptItems.length > 0 &&
+    conceptItems.every((item) => checked[item.checkId])
+  const hasQuestions = Object.values(conceptFeedback).some((value) => value.trim())
 
   return (
     <section className="rounded-2xl border border-danger/20 bg-danger-soft/45 p-4">
@@ -531,20 +580,58 @@ function SafetyOrientationBlock({
           <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-danger">실습 전 안전 확인</div>
           <h2 className="text-base font-bold leading-snug text-ink-strong">AI를 쓰기 전에 먼저 알아야 할 것</h2>
           <p className="mt-1 text-sm leading-relaxed text-text-muted">
-            LLM은 다정하게 답할 수 있지만 사람의 판단, 보호, 책임을 대신하지 않습니다. 아래 내용을 확인한 뒤
-            실제 질문 실습으로 넘어갑니다.
+            먼저 AI, LLM, GPT가 무엇인지 아주 쉬운 말로 확인합니다. 각 단락을 읽고 이해했는지 표시하거나,
+            헷갈리는 점을 적어 질문으로 남긴 뒤 실제 질문 실습으로 넘어갑니다.
           </p>
         </div>
       </div>
 
       {concepts.length ? (
         <div className="grid gap-2">
-          {concepts.map((concept) => (
-            <div key={concept.title} className="rounded-[12px] border border-border bg-card p-3">
-              <div className="text-sm font-semibold text-ink">{concept.title}</div>
+          {conceptItems.map((concept) => {
+            const on = Boolean(checked[concept.checkId])
+            const feedback = conceptFeedback[concept.checkId] ?? ''
+            const reply = safetyCoachReply(concept.title, feedback)
+            return (
+            <div key={concept.checkId} className="rounded-[12px] border border-border bg-card p-3">
+              <div className="text-sm font-semibold leading-snug text-ink">{concept.title}</div>
               <p className="mt-1 text-xs leading-relaxed text-text-muted">{concept.body}</p>
+              <button
+                type="button"
+                onClick={() => onToggle(concept.checkId)}
+                className="mt-3 flex w-full items-start gap-2 rounded-[10px] border border-border bg-secondary px-3 py-2.5 text-left transition active:scale-[0.99]"
+              >
+                <span
+                  className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition ${
+                    on ? 'border-primary bg-primary text-primary-foreground' : 'border-border-strong bg-card'
+                  }`}
+                >
+                  {on ? <Check size={14} strokeWidth={3} /> : null}
+                </span>
+                <span className="text-xs font-medium leading-relaxed text-ink">
+                  {concept.comprehension_check ?? '이 단락을 읽고 이해했어요.'}
+                </span>
+              </button>
+              <label className="mt-3 block text-xs font-semibold text-text-muted" htmlFor={`${concept.checkId}-feedback`}>
+                잘 이해되지 않는 점이나 질문
+              </label>
+              <textarea
+                id={`${concept.checkId}-feedback`}
+                value={feedback}
+                onChange={(e) => onConceptFeedback(concept.checkId, e.target.value)}
+                rows={2}
+                placeholder={concept.question_prompt ?? '예: 이 부분이 잘 이해되지 않아요.'}
+                className="mt-1 w-full resize-y rounded-[10px] border border-border bg-secondary px-3 py-2 text-xs leading-relaxed text-ink outline-none transition placeholder:text-text-faint focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+              />
+              {reply ? (
+                <div className="mt-2 rounded-[10px] border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-text-muted">
+                  <span className="font-semibold text-primary">바로 답변: </span>
+                  {reply}
+                </div>
+              ) : null}
             </div>
-          ))}
+            )
+          })}
         </div>
       ) : null}
 
@@ -601,6 +688,23 @@ function SafetyOrientationBlock({
           <span>{error}</span>
         </div>
       ) : null}
+      {notice ? (
+        <div className="mt-3 flex items-center gap-2 rounded-[10px] bg-success-soft px-3.5 py-3 text-sm font-medium text-success">
+          <Check size={16} className="shrink-0" />
+          <span>{notice}</span>
+        </div>
+      ) : null}
+
+      {hasQuestions ? (
+        <button
+          type="button"
+          onClick={onSaveQuestions}
+          disabled={saving}
+          className="mt-3 flex h-10 w-full items-center justify-center rounded-[10px] border border-border bg-card text-sm font-semibold text-ink transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          질문만 먼저 저장
+        </button>
+      ) : null}
 
       <button
         type="button"
@@ -612,7 +716,7 @@ function SafetyOrientationBlock({
       </button>
       {!ready ? (
         <p className="mt-2 text-center text-xs leading-relaxed text-text-faint">
-          세 가지 확인을 모두 체크하면 실제 LLM 실습이 열립니다.
+          설명 단락과 안전 확인을 모두 체크하면 실제 AI 실습이 열립니다. 이해되지 않으면 질문을 먼저 남겨주세요.
         </p>
       ) : null}
     </section>
@@ -627,6 +731,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const [stage, setStage] = useState<StageKey>('day0')
   const [proof, setProof] = useState('')
   const [checked, setChecked] = useState<Record<string, boolean>>({})
+  const [conceptFeedback, setConceptFeedback] = useState<SafetyConceptFeedback>({})
   const [whyOpen, setWhyOpen] = useState(false)
   const [safetyReady, setSafetyReady] = useState(false)
   const [safetySyncing, setSafetySyncing] = useState(false)
@@ -639,6 +744,13 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     setStage(next)
     setProof(String(st[next]?.proof_artifact ?? ''))
     setChecked({})
+    const draft = st.ui_state?.stage_drafts?.[next]
+    const feedback = draft?.safety_concept_feedback
+    setConceptFeedback(
+      feedback && typeof feedback === 'object' && !Array.isArray(feedback)
+        ? (feedback as SafetyConceptFeedback)
+        : {},
+    )
     setWhyOpen(false)
     setSafetyReady(Boolean(st[next]?.completed || st.ui_state?.safety_confirmed?.[next]))
     setSafetySyncing(false)
@@ -696,9 +808,45 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     setChecked((prev) => ({ ...prev, [id]: !prev[id] }))
   }
 
+  function updateConceptFeedback(id: string, value: string) {
+    setConceptFeedback((prev) => ({ ...prev, [id]: value }))
+  }
+
+  function saveSafetyQuestions() {
+    if (!state || safetySyncing) return
+    setSafetySyncing(true)
+    setError(null)
+    seqRef.current += 1
+    void syncSession({
+      caseId,
+      email,
+      selectedStage: stage,
+      clientSeq: seqRef.current,
+      eventName: 'safety_orientation_feedback_saved',
+      eventPayload: { stage, concept_feedback: conceptFeedback },
+      stageDrafts: {
+        [stage]: {
+          safety_concept_feedback: conceptFeedback,
+        },
+      },
+    })
+      .then((next) => {
+        setState(next)
+        setNotice('질문을 저장했어요. 이해되는 단락부터 체크해도 됩니다.')
+      })
+      .catch((e) => {
+        console.error('safety feedback sync failed', e)
+        setError(errMsg(e))
+      })
+      .finally(() => setSafetySyncing(false))
+  }
+
   function confirmSafetyOrientation() {
     if (!state || safetySyncing) return
     const confirmedCheckIds = stageChecklist(current).filter((item) => item.id.startsWith('understand_') && checked[item.id]).map((item) => item.id)
+    const confirmedConceptIds = (current?.foundation_concepts ?? [])
+      .map((concept, index) => conceptId(concept, index))
+      .filter((id) => checked[id])
     setSafetySyncing(true)
     setError(null)
     seqRef.current += 1
@@ -708,7 +856,18 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       selectedStage: stage,
       clientSeq: seqRef.current,
       eventName: 'safety_orientation_confirmed',
-      eventPayload: { stage, confirmed_check_ids: confirmedCheckIds },
+      eventPayload: {
+        stage,
+        confirmed_check_ids: confirmedCheckIds,
+        confirmed_concept_ids: confirmedConceptIds,
+        concept_feedback: conceptFeedback,
+      },
+      stageDrafts: {
+        [stage]: {
+          safety_concept_feedback: conceptFeedback,
+          safety_concept_confirmed_ids: confirmedConceptIds,
+        },
+      },
     })
       .then((next) => {
         setState(next)
@@ -879,9 +1038,13 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           <SafetyOrientationBlock
             stage={current}
             checked={checked}
+            conceptFeedback={conceptFeedback}
             saving={safetySyncing}
             error={error}
+            notice={notice}
             onToggle={toggleCheck}
+            onConceptFeedback={updateConceptFeedback}
+            onSaveQuestions={saveSafetyQuestions}
             onReady={confirmSafetyOrientation}
           />
         ) : null}

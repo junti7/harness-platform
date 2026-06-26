@@ -193,7 +193,13 @@ export type TrainingStage = {
   learning_outcome?: string
   estimated_minutes?: number
   completion_rule?: string
-  foundation_concepts?: Array<{ title: string; body: string }>
+  foundation_concepts?: Array<{
+    id?: string
+    title: string
+    body: string
+    comprehension_check?: string
+    question_prompt?: string
+  }>
   schedule_blocks?: Array<{ title: string; minutes?: number; goal?: string }>
   required_action?: string
   proof_artifact_hint?: string
@@ -257,6 +263,7 @@ export type TrainingUiState = {
   selected_stage?: StageKey
   active_curriculum_index?: number
   safety_confirmed?: Record<string, boolean>
+  stage_drafts?: Record<string, Record<string, unknown>>
   last_client_seq?: number
 }
 
@@ -298,6 +305,7 @@ export async function syncSession(input: {
   email: string
   selectedStage: StageKey
   activeCurriculumIndex?: number
+  stageDrafts?: Record<string, Record<string, unknown>>
   clientSeq: number
   eventName?: string
   eventPayload?: Record<string, unknown>
@@ -307,6 +315,7 @@ export async function syncSession(input: {
     email: input.email,
     selected_stage: input.selectedStage,
     active_curriculum_index: input.activeCurriculumIndex ?? 0,
+    stage_drafts: input.stageDrafts ?? {},
     client_seq: input.clientSeq,
     event_type: 'ui_sync',
     event_name: input.eventName ?? 'state_sync',
