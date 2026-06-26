@@ -33,8 +33,9 @@ HOST="$(scutil --get ComputerName 2>/dev/null || hostname -s)"
 slack() { [ -n "${SLACK_WEBHOOK_URL:-}" ] && curl -s -m 10 -X POST "$SLACK_WEBHOOK_URL" -H 'Content-Type: application/json' -d "$1" >/dev/null 2>&1; }
 gw_up() { nc -z -G 2 127.0.0.1 4002 >/dev/null 2>&1; }
 
-# 부팅 후 경과초
-boot_sec="$(sysctl -n kern.boottime 2>/dev/null | sed -n 's/.*sec = \([0-9]\{6,\}\).*/\1/p')"
+# 부팅 후 경과초. kern.boottime 출력은 "{ sec = 1782511537, usec = 220428 }" 형식.
+# 첫 번째 정수(sec)만 취한다(greedy 매칭으로 usec를 잡지 않도록 grep -o + head).
+boot_sec="$(sysctl -n kern.boottime 2>/dev/null | grep -oE '[0-9]+' | head -1)"
 now="$(date +%s)"
 up=$(( now - ${boot_sec:-0} ))
 log "start uptime=${up}s gw_up=$(gw_up && echo yes || echo no)"
