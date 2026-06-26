@@ -18,8 +18,9 @@
 
   <key>EnvironmentVariables</key>
   <dict>
+    <!-- /usr/sbin 필수: sysctl(kern.boottime)·scutil 가 여기 있다. 빠지면 uptime 판정이 깨진다. -->
     <key>PATH</key>
-    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin</string>
   </dict>
 
   <key>StandardOutPath</key>
