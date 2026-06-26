@@ -115,3 +115,24 @@
 - **cross-LLM Red Team (CEO 주문):** `docs/governance/RED_TEAM_REQUEST_TURTLE_DIAGNOSIS_2026-06-27.md`
 - **AR:** AR-20260627-001/002/003 (`docs/reports/ar_tracker.jsonl`)
 - **실계좌(capital_action) 진입은** 본 진단의 P0·P1 해소 + `turtle_gate_clear` + `pre_mortem_approve` 전까지 보류.
+
+---
+
+## 7. 부록 — cross-LLM Red Team 결과 (2026-06-27, CEO 주문)
+
+**판정: `red_team_block` (Codex + Copilot 2-of-2 합의).** 진단 F1~F6은 전부 confirm/refine(**refute 0건**)으로 검증됐고,
+두 모델이 자본손실 직결 신규 BLOCKER를 추가했다. 전문: `docs/governance/RED_TEAM_REQUEST_TURTLE_DIAGNOSIS_2026-06-27.md`.
+
+### 신규 결함 → P0 승격 (실자본 전 필수 수정)
+
+| 추가 조치(P0) | 결함 | 근거 |
+|---|---|---|
+| **체결 확인 게이트** | 주문 '제출'을 '체결'로 간주 → 부분체결·거절 시 원장 desync | 2-of-2 BLOCKER |
+| **고아 포지션 관리** | `manage_positions`가 state에 없는 실보유를 영영 손절/청산 안 함 | 2-of-2 BLOCKER (turtle_auto_trader:289-291) |
+| **손절 브로커 상주 + stop 고정** | 손절 비상주 + 매 실행 시 현재 ATR로 재계산 → 갭/장애 시 2N 초과, 변동성 확대 시 stop 확대 | 2-of-2 BLOCKER (alpaca:205-223) |
+| **숏 short-safe 재설계** | F1(롱전용) 수정 시: state "buy" 고정·청산 "sell" 고정·long 전용 exit → 숏 허용하면 오작동 | Codex BLOCKER |
+| **buying power/exposure 검증** | portfolio_value 기준 사이징만, 현금/마진/총노출 미점검 | Codex BLOCKER |
+| **state 원자성** | `save_state()` 통째쓰기 → `update_json_atomic` 락 적용(메모리 `state_file_multiwriter_lock`) | Codex MAJOR |
+
+> F3 정밀화(Copilot): 정수버림 탓 실효 리스크가 정확히 2.000%는 아니나 **대체로 ~2%**(여전히 ≤1% 규정 위반).
+> F5 정밀화(양 모델): 구조적 desync는 confirm이나 "멀티-writer 동시쓰기" 단정은 코드 2파일만으론 미증명 — 별도 상태파일/브로커 reconcile 검증 필요(이미 §1 ground-truth로 일부 확인).
