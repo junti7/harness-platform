@@ -336,6 +336,37 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertIn("repeated_downvoted_answer_pattern", issues)
 
+    def test_safety_coach_fallback_answers_cost_barrier_directly(self):
+        answer = self.mod._edu_vp_safety_coach_fallback(
+            "안전한 사용의 네 가지 기준",
+            "그렇지만 전문가에게 상담을 받을 경우 비용이 많이 들잖아요.",
+        )
+        issues = self.mod._edu_vp_safety_coach_red_team(
+            question="그렇지만 전문가에게 상담을 받을 경우 비용이 많이 들잖아요.",
+            answer=answer,
+            concept_body="건강, 법률, 돈은 전문가에게 확인합니다.",
+        )
+
+        self.assertIn("전문가에게 상담을 받을 때 비용이 많이 드는", answer)
+        self.assertIn("무료 법률상담", answer)
+        self.assertEqual(issues, [])
+
+    def test_safety_coach_fallback_answers_transformer_machine_learning_hierarchy(self):
+        answer = self.mod._edu_vp_safety_coach_fallback(
+            "AI와 머신러닝",
+            "Transformer랑 machine learning은 같은 거야?",
+        )
+        issues = self.mod._edu_vp_safety_coach_red_team(
+            question="Transformer랑 machine learning은 같은 거야?",
+            answer=answer,
+            concept_body="Machine learning은 AI의 한 분야입니다. Transformer는 딥러닝 모델 구조 중 하나입니다.",
+        )
+
+        self.assertIn("같은 층위의 말이 아닙니다", answer)
+        self.assertIn("Machine learning은 AI 안에 있는 넓은 분야", answer)
+        self.assertIn("Transformer는 그 안", answer)
+        self.assertEqual(issues, [])
+
     def test_safety_coach_reinforcement_policy_lookup_matches_similar_downvote_review(self):
         payload = {
             "question": "그런데 AI가 답변을 하는 작업은 왜 엄청난 전기가 든다고 해?",

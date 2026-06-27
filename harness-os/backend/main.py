@@ -8777,7 +8777,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-constraint-aware-v11"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-robustness-sim-v12"
 _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
 _EDU_VP_SAFETY_COACH_EXECUTOR = ThreadPoolExecutor(
     max_workers=int(os.getenv("EDU_SAFETY_COACH_MAX_WORKERS") or "4"),
@@ -8855,6 +8855,11 @@ def _edu_vp_question_asks_error_mechanism(question: str) -> bool:
     return _edu_vp_question_asks_direct_principle(q) and any(
         marker in q for marker in ("틀린", "오류", "거짓", "환각", "확인", "검증", "믿으면", "정확")
     )
+
+
+def _edu_vp_question_compares_transformer_ml(question: str) -> bool:
+    q = str(question or "").strip().lower()
+    return "transformer" in q and any(marker in q for marker in ("machine learning", "머신러닝", "기계학습"))
 
 
 def _edu_vp_safety_coach_fast_answer(concept_title: str, question: str) -> str | None:
@@ -8944,6 +8949,8 @@ def _edu_vp_safety_question_intent_classes(question: str) -> set[str]:
         classes.add("transformer_authors")
     if _edu_vp_question_asks_error_mechanism(text):
         classes.add("ai_error_mechanism")
+    if _edu_vp_question_compares_transformer_ml(text):
+        classes.add("transformer_ml_hierarchy")
     elif _edu_vp_question_asks_direct_principle(text):
         classes.add("general_principle")
     return classes
@@ -9461,7 +9468,8 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
     q = question.strip()
     if _edu_vp_safety_coach_has_cost_barrier(q):
         return (
-            "맞아요, 전문가 상담이 안전하다는 말만으로는 부족하고 비용 부담은 실제 장벽입니다. "
+            "맞아요, 전문가에게 상담을 받을 때 비용이 많이 드는 건 현실적인 문제이고, 비용 부담은 실제 장벽입니다. "
+            "전문가 상담이 안전하다는 말만으로는 이 부담이 해결되지 않습니다. "
             "그래서 먼저 AI로 상황과 질문을 정리하되, 판단이 건강·법률·돈처럼 크게 영향을 주는 일이라면 저비용 경로부터 찾는 게 현실적입니다. "
             "예를 들어 공공 상담, 지역 센터, 학교·회사 상담 창구, 무료 법률상담처럼 비용을 낮춘 선택지를 먼저 확인할 수 있습니다. "
             "오늘 기준은 'AI로 준비하고, 위험이 큰 결정은 가장 저렴한 공식 도움부터 연결한다'로 잡으면 됩니다."
@@ -9512,6 +9520,13 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
             "많이 본 말의 패턴을 잘 이어 붙이면 맞아 보이지만, 실제 사실·날짜·공지·개인 상황을 직접 확인한 것은 아닐 수 있습니다. "
             "예를 들어 길 안내를 말끔하게 써도 실제 도로 공사까지 본 것은 아닐 수 있습니다. "
             "오늘은 AI 답을 '그럴듯한 초안'으로 받고, 중요한 내용은 원문이나 실제 자료로 한 번 더 확인한다고 기억하면 됩니다."
+        )
+    if _edu_vp_question_compares_transformer_ml(q):
+        return (
+            "Transformer와 machine learning은 같은 층위의 말이 아닙니다. "
+            "Machine learning은 AI 안에 있는 넓은 분야이고, Transformer는 그 안에서 언어 같은 데이터를 처리할 때 쓰이는 딥러닝 구조 중 하나입니다. "
+            "예를 들어 운동이 큰 분야라면 축구 전술은 그 안의 한 방식인 것처럼 보면 됩니다. "
+            "오늘은 machine learning은 큰 분야, Transformer는 그 안에 포함되는 특정 구조라고 기억하면 됩니다."
         )
     if "조사" in q and ("추측" in q or "이어질" in q or "다음" in q):
         return (
@@ -9692,9 +9707,7 @@ def _edu_vp_safety_coach_red_team(
         required = ("Google", "Vaswani", "Shazeer")
         if not all(term in answer_text for term in required):
             issues.append("missing_transformer_paper_authors")
-    compares_transformer_ml = "transformer" in question_text.lower() and any(
-        term in question_text.lower() for term in ("machine learning", "머신러닝", "기계학습")
-    )
+    compares_transformer_ml = _edu_vp_question_compares_transformer_ml(question_text)
     if compares_transformer_ml:
         lower_answer = answer_text.lower()
         has_hierarchy = any(term in answer_text for term in ("큰 분야", "넓은 분야", "포함", "안에", "부분")) or "subset" in lower_answer
