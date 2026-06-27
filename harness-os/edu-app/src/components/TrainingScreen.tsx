@@ -831,6 +831,11 @@ function SafetyOrientationBlock({
               }`}
             >
               <div className="text-sm font-semibold leading-snug text-ink">{concept.title}</div>
+              {routedConceptId === concept.checkId ? (
+                <div className="mt-2 inline-flex w-fit items-center rounded-full bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground">
+                  질문에 가장 가까운 설명 카드
+                </div>
+              ) : null}
               <p className="mt-1 text-xs leading-relaxed text-text-muted">{concept.body}</p>
               <button
                 type="button"
@@ -1129,12 +1134,11 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       const previousUnconfirmed = conceptItems
         .slice(0, routed.targetIndex)
         .filter((item) => !checked[item.checkId])
-      updateConceptFeedback(routed.target.checkId, question)
       setRoutedConceptId(routed.target.checkId)
       setNotice(
         previousUnconfirmed.length
-          ? `이 질문은 뒤의 '${routed.target.title}' 카드에서 먼저 다룹니다. 그 카드로 이동했어요. 앞 카드 ${previousUnconfirmed.length}개를 확인해야 다음 단계로 넘어갈 수 있습니다.`
-          : `이 질문은 뒤의 '${routed.target.title}' 카드에서 먼저 다룹니다. 그 카드로 이동했어요.`,
+          ? `질문에 가장 가까운 설명 카드로 이동했어요. 앞 카드 ${previousUnconfirmed.length}개를 확인해야 다음 단계로 넘어갈 수 있습니다.`
+          : '질문에 가장 가까운 설명 카드로 이동했어요.',
       )
       window.setTimeout(() => {
         const el = document.getElementById(`concept-card-${routed.target.checkId}`)
