@@ -51,7 +51,7 @@ export type TrainingScreenProps = {
 
 const STAGE_ORDER: StageKey[] = ['day0', 'day1']
 const STAGE_LABEL: Record<StageKey, string> = { day0: 'Day 0', day1: 'Day 1' }
-const SAFETY_COACH_ANSWER_VERSION = '2026-06-27-empathy-first-v7'
+const SAFETY_COACH_ANSWER_VERSION = '2026-06-27-principle-general-v9'
 const TRAINING_DEVICE_ID_KEY = 'vp_training_device_id'
 const TRAINING_LOCAL_DRAFT_PREFIX = 'vp_training_stage_draft'
 type SafetyConceptFeedback = Record<string, string>
@@ -240,8 +240,38 @@ function routeKeywords(text: string): string[] {
 
 function isDirectPrincipleQuestion(text: string): boolean {
   const normalized = text.toLowerCase()
-  const asksPrinciple = ['왜', '어떻게', '원리', '이유', '작동', '계산', '만들'].some((term) => normalized.includes(term))
+  const asksPrinciple = ['왜', '어떻게', '원리', '이유', '작동', '계산', '만들', '나오', '생기', '되는', 'why', 'how', 'principle', 'mechanism', 'work', 'compute'].some((term) => normalized.includes(term))
   const principleTopics = [
+    'ai',
+    'llm',
+    'gpt',
+    '챗gpt',
+    'chatgpt',
+    'claude',
+    'gemini',
+    '생성형',
+    '답변',
+    '답',
+    '문장',
+    '말',
+    '단어',
+    '토큰',
+    'attention',
+    '어텐션',
+    'transformer',
+    '트랜스포머',
+    '학습',
+    '패턴',
+    '추측',
+    '이어질',
+    '확률',
+    '가능성',
+    '틀린',
+    '오류',
+    '거짓',
+    '환각',
+    '확인',
+    '검증',
     '전기',
     '전력',
     '전기세',

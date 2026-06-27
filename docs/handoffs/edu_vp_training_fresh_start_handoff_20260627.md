@@ -307,6 +307,10 @@ Codex CLI 사용 시 사용자가 별도 해제하기 전까지 **caveman full**
 - 전기/에너지/비용/환경 질문은 하드코딩 답변 대신 prompt와 red-team 기준으로 처리한다.
 - 전기/에너지 질문에 `생성형 AI 정의`만 답하면 red-team이 `answered_definition_instead_of_energy_question`으로 차단한다.
 - 전기/에너지 질문에 데이터센터/서버/GPU/냉각/계산 같은 원인 설명이 부족하면 `missing_energy_use_mechanism`으로 차단한다.
+- LLM 품질 실패나 timeout 뒤 fallback으로 내려가도 같은 원리 정책을 지킨다. 단락 제목이 `Transformer`여도 원리 질문이면 Transformer 정의로 답하지 않는다.
+- `왜/어떻게/원리/이유/작동/계산` + AI/LLM/답변/문장/attention/Transformer/틀림/환각/확인 등 주제면 일반 원리 질문으로 본다.
+- 일반 원리 질문에 단락 정의만 답하면 red-team이 `missing_principle_mechanism` 또는 `answered_definition_instead_of_principle_question`으로 차단한다.
+- answer version `2026-06-27-principle-general-v9`부터 기존 cached bad answer를 재사용하지 않는다.
 
 핵심 파일:
 

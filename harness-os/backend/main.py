@@ -8768,7 +8768,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-empathy-first-v7"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-principle-general-v9"
 _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
 _EDU_VP_SAFETY_COACH_EXECUTOR = ThreadPoolExecutor(
     max_workers=int(os.getenv("EDU_SAFETY_COACH_MAX_WORKERS") or "4"),
@@ -8818,6 +8818,34 @@ def _edu_vp_question_asks_ai_energy_use(question: str) -> bool:
         "환경", "탄소", "power", "electric", "energy", "datacenter", "data center", "cooling",
     )
     return any(marker in q for marker in energy_markers)
+
+
+def _edu_vp_question_asks_direct_principle(question: str) -> bool:
+    q = str(question or "").strip().lower()
+    asks_principle = any(
+        marker in q
+        for marker in (
+            "왜", "어떻게", "원리", "이유", "작동", "계산", "만들", "나오", "생기", "되는", "하나요",
+            "why", "how", "principle", "mechanism", "work", "compute",
+        )
+    )
+    if not asks_principle:
+        return False
+    principle_topics = (
+        "ai", "llm", "gpt", "챗gpt", "chatgpt", "claude", "gemini", "생성형", "답변", "답", "문장",
+        "말", "단어", "토큰", "attention", "어텐션", "transformer", "트랜스포머", "학습", "패턴",
+        "추측", "이어질", "확률", "가능성", "틀린", "오류", "거짓", "환각", "확인", "검증",
+        "전기", "전력", "전기세", "전기요금", "에너지", "데이터센터", "냉각", "gpu", "서버",
+        "환경", "탄소", "power", "electric", "energy", "datacenter", "data center", "cooling",
+    )
+    return any(marker in q for marker in principle_topics)
+
+
+def _edu_vp_question_asks_error_mechanism(question: str) -> bool:
+    q = str(question or "").strip().lower()
+    return _edu_vp_question_asks_direct_principle(q) and any(
+        marker in q for marker in ("틀린", "오류", "거짓", "환각", "확인", "검증", "믿으면", "정확")
+    )
 
 
 def _edu_vp_safety_coach_fast_answer(concept_title: str, question: str) -> str | None:
@@ -9220,6 +9248,20 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
             "Llion Jones, Aidan N. Gomez, Lukasz Kaiser, Illia Polosukhin이 함께 발표했습니다. "
             "한 사람이 혼자 만든 이론이라기보다, 여러 연구자가 공동으로 발표한 구조가 이후 ChatGPT, Claude, Gemini 같은 생성형 AI의 중요한 기반이 됐다고 보면 됩니다."
         )
+    if _edu_vp_question_asks_ai_energy_use(q):
+        return (
+            "AI 답변에 전기가 많이 든다고 하는 이유는 답을 만들 때 멀리 있는 데이터센터의 서버가 많은 계산을 하기 때문입니다. "
+            "큰 AI는 GPU 같은 계산 장치가 단어 후보를 계속 비교하고, 뜨거워진 장비를 식히는 냉각에도 전기가 들어갑니다. "
+            "휴대폰 화면에서는 짧은 질문처럼 보여도, 뒤에서는 큰 컴퓨터실이 함께 움직이는 셈입니다. "
+            "오늘은 AI 질문 비용을 '내 기기 전기'가 아니라 '서버 계산과 냉각 비용'으로 기억하면 됩니다."
+        )
+    if _edu_vp_question_asks_error_mechanism(q):
+        return (
+            "AI 답이 틀릴 수 있는 이유는 정답을 확인해서 말하는 기계가 아니라, 지금 문장 뒤에 올 가능성이 높은 말을 계산해 답을 만들기 때문입니다. "
+            "많이 본 말의 패턴을 잘 이어 붙이면 맞아 보이지만, 실제 사실·날짜·공지·개인 상황을 직접 확인한 것은 아닐 수 있습니다. "
+            "예를 들어 길 안내를 말끔하게 써도 실제 도로 공사까지 본 것은 아닐 수 있습니다. "
+            "오늘은 AI 답을 '그럴듯한 초안'으로 받고, 중요한 내용은 원문이나 실제 자료로 한 번 더 확인한다고 기억하면 됩니다."
+        )
     if "조사" in q and ("추측" in q or "이어질" in q or "다음" in q):
         return (
             "조사는 앞말의 역할을 보고 고릅니다. 예를 들어 '학교' 뒤에는 '에', '에서', '가'가 올 수 있지만, "
@@ -9233,6 +9275,13 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
             "문맥상 '우산'이나 '장화' 같은 물건 이름이 잘 맞습니다. LLM은 비슷한 문장을 아주 많이 본 뒤, "
             "지금 문장 흐름에서 자주 이어졌던 명사를 후보로 올리고 그중 가능성이 높은 말을 고릅니다. "
             "다만 실제 정답을 아는 것이 아니라 그럴듯한 이어 말 고르기라서, 중요한 내용은 사람이 다시 확인해야 합니다."
+        )
+    if _edu_vp_question_asks_direct_principle(q):
+        return (
+            "짧게 말하면 AI 답변은 질문을 숫자로 바꾸고, 학습한 말의 패턴을 바탕으로 다음에 올 말을 계속 계산해서 만들어집니다. "
+            "사람처럼 머릿속에서 뜻을 느끼는 것이 아니라, 단어와 단어 사이의 관련도와 가능성을 빠르게 비교합니다. "
+            "자동완성이 한 글자씩 후보를 보여주듯, 큰 AI는 훨씬 많은 후보를 보며 문장을 이어갑니다. "
+            "오늘은 원리를 '이해하는 사람'이 아니라 '가능성 높은 다음 말을 고르는 계산'으로 기억하면 됩니다."
         )
     if "AI와 LLM" in title:
         return (
@@ -9339,6 +9388,24 @@ def _edu_vp_safety_coach_red_team(
             issues.append("missing_energy_use_mechanism")
         if generic_definition_only:
             issues.append("answered_definition_instead_of_energy_question")
+    if _edu_vp_question_asks_direct_principle(question_text):
+        principle_mechanism_terms = (
+            "계산", "숫자", "가능성", "후보", "다음", "관련도", "학습", "패턴", "확률", "토큰",
+            "문맥", "흐름", "고르", "비교", "서버", "데이터센터", "gpu", "냉각",
+            "앞말", "앞뒤", "뜻", "역할", "장면", "자연스러",
+        )
+        definition_only = any(
+            term in answer_text
+            for term in (
+                "Transformer는 문장에서 중요한 말을 찾아",
+                "생성형 AI는 새 글, 그림, 답변처럼",
+                "AI는 큰 이름이고, LLM은",
+            )
+        )
+        if sum(1 for term in principle_mechanism_terms if term.lower() in answer_text.lower()) < 2:
+            issues.append("missing_principle_mechanism")
+        if definition_only:
+            issues.append("answered_definition_instead_of_principle_question")
     asks_transformer_paper = _edu_vp_question_asks_transformer_paper_authors(question_text)
     if asks_transformer_paper:
         required = ("Google", "Vaswani", "Shazeer")

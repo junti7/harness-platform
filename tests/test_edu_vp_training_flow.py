@@ -213,6 +213,37 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("missing_energy_use_mechanism", issues)
         self.assertIn("answered_definition_instead_of_energy_question", issues)
 
+    def test_safety_coach_fallback_answers_energy_question_before_transformer_definition(self):
+        answer = self.mod._edu_vp_safety_coach_fallback(
+            "Transformer",
+            "그런데 AI가 답변을 하는 작업은 왜 엄청난 전기가 든다고 해?",
+        )
+
+        self.assertIn("데이터센터", answer)
+        self.assertIn("서버", answer)
+        self.assertIn("냉각", answer)
+        self.assertNotIn("Transformer는 문장에서 중요한 말을", answer)
+
+    def test_safety_coach_fallback_answers_general_principle_before_concept_definition(self):
+        answer = self.mod._edu_vp_safety_coach_fallback(
+            "Transformer",
+            "왜 AI 답변은 사람처럼 자연스럽게 나와?",
+        )
+
+        self.assertIn("질문을 숫자로 바꾸고", answer)
+        self.assertIn("다음에 올 말을", answer)
+        self.assertNotIn("Transformer는 문장에서 중요한 말을", answer)
+
+    def test_safety_coach_red_team_blocks_concept_definition_for_principle_question(self):
+        issues = self.mod._edu_vp_safety_coach_red_team(
+            question="왜 AI 답변은 사람처럼 자연스럽게 나와?",
+            answer="Transformer는 문장에서 중요한 말을 찾아 서로 연결하는 방법입니다. 책을 읽으며 중요한 단어에 형광펜을 칠하고, 그 단어들끼리 연결해 뜻을 잡는 모습과 비슷합니다.",
+            concept_body="Transformer의 핵심은 attention입니다.",
+        )
+
+        self.assertIn("missing_principle_mechanism", issues)
+        self.assertIn("answered_definition_instead_of_principle_question", issues)
+
     def test_safety_coach_switches_model_when_energy_question_gets_generic_definition(self):
         req = self.mod.EduVpTrainingSafetyCoachRequest(
             case_id=123,
