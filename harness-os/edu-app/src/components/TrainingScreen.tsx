@@ -326,8 +326,8 @@ function safetyQuestionWasDeleted(conceptId: string, question: string | undefine
   const q = (question || '').trim()
   if (!q) return false
   return deletedKeys.some((key) => {
-    const [deletedConceptId, , deletedQuestion] = key.split('::')
-    return deletedConceptId === conceptId && deletedQuestion === q
+    const prefix = `${conceptId}::`
+    return key.startsWith(prefix) && key.endsWith(`::${q}`)
   })
 }
 
@@ -399,12 +399,15 @@ function QuestionArchivePanel({
 }) {
   const hasItems = groups.some((group) => group.items.length > 0) || deferred.length > 0
   return (
-    <section className="mb-4 rounded-2xl border border-border bg-card p-4 print:border-0 print:p-0 print:shadow-none">
+    <section className="mb-4 rounded-2xl border border-primary/25 bg-sky-50/80 p-4 shadow-[0_0_0_1px_rgba(37,99,235,0.08)] print:border-0 print:bg-card print:p-0 print:shadow-none">
       <div className="mb-3 flex items-start justify-between gap-3 print:hidden">
         <div className="min-w-0">
+          <div className="mb-1 inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
+            질문 아카이브
+          </div>
           <h2 className="text-base font-bold leading-snug text-ink-strong">Day별 질문 모아보기</h2>
           <p className="mt-1 text-xs leading-relaxed text-text-faint">
-            Day별로 남긴 질문과 AI 코치 답변을 한 곳에서 다시 봅니다.
+            삭제한 질문은 제외하고, Day별 질문과 AI 코치 답변만 따로 봅니다.
           </p>
         </div>
         <div className="flex shrink-0 gap-1.5">
@@ -434,7 +437,7 @@ function QuestionArchivePanel({
       ) : (
         <div className="grid gap-3">
           {groups.map((group) => (
-            <div key={group.stage} className="rounded-[12px] border border-border bg-secondary p-3 print:break-inside-avoid print:bg-card">
+            <div key={group.stage} className="rounded-[12px] border border-primary/15 bg-card p-3 print:break-inside-avoid print:bg-card">
               <h3 className="text-sm font-bold text-ink">{group.label}</h3>
               {group.items.length ? (
                 <div className="mt-2 grid gap-2">
@@ -457,7 +460,7 @@ function QuestionArchivePanel({
             </div>
           ))}
           {deferred.length ? (
-            <div className="rounded-[12px] border border-border bg-secondary p-3 print:break-inside-avoid print:bg-card">
+            <div className="rounded-[12px] border border-primary/15 bg-card p-3 print:break-inside-avoid print:bg-card">
               <h3 className="text-sm font-bold text-ink">심화 질문 · 커리큘럼 후보</h3>
               <p className="mt-1 text-xs leading-relaxed text-text-faint">
                 상세 카드가 아직 확정되지 않은 질문입니다. 러프 커리큘럼 조정 후보로 남깁니다.
@@ -1889,7 +1892,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         <QuestionArchivePanel groups={questionGroups} deferred={deferredQuestions} onClose={() => setQuestionArchiveOpen(false)} />
       ) : null}
 
-      <div className={questionArchiveOpen ? 'print:hidden' : ''}>
+      <div className={questionArchiveOpen ? 'hidden print:hidden' : ''}>
       {/* 전체 진행률 */}
       <div className="mb-4 flex items-center gap-2.5">
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
