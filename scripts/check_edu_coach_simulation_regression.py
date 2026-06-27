@@ -2,17 +2,38 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
+import os
+import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 from edu_coach_corpus_scenario_generator import OUTPUT_CONFIG, collect_corpus_scenarios
 from edu_coach_simulation_runner import run_simulation
 
 
+ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MIN_CORPUS_RECORDS = 30264
 DEFAULT_MIN_YOUTUBE_RECORDS = 1649
+DEFAULT_MAX_FAST_RAG_TIMEOUT_MS = 450
+DEFAULT_MAX_RAG_PATCH_CALLS = 1
+
+
+def _load_backend_main() -> Any:
+    module_name = "harness_backend_main_for_edu_coach_latency_guard"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+    path = ROOT / "harness-os" / "backend" / "main.py"
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
 
 
 def _needs_work(summary: dict[str, Any]) -> int:
@@ -62,12 +83,122 @@ def check_freshness(*, config_path: Path = OUTPUT_CONFIG) -> dict[str, Any]:
     }
 
 
+def check_latency_budget(
+    *,
+    max_fast_rag_timeout_ms: int = DEFAULT_MAX_FAST_RAG_TIMEOUT_MS,
+    max_rag_patch_calls: int = DEFAULT_MAX_RAG_PATCH_CALLS,
+) -> dict[str, Any]:
+    mod = _load_backend_main()
+    failures: list[str] = []
+
+    fast_req = mod.EduVpTrainingSafetyCoachRequest(
+        case_id=123,
+        stage="day0",
+        concept_id="safety_concept_ai_llm_words",
+        concept_title="먼저 말부터 정리하기: AI와 LLM",
+        concept_body="LLM은 다음에 올 법한 말을 이어 붙입니다.",
+        question="다음 글에 이어질 최적의 명사는 어떻게 추측해?",
+    )
+
+    def slow_evidence(*_args: Any, **_kwargs: Any) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
+        time.sleep(0.5)
+        return "", [], {"selected_count": 0}
+
+    old_fast_timeout = os.environ.get("EDU_SAFETY_COACH_FAST_RAG_TIMEOUT_SECONDS")
+    os.environ["EDU_SAFETY_COACH_FAST_RAG_TIMEOUT_SECONDS"] = "0.01"
+    try:
+        fast_started = time.monotonic()
+        with (
+            patch.object(mod, "_edu_vp_safety_coach_evidence", side_effect=slow_evidence),
+            patch.object(mod, "_edu_generate_text") as mocked_fast_generate,
+        ):
+            fast_answer, fast_model, fast_usage, fast_fallback = mod._edu_vp_generate_safety_coach_answer(fast_req)
+        fast_elapsed_ms = int(round((time.monotonic() - fast_started) * 1000))
+    finally:
+        if old_fast_timeout is None:
+            os.environ.pop("EDU_SAFETY_COACH_FAST_RAG_TIMEOUT_SECONDS", None)
+        else:
+            os.environ["EDU_SAFETY_COACH_FAST_RAG_TIMEOUT_SECONDS"] = old_fast_timeout
+
+    fast_meta = fast_usage.get("_safety_coach_evidence_meta") if isinstance(fast_usage, dict) else {}
+    if fast_elapsed_ms > max_fast_rag_timeout_ms:
+        failures.append(f"fast_rag_timeout_elapsed_ms={fast_elapsed_ms}>max={max_fast_rag_timeout_ms}")
+    if str(fast_meta.get("skip_reason") if isinstance(fast_meta, dict) else "") != "retrieve_timeout":
+        failures.append(f"fast_rag_skip_reason={fast_meta.get('skip_reason') if isinstance(fast_meta, dict) else None}")
+    if getattr(mocked_fast_generate, "call_count", 0) != 0:
+        failures.append(f"fast_template_llm_calls={getattr(mocked_fast_generate, 'call_count', 0)}")
+    if fast_fallback or "명사는" not in str(fast_answer) or fast_model != "fast-template":
+        failures.append(f"fast_template_regressed:model={fast_model}:fallback={fast_fallback}")
+
+    patch_req = mod.EduVpTrainingSafetyCoachRequest(
+        case_id=123,
+        stage="day0",
+        concept_id="safety_concept_attention",
+        concept_title="Transformer의 핵심: attention",
+        concept_body="attention은 중요한 단어끼리 연결해 문장의 흐름을 잡는 방법입니다.",
+        question="attention은 누가 어떻게 설정하는거야?",
+    )
+    weak_answer = (
+        "attention은 사람이 문장마다 직접 정하지 않습니다. 모델이 입력 문장 안에서 단어 사이 관련도를 계산합니다. "
+        "예를 들어 이름과 대명사를 함께 보는 식으로 연결을 잡습니다."
+    )
+    evidence_items = [
+        {
+            "source": "YouTube family learning digest",
+            "cite": "attention 설정을 정답 암기가 아니라 질문 비교 도구로 다룰 때 이해가 오래 남는다고 설명한다.",
+        }
+    ]
+    with (
+        patch.object(mod, "_edu_vp_safety_coach_reinforcement_policies", return_value=[]),
+        patch.object(mod, "_edu_vp_safety_coach_evidence_with_timeout", return_value=("", evidence_items, {"selected_count": 1, "elapsed_ms": 3, "timeout_ms": 1500})),
+        patch.object(mod, "_edu_safety_coach_model_ladder", return_value=["model-a", "model-b"]),
+        patch.object(mod, "_edu_generate_text", return_value=(weak_answer, {"prompt_token_count": 10, "candidates_token_count": 8}, "model-a")) as mocked_patch_generate,
+        patch.object(mod, "_edu_log_llm_cost"),
+    ):
+        patch_answer, patch_model, patch_usage, patch_fallback = mod._edu_vp_generate_safety_coach_answer(patch_req)
+    patch_calls = int(getattr(mocked_patch_generate, "call_count", 0))
+    if patch_calls > max_rag_patch_calls:
+        failures.append(f"rag_patch_llm_calls={patch_calls}>max={max_rag_patch_calls}")
+    if patch_model != "model-a+rag_patch":
+        failures.append(f"rag_patch_model={patch_model}")
+    if not bool(patch_usage.get("_safety_coach_rag_patch_applied") if isinstance(patch_usage, dict) else False):
+        failures.append("rag_patch_not_applied")
+    if not bool(patch_usage.get("_safety_coach_rag_infused") if isinstance(patch_usage, dict) else False):
+        failures.append("rag_patch_not_infused")
+    if patch_fallback or "질문 비교 도구" not in str(patch_answer):
+        failures.append(f"rag_patch_answer_regressed:fallback={patch_fallback}")
+
+    return {
+        "ok": not failures,
+        "failures": failures,
+        "fast_rag_timeout": {
+            "elapsed_ms": fast_elapsed_ms,
+            "max_ms": max_fast_rag_timeout_ms,
+            "model": fast_model,
+            "fallback_used": bool(fast_fallback),
+            "skip_reason": fast_meta.get("skip_reason") if isinstance(fast_meta, dict) else None,
+            "llm_calls": int(getattr(mocked_fast_generate, "call_count", 0)),
+        },
+        "rag_patch": {
+            "model": patch_model,
+            "llm_calls": patch_calls,
+            "max_llm_calls": max_rag_patch_calls,
+            "fallback_used": bool(patch_fallback),
+            "patch_applied": bool(patch_usage.get("_safety_coach_rag_patch_applied") if isinstance(patch_usage, dict) else False),
+            "rag_infused": bool(patch_usage.get("_safety_coach_rag_infused") if isinstance(patch_usage, dict) else False),
+        },
+    }
+
+
 def check_regression(
     *,
     min_corpus_records: int = DEFAULT_MIN_CORPUS_RECORDS,
     min_youtube_records: int = DEFAULT_MIN_YOUTUBE_RECORDS,
+    max_fast_rag_timeout_ms: int = DEFAULT_MAX_FAST_RAG_TIMEOUT_MS,
+    max_rag_patch_calls: int = DEFAULT_MAX_RAG_PATCH_CALLS,
     report_dir: Path | None = None,
     freshness: bool = True,
+    latency: bool = True,
 ) -> dict[str, Any]:
     if report_dir is None:
         temp_context = tempfile.TemporaryDirectory(prefix="edu_coach_regression_")
@@ -99,11 +230,21 @@ def check_regression(
         failures.append(f"youtube_records={youtube_records}<min={min_youtube_records}")
     freshness_summary = check_freshness() if freshness else {"ok": True, "failures": [], "skipped": True}
     failures.extend(f"freshness:{failure}" for failure in freshness_summary.get("failures", []))
+    latency_summary = (
+        check_latency_budget(
+            max_fast_rag_timeout_ms=max_fast_rag_timeout_ms,
+            max_rag_patch_calls=max_rag_patch_calls,
+        )
+        if latency
+        else {"ok": True, "failures": [], "skipped": True}
+    )
+    failures.extend(f"latency:{failure}" for failure in latency_summary.get("failures", []))
 
     return {
         "ok": not failures,
         "failures": failures,
         "freshness": freshness_summary,
+        "latency": latency_summary,
         "adversarial": {
             "record_count": int(adversarial.get("record_count") or 0),
             "verdict_counts": adversarial.get("verdict_counts") or {},
@@ -122,14 +263,20 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Fail if EDU safety-coach max corpus/adversarial regression tests degrade.")
     parser.add_argument("--min-corpus-records", type=int, default=DEFAULT_MIN_CORPUS_RECORDS)
     parser.add_argument("--min-youtube-records", type=int, default=DEFAULT_MIN_YOUTUBE_RECORDS)
+    parser.add_argument("--max-fast-rag-timeout-ms", type=int, default=DEFAULT_MAX_FAST_RAG_TIMEOUT_MS)
+    parser.add_argument("--max-rag-patch-calls", type=int, default=DEFAULT_MAX_RAG_PATCH_CALLS)
     parser.add_argument("--report-dir", type=Path, default=None, help="optional report directory; default uses a temp dir")
     parser.add_argument("--skip-freshness", action="store_true", help="skip fresh corpus collection vs committed config check")
+    parser.add_argument("--skip-latency", action="store_true", help="skip fast RAG timeout and RAG patch call-count checks")
     args = parser.parse_args()
     summary = check_regression(
         min_corpus_records=max(1, args.min_corpus_records),
         min_youtube_records=max(1, args.min_youtube_records),
+        max_fast_rag_timeout_ms=max(1, args.max_fast_rag_timeout_ms),
+        max_rag_patch_calls=max(1, args.max_rag_patch_calls),
         report_dir=args.report_dir,
         freshness=not bool(args.skip_freshness),
+        latency=not bool(args.skip_latency),
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
     return 0 if summary["ok"] else 1

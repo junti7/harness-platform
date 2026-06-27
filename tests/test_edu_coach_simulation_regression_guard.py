@@ -39,6 +39,7 @@ class EduCoachSimulationRegressionGuardTests(unittest.TestCase):
         with (
             patch.object(self.guard, "run_simulation", side_effect=fake_run_simulation),
             patch.object(self.guard, "check_freshness", return_value={"ok": True, "failures": []}),
+            patch.object(self.guard, "check_latency_budget", return_value={"ok": True, "failures": []}),
         ):
             summary = self.guard.check_regression()
 
@@ -58,6 +59,7 @@ class EduCoachSimulationRegressionGuardTests(unittest.TestCase):
         with (
             patch.object(self.guard, "run_simulation", side_effect=fake_run_simulation),
             patch.object(self.guard, "check_freshness", return_value={"ok": True, "failures": []}),
+            patch.object(self.guard, "check_latency_budget", return_value={"ok": True, "failures": []}),
         ):
             summary = self.guard.check_regression()
 
@@ -86,11 +88,37 @@ class EduCoachSimulationRegressionGuardTests(unittest.TestCase):
         with (
             patch.object(self.guard, "run_simulation", side_effect=fake_run_simulation),
             patch.object(self.guard, "check_freshness", return_value=freshness),
+            patch.object(self.guard, "check_latency_budget", return_value={"ok": True, "failures": []}),
         ):
             summary = self.guard.check_regression()
 
         self.assertFalse(summary["ok"])
         self.assertIn("freshness:fresh_youtube=1700>committed_youtube=1649", summary["failures"])
+
+    def test_fails_when_latency_guard_fails(self):
+        def fake_run_simulation(*, candidate_source, report_dir):
+            if candidate_source == "adversarial-current-fallback":
+                return {"record_count": 378, "verdict_counts": {"clear": 378}, "channel_counts": {}}
+            return {
+                "record_count": 30264,
+                "verdict_counts": {"clear": 30264},
+                "channel_counts": {"YouTube": 1649},
+            }
+
+        latency = {
+            "ok": False,
+            "failures": ["fast_rag_timeout_elapsed_ms=900>max=450", "rag_patch_llm_calls=2>max=1"],
+        }
+        with (
+            patch.object(self.guard, "run_simulation", side_effect=fake_run_simulation),
+            patch.object(self.guard, "check_freshness", return_value={"ok": True, "failures": []}),
+            patch.object(self.guard, "check_latency_budget", return_value=latency),
+        ):
+            summary = self.guard.check_regression()
+
+        self.assertFalse(summary["ok"])
+        self.assertIn("latency:fast_rag_timeout_elapsed_ms=900>max=450", summary["failures"])
+        self.assertIn("latency:rag_patch_llm_calls=2>max=1", summary["failures"])
 
 
 if __name__ == "__main__":
