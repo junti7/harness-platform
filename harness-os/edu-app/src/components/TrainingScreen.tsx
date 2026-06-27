@@ -47,7 +47,7 @@ export type TrainingScreenProps = {
 
 const STAGE_ORDER: StageKey[] = ['day0', 'day1']
 const STAGE_LABEL: Record<StageKey, string> = { day0: 'Day 0', day1: 'Day 1' }
-const SAFETY_COACH_ANSWER_VERSION = '2026-06-27-question-specific-v2'
+const SAFETY_COACH_ANSWER_VERSION = '2026-06-27-redteam-v3'
 type SafetyConceptFeedback = Record<string, string>
 type SafetyCoachAnswers = Record<string, {
   answer: string

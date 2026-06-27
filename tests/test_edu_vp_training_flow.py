@@ -174,6 +174,42 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(model, "gemini-test")
         self.assertFalse(fallback_used)
 
+    def test_safety_coach_red_team_requires_transformer_paper_authors(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=123,
+            stage="day0",
+            concept_id="safety_concept_transformer_origin",
+            concept_title="생성형 AI는 어떻게 시작됐나",
+            concept_body="Transformer는 2017년 Attention Is All You Need 논문으로 널리 알려졌습니다.",
+            question="Transformer 이론 관련 논문은 누가 발표했나요?",
+        )
+        weak = (
+            "Transformer 이론 관련 논문은 'Attention Is All You Need'라는 제목으로 2017년에 발표되었습니다. "
+            "이 논문은 Transformer 방법의 핵심을 설명했습니다."
+        )
+        fixed = (
+            "Transformer를 널리 알린 논문은 Google 연구팀의 Ashish Vaswani, Noam Shazeer, "
+            "Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser, "
+            "Illia Polosukhin이 함께 발표했습니다."
+        )
+
+        with (
+            patch.object(self.mod, "_edu_generate_text", side_effect=[
+                (weak, {"prompt_token_count": 10, "candidates_token_count": 8}, "gemini-test"),
+                (fixed, {"prompt_token_count": 12, "candidates_token_count": 9}, "gemini-test"),
+            ]) as mocked_generate,
+            patch.object(self.mod, "_edu_log_llm_cost"),
+        ):
+            answer, model, _usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
+
+        self.assertEqual(mocked_generate.call_count, 2)
+        self.assertIn("Google", answer)
+        self.assertIn("Vaswani", answer)
+        self.assertIn("Shazeer", answer)
+        self.assertNotEqual(answer, weak)
+        self.assertEqual(model, "gemini-test")
+        self.assertFalse(fallback_used)
+
     def test_safety_confirmation_unlocks_day0_practice(self):
         state = {"intake": {"preferred_llm": "claude"}, "day0": self.mod._edu_vp_build_day0({"preferred_llm": "claude"})}
         unlocked = self.mod._edu_vp_unlock_day0_practice(state)

@@ -8519,6 +8519,13 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
 def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
     title = concept_title or "이 단락"
     q = question.strip()
+    if any(k in q for k in ("누가", "저자", "발표", "쓴 사람", "만든 사람")) and any(k in q.lower() for k in ("transformer", "논문", "attention")):
+        return (
+            "Transformer를 널리 알린 논문은 2017년 'Attention Is All You Need'입니다. "
+            "이 논문은 Google 연구팀의 Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, "
+            "Llion Jones, Aidan N. Gomez, Lukasz Kaiser, Illia Polosukhin이 함께 발표했습니다. "
+            "한 사람이 혼자 만든 이론이라기보다, 여러 연구자가 공동으로 발표한 구조가 이후 ChatGPT, Claude, Gemini 같은 생성형 AI의 중요한 기반이 됐다고 보면 됩니다."
+        )
     if "조사" in q and ("추측" in q or "이어질" in q or "다음" in q):
         return (
             "조사는 앞말의 역할을 보고 고릅니다. 예를 들어 '학교' 뒤에는 '에', '에서', '가'가 올 수 있지만, "
@@ -8552,6 +8559,34 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
     return "질문을 조금 더 구체적으로 적어주시면, 그 부분에 맞춰 쉬운 예로 다시 설명할 수 있습니다."
 
 
+def _edu_vp_safety_coach_red_team(*, question: str, answer: str, concept_body: str) -> list[str]:
+    issues: list[str] = []
+    answer_text = answer.strip()
+    question_text = question.strip()
+    if not answer_text:
+        return ["empty_answer"]
+    overlap_terms = [
+        "비 오는 날 아이 준비물",
+        "우산, 장화, 여벌 양말",
+        "학교 공지나 실제 날씨",
+    ]
+    if any(term in answer_text for term in overlap_terms if term in concept_body):
+        issues.append("source_example_repeated")
+    question_terms = [token for token in re.findall(r"[가-힣A-Za-z0-9]+", question_text) if len(token) >= 2]
+    if question_terms and not any(token in answer_text for token in question_terms[:5]):
+        issues.append("question_not_addressed")
+    asks_who = any(k in question_text for k in ("누가", "저자", "발표", "쓴 사람", "만든 사람"))
+    asks_transformer_paper = asks_who and any(k in question_text.lower() for k in ("transformer", "논문", "attention"))
+    if asks_transformer_paper:
+        required = ("Google", "Vaswani", "Shazeer")
+        if not all(term in answer_text for term in required):
+            issues.append("missing_transformer_paper_authors")
+    anthropomorphic_terms = ("AI가 이해해서", "AI가 판단해서", "마음으로", "스스로 책임")
+    if any(term in answer_text for term in anthropomorphic_terms):
+        issues.append("anthropomorphic_or_overtrusting")
+    return issues
+
+
 def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -> tuple[str, str, dict[str, int], bool]:
     question = _edu_neutralize(req.question, cap=700)
     concept_title = _edu_neutralize(req.concept_title, cap=160)
@@ -8583,7 +8618,14 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         usage: dict[str, int] = {}
         used_model = ""
         answer = ""
+        red_team_issues: list[str] = []
         for attempt, prompt in enumerate((base_prompt, retry_prompt), start=1):
+            if attempt > 1 and red_team_issues:
+                prompt = (
+                    f"{prompt}\n\n"
+                    f"[약식 Red Team 차단 사유]\n{', '.join(red_team_issues)}\n"
+                    "위 사유를 모두 고쳐 다시 답하라. 누가/저자/발표자 질문이면 사람 또는 연구팀 이름을 반드시 포함하라."
+                )
             raw, usage, used_model = _edu_generate_text(
                 prompt,
                 max_output_tokens=420,
@@ -8593,15 +8635,12 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
             answer = re.sub(r"```(?:text)?", "", raw or "").strip().rstrip("`").strip()
             if not answer:
                 raise ValueError("empty safety coach answer")
-            overlap_terms = [
-                "비 오는 날 아이 준비물",
-                "우산, 장화, 여벌 양말",
-                "학교 공지나 실제 날씨",
-            ]
-            repeats_source_example = any(term in answer for term in overlap_terms if term in concept_body)
-            question_terms = [token for token in re.findall(r"[가-힣A-Za-z0-9]+", question) if len(token) >= 2]
-            addresses_question = not question_terms or any(token in answer for token in question_terms[:5])
-            if not repeats_source_example and addresses_question:
+            red_team_issues = _edu_vp_safety_coach_red_team(
+                question=question,
+                answer=answer,
+                concept_body=concept_body,
+            )
+            if not red_team_issues:
                 break
             if attempt == 2:
                 answer = _edu_vp_safety_coach_fallback(concept_title, question)
