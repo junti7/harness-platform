@@ -3010,38 +3010,46 @@ def _fetch_yfinance_quotes(watchlist: list[dict[str, Any]]) -> list[dict[str, An
     if not symbol_to_item:
         return []
 
-    try:
-        tickers = yf.Tickers(" ".join(symbol_to_item.keys()))
-    except Exception:
-        return []
-
-    fetched_at = datetime.now().isoformat(timespec="seconds")
-    rows: list[dict[str, Any]] = []
-    for sym, item in symbol_to_item.items():
+    def _fetch() -> list[dict[str, Any]]:
         try:
-            t = tickers.tickers.get(sym)
-            if t is None:
-                continue
-            fi = t.fast_info
-            last = fi.last_price
-            prev_close = fi.previous_close
-            change_pct = round((last - prev_close) / prev_close * 100, 3) if prev_close else None
-            rows.append({
-                "conid": item.get("conid") or sym,
-                "symbol": sym,
-                "last": round(last, 4) if last else None,
-                "bid": None,
-                "ask": None,
-                "close": round(prev_close, 4) if prev_close else None,
-                "change_pct": change_pct,
-                "currency": fi.currency or "USD",
-                "source": "yfinance",
-                "fetched_at": fetched_at,
-                "freshness_status": "fresh",
-            })
+            tickers = yf.Tickers(" ".join(symbol_to_item.keys()))
         except Exception:
-            continue
-    return rows
+            return []
+        fetched_at = datetime.now().isoformat(timespec="seconds")
+        result: list[dict[str, Any]] = []
+        for sym, item in symbol_to_item.items():
+            try:
+                t = tickers.tickers.get(sym)
+                if t is None:
+                    continue
+                fi = t.fast_info
+                last = fi.last_price
+                prev_close = fi.previous_close
+                change_pct = round((last - prev_close) / prev_close * 100, 3) if prev_close else None
+                result.append({
+                    "conid": item.get("conid") or sym,
+                    "symbol": sym,
+                    "last": round(last, 4) if last else None,
+                    "bid": None,
+                    "ask": None,
+                    "close": round(prev_close, 4) if prev_close else None,
+                    "change_pct": change_pct,
+                    "currency": fi.currency or "USD",
+                    "source": "yfinance",
+                    "fetched_at": fetched_at,
+                    "freshness_status": "fresh",
+                })
+            except Exception:
+                continue
+        return result
+
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutureTimeout
+    try:
+        with ThreadPoolExecutor(max_workers=1) as ex:
+            future = ex.submit(_fetch)
+            return future.result(timeout=12)
+    except (_FutureTimeout, Exception):
+        return []
 
 
 def _fetch_ibkr_quotes(watchlist: list[dict[str, Any]]) -> list[dict[str, Any]]:
