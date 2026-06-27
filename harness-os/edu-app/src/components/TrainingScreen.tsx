@@ -975,16 +975,16 @@ function SafetyOrientationBlock({
               id={`concept-card-${concept.checkId}`}
               className={`rounded-[12px] border bg-card p-3 transition ${
                 routedConceptId === concept.checkId
-                  ? 'border-primary bg-primary/10 shadow-[0_0_0_4px_rgba(37,99,235,0.18)] ring-2 ring-primary'
+                  ? 'border-primary bg-primary/10 shadow-[0_0_0_4px_rgba(37,99,235,0.2)] ring-2 ring-primary'
                   : 'border-border'
               }`}
             >
-              <div className="text-sm font-semibold leading-snug text-ink">{concept.title}</div>
               {routedConceptId === concept.checkId ? (
-                <div className="mt-2 inline-flex w-fit items-center rounded-full bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground">
-                  질문에 가장 가까운 설명 카드
+                <div className="-mx-1 mb-3 rounded-[10px] border border-primary/30 bg-primary/12 px-3 py-2 text-xs font-semibold leading-relaxed text-primary">
+                  이 카드에 질문과 가장 가까운 설명이 있어요.
                 </div>
               ) : null}
+              <div className="text-sm font-semibold leading-snug text-ink">{concept.title}</div>
               <p className="mt-1 text-xs leading-relaxed text-text-muted">{concept.body}</p>
               <button
                 type="button"
