@@ -11,6 +11,10 @@
 - synthetic_used: `0`
 - adversarial_cases: `378`
 - utterances: `docs/reviews/edu_coach_simulations/corpus_utterances_20260627T124124Z.jsonl`
+- union_local_cases_before_dedup: `29164`
+- union_remote_cases_before_dedup: `47934`
+- union_dedup_removed: `27645`
+- dedup_key_strategy: `normalized_question_first_220_chars`
 
 ## Source Families
 
@@ -24,6 +28,23 @@
 - `reddit`: 24 selected / 24 raw
 - `hackernews`: 22 selected / 22 raw
 - `googleplay`: 1 selected / 1 raw
+
+## Union Origin By Family
+
+- `local:naver_blog`: 19
+- `local:naver_cafe`: 10
+- `local:naver_kin`: 19
+- `local:youtube`: 1522
+- `remote:academic`: 70
+- `remote:evidence_bank`: 41
+- `remote:googleplay`: 1
+- `remote:hackernews`: 22
+- `remote:naver_blog`: 12794
+- `remote:naver_cafe`: 10658
+- `remote:naver_kin`: 7091
+- `remote:reddit`: 24
+- `remote:rss`: 16741
+- `remote:youtube`: 441
 
 ## Channels
 
