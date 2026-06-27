@@ -6248,6 +6248,7 @@ def _ensure_edu_case_schema() -> None:
                 )
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_edu_vp_training_event_log_case_id ON edu_vp_training_event_log (case_id, created_at DESC)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_edu_vp_training_event_log_email ON edu_vp_training_event_log (email, created_at DESC)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_edu_vp_training_event_log_type_created ON edu_vp_training_event_log (event_type, created_at DESC)")
             conn.commit()
             _edu_sync_table_id_sequence("edu_customers")
             _edu_sync_table_id_sequence("edu_cases")
@@ -8583,6 +8584,59 @@ def _edu_vp_safety_coach_answer_version(value: str | None) -> str:
     return cleaned or _EDU_VP_SAFETY_COACH_ANSWER_VERSION
 
 
+def _edu_vp_safety_cache_allowed(question: str) -> bool:
+    high_risk_terms = (
+        "자살", "죽고", "죽고 싶", "자해", "극단", "해치", "살 가치", "우울", "공황",
+        "병원", "약", "진단", "소송", "법률", "변호사", "투자", "대출", "빚", "돈을",
+        "성적", "성인", "미성년", "개인정보", "비밀번호", "주소", "전화번호",
+    )
+    text = str(question or "").lower()
+    return not any(term in text for term in high_risk_terms)
+
+
+def _edu_vp_safety_question_similarity(a: str, b: str) -> float:
+    na = _edu_vp_normalize_safety_question(a)
+    nb = _edu_vp_normalize_safety_question(b)
+    if not na or not nb:
+        return 0.0
+    if na == nb:
+        return 1.0
+    terms_a = set(_edu_vp_safety_coach_keywords(na, max_terms=16))
+    terms_b = set(_edu_vp_safety_coach_keywords(nb, max_terms=16))
+    if not terms_a or not terms_b:
+        return 0.0
+    overlap = len(terms_a & terms_b)
+    containment = overlap / max(1, min(len(terms_a), len(terms_b)))
+    jaccard = overlap / max(1, len(terms_a | terms_b))
+    score = max(jaccard, containment * 0.92)
+    concept_markers = ("조사", "명사", "transformer", "machine", "learning", "의존", "다정", "논문")
+    action_markers = ("추측", "이어", "발표", "저자", "누가", "빠져", "의존")
+    same_concept = any(marker in na and marker in nb for marker in concept_markers)
+    same_action = any(marker in na and marker in nb for marker in action_markers)
+    if same_concept and same_action:
+        score = max(score, 0.86)
+    return score
+
+
+def _edu_vp_safety_keyword_stem(token: str) -> str:
+    cleaned = str(token or "").lower().strip()
+    replacements = (
+        ("추측하나요", "추측"),
+        ("추측하니", "추측"),
+        ("추측해", "추측"),
+        ("알려줘", "알려"),
+        ("알려주세요", "알려"),
+    )
+    for old, new in replacements:
+        if cleaned.endswith(old):
+            cleaned = cleaned[: -len(old)] + new
+    for suffix in ("에서는", "에서", "으로", "에게", "부터", "까지", "처럼", "라는", "이라", "으로는", "에는", "은", "는", "이", "가", "을", "를", "에", "의"):
+        if len(cleaned) > len(suffix) + 1 and cleaned.endswith(suffix):
+            cleaned = cleaned[: -len(suffix)]
+            break
+    return cleaned
+
+
 def _edu_vp_safety_coach_keywords(text: str, *, max_terms: int = 12) -> list[str]:
     stopwords = {
         "그리고", "그런데", "하지만", "어떻게", "이렇게", "저렇게", "이럴", "경우", "대한", "관련",
@@ -8592,6 +8646,7 @@ def _edu_vp_safety_coach_keywords(text: str, *, max_terms: int = 12) -> list[str
     terms: list[str] = []
     seen: set[str] = set()
     for token in re.findall(r"[0-9A-Za-z가-힣]{2,}", str(text or "").lower()):
+        token = _edu_vp_safety_keyword_stem(token)
         if token in stopwords or token in seen:
             continue
         seen.add(token)
@@ -8683,6 +8738,72 @@ def _edu_vp_cached_safety_coach_answer(
         "fallback_used": bool(payload.get("fallback_used")),
         "evidence_meta": payload.get("evidence_meta") if isinstance(payload.get("evidence_meta"), dict) else {},
         "evidence_used": bool(payload.get("evidence_used")),
+        "reuse_scope": "same_case",
+        "similarity": 1.0,
+    }
+
+
+def _edu_vp_recent_safety_coach_answer(
+    *,
+    concept_id: str,
+    question: str,
+    normalized_question: str,
+    answer_version: str,
+    max_age_days: int = 7,
+    threshold: float = 0.82,
+) -> dict[str, Any] | None:
+    if not concept_id or not normalized_question or not _edu_vp_safety_cache_allowed(question):
+        return None
+    rows = _edu_execute(
+        """
+        SELECT event_payload, created_at
+        FROM edu_vp_training_event_log
+        WHERE event_type = 'safety_coach'
+          AND event_name = 'safety_question_answered'
+          AND created_at >= NOW() - (%s || ' days')::INTERVAL
+          AND event_payload->>'concept_id' = %s
+          AND event_payload->>'answer_version' = %s
+          AND COALESCE(event_payload->>'answer', '') <> ''
+        ORDER BY created_at DESC
+        LIMIT 80
+        """,
+        (str(max(1, min(max_age_days, 30))), concept_id[:120], answer_version[:80]),
+        fetch=True,
+    )
+    best_payload: dict[str, Any] | None = None
+    best_score = 0.0
+    best_created_at = None
+    for row in rows or []:
+        payload = row.get("event_payload") or {}
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                continue
+        if not isinstance(payload, dict):
+            continue
+        prior_question = str(payload.get("question") or payload.get("normalized_question") or "")
+        if not _edu_vp_safety_cache_allowed(prior_question):
+            continue
+        score = _edu_vp_safety_question_similarity(question, prior_question)
+        if score > best_score:
+            best_score = score
+            best_payload = payload
+            best_created_at = row.get("created_at")
+    if not best_payload or best_score < threshold:
+        return None
+    answer = str(best_payload.get("answer") or "").strip()
+    if not answer:
+        return None
+    return {
+        "answer": answer,
+        "model": str(best_payload.get("model") or ""),
+        "fallback_used": bool(best_payload.get("fallback_used")),
+        "evidence_meta": best_payload.get("evidence_meta") if isinstance(best_payload.get("evidence_meta"), dict) else {},
+        "evidence_used": bool(best_payload.get("evidence_used")),
+        "reuse_scope": "recent_similar",
+        "similarity": round(best_score, 4),
+        "source_created_at": best_created_at.isoformat() if hasattr(best_created_at, "isoformat") else str(best_created_at or ""),
     }
 
 
@@ -11459,11 +11580,19 @@ def edu_vp_training_safety_coach(
         normalized_question=normalized_question,
         answer_version=answer_version,
     )
+    if not cached:
+        cached = _edu_vp_recent_safety_coach_answer(
+            concept_id=concept_id,
+            question=question,
+            normalized_question=normalized_question,
+            answer_version=answer_version,
+        )
     if cached:
         cached_evidence_meta = cached.get("evidence_meta") if isinstance(cached, dict) else None
         cached_evidence_used = bool(cached.get("evidence_used")) or bool(
             isinstance(cached_evidence_meta, dict) and int(cached_evidence_meta.get("selected_count") or 0) > 0
         )
+        reuse_scope = str(cached.get("reuse_scope") or "same_case")
         log_payload = {
             "stage": stage,
             "concept_id": concept_id,
@@ -11476,6 +11605,9 @@ def edu_vp_training_safety_coach(
             "answer_version": answer_version,
             "duplicate_reused": True,
             "evidence_used": cached_evidence_used,
+            "reuse_scope": reuse_scope,
+            "similarity": cached.get("similarity"),
+            "source_created_at": cached.get("source_created_at"),
         }
         _edu_vp_append_event(
             case_id=case_id,
@@ -11492,6 +11624,7 @@ def edu_vp_training_safety_coach(
             "answer_version": answer_version,
             "duplicate_reused": True,
             "evidence_used": cached_evidence_used,
+            "reuse_scope": reuse_scope,
         }
     _edu_public_gate(request)
     answer, model_name, usage, fallback_used = _edu_vp_generate_safety_coach_answer(req)

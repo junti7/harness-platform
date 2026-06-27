@@ -358,6 +358,34 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertEqual(normalized, "다음 글에 이어질 조사는 어떻게 추측하나요?")
 
+    def test_safety_coach_question_similarity_matches_close_wording(self):
+        score = self.mod._edu_vp_safety_question_similarity(
+            "다음 글에 이어질 최적의 명사는 어떻게 추측해?",
+            "다음 문장에 이어질 명사는 어떻게 추측하나요?",
+        )
+
+        self.assertGreaterEqual(score, 0.82)
+
+    def test_safety_coach_question_similarity_rejects_different_topic(self):
+        score = self.mod._edu_vp_safety_question_similarity(
+            "다음 글에 이어질 최적의 명사는 어떻게 추측해?",
+            "AI에게 너무 의존하게 될 때 어떻게 멈추나요?",
+        )
+
+        self.assertLess(score, 0.82)
+
+    def test_safety_coach_recent_cache_blocks_high_risk_questions(self):
+        with patch.object(self.mod, "_edu_execute") as mocked_execute:
+            cached = self.mod._edu_vp_recent_safety_coach_answer(
+                concept_id="safety_concept_ai_llm_words",
+                question="죽고 싶을 때 AI에게 물어봐도 되나요?",
+                normalized_question="죽고 싶을 때 ai에게 물어봐도 되나요?",
+                answer_version="2026-06-27-rag-query-v6",
+            )
+
+        self.assertIsNone(cached)
+        mocked_execute.assert_not_called()
+
     def test_safety_coach_cached_answer_reads_matching_event_payload(self):
         payload = {
             "answer": "조사는 앞말의 역할을 보고 고릅니다.",
@@ -385,6 +413,33 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(params[0], 123)
         self.assertEqual(params[1], "safety_concept_ai_llm_words")
         self.assertEqual(params[3], "2026-06-27-rag-query-v6")
+
+    def test_safety_coach_recent_cache_reuses_similar_answer_within_week(self):
+        payload = {
+            "question": "다음 문장에 이어질 명사는 어떻게 추측하나요?",
+            "answer": "명사는 앞뒤 말이 만들고 있는 장면을 보고 고릅니다.",
+            "model": "fast-template",
+            "fallback_used": False,
+            "answer_version": "2026-06-27-rag-query-v6",
+            "evidence_used": False,
+        }
+
+        with patch.object(self.mod, "_edu_execute", return_value=[{"event_payload": payload, "created_at": None}]) as mocked_execute:
+            cached = self.mod._edu_vp_recent_safety_coach_answer(
+                concept_id="safety_concept_ai_llm_words",
+                question="다음 글에 이어질 최적의 명사는 어떻게 추측해?",
+                normalized_question="다음 글에 이어질 최적의 명사는 어떻게 추측해?",
+                answer_version="2026-06-27-rag-query-v6",
+            )
+
+        self.assertIsNotNone(cached)
+        assert cached is not None
+        self.assertEqual(cached["answer"], payload["answer"])
+        self.assertEqual(cached["reuse_scope"], "recent_similar")
+        self.assertGreaterEqual(cached["similarity"], 0.82)
+        query, params = mocked_execute.call_args.args[:2]
+        self.assertIn("created_at >= NOW()", query)
+        self.assertEqual(params[0], "7")
 
     def test_safety_coach_fallback_handles_noun_prediction_question(self):
         answer = self.mod._edu_vp_safety_coach_fallback(
