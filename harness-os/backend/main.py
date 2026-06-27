@@ -6068,6 +6068,24 @@ class EduVpTrainingSafetyCoachRequest(BaseModel):
     answer_version: str = ""
 
 
+class EduVpTrainingSafetyRouteConcept(BaseModel):
+    id: str = ""
+    title: str = ""
+    body: str = ""
+    comprehension_check: str = ""
+    question_prompt: str = ""
+
+
+class EduVpTrainingSafetyRouteRequest(BaseModel):
+    case_id: int
+    email: str = ""
+    stage: str = "day0"
+    source_concept_id: str = ""
+    question: str = ""
+    concepts: list[EduVpTrainingSafetyRouteConcept] = Field(default_factory=list)
+    planned_outline: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class EduVpTrainingCurriculumRequest(BaseModel):
     email: str = ""
     llm: str = ""
@@ -10151,6 +10169,158 @@ def _edu_safety_coach_model_ladder() -> list[str]:
     return ordered or _edu_model_ladder()
 
 
+def _edu_vp_route_ollama_hosts() -> list[str]:
+    hosts: list[str] = []
+    for candidate in [
+        os.getenv("OLLAMA_REMOTE_HOST", "").strip(),
+        os.getenv("OLLAMA_HOST", "http://localhost:11434").strip(),
+    ]:
+        if candidate and candidate not in hosts:
+            hosts.append(candidate)
+    return hosts
+
+
+def _edu_vp_route_model_ladder() -> list[str]:
+    configured = [x.strip() for x in (os.getenv("EDU_SAFETY_ROUTE_MODEL_LADDER") or "").split(",") if x.strip()]
+    defaults = [
+        os.getenv("EDU_SAFETY_ROUTE_OLLAMA_MODEL", "").strip(),
+        os.getenv("GEMINI_LOCAL_FALLBACK_MODEL", "").strip(),
+        os.getenv("OLLAMA_CHAT_MODEL", "").strip(),
+        os.getenv("OLLAMA_MODEL", "").strip(),
+        "qwen2.5:1.5b",
+        "gemma4:latest",
+        "gemma2:27b",
+    ]
+    ordered: list[str] = []
+    for candidate in [*configured, *defaults]:
+        if candidate and candidate not in ordered:
+            ordered.append(candidate)
+    return ordered
+
+
+def _edu_vp_ollama_json(prompt: str, *, timeout_seconds: float = 0.75, max_tokens: int = 96) -> tuple[dict[str, Any], str]:
+    last_exc: Exception | None = None
+    for host in _edu_vp_route_ollama_hosts():
+        for model in _edu_vp_route_model_ladder():
+            try:
+                resp = httpx.post(
+                    f"{host}/api/chat",
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": "You route Korean learner questions to one curriculum card. Return valid JSON only."},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "stream": False,
+                        "format": "json",
+                        "options": {
+                            "temperature": 0,
+                            "top_p": 0.8,
+                            "num_ctx": 2048,
+                            "num_predict": max_tokens,
+                        },
+                    },
+                    timeout=timeout_seconds,
+                )
+                resp.raise_for_status()
+                text = str((((resp.json() or {}).get("message") or {}).get("content") or "")).strip()
+                data = json.loads(text)
+                if isinstance(data, dict):
+                    return data, model
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                continue
+    raise RuntimeError(f"ollama_route_unavailable: {last_exc}")
+
+
+def _edu_vp_external_route_json(prompt: str, *, timeout_seconds: float = 2.5) -> tuple[dict[str, Any], str]:
+    if os.getenv("EDU_SAFETY_ROUTE_EXTERNAL_FALLBACK", "false").strip().lower() not in {"1", "true", "yes", "on"}:
+        raise RuntimeError("external_route_disabled")
+    ladder: list[str] = []
+    if os.getenv("OPENAI_API_KEY") and OpenAI is not None:
+        ladder.append(os.getenv("EDU_SAFETY_ROUTE_OPENAI_MODEL", "gpt-4o-mini"))
+    if os.getenv("ANTHROPIC_API_KEY"):
+        ladder.append(os.getenv("EDU_SAFETY_ROUTE_CLAUDE_MODEL", "claude-haiku-4-5"))
+    raw, _usage, model = _edu_generate_text(
+        prompt,
+        max_output_tokens=160,
+        timeout_seconds=timeout_seconds,
+        response_mime_type="application/json",
+        model_ladder=ladder,
+    )
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise RuntimeError("external_route_non_object")
+    return parsed, model
+
+
+def _edu_vp_route_prompt(req: EduVpTrainingSafetyRouteRequest) -> str:
+    candidates: list[dict[str, str]] = []
+    source_seen = False
+    for item in req.concepts[:16]:
+        cid = str(item.id or "").strip()[:120]
+        if not cid:
+            continue
+        if cid == req.source_concept_id:
+            source_seen = True
+        candidates.append({
+            "id": cid,
+            "title": str(item.title or "")[:160],
+            "text": f"{item.body or ''} {item.comprehension_check or ''} {item.question_prompt or ''}"[:420],
+        })
+    planned = [
+        {
+            "key": str(item.get("key") or "")[:80],
+            "day": int(item.get("day") or 0),
+            "title": str(item.get("title") or "")[:160],
+            "text": f"{item.get('focus') or ''} {item.get('outcome') or ''}"[:320],
+        }
+        for item in (req.planned_outline or [])[:10]
+        if isinstance(item, dict)
+    ]
+    return json.dumps(
+        {
+            "task": "Choose the best existing same-day card for this learner question. Prefer an existing card over a future rough plan when it directly answers the question. If no existing card is clearly relevant, return target_id empty and optionally planned_key.",
+            "question": str(req.question or "")[:500],
+            "source_concept_id": str(req.source_concept_id or "")[:120],
+            "source_card_is_candidate": source_seen,
+            "existing_cards": candidates,
+            "rough_future_plan": planned,
+            "output_schema": {
+                "target_id": "existing card id or empty string",
+                "planned_key": "rough future plan key or empty string",
+                "confidence": "0 to 1",
+                "reason": "short Korean reason",
+            },
+        },
+        ensure_ascii=False,
+    )
+
+
+def _edu_vp_validate_route_response(data: dict[str, Any], req: EduVpTrainingSafetyRouteRequest) -> dict[str, Any]:
+    ids = {str(item.id or "") for item in req.concepts if str(item.id or "").strip()}
+    planned_keys = {str(item.get("key") or "") for item in (req.planned_outline or []) if isinstance(item, dict)}
+    target_id = str(data.get("target_id") or "").strip()
+    planned_key = str(data.get("planned_key") or "").strip()
+    try:
+        confidence = float(data.get("confidence") or 0)
+    except Exception:
+        confidence = 0.0
+    if target_id not in ids:
+        target_id = ""
+    if planned_key not in planned_keys:
+        planned_key = ""
+    if confidence < float(os.getenv("EDU_SAFETY_ROUTE_MIN_CONFIDENCE", "0.62")):
+        target_id = ""
+        planned_key = ""
+    return {
+        "target_concept_id": target_id,
+        "planned_key": planned_key,
+        "confidence": round(max(0.0, min(1.0, confidence)), 3),
+        "reason": str(data.get("reason") or "")[:240],
+    }
+
+
 def _edu_generate_text(
     prompt: str,
     *,
@@ -11640,6 +11810,85 @@ def edu_vp_training_account_update_email(
         "account_updated": True,
         "training_auth_token": _issue_edu_training_auth_token(new_email, int(account["id"])),
     }
+
+
+@app.post("/api/edu/vp-training/safety-route")
+def edu_vp_training_safety_route(
+    request: Request,
+    req: EduVpTrainingSafetyRouteRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    _ensure_edu_case_schema()
+    case_id = int(req.case_id)
+    payload = _edu_load_case_payload(case_id)
+    owner_email = _edu_normalize_email(str(payload["customer"].get("email") or ""))
+    caller_email = _edu_normalize_email(req.email)
+    if caller_email and caller_email != owner_email:
+        raise HTTPException(403, "forbidden")
+    _edu_vp_assert_access(request, owner_email)
+    if not str(req.question or "").strip() or not req.concepts:
+        raise HTTPException(400, "question and concepts are required")
+
+    prompt = _edu_vp_route_prompt(req)
+    provider = "none"
+    model = ""
+    raw: dict[str, Any] = {}
+    try:
+        raw, model = _edu_vp_ollama_json(
+            prompt,
+            timeout_seconds=float(os.getenv("EDU_SAFETY_ROUTE_OLLAMA_TIMEOUT_SECONDS", "0.75")),
+        )
+        provider = "ollama"
+    except Exception as local_exc:  # noqa: BLE001
+        try:
+            raw, model = _edu_vp_external_route_json(
+                prompt,
+                timeout_seconds=float(os.getenv("EDU_SAFETY_ROUTE_EXTERNAL_TIMEOUT_SECONDS", "1.0")),
+            )
+            provider = "external"
+        except Exception as external_exc:  # noqa: BLE001
+            _edu_vp_append_event(
+                case_id=case_id,
+                email=owner_email,
+                event_type="safety_route",
+                event_name="semantic_route_unavailable",
+                payload={
+                    "stage": req.stage,
+                    "source_concept_id": req.source_concept_id,
+                    "question": str(req.question or "")[:500],
+                    "local_error": str(local_exc)[:240],
+                    "external_error": str(external_exc)[:240],
+                },
+            )
+            return {
+                "ok": True,
+                "target_concept_id": "",
+                "planned_key": "",
+                "confidence": 0,
+                "reason": "semantic route unavailable",
+                "model": "",
+                "provider": "none",
+            }
+
+    routed = _edu_vp_validate_route_response(raw, req)
+    _edu_vp_append_event(
+        case_id=case_id,
+        email=owner_email,
+        event_type="safety_route",
+        event_name="semantic_route_checked",
+        payload={
+            "stage": req.stage,
+            "source_concept_id": req.source_concept_id,
+            "question": str(req.question or "")[:500],
+            "target_concept_id": routed["target_concept_id"],
+            "planned_key": routed["planned_key"],
+            "confidence": routed["confidence"],
+            "reason": routed["reason"],
+            "model": model,
+            "provider": provider,
+        },
+    )
+    return {"ok": True, **routed, "model": model, "provider": provider}
 
 
 @app.post("/api/edu/vp-training/safety-coach")

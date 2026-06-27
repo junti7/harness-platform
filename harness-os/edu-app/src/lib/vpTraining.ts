@@ -309,6 +309,42 @@ export type SafetyCoachResponse = {
   evidence_used?: boolean
 }
 
+export type SafetyRouteResponse = {
+  ok: boolean
+  target_concept_id?: string
+  planned_key?: string
+  confidence?: number
+  reason?: string
+  model?: string
+  provider?: string
+}
+
+export async function routeSafetyQuestion(input: {
+  caseId: number
+  email: string
+  stage: StageKey
+  sourceConceptId: string
+  question: string
+  concepts: Array<{
+    id?: string
+    title: string
+    body: string
+    comprehension_check?: string
+    question_prompt?: string
+  }>
+  plannedOutline?: PlannedCurriculumItem[]
+}): Promise<SafetyRouteResponse> {
+  return vpPost<SafetyRouteResponse>(VP_TRAINING.safetyRoute, {
+    case_id: input.caseId,
+    email: input.email,
+    stage: input.stage,
+    source_concept_id: input.sourceConceptId,
+    question: input.question,
+    concepts: input.concepts,
+    planned_outline: input.plannedOutline ?? [],
+  }, 1200)
+}
+
 export async function askSafetyCoach(input: {
   caseId: number
   email: string

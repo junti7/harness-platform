@@ -30,6 +30,7 @@ export const VP_TRAINING = {
   artifact: '/api/edu/vp-training/artifact',
   curriculum: '/api/edu/vp-training/curriculum',
   feedback: '/api/edu/vp-training/feedback',
+  safetyRoute: '/api/edu/vp-training/safety-route',
   safetyCoach: '/api/edu/vp-training/safety-coach',
   materials: (kitId: string) => `/api/edu/vp-training/materials/${encodeURIComponent(kitId)}`,
 } as const
@@ -58,9 +59,9 @@ export class ApiError extends Error {
   }
 }
 
-async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
   try {
     return await fetch(input, { ...init, signal: controller.signal })
   } catch (e) {
@@ -100,12 +101,12 @@ export async function vpGet<T = unknown>(
 }
 
 /** POST(JSON) 헬퍼. */
-export async function vpPost<T = unknown>(path: string, body: unknown = {}): Promise<T> {
+export async function vpPost<T = unknown>(path: string, body: unknown = {}, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
   const res = await fetchWithTimeout(`${API_BASE}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body),
-  })
+  }, timeoutMs)
   return parse<T>(res)
 }
 

@@ -19,6 +19,7 @@ import { ApiError } from '@/lib/api'
 import {
   askSafetyCoach,
   fetchSession,
+  routeSafetyQuestion,
   saveStageArtifact,
   syncSession,
   type ChecklistItem,
@@ -1278,7 +1279,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     setCoachErrors((prev) => ({ ...prev, [id]: '' }))
   }
 
-  function requestCoachAnswer(concept: NonNullable<TrainingStage['foundation_concepts']>[number], id: string) {
+  async function requestCoachAnswer(concept: NonNullable<TrainingStage['foundation_concepts']>[number], id: string) {
     const question = (conceptFeedback[id] ?? '').trim()
     if (!state || !question || coachLoading[id]) return
     const conceptItems = (current?.foundation_concepts ?? []).map((item, index) => ({ ...item, checkId: conceptId(item, index) }))
@@ -1302,6 +1303,53 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       window.setTimeout(() => setRoutedConceptId((value) => (value === routed.target.checkId ? null : value)), 5000)
       return
     }
+    setCoachLoading((prev) => ({ ...prev, [id]: true }))
+    setCoachErrors((prev) => ({ ...prev, [id]: '' }))
+    try {
+      const semantic = await routeSafetyQuestion({
+        caseId,
+        email,
+        stage,
+        sourceConceptId: id,
+        question,
+        concepts: conceptItems.map((item) => ({
+          id: item.checkId,
+          title: item.title,
+          body: item.body,
+          comprehension_check: item.comprehension_check,
+          question_prompt: item.question_prompt,
+        })),
+        plannedOutline: state.planned_curriculum_outline ?? [],
+      })
+      const targetId = semantic.target_concept_id || ''
+      if (targetId && targetId !== id) {
+        const sourceIndex = conceptItems.findIndex((item) => item.checkId === id)
+        const targetIndex = conceptItems.findIndex((item) => item.checkId === targetId)
+        const target = conceptItems[targetIndex]
+        if (target && targetIndex > sourceIndex) {
+          const previousUnconfirmed = conceptItems
+            .slice(0, targetIndex)
+            .filter((item) => !checked[item.checkId])
+          setRoutedConceptId(target.checkId)
+          setNotice(
+            previousUnconfirmed.length
+              ? `질문에 가장 가까운 설명 카드로 이동했어요. 앞 카드 ${previousUnconfirmed.length}개를 확인해야 다음 단계로 넘어갈 수 있습니다.`
+              : '질문에 가장 가까운 설명 카드로 이동했어요.',
+          )
+          window.setTimeout(() => {
+            const el = document.getElementById(`concept-card-${target.checkId}`)
+            if (!el) return
+            const top = el.getBoundingClientRect().top + window.scrollY - 12
+            window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+          }, 50)
+          window.setTimeout(() => setRoutedConceptId((value) => (value === target.checkId ? null : value)), 5000)
+          setCoachLoading((prev) => ({ ...prev, [id]: false }))
+          return
+        }
+      }
+    } catch (e) {
+      console.warn('semantic safety route failed', e)
+    }
     const currentAnswer = coachAnswersRef.current[id]
     if (
       currentAnswer?.answer &&
@@ -1309,6 +1357,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       (currentAnswer.question ?? '').trim() === question
     ) {
       setNotice('이미 이 질문에 답변했어요. 질문을 바꾸면 새 답변을 받을 수 있습니다.')
+      setCoachLoading((prev) => ({ ...prev, [id]: false }))
       return
     }
     const planned = stage === 'day0' ? routePlannedCurriculumQuestion(state.planned_curriculum_outline, stage, question) : null
@@ -1393,11 +1442,12 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         .catch((e) => {
           console.error('advanced safety question sync failed', e)
           setCoachErrors((prev) => ({ ...prev, [id]: errMsg(e) }))
-      })
+        })
+        .finally(() => {
+          setCoachLoading((prev) => ({ ...prev, [id]: false }))
+        })
       return
     }
-    setCoachLoading((prev) => ({ ...prev, [id]: true }))
-    setCoachErrors((prev) => ({ ...prev, [id]: '' }))
     void askSafetyCoach({
       caseId,
       email,
