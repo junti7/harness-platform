@@ -6439,6 +6439,33 @@ td.pnl-neg,
   color: var(--info, #2563eb);
   border: 1px solid rgba(37, 99, 235, 0.22);
 }
+.action-adopted-badge {
+  background: rgba(124, 58, 237, 0.1);
+  color: #7c3aed;
+  border: 1px solid rgba(124, 58, 237, 0.22);
+  font-size: 0.68rem;
+}
+.prcard-badges {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.position-risk-card.stop-missing {
+  border-color: rgba(220, 38, 38, 0.4);
+}
+.stop-missing-alert {
+  font-size: 0.72rem;
+  color: var(--danger, #dc2626);
+  background: rgba(220, 38, 38, 0.07);
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+  margin-bottom: 0.35rem;
+}
+.currency-tag {
+  color: var(--text-secondary, #9ca3af);
+  font-size: 0.78rem;
+}
 
 /* ── 대기 주문(미체결) 카드 ── */
 .ibkr-pending-section {

@@ -14,6 +14,8 @@ type IbkrAccount = {
 type IbkrPosition = {
   symbol: string
   exchange: string
+  currency?: string
+  primary_exchange?: string
   qty: number
   entry_ts: string
   entry_price: number
@@ -31,6 +33,8 @@ type IbkrPosition = {
   action: 'HOLD' | 'STOP_LOSS' | 'S1_EXIT' | 'S2_EXIT'
   near_stop: boolean
   near_s1: boolean
+  resident_stop_missing?: boolean
+  adopted?: boolean
 }
 
 type IbkrPendingOrder = {
@@ -204,10 +208,12 @@ function RiskBar({
   label,
   distancePct,
   referencePrice,
+  currency,
 }: {
   label: string
   distancePct: number | null
   referencePrice: number | null
+  currency?: string
 }) {
   if (distancePct === null || referencePrice === null) {
     return (
@@ -226,7 +232,7 @@ function RiskBar({
   return (
     <div className="risk-bar-row">
       <span className="risk-bar-label">{label}</span>
-      <span className="risk-bar-ref">${fmt(referencePrice)}</span>
+      <span className="risk-bar-ref">{fmtPrice(referencePrice, currency)}</span>
       <div className="risk-bar-track">
         <div className={`risk-bar-fill ${fillClass}`} style={{ width: fillWidth }} />
       </div>
@@ -427,30 +433,45 @@ function SystemStatusRow({
 function PositionCard({ pos }: { pos: IbkrPosition }) {
   const isExit = pos.action !== 'HOLD'
   const pnlPos = (pos.unrealized_pnl ?? 0) >= 0
+  const currency = pos.currency || 'USD'
+  const primaryExch = pos.primary_exchange || pos.exchange || 'SMART'
+  const exchLabel = primaryExch !== 'SMART' ? primaryExch : pos.exchange
 
   return (
-    <article className={`position-risk-card ${isExit ? 'action-exit' : ''}`}>
+    <article className={`position-risk-card ${isExit ? 'action-exit' : ''} ${pos.resident_stop_missing ? 'stop-missing' : ''}`}>
       {/* 헤더 */}
       <div className="prcard-header">
         <div className="prcard-symbol">
           <strong>{pos.symbol}</strong>
           <small>{symName(pos.symbol)}</small>
         </div>
-        <ActionBadge action={pos.action} />
+        <div className="prcard-badges">
+          <ActionBadge action={pos.action} />
+          {pos.adopted && <span className="position-action-badge action-adopted-badge">입양</span>}
+        </div>
       </div>
+
+      {/* resident_stop_missing 경고 */}
+      {pos.resident_stop_missing && (
+        <div className="stop-missing-alert">
+          ⚠ 상주손절 미발행 — 다음 run에서 재시도 또는 즉시 청산 대기 중
+        </div>
+      )}
 
       {/* 메타 */}
       <div className="prcard-meta">
-        {pos.qty}주 · {pos.exchange} · 진입 {formatEntryDate(pos.entry_ts)}
+        {pos.qty}주 · {exchLabel}
+        {currency !== 'USD' && <span className="currency-tag"> · {currency}</span>}
+        {' · 진입 '}{formatEntryDate(pos.entry_ts)}
       </div>
 
       {/* 가격 */}
       <div className="prcard-prices">
         <div className="prcard-price-main">
-          {pos.current_price !== null ? `$${fmt(pos.current_price)}` : '—'}
+          {pos.current_price !== null ? fmtPrice(pos.current_price, currency) : '—'}
         </div>
         <div className="prcard-price-entry">
-          진입 ${fmt(pos.entry_price)}
+          진입 {fmtPrice(pos.entry_price, currency)}
         </div>
         <div className={`prcard-pnl ${pnlPos ? 'pnl-pos' : 'pnl-neg'}`}>
           {fmtUsd(pos.unrealized_pnl)}
@@ -461,14 +482,14 @@ function PositionCard({ pos }: { pos: IbkrPosition }) {
       {/* 위험 지표 */}
       <div className="prcard-risk-section">
         <p className="prcard-risk-title">위험 지표 <small>(낮을수록 청산 임박)</small></p>
-        <RiskBar label="손절가" distancePct={pos.stop_distance_pct} referencePrice={pos.stop_loss} />
-        <RiskBar label="S1 청산" distancePct={pos.s1_distance_pct} referencePrice={pos.s1_low} />
-        <RiskBar label="S2 청산" distancePct={pos.s2_distance_pct} referencePrice={pos.s2_low} />
+        <RiskBar label="손절가" distancePct={pos.stop_distance_pct} referencePrice={pos.stop_loss} currency={currency} />
+        <RiskBar label="S1 청산" distancePct={pos.s1_distance_pct} referencePrice={pos.s1_low} currency={currency} />
+        <RiskBar label="S2 청산" distancePct={pos.s2_distance_pct} referencePrice={pos.s2_low} currency={currency} />
       </div>
 
       {/* 푸터 */}
       <div className="prcard-footer">
-        <span>ATR ${fmt(pos.atr)}</span>
+        <span>ATR {fmtPrice(pos.atr, currency)}</span>
         {pos.market_value !== null && (
           <span>시장가치 ${fmt(pos.market_value, 0)}</span>
         )}
