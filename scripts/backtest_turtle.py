@@ -65,8 +65,30 @@ def atr(bars, i, period=ATR_PERIOD):
 _BAR_CACHE: dict = {}
 
 
-def run_backtest(corrected: bool, size_div: float | None = None, label: str | None = None) -> dict:
+def _hybrid_risk_frac(system, cp, ma100, ma200, atr_now, atr_prev) -> float:
+    """국면 적응형 risk 예산(손절=2N까지 손실 비중). 강추세·저변동=↑, 횡보·고변동=↓.
+    base 1% → S2(강돌파)·200일선 위·변동축소면 최대 2%, 약하거나 변동확대면 0.5%까지."""
+    f = 0.01
+    if system == "S2":
+        f *= 1.4                      # 55일 돌파 = 강한 추세
+    if ma200 and cp > ma200:
+        f *= 1.3                      # 장기 상승추세
+    elif ma100 and cp > ma100:
+        f *= 1.0
+    if atr_prev and atr_now:
+        vr = atr_now / atr_prev
+        if vr > 1.3:
+            f *= 0.6                   # 변동성 확대 → 축소
+        elif vr < 0.9:
+            f *= 1.15                  # 변동성 수축 → 확대
+    return max(0.005, min(0.02, f))
+
+
+def run_backtest(corrected: bool, size_div: float | None = None, label: str | None = None,
+                 hybrid: bool = False, heat_cap: float | None = None,
+                 market_regime: bool = False) -> dict:
     # size_div: 사이징 분모 배수(2.0=2N 진짜1%, 1.0=1N 클래식2%). None이면 corrected→2N, else 1N.
+    # hybrid=True 면 _hybrid_risk_frac 로 국면별 risk 예산. heat_cap: 포트폴리오 합산 risk 상한.
     if size_div is None:
         size_div = STOP_MULT if corrected else 1.0
     data = _BAR_CACHE or {s: fetch(s) for s in UNIVERSE}
@@ -79,6 +101,18 @@ def run_backtest(corrected: bool, size_div: float | None = None, label: str | No
     pos = {}  # sym -> {qty, entry, stop, system}
     trades = []
     equity_curve = []
+    # 시장 레짐 필터: 광범위 반도체지수(SMH) 200일선. 위=risk-on, 아래=risk-off(베어).
+    smh = data.get("SMH", [])
+    smh_idx = {b["t"][:10]: k for k, b in enumerate(smh)}
+
+    def market_risk_on(date):
+        if date not in smh_idx:
+            return True
+        k = smh_idx[date]
+        if k < 200:
+            return True
+        ma = sum(b["c"] for b in smh[k - 199:k + 1]) / 200
+        return smh[k]["c"] > ma
 
     def held_syms():
         return set(pos.keys())
@@ -147,18 +181,34 @@ def run_backtest(corrected: bool, size_div: float | None = None, label: str | No
                 continue
             if corr_blocked(sym):
                 continue
+            ma100 = sum(b["c"] for b in bars[i - 100 + 1:i + 1]) / 100 if i >= 100 else None
+            ma200 = sum(b["c"] for b in bars[i - 200 + 1:i + 1]) / 200 if i >= 200 else None
             if corrected:
-                sma = sum(b["c"] for b in bars[i - TREND_MA + 1:i + 1]) / TREND_MA if i >= TREND_MA else None
-                if sma is not None and cp <= sma:
+                if ma100 is not None and cp <= ma100:
                     continue
-                denom = size_div * a
+            if market_regime:
+                # 불장(SMH>200MA): 공격 1N(2%). 베어: 방어 0.5% + 약한 S1 진입 차단(S2만).
+                risk_on = market_risk_on(date)
+                if not risk_on and system == "S1":
+                    continue
+                f = 0.02 if risk_on else 0.005
+                qty = int((equity * f) / (STOP_MULT * a))
+            elif hybrid:
+                atr_prev = atr(bars, i - 60) if i >= 60 + ATR_PERIOD else a
+                f = _hybrid_risk_frac(system, cp, ma100, ma200, a, atr_prev)
+                qty = int((equity * f) / (STOP_MULT * a))   # risk-to-stop(2N) = f
             else:
-                denom = size_div * a
-            qty = int((equity * RISK_PCT) / denom)
+                qty = int((equity * RISK_PCT) / (size_div * a))
             if qty <= 0 or qty * cp > cash:
                 continue
+            new_risk = qty * STOP_MULT * a
+            if heat_cap is not None:
+                open_risk = sum(p["risk"] for p in pos.values())
+                if open_risk + new_risk > heat_cap * equity:
+                    continue
             cash -= qty * cp
-            pos[sym] = {"qty": qty, "entry": cp, "stop": cp - STOP_MULT * a, "system": system}
+            pos[sym] = {"qty": qty, "entry": cp, "stop": cp - STOP_MULT * a,
+                        "system": system, "risk": new_risk}
 
         equity = cash + sum(pos[s]["qty"] * data[s][idx[s][date]]["c"]
                             for s in pos if date in idx[s])
@@ -190,6 +240,7 @@ def summarize(corrected, trades, curve):
     return {
         "system": "수정(P0/P1)" if corrected else "기존(버그)",
         "final": final, "return_pct": ret, "cagr": cagr, "mdd": mdd,
+        "mar": (cagr / abs(mdd)) if mdd else 0,
         "trades": n, "win_rate": win_rate, "profit_factor": pf,
         "avg_win": (sum(win_pnls) / len(win_pnls)) if win_pnls else 0,
         "avg_loss": (sum(loss_pnls) / len(loss_pnls)) if loss_pnls else 0,
@@ -214,23 +265,23 @@ def buy_hold(sym="SMH"):
 def main():
     print(f"백테스트 {START} ~ {END} | 유니버스 {UNIVERSE} | 초기 ${INITIAL:,.0f}\n")
     rows = [
-        run_backtest(corrected=False, size_div=1.0, label="기존버그(필터X·1N)"),
         run_backtest(corrected=True, size_div=2.0, label="수정 2N(진짜1%)"),
-        run_backtest(corrected=True, size_div=1.5, label="수정 1.5N(~1.3%)"),
         run_backtest(corrected=True, size_div=1.0, label="수정 1N(클래식2%)"),
+        run_backtest(corrected=True, hybrid=True, label="하이브리드(per-trade)"),
+        run_backtest(corrected=True, market_regime=True, label="시장레짐(SMH200MA)"),
     ]
     bh = buy_hold("SMH")
     bhq = buy_hold("QQQ")
 
-    print(f"{'시스템':16} {'최종수익%':>10} {'CAGR%':>8} {'MaxDD%':>8} {'거래수':>6} {'승률%':>7} {'PF':>6} {'평균익':>9} {'평균손':>9}")
-    print("-" * 92)
+    print(f"{'시스템':18} {'최종%':>8} {'CAGR%':>7} {'MaxDD%':>8} {'MAR':>5} {'거래':>5} {'승률%':>6} {'PF':>5}")
+    print("-" * 70)
     for r in rows:
-        print(f"{r['system']:16} {r['return_pct']:>10.1f} {r['cagr']:>8.1f} {r['mdd']:>8.1f} "
-              f"{r['trades']:>6} {r['win_rate']:>7.1f} {r['profit_factor']:>6.2f} "
-              f"{r['avg_win']:>9.0f} {r['avg_loss']:>9.0f}")
+        print(f"{r['system']:18} {r['return_pct']:>8.1f} {r['cagr']:>7.1f} {r['mdd']:>8.1f} "
+              f"{r['mar']:>5.2f} {r['trades']:>5} {r['win_rate']:>6.1f} {r['profit_factor']:>5.2f}")
     for r in (bh, bhq):
-        print(f"{r['system']:16} {r['return_pct']:>10.1f} {r['cagr']:>8.1f} {r['mdd']:>8.1f} "
-              f"{'—':>6} {'—':>7} {'—':>6} {'—':>9} {'—':>9}")
+        mar = r['cagr'] / abs(r['mdd']) if r['mdd'] else 0
+        print(f"{r['system']:18} {r['return_pct']:>8.1f} {r['cagr']:>7.1f} {r['mdd']:>8.1f} "
+              f"{mar:>5.2f} {'—':>5} {'—':>6} {'—':>5}")
     return 0
 
 
