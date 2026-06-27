@@ -281,7 +281,8 @@ function routePlannedCurriculumQuestion(
 
 function plannedCurriculumGuide(planned?: PlannedCurriculumItem | null): string {
   if (!planned) return ''
-  return `지금 바로 길게 들어가면 Day 0의 핵심이 흐려질 수 있어서, 오늘은 관련 주제가 뒤 훈련에 준비되어 있다는 점만 먼저 알려드립니다. ${planned.title} 과정에서 ${planned.outcome}`
+  const outcome = String(planned.outcome || '').replace(/다\.$/, '게 됩니다.')
+  return `지금 바로 길게 들어가면 Day 0의 핵심이 흐려질 수 있어서, 오늘은 관련 주제가 뒤 훈련에 준비되어 있다는 점만 먼저 알려드립니다. ${planned.title} 과정에서 ${outcome}`
 }
 
 function day0BridgeAnswerForUnassignedQuestion(question: string, planned?: PlannedCurriculumItem | null): string | null {
@@ -442,6 +443,23 @@ function evidenceBadge(value?: boolean): string {
   if (value === true) return '검증 자료 반영'
   if (value === false) return '맞는 자료 없음'
   return '자료 확인 전'
+}
+
+function renderCoachAnswer(text: string) {
+  return text.split('\n').map((line, lineIndex) => {
+    const parts = line.split(/(\*\*[^*]+\*\*)/g).filter(Boolean)
+    return (
+      <span key={`line-${lineIndex}`}>
+        {parts.map((part, partIndex) => {
+          if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+            return <strong key={`${lineIndex}-${partIndex}`} className="font-bold text-ink">{part.slice(2, -2)}</strong>
+          }
+          return <span key={`${lineIndex}-${partIndex}`}>{part}</span>
+        })}
+        {lineIndex < text.split('\n').length - 1 ? <br /> : null}
+      </span>
+    )
+  })
 }
 
 function mergeSafetyCoachThreads(...groups: SafetyCoachThreads[]): SafetyCoachThreads {
@@ -1371,7 +1389,7 @@ function SafetyOrientationBlock({
                       ) : null}
                     </span>
                   </div>
-                  {coach.answer}
+                  {renderCoachAnswer(coach.answer)}
                 </div>
               ) : null}
             </div>
