@@ -8882,7 +8882,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-robustness-sim-v12"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-robustness-sim-v13"
 _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
 _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_PATH = PROJECT_ROOT / "configs" / "education" / "edu_coach_policy_registry.json"
 _EDU_VP_SAFETY_COACH_POLICY_CANDIDATE_PATH = PROJECT_ROOT / "docs" / "reviews" / "edu_coach_simulations" / "policy_candidates.jsonl"
@@ -8933,8 +8933,10 @@ def _edu_vp_question_asks_ai_energy_use(question: str) -> bool:
     q = str(question or "").strip().lower()
     if any(marker in q for marker in ("에너지를 많이 쏟", "에너지 많이 쏟", "지질 에너지", "lipid energy")):
         return False
+    if any(marker in q for marker in ("투자", "주가", "고점", "급등", "수혜", "증권가", "매수", "매도")):
+        return False
     energy_markers = (
-        "전기", "전력", "전기세", "전기요금", "에너지", "데이터센터", "냉각", "gpu", "서버", "npu",
+        "전기", "전력", "전기세", "전기요금", "에너지", "데이터센터", "냉각", "gpu", "npu",
         "환경", "탄소", "power", "electric", "energy", "datacenter", "data center", "cooling",
     )
     if not any(marker in q for marker in energy_markers):
@@ -8942,40 +8944,41 @@ def _edu_vp_question_asks_ai_energy_use(question: str) -> bool:
     generative_ai_markers = (
         "ai 답변", "ai가 답변", "ai한테 질문", "ai 질문", "생성형 ai", "llm", "gpt", "챗gpt",
     )
-    infra_markers = ("데이터센터", "냉각", "gpu", "서버", "npu", "datacenter", "data center", "cooling")
+    infra_markers = ("데이터센터", "냉각", "gpu", "npu", "datacenter", "data center", "cooling")
     return any(marker in q for marker in generative_ai_markers) or any(marker in q for marker in infra_markers)
 
 
 def _edu_vp_question_asks_direct_principle(question: str) -> bool:
     q = str(question or "").strip().lower()
-    mechanism_markers = (
-        "원리", "이유", "작동", "계산", "mechanism", "work", "compute",
-        "전기", "전력", "에너지", "데이터센터", "냉각", "gpu", "서버",
+    if _edu_vp_question_asks_ai_energy_use(q):
+        return True
+    ai_system_markers = (
+        "ai", "llm", "gpt", "챗gpt", "chatgpt", "claude", "gemini", "생성형",
+        "모델", "transformer", "트랜스포머", "attention", "어텐션",
+    )
+    ai_mechanism_targets = (
+        "답변", "답", "문장", "말", "단어", "토큰", "다음", "후보", "확률", "가능성",
+        "환각", "오류", "틀린", "거짓", "검증", "자연스럽", "attention", "어텐션", "transformer", "트랜스포머",
+    )
+    explicit_mechanism_markers = (
+        "원리", "작동", "계산", "mechanism", "compute", "어떻게 답", "어떻게 만들",
+        "왜 답", "왜 틀", "왜 거짓", "왜 환각", "왜 ai 답변", "자연스럽게 나", "다음 단어", "토큰",
     )
     practical_help_markers = (
         "어떻게 해야", "어떻게 하면", "어떻게 사용", "활용", "사용에 대해", "시작해야", "할지",
         "하면 좋", "해야 할지", "걱정", "추천", "만들기", "교육", "강의", "career", "approach",
         "homework", "accommodation", "use as", "뭘 준비", "무서", "불안", "막힐까", "진로",
+        "방법", "수업", "숙제", "상담", "의존하게", "의존도가", "살아남", "망했", "뭐 해먹",
+        "막막", "도와줄", "활용법", "괜찮", "될까요",
     )
-    if any(marker in q for marker in practical_help_markers) and not any(marker in q for marker in mechanism_markers):
+    has_ai_system = any(marker in q for marker in ai_system_markers)
+    has_target = any(marker in q for marker in ai_mechanism_targets)
+    has_explicit_mechanism = any(marker in q for marker in explicit_mechanism_markers) or "why" in q or "how" in q
+    if any(marker in q for marker in practical_help_markers) and not (has_ai_system and has_target and has_explicit_mechanism):
         return False
-    asks_principle = any(
-        marker in q
-        for marker in (
-            "왜", "어떻게", "원리", "이유", "작동", "계산", "만들", "나오", "생기", "되는", "하나요",
-            "why", "principle", "mechanism", "compute",
-        )
-    )
-    if not asks_principle:
+    if not (has_ai_system and has_target and has_explicit_mechanism):
         return False
-    principle_topics = (
-        "ai", "llm", "gpt", "챗gpt", "chatgpt", "claude", "gemini", "생성형", "답변", "답", "문장",
-        "말", "단어", "토큰", "attention", "어텐션", "transformer", "트랜스포머", "학습", "패턴",
-        "추측", "이어질", "확률", "가능성", "틀린", "오류", "거짓", "환각", "확인", "검증",
-        "전기", "전력", "전기세", "전기요금", "에너지", "데이터센터", "냉각", "gpu", "서버",
-        "환경", "탄소", "power", "electric", "energy", "datacenter", "data center", "cooling",
-    )
-    return any(marker in q for marker in principle_topics)
+    return True
 
 
 def _edu_vp_question_asks_error_mechanism(question: str) -> bool:
@@ -9611,6 +9614,26 @@ def _edu_vp_safety_coach_keywords(text: str, *, max_terms: int = 12) -> list[str
     return terms
 
 
+def _edu_vp_safety_coach_answer_addresses_detected_intent(question: str, answer: str) -> bool:
+    q = str(question or "").lower()
+    a = str(answer or "").lower()
+    checks: list[tuple[bool, tuple[str, ...]]] = [
+        (_edu_vp_question_asks_ai_energy_use(q), ("데이터센터", "gpu", "냉각", "서버", "전기", "전력", "계산")),
+        (_edu_vp_safety_coach_has_cost_barrier(q), ("비용 부담", "저비용", "공공", "무료 법률상담", "상담 창구", "지역 센터")),
+        (_edu_vp_safety_coach_has_isolation_context(q), ("그렇게 느낄 수", "혼자", "AI라도", "작은 창구", "들어줄")),
+        (any(k in q for k in ("숙제", "과제", "수행평가", "homework")), ("대신 쓰", "생각을 돕", "자기 답", "반례", "풀이 과정")),
+        (any(k in q for k in ("개인정보", "사생활", "사진", "얼굴", "보안", "privacy")), ("개인정보", "얼굴", "저장", "재사용", "식별")),
+        (any(k in q for k in ("유튜브", "영상", "스크린", "게임", "youtube", "screen")), ("화면 시간", "스크린", "보고 나서", "소비", "설명")),
+        (any(k in q for k in ("진로", "커리어", "직장", "대체", "도태", "career", "job")), ("진로", "반복 작업", "판단", "설명", "조율", "검토")),
+        (_edu_vp_question_asks_direct_principle(q), ("계산", "가능성", "후보", "다음", "패턴", "비교", "토큰")),
+        (_edu_vp_safety_coach_needs_empathy(q), ("그럴 수", "그렇게 느낄", "기분은 진짜", "막막", "자연스러운")),
+    ]
+    for applies, terms in checks:
+        if applies and any(term.lower() in a for term in terms):
+            return True
+    return False
+
+
 def _edu_vp_validate_safety_coach_evidence(
     *,
     query: str,
@@ -9866,7 +9889,7 @@ def _edu_vp_safety_coach_has_cost_barrier(question: str) -> bool:
     text = str(question or "").strip().lower()
     cost_markers = (
         "비용", "돈", "비싸", "비싼", "부담", "상담료", "진료비", "수임료", "형편", "여유",
-        "무료", "저렴", "싸게", "많이 들", "cost", "expensive", "afford",
+        "많이 들", "cost", "expensive", "afford",
     )
     help_markers = (
         "전문가", "상담", "상담사", "의사", "병원", "변호사", "법률", "노무사", "세무사",
@@ -10079,7 +10102,7 @@ def _edu_vp_safety_coach_red_team(
     )
     if any(marker in answer_text for marker in leaked_markers):
         issues.append("prompt_marker_leaked")
-    mentions_evidence = any(term in answer_text for term in ("관련 자료", "내부 자료", "자료에서는", "출처", "근거 자료", "인용"))
+    mentions_evidence = any(term in answer_text for term in ("관련 자료", "내부 자료", "자료에서는", "출처:", "출처는", "출처가", "근거 자료", "인용한"))
     if mentions_evidence and not evidence_items:
         issues.append("unsupported_evidence_reference")
     for policy in (reinforcement_policies or [])[:5]:
@@ -10115,12 +10138,16 @@ def _edu_vp_safety_coach_red_team(
     if repeated >= 1:
         issues.append("concept_body_repeated")
     question_terms = _edu_vp_safety_coach_keywords(question_text, max_terms=8)
-    if question_terms and not any(token in answer_text for token in question_terms[:5]):
+    if (
+        question_terms
+        and not any(token in answer_text for token in question_terms[:5])
+        and not _edu_vp_safety_coach_answer_addresses_detected_intent(question_text, answer_text)
+    ):
         issues.append("question_not_addressed")
     if _edu_vp_safety_coach_needs_empathy(question_text):
         empathy_terms = (
             "그럴 수", "그렇게 느낄", "기분은 진짜", "자연스러운", "외로", "혼자", "마음이 놓",
-            "위로처럼", "힘든 순간", "이상한 일이 아닙니다", "막막",
+            "위로처럼", "힘든 순간", "이상한 일이 아닙니다", "막막", "맞아요",
         )
         cold_instruction_terms = (
             "중요한 지점입니다", "핵심은 AI 답", "초안으로만", "헷갈리는 동안은 체크하지 말고",

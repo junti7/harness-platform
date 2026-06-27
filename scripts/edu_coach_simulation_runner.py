@@ -270,6 +270,7 @@ def _corpus_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "concept_title": "수집 corpus 기반 사용자 질문",
                 "concept_body": str(row.get("evidence_excerpt") or ""),
                 "source_channel": str(row.get("source_channel") or ""),
+                "source_family": str(row.get("source_family") or ""),
                 "segment": str(row.get("segment") or ""),
             }
         )

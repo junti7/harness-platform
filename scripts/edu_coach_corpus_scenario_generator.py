@@ -317,14 +317,14 @@ def _classify_intents(text: str) -> list[str]:
         marker in lower
         for marker in ("ai 답변", "ai가 답변", "ai한테 질문", "ai 질문", "생성형 ai", "챗gpt", "chatgpt", "llm", "gemini", "claude")
     )
-    infra_context = any(marker in lower for marker in ("데이터센터", "냉각", "gpu", "서버", "npu", "datacenter", "data center", "cooling"))
+    infra_context = any(marker in lower for marker in ("데이터센터", "냉각", "gpu", "npu", "datacenter", "data center", "cooling"))
     ai_energy_context = ai_context and any(
-        marker in lower for marker in ("전기", "전력", "데이터센터", "냉각", "gpu", "서버", "npu", "power", "energy")
+        marker in lower for marker in ("전기", "전력", "데이터센터", "냉각", "gpu", "npu", "power", "energy")
     )
     if "ai_energy_use" in intents and (
         not ai_energy_context
         or not (generative_ai_context or infra_context)
-        or any(marker in lower for marker in ("에너지를 많이 쏟", "지질 에너지", "lipid energy"))
+        or any(marker in lower for marker in ("에너지를 많이 쏟", "지질 에너지", "lipid energy", "투자", "주가", "고점", "급등", "수혜", "증권가", "매수", "매도"))
     ):
         intents.remove("ai_energy_use")
     if "isolation_dependency" in intents and not any(
@@ -334,12 +334,26 @@ def _classify_intents(text: str) -> list[str]:
         )
     ):
         intents.remove("isolation_dependency")
-    if "general_principle" in intents and any(
-        marker in lower for marker in ("어떻게 해야", "어떻게 사용", "활용", "추천", "시작해야", "교육", "강의", "career", "approach")
-    ) and not any(marker in lower for marker in ("원리", "작동", "계산", "mechanism", "compute", "데이터센터", "전기")):
-        intents.remove("general_principle")
+    if "general_principle" in intents:
+        principle_ai_system = any(
+            marker in lower
+            for marker in ("ai", "llm", "gpt", "챗gpt", "chatgpt", "claude", "gemini", "생성형", "모델", "transformer", "트랜스포머", "attention", "어텐션")
+        )
+        principle_target = any(
+            marker in lower
+            for marker in ("답변", "답", "문장", "말", "단어", "토큰", "다음", "후보", "확률", "가능성", "환각", "오류", "틀린", "거짓", "검증", "자연스럽")
+        )
+        explicit_principle = any(
+            marker in lower
+            for marker in ("원리", "작동", "계산", "mechanism", "compute", "어떻게 답", "어떻게 만들", "왜 답", "왜 틀", "왜 거짓", "왜 환각", "왜 ai 답변", "자연스럽게 나", "다음 단어", "토큰")
+        )
+        if not (ai_energy_context or (principle_ai_system and principle_target and explicit_principle)):
+            intents.remove("general_principle")
     if not intents:
-        intents = ["uncategorized_user_voice"]
+        if any(marker.lower() in lower for marker in DOMAIN_MARKERS):
+            intents = ["general_ai_context"]
+        else:
+            intents = ["uncategorized_user_voice"]
     if "professional_cost_barrier" in intents and "emotional_validation" not in intents and any(k in lower for k in ("걱정", "불안", "마음")):
         intents.append("emotional_validation")
     return intents[:5]

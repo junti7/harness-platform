@@ -64,6 +64,78 @@ class EduCoachSimulationRunnerTests(unittest.TestCase):
 
         self.assertEqual(result["verdict"], "clear")
 
+    def test_free_training_question_does_not_trigger_cost_barrier(self):
+        answer = self.backend._edu_vp_safety_coach_fallback(
+            "수집 corpus 기반 사용자 질문",
+            "학부모님도 쉽게 배우는 챗GPT 무료교육, 아이들 숙제 도와줄 AI 활용 팁이 궁금해요.",
+        )
+        result = self.runner.evaluate_answer(
+            backend=self.backend,
+            registry=self.registry,
+            question="학부모님도 쉽게 배우는 챗GPT 무료교육, 아이들 숙제 도와줄 AI 활용 팁이 궁금해요.",
+            answer=answer,
+            concept_body="",
+            intent_labels=["ai_homework_overreliance", "learning_start"],
+        )
+
+        self.assertEqual(result["verdict"], "clear")
+        self.assertNotIn("missing_low_cost_help_options", result["issues"])
+
+    def test_dependency_how_question_is_not_scored_as_principle(self):
+        answer = self.backend._edu_vp_safety_coach_fallback(
+            "수집 corpus 기반 사용자 질문",
+            "AI와 친한 아이가 살아남습니다 대한 의존도가 높아진다면 어떻게 될까요?",
+        )
+        result = self.runner.evaluate_answer(
+            backend=self.backend,
+            registry=self.registry,
+            question="AI와 친한 아이가 살아남습니다 대한 의존도가 높아진다면 어떻게 될까요?",
+            answer=answer,
+            concept_body="",
+            intent_labels=["emotional_validation", "isolation_dependency"],
+        )
+
+        self.assertEqual(result["verdict"], "clear")
+        self.assertNotIn("missing_principle_mechanism", result["issues"])
+
+    def test_non_ai_principle_words_do_not_trigger_ai_principle_review(self):
+        questions = [
+            "애들 숙제 블랙홀 설명 ai로 체면 살림ㅠㅠ 초딩 아들이 과학 숙제하다 블랙홀 원리를 물어보는데요.",
+            "AI시대 0순위 지역 수요와 공급의 원리는 새로운 세상에서도 그대로 적용될까요?",
+            "How AI anxiety is upending career ambitions and making students shift majors.",
+        ]
+        for question in questions:
+            with self.subTest(question=question):
+                answer = self.backend._edu_vp_safety_coach_fallback("수집 corpus 기반 사용자 질문", question)
+                result = self.runner.evaluate_answer(
+                    backend=self.backend,
+                    registry=self.registry,
+                    question=question,
+                    answer=answer,
+                    concept_body="",
+                    intent_labels=["learning_start"],
+                )
+
+                self.assertNotIn("missing_principle_mechanism", result["issues"])
+
+    def test_server_or_source_words_do_not_create_false_energy_or_evidence_failures(self):
+        answer = self.backend._edu_vp_safety_coach_fallback(
+            "수집 corpus 기반 사용자 질문",
+            "고삼 스트레스와 온라인개학과 공부와 마음 관리와 서버는 불안해요.",
+        )
+        self.assertNotIn("데이터센터", answer)
+
+        result = self.runner.evaluate_answer(
+            backend=self.backend,
+            registry=self.registry,
+            question="검색 AI는 출처가 필요한 순간부터 생각이 달라진다. 아이 숙제 자료를 찾으면 어떻게 써야 하나요?",
+            answer="검색·출처·필요한 쪽이 걱정되는 건 그럴 수 있습니다. 숙제나 과제에서 AI를 쓰는 핵심은 대신 쓰게 하느냐, 생각을 돕게 하느냐입니다.",
+            concept_body="",
+            intent_labels=["ai_homework_overreliance"],
+        )
+
+        self.assertNotIn("unsupported_evidence_reference", result["issues"])
+
     def test_run_simulation_writes_report(self):
         with tempfile.TemporaryDirectory() as tmp:
             summary = self.runner.run_simulation(
