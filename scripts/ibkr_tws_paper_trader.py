@@ -331,7 +331,7 @@ def reconcile_pending_orders(ib: IB, state: dict, paper_account: str) -> dict:
     """기존 pending_orders를 브로커 실상태와 대조해 정리.
     체결 → positions 승격, 취소/거절 → purge."""
     pending = state.get("pending_orders") or {}
-    summary = {"promoted": [], "purged": [], "kept": [], "live_symbols": set()}
+    summary = {"promoted": [], "purged": [], "kept": [], "live_symbols": []}
     if not pending:
         return summary
 
@@ -367,7 +367,7 @@ def reconcile_pending_orders(ib: IB, state: dict, paper_account: str) -> dict:
                 live_symbols.add(sym)
     except Exception:
         pass
-    summary["live_symbols"] = live_symbols
+    summary["live_symbols"] = sorted(live_symbols)
 
     for sym in list(pending.keys()):
         meta = pending.get(sym)
@@ -381,18 +381,41 @@ def reconcile_pending_orders(ib: IB, state: dict, paper_account: str) -> dict:
             bp_item = broker_positions[sym]
             filled_qty = abs(float(getattr(bp_item, "position",
                                            meta.get("qty", 0)) or 0)) or meta.get("qty", 0)
-            # pending → positions 승격 시 resident stop 발행 (없으면 무방비 방지)
+            qty_promo = int(filled_qty)
+            # pending → positions 승격 시 resident stop 발행 — 실패 시 즉시 청산 (무방비 방지)
             stop_val = meta.get("stop_loss")
+            try:
+                stop_val = float(stop_val) if stop_val is not None else None
+            except (TypeError, ValueError):
+                stop_val = None
             stop_id = None
-            if stop_val and stop_val > 0 and int(filled_qty) > 0:
+            if stop_val and stop_val > 0 and qty_promo > 0:
                 try:
                     promo_contract = make_contract(sym, meta)
                     ib.qualifyContracts(promo_contract)
-                    stop_id = place_resident_stop(ib, promo_contract, int(filled_qty),
+                    stop_id = place_resident_stop(ib, promo_contract, qty_promo,
                                                   stop_val, paper_account)
-                except Exception:
-                    pass
-            promoted = {**meta, "status": "Filled", "qty": int(filled_qty),
+                except Exception as e:
+                    print(f"  [{sym}] 승격 stop 발행 예외: {e}")
+            if stop_id is None and qty_promo > 0:
+                # stop 없으면 신규 진입과 동일하게 즉시 시장가 청산
+                print(f"  ⚠️  [{sym}] 승격 상주손절 실패 — 즉시 청산 (무방비 포지션 방지)")
+                try:
+                    abort_contract = make_contract(sym, meta)
+                    ib.qualifyContracts(abort_contract)
+                    abort_order = MarketOrder("SELL", qty_promo)
+                    abort_order.tif = "GTC"
+                    abort_order.account = paper_account
+                    abort_trade = ib.placeOrder(abort_contract, abort_order)
+                    wait_for_fill_ibkr(ib, abort_trade)
+                except Exception as e:
+                    print(f"  [{sym}] 승격 청산 실패: {e}")
+                pending.pop(sym, None)
+                summary["purged"].append(sym)
+                log_entry({"ts": now_iso(), "action": "pending_promote_stop_failed_liquidated",
+                           "symbol": sym, "qty": qty_promo})
+                continue
+            promoted = {**meta, "status": "Filled", "qty": qty_promo,
                         "resident_stop_id": stop_id,
                         "filled_reconciled_at": now_iso()}
             state.setdefault("positions", {})[sym] = promoted
@@ -718,7 +741,7 @@ def run(execute: bool = False) -> None:
             return False
 
     def ensure_connected(ib: IB) -> bool:
-        """연결 끊김 감지 시 1회 재연결 시도."""
+        """연결 끊김 감지 시 1회 재연결 시도. clientId 충돌 방지로 랜덤 ID 사용."""
         if ib.isConnected():
             return True
         print("[WARN] IB Gateway 연결 끊김 감지 — 재연결 시도")
@@ -727,12 +750,14 @@ def run(execute: bool = False) -> None:
         except Exception:
             pass
         _time.sleep(3)
+        import random as _random
+        retry_id = _random.randint(50, 99)  # 기본 10, 재연결용 50-99 범위
         try:
-            ib.connect(TWS_HOST, TWS_PORT, clientId=TWS_CLIENT_ID + 1, timeout=10)
-            print("[INFO] 재연결 성공")
+            ib.connect(TWS_HOST, TWS_PORT, clientId=retry_id, timeout=10)
+            print(f"[INFO] 재연결 성공 (clientId={retry_id})")
             return True
         except Exception as e:
-            print(f"[ERROR] 재연결 실패: {e}")
+            print(f"[ERROR] 재연결 실패 (clientId={retry_id}): {e}")
             return False
 
     ib = IB()
@@ -769,6 +794,10 @@ def run(execute: bool = False) -> None:
     if broker_positions is None:
         print("[ERROR] 브로커 포지션 조회 실패 — 포지션 관리/신규 진입 전체 생략 (다음 run 재시도)")
         log_entry({"ts": now_iso(), "action": "run_aborted", "reason": "broker_positions_unavailable"})
+        try:
+            ib.disconnect()
+        except Exception:
+            pass
         return
     pos_symbols = set(broker_positions.keys())
     tracked_symbols = set(state["positions"].keys())
@@ -782,6 +811,10 @@ def run(execute: bool = False) -> None:
     print("\n── 포지션 관리 ──")
     if not ensure_connected(ib):
         print("[ERROR] 재연결 실패 — 포지션 관리 생략")
+        try:
+            ib.disconnect()
+        except Exception:
+            pass
         return
     mgmt_actions = manage_positions_ibkr(
         ib, state, broker_positions, universe_set, paper_account, dry_run)
@@ -800,7 +833,7 @@ def run(execute: bool = False) -> None:
 
     # 피라미딩
     print("\n── 피라미딩 ──")
-    broker_positions = get_broker_positions(ib, paper_account)
+    broker_positions = get_broker_positions(ib, paper_account) or {}  # None 시 빈 dict (피라미딩 전체 스킵)
     pyramid_acts = pyramid_positions_ibkr(
         ib, state, broker_positions, nav, paper_account, dry_run)
     adds = [a for a in pyramid_acts if a.get("action") == "pyramid_add"]
@@ -977,16 +1010,26 @@ def run(execute: bool = False) -> None:
                            "order_status": status, "system": system, "dry_run": False})
                 continue
 
-            # 부분 체결 감지 — 잔여 주문 즉시 취소 (dangling open order 방지)
+            # 부분 체결 감지 — 잔여 주문 취소 후 terminal 상태 확인 (race condition 방지)
             if status not in ("Filled",):
                 cancel_ibkr_order(ib, trade.order.orderId)
-                ib.sleep(1)
-                # 취소 후 최종 체결 수량 재확인
-                filled_qty = float(trade.orderStatus.filled or filled_qty)
-                print(f"     → 부분체결({int(filled_qty)}주) — 잔여 취소. 부분 수량으로 진행")
+                # 취소 반영까지 terminal 상태 대기 (최대 8초)
+                _cancel_deadline = _time.monotonic() + 8
+                _terminal = {"Filled", "Cancelled", "Inactive", "ApiCancelled"}
+                while _time.monotonic() < _cancel_deadline:
+                    ib.sleep(0.5)
+                    if trade.orderStatus.status in _terminal:
+                        break
+                # terminal 확정 후 최종 체결 수량 읽기
+                try:
+                    filled_qty = float(trade.orderStatus.filled or filled_qty)
+                except (TypeError, ValueError):
+                    pass
+                final_status = str(getattr(trade.orderStatus, "status", status) or status)
+                print(f"     → 부분체결({int(filled_qty)}주/{shares}주) — 잔여 취소 확정. 부분 수량으로 진행")
                 log_entry({"ts": now_iso(), "action": "enter_partial_fill_cancelled",
                            "symbol": sym, "filled_qty": filled_qty, "requested": shares,
-                           "original_status": status})
+                           "final_status": final_status, "original_status": status})
 
             # 체결(전체 or 부분) 완료 → pending 제거
             state_pop_pending(sym)
@@ -1049,14 +1092,11 @@ def run(execute: bool = False) -> None:
     print(f"추적 포지션: {list(state['positions'].keys()) or '없음'}")
     print("=" * 62)
 
-    # last_run + disconnect (finally 보장 — 예외 후에도 연결 해제)
+    state_set_last_run(now_iso())
     try:
-        state_set_last_run(now_iso())
-    finally:
-        try:
-            ib.disconnect()
-        except Exception:
-            pass
+        ib.disconnect()
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

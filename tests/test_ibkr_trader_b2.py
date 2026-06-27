@@ -427,7 +427,12 @@ def test_cancel_ibkr_order_called_on_partial(tmp_path, monkeypatch):
 
     ib = _make_ib()
     ib.isConnected.return_value = True
-    ib.placeOrder.return_value = MagicMock(order=MagicMock(orderId=42))
+    mock_trade = MagicMock()
+    mock_trade.order.orderId = 42
+    mock_trade.orderStatus.status = "Cancelled"  # cancel 후 terminal 상태
+    mock_trade.orderStatus.filled = 5.0
+    mock_trade.orderStatus.avgFillPrice = 100.0
+    ib.placeOrder.return_value = mock_trade
     ib.qualifyContracts.return_value = None
 
     state = {"positions": {}, "pending_orders": {},

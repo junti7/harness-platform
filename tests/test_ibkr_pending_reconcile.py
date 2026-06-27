@@ -44,6 +44,8 @@ class _Order:
 class _Status:
     def __init__(self, status):
         self.status = status
+        self.filled = 0
+        self.avgFillPrice = 0
 
 
 class _Trade:
@@ -58,6 +60,7 @@ class _FakeIB:
         self._positions = positions
         self._open_trades = open_trades
         self.req_all_called = False
+        self._next_order_id = 9000
 
     def positions(self, account=None):
         return self._positions
@@ -71,6 +74,22 @@ class _FakeIB:
 
     def openTrades(self):
         return self._open_trades
+
+    def qualifyContracts(self, *args):
+        pass
+
+    def placeOrder(self, contract, order):
+        """resident stop / abort order 지원 — 성공 가상 응답 반환."""
+        sym = getattr(contract, "symbol", "?")
+        oid = self._next_order_id
+        self._next_order_id += 1
+        t = _Trade(sym, oid, "Submitted")
+        t.orderStatus.filled = 0
+        t.orderStatus.avgFillPrice = 0
+        return t
+
+    def cancelOrder(self, order):
+        pass
 
 
 def _meta(symbol, oid, status="PreSubmitted", qty=10):
