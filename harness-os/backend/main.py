@@ -3046,8 +3046,15 @@ def _fetch_yfinance_quotes(watchlist: list[dict[str, Any]]) -> list[dict[str, An
 
 def _fetch_ibkr_quotes(watchlist: list[dict[str, Any]]) -> list[dict[str, Any]]:
     from scripts.ibkr_cp_client import IbkrCpClient, safe_check_connectivity
+    import socket as _s_cp
 
     if not watchlist:
+        return []
+    # 빠른 port probe — 미가동이면 12초 HTTP timeout 없이 즉시 반환
+    try:
+        with _s_cp.create_connection(("127.0.0.1", 5001), timeout=1.0):
+            pass
+    except Exception:
         return []
     preflight = safe_check_connectivity()
     auth = preflight.get("auth") or {}
@@ -3122,7 +3129,21 @@ def _trading_api_overview() -> dict[str, Any]:
     pending_rows = _read_jsonl(pending_path)
     registry_recent = registry_rows[-5:]
     pending_recent = pending_rows[-5:]
-    preflight = safe_check_connectivity()
+
+    # CP Gateway 가동 여부를 socket probe(1초)로 선판단.
+    # 미가동이면 safe_check_connectivity(12초 HTTP timeout)를 건너뛰어 응답 지연 방지.
+    import socket as _socket_cp
+    _cp_port_open = False
+    try:
+        with _socket_cp.create_connection(("127.0.0.1", 5001), timeout=1.0):
+            _cp_port_open = True
+    except Exception:
+        pass
+
+    if _cp_port_open:
+        preflight = safe_check_connectivity()
+    else:
+        preflight = {"ok": False, "error": "CP Gateway 미가동 (port 5001 닫힘)", "auth": {}}
     auth = preflight.get("auth") or {}
 
     # TWS(port 4002) fallback: CP Gateway가 없어도 TWS로 연결됐으면 ok/authenticated 표시
@@ -8926,7 +8947,7 @@ def _edu_vp_question_asks_direct_principle(question: str) -> bool:
     practical_help_markers = (
         "어떻게 해야", "어떻게 하면", "어떻게 사용", "활용", "사용에 대해", "시작해야", "할지",
         "하면 좋", "해야 할지", "걱정", "추천", "만들기", "교육", "강의", "career", "approach",
-        "homework", "accommodation", "use as",
+        "homework", "accommodation", "use as", "뭘 준비", "무서", "불안", "막힐까", "진로",
     )
     if any(marker in q for marker in practical_help_markers) and not any(marker in q for marker in mechanism_markers):
         return False
@@ -9565,6 +9586,8 @@ def _edu_vp_safety_coach_keywords(text: str, *, max_terms: int = 12) -> list[str
     stopwords = {
         "그리고", "그런데", "하지만", "어떻게", "이렇게", "저렇게", "이럴", "경우", "대한", "관련",
         "이런", "상황", "상황이면", "해야", "해요", "사용자", "질문", "답변", "합니다", "있나요", "있어요", "무엇", "왜요", "좀", "잘",
+        "뉴스", "봤는데요", "현실적으로", "보면", "반대로", "온라인", "커뮤니티", "유튜브", "댓글", "반응",
+        "비슷한", "고민", "학습앱", "후기", "연구", "요약", "개발자",
         "ai", "llm", "gpt", "chatgpt", "gemini", "claude",
     }
     terms: list[str] = []
@@ -9929,6 +9952,13 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
             f"{focus} 쪽은 그럴 수 있지만, 사진, 얼굴, 개인정보, 보안이 걸린 AI 사용은 재미보다 경계가 먼저입니다. "
             "AI 앱에 한 번 올린 정보는 저장, 재사용, 외부 처리 가능성을 완전히 통제하기 어렵기 때문입니다. "
             "아이 사진이나 민감한 정보는 올리지 않는 것을 기본으로 하고, 꼭 써야 한다면 얼굴·이름·학교처럼 식별되는 정보부터 빼고 확인하는 게 안전합니다."
+        )
+    if _edu_vp_question_asks_ai_energy_use(q):
+        return (
+            "AI 답변에 전기가 많이 든다고 하는 이유는 답을 만들 때 멀리 있는 데이터센터의 서버가 많은 계산을 하기 때문입니다. "
+            "큰 AI는 GPU 같은 계산 장치가 단어 후보를 계속 비교하고, 뜨거워진 장비를 식히는 냉각에도 전기가 들어갑니다. "
+            "휴대폰 화면에서는 짧은 질문처럼 보여도, 뒤에서는 큰 컴퓨터실이 함께 움직이는 셈입니다. "
+            "오늘은 AI 질문 비용을 '내 기기 전기'가 아니라 '서버 계산과 냉각 비용'으로 기억하면 됩니다."
         )
     if any(k in q_lower for k in ("유튜브", "영상", "스크린", "게임", "미디어", "자막", "youtube", "video", "screen")):
         return (
