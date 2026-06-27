@@ -189,6 +189,25 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("missing_low_cost_help_options", review["issues"])
         self.assertIn("무료·저비용", review["improvement_note"])
 
+    def test_safety_coach_reprocesses_pending_downvote_reviews(self):
+        payload = {
+            "question": "그렇지만 전문가에게 상담을 받을 경우 비용이 많이 들잖아요.",
+            "answer": "전문가 상담이 가장 안전합니다. 비용이 많이 들지 않는다는 점도 고려해야 합니다.",
+            "feedback_saved_at": "2026-06-27T07:43:02+00:00",
+        }
+
+        with (
+            patch.object(self.mod, "_edu_execute", return_value=[{"case_id": 71, "email": "vp@example.com", "event_payload": payload}]) as mocked_execute,
+            patch.object(self.mod, "_edu_vp_review_safety_coach_downvote_async") as mocked_review,
+        ):
+            result = self.mod._edu_vp_reprocess_pending_safety_coach_downvotes(limit=10)
+
+        self.assertEqual(result["processed"], 1)
+        mocked_review.assert_called_once()
+        query = mocked_execute.call_args.args[0]
+        self.assertIn("NOT EXISTS", query)
+        self.assertIn("answer_auto_reinforcement_reviewed", query)
+
     def test_safety_coach_fallback_empathizes_with_isolated_dependency_question(self):
         answer = self.mod._edu_vp_safety_coach_fallback(
             "항상 내 편인 말은 안전 신호가 아니다",
@@ -343,6 +362,66 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertGreaterEqual(policies[0]["similarity"], 0.72)
         query = mocked_execute.call_args.args[0]
         self.assertIn("answer_auto_reinforcement_reviewed", query)
+
+    def test_safety_coach_reinforcement_policy_lookup_matches_cost_barrier_paraphrases(self):
+        payload = {
+            "question": "그렇지만 전문가에게 상담을 받을 경우 비용이 많이 들잖아요.",
+            "answer": "전문가 상담이 가장 안전합니다. 비용이 많이 들지 않는다는 점도 고려해야 합니다. 가족이나 친구에게 먼저 이야기해보세요.",
+            "answer_version": "2026-06-27-constraint-aware-v11",
+            "concept_title": "안전한 사용의 네 가지 기준",
+            "auto_reinforcement": {
+                "verdict": "needs_improvement",
+                "issues": ["contradicted_user_cost_constraint", "missing_low_cost_help_options"],
+                "improvement_note": "비용·접근성 장벽이 있으면 먼저 현실 부담을 인정하고, 무료·저비용·공공 창구 같은 실행 가능한 선택지를 제시한다.",
+                "review_source": "llm+heuristic",
+            },
+        }
+
+        with patch.object(self.mod, "_edu_execute", return_value=[{"event_payload": payload, "created_at": None}]):
+            policies = self.mod._edu_vp_safety_coach_reinforcement_policies(
+                question="상담사가 비싸면 AI한테 물어봐도 되나요?",
+                concept_title="안전한 사용의 네 가지 기준",
+                answer_version="2026-06-27-constraint-aware-v11",
+            )
+
+        self.assertEqual(len(policies), 1)
+        self.assertGreaterEqual(policies[0]["similarity"], 0.72)
+        self.assertIn("무료·저비용", policies[0]["improvement_note"])
+
+    def test_safety_coach_reinforcement_policy_prefers_corrected_review_over_stale_llm_review(self):
+        stale = {
+            "question": "그렇지만 전문가에게 상담을 받을 경우 비용이 많이 들잖아요.",
+            "answer": "전문가 상담이 가장 안전합니다.",
+            "answer_version": "2026-06-27-auto-reinforcement-v10",
+            "concept_title": "안전한 사용의 네 가지 기준",
+            "auto_reinforcement": {
+                "verdict": "needs_improvement",
+                "issues": ["user_mistake"],
+                "improvement_note": "AI 답변은 사용자가 직접 전문가와 상담하는 것을 권장합니다.",
+                "review_source": "llm",
+            },
+        }
+        corrected = {
+            **stale,
+            "auto_reinforcement": {
+                "verdict": "needs_improvement",
+                "issues": ["contradicted_user_cost_constraint", "missing_low_cost_help_options"],
+                "improvement_note": "비용·접근성 장벽이 있으면 먼저 현실 부담을 인정하고, 무료·저비용·공공 창구 같은 실행 가능한 선택지를 제시한다.",
+                "review_source": "corrected_llm+heuristic",
+            },
+        }
+
+        with patch.object(self.mod, "_edu_execute", return_value=[{"event_payload": stale, "created_at": "2026-06-27T07:43:05"}, {"event_payload": corrected, "created_at": "2026-06-27T07:47:24"}]):
+            policies = self.mod._edu_vp_safety_coach_reinforcement_policies(
+                question="전문가 상담은 돈이 많이 들지 않나요?",
+                concept_title="안전한 사용의 네 가지 기준",
+                answer_version="2026-06-27-constraint-aware-v11",
+                limit=3,
+            )
+
+        self.assertEqual(len(policies), 1)
+        self.assertEqual(policies[0]["review_source"], "corrected_llm+heuristic")
+        self.assertNotIn("user_mistake", policies[0]["issues"])
 
     def test_safety_coach_auto_reinforcement_prompt_blocks_bad_repeat_and_switches_model(self):
         req = self.mod.EduVpTrainingSafetyCoachRequest(
@@ -640,6 +719,30 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         )
 
         self.assertLess(score, 0.82)
+
+    def test_safety_coach_question_similarity_does_not_overmatch_unrelated_principles(self):
+        self.assertLess(
+            self.mod._edu_vp_safety_question_similarity(
+                "그런데 AI가 답변을 하는 작업은 왜 엄청난 전기가 든다고 해?",
+                "다음 글에 이어질 최적의 명사는 어떻게 추측해?",
+            ),
+            0.72,
+        )
+        self.assertLess(
+            self.mod._edu_vp_safety_question_similarity(
+                "왜 AI 답변은 사람처럼 자연스럽게 나와?",
+                "다음 글에 이어질 최적의 명사는 어떻게 추측해?",
+            ),
+            0.72,
+        )
+
+    def test_safety_coach_question_similarity_matches_cost_barrier_intent(self):
+        score = self.mod._edu_vp_safety_question_similarity(
+            "그렇지만 전문가에게 상담을 받을 경우 비용이 많이 들잖아요.",
+            "상담사가 비싸면 AI한테 물어봐도 되나요?",
+        )
+
+        self.assertGreaterEqual(score, 0.82)
 
     def test_safety_coach_recent_cache_blocks_high_risk_questions(self):
         with patch.object(self.mod, "_edu_execute") as mocked_execute:

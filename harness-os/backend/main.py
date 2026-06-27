@@ -3692,6 +3692,15 @@ def get_edu_vp_training_event_log(
     return {"ok": True, "count": len(events), "events": events}
 
 
+@app.post("/api/admin/edu/vp-training/safety-coach/reprocess-downvotes")
+def admin_reprocess_edu_vp_training_safety_coach_downvotes(
+    limit: int = 20,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    _ensure_edu_case_schema()
+    return _edu_vp_reprocess_pending_safety_coach_downvotes(limit=limit)
+
+
 @app.get("/api/approvals")
 def get_approvals(
     role: str,
@@ -8903,6 +8912,43 @@ def _edu_vp_safety_cache_allowed(question: str) -> bool:
     return not any(term in text for term in high_risk_terms)
 
 
+def _edu_vp_safety_reinforcement_lookup_allowed(question: str) -> bool:
+    text = str(question or "").lower()
+    if not text:
+        return False
+    never_learn_terms = (
+        "자살", "죽고", "죽고 싶", "자해", "극단", "해치", "살 가치",
+        "성적", "성인", "미성년", "비밀번호", "주소", "전화번호",
+    )
+    return not any(term in text for term in never_learn_terms)
+
+
+def _edu_vp_safety_question_intent_classes(question: str) -> set[str]:
+    text = str(question or "").strip().lower()
+    classes: set[str] = set()
+    if _edu_vp_question_asks_ai_energy_use(text):
+        classes.add("ai_energy_use")
+    if _edu_vp_safety_coach_has_cost_barrier(text):
+        classes.add("professional_cost_barrier")
+    if _edu_vp_safety_coach_has_isolation_context(text):
+        classes.add("isolation_dependency")
+    if _edu_vp_safety_coach_needs_empathy(text):
+        classes.add("emotional_validation")
+    if "조사" in text and any(marker in text for marker in ("추측", "이어", "다음")):
+        classes.add("particle_prediction")
+    if "명사" in text and any(marker in text for marker in ("추측", "이어", "다음", "최적")):
+        classes.add("noun_prediction")
+    if _edu_vp_question_asks_attention_mechanism(text):
+        classes.add("attention_mechanism")
+    if _edu_vp_question_asks_transformer_paper_authors(text):
+        classes.add("transformer_authors")
+    if _edu_vp_question_asks_error_mechanism(text):
+        classes.add("ai_error_mechanism")
+    elif _edu_vp_question_asks_direct_principle(text):
+        classes.add("general_principle")
+    return classes
+
+
 def _edu_vp_safety_question_similarity(a: str, b: str) -> float:
     na = _edu_vp_normalize_safety_question(a)
     nb = _edu_vp_normalize_safety_question(b)
@@ -8926,8 +8972,21 @@ def _edu_vp_safety_question_similarity(a: str, b: str) -> float:
         score = max(score, 0.86)
     if _edu_vp_question_asks_ai_energy_use(na) and _edu_vp_question_asks_ai_energy_use(nb):
         score = max(score, 0.9)
-    if _edu_vp_question_asks_direct_principle(na) and _edu_vp_question_asks_direct_principle(nb):
-        score = max(score, 0.78)
+    classes_a = _edu_vp_safety_question_intent_classes(na)
+    classes_b = _edu_vp_safety_question_intent_classes(nb)
+    shared_classes = classes_a & classes_b
+    strong_classes = {
+        "professional_cost_barrier",
+        "isolation_dependency",
+        "particle_prediction",
+        "noun_prediction",
+        "attention_mechanism",
+        "transformer_authors",
+        "ai_error_mechanism",
+        "ai_energy_use",
+    }
+    if shared_classes & strong_classes:
+        score = max(score, 0.88)
     return score
 
 
@@ -8988,7 +9047,7 @@ def _edu_vp_safety_coach_reinforcement_policies(
     threshold: float = 0.72,
 ) -> list[dict[str, Any]]:
     normalized_question = _edu_vp_normalize_safety_question(question)
-    if len(normalized_question) < 2 or not _edu_vp_safety_cache_allowed(question):
+    if len(normalized_question) < 2 or not _edu_vp_safety_reinforcement_lookup_allowed(question):
         return []
     try:
         rows = _edu_execute(
@@ -9013,6 +9072,7 @@ def _edu_vp_safety_coach_reinforcement_policies(
         )
         return []
     candidates: list[dict[str, Any]] = []
+    best_by_key: dict[tuple[str, str], dict[str, Any]] = {}
     for row in rows or []:
         payload = row.get("event_payload") or {}
         if isinstance(payload, str):
@@ -9023,10 +9083,17 @@ def _edu_vp_safety_coach_reinforcement_policies(
         if not isinstance(payload, dict):
             continue
         prior_question = str(payload.get("question") or "").strip()
-        if not prior_question or not _edu_vp_safety_cache_allowed(prior_question):
+        if not prior_question or not _edu_vp_safety_reinforcement_lookup_allowed(prior_question):
             continue
         review = payload.get("auto_reinforcement")
         if not isinstance(review, dict) or str(review.get("verdict") or "") != "needs_improvement":
+            continue
+        issues = review.get("issues")
+        if not isinstance(issues, list):
+            issues = []
+        clean_issues = [str(item).strip()[:80] for item in issues if str(item).strip() and str(item).strip() != "user_mistake"][:6]
+        note = str(review.get("improvement_note") or "").strip()[:500]
+        if not clean_issues and not note:
             continue
         if answer_version and str(payload.get("answer_version") or "") not in {"", answer_version}:
             # Old-version feedback still matters when highly similar, but keep exact-version rules ahead.
@@ -9040,22 +9107,34 @@ def _edu_vp_safety_coach_reinforcement_policies(
         score = max(0.0, score - version_penalty)
         if score < threshold:
             continue
-        issues = review.get("issues")
-        if not isinstance(issues, list):
-            issues = []
-        candidates.append(
-            {
-                "question": prior_question[:500],
-                "rejected_answer": str(payload.get("answer") or "").strip()[:900],
-                "issues": [str(item).strip()[:80] for item in issues if str(item).strip()][:6],
-                "improvement_note": str(review.get("improvement_note") or "").strip()[:500],
-                "similarity": round(score, 4),
-                "review_source": str(review.get("review_source") or ""),
-                "model": str(review.get("model") or ""),
-                "created_at": row.get("created_at").isoformat() if hasattr(row.get("created_at"), "isoformat") else str(row.get("created_at") or ""),
-            }
-        )
-    candidates.sort(key=lambda item: float(item.get("similarity") or 0), reverse=True)
+        created_at_raw = row.get("created_at")
+        created_at = created_at_raw.isoformat() if hasattr(created_at_raw, "isoformat") else str(created_at_raw or "")
+        review_source = str(review.get("review_source") or "")
+        candidate = {
+            "question": prior_question[:500],
+            "rejected_answer": str(payload.get("answer") or "").strip()[:900],
+            "issues": clean_issues,
+            "improvement_note": note,
+            "similarity": round(score, 4),
+            "review_source": review_source,
+            "model": str(review.get("model") or ""),
+            "created_at": created_at,
+            "_rank": (
+                float(score),
+                1 if "corrected" in review_source else 0,
+                1 if "heuristic" in review_source else 0,
+                len(clean_issues),
+                created_at,
+            ),
+        }
+        key = (_edu_vp_normalize_safety_question(prior_question)[:500], str(payload.get("answer") or "").strip()[:240])
+        current = best_by_key.get(key)
+        if current is None or tuple(candidate["_rank"]) > tuple(current.get("_rank") or ()):
+            best_by_key[key] = candidate
+    candidates = list(best_by_key.values())
+    candidates.sort(key=lambda item: tuple(item.get("_rank") or ()), reverse=True)
+    for item in candidates:
+        item.pop("_rank", None)
     return candidates[: max(1, min(limit, 5))]
 
 
@@ -9833,6 +9912,51 @@ def _edu_vp_review_safety_coach_downvote_async(
         },
         actor_role="system",
     )
+
+
+def _edu_vp_reprocess_pending_safety_coach_downvotes(*, limit: int = 20) -> dict[str, Any]:
+    safe_limit = max(1, min(int(limit or 20), 100))
+    rows = _edu_execute(
+        """
+        SELECT f.case_id, f.email, f.event_payload
+        FROM edu_vp_training_event_log f
+        WHERE f.event_type = 'safety_coach_feedback'
+          AND f.event_name = 'answer_feedback_recorded'
+          AND f.event_payload->>'rating' = 'down'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM edu_vp_training_event_log r
+              WHERE r.event_type = 'safety_coach_feedback'
+                AND r.event_name = 'answer_auto_reinforcement_reviewed'
+                AND r.case_id IS NOT DISTINCT FROM f.case_id
+                AND r.email = f.email
+                AND r.event_payload->>'question' = f.event_payload->>'question'
+                AND r.event_payload->>'answer' = f.event_payload->>'answer'
+                AND r.event_payload->>'feedback_saved_at' = f.event_payload->>'feedback_saved_at'
+          )
+        ORDER BY f.created_at ASC
+        LIMIT %s
+        """,
+        (safe_limit,),
+        fetch=True,
+    )
+    processed = 0
+    for row in rows or []:
+        payload = row.get("event_payload") or {}
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                continue
+        if not isinstance(payload, dict):
+            continue
+        _edu_vp_review_safety_coach_downvote_async(
+            case_id=int(row["case_id"]) if row.get("case_id") is not None else 0,
+            email=str(row.get("email") or ""),
+            payload=payload,
+        )
+        processed += 1
+    return {"ok": True, "pending_found": len(rows or []), "processed": processed}
 
 
 def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -> tuple[str, str, dict[str, int], bool]:

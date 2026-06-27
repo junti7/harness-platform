@@ -323,11 +323,14 @@ Codex CLI 사용 시 사용자가 별도 해제하기 전까지 **caveman full**
 
 - downvote 즉시 `answer_feedback_recorded`를 저장한다.
 - 백그라운드 리뷰가 `needs_improvement`이면 `answer_auto_reinforcement_reviewed`에 `issues`, `improvement_note`, `rejected_answer`를 남긴다.
-- 다음 안전 코치 답변 생성 시 유사 질문의 `needs_improvement` 리뷰를 최근 90일 범위에서 검색한다.
+- 다음 안전 코치 답변 생성 시 유사 질문의 `needs_improvement` 리뷰를 최근 90일 범위에서 검색한다. 검색은 cache 고위험 차단과 분리되어, 법률/병원/변호사 같은 비용 장벽 질문도 reinforcement lookup 대상이 된다.
+- 유사도는 broad principle match가 아니라 intent class 기반으로 보강한다. 예: `professional_cost_barrier`, `ai_energy_use`, `noun_prediction`, `particle_prediction`, `isolation_dependency`, `attention_mechanism`.
 - 유사도 기준을 넘은 정책은 `[자동강화 규칙]` prompt block으로 주입된다.
 - 자동강화 규칙이 있으면 fast-template을 우회해 LLM이 개선 규칙을 반영하게 한다.
 - red-team은 이전 downvote 답변과 유사한 새 답변을 `repeated_downvoted_answer_pattern`으로 차단한다.
 - cache/recent reuse는 같은 version에서 downvote된 답변을 재사용하지 않는다.
+- stale LLM review와 corrected heuristic review가 같은 질문/답변에 공존하면 corrected/heuristic issue가 우선된다. `user_mistake` issue는 reinforcement issue로 쓰지 않는다.
+- background task가 실패해 `answer_feedback_recorded`만 남은 downvote는 `/api/admin/edu/vp-training/safety-coach/reprocess-downvotes`에서 재처리할 수 있다.
 
 ### 12. Constraint-Aware Safety Coaching
 
