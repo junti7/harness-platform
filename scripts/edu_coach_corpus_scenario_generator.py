@@ -467,7 +467,7 @@ def _renumber_cases(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return numbered
 
 
-def collect_corpus_scenarios(*, max_cases: int = 500) -> dict[str, Any]:
+def collect_corpus_scenarios(*, max_cases: int | None = 0) -> dict[str, Any]:
     paths: list[Path] = []
     for pattern in SOURCE_GLOBS:
         paths.extend(DATA_ROOT.glob(pattern))
@@ -517,49 +517,9 @@ def collect_corpus_scenarios(*, max_cases: int = 500) -> dict[str, Any]:
                 }
             )
     synthetic_rows = _synthetic_scenarios(start_index=len(candidates) + 1)
-    candidate_family_counts = Counter(item["source_family"] for item in candidates)
-    synthetic_used_count = 0
-    by_family: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for item in candidates:
-        by_family[item["source_family"]].append(item)
-    for item in synthetic_rows:
-        by_family[item["source_family"]].append(item)
-
-    selected: list[dict[str, Any]] = []
-    family_quota = max(1, max_cases // len(SOURCE_FAMILIES))
-    remainder = max(0, max_cases - (family_quota * len(SOURCE_FAMILIES)))
-    family_targets = {family: family_quota + (1 if idx < remainder else 0) for idx, family in enumerate(SOURCE_FAMILIES)}
-    for family in SOURCE_FAMILIES:
-        rows = by_family.get(family, [])
-        by_intent: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        for item in rows:
-            by_intent[str((item.get("intent_labels") or ["uncategorized"])[0])].append(item)
-        intent_keys = sorted(by_intent)
-        round_index = 0
-        while len([item for item in selected if item.get("source_family") == family]) < family_targets[family]:
-            added = False
-            for intent in intent_keys:
-                items = by_intent[intent]
-                if round_index < len(items):
-                    selected.append(items[round_index])
-                    if items[round_index].get("synthetic"):
-                        synthetic_used_count += 1
-                    added = True
-                    if len([item for item in selected if item.get("source_family") == family]) >= family_targets[family]:
-                        break
-            if not added:
-                break
-            round_index += 1
-    if len(selected) < max_cases:
-        selected_keys = {str(item.get("question") or "") for item in selected}
-        extras = [item for item in [*candidates, *synthetic_rows] if str(item.get("question") or "") not in selected_keys]
-        round_index = 0
-        while len(selected) < max_cases and round_index < len(extras):
-            selected.append(extras[round_index])
-            if extras[round_index].get("synthetic"):
-                synthetic_used_count += 1
-            round_index += 1
-    selected = _renumber_cases(selected[:max_cases])
+    cap = max(0, int(max_cases or 0))
+    selected_source = candidates if cap <= 0 else candidates[:cap]
+    selected = _renumber_cases(selected_source)
     adversarial_cases = _renumber_cases(synthetic_rows)
     channel_counts = Counter(item["source_channel"] for item in selected)
     family_counts = Counter(item["source_family"] for item in selected)
@@ -568,15 +528,16 @@ def collect_corpus_scenarios(*, max_cases: int = 500) -> dict[str, Any]:
     segment_counts = Counter(item["segment"] for item in selected)
     rejected_reasons = Counter(reason for item in rejected for reason in item.get("noise_reasons", []))
     return {
-        "schema_version": "2026-06-27.corpus-v2",
+        "schema_version": "2026-06-27.corpus-v3",
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "source_paths": [str(path.relative_to(ROOT)) for path in paths],
-        "selection_mode": "source_family_quota_with_synthetic_augmentation",
-        "family_targets": family_targets,
+        "selection_mode": "max_quality_corpus_no_family_quota",
+        "max_cases_requested": cap,
+        "family_targets": {},
         "candidate_count_before_sampling": len(candidates),
         "raw_family_counts": dict(raw_family_counts),
         "synthetic_available_count": len(synthetic_rows),
-        "synthetic_used_count": synthetic_used_count,
+        "synthetic_used_count": 0,
         "rejected_count": len(rejected),
         "rejected_reason_counts": dict(rejected_reasons),
         "case_count": len(selected),
@@ -637,6 +598,7 @@ def _render_report(payload: dict[str, Any], utterance_path: Path) -> str:
         f"- rejected_count: `{payload.get('rejected_count', 0)}`",
         f"- selected_cases: `{payload['case_count']}`",
         f"- selection_mode: `{payload.get('selection_mode', '')}`",
+        f"- max_cases_requested: `{payload.get('max_cases_requested', 0)}`",
         f"- synthetic_available: `{payload.get('synthetic_available_count', 0)}`",
         f"- synthetic_used: `{payload.get('synthetic_used_count', 0)}`",
         f"- adversarial_cases: `{payload.get('adversarial_case_count', 0)}`",
@@ -647,8 +609,7 @@ def _render_report(payload: dict[str, Any], utterance_path: Path) -> str:
     ]
     for key, value in sorted(payload.get("source_family_counts", {}).items(), key=lambda item: (-item[1], item[0])):
         raw_count = payload.get("raw_family_counts", {}).get(key, 0)
-        target = payload.get("family_targets", {}).get(key, 0)
-        lines.append(f"- `{key}`: {value} selected / {raw_count} raw / target {target}")
+        lines.append(f"- `{key}`: {value} selected / {raw_count} raw")
     lines.extend([
         "",
         "## Channels",
@@ -675,9 +636,9 @@ def _render_report(payload: dict[str, Any], utterance_path: Path) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate EDU coach scenario candidates from collected local corpora.")
-    parser.add_argument("--max-cases", type=int, default=500)
+    parser.add_argument("--max-cases", type=int, default=0, help="0 means no cap: use every quality-passing real corpus case")
     args = parser.parse_args()
-    payload = collect_corpus_scenarios(max_cases=max(1, int(args.max_cases)))
+    payload = collect_corpus_scenarios(max_cases=max(0, int(args.max_cases)))
     paths = write_outputs(payload)
     print(json.dumps({"ok": True, **paths, "case_count": payload["case_count"], "channel_counts": payload["channel_counts"], "intent_counts": payload["intent_counts"]}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0

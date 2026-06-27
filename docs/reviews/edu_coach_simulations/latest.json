@@ -1,97 +1,97 @@
 {
   "candidate_source": "corpus-current-fallback",
   "channel_counts": {
-    "Academic_augmented": 43,
     "ERIC": 4,
     "EdSurge": 1,
     "EvidenceBank": 10,
-    "EvidenceBank_augmented": 40,
-    "GooglePlay_augmented": 49,
     "GooglePlay_콴다": 1,
     "HackerNews": 9,
-    "HackerNews_augmented": 41,
     "Khan_Blog": 1,
     "MIT_Tech": 1,
-    "Naver_블로그": 50,
-    "Naver_지식iN": 50,
-    "Naver_카페글": 50,
+    "Naver_블로그": 9924,
+    "Naver_지식iN": 5536,
+    "Naver_카페글": 8167,
     "OpenAlex": 3,
-    "RSS_augmented": 44,
-    "Reddit_augmented": 39,
     "Reddit_r/AsianParents": 2,
     "Reddit_r/EdTech": 3,
     "Reddit_r/korea": 6,
     "RestWorld": 1,
     "TechCrunch": 1,
     "The74": 1,
-    "YouTube": 42,
-    "YouTube_augmented": 8
+    "YouTube": 788
   },
   "intent_verdict_counts": {
     "ai_energy_use": {
-      "clear": 66,
-      "needs_work": 3
+      "clear": 38,
+      "needs_work": 35
     },
     "ai_homework_overreliance": {
-      "clear": 79,
-      "needs_work": 2
+      "clear": 2123,
+      "needs_work": 133
     },
     "career_anxiety": {
-      "clear": 63,
-      "needs_work": 4
+      "clear": 5107,
+      "needs_work": 327
     },
     "emotional_validation": {
-      "clear": 106,
-      "needs_work": 2
+      "clear": 5525,
+      "needs_work": 339
     },
     "general_principle": {
-      "clear": 114,
-      "needs_work": 5
+      "clear": 2106,
+      "needs_work": 211
     },
     "isolation_dependency": {
-      "clear": 55,
-      "needs_work": 6
+      "clear": 312,
+      "needs_work": 289
     },
     "learning_start": {
-      "clear": 142,
-      "needs_work": 4
+      "clear": 12720,
+      "needs_work": 290
     },
     "privacy_boundary": {
-      "clear": 61,
-      "needs_work": 2
+      "clear": 606,
+      "needs_work": 38
     },
     "professional_cost_barrier": {
-      "clear": 64,
-      "needs_work": 2
+      "clear": 2091,
+      "needs_work": 135
     },
     "screen_dependency": {
-      "clear": 68,
-      "needs_work": 1
+      "clear": 3767,
+      "needs_work": 102
     }
   },
   "llm_judge_enabled": false,
   "ok": true,
-  "output_path": "docs/reviews/edu_coach_simulations/run_20260627T094328Z_corpus_current_fallback.jsonl",
-  "record_count": 500,
-  "run_id": "20260627T094328Z",
+  "output_path": "docs/reviews/edu_coach_simulations/run_20260627T095016Z_corpus_current_fallback.jsonl",
+  "record_count": 24459,
+  "run_id": "20260627T095016Z",
   "segment_counts": {
-    "general": 89,
-    "parent": 365,
-    "student": 42,
-    "worker": 4
+    "general": 36,
+    "parent": 18964,
+    "worker": 5459
   },
   "top_issues": [
     [
-      "missing_principle_mechanism",
-      10
+      "question_not_addressed",
+      617
     ],
     [
-      "question_not_addressed",
-      9
+      "missing_principle_mechanism",
+      399
+    ],
+    [
+      "missing_empathy_for_emotional_question",
+      16
+    ],
+    [
+      "unsupported_evidence_reference",
+      8
     ]
   ],
   "verdict_counts": {
-    "clear": 481,
-    "needs_work": 19
+    "clear": 23448,
+    "needs_work": 1011
   }
 }

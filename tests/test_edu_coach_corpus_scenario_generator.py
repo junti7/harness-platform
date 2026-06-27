@@ -25,9 +25,9 @@ class EduCoachCorpusScenarioGeneratorTests(unittest.TestCase):
         cls.generator = _load_generator()
 
     def test_collects_corpus_scenarios_from_multiple_channels(self):
-        payload = self.generator.collect_corpus_scenarios(max_cases=80)
+        payload = self.generator.collect_corpus_scenarios(max_cases=0)
 
-        self.assertGreaterEqual(payload["case_count"], 80)
+        self.assertGreaterEqual(payload["case_count"], 500)
         self.assertGreater(payload["rejected_count"], 0)
         self.assertIn("rejected_reason_counts", payload)
         self.assertGreaterEqual(payload["channel_counts"].get("Naver_카페글", 0), 1)
@@ -35,9 +35,10 @@ class EduCoachCorpusScenarioGeneratorTests(unittest.TestCase):
         self.assertGreaterEqual(len(payload["intent_counts"]), 3)
         self.assertIn("source_family_counts", payload)
         self.assertIn("raw_family_counts", payload)
-        self.assertEqual(payload["selection_mode"], "source_family_quota_with_synthetic_augmentation")
-        self.assertGreaterEqual(payload["source_family_counts"].get("youtube", 0), 1)
-        self.assertGreaterEqual(payload["source_family_counts"].get("rss", 0), 1)
+        self.assertEqual(payload["selection_mode"], "max_quality_corpus_no_family_quota")
+        self.assertEqual(payload["synthetic_used_count"], 0)
+        self.assertEqual(payload["source_family_counts"].get("youtube", 0), payload["raw_family_counts"].get("youtube", 0))
+        self.assertEqual(payload["source_family_counts"].get("rss", 0), payload["raw_family_counts"].get("rss", 0))
         self.assertGreater(payload["synthetic_available_count"], 0)
         self.assertGreater(payload["adversarial_case_count"], 0)
         self.assertIn("source_paths", payload)
