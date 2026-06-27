@@ -248,6 +248,155 @@ def summarize(corrected, trades, curve):
     }
 
 
+def run_ls(pyramid: bool = False, allow_short: bool = True, label: str = "") -> dict:
+    """롱+숏(+선택 피라미딩) 1N 사이징 백테스트. #2 검증용.
+
+    회계: equity = cash_base(실현) + Σ미실현. 진입 시 cash 불변(미실현으로 추적), 청산 시 실현 반영.
+    gross 노출 ≤ equity(무레버리지). 피라미딩: ½N 유리 이동마다 유닛 추가(최대 4), stop 상향.
+    """
+    data = _BAR_CACHE or {s: fetch(s) for s in UNIVERSE}
+    _BAR_CACHE.update(data)
+    idx = {s: {b["t"][:10]: k for k, b in enumerate(bars)} for s, bars in data.items()}
+    all_dates = sorted({b["t"][:10] for bars in data.values() for b in bars})
+    MAX_UNITS = 4
+
+    cashb = [INITIAL]  # 실현 자본(리스트=클로저 가변)
+    pos = {}  # sym -> {dir, N, stop, system, units:[{qty,entry}], last_entry}
+    trades = []
+    curve = []
+
+    def unreal():
+        u = 0.0
+        for s, p in pos.items():
+            if all_dates_cur not in idx[s]:
+                continue
+            cur = data[s][idx[s][all_dates_cur]]["c"]
+            for un in p["units"]:
+                u += un["qty"] * ((cur - un["entry"]) if p["dir"] == "long" else (un["entry"] - cur))
+        return u
+
+    def gross():
+        g = 0.0
+        for s, p in pos.items():
+            cur = data[s][idx[s][all_dates_cur]]["c"] if all_dates_cur in idx[s] else p["units"][0]["entry"]
+            g += sum(un["qty"] for un in p["units"]) * cur
+        return g
+
+    def corr_blocked(sym):
+        held = set(pos.keys())
+        for eq in EQUIVALENT_SETS:
+            if sym in eq and (held & (eq - {sym})):
+                return True
+        grp = CORR_GROUP.get(sym)
+        if grp and sum(1 for h in held if CORR_GROUP.get(h) == grp) >= MAX_CORR_UNITS:
+            return True
+        return False
+
+    for all_dates_cur in all_dates:
+        date = all_dates_cur
+        # 1) 청산/손절/피라미딩
+        for sym in list(pos.keys()):
+            if date not in idx[sym]:
+                continue
+            i = idx[sym][date]
+            bars = data[sym]
+            p = pos[sym]
+            day = bars[i]
+            exit_days = 10 if p["system"] == "S1" else 20
+            closed = False
+            if p["dir"] == "long":
+                if day["l"] <= p["stop"]:
+                    px = min(day["o"], p["stop"]) if day["o"] < p["stop"] else p["stop"]
+                    closed, reason = True, "stop"
+                elif i >= exit_days and day["c"] < min(b["l"] for b in bars[i - exit_days:i]):
+                    px, closed, reason = day["c"], True, "exit"
+            else:  # short
+                if day["h"] >= p["stop"]:
+                    px = max(day["o"], p["stop"]) if day["o"] > p["stop"] else p["stop"]
+                    closed, reason = True, "stop"
+                elif i >= exit_days and day["c"] > max(b["h"] for b in bars[i - exit_days:i]):
+                    px, closed, reason = day["c"], True, "exit"
+            if closed:
+                realized = sum(un["qty"] * ((px - un["entry"]) if p["dir"] == "long" else (un["entry"] - px))
+                               for un in p["units"])
+                cashb[0] += realized
+                trades.append((sym, p["dir"], realized, reason, len(p["units"])))
+                del pos[sym]
+                continue
+            # 피라미딩: ½N 유리 이동 시 유닛 추가
+            if pyramid and len(p["units"]) < MAX_UNITS:
+                N = p["N"]
+                cp = day["c"]
+                trig = p["last_entry"] + 0.5 * N if p["dir"] == "long" else p["last_entry"] - 0.5 * N
+                add = (cp >= trig) if p["dir"] == "long" else (cp <= trig)
+                if add:
+                    eq = cashb[0] + unreal()
+                    qty = int((eq * RISK_PCT) / N)
+                    if qty > 0 and gross() + qty * cp <= eq:
+                        p["units"].append({"qty": qty, "entry": cp})
+                        p["last_entry"] = cp
+                        p["stop"] = (cp - STOP_MULT * N) if p["dir"] == "long" else (cp + STOP_MULT * N)
+
+        # 2) 신규 진입
+        equity = cashb[0] + unreal()
+        for sym in UNIVERSE:
+            if sym in pos or date not in idx[sym] or len(pos) >= MAX_POSITIONS:
+                continue
+            i = idx[sym][date]
+            bars = data[sym]
+            if i < 56:
+                continue
+            cp = bars[i]["c"]
+            a = atr(bars, i)
+            if a <= 0 or corr_blocked(sym):
+                continue
+            ma100 = sum(b["c"] for b in bars[i - 99:i + 1]) / 100 if i >= 99 else None
+            s1h = max(b["h"] for b in bars[i - 20:i]); s2h = max(b["h"] for b in bars[i - 55:i])
+            s1l = min(b["l"] for b in bars[i - 20:i]); s2l = min(b["l"] for b in bars[i - 55:i])
+            direction = system = None
+            if cp > s2h:
+                direction, system = "long", "S2"
+            elif cp > s1h:
+                direction, system = "long", "S1"
+            elif allow_short and cp < s2l:
+                direction, system = "short", "S2"
+            elif allow_short and cp < s1l:
+                direction, system = "short", "S1"
+            if not direction:
+                continue
+            if ma100 is not None:
+                if direction == "long" and cp <= ma100:
+                    continue
+                if direction == "short" and cp >= ma100:
+                    continue
+            qty = int((equity * RISK_PCT) / a)
+            if qty <= 0 or gross() + qty * cp > equity:
+                continue
+            stop = (cp - STOP_MULT * a) if direction == "long" else (cp + STOP_MULT * a)
+            pos[sym] = {"dir": direction, "N": a, "stop": stop, "system": system,
+                        "units": [{"qty": qty, "entry": cp}], "last_entry": cp}
+
+        curve.append((date, cashb[0] + unreal()))
+
+    # summarize (curve 기반)
+    final = curve[-1][1]
+    ret = (final / INITIAL - 1) * 100
+    peak = -1e9; mdd = 0
+    for _, e in curve:
+        peak = max(peak, e); mdd = min(mdd, (e / peak - 1) * 100)
+    pnls = [t[2] for t in trades]
+    wins = [p for p in pnls if p > 0]; losses = [p for p in pnls if p <= 0]
+    n = len(trades)
+    pf = (sum(wins) / -sum(losses)) if losses and sum(losses) != 0 else float("inf")
+    yrs = len(curve) / 252
+    cagr = ((final / INITIAL) ** (1 / yrs) - 1) * 100 if yrs > 0 and final > 0 else -100
+    return {"system": label, "return_pct": ret, "cagr": cagr, "mdd": mdd,
+            "mar": (cagr / abs(mdd)) if mdd else 0, "trades": n,
+            "win_rate": (len(wins) / n * 100) if n else 0, "profit_factor": pf,
+            "avg_win": 0, "avg_loss": 0, "curve": curve}
+
+
+
 def buy_hold(sym="SMH"):
     bars = fetch(sym)
     first, last = bars[0]["c"], bars[-1]["c"]
@@ -267,8 +416,10 @@ def main():
     rows = [
         run_backtest(corrected=True, size_div=2.0, label="수정 2N(진짜1%)"),
         run_backtest(corrected=True, size_div=1.0, label="수정 1N(클래식2%)"),
-        run_backtest(corrected=True, hybrid=True, label="하이브리드(per-trade)"),
-        run_backtest(corrected=True, market_regime=True, label="시장레짐(SMH200MA)"),
+        run_ls(allow_short=False, pyramid=False, label="롱전용 1N(재확인)"),
+        run_ls(allow_short=True, pyramid=False, label="롱+숏 1N"),
+        run_ls(allow_short=True, pyramid=True, label="롱+숏+피라미딩 1N"),
+        run_ls(allow_short=False, pyramid=True, label="롱전용+피라미딩 1N"),
     ]
     bh = buy_hold("SMH")
     bhq = buy_hold("QQQ")
