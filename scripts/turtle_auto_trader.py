@@ -86,6 +86,13 @@ MAX_UNITS_PER_GROUP = int(os.getenv("PAPER_MAX_CORR_UNITS", "3"))
 TURTLE_MAX_RISK_PCT = float(os.getenv("PAPER_MAX_TRADE_RISK_PCT", "0.02"))
 PAPER_MAX_PORTFOLIO_HEAT = float(os.getenv("PAPER_MAX_PORTFOLIO_HEAT", "0.10"))
 
+# #2 피라미딩(롱 전용, 2026-06-27 백테스트 검증: CAGR 22.7%→32.9%, PF 2.19→2.82).
+# 추세가 유리하게 ½N 이동할 때마다 유닛 추가(최대 4), 추가 시 전체 손절을 최근 유닛 -2N 으로 상향.
+# 숏은 백테스트상 재앙(MAR 0.16)이라 도입하지 않음.
+PAPER_PYRAMID_ENABLED = os.getenv("PAPER_PYRAMID_ENABLED", "true").lower() == "true"
+PAPER_MAX_UNITS = int(os.getenv("PAPER_MAX_UNITS", "4"))
+PAPER_PYRAMID_STEP_N = float(os.getenv("PAPER_PYRAMID_STEP_N", "0.5"))
+
 # P1(F1 추세필터): 하락·횡보 국면에서 롱 전용 봇이 가짜 돌파를 사 휩쏘로 출혈하는 것을 차단.
 # 장기 이동평균(MA) 위에서만 롱 진입을 허용한다(롱·숏 대칭은 short-safe 재설계가 필요한 별도 과제).
 TREND_FILTER_ENABLED = os.getenv("PAPER_TREND_FILTER", "true").lower() == "true"
@@ -309,11 +316,15 @@ def correlation_block(symbol: str, held: set) -> tuple[bool, str]:
 
 
 def portfolio_heat(state: dict, account_value: float) -> float:
-    """현재 보유 포지션의 합산 risk(각 포지션 손절까지 손실 = qty×|entry−stop|) ÷ 계좌. 0~1."""
+    """현재 보유 포지션의 합산 risk ÷ 계좌. 0~1.
+    피라미딩 포지션은 저장된 risk_usd(=총qty×2N)를 우선 사용(엔트리 1개로 계산하면 과소평가)."""
     if not account_value:
         return 0.0
     tot = 0.0
     for p in state.get("turtle_positions", {}).values():
+        if p.get("risk_usd") is not None:
+            tot += p["risk_usd"]
+            continue
         q = p.get("qty", 0) or 0
         e = p.get("entry_price") or 0
         s = p.get("stop_loss") or 0
@@ -417,8 +428,8 @@ def enter_position(symbol: str, gate: dict, signal: dict, dry_run: bool, state: 
             entry["stop_loss"] = stop_loss
             entry["stop_order_id"] = stop_order_id[:16]
 
-            # 상태 기록 (원자적 델타 — 자기 키만)
-            state_set_position(symbol, {
+            # 상태 기록 (원자적 델타 — 자기 키만). 피라미딩 메타 포함(#2).
+            rec = {
                 "entry_ts": entry["ts"],
                 "system": gate["system"],
                 "entry_price": fill_price,
@@ -427,14 +438,14 @@ def enter_position(symbol: str, gate: dict, signal: dict, dry_run: bool, state: 
                 "qty": qty_i,
                 "side": "buy",
                 "stop_order_id": stop_order_id,
-            })
-            # in-memory state 도 동기화(같은 run 내 후속 로직 일관성)
-            state.setdefault("turtle_positions", {})[symbol] = {
-                "entry_ts": entry["ts"], "system": gate["system"],
-                "entry_price": fill_price, "atr": signal["atr"],
-                "stop_loss": stop_loss, "qty": qty_i, "side": "buy",
-                "stop_order_id": stop_order_id,
+                "n_at_entry": signal["atr"],          # 첫 유닛 N — ½N 추가 트리거·2N 손절 기준
+                "last_unit_price": fill_price,          # 마지막 유닛 진입가
+                "unit_count": 1,                        # 보유 유닛 수(피라미딩)
+                "risk_usd": round(qty_i * TURTLE_STOP_MULT * signal["atr"], 2),
             }
+            state_set_position(symbol, rec)
+            # in-memory state 도 동기화(같은 run 내 후속 로직 일관성)
+            state.setdefault("turtle_positions", {})[symbol] = dict(rec)
             # 거래 일기 기록 (기업명·섹터·선정 사유 포함) — 실제 체결가/수량 기준
             _info = _UNIVERSE_INFO.get(symbol, {})
             log_trade_entry(
@@ -649,6 +660,117 @@ def manage_positions(positions: list, state: dict, dry_run: bool) -> list[dict]:
     return actions
 
 
+# ── 피라미딩 (#2, 롱 전용) ────────────────────────────────────────────────────
+
+def pyramid_positions(positions: list, state: dict, account_value: float, dry_run: bool) -> list[dict]:
+    """추세가 유리하게 ½N 이동할 때마다 유닛 추가(최대 PAPER_MAX_UNITS). 추가 시 전체 손절을
+    최근 유닛 -2N 으로 상향하고 상주손절을 교체한다. 롱 전용(숏은 백테스트상 기각)."""
+    if not PAPER_PYRAMID_ENABLED:
+        return []
+    actions: list[dict] = []
+    broker = {p["symbol"]: p for p in positions if "error" not in p}
+    for sym, tracked in list(state.get("turtle_positions", {}).items()):
+        if tracked.get("side") != "buy":
+            continue
+        if tracked.get("unit_count", 1) >= PAPER_MAX_UNITS:
+            continue
+        if sym not in broker:
+            continue
+        N = tracked.get("n_at_entry") or tracked.get("atr") or 0
+        if N <= 0:
+            continue
+        cur = broker[sym].get("current_price") or 0
+        last = tracked.get("last_unit_price") or tracked.get("entry_price") or 0
+        trigger = last + PAPER_PYRAMID_STEP_N * N
+        if not cur or cur < trigger:
+            continue
+
+        qty_add = int((account_value * TURTLE_RISK_PCT) / N)
+        if qty_add <= 0:
+            continue
+        old_qty = int(tracked.get("qty", 0) or 0)
+        new_total = old_qty + qty_add
+        new_stop = round(cur - TURTLE_STOP_MULT * N, 2)
+        new_risk = round(new_total * TURTLE_STOP_MULT * N, 2)
+
+        # heat 상한: 이 포지션 risk 를 신규치로 교체했을 때 합산 heat 가 상한 이하인가
+        old_risk = tracked.get("risk_usd") or 0
+        prospective_heat = portfolio_heat(state, account_value) + (new_risk - old_risk) / account_value if account_value else 1
+        if prospective_heat > PAPER_MAX_PORTFOLIO_HEAT:
+            actions.append({"ts": now_iso(), "action": "pyramid_skip", "symbol": sym,
+                            "reason": "heat_cap", "unit_to": tracked.get("unit_count", 1) + 1})
+            log_entry(actions[-1])
+            continue
+
+        action = {"ts": now_iso(), "action": "pyramid_add", "symbol": sym,
+                  "unit": tracked.get("unit_count", 1) + 1, "qty_add": qty_add,
+                  "price": cur, "new_total_qty": new_total, "new_stop": new_stop,
+                  "dry_run": dry_run}
+
+        if not dry_run:
+            try:
+                order = _alpaca_post("/orders", {
+                    "symbol": sym, "qty": str(qty_add), "side": "buy",
+                    "type": "market", "time_in_force": "day",
+                })
+                status, filled_qty, fill_price = wait_for_fill(order.get("id", ""))
+                action["order_status"] = status
+                if filled_qty <= 0:
+                    action["status"] = "not_filled"
+                    log_entry(action)
+                    actions.append(action)
+                    continue
+                fill_price = fill_price or cur
+                new_total = old_qty + int(filled_qty)
+                new_stop = round(fill_price - TURTLE_STOP_MULT * N, 2)
+                new_risk = round(new_total * TURTLE_STOP_MULT * N, 2)
+                # 상주손절 교체: 기존 취소 → 전체 수량으로 재배치
+                cancel_order(tracked.get("stop_order_id", ""))
+                new_stop_id = ""
+                try:
+                    so = _alpaca_post("/orders", {
+                        "symbol": sym, "qty": str(new_total), "side": "sell",
+                        "type": "stop", "stop_price": str(new_stop), "time_in_force": STOP_TIF,
+                    })
+                    new_stop_id = so.get("id", "")
+                except Exception as se:
+                    action["stop_order_error"] = str(se)
+                updated = dict(tracked)
+                updated.update({
+                    "qty": new_total, "stop_loss": new_stop,
+                    "last_unit_price": fill_price,
+                    "unit_count": tracked.get("unit_count", 1) + 1,
+                    "stop_order_id": new_stop_id, "risk_usd": new_risk,
+                })
+                state_set_position(sym, updated)
+                state["turtle_positions"][sym] = dict(updated)
+                action.update({"status": "filled", "fill_price": fill_price,
+                               "new_total_qty": new_total, "new_stop": new_stop,
+                               "stop_order_id": new_stop_id[:16]})
+                log_trade_entry(
+                    ticker=sym, side="buy", shares=int(filled_qty), price=fill_price,
+                    atr=N, stop_loss=new_stop, system=tracked.get("system", "S2"),
+                    signal="pyramid_add",
+                    sector="", harness_score=0, selection_reason="",
+                    note=f"피라미딩 유닛 {action['unit']}/{PAPER_MAX_UNITS} | 손절상향 ${new_stop}",
+                )
+            except Exception as e:
+                action["status"] = "error"
+                action["error"] = str(e)
+        else:
+            action["status"] = "dry_run"
+            # in-memory 반영(같은 run 일관성)
+            sim = dict(tracked)
+            sim.update({"qty": new_total, "stop_loss": new_stop, "last_unit_price": cur,
+                        "unit_count": tracked.get("unit_count", 1) + 1, "risk_usd": new_risk})
+            state["turtle_positions"][sym] = sim
+
+        log_entry(action)
+        actions.append(action)
+
+    return actions
+
+
 # ── 메인 ──────────────────────────────────────────────────────────────────────
 
 def run(execute: bool = False) -> dict:
@@ -693,6 +815,16 @@ def run(execute: bool = False) -> dict:
             print(f"  [{status}] EXIT {a['symbol']} — {a['reason']} | P&L: {a.get('unrealized_pnl_pct',0) or 0:+.2f}%")
     elif not reconcile_acts:
         print("  청산 대상 없음")
+
+    # 3b. 피라미딩 (#2, 롱 전용) — 추세 유리 시 유닛 추가
+    print("\n── 피라미딩 ──")
+    pyramid_actions = pyramid_positions(positions, state, account_value, dry_run)
+    adds = [a for a in pyramid_actions if a.get("action") == "pyramid_add"]
+    if adds:
+        for a in adds:
+            print(f"  [{status}] PYRAMID {a['symbol']} 유닛{a['unit']}/{PAPER_MAX_UNITS} +{a['qty_add']}주 @${a['price']} → 총{a['new_total_qty']}주 stop=${a['new_stop']}")
+    else:
+        print("  추가 대상 없음")
 
     # 4. 신호 스캔 및 진입
     print("\n── 신호 스캔 ──")
