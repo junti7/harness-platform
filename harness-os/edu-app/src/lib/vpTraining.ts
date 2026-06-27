@@ -135,40 +135,6 @@ export async function startNewCase(email: string, name: string): Promise<number 
   return typeof r.case_id === 'number' ? r.case_id : null
 }
 
-/** 기존 케이스를 현재 맞춤 커리큘럼 선택값으로 재생성/동기화한다. */
-export async function rebuildCaseFromSavedCurriculum(
-  email: string,
-  caseId: number,
-  name = '',
-): Promise<TrainingState> {
-  const attrs = loadSavedCurriculumAttrs()
-  const r = await vpPost<{ training_state: TrainingState }>(VP_TRAINING.intake, {
-    ...curriculumAttrsToIntake(email, name, attrs, caseId),
-    force_new: false,
-  })
-  return r.training_state
-}
-
-export function trainingStateMatchesSavedCurriculum(state: TrainingState): boolean {
-  const attrs = loadSavedCurriculumAttrs()
-  const expectedLlm = intakeLlm(attrs)
-  const expectedSegment = intakeSegment(attrs)
-  const expectedDevice = intakeDevice(attrs)
-  const expectedLevel = attrs.level || 'beginner'
-  const expectedGoal = intakeGoal(attrs)
-  const expectedFriction = intakeFriction(attrs)
-  const actualIntake = state.intake ?? {}
-  const actualSegment = String(state.personalized_curriculum?.segment || state.customer?.segment || '')
-  return (
-    String(actualIntake.preferred_llm || '') === expectedLlm &&
-    String(actualIntake.current_device || '') === expectedDevice &&
-    String(actualIntake.ai_experience || '') === expectedLevel &&
-    String(actualIntake.learning_goal || '') === expectedGoal &&
-    String(actualIntake.biggest_friction || '') === expectedFriction &&
-    actualSegment === expectedSegment
-  )
-}
-
 /** 케이스를 완전 삭제(되돌릴 수 없음). 백엔드에서 edu_cases 행을 DELETE 한다. */
 export async function deleteCase(email: string, caseId: number): Promise<void> {
   await vpPost(VP_TRAINING.casesDelete, { email, case_id: caseId })

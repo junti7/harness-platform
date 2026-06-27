@@ -228,6 +228,9 @@ export default function CurriculumScreen({ email, onBack }: CurriculumScreenProp
         <Selector label="사용 환경" value={attrs.env ?? 'mobile'} options={ENVS} onChange={(v) => set('env', v)} />
         <Selector label="역할" value={attrs.job ?? '학부모'} options={JOBS} onChange={(v) => set('job', v)} />
         <Selector label="선호 자료" value={attrs.media_preference ?? 'mixed'} options={MEDIA} onChange={(v) => set('media_preference', v)} />
+        <div className="rounded-[10px] border border-border bg-secondary px-3 py-2 text-xs leading-relaxed text-text-muted">
+          여기서 바꾼 값은 미리보기와 새 훈련 시작에만 적용됩니다. 이미 시작한 훈련의 진행 내용은 바뀌지 않습니다.
+        </div>
         <label className="flex flex-col gap-1.5">
           <span className="text-xs font-semibold text-text-faint">도달 목표</span>
           <textarea

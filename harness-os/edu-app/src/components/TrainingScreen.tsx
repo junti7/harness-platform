@@ -19,10 +19,8 @@ import { ApiError } from '@/lib/api'
 import {
   askSafetyCoach,
   fetchSession,
-  rebuildCaseFromSavedCurriculum,
   saveStageArtifact,
   syncSession,
-  trainingStateMatchesSavedCurriculum,
   type ChecklistItem,
   type CurriculumHighlight,
   type DynamicCurriculumItem,
@@ -1225,10 +1223,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           setLoading(false)
           return
         }
-        let nextState = r.state
-        if (!trainingStateMatchesSavedCurriculum(nextState)) {
-          nextState = await rebuildCaseFromSavedCurriculum(email, caseId, String(nextState.customer?.name || ''))
-        }
+        const nextState = r.state
         if (!alive) return
         seqRef.current = Math.max(seqRef.current, Number(nextState.ui_state?.last_client_seq ?? 0))
         setState(nextState)
