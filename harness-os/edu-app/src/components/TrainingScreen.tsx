@@ -445,21 +445,143 @@ function evidenceBadge(value?: boolean): string {
   return '자료 확인 전'
 }
 
-function renderCoachAnswer(text: string) {
-  return text.split('\n').map((line, lineIndex) => {
-    const parts = line.split(/(\*\*[^*]+\*\*)/g).filter(Boolean)
-    return (
-      <span key={`line-${lineIndex}`}>
-        {parts.map((part, partIndex) => {
-          if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
-            return <strong key={`${lineIndex}-${partIndex}`} className="font-bold text-ink">{part.slice(2, -2)}</strong>
-          }
-          return <span key={`${lineIndex}-${partIndex}`}>{part}</span>
-        })}
-        {lineIndex < text.split('\n').length - 1 ? <br /> : null}
-      </span>
-    )
+function renderInlineCoachMarkdown(text: string, keyPrefix: string) {
+  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).filter(Boolean)
+  return parts.map((part, partIndex) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+      return <strong key={`${keyPrefix}-${partIndex}`} className="font-bold text-ink">{part.slice(2, -2)}</strong>
+    }
+    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+      return <code key={`${keyPrefix}-${partIndex}`} className="rounded bg-card px-1 py-0.5 font-mono text-[0.95em] text-ink">{part.slice(1, -1)}</code>
+    }
+    return <span key={`${keyPrefix}-${partIndex}`}>{part}</span>
   })
+}
+
+function markdownTableCells(line: string): string[] {
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim())
+}
+
+function isMarkdownTableSeparator(line: string): boolean {
+  const cells = markdownTableCells(line)
+  return cells.length >= 2 && cells.every((cell) => /^:?-{3,}:?$/.test(cell))
+}
+
+function isMarkdownTableStart(lines: string[], index: number): boolean {
+  return Boolean(lines[index]?.includes('|') && lines[index + 1]?.includes('|') && isMarkdownTableSeparator(lines[index + 1]))
+}
+
+function renderCoachTable(lines: string[], start: number): { node: React.ReactNode; next: number } {
+  const header = markdownTableCells(lines[start])
+  const rows: string[][] = []
+  let index = start + 2
+  while (index < lines.length && lines[index].includes('|') && lines[index].trim()) {
+    rows.push(markdownTableCells(lines[index]))
+    index += 1
+  }
+  return {
+    next: index,
+    node: (
+      <div key={`table-${start}`} className="my-2 overflow-x-auto rounded-[10px] border border-border bg-card">
+        <table className="w-full min-w-[360px] border-collapse text-left text-[11px]">
+          <thead className="bg-secondary text-ink">
+            <tr>
+              {header.map((cell, cellIndex) => (
+                <th key={`head-${cellIndex}`} className="border-b border-border px-2.5 py-2 font-semibold">
+                  {renderInlineCoachMarkdown(cell, `table-${start}-head-${cellIndex}`)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, rowIndex) => (
+              <tr key={`row-${rowIndex}`} className="border-t border-border/70">
+                {header.map((_, cellIndex) => (
+                  <td key={`cell-${rowIndex}-${cellIndex}`} className="px-2.5 py-2 align-top text-text-muted">
+                    {renderInlineCoachMarkdown(row[cellIndex] || '', `table-${start}-${rowIndex}-${cellIndex}`)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ),
+  }
+}
+
+function renderCoachAnswer(text: string) {
+  const lines = text.split('\n')
+  const nodes: React.ReactNode[] = []
+  let index = 0
+  while (index < lines.length) {
+    const line = lines[index]
+    const trimmed = line.trim()
+    if (!trimmed) {
+      nodes.push(<div key={`gap-${index}`} className="h-2" />)
+      index += 1
+      continue
+    }
+    if (isMarkdownTableStart(lines, index)) {
+      const rendered = renderCoachTable(lines, index)
+      nodes.push(rendered.node)
+      index = rendered.next
+      continue
+    }
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/)
+    if (heading) {
+      nodes.push(
+        <div key={`heading-${index}`} className="mt-2 font-bold text-ink">
+          {renderInlineCoachMarkdown(heading[2], `heading-${index}`)}
+        </div>,
+      )
+      index += 1
+      continue
+    }
+    const bullet = trimmed.match(/^[-*]\s+(.+)$/)
+    if (bullet) {
+      const items: string[] = []
+      while (index < lines.length) {
+        const match = lines[index].trim().match(/^[-*]\s+(.+)$/)
+        if (!match) break
+        items.push(match[1])
+        index += 1
+      }
+      nodes.push(
+        <ul key={`ul-${index}`} className="my-1 list-disc space-y-1 pl-4">
+          {items.map((item, itemIndex) => (
+            <li key={`li-${itemIndex}`}>{renderInlineCoachMarkdown(item, `ul-${index}-${itemIndex}`)}</li>
+          ))}
+        </ul>,
+      )
+      continue
+    }
+    const numbered = trimmed.match(/^\d+[.)]\s+(.+)$/)
+    if (numbered) {
+      const items: string[] = []
+      while (index < lines.length) {
+        const match = lines[index].trim().match(/^\d+[.)]\s+(.+)$/)
+        if (!match) break
+        items.push(match[1])
+        index += 1
+      }
+      nodes.push(
+        <ol key={`ol-${index}`} className="my-1 list-decimal space-y-1 pl-4">
+          {items.map((item, itemIndex) => (
+            <li key={`li-${itemIndex}`}>{renderInlineCoachMarkdown(item, `ol-${index}-${itemIndex}`)}</li>
+          ))}
+        </ol>,
+      )
+      continue
+    }
+    nodes.push(
+      <p key={`p-${index}`} className="my-1">
+        {renderInlineCoachMarkdown(line, `p-${index}`)}
+      </p>,
+    )
+    index += 1
+  }
+  return nodes
 }
 
 function mergeSafetyCoachThreads(...groups: SafetyCoachThreads[]): SafetyCoachThreads {
