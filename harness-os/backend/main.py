@@ -8882,7 +8882,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-robustness-sim-v13"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-rag-infused-v14"
 _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
 _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_PATH = PROJECT_ROOT / "configs" / "education" / "edu_coach_policy_registry.json"
 _EDU_VP_SAFETY_COACH_POLICY_CANDIDATE_PATH = PROJECT_ROOT / "docs" / "reviews" / "edu_coach_simulations" / "policy_candidates.jsonl"
@@ -8891,6 +8891,10 @@ _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_LOCK = threading.Lock()
 _EDU_VP_SAFETY_COACH_EXECUTOR = ThreadPoolExecutor(
     max_workers=int(os.getenv("EDU_SAFETY_COACH_MAX_WORKERS") or "4"),
     thread_name_prefix="edu-safety-coach",
+)
+_EDU_VP_SAFETY_COACH_EVIDENCE_EXECUTOR = ThreadPoolExecutor(
+    max_workers=int(os.getenv("EDU_SAFETY_COACH_EVIDENCE_MAX_WORKERS") or "2"),
+    thread_name_prefix="edu-safety-coach-evidence",
 )
 
 
@@ -9014,6 +9018,93 @@ def _edu_vp_safety_coach_fast_answer(concept_title: str, question: str) -> str |
     if _edu_vp_question_asks_transformer_paper_authors(q):
         return _edu_vp_safety_coach_fallback(concept_title, q)
     return None
+
+
+def _edu_vp_safety_coach_rag_sentence(question: str, evidence_items: list[dict[str, Any]] | None) -> str:
+    if not evidence_items:
+        return ""
+    question_terms = _edu_vp_safety_coach_keywords(question, max_terms=5)
+    if not question_terms:
+        return ""
+    selected = None
+    for item in evidence_items[:4]:
+        cite = _edu_clean_cite(str(item.get("cite") or item.get("body") or ""))
+        if len(cite) < 30:
+            continue
+        cite_lower = cite.lower()
+        if question_terms and not any(term.lower() in cite_lower for term in question_terms):
+            continue
+        selected = cite
+        break
+    if not selected:
+        return ""
+    first_sentence = re.split(r"(?<=[.!?。])\s+|[。!?]\s*", selected.strip(), maxsplit=1)[0].strip()
+    excerpt = re.sub(r"\s+", " ", first_sentence)[:150].strip(" ,;:-.!?。")
+    for prefix in ("최근 수집 자료는 ", "수집 자료는 ", "관련 자료는 ", "자료는 "):
+        if excerpt.startswith(prefix):
+            excerpt = excerpt[len(prefix):]
+            break
+    if len(excerpt) < 24:
+        return ""
+    if excerpt.endswith("다"):
+        return f"관련 자료도 {excerpt}는 점을 보여줍니다."
+    return f"관련 자료도 '{excerpt}'라는 흐름을 보여줍니다."
+
+
+def _edu_vp_safety_coach_blend_rag_sentence(answer: str, question: str, evidence_items: list[dict[str, Any]] | None) -> tuple[str, bool]:
+    base = str(answer or "").strip()
+    rag_sentence = _edu_vp_safety_coach_rag_sentence(question, evidence_items)
+    if not base or not rag_sentence or rag_sentence in base:
+        return base, False
+    sentences = [sentence.strip() for sentence in re.split(r"(?<=[.!?。])\s+", base) if sentence.strip()]
+    if not sentences:
+        return f"{base} {rag_sentence}"[:2200].strip(), True
+    insert_at = len(sentences)
+    for index, sentence in enumerate(sentences):
+        if sentence.startswith(("오늘은", "오늘 기준", "오늘 기억")):
+            insert_at = index
+            break
+    sentences.insert(insert_at, rag_sentence)
+    candidate = " ".join(sentences).strip()
+    if len(candidate) > 2200:
+        return base[:2200].strip(), False
+    return candidate, True
+
+
+def _edu_vp_safety_coach_evidence_with_timeout(
+    query: str,
+    *,
+    validation_text: str = "",
+    limit: int = 2,
+    timeout_seconds: float | None = None,
+) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
+    timeout = max(0.2, float(timeout_seconds or os.getenv("EDU_SAFETY_COACH_RAG_TIMEOUT_SECONDS") or "2.0"))
+    future = _EDU_VP_SAFETY_COACH_EVIDENCE_EXECUTOR.submit(
+        _edu_vp_safety_coach_evidence,
+        query,
+        validation_text=validation_text,
+        limit=limit,
+    )
+    try:
+        return future.result(timeout=timeout)
+    except FuturesTimeoutError:
+        future.cancel()
+        return "", [], {
+            "query": query[:500],
+            "selected_count": 0,
+            "rejected_count": 0,
+            "rejected": [],
+            "skip_reason": "retrieve_timeout",
+        }
+    except Exception as exc:  # noqa: BLE001
+        return "", [], {
+            "query": query[:500],
+            "selected_count": 0,
+            "rejected_count": 0,
+            "rejected": [],
+            "skip_reason": "retrieve_failed",
+            "error_type": type(exc).__name__,
+        }
 
 
 def _edu_vp_generate_text_with_timeout(
@@ -10585,16 +10676,39 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         answer_version=answer_version,
     )
     fast_answer = None if reinforcement_policies else _edu_vp_safety_coach_fast_answer(concept_title, question)
+    evidence_query = f"{question} {concept_title}"
+    evidence_validation_text = concept_body
+    evidence_timeout = float(
+        os.getenv(
+            "EDU_SAFETY_COACH_FAST_RAG_TIMEOUT_SECONDS" if fast_answer else "EDU_SAFETY_COACH_RAG_TIMEOUT_SECONDS",
+            "1.2" if fast_answer else "2.0",
+        )
+    )
+    evidence_text, evidence_items, evidence_meta = _edu_vp_safety_coach_evidence_with_timeout(
+        evidence_query,
+        validation_text=evidence_validation_text,
+        limit=1,
+        timeout_seconds=evidence_timeout,
+    )
     if fast_answer:
+        rag_answer, rag_infused = _edu_vp_safety_coach_blend_rag_sentence(fast_answer, question, evidence_items)
+        quality_review = _edu_vp_safety_coach_quality_review(
+            question=question,
+            answer=rag_answer,
+            concept_body=concept_body,
+            evidence_items=evidence_items,
+            reinforcement_policies=[],
+            policy_context=policy_context,
+            llm_judge_enabled=False,
+        )
+        red_team_issues = [str(item) for item in quality_review.get("issues") or [] if str(item).strip()]
+        final_answer = rag_answer if not red_team_issues else fast_answer
+        final_model = "fast-template+rag" if rag_infused and not red_team_issues else "fast-template"
+        final_evidence_used = bool(rag_infused and not red_team_issues)
         usage: dict[str, int] = {
-            "_safety_coach_evidence_meta": {
-                "query": f"{question} {concept_title}"[:500],
-                "selected_count": 0,
-                "rejected_count": 0,
-                "rejected": [],
-                "skip_reason": "fast_template",
-            },
-            "_safety_coach_red_team_issues": [],
+            "_safety_coach_evidence_meta": evidence_meta,
+            "_safety_coach_red_team_issues": [] if not red_team_issues else red_team_issues,
+            "_safety_coach_rag_infused": final_evidence_used,
             "_safety_coach_reinforcement_policies": [],
             "_safety_coach_policy_context": {
                 "schema_version": policy_context.get("schema_version"),
@@ -10602,14 +10716,17 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                 "policy_ids": policy_context.get("policy_ids"),
             },
         }
-        return fast_answer[:2200], "fast-template", usage, False
-    evidence_query = f"{question} {concept_title}"
-    evidence_validation_text = concept_body
-    evidence_text, evidence_items, evidence_meta = _edu_vp_safety_coach_evidence(
-        evidence_query,
-        validation_text=evidence_validation_text,
-        limit=1,
-    )
+        if not final_evidence_used and isinstance(evidence_meta, dict):
+            if str(evidence_meta.get("skip_reason") or "") not in {
+                "retrieve_timeout",
+                "retrieve_failed",
+                "no_candidates",
+                "all_candidates_rejected",
+                "too_few_query_terms",
+            }:
+                evidence_meta["skip_reason"] = "fast_template"
+            evidence_meta["fast_template_no_rag"] = True
+        return final_answer[:2200], final_model, usage, False
     evidence_block = evidence_text or "(질문과 딱 맞는 내부 자료가 없으므로 자료를 언급하지 말 것)"
     reinforcement_block = _edu_vp_safety_coach_reinforcement_prompt(reinforcement_policies)
     policy_block = _edu_vp_safety_coach_policy_prompt(policy_context)
@@ -10635,7 +10752,8 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         "- 3~5문장으로 끝낸다. 900자 이내로 답한다.\n"
         "- 반드시 [현재 단락 설명]에 없는 새 생활 예시 1개를 포함한다.\n"
         "- [관련 내부 자료]가 '(질문과 딱 맞는 내부 자료가 없음)'이면 자료를 절대 언급하지 않는다.\n"
-        "- [관련 내부 자료]가 있으면 한 문장만 '관련 자료에서는 ...'처럼 아주 짧게 반영한다. 출처 이름은 확실할 때만 말한다.\n"
+        "- [관련 내부 자료]가 있으면 정의를 반복하지 말고 사용자 질문에 붙는 새 관점, 실전 예시, 최근 흐름 중 하나를 한 문장으로 자연스럽게 녹인다.\n"
+        "- [관련 내부 자료]가 있으면 '관련 자료도 ...을 보여줍니다'처럼 아주 짧게 반영한다. 출처 이름은 확실할 때만 말한다.\n"
         "- AI를 사람, 친구, 전문가, 보호자처럼 표현하지 않는다.\n"
         "- 다만 사용자가 AI 대화에서 위로를 느낄 수 있다는 사실은 부정하지 않는다.\n"
         "- 자해, 건강, 법률, 돈, 아이 안전 등 고위험 신호가 있으면 AI 답변 대신 실제 사람/전문가/긴급 도움을 연결하라고 말한다.\n"
@@ -10775,7 +10893,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                 "intent_classes": policy_context.get("intent_classes"),
                 "policy_ids": policy_context.get("policy_ids"),
             }  # type: ignore[index]
-        return answer[:2200], used_model, usage, quality_fallback_used
+        return answer[:2200], used_model, usage, True
     except Exception as exc:  # noqa: BLE001
         _edu_runtime_event(
             "vp_training_safety_coach_fallback",

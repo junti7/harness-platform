@@ -1,5 +1,6 @@
 import importlib.util
 import sys
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -1067,7 +1068,10 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             question="다음 글에 이어질 최적의 명사는 어떻게 추측해?",
         )
 
-        with patch.object(self.mod, "_edu_generate_text") as mocked_generate:
+        with (
+            patch.object(self.mod, "_edu_vp_safety_coach_evidence", return_value=("", [], {"selected_count": 0, "rejected_count": 0, "rejected": [], "skip_reason": "test"})),
+            patch.object(self.mod, "_edu_generate_text") as mocked_generate,
+        ):
             answer, model, usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
 
         mocked_generate.assert_not_called()
@@ -1075,6 +1079,141 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertFalse(fallback_used)
         self.assertIn("명사는", answer)
         self.assertEqual(usage["_safety_coach_evidence_meta"]["skip_reason"], "fast_template")
+        self.assertTrue(usage["_safety_coach_evidence_meta"]["fast_template_no_rag"])
+        self.assertFalse(usage["_safety_coach_rag_infused"])
+
+    def test_safety_coach_infuses_rag_into_fast_template_answers(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=123,
+            stage="day0",
+            concept_id="safety_concept_ai_llm_words",
+            concept_title="먼저 말부터 정리하기: AI와 LLM",
+            concept_body="LLM은 다음에 올 법한 말을 이어 붙입니다.",
+            question="다음 글에 이어질 최적의 명사는 어떻게 추측해?",
+        )
+        evidence_items = [
+            {
+                "source": "YouTube family learning digest",
+                "cite": "최근 수집 자료는 명사 추측을 정답기가 아니라 질문 비교 도구로 다룰 때 사고력이 남는다고 설명한다.",
+            }
+        ]
+
+        with (
+            patch.object(
+                self.mod,
+                "_edu_vp_safety_coach_evidence",
+                return_value=(
+                    "- 자료 1: 최근 수집 자료는 명사 추측을 정답기가 아니라 질문 비교 도구로 다룰 때 사고력이 남는다고 설명한다.\n  출처: YouTube family learning digest",
+                    evidence_items,
+                    {"selected_count": 1, "rejected_count": 0, "rejected": [], "query": "다음 글에 이어질 최적의 명사는 어떻게 추측해?"},
+                ),
+            ),
+            patch.object(self.mod, "_edu_generate_text") as mocked_generate,
+        ):
+            answer, model, usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
+
+        mocked_generate.assert_not_called()
+        self.assertEqual(model, "fast-template+rag")
+        self.assertFalse(fallback_used)
+        self.assertIn("명사는", answer)
+        self.assertIn("관련 자료도", answer)
+        self.assertIn("질문 비교 도구", answer)
+        self.assertTrue(usage["_safety_coach_rag_infused"])
+        self.assertEqual(usage["_safety_coach_evidence_meta"]["selected_count"], 1)
+
+    def test_safety_coach_rag_sentence_requires_usable_evidence(self):
+        self.assertEqual(self.mod._edu_vp_safety_coach_rag_sentence("명사 추측", []), "")
+        self.assertEqual(
+            self.mod._edu_vp_safety_coach_rag_sentence(
+                "명사 추측",
+                [{"source": "x", "cite": "짧은 cite"}],
+            ),
+            "",
+        )
+
+    def test_safety_coach_does_not_infuse_irrelevant_rag_sentence(self):
+        sentence = self.mod._edu_vp_safety_coach_rag_sentence(
+            "다음 글에 이어질 최적의 명사는 어떻게 추측해?",
+            [
+                {
+                    "source": "privacy digest",
+                    "cite": "아이 사진과 얼굴 정보는 저장과 재사용 가능성 때문에 업로드 전 보호자 확인이 필요하다고 설명한다.",
+                }
+            ],
+        )
+
+        self.assertEqual(sentence, "")
+
+    def test_safety_coach_drops_rag_when_blended_answer_would_truncate(self):
+        long_answer = "가" * 2190
+        blended, used = self.mod._edu_vp_safety_coach_blend_rag_sentence(
+            long_answer,
+            "명사 추측",
+            [{"source": "x", "cite": "명사 추측 자료는 문맥과 장면을 함께 보아야 한다고 설명한다."}],
+        )
+
+        self.assertEqual(blended, long_answer)
+        self.assertFalse(used)
+
+    def test_safety_coach_fast_template_drops_rag_when_quality_review_fails(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=123,
+            stage="day0",
+            concept_id="safety_concept_ai_llm_words",
+            concept_title="먼저 말부터 정리하기: AI와 LLM",
+            concept_body="LLM은 다음에 올 법한 말을 이어 붙입니다.",
+            question="다음 글에 이어질 최적의 명사는 어떻게 추측해?",
+        )
+        evidence_items = [
+            {
+                "source": "YouTube family learning digest",
+                "cite": "최근 수집 자료는 명사 추측을 정답기가 아니라 질문 비교 도구로 다룰 때 사고력이 남는다고 설명한다.",
+            }
+        ]
+
+        with (
+            patch.object(self.mod, "_edu_vp_safety_coach_evidence_with_timeout", return_value=("", evidence_items, {"selected_count": 1, "rejected_count": 0, "rejected": []})),
+            patch.object(self.mod, "_edu_vp_safety_coach_quality_review", return_value={"issues": ["test_quality_fail"], "llm_judge": {}}),
+            patch.object(self.mod, "_edu_generate_text") as mocked_generate,
+        ):
+            answer, model, usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
+
+        mocked_generate.assert_not_called()
+        self.assertEqual(model, "fast-template")
+        self.assertFalse(fallback_used)
+        self.assertIn("명사는", answer)
+        self.assertNotIn("관련 자료", answer)
+        self.assertFalse(usage["_safety_coach_rag_infused"])
+        self.assertEqual(usage["_safety_coach_red_team_issues"], ["test_quality_fail"])
+
+    def test_safety_coach_fast_template_survives_rag_timeout(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=123,
+            stage="day0",
+            concept_id="safety_concept_ai_llm_words",
+            concept_title="먼저 말부터 정리하기: AI와 LLM",
+            concept_body="LLM은 다음에 올 법한 말을 이어 붙입니다.",
+            question="다음 글에 이어질 최적의 명사는 어떻게 추측해?",
+        )
+
+        def slow_evidence(*_args, **_kwargs):
+            time.sleep(0.5)
+            return "", [], {"selected_count": 0}
+
+        with (
+            patch.dict("os.environ", {"EDU_SAFETY_COACH_FAST_RAG_TIMEOUT_SECONDS": "0.01"}),
+            patch.object(self.mod, "_edu_vp_safety_coach_evidence", side_effect=slow_evidence),
+            patch.object(self.mod, "_edu_generate_text") as mocked_generate,
+        ):
+            answer, model, usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
+
+        mocked_generate.assert_not_called()
+        self.assertEqual(model, "fast-template")
+        self.assertFalse(fallback_used)
+        self.assertIn("명사는", answer)
+        self.assertEqual(usage["_safety_coach_evidence_meta"]["skip_reason"], "retrieve_timeout")
+        self.assertTrue(usage["_safety_coach_evidence_meta"]["fast_template_no_rag"])
+        self.assertFalse(usage["_safety_coach_rag_infused"])
 
     def test_attention_setting_question_does_not_use_author_fast_template(self):
         req = self.mod.EduVpTrainingSafetyCoachRequest(
