@@ -40,6 +40,7 @@ class EduCoachSimulationRegressionGuardTests(unittest.TestCase):
             patch.object(self.guard, "run_simulation", side_effect=fake_run_simulation),
             patch.object(self.guard, "check_freshness", return_value={"ok": True, "failures": []}),
             patch.object(self.guard, "check_latency_budget", return_value={"ok": True, "failures": []}),
+            patch.object(self.guard, "check_structured_packet_contract", return_value={"ok": True, "failures": []}),
         ):
             summary = self.guard.check_regression()
 
@@ -60,6 +61,7 @@ class EduCoachSimulationRegressionGuardTests(unittest.TestCase):
             patch.object(self.guard, "run_simulation", side_effect=fake_run_simulation),
             patch.object(self.guard, "check_freshness", return_value={"ok": True, "failures": []}),
             patch.object(self.guard, "check_latency_budget", return_value={"ok": True, "failures": []}),
+            patch.object(self.guard, "check_structured_packet_contract", return_value={"ok": True, "failures": []}),
         ):
             summary = self.guard.check_regression()
 
@@ -89,6 +91,7 @@ class EduCoachSimulationRegressionGuardTests(unittest.TestCase):
             patch.object(self.guard, "run_simulation", side_effect=fake_run_simulation),
             patch.object(self.guard, "check_freshness", return_value=freshness),
             patch.object(self.guard, "check_latency_budget", return_value={"ok": True, "failures": []}),
+            patch.object(self.guard, "check_structured_packet_contract", return_value={"ok": True, "failures": []}),
         ):
             summary = self.guard.check_regression()
 
@@ -113,12 +116,39 @@ class EduCoachSimulationRegressionGuardTests(unittest.TestCase):
             patch.object(self.guard, "run_simulation", side_effect=fake_run_simulation),
             patch.object(self.guard, "check_freshness", return_value={"ok": True, "failures": []}),
             patch.object(self.guard, "check_latency_budget", return_value=latency),
+            patch.object(self.guard, "check_structured_packet_contract", return_value={"ok": True, "failures": []}),
         ):
             summary = self.guard.check_regression()
 
         self.assertFalse(summary["ok"])
         self.assertIn("latency:fast_rag_timeout_elapsed_ms=900>max=450", summary["failures"])
         self.assertIn("latency:rag_patch_llm_calls=2>max=1", summary["failures"])
+
+    def test_fails_when_structured_packet_contract_fails(self):
+        def fake_run_simulation(*, candidate_source, report_dir):
+            if candidate_source == "adversarial-current-fallback":
+                return {"record_count": 378, "verdict_counts": {"clear": 378}, "channel_counts": {}}
+            return {
+                "record_count": 30264,
+                "verdict_counts": {"clear": 30264},
+                "channel_counts": {"YouTube": 1649},
+            }
+
+        structured_packet = {
+            "ok": False,
+            "failures": ["structured_packet_llm_calls=2>max=1", "structured_packet_usage_missing"],
+        }
+        with (
+            patch.object(self.guard, "run_simulation", side_effect=fake_run_simulation),
+            patch.object(self.guard, "check_freshness", return_value={"ok": True, "failures": []}),
+            patch.object(self.guard, "check_latency_budget", return_value={"ok": True, "failures": []}),
+            patch.object(self.guard, "check_structured_packet_contract", return_value=structured_packet),
+        ):
+            summary = self.guard.check_regression()
+
+        self.assertFalse(summary["ok"])
+        self.assertIn("structured_packet:structured_packet_llm_calls=2>max=1", summary["failures"])
+        self.assertIn("structured_packet:structured_packet_usage_missing", summary["failures"])
 
 
 if __name__ == "__main__":

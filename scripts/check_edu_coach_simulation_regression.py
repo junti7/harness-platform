@@ -21,6 +21,7 @@ DEFAULT_MIN_CORPUS_RECORDS = 30264
 DEFAULT_MIN_YOUTUBE_RECORDS = 1649
 DEFAULT_MAX_FAST_RAG_TIMEOUT_MS = 450
 DEFAULT_MAX_RAG_PATCH_CALLS = 1
+DEFAULT_MAX_STRUCTURED_PACKET_CALLS = 1
 
 
 def _load_backend_main() -> Any:
@@ -190,15 +191,80 @@ def check_latency_budget(
     }
 
 
+def check_structured_packet_contract(
+    *,
+    max_structured_packet_calls: int = DEFAULT_MAX_STRUCTURED_PACKET_CALLS,
+) -> dict[str, Any]:
+    mod = _load_backend_main()
+    failures: list[str] = []
+    req = mod.EduVpTrainingSafetyCoachRequest(
+        case_id=123,
+        stage="day0",
+        concept_id="safety_concept_attention",
+        concept_title="Transformer의 핵심: attention",
+        concept_body="attention은 중요한 단어끼리 연결해 문장의 흐름을 잡는 방법입니다.",
+        question="attention은 누가 어떻게 설정하는거야?",
+    )
+    packet = {
+        "taxonomy": {"topic_domain": ["ai_principle"], "user_need": ["mechanism_explanation"]},
+        "runtime_intent": {"primary": "principle_question", "secondary": [], "latent_need": "attention 설정 주체 설명"},
+        "rag_synthesis": {"usable": False, "fresh_angle": "", "reader_relevance": "", "example_seed": "", "evidence_risk": "weak_match"},
+        "answer_plan": {
+            "opening_move": "direct_answer",
+            "core_explanation": ["사람이 문장마다 직접 설정하지 않는다", "모델이 관련도를 계산한다"],
+            "fresh_example": "대명사와 이름 연결",
+            "boundary": "사람처럼 이해하는 것은 아니다",
+            "closing_rule": "계산된 연결 강도",
+        },
+        "final_answer": (
+            "attention은 사람이 문장마다 직접 설정하는 값이 아닙니다. 모델은 학습한 방식에 따라 입력 문장 안에서 "
+            "단어 사이 관련도를 계산합니다. 예를 들어 이름과 대명사를 함께 보며 누가 누구인지 연결하는 것처럼 보면 됩니다. "
+            "오늘은 attention을 사람이 넣는 표시가 아니라 모델이 계산하는 연결 강도로 기억하면 됩니다."
+        ),
+    }
+    with (
+        patch.dict(os.environ, {"EDU_SAFETY_COACH_STRUCTURED_PACKET_ENABLED": "true"}),
+        patch.object(mod, "_edu_vp_safety_coach_reinforcement_policies", return_value=[]),
+        patch.object(mod, "_edu_vp_safety_coach_evidence_with_timeout", return_value=("", [], {"selected_count": 0, "rejected_count": 0, "rejected": [], "skip_reason": "contract_test"})),
+        patch.object(mod, "_edu_safety_coach_model_ladder", return_value=["model-a", "model-b"]),
+        patch.object(mod, "_edu_generate_text", return_value=(json.dumps(packet, ensure_ascii=False), {"prompt_token_count": 10, "candidates_token_count": 8}, "model-a")) as mocked_generate,
+        patch.object(mod, "_edu_log_llm_cost"),
+    ):
+        answer, model, usage, fallback = mod._edu_vp_generate_safety_coach_answer(req)
+    calls = int(getattr(mocked_generate, "call_count", 0))
+    packet_usage = usage.get("_safety_coach_structured_packet") if isinstance(usage, dict) else {}
+    if calls > max_structured_packet_calls:
+        failures.append(f"structured_packet_llm_calls={calls}>max={max_structured_packet_calls}")
+    if model != "model-a+structured_packet":
+        failures.append(f"structured_packet_model={model}")
+    if fallback:
+        failures.append("structured_packet_fallback_used=true")
+    if not isinstance(packet_usage, dict) or not packet_usage.get("enabled"):
+        failures.append("structured_packet_usage_missing")
+    if "attention은" not in str(answer):
+        failures.append("structured_packet_answer_regressed")
+    return {
+        "ok": not failures,
+        "failures": failures,
+        "model": model,
+        "llm_calls": calls,
+        "max_llm_calls": max_structured_packet_calls,
+        "fallback_used": bool(fallback),
+        "schema_keys": packet_usage.get("schema_keys") if isinstance(packet_usage, dict) else [],
+    }
+
+
 def check_regression(
     *,
     min_corpus_records: int = DEFAULT_MIN_CORPUS_RECORDS,
     min_youtube_records: int = DEFAULT_MIN_YOUTUBE_RECORDS,
     max_fast_rag_timeout_ms: int = DEFAULT_MAX_FAST_RAG_TIMEOUT_MS,
     max_rag_patch_calls: int = DEFAULT_MAX_RAG_PATCH_CALLS,
+    max_structured_packet_calls: int = DEFAULT_MAX_STRUCTURED_PACKET_CALLS,
     report_dir: Path | None = None,
     freshness: bool = True,
     latency: bool = True,
+    structured_packet: bool = True,
 ) -> dict[str, Any]:
     if report_dir is None:
         temp_context = tempfile.TemporaryDirectory(prefix="edu_coach_regression_")
@@ -239,12 +305,19 @@ def check_regression(
         else {"ok": True, "failures": [], "skipped": True}
     )
     failures.extend(f"latency:{failure}" for failure in latency_summary.get("failures", []))
+    structured_packet_summary = (
+        check_structured_packet_contract(max_structured_packet_calls=max_structured_packet_calls)
+        if structured_packet
+        else {"ok": True, "failures": [], "skipped": True}
+    )
+    failures.extend(f"structured_packet:{failure}" for failure in structured_packet_summary.get("failures", []))
 
     return {
         "ok": not failures,
         "failures": failures,
         "freshness": freshness_summary,
         "latency": latency_summary,
+        "structured_packet": structured_packet_summary,
         "adversarial": {
             "record_count": int(adversarial.get("record_count") or 0),
             "verdict_counts": adversarial.get("verdict_counts") or {},
@@ -265,18 +338,22 @@ def main() -> int:
     parser.add_argument("--min-youtube-records", type=int, default=DEFAULT_MIN_YOUTUBE_RECORDS)
     parser.add_argument("--max-fast-rag-timeout-ms", type=int, default=DEFAULT_MAX_FAST_RAG_TIMEOUT_MS)
     parser.add_argument("--max-rag-patch-calls", type=int, default=DEFAULT_MAX_RAG_PATCH_CALLS)
+    parser.add_argument("--max-structured-packet-calls", type=int, default=DEFAULT_MAX_STRUCTURED_PACKET_CALLS)
     parser.add_argument("--report-dir", type=Path, default=None, help="optional report directory; default uses a temp dir")
     parser.add_argument("--skip-freshness", action="store_true", help="skip fresh corpus collection vs committed config check")
     parser.add_argument("--skip-latency", action="store_true", help="skip fast RAG timeout and RAG patch call-count checks")
+    parser.add_argument("--skip-structured-packet", action="store_true", help="skip structured packet contract check")
     args = parser.parse_args()
     summary = check_regression(
         min_corpus_records=max(1, args.min_corpus_records),
         min_youtube_records=max(1, args.min_youtube_records),
         max_fast_rag_timeout_ms=max(1, args.max_fast_rag_timeout_ms),
         max_rag_patch_calls=max(1, args.max_rag_patch_calls),
+        max_structured_packet_calls=max(1, args.max_structured_packet_calls),
         report_dir=args.report_dir,
         freshness=not bool(args.skip_freshness),
         latency=not bool(args.skip_latency),
+        structured_packet=not bool(args.skip_structured_packet),
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
     return 0 if summary["ok"] else 1
