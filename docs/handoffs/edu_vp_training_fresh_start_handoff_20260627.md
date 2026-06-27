@@ -265,6 +265,32 @@ Codex CLI 사용 시 사용자가 별도 해제하기 전까지 **caveman full**
 - `_edu_vp_review_safety_coach_downvote_async(...)`
 - `/api/edu/vp-training/safety-coach/feedback`
 
+### 9. Empathy-First Coach Answer Policy
+
+문제:
+
+- 감정/고립 질문에 기존 답변이 교육 안전 규칙부터 말했다.
+- `"주변에 내 얘기를 들어줄 사람이 없을 때"`라는 전제를 무시하고 `"가족이나 친구에게 이야기"` 같은 처방을 제안했다.
+- `"기분이 좋은걸?"` 같은 정서 표현을 인정하지 않고 `"안전 신호가 아니다"`로 바로 교정했다.
+- 이 흐름은 사용자가 사람이라는 점을 놓쳐 서비스 신뢰를 크게 떨어뜨린다.
+
+현재 정책:
+
+- safety coach answer version을 `2026-06-27-empathy-first-v7`로 올려 기존 냉담한 cache 재사용을 막는다.
+- 감정/외로움/의존/기분 질문은 첫 문장에서 반드시 감정을 인정한다.
+- AI 대화에서 위로를 느끼는 사실 자체는 부정하지 않는다.
+- AI를 완전히 금지하듯 말하지 않고, 임시 위로/정리 도구로 쓸 수 있음을 인정한 뒤 경계를 설명한다.
+- 사용자가 `들어줄 사람이 없다`고 말하면 그 결핍을 무시한 `가족이나 친구에게 말하세요`식 첫 처방을 금지한다.
+- red-team은 감정 질문에 공감 누락, 차가운 교육 문구, 고립 맥락 무시를 품질 실패로 잡는다.
+- downvote heuristic도 같은 문제를 `needs_improvement`로 기록한다.
+
+핵심 backend:
+
+- `_edu_vp_safety_coach_needs_empathy(...)`
+- `_edu_vp_safety_coach_has_isolation_context(...)`
+- `_edu_vp_safety_coach_fallback(...)`
+- `_edu_vp_safety_coach_red_team(...)`
+
 ## Files Most Likely To Edit Next
 
 Frontend:
@@ -301,7 +327,7 @@ Latest known results:
 
 - Frontend build: pass
 - Frontend lint: pass
-- Pytest: `39 passed`
+- Pytest: `42 passed`
 
 ## Deploy Commands
 

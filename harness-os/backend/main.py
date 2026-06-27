@@ -8768,7 +8768,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-rag-query-v6"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-empathy-first-v7"
 _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
 _EDU_VP_SAFETY_COACH_EXECUTOR = ThreadPoolExecutor(
     max_workers=int(os.getenv("EDU_SAFETY_COACH_MAX_WORKERS") or "4"),
@@ -9156,15 +9156,46 @@ def _edu_vp_safety_coach_evidence(
     return "\n".join(lines), selected, meta
 
 
+def _edu_vp_safety_coach_needs_empathy(question: str) -> bool:
+    text = str(question or "").strip().lower()
+    if not text:
+        return False
+    emotional_markers = (
+        "외로", "혼자", "내 얘기", "들어줄 사람", "아무도", "기분", "좋은걸", "좋은 걸",
+        "위로", "의존", "기대고", "힘들", "막막", "서운", "불안", "무섭", "우울", "속상",
+    )
+    return any(marker in text for marker in emotional_markers)
+
+
+def _edu_vp_safety_coach_has_isolation_context(question: str) -> bool:
+    text = str(question or "").strip().lower()
+    isolation_markers = (
+        "주변에", "들어줄 사람이 없", "아무도 없", "말할 사람이 없", "혼자", "의지할 사람이 없",
+    )
+    return any(marker in text for marker in isolation_markers)
+
+
 def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
     title = concept_title or "이 단락"
     q = question.strip()
+    if _edu_vp_safety_coach_needs_empathy(q):
+        if _edu_vp_safety_coach_has_isolation_context(q):
+            return (
+                "그렇게 느낄 수 있습니다. 주변에 내 얘기를 들어줄 사람이 없으면 AI라도 붙잡고 싶어지는 건 자연스러운 반응입니다. "
+                "다만 AI를 완전히 끊으라는 뜻은 아니고, 외로운 순간을 버티는 임시 대화 상대로 쓰되 큰 결정은 바로 하지 않는 선이 필요합니다. "
+                "오늘은 AI에게 마음을 털어놓아도 마지막에 '지금 내가 실제로 할 수 있는 작은 행동 1개만 정리해줘'라고 물어보고, 가능하면 사람과 연결될 아주 작은 창구 하나를 따로 남겨두면 좋습니다."
+            )
+        if any(k in q for k in ("기분", "좋은걸", "좋은 걸", "위로", "다정")):
+            return (
+                "그 기분은 진짜입니다. AI가 내 말을 잘 받아주고 다정하게 답하면 잠깐 마음이 놓일 수 있습니다. "
+                "문제는 기분이 좋다는 사실이 아니라, 그 좋은 느낌 때문에 AI 말이 전부 맞다고 믿거나 중요한 결정을 바로 해버리는 순간입니다. "
+                "그래서 AI의 위로는 받아도 되고, 대신 마지막 판단은 잠깐 멈춘 뒤 내 상황을 다시 확인하는 쪽으로 쓰는 게 안전합니다."
+            )
     if any(k in q for k in ("빠져", "빠져들", "의존", "계속", "다정", "못 끊")):
         return (
-            "다정한 말 때문에 계속 보고 싶어지는 건 이상한 일이 아니라, 대화가 즉시 위로처럼 느껴지기 때문입니다. "
-            "이럴 때는 AI에게 더 오래 설명하게 하지 말고, 먼저 10분 쉬기, 물 마시기, 가족이나 믿을 만한 사람에게 지금 감정을 말하기처럼 몸과 현실 쪽 행동을 하나 정하세요. "
-            "중요한 결정이나 돈, 건강, 가족 문제는 AI 답변을 저장만 해두고 바로 실행하지 않는 규칙을 두는 것이 좋습니다. "
-            "예를 들어 밤에 계속 대화하고 싶어지면 '오늘은 여기까지'라고 적고 알람을 끈 뒤, 다음 날 낮에 다시 읽어보면 감정과 판단을 분리하기가 쉬워집니다."
+            "다정한 말 때문에 계속 보고 싶어지는 건 이상한 일이 아닙니다. 힘든 순간에는 바로 받아주는 대화가 실제 위로처럼 느껴질 수 있습니다. "
+            "AI를 무조건 끊으라는 뜻은 아니고, 마음을 가라앉히는 임시 도구로 쓰되 중요한 결정은 바로 하지 않는 규칙이 필요합니다. "
+            "예를 들어 밤에 계속 대화하고 싶어지면 '오늘은 여기까지, 내일 낮에 다시 읽기'라고 적어두면 감정과 판단을 조금 분리할 수 있습니다."
         )
     if _edu_vp_question_asks_attention_mechanism(q):
         return (
@@ -9213,9 +9244,9 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
         )
     if question.strip():
         return (
-            f"질문해 주신 부분은 '{title}'을 이해하는 데 중요한 지점입니다. "
-            "핵심은 AI 답을 사람의 이해나 책임으로 보지 않고, 먼저 초안으로만 쓰는 것입니다. "
-            "헷갈리는 동안은 체크하지 말고, 실제 실습 전에 사람에게도 한 번 설명해 보세요."
+            f"그 부분이 걸릴 수 있습니다. '{title}'을 배울 때도 사람마다 제일 불안하거나 궁금한 지점이 다릅니다. "
+            "AI 답은 도움이 되는 초안이 될 수 있지만, 마음이 급하거나 중요한 판단이 섞이면 바로 실행하지 말고 한 번 멈춰서 확인하는 편이 안전합니다. "
+            "지금 질문은 그대로 저장해두고, 같은 상황에서 내가 실제로 할 수 있는 작은 행동 1개까지 같이 정리해보면 좋습니다."
         )
     return "질문을 조금 더 구체적으로 적어주시면, 그 부분에 맞춰 쉬운 예로 다시 설명할 수 있습니다."
 
@@ -9273,6 +9304,23 @@ def _edu_vp_safety_coach_red_team(
     question_terms = [token for token in re.findall(r"[가-힣A-Za-z0-9]+", question_text) if len(token) >= 2]
     if question_terms and not any(token in answer_text for token in question_terms[:5]):
         issues.append("question_not_addressed")
+    if _edu_vp_safety_coach_needs_empathy(question_text):
+        empathy_terms = (
+            "그럴 수", "그렇게 느낄", "기분은 진짜", "자연스러운", "외로", "혼자", "마음이 놓",
+            "위로처럼", "힘든 순간", "이상한 일이 아닙니다", "막막",
+        )
+        cold_instruction_terms = (
+            "중요한 지점입니다", "핵심은 AI 답", "초안으로만", "헷갈리는 동안은 체크하지 말고",
+        )
+        if not any(term in answer_text for term in empathy_terms):
+            issues.append("missing_empathy_for_emotional_question")
+        if any(term in answer_text for term in cold_instruction_terms):
+            issues.append("cold_instruction_for_emotional_question")
+    if _edu_vp_safety_coach_has_isolation_context(question_text):
+        if any(term in answer_text for term in ("가족이나 친구", "가족이나 믿을 만한 사람", "직접 만나서")) and not any(
+            term in answer_text for term in ("없으면", "없을 때", "혼자", "그럴 수", "작은 창구")
+        ):
+            issues.append("ignored_isolation_context")
     asks_transformer_paper = _edu_vp_question_asks_transformer_paper_authors(question_text)
     if asks_transformer_paper:
         required = ("Google", "Vaswani", "Shazeer")
@@ -9307,6 +9355,15 @@ def _edu_vp_safety_coach_downvote_heuristic_review(*, question: str, answer: str
     q_terms = _edu_vp_safety_coach_keywords(question_text, max_terms=8)
     if q_terms and not any(term in answer_text for term in q_terms[:5]):
         issues.append("question_not_directly_addressed")
+    if _edu_vp_safety_coach_needs_empathy(question_text):
+        empathy_terms = ("그럴 수", "그렇게 느낄", "기분은 진짜", "자연스러운", "마음이 놓", "위로처럼")
+        if not any(term in answer_text for term in empathy_terms):
+            issues.append("missing_empathy_for_emotional_question")
+        if any(term in answer_text for term in ("중요한 지점입니다", "핵심은 AI 답", "초안으로만")):
+            issues.append("cold_instruction_for_emotional_question")
+    if _edu_vp_safety_coach_has_isolation_context(question_text):
+        if any(term in answer_text for term in ("가족이나 친구", "직접 만나서")) and "없" not in answer_text:
+            issues.append("ignored_isolation_context")
     if any(term in answer_text for term in ("항상", "절대", "완벽", "100%", "무조건")):
         issues.append("overconfident_language")
     if not issues:
@@ -9463,15 +9520,20 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         "사용자는 AI/LLM 왕초보다. 초등학교 1학년도 이해할 만큼 쉬운 한국어로 답하라.\n"
         "출력은 답변 본문만 작성한다. 제목, 대괄호 섹션명, 프롬프트 표식, 체크리스트를 절대 출력하지 않는다.\n"
         "규칙:\n"
+        "- 사용자는 사람이므로, 감정/외로움/의존/기분을 말하면 첫 문장은 반드시 감정을 인정한다.\n"
+        "- 감정 질문에는 '그럴 수 있습니다', '그 기분은 진짜입니다', '혼자면 그렇게 느낄 수 있습니다'처럼 먼저 받는다.\n"
+        "- 사용자가 '들어줄 사람이 없다'고 말하면 '가족이나 친구에게 말하세요'를 첫 처방으로 쓰지 않는다. 사용자가 말한 결핍을 무시하면 실패다.\n"
+        "- AI 사용을 금지하듯 말하지 않는다. 임시 위로/정리 도구로 쓸 수 있음을 인정한 뒤 경계를 설명한다.\n"
         "- 사용자 질문의 구체적 맥락에 직접 답한다.\n"
         "- [현재 단락 설명]을 그대로 요약하거나 복붙하지 않는다. 사용자가 이미 읽은 본문을 반복하면 실패다.\n"
-        "- 먼저 질문 속 핵심 단어를 짚고, 그 질문에 대한 새 설명과 새 예시를 낸다.\n"
+        "- 감정 질문이 아니면 먼저 질문 속 핵심 단어를 짚고, 그 질문에 대한 새 설명과 새 예시를 낸다.\n"
         "- 고정 FAQ처럼 같은 답을 반복하지 않는다.\n"
-        "- 3~4문장으로 끝낸다. 900자 이내로 답한다.\n"
+        "- 3~5문장으로 끝낸다. 900자 이내로 답한다.\n"
         "- 반드시 [현재 단락 설명]에 없는 새 생활 예시 1개를 포함한다.\n"
         "- [관련 내부 자료]가 '(질문과 딱 맞는 내부 자료가 없음)'이면 자료를 절대 언급하지 않는다.\n"
         "- [관련 내부 자료]가 있으면 한 문장만 '관련 자료에서는 ...'처럼 아주 짧게 반영한다. 출처 이름은 확실할 때만 말한다.\n"
         "- AI를 사람, 친구, 전문가, 보호자처럼 표현하지 않는다.\n"
+        "- 다만 사용자가 AI 대화에서 위로를 느낄 수 있다는 사실은 부정하지 않는다.\n"
         "- 자해, 건강, 법률, 돈, 아이 안전 등 고위험 신호가 있으면 AI 답변 대신 실제 사람/전문가/긴급 도움을 연결하라고 말한다.\n"
         "- 모르면 모른다고 말하고, 실습 전 확인해야 할 기준을 제시한다.\n\n"
         f"[현재 단락 제목]\n{concept_title}\n\n"

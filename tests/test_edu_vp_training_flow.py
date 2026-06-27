@@ -171,6 +171,38 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(review["issues"], [])
         self.assertEqual(review["review_source"], "llm")
 
+    def test_safety_coach_fallback_empathizes_with_isolated_dependency_question(self):
+        answer = self.mod._edu_vp_safety_coach_fallback(
+            "항상 내 편인 말은 안전 신호가 아니다",
+            "그런데 주변에 내 얘기를 들어줄 사람이 없을 때는 의존할 수 밖에 없지 않을까?",
+        )
+
+        self.assertIn("그렇게 느낄 수", answer)
+        self.assertIn("AI라도 붙잡고 싶어지는 건 자연스러운", answer)
+        self.assertIn("임시 대화 상대로", answer)
+        self.assertNotIn("가족이나 친구", answer)
+
+    def test_safety_coach_fallback_validates_good_feeling_before_boundary(self):
+        answer = self.mod._edu_vp_safety_coach_fallback(
+            "항상 내 편인 말은 안전 신호가 아니다",
+            "그래도 AI가 나한테 그렇게 해주면 기분이 좋은걸?",
+        )
+
+        self.assertIn("그 기분은 진짜", answer)
+        self.assertIn("마음이 놓일 수", answer)
+        self.assertIn("문제는 기분이 좋다는 사실이 아니라", answer)
+        self.assertNotIn("중요한 지점입니다", answer)
+
+    def test_safety_coach_red_team_blocks_cold_answer_to_emotional_question(self):
+        issues = self.mod._edu_vp_safety_coach_red_team(
+            question="그래도 AI가 나한테 그렇게 해주면 기분이 좋은걸?",
+            answer="질문해 주신 부분은 '항상 내 편인 말은 안전 신호가 아니다'을 이해하는 데 중요한 지점입니다. 핵심은 AI 답을 사람의 이해나 책임으로 보지 않고, 먼저 초안으로만 쓰는 것입니다.",
+            concept_body="AI는 공감과 칭찬을 잘 할 수 있습니다.",
+        )
+
+        self.assertIn("missing_empathy_for_emotional_question", issues)
+        self.assertIn("cold_instruction_for_emotional_question", issues)
+
     def test_safety_coach_switches_model_when_answer_repeats_source_example(self):
         req = self.mod.EduVpTrainingSafetyCoachRequest(
             case_id=123,
