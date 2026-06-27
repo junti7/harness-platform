@@ -382,7 +382,7 @@ agent는 어떤 상황에서도 `signal_approve`, `opportunity_approve`, `report
 - pipeline 실행 전 schema/env/model identity preflight를 통과해야 한다. DB 스키마 누락, 필수 env 누락, 모델 식별 불가 상태에서는 run을 중단한다.
 - 리포트의 핵심 claim은 `verified`, `company-self-report`, `speculative` 중 하나의 근거 자세를 드러내야 한다.
 - **[트레이딩 절대 원칙]** Harness의 모든 주식 트레이딩 활동은 `docs/trading/TURTLE_TRADING_PRINCIPLES.md`의 Turtle Trading 5대 원칙(종목 선정·포지션 사이징·진입 신호·손절·청산)을 반드시 준수한다. 이 원칙은 감정·직관·예측이 아닌 알고리즘과 규율에 기반한다.
-- **[트레이딩 capital_action 조건]** 트레이딩 관련 `capital_action_approve`는 Turtle 파라미터(ATR, 진입 시스템, 손절가, 포지션 리스크 ≤1%)가 모두 기재된 경우에만 유효하다.
+- **[트레이딩 capital_action 조건]** 트레이딩 관련 `capital_action_approve`는 Turtle 파라미터(ATR, 진입 시스템, 손절가, 단일 트레이드 리스크 ≤2%[클래식 Turtle 1유닛], 포트폴리오 합산 heat 상한)가 모두 기재된 경우에만 유효하다. (2026-06-27 CEO 확정: 기존 ≤1%[2N 사이징]는 백테스트상 과보수적[CAGR 14.5% vs 1N 22.7%, MAR 0.71 vs 0.93]이라 클래식 1유닛 ≤2%로 개정. 전체 리스크는 포트폴리오 heat 상한으로 통제. AR-20260627-004.)
 - **[외국환거래 한도 — 2026-05-27 한국은행 답변 반영]** IBKR 계좌로의 연간 총 송금액은 **$100,000(10만 달러) 이하**로 유지한다. 이 한도 내에서는 별도 외국환거래 신고가 불필요하다 (한국은행 외환심사팀 비공식 참고 답변 기준, `docs/reports/legal/bok_response_ibkr_2026-05.md` 참조). 연간 $100,000 초과 시 기획재정부 또는 외국환거래 신고기관에 사전 신고 후 진행한다. 이 답변은 법적 증빙으로 사용 불가하며 참고용이다.
 - 모든 코드 변경은 commit → push → origin/main 반영 경로로만 진행하며, Mac Mini 프로덕션 직접 수동 수정 및 scp 수동 배포는 절대 금지한다. 배포는 오직 scripts/deploy_to_macmini.sh로만 수행한다. (docs/governance/DEPLOYMENT_SOURCE_OF_TRUTH.md 준수)
 - **[강제 배포-청결 규칙]** MBP에서 추적 파일을 commit한 작업은 **Mac Mini 선택 배포 + 필요 시 build/restart + MBP/Mac Mini 양쪽 `git status` 청결 검증**까지 끝나기 전에는 완료로 간주하지 않는다. 어느 한쪽이라도 추적 파일 dirty가 남아 있으면 즉시 정리하거나 handoff로 명시하고, "완료"라고 보고하지 않는다.
@@ -411,7 +411,7 @@ agent는 어떤 상황에서도 `signal_approve`, `opportunity_approve`, `report
 - **[트레이딩]** Turtle Trading 진입 신호(20일/55일 브레이크아웃) 없이 포지션을 오픈하지 않는다.
 - **[트레이딩]** 손절선(진입가 ± 2 × ATR) 이탈 후 포지션을 계속 보유하지 않는다.
 - **[트레이딩]** 청산 신호(System 1: 10일, System 2: 20일) 발생 후 "조금만 더 기다리자"며 청산을 미루지 않는다.
-- **[트레이딩]** 단일 트레이드에 계좌 리스크 1%를 초과하는 포지션을 취하지 않는다.
+- **[트레이딩]** 단일 트레이드에 계좌 리스크 **2%(클래식 Turtle 1유닛)**를 초과하는 포지션을 취하지 않으며, 포트폴리오 합산 heat(보유 포지션 손절 리스크 합)가 상한(`PAPER_MAX_PORTFOLIO_HEAT`, 기본 10%)을 넘는 신규 진입을 하지 않는다. (2026-06-27 CEO 개정 — 기존 1%는 과보수적. AR-20260627-004)
 - **[트레이딩]** `docs/trading/TURTLE_TRADING_PRINCIPLES.md` 파라미터 미기재 상태의 트레이딩 capital_action을 승인하지 않는다.
 - 프로덕션(Mac Mini) 작업트리의 코드를 직접 수동 수정하거나 scp/수동 파일 복사로 배포하지 않는다.
 - MBP에서 commit만 하고 Mac Mini 반영/청결 확인을 생략한 채 작업을 닫지 않는다.

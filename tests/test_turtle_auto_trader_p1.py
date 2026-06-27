@@ -16,30 +16,41 @@ import scripts.turtle_auto_trader as t  # noqa: E402
 
 # ── F3 사이징 ─────────────────────────────────────────────────────────────────
 
-def test_sizing_targets_true_1pct_at_2N():
+def test_sizing_1N_classic_with_2N_risk_reporting():
+    """2026-06-27 CEO 확정: 1N 사이징(클래식). 측정은 2N(실효 ~2%), 게이트 ≤2%."""
     acct = 100_000.0
     atr = 2.5
     sig = {"symbol": "NVDA", "current_price": 100.0, "atr": atr,
            "signal": "breakout_long", "system": "S2", "direction": "long"}
     g = t.turtle_gate_check(sig, acct)
-    # 손절거리 2N=5.0 → shares = 100000*0.01/5 = 200
-    assert g["shares"] == 200
-    # 실효 손절 리스크(2N) = 200*5 = $1000 = 1.0% (≤1% 통과)
-    assert abs(g["risk_pct"] - 1.0) < 0.06
+    # 1N 사이징: shares = 100000*0.01/2.5 = 400
+    assert g["shares"] == 400
+    # 실효 손절 리스크(2N) = 400*5 = $2000 = 2.0% — 측정은 항상 2N 기준
+    assert abs(g["risk_pct"] - 2.0) < 0.06
+    # ≤2%(TURTLE_MAX_RISK_PCT) 게이트 통과
     assert g["checks"]["risk_pct"] is True
-    # 손절가 = 100 - 2*2.5 = 95
     assert g["stop_loss"] == 95.0
 
 
-def test_sizing_is_half_of_old_1N_sizing():
-    """수정 전(1N) 대비 절반이어야 한다(리스크 2%→1%)."""
-    acct, atr = 100_000.0, 4.0
-    sig = {"symbol": "MU", "current_price": 200.0, "atr": atr,
+def test_sizing_gate_blocks_above_2pct(monkeypatch):
+    """단일 트레이드 상한 2% 초과는 게이트 차단."""
+    monkeypatch.setattr(t, "TURTLE_MAX_RISK_PCT", 0.015)  # 1.5%로 낮추면 2% 사이징은 막혀야
+    acct, atr = 100_000.0, 2.5
+    sig = {"symbol": "NVDA", "current_price": 100.0, "atr": atr,
            "signal": "breakout_long", "system": "S2", "direction": "long"}
     g = t.turtle_gate_check(sig, acct)
-    old_1N_shares = int((acct * t.TURTLE_RISK_PCT) / atr)  # 수정 전 공식
-    assert g["shares"] == int((acct * t.TURTLE_RISK_PCT) / (t.TURTLE_STOP_MULT * atr))
-    assert g["shares"] * 2 == old_1N_shares  # 정확히 절반
+    assert g["risk_pct"] > 1.5
+    assert g["checks"]["risk_pct"] is False
+
+
+def test_portfolio_heat():
+    acct = 100_000.0
+    state = {"turtle_positions": {
+        "A": {"qty": 100, "entry_price": 50.0, "stop_loss": 40.0},   # risk 100*10=1000=1%
+        "B": {"qty": 50, "entry_price": 100.0, "stop_loss": 80.0},   # risk 50*20=1000=1%
+    }}
+    assert abs(t.portfolio_heat(state, acct) - 0.02) < 1e-9
+    assert t.portfolio_heat(state, 0) == 0.0
 
 
 # ── F2 상관 한도 ──────────────────────────────────────────────────────────────

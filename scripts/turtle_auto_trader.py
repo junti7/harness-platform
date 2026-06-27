@@ -80,6 +80,12 @@ CORR_GROUP = {
 }
 MAX_UNITS_PER_GROUP = int(os.getenv("PAPER_MAX_CORR_UNITS", "3"))
 
+# 사이징 베이스라인(2026-06-27 CEO 확정): 1N=클래식 Turtle 1유닛(손절 2N에서 실효 리스크 ~2%).
+# 백테스트상 2N 사이징(진짜 1%)은 과보수적(CAGR 14.5% vs 1N 22.7%, MAR 0.71 vs 0.93).
+# 단일 트레이드 상한 = 2%, 포트폴리오 합산 heat 상한으로 전체 리스크를 통제한다(CLAUDE.md ≤1%→≤2% 개정).
+TURTLE_MAX_RISK_PCT = float(os.getenv("PAPER_MAX_TRADE_RISK_PCT", "0.02"))
+PAPER_MAX_PORTFOLIO_HEAT = float(os.getenv("PAPER_MAX_PORTFOLIO_HEAT", "0.10"))
+
 # P1(F1 추세필터): 하락·횡보 국면에서 롱 전용 봇이 가짜 돌파를 사 휩쏘로 출혈하는 것을 차단.
 # 장기 이동평균(MA) 위에서만 롱 진입을 허용한다(롱·숏 대칭은 short-safe 재설계가 필요한 별도 과제).
 TREND_FILTER_ENABLED = os.getenv("PAPER_TREND_FILTER", "true").lower() == "true"
@@ -228,15 +234,16 @@ def turtle_gate_check(signal: dict, account_value: float) -> dict:
     # 2. ATR 계산
     checks["atr"] = atr > 0
 
-    # 3. 포지션 리스크 ≤ 1% (P1/F3 — 손절거리=2N 기준으로 사이징·측정)
-    #    [수정 전 버그] shares=(계좌×1%)/ATR 는 1N 에 리스크를 맞췄으나 손절은 2N 이라 실효 리스크가
-    #    2%(규정 2배)였고, gate 도 1N 으로 측정해 "0.995%"로 통과시켰다(Red Team 2026-06-27 BLOCKER).
-    #    이제 손절거리(stop_distance=TURTLE_STOP_MULT×ATR)로 나눠 실제 손절 손실을 ≤1%로 만든다.
+    # 3. 포지션 리스크 — 1N 사이징(클래식 Turtle 1유닛) + 단일 트레이드 ≤2% 게이트
+    #    (2026-06-27 CEO 확정) shares=(계좌×1%)/ATR 로 1N 사이징하되, 손절은 2N 이므로 *실효 손절
+    #    리스크는 ~2%*다. gate 는 이 실효 리스크(2N)를 정확히 측정해 ≤2%(TURTLE_MAX_RISK_PCT)로 막는다.
+    #    1N 으로 만든 BLOCKER(1N 사이징인데 1N 으로 측정해 ≤1% 통과)는 해소됨 — 측정은 항상 2N 기준.
+    #    전체 리스크는 포트폴리오 heat 상한(PAPER_MAX_PORTFOLIO_HEAT)으로 별도 통제.
     if atr > 0:
+        shares = int((account_value * TURTLE_RISK_PCT) / atr)
         stop_distance = TURTLE_STOP_MULT * atr
-        shares = int((account_value * TURTLE_RISK_PCT) / stop_distance)
-        position_risk_pct = (shares * stop_distance) / account_value
-        checks["risk_pct"] = position_risk_pct <= TURTLE_RISK_PCT * 1.05  # 5% 허용 오차
+        position_risk_pct = (shares * stop_distance) / account_value  # 실효 손절(2N) 리스크 ~2%
+        checks["risk_pct"] = position_risk_pct <= TURTLE_MAX_RISK_PCT * 1.05  # 5% 허용 오차
     else:
         stop_distance = 0
         shares = 0
@@ -299,6 +306,20 @@ def correlation_block(symbol: str, held: set) -> tuple[bool, str]:
         if same_group >= MAX_UNITS_PER_GROUP:
             return True, f"corr_group_full ({grp}={same_group}/{MAX_UNITS_PER_GROUP})"
     return False, ""
+
+
+def portfolio_heat(state: dict, account_value: float) -> float:
+    """현재 보유 포지션의 합산 risk(각 포지션 손절까지 손실 = qty×|entry−stop|) ÷ 계좌. 0~1."""
+    if not account_value:
+        return 0.0
+    tot = 0.0
+    for p in state.get("turtle_positions", {}).values():
+        q = p.get("qty", 0) or 0
+        e = p.get("entry_price") or 0
+        s = p.get("stop_loss") or 0
+        if e and s:
+            tot += q * abs(e - s)
+    return tot / account_value
 
 
 def should_enter(symbol: str, signal: dict, existing_symbols: set, state: dict) -> tuple[bool, str]:
@@ -720,6 +741,17 @@ def run(execute: bool = False) -> dict:
                 "ts": now_iso(), "action": "gate_blocked",
                 "symbol": sym, "reason": str(gate["checks"]),
             })
+            continue
+
+        # 포트폴리오 heat 상한: 기존 보유 risk 합 + 신규 risk ≤ HEAT_CAP × 계좌
+        cur_heat = portfolio_heat(state, account_value)
+        new_heat = (gate["risk_dollars"] / account_value) if account_value else 0
+        if cur_heat + new_heat > PAPER_MAX_PORTFOLIO_HEAT:
+            print(f"      heat 상한 초과 — 건너뜀 (보유 {cur_heat*100:.1f}% + 신규 {new_heat*100:.1f}% > {PAPER_MAX_PORTFOLIO_HEAT*100:.0f}%)")
+            log_entry({"ts": now_iso(), "action": "heat_blocked", "symbol": sym,
+                       "cur_heat": round(cur_heat, 4), "new_heat": round(new_heat, 4),
+                       "cap": PAPER_MAX_PORTFOLIO_HEAT})
+            skipped.append({"symbol": sym, "reason": "heat_cap", "signal": signal["signal"]})
             continue
 
         result = enter_position(sym, gate, signal, dry_run, state)
