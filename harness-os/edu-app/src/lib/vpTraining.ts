@@ -119,6 +119,7 @@ function curriculumAttrsToIntake(email: string, name: string, attrs: CurriculumA
     current_device: intakeDevice(attrs),
     desktop_os: 'mac',
     ai_experience: attrs.level || 'beginner',
+    motivation: attrs.motivation || 'work',
     biggest_friction: intakeFriction(attrs),
     learning_goal: intakeGoal(attrs),
     media_preference: attrs.media_preference || 'mixed',

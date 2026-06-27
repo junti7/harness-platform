@@ -5989,6 +5989,7 @@ class EduVpTrainingIntakeRequest(BaseModel):
     current_device: str = "iphone"
     desktop_os: str = "mac"
     ai_experience: str = "beginner"
+    motivation: str = "work"
     biggest_friction: str = ""
     learning_goal: str = ""
     media_preference: str = "mixed"
@@ -7630,6 +7631,9 @@ def _edu_vp_planned_curriculum_outline(state: dict[str, Any]) -> list[dict[str, 
 
 
 def _edu_vp_curriculum_motivation(segment: str, intake: dict[str, Any]) -> str:
+    explicit = str(intake.get("motivation") or "").strip().lower()
+    if explicit in {"work", "child_study", "daily", "writing"}:
+        return explicit
     text = f"{intake.get('learning_goal') or ''} {intake.get('biggest_friction') or ''}".lower()
     if any(k in text for k in ("글", "쓰기", "문장", "메일", "보고서", "copy", "writing")):
         return "writing"
@@ -7728,6 +7732,16 @@ def _edu_vp_build_dynamic_curriculum_path(
     topic_rows = [item for item in (curriculum.get("order") or []) if item.get("topic")]
     topics = [str(item.get("topic") or "") for item in topic_rows]
     topic_weight = {str(item.get("topic") or ""): float(item.get("weight") or 0.0) for item in topic_rows}
+    motivation = _edu_vp_curriculum_motivation(segment, intake)
+    seed_topic = {
+        "work": "업무 활용",
+        "writing": "글쓰기",
+        "daily": "일상 정리",
+        "child_study": "자녀학습/숙제",
+    }.get(motivation, "")
+    if seed_topic:
+        topics = [seed_topic] + [topic for topic in topics if topic != seed_topic]
+        topic_weight[seed_topic] = max(topic_weight.values() or [1.0])
     concerns = [str(item.get("concern") or "") for item in (curriculum.get("top_concerns") or []) if item.get("concern")]
     highlights = [str(item.get("title") or "") for item in (curriculum.get("highlights") or []) if item.get("title")]
     overlays = [str(item.get("model") or "") for item in (curriculum.get("overlay") or []) if item.get("model")]
@@ -9274,7 +9288,40 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         return _edu_vp_safety_coach_fallback(concept_title, question), "fallback", {}, True
 
 
-def _edu_vp_day1_materials(llm_label: str) -> list[dict[str, Any]]:
+def _edu_vp_day1_materials(llm_label: str, motivation: str = "child_study") -> list[dict[str, Any]]:
+    if motivation == "work":
+        return [
+            _edu_vp_material_kit(
+                kit_id="day1-work-reply-kit",
+                title="업무 답장 정리 실전팩",
+                description=f"{llm_label}에게 받은 업무 메시지를 실행 가능한 답장 초안으로 바꾸게 하는 연습용 샘플입니다.",
+                files=["00_README_업무답장실전팩.md", "01_받은업무메시지.txt", "02_답장조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
+            ),
+            _edu_vp_material_kit(
+                kit_id="day1-meeting-notes-kit",
+                title="회의 메모 정리 실전팩",
+                description="뒤섞인 회의 메모를 결정사항, 할 일, 확인 질문으로 나누는 연습용 샘플입니다.",
+                files=["00_README_회의메모실전팩.md", "01_회의메모원본.txt", "02_정리조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
+            ),
+        ]
+    if motivation == "writing":
+        return [
+            _edu_vp_material_kit(
+                kit_id="day1-writing-draft-kit",
+                title="짧은 글 초안 실전팩",
+                description=f"{llm_label}에게 메모를 읽기 쉬운 글 초안으로 바꾸게 하는 연습용 샘플입니다.",
+                files=["00_README_글초안실전팩.md", "01_흩어진메모.txt", "02_글쓰기조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
+            )
+        ]
+    if motivation == "daily":
+        return [
+            _edu_vp_material_kit(
+                kit_id="day1-daily-schedule-kit",
+                title="생활 일정 정리 실전팩",
+                description=f"{llm_label}에게 흩어진 생활 메모를 일정과 준비물로 정리하게 하는 연습용 샘플입니다.",
+                files=["00_README_생활일정실전팩.md", "01_흩어진생활메모.txt", "02_정리조건.txt", "03_AI에게붙여넣을프롬프트.txt", "04_좋은결과예시.txt"],
+            )
+        ]
     return [
         _edu_vp_material_kit(
             kit_id="day1-school-notice-kit",
@@ -9335,9 +9382,43 @@ def _edu_vp_build_day1(intake: dict[str, Any]) -> dict[str, Any]:
     llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or "gemini"))
     friction = str(intake.get("biggest_friction") or "AI가 어렵고 막막함").strip()
     goal = str(intake.get("learning_goal") or "생활과 업무에서 바로 쓸 수 있는 첫 성공 만들기").strip()
-    query = f"{friction} {goal} 학원 일정 학교 공지 가정통신문 병원 예약 엄마모임 가족모임"
+    motivation = _edu_vp_curriculum_motivation(str(intake.get("segment") or "worker"), intake)
+    if motivation == "work":
+        title = "Day 1 · 업무 메모와 반복 작업을 AI로 정리해보기"
+        learning_why = "오늘은 AI에게 막연히 일을 맡기는 것이 아니라, 실제 업무 메시지·회의 메모·반복 확인 일을 구조화해서 첫 초안을 만드는 연습을 하는 날입니다."
+        learning_outcome = "Day 1을 마치면 받은 업무 메시지, 회의 메모, 할 일 목록 같은 재료를 AI로 초안화하고, 사람이 다시 확인해 실제로 쓸 수 있게 고치는 기본 루틴을 익히게 됩니다."
+        action_options = "업무 답장 정리/회의 메모 요약/할 일 목록 만들기/확인 질문 뽑기/반복 업무 체크리스트 만들기"
+        prompt_context = "업무 메시지, 회의 메모, 보고 초안, 할 일 목록, 반복 확인 업무"
+        query_terms = "업무 회의 메모 답장 보고 초안 체크리스트 반복 작업"
+        rubric_scene = "업무 장면 1개"
+    elif motivation == "writing":
+        title = "Day 1 · 짧은 글 초안 만들기"
+        learning_why = "오늘은 AI에게 완성글을 대신 쓰게 하는 것이 아니라, 흩어진 생각을 읽기 쉬운 첫 문장과 짧은 초안으로 바꾸는 연습을 하는 날입니다."
+        learning_outcome = "Day 1을 마치면 메모, 안내문, 짧은 글감을 AI로 초안화하고 내 말투와 목적에 맞게 다시 고치는 기본 루틴을 익히게 됩니다."
+        action_options = "짧은 글 초안/안내문 초안/메모 정리/부드러운 문장 바꾸기"
+        prompt_context = "짧은 메모, 안내문, 글감, 문장 다듬기"
+        query_terms = "글쓰기 메모 문장 초안 안내문 표현 다듬기"
+        rubric_scene = "글쓰기 장면 1개"
+    elif motivation == "daily":
+        title = "Day 1 · 생활 일정과 메모 정리하기"
+        learning_why = "오늘은 AI에게 일상을 대신 판단하게 하는 것이 아니라, 흩어진 생활 메모와 일정을 보기 쉽게 정리하는 연습을 하는 날입니다."
+        learning_outcome = "Day 1을 마치면 생활 일정, 준비물, 예약, 가족 공유 메모를 AI로 초안화하고 사람이 다시 확인하는 기본 루틴을 익히게 됩니다."
+        action_options = "생활 일정 정리/준비물 목록/예약 메모 정리/가족 공유 문장 만들기"
+        prompt_context = "생활 일정, 준비물, 예약, 가족 공유 메모"
+        query_terms = "생활 일정 메모 준비물 예약 가족 공유 정리"
+        rubric_scene = "생활 장면 1개"
+    else:
+        title = "Day 1 · 가정통신문과 학원 일정을 AI로 정리해보기"
+        learning_why = "오늘은 AI에게 막연히 말을 걸어보는 것이 아니라, 주부/학부모가 실제로 매일 겪는 공지·일정·답장 문제를 구조화해서 머리 부담을 줄이는 연습을 하는 날입니다."
+        learning_outcome = "Day 1을 마치면 긴 가정통신문, 학원 일정 충돌, 진학 설명회 메모, 학부모 단톡방 답장 같은 재료를 AI로 첫 초안화하고, 내 말투에 맞게 다듬는 기본 루틴을 익히게 됩니다."
+        action_options = "학원 일정 정리/학교 공지 요약/가정통신문 정리/병원 예약 정리/엄마모임과 가족모임 충돌 정리"
+        prompt_context = "학원 일정, 학교 공지, 가정통신문, 병원 예약, 엄마모임, 가족모임"
+        query_terms = "학원 일정 학교 공지 가정통신문 병원 예약 엄마모임 가족모임"
+        rubric_scene = "생활 장면 1개"
+    query = f"{friction} {goal} {query_terms}"
+    retrieval_segment = "worker" if motivation == "work" else "parent"
     try:
-        bundle = _retrieve_evidence_bundle(query, "parent", k=4)
+        bundle = _retrieve_evidence_bundle(query, retrieval_segment, k=4)
     except Exception as exc:  # noqa: BLE001
         _edu_runtime_event(
             "vp_training_day1_bundle_failed",
@@ -9362,29 +9443,29 @@ def _edu_vp_build_day1(intake: dict[str, Any]) -> dict[str, Any]:
     customer_facing_safe = mode == "db_customer_facing"
     schedule_blocks = _edu_vp_schedule_blocks("day1")
     return {
-        "title": "Day 1 · 가정통신문과 학원 일정을 AI로 정리해보기",
-        "learning_why": "오늘은 AI에게 막연히 말을 걸어보는 것이 아니라, 주부/학부모가 실제로 매일 겪는 공지·일정·답장 문제를 구조화해서 머리 부담을 줄이는 연습을 하는 날입니다.",
-        "learning_outcome": "Day 1를 마치면 긴 가정통신문, 학원 일정 충돌, 진학 설명회 메모, 학부모 단톡방 답장 같은 재료를 AI로 첫 초안화하고, 내 말투에 맞게 다듬는 기본 루틴을 익히게 됩니다.",
+        "title": title,
+        "learning_why": learning_why,
+        "learning_outcome": learning_outcome,
         "estimated_minutes": _edu_vp_total_minutes(schedule_blocks),
         "completion_rule": "한두 개 버튼만 누르면 끝나는 날이 아니라, 최소 약 85분 동안 기초 설명을 읽고, 실전 교보재 1회 이상 수행하고, 수정본과 회고까지 남겼을 때 Day 1 완료로 봅니다.",
         "foundation_concepts": _edu_vp_foundation_concepts("day1", llm_label),
         "schedule_blocks": schedule_blocks,
-        "required_action": f"{llm_label}에게 '학원 일정 정리/학교 공지 요약/가정통신문 정리/병원 예약 정리/엄마모임과 가족모임 충돌 정리' 중 지금 제일 스트레스인 장면 1개를 설명하고, 쉬운 한국어 초안 1개를 받은 뒤 직접 고쳐본다.",
+        "required_action": f"{llm_label}에게 '{action_options}' 중 지금 제일 스트레스인 장면 1개를 설명하고, 쉬운 한국어 초안 1개를 받은 뒤 직접 고쳐본다.",
         "proof_artifact_hint": "처음 결과와 본인이 고친 최종 결과를 둘 다 붙여 넣으세요.",
         "pass_fail_rubric": [
-            "생활 장면 1개를 실제로 질문했다",
+            f"{rubric_scene}를 실제로 질문했다",
             "AI 초안을 1개 받았다",
             "본인이 직접 문장을 다시 고쳤다",
             "전/후 결과를 남겼다",
         ],
-        "sample_materials": _edu_vp_day1_materials(llm_label),
+        "sample_materials": _edu_vp_day1_materials(llm_label, motivation),
         "tutorial_steps": _edu_vp_tutorial_steps("day1", intake),
         "recommended_learning": _edu_vp_recommended_learning("day1"),
         "home_life_recommended_learning": _edu_vp_home_recommended_learning(),
         "home_priority_missions": _edu_vp_home_priority_missions(),
         "scenario_bank": _edu_vp_home_scenarios(),
         "blocked_step_options": ["pick_scene", "ask_ai", "rewrite", "save_output"],
-        "practice_prompt_template": f"지금 제일 부담되는 생활 장면은 '{friction}'입니다. 예를 들어 학원 일정, 학교 공지, 가정통신문, 병원 예약, 엄마모임, 가족모임처럼 실제 집안일과 연결해서 생각하고 있습니다. {goal}에 맞게, 초등학생도 이해할 수 있을 만큼 쉬운 한국어로 오늘 바로 쓸 초안 1개만 적어줘.",
+        "practice_prompt_template": f"지금 제일 부담되는 장면은 '{friction}'입니다. 예를 들어 {prompt_context}처럼 실제 상황과 연결해서 생각하고 있습니다. {goal}에 맞게, 초등학생도 이해할 수 있을 만큼 쉬운 한국어로 오늘 바로 쓸 초안 1개만 적어줘.",
         "evidence_bundle_id": f"vp-day1-{hashlib.sha1(query.encode('utf-8')).hexdigest()[:10]}",
         "retrieval_mode": mode,
         "customer_facing_safe": customer_facing_safe,
@@ -11490,6 +11571,7 @@ def edu_vp_training_intake(
         "current_device": (req.current_device or "iphone").strip().lower(),
         "desktop_os": (req.desktop_os or "mac").strip().lower(),
         "ai_experience": (req.ai_experience or "beginner").strip().lower(),
+        "motivation": (req.motivation or "work").strip().lower(),
         "biggest_friction": (req.biggest_friction or "").strip(),
         "learning_goal": (req.learning_goal or "").strip(),
         "media_preference": (req.media_preference or "mixed").strip().lower(),
@@ -12309,6 +12391,34 @@ def _edu_vp_material_zip_bytes(kit_id: str) -> tuple[str, bytes]:
             "02_원하는답장조건.txt": "조건: 1) 부드러운 한국어 2) 너무 길지 않게 3) 참석 가능 여부 포함 4) 예민하거나 딱딱한 말투 금지",
             "03_AI에게붙여넣을프롬프트.txt": "아래 메시지에 대한 답장을 아주 쉬운 한국어로 1개 써줘. 너무 길지 않게, 부드럽고 예의 있게, 참석 가능 여부가 들어가게 해줘.\n\n[받은 메시지]\n안녕하세요. 내일 공개수업 후에 간단히 반 대표 모임을 하려고 합니다. 시간 괜찮으실지, 혹시 준비해 오실 의견 있으시면 미리 알려주세요.",
             "04_좋은결과예시.txt": "안녕하세요. 내일 공개수업 후 모임에 참석 가능합니다. 따로 준비해 갈 의견이 생기면 미리 말씀드리겠습니다. 감사합니다.",
+        },
+        "day1-work-reply-kit": {
+            "00_README_업무답장실전팩.md": "# 업무 답장 정리 실전팩\n\n받은 업무 메시지를 확인사항, 답장 초안, 다음 행동으로 나누는 연습입니다.",
+            "01_받은업무메시지.txt": "이번 주 금요일까지 거래처에 보낼 제안서 초안을 먼저 공유해주세요. 비용 항목은 아직 확정 전이라 내부 검토 후 다시 조정해야 합니다. 목요일 오후 회의 전까지 주요 쟁점도 함께 정리 부탁드립니다.",
+            "02_답장조건.txt": "조건: 1) 정중하지만 짧게 2) 할 일과 확인할 점을 나눠서 3) 비용은 확정 전이라고 표시 4) 내가 바로 보낼 수 있게",
+            "03_AI에게붙여넣을프롬프트.txt": "아래 업무 메시지를 보고 답장 초안을 아주 쉬운 한국어로 써줘. 할 일, 확인할 점, 답장 문장을 나눠줘.\n\n이번 주 금요일까지 거래처에 보낼 제안서 초안을 먼저 공유해주세요. 비용 항목은 아직 확정 전이라 내부 검토 후 다시 조정해야 합니다. 목요일 오후 회의 전까지 주요 쟁점도 함께 정리 부탁드립니다.",
+            "04_좋은결과예시.txt": "할 일: 제안서 초안 작성, 주요 쟁점 정리, 비용 항목 내부 확인\n확인할 점: 비용 항목은 아직 확정 전인지 다시 표시 필요\n답장 초안: 네, 금요일 전까지 제안서 초안을 먼저 공유드리겠습니다. 비용 항목은 내부 검토 후 조정될 수 있도록 표시하고, 목요일 회의 전 주요 쟁점도 함께 정리해두겠습니다.",
+        },
+        "day1-meeting-notes-kit": {
+            "00_README_회의메모실전팩.md": "# 회의 메모 정리 실전팩\n\n뒤섞인 회의 메모를 결정사항, 할 일, 확인 질문으로 나누는 연습입니다.",
+            "01_회의메모원본.txt": "랜딩페이지 문구는 이번 주 안에 2안으로 정리. 가격표는 아직 확정하지 말 것. 다음 뉴스레터 발행 전까지 독자 반응 데이터 확인. 결제 버튼 위치는 모바일에서 다시 테스트. 법무 검토 필요한 표현 따로 표시.",
+            "02_정리조건.txt": "조건: 1) 결정사항 / 할 일 / 확인 질문 3칸 2) 모바일에서 보기 쉽게 3) 오늘 바로 할 일을 따로 표시",
+            "03_AI에게붙여넣을프롬프트.txt": "아래 회의 메모를 결정사항, 할 일, 확인 질문으로 나눠줘. 오늘 바로 할 일도 따로 표시해줘.\n\n랜딩페이지 문구는 이번 주 안에 2안으로 정리. 가격표는 아직 확정하지 말 것. 다음 뉴스레터 발행 전까지 독자 반응 데이터 확인. 결제 버튼 위치는 모바일에서 다시 테스트. 법무 검토 필요한 표현 따로 표시.",
+            "04_좋은결과예시.txt": "결정사항: 랜딩페이지 문구는 이번 주 안에 2안 작성, 가격표는 아직 확정하지 않음\n할 일: 독자 반응 데이터 확인, 모바일 결제 버튼 위치 테스트, 법무 검토 표현 표시\n확인 질문: 가격표 확정 시점은 언제인가? 법무 검토 기준은 무엇인가?\n오늘 바로 할 일: 랜딩페이지 문구 2안 초안 만들기",
+        },
+        "day1-writing-draft-kit": {
+            "00_README_글초안실전팩.md": "# 짧은 글 초안 실전팩\n\n흩어진 메모를 읽기 쉬운 짧은 글로 바꾸는 연습입니다.",
+            "01_흩어진메모.txt": "AI를 처음 쓰는 사람은 용어가 어렵다. LLM이라는 말도 낯설다. 너무 빨리 실습으로 들어가면 무섭거나 헷갈릴 수 있다. 먼저 안전과 원리를 쉽게 설명해야 한다.",
+            "02_글쓰기조건.txt": "조건: 1) 초등학생도 이해할 말 2) 5문장 이하 3) 딱딱하지 않게 4) 과장 금지",
+            "03_AI에게붙여넣을프롬프트.txt": "아래 메모를 읽기 쉬운 짧은 글 초안으로 바꿔줘. 초등학생도 이해할 말로, 5문장 이하로 써줘.\n\nAI를 처음 쓰는 사람은 용어가 어렵다. LLM이라는 말도 낯설다. 너무 빨리 실습으로 들어가면 무섭거나 헷갈릴 수 있다. 먼저 안전과 원리를 쉽게 설명해야 한다.",
+            "04_좋은결과예시.txt": "AI를 처음 쓰는 사람에게는 어려운 말이 많습니다. LLM이라는 말도 처음 들으면 낯설 수 있습니다. 그래서 바로 실습부터 하면 헷갈리거나 불안할 수 있습니다. 먼저 AI가 어떻게 답을 만드는지와 안전하게 쓰는 법을 쉬운 말로 확인해야 합니다.",
+        },
+        "day1-daily-schedule-kit": {
+            "00_README_생활일정실전팩.md": "# 생활 일정 정리 실전팩\n\n흩어진 생활 메모를 일정, 준비물, 확인할 일로 나누는 연습입니다.",
+            "01_흩어진생활메모.txt": "화요일 오전 치과 예약, 수요일 택배 반품 마감, 금요일 가족 저녁 약속, 장보기는 우유 계란 세제, 관리비 납부 이번 주 안에, 토요일 오전 세탁소 찾기",
+            "02_정리조건.txt": "조건: 1) 날짜순 2) 준비물 따로 3) 놓치면 곤란한 일 표시 4) 가족에게 공유하기 쉬운 말",
+            "03_AI에게붙여넣을프롬프트.txt": "아래 생활 메모를 날짜순으로 정리해줘. 준비물과 놓치면 곤란한 일도 따로 표시해줘.\n\n화요일 오전 치과 예약, 수요일 택배 반품 마감, 금요일 가족 저녁 약속, 장보기는 우유 계란 세제, 관리비 납부 이번 주 안에, 토요일 오전 세탁소 찾기",
+            "04_좋은결과예시.txt": "화요일: 오전 치과 예약\n수요일: 택배 반품 마감\n금요일: 가족 저녁 약속\n토요일: 오전 세탁소 찾기\n이번 주 안에: 관리비 납부\n준비물/살 것: 우유, 계란, 세제\n놓치면 곤란한 일: 택배 반품, 관리비 납부",
         },
     }
     files = bundles.get(kit_id)

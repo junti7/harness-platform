@@ -608,11 +608,13 @@ class EduVpTrainingFlowTests(unittest.TestCase):
                     "preferred_llm": "claude",
                     "biggest_friction": "뭘 질문해야 할지 모르겠다",
                     "learning_goal": "회의 메모와 답장을 덜 부담스럽게 만들기",
+                    "motivation": "work",
                 }
             )
 
         self.assertIn("Claude", card["required_action"])
-        self.assertIn("학원 일정 정리/학교 공지 요약/가정통신문 정리/병원 예약 정리/엄마모임과 가족모임 충돌 정리", card["required_action"])
+        self.assertIn("업무 답장 정리/회의 메모 요약/할 일 목록 만들기", card["required_action"])
+        self.assertIn("업무 메모와 반복 작업", card["title"])
         self.assertGreaterEqual(card["estimated_minutes"], 60)
         self.assertGreaterEqual(len(card["foundation_concepts"]), 4)
         self.assertGreaterEqual(len(card["schedule_blocks"]), 6)
@@ -621,26 +623,60 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertFalse(card["fallback_used"])
         self.assertTrue(card["external_reuse_safe"])
         self.assertEqual(len(card["evidence_cards"]), 1)
-        self.assertEqual(len(card["sample_materials"]), 4)
-        self.assertEqual(card["sample_materials"][0]["kit_id"], "day1-school-notice-kit")
+        self.assertEqual(len(card["sample_materials"]), 2)
+        self.assertEqual(card["sample_materials"][0]["kit_id"], "day1-work-reply-kit")
         self.assertGreaterEqual(len(card["home_priority_missions"]), 4)
         self.assertGreaterEqual(len(card["scenario_bank"]), 10)
         self.assertIn("학교 준비물 공지 정리", [item["title"] for item in card["scenario_bank"]])
         self.assertGreaterEqual(len(card["home_life_recommended_learning"]), 1)
         self.assertIn("직접 AI를 써봐야", card["evidence_cards"][0]["title"])
-        self.assertEqual(mocked_bundle.call_count, 3)
-        first_args, first_kwargs = mocked_bundle.call_args_list[0]
-        second_args, second_kwargs = mocked_bundle.call_args_list[1]
-        third_args, third_kwargs = mocked_bundle.call_args_list[2]
-        self.assertIn("학원 일정 학교 공지 가정통신문", first_args[0])
-        self.assertEqual(first_args[1], "parent")
-        self.assertEqual(first_kwargs["k"], 4)
-        self.assertIn("학원 일정 학교 공지 가정통신문 병원 예약 엄마모임 가족모임", second_args[0])
-        self.assertEqual(second_args[1], "parent")
-        self.assertEqual(second_kwargs["k"], 4)
-        self.assertIn("네이버 맘카페 학원 일정", third_args[0])
-        self.assertEqual(third_args[1], "parent")
-        self.assertEqual(third_kwargs["k"], 6)
+        self.assertEqual(mocked_bundle.call_args_list[0][0][1], "worker")
+
+    def test_work_motivation_keeps_day1_and_outline_work_focused(self):
+        state = {
+            "intake": {
+                "preferred_llm": "claude",
+                "segment": "parent",
+                "motivation": "work",
+                "biggest_friction": "업무 답장이 막막함",
+                "learning_goal": "업무와 반복 작업에 AI를 활용하기",
+            },
+            "customer": {"segment": "parent"},
+            "day1": self.mod._edu_vp_build_day1({
+                "preferred_llm": "claude",
+                "segment": "parent",
+                "motivation": "work",
+                "biggest_friction": "업무 답장이 막막함",
+                "learning_goal": "업무와 반복 작업에 AI를 활용하기",
+            }),
+        }
+
+        outline = self.mod._edu_vp_planned_curriculum_outline(state)
+
+        self.assertIn("업무 메모와 반복 작업", state["day1"]["title"])
+        self.assertIn("업무 메모와 반복 작업", outline[1]["title"])
+        self.assertNotIn("가정통신문", outline[1]["title"])
+
+    def test_work_motivation_seeds_dynamic_curriculum_path(self):
+        path, _meta = self.mod._edu_vp_build_dynamic_curriculum_path(
+            {
+                "preferred_llm": "claude",
+                "segment": "parent",
+                "motivation": "work",
+                "biggest_friction": "업무 답장이 막막함",
+                "learning_goal": "업무와 반복 작업에 AI를 활용하기",
+                "ai_experience": "beginner",
+            },
+            {
+                "segment": "parent",
+                "order": [{"topic": "자녀학습/숙제", "weight": 0.9}],
+                "top_concerns": [{"concern": "업무 답장이 막막함"}],
+                "highlights": [{"title": "업무 답장 예시"}],
+                "overlay": [{"model": "Claude"}],
+            },
+        )
+
+        self.assertEqual(path[0]["topic"], "업무 활용")
 
     def test_material_zip_contains_expected_files(self):
         filename, payload = self.mod._edu_vp_material_zip_bytes("day1-school-notice-kit")
