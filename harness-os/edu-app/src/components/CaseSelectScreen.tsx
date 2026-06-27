@@ -115,7 +115,7 @@ export default function CaseSelectScreen({
   }
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 py-7">
+    <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 py-7 sm:max-w-[760px] sm:px-6 lg:max-w-[960px] xl:max-w-[1120px] xl:px-8">
       <header className="mb-6 flex items-center justify-between">
         <div className="flex flex-col">
           <span className="text-xs font-semibold uppercase tracking-[0.12em] text-text-faint">

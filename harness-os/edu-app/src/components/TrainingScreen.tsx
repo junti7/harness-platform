@@ -1856,7 +1856,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
 
   if (loading) {
     return (
-      <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 py-7 sm:max-w-[760px] sm:px-6">
+      <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 py-7 sm:max-w-[760px] sm:px-6 lg:max-w-[960px] xl:max-w-[1120px] xl:px-8">
         {header}
         <div className="flex flex-1 items-center justify-center gap-2 text-text-muted">
           <Loader2 size={18} className="animate-spin" />
@@ -1868,7 +1868,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
 
   if (!exists) {
     return (
-      <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 py-7 sm:max-w-[760px] sm:px-6">
+      <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 py-7 sm:max-w-[760px] sm:px-6 lg:max-w-[960px] xl:max-w-[1120px] xl:px-8">
         {header}
         <div className="mt-6 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border bg-card px-6 py-12 text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent text-accent-foreground">
@@ -1897,7 +1897,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const safetyGateActive = stage === 'day0' && !safetyReady && !current?.completed
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 py-7 sm:max-w-[760px] sm:px-6">
+    <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 py-7 sm:max-w-[760px] sm:px-6 lg:max-w-[960px] xl:max-w-[1120px] xl:px-8">
       {header}
 
       {questionArchiveOpen ? (
