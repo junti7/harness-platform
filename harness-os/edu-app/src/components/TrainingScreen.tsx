@@ -69,6 +69,11 @@ type SafetyCoachThreadItem = {
   createdAt: string
 }
 type SafetyCoachThreads = SafetyCoachThreadItem[]
+type SafetyCoachThreadGroup = {
+  stage: StageKey
+  label: string
+  items: SafetyCoachThreads
+}
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) {
@@ -172,6 +177,90 @@ function appendSafetyCoachThread(threads: SafetyCoachThreads, item: SafetyCoachT
   const key = `${item.conceptId}::${item.version}::${item.question.trim()}`
   const withoutDuplicate = threads.filter((thread) => `${thread.conceptId}::${thread.version}::${thread.question.trim()}` !== key)
   return [...withoutDuplicate, item].slice(-40)
+}
+
+function mergeSafetyCoachThreads(...groups: SafetyCoachThreads[]): SafetyCoachThreads {
+  return groups.flat().reduce<SafetyCoachThreads>((acc, item) => appendSafetyCoachThread(acc, item), [])
+}
+
+function safetyCoachThreadGroups(
+  state: TrainingState | null,
+  activeStage: StageKey,
+  activeThreads: SafetyCoachThreads,
+): SafetyCoachThreadGroup[] {
+  const drafts = state?.ui_state?.stage_drafts ?? {}
+  return STAGE_ORDER.map((key) => {
+    const draftThreads = currentSafetyCoachThreads(drafts[key]?.safety_coach_threads)
+    const items = key === activeStage ? mergeSafetyCoachThreads(draftThreads, activeThreads) : draftThreads
+    return { stage: key, label: STAGE_LABEL[key], items }
+  })
+}
+
+function QuestionArchivePanel({
+  groups,
+  onClose,
+}: {
+  groups: SafetyCoachThreadGroup[]
+  onClose: () => void
+}) {
+  const hasItems = groups.some((group) => group.items.length > 0)
+  return (
+    <section className="mb-4 rounded-2xl border border-border bg-card p-4 print:border-0 print:p-0 print:shadow-none">
+      <div className="mb-3 flex items-start justify-between gap-3 print:hidden">
+        <div className="min-w-0">
+          <h2 className="text-base font-bold leading-snug text-ink-strong">Day별 질문 모아보기</h2>
+          <p className="mt-1 text-xs leading-relaxed text-text-faint">
+            Day별로 남긴 질문과 AI 코치 답변을 한 곳에서 다시 봅니다.
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-1.5">
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="rounded-[9px] border border-border bg-secondary px-3 py-2 text-xs font-semibold text-ink transition hover:bg-card"
+          >
+            전체 프린트
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-[9px] border border-border bg-secondary px-3 py-2 text-xs font-semibold text-ink transition hover:bg-card"
+          >
+            닫기
+          </button>
+        </div>
+      </div>
+      <div className="hidden print:block">
+        <h1 className="text-xl font-bold text-ink-strong">Day별 질문 모아보기</h1>
+      </div>
+      {!hasItems ? (
+        <div className="rounded-[12px] border border-dashed border-border bg-secondary px-3 py-6 text-center text-sm text-text-muted">
+          아직 저장된 질문이 없습니다.
+        </div>
+      ) : (
+        <div className="grid gap-3">
+          {groups.map((group) => (
+            <div key={group.stage} className="rounded-[12px] border border-border bg-secondary p-3 print:break-inside-avoid print:bg-card">
+              <h3 className="text-sm font-bold text-ink">{group.label}</h3>
+              {group.items.length ? (
+                <div className="mt-2 grid gap-2">
+                  {group.items.slice().reverse().map((item) => (
+                    <article key={`${group.stage}-${item.id}`} className="rounded-[10px] border border-border bg-card px-3 py-2 print:border-border">
+                      <div className="mb-1 text-[11px] font-semibold text-primary">{item.conceptTitle}</div>
+                      <p className="text-xs font-semibold leading-relaxed text-ink">Q. {item.question}</p>
+                      <p className="mt-1 text-xs leading-relaxed text-text-muted">A. {item.answer}</p>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs leading-relaxed text-text-faint">이 Day에는 아직 질문이 없습니다.</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
 }
 
 function languageLabel(value?: string): string {
@@ -839,6 +928,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const [safetySyncing, setSafetySyncing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [questionArchiveOpen, setQuestionArchiveOpen] = useState(false)
   const seqRef = useRef(0)
   const conceptFeedbackRef = useRef<SafetyConceptFeedback>({})
   const coachAnswersRef = useRef<SafetyCoachAnswers>({})
@@ -1144,8 +1234,9 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   }
 
   // ── 렌더 ──────────────────────────────────────────────
+  const questionGroups = safetyCoachThreadGroups(state, stage, coachThreads)
   const header = (
-    <header className="mb-5 flex items-center gap-3">
+    <header className="mb-5 flex items-center gap-3 print:hidden">
       <button
         type="button"
         onClick={onBack}
@@ -1162,6 +1253,15 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           {String(state?.case?.case_label ?? `훈련 #${caseId}`)}
         </h1>
       </div>
+      {state ? (
+        <button
+          type="button"
+          onClick={() => setQuestionArchiveOpen((v) => !v)}
+          className="ml-auto shrink-0 rounded-[9px] border border-border bg-card px-3 py-2 text-xs font-semibold text-ink transition hover:bg-secondary"
+        >
+          질문 모아보기
+        </button>
+      ) : null}
     </header>
   )
 
@@ -1210,6 +1310,11 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 py-7">
       {header}
 
+      {questionArchiveOpen ? (
+        <QuestionArchivePanel groups={questionGroups} onClose={() => setQuestionArchiveOpen(false)} />
+      ) : null}
+
+      <div className={questionArchiveOpen ? 'print:hidden' : ''}>
       {/* 전체 진행률 */}
       <div className="mb-4 flex items-center gap-2.5">
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
@@ -1417,6 +1522,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           ) : null}
         </div>
         ) : null}
+      </div>
       </div>
     </div>
   )
