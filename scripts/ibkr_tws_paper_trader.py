@@ -706,11 +706,37 @@ def run(execute: bool = False) -> None:
     print(f"포트: {TWS_PORT} | 유니버스: {len(universe)}종목")
     print("=" * 62)
 
+    def _connect_ib(ib: IB, host: str, port: int, client_id: int) -> bool:
+        """IB Gateway 연결 (실패 시 False). ib_insync IB 객체 재사용 가능."""
+        try:
+            if ib.isConnected():
+                return True
+            ib.connect(host, port, clientId=client_id, timeout=10)
+            return True
+        except Exception as e:
+            print(f"[ERROR] IB Gateway 연결 실패: {e}")
+            return False
+
+    def ensure_connected(ib: IB) -> bool:
+        """연결 끊김 감지 시 1회 재연결 시도."""
+        if ib.isConnected():
+            return True
+        print("[WARN] IB Gateway 연결 끊김 감지 — 재연결 시도")
+        try:
+            ib.disconnect()
+        except Exception:
+            pass
+        _time.sleep(3)
+        try:
+            ib.connect(TWS_HOST, TWS_PORT, clientId=TWS_CLIENT_ID + 1, timeout=10)
+            print("[INFO] 재연결 성공")
+            return True
+        except Exception as e:
+            print(f"[ERROR] 재연결 실패: {e}")
+            return False
+
     ib = IB()
-    try:
-        ib.connect(TWS_HOST, TWS_PORT, clientId=TWS_CLIENT_ID, timeout=10)
-    except Exception as e:
-        print(f"[ERROR] IB Gateway 연결 실패: {e}")
+    if not _connect_ib(ib, TWS_HOST, TWS_PORT, TWS_CLIENT_ID):
         print("  → IB Gateway 실행 중인지, API 포트 4002 활성화됐는지 확인하세요.")
         return
     accounts = ib.managedAccounts()
@@ -754,6 +780,9 @@ def run(execute: bool = False) -> None:
 
     # 포지션 관리 (reconcile + 손절/청산)
     print("\n── 포지션 관리 ──")
+    if not ensure_connected(ib):
+        print("[ERROR] 재연결 실패 — 포지션 관리 생략")
+        return
     mgmt_actions = manage_positions_ibkr(
         ib, state, broker_positions, universe_set, paper_account, dry_run)
     exit_acts = [a for a in mgmt_actions if a.get("action") == "exit"]
@@ -771,7 +800,6 @@ def run(execute: bool = False) -> None:
 
     # 피라미딩
     print("\n── 피라미딩 ──")
-    # 피라미딩 후 broker_positions 새로 고침
     broker_positions = get_broker_positions(ib, paper_account)
     pyramid_acts = pyramid_positions_ibkr(
         ib, state, broker_positions, nav, paper_account, dry_run)
@@ -940,7 +968,7 @@ def run(execute: bool = False) -> None:
             print(f"     체결: status={status} qty={filled_qty} avg=${fill_price:.2f}")
 
             if filled_qty <= 0:
-                # timeout/미체결 — pending 유지하고 다음 run reconcile에 위임
+                # 완전 미체결 — pending 유지, 다음 run reconcile에 위임
                 updated_pending = {**pending_rec, "status": status, "last_checked": now_iso()}
                 state["pending_orders"][sym] = updated_pending
                 state_set_pending(sym, updated_pending)
@@ -949,7 +977,18 @@ def run(execute: bool = False) -> None:
                            "order_status": status, "system": system, "dry_run": False})
                 continue
 
-            # 체결 완료 → pending 제거
+            # 부분 체결 감지 — 잔여 주문 즉시 취소 (dangling open order 방지)
+            if status not in ("Filled",):
+                cancel_ibkr_order(ib, trade.order.orderId)
+                ib.sleep(1)
+                # 취소 후 최종 체결 수량 재확인
+                filled_qty = float(trade.orderStatus.filled or filled_qty)
+                print(f"     → 부분체결({int(filled_qty)}주) — 잔여 취소. 부분 수량으로 진행")
+                log_entry({"ts": now_iso(), "action": "enter_partial_fill_cancelled",
+                           "symbol": sym, "filled_qty": filled_qty, "requested": shares,
+                           "original_status": status})
+
+            # 체결(전체 or 부분) 완료 → pending 제거
             state_pop_pending(sym)
             state.get("pending_orders", {}).pop(sym, None)
 
@@ -994,7 +1033,7 @@ def run(execute: bool = False) -> None:
                 "atr": atr, "atr_usd": round(atr_usd, 6),
                 "stop_loss": actual_stop, "system": system,
                 "resident_stop_id": stop_id,
-                "risk_pct": gate["risk_pct"], "dry_run": False,
+                "risk_pct": risk_pct_val, "dry_run": False,
             })
             print(f"     → 진입 완료 (stop_id={stop_id}, stop=${actual_stop})")
         else:

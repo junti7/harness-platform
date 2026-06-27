@@ -374,3 +374,108 @@ def test_state_set_position_preserves_other_keys(tmp_path, monkeypatch):
     assert state["baseline"]["nav"] == 50000
     assert state["last_run"] == "2026-06-27T01:00:00Z"
     assert "GLD" in state["positions"]
+
+
+# ── 8. 부분 체결 처리 ─────────────────────────────────────────────────────────
+
+def test_wait_for_fill_partial_then_timeout():
+    """부분 체결 후 timeout — filled_qty > 0, status 비terminal."""
+    trade = MagicMock()
+    trade.orderStatus.status = "PreSubmitted"
+    trade.orderStatus.filled = 5
+    trade.orderStatus.avgFillPrice = 100.0
+
+    ib = MagicMock()
+    ib.sleep = MagicMock()
+
+    status, qty, price = t.wait_for_fill_ibkr(ib, trade, timeout_s=0.001, poll_s=0.0005)
+    # timeout 시 현재 상태 그대로 반환
+    assert qty == 5.0
+    assert status not in ("Filled",)  # 완전 체결이 아님을 확인
+
+
+def test_cancel_ibkr_order_called_on_partial(tmp_path, monkeypatch):
+    """부분 체결(status!=Filled, filled_qty>0) 시 cancel_ibkr_order 호출."""
+    monkeypatch.setattr(t, "STATE_PATH", tmp_path / "s.json")
+    monkeypatch.setattr(t, "LOG_PATH", tmp_path / "l.jsonl")
+    (tmp_path / "s.json").write_text('{"positions":{},"pending_orders":{}}')
+
+    cancelled = []
+
+    def _mock_cancel(ib_, order_id):
+        cancelled.append(order_id)
+
+    # wait_for_fill: 부분 체결 시뮬레이션
+    def _partial_fill(ib_, trade_, **kw):
+        return "PreSubmitted", 5.0, 100.0  # 5주만 체결
+
+    monkeypatch.setattr(t, "cancel_ibkr_order", _mock_cancel)
+    monkeypatch.setattr(t, "wait_for_fill_ibkr", _partial_fill)
+    monkeypatch.setattr(t, "place_resident_stop",
+                        lambda ib_, c, qty, stop, acct: 9002)
+    monkeypatch.setattr(t, "get_usd_rate", lambda ib_, cur: 1.0)
+    monkeypatch.setattr(t, "usd_rate_is_reliable", lambda cur: True)
+    monkeypatch.setattr(t, "fetch_bars_ibkr",
+                        lambda ib_, c, days=150: [{"h": 110, "l": 90, "c": 100, "o": 100}] * 60)
+
+    import core.turtle_strategy as core_mod
+    import unittest.mock as mock
+
+    fake_sig = {"signal": "breakout_long", "system": "S1", "symbol": "NVDA",
+                "current_price": 100.0, "atr": 5.0, "direction": "long"}
+    monkeypatch.setattr(core_mod, "signal_from_bars", lambda sym, bars: fake_sig)
+
+    ib = _make_ib()
+    ib.isConnected.return_value = True
+    ib.placeOrder.return_value = MagicMock(order=MagicMock(orderId=42))
+    ib.qualifyContracts.return_value = None
+
+    state = {"positions": {}, "pending_orders": {},
+             "baseline": {"nav": 100000}}
+    universe = [{"symbol": "NVDA", "exchange": "SMART", "currency": "USD",
+                 "region": "US", "harness_score": 80}]
+
+    with mock.patch.object(t, "load_universe", return_value=universe), \
+         mock.patch.object(t, "reconcile_pending_orders",
+                           return_value={"promoted": [], "purged": [], "kept": [],
+                                         "live_symbols": set()}), \
+         mock.patch.object(t, "state_flush_pending_and_positions"), \
+         mock.patch.object(t, "get_broker_positions", return_value={}), \
+         mock.patch.object(t, "manage_positions_ibkr", return_value=[]), \
+         mock.patch.object(t, "pyramid_positions_ibkr", return_value=[]), \
+         mock.patch.object(t, "load_state", return_value=state), \
+         mock.patch.object(t, "state_set_last_run"), \
+         mock.patch.object(t, "state_set_pending"), \
+         mock.patch.object(t, "state_pop_pending"), \
+         mock.patch.object(t, "state_set_position"):
+        ib.managedAccounts.return_value = ["DU999"]
+        ib.accountValues.return_value = [
+            SimpleNamespace(tag="NetLiquidation", currency="USD", value="100000"),
+            SimpleNamespace(tag="TotalCashValue", currency="USD", value="100000"),
+        ]
+        ib.connect.return_value = None
+        with mock.patch.object(t, "IB", return_value=ib):
+            t.run(execute=True)
+
+    assert any(c == 42 for c in cancelled), "부분 체결 후 cancel_ibkr_order 미호출"
+
+
+# ── 9. 비USD FX gate — stop_loss 현지통화 단위 검증 ────────────────────────────
+
+def test_non_usd_stop_loss_in_local_currency():
+    """KRW 종목: stop_loss = price - 2×atr_local (USD 혼입 없음)."""
+    import core.turtle_strategy as core_mod
+    price = 80000.0  # KRW
+    atr_local = 800.0  # KRW ATR
+    atr_usd = atr_local * (1 / 1380)  # ≈ 0.58 USD
+    nav = 50000.0  # USD
+
+    shares = core_mod.size_shares(nav, atr_usd)
+    stop_loss = round(price - core_mod.TURTLE_STOP_MULT * atr_local, 2)
+
+    assert stop_loss == pytest.approx(80000 - 2 * 800, abs=1)
+    assert stop_loss > 70000, "stop_loss가 KRW 현지통화 기준이어야 함"
+    assert stop_loss < 80000
+    risk_dollars = round(shares * core_mod.TURTLE_STOP_MULT * atr_usd, 2)
+    risk_pct = risk_dollars / nav
+    assert risk_pct <= 0.02 * 1.05, f"risk_pct {risk_pct:.4f} > 2.1%"
