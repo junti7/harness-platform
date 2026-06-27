@@ -9216,6 +9216,124 @@ def _edu_vp_safety_question_intent_classes(question: str) -> set[str]:
     return classes
 
 
+_EDU_VP_SAFETY_INTENT_TAXONOMY_MAP: dict[str, dict[str, Any]] = {
+    "ai_energy_use": {
+        "topic_domain": ["ai_principle"],
+        "user_need": ["explanation"],
+        "answer_shape": ["direct_answer", "simple_example"],
+        "must_include": ["data_center", "gpu_or_server", "cooling"],
+        "runtime_primary": "principle_question",
+    },
+    "professional_cost_barrier": {
+        "constraint_type": ["cost"],
+        "user_need": ["low_cost_alternative"],
+        "answer_shape": ["acknowledge_constraint", "practical_options"],
+        "must_include": ["cost_acknowledgement", "low_cost_options"],
+        "runtime_primary": "cost_barrier",
+    },
+    "isolation_dependency": {
+        "constraint_type": ["no_listener_available"],
+        "emotion_state": ["lonely"],
+        "answer_shape": ["empathy_first", "bounded_ai_support"],
+        "must_include": ["isolation_acknowledgement"],
+        "runtime_primary": "emotional_support",
+    },
+    "emotional_validation": {
+        "emotion_state": ["anxious", "comforted", "lonely"],
+        "answer_shape": ["empathy_first"],
+        "must_include": ["emotion_acknowledgement"],
+        "runtime_primary": "emotional_support",
+    },
+    "particle_prediction": {
+        "topic_domain": ["ai_principle"],
+        "user_need": ["mechanism_explanation"],
+        "answer_shape": ["simple_example"],
+        "runtime_primary": "principle_question",
+    },
+    "noun_prediction": {
+        "topic_domain": ["ai_principle"],
+        "user_need": ["mechanism_explanation"],
+        "answer_shape": ["simple_example"],
+        "runtime_primary": "principle_question",
+    },
+    "attention_mechanism": {
+        "topic_domain": ["ai_principle"],
+        "user_need": ["mechanism_explanation"],
+        "answer_shape": ["direct_answer", "simple_example"],
+        "runtime_primary": "principle_question",
+    },
+    "transformer_authors": {
+        "topic_domain": ["ai_history"],
+        "user_need": ["factual_lookup"],
+        "answer_shape": ["factual_answer"],
+        "runtime_primary": "factual_curiosity",
+    },
+    "ai_error_mechanism": {
+        "topic_domain": ["ai_principle"],
+        "user_need": ["mechanism_explanation", "trust_boundary"],
+        "answer_shape": ["direct_answer", "verification_boundary"],
+        "runtime_primary": "principle_question",
+    },
+    "transformer_ml_hierarchy": {
+        "topic_domain": ["ai_concept_comparison"],
+        "user_need": ["concept_distinction"],
+        "answer_shape": ["comparison"],
+        "runtime_primary": "principle_question",
+    },
+    "general_principle": {
+        "topic_domain": ["ai_principle"],
+        "user_need": ["basic_explanation"],
+        "answer_shape": ["direct_answer", "simple_example"],
+        "runtime_primary": "principle_question",
+    },
+}
+
+_EDU_VP_SAFETY_RUNTIME_INTENT_PRIORITY = (
+    "safety_boundary",
+    "cost_barrier",
+    "emotional_support",
+    "principle_question",
+    "factual_curiosity",
+    "practical_use",
+    "curiosity",
+)
+
+
+def _edu_vp_safety_coach_taxonomy_context(intent_classes: list[str] | set[str]) -> dict[str, Any]:
+    fields = ("topic_domain", "user_need", "constraint_type", "emotion_state", "answer_shape", "must_include")
+    taxonomy: dict[str, list[str]] = {field: [] for field in fields}
+    runtime_primary_candidates: list[str] = []
+    seen_by_field: dict[str, set[str]] = {field: set() for field in fields}
+    for intent_class in sorted(str(item) for item in intent_classes if str(item).strip()):
+        mapping = _EDU_VP_SAFETY_INTENT_TAXONOMY_MAP.get(intent_class)
+        if not mapping:
+            continue
+        runtime_primary = str(mapping.get("runtime_primary") or "").strip()
+        if runtime_primary:
+            runtime_primary_candidates.append(runtime_primary)
+        for field in fields:
+            for value in mapping.get(field) or []:
+                cleaned = str(value).strip()
+                if cleaned and cleaned not in seen_by_field[field]:
+                    taxonomy[field].append(cleaned)
+                    seen_by_field[field].add(cleaned)
+    primary = "curiosity"
+    for candidate in _EDU_VP_SAFETY_RUNTIME_INTENT_PRIORITY:
+        if candidate in runtime_primary_candidates:
+            primary = candidate
+            break
+    if not runtime_primary_candidates and not any(taxonomy.values()):
+        primary = "unknown"
+    return {
+        "taxonomy": taxonomy,
+        "runtime_intent": {
+            "primary": primary,
+            "secondary": [item for item in runtime_primary_candidates if item != primary],
+            "source": "deterministic_taxonomy_map_v16",
+        },
+    }
+
+
 def _edu_vp_safety_question_similarity(a: str, b: str) -> float:
     na = _edu_vp_normalize_safety_question(a)
     nb = _edu_vp_normalize_safety_question(b)
@@ -9474,6 +9592,7 @@ def _edu_vp_safety_coach_issue_severity(issue: str) -> str:
 def _edu_vp_safety_coach_resolved_policy_context(question: str) -> dict[str, Any]:
     registry = _edu_vp_safety_coach_policy_registry()
     intent_classes = sorted(_edu_vp_safety_question_intent_classes(question))
+    taxonomy_context = _edu_vp_safety_coach_taxonomy_context(intent_classes)
     policies: list[dict[str, Any]] = []
     seen: set[str] = set()
     for policy in registry.get("policies") or []:
@@ -9491,6 +9610,8 @@ def _edu_vp_safety_coach_resolved_policy_context(question: str) -> dict[str, Any
     return {
         "schema_version": str(registry.get("schema_version") or ""),
         "intent_classes": intent_classes,
+        "taxonomy": taxonomy_context.get("taxonomy") or {},
+        "runtime_intent": taxonomy_context.get("runtime_intent") or {},
         "policy_ids": [str(policy.get("policy_id") or "") for policy in policies],
         "policies": policies[:5],
     }
@@ -9502,6 +9623,7 @@ def _edu_vp_safety_coach_policy_prompt(policy_context: dict[str, Any]) -> str:
         return "(적용 정책 없음)"
     lines: list[str] = [
         f"감지된 intent: {', '.join(policy_context.get('intent_classes') or []) or 'unknown'}",
+        f"runtime primary: {((policy_context.get('runtime_intent') or {}).get('primary') if isinstance(policy_context.get('runtime_intent'), dict) else '') or 'unknown'}",
         f"registry schema: {policy_context.get('schema_version') or 'unknown'}",
     ]
     for idx, policy in enumerate(policies[:5], start=1):
@@ -10742,6 +10864,8 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
             "_safety_coach_policy_context": {
                 "schema_version": policy_context.get("schema_version"),
                 "intent_classes": policy_context.get("intent_classes"),
+                "taxonomy": policy_context.get("taxonomy"),
+                "runtime_intent": policy_context.get("runtime_intent"),
                 "policy_ids": policy_context.get("policy_ids"),
             },
         }
@@ -10836,6 +10960,8 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                     usage["_safety_coach_policy_context"] = {
                         "schema_version": policy_context.get("schema_version"),
                         "intent_classes": policy_context.get("intent_classes"),
+                        "taxonomy": policy_context.get("taxonomy"),
+                        "runtime_intent": policy_context.get("runtime_intent"),
                         "policy_ids": policy_context.get("policy_ids"),
                     }  # type: ignore[index]
                 return answer[:2200], used_model, usage, True
@@ -10854,6 +10980,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                         "timeout_seconds": call_timeout,
                         "policy_ids": policy_context.get("policy_ids"),
                         "intent_classes": policy_context.get("intent_classes"),
+                        "runtime_intent": (policy_context.get("runtime_intent") or {}).get("primary") if isinstance(policy_context.get("runtime_intent"), dict) else "",
                     },
                     model_ladder=[model_name],
                 )
@@ -10914,6 +11041,8 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                             usage["_safety_coach_policy_context"] = {
                                 "schema_version": policy_context.get("schema_version"),
                                 "intent_classes": policy_context.get("intent_classes"),
+                                "taxonomy": policy_context.get("taxonomy"),
+                                "runtime_intent": policy_context.get("runtime_intent"),
                                 "policy_ids": policy_context.get("policy_ids"),
                             }  # type: ignore[index]
                         patched_model = f"{used_model}+rag_patch"
@@ -10932,6 +11061,8 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                     usage["_safety_coach_policy_context"] = {
                         "schema_version": policy_context.get("schema_version"),
                         "intent_classes": policy_context.get("intent_classes"),
+                        "taxonomy": policy_context.get("taxonomy"),
+                        "runtime_intent": policy_context.get("runtime_intent"),
                         "policy_ids": policy_context.get("policy_ids"),
                     }  # type: ignore[index]
                 _edu_log_llm_cost(usage, used_model)
@@ -10957,6 +11088,8 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
             usage["_safety_coach_policy_context"] = {
                 "schema_version": policy_context.get("schema_version"),
                 "intent_classes": policy_context.get("intent_classes"),
+                "taxonomy": policy_context.get("taxonomy"),
+                "runtime_intent": policy_context.get("runtime_intent"),
                 "policy_ids": policy_context.get("policy_ids"),
             }  # type: ignore[index]
         return answer[:2200], used_model, usage, True

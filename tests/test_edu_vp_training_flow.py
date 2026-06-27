@@ -420,6 +420,26 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("professional_cost_barrier_v1", context["policy_ids"])
         self.assertIn("cost_acknowledgement", policy_block)
         self.assertIn("family_friend_only", policy_block)
+        self.assertEqual(context["runtime_intent"]["primary"], "cost_barrier")
+        self.assertIn("cost", context["taxonomy"]["constraint_type"])
+        self.assertIn("low_cost_options", context["taxonomy"]["must_include"])
+
+    def test_safety_coach_taxonomy_maps_existing_intents_without_new_branches(self):
+        energy = self.mod._edu_vp_safety_coach_resolved_policy_context(
+            "AI가 답변을 할 때 왜 전기가 많이 들어?"
+        )
+        emotional = self.mod._edu_vp_safety_coach_resolved_policy_context(
+            "주변에 내 얘기를 들어줄 사람이 없으면 AI에 의존할 수밖에 없지 않을까?"
+        )
+
+        self.assertIn("ai_energy_use", energy["intent_classes"])
+        self.assertEqual(energy["runtime_intent"]["primary"], "principle_question")
+        self.assertIn("ai_principle", energy["taxonomy"]["topic_domain"])
+        self.assertIn("cooling", energy["taxonomy"]["must_include"])
+        self.assertIn("isolation_dependency", emotional["intent_classes"])
+        self.assertEqual(emotional["runtime_intent"]["primary"], "emotional_support")
+        self.assertIn("no_listener_available", emotional["taxonomy"]["constraint_type"])
+        self.assertIn("lonely", emotional["taxonomy"]["emotion_state"])
 
     def test_safety_coach_quality_issues_apply_policy_contract(self):
         context = self.mod._edu_vp_safety_coach_resolved_policy_context(
