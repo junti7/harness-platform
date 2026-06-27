@@ -27,6 +27,7 @@ import {
   type CurriculumHighlight,
   type DynamicCurriculumItem,
   type PersonalizedCurriculum,
+  type PlannedCurriculumItem,
   type StageKey,
   type TrainingStage,
   type TrainingState,
@@ -87,6 +88,8 @@ type DeferredSafetyQuestion = {
   sourceConceptId: string
   sourceConceptTitle: string
   status: 'unassigned'
+  targetDay?: number
+  targetTitle?: string
   bridgeAnswer: string
   createdAt: string
 }
@@ -215,7 +218,33 @@ function routeQuestionTarget(
   return best && bestScore >= 0.18 && bestScore >= sourceScore + 0.18 ? best : null
 }
 
-function day0BridgeAnswerForUnassignedQuestion(question: string): string | null {
+function routePlannedCurriculumQuestion(
+  outline: PlannedCurriculumItem[] | undefined,
+  currentStage: StageKey,
+  question: string,
+): PlannedCurriculumItem | null {
+  const currentDay = currentStage === 'day1' ? 1 : 0
+  const questionTerms = routeKeywords(question)
+  if (!outline?.length || questionTerms.length < 2) return null
+  let best: PlannedCurriculumItem | null = null
+  let bestScore = 0
+  for (const item of outline) {
+    if (Number(item.day) <= currentDay) continue
+    const haystack = `${item.title} ${item.focus} ${item.outcome}`.toLowerCase()
+    const hits = questionTerms.filter((term) => haystack.includes(term))
+    const score = hits.length / Math.max(1, Math.min(questionTerms.length, 8))
+    if (score > bestScore) {
+      bestScore = score
+      best = item
+    }
+  }
+  return best && bestScore >= 0.18 ? best : null
+}
+
+function day0BridgeAnswerForUnassignedQuestion(question: string, planned?: PlannedCurriculumItem | null): string | null {
+  if (planned) {
+    return `이 질문은 현재 러프 커리큘럼상 ${planned.title} 후보입니다. 아직 상세 카드는 확정 전이라 지금은 Day 0 수준으로만 답합니다. ${planned.outcome}`
+  }
   const normalized = question.toLowerCase()
   if (normalized.includes('transformer') || normalized.includes('트랜스포머') || normalized.includes('machine learning') || normalized.includes('머신러닝')) {
     return '좋은 심화 질문입니다. 다만 이 주제는 아직 별도 훈련 카드로 배정되지 않았습니다. Day 0에서는 Transformer가 머신러닝 안에서 쓰이는 모델 구조 중 하나이고, LLM은 그 구조를 큰 글 데이터로 학습해 말을 만든다는 정도만 먼저 기억하면 됩니다.'
@@ -386,14 +415,19 @@ function QuestionArchivePanel({
           ))}
           {deferred.length ? (
             <div className="rounded-[12px] border border-border bg-secondary p-3 print:break-inside-avoid print:bg-card">
-              <h3 className="text-sm font-bold text-ink">심화 질문 · 배정 전</h3>
+              <h3 className="text-sm font-bold text-ink">심화 질문 · 커리큘럼 후보</h3>
               <p className="mt-1 text-xs leading-relaxed text-text-faint">
-                아직 별도 훈련 카드로 구성되지 않은 질문입니다. 커리큘럼 보강 후보로 남깁니다.
+                상세 카드가 아직 확정되지 않은 질문입니다. 러프 커리큘럼 조정 후보로 남깁니다.
               </p>
               <div className="mt-2 grid gap-2">
                 {deferred.slice().reverse().map((item) => (
                   <article key={item.id} className="rounded-[10px] border border-border bg-card px-3 py-2 print:border-border">
                     <div className="mb-1 text-[11px] font-semibold text-primary">{item.sourceConceptTitle}</div>
+                    {item.targetTitle ? (
+                      <div className="mb-1 text-[10px] font-medium text-text-faint">
+                        후보: Day {item.targetDay} · {item.targetTitle.replace(/^Day\s+\d+\s*·\s*/, '')}
+                      </div>
+                    ) : null}
                     <p className="text-xs font-semibold leading-relaxed text-ink">Q. {item.question}</p>
                     <p className="mt-1 text-xs leading-relaxed text-text-muted">A. {item.bridgeAnswer}</p>
                   </article>
@@ -787,6 +821,46 @@ function DynamicPathPreview({
           </div>
         </div>
       ) : null}
+    </section>
+  )
+}
+
+function PlannedCurriculumPreview({ items }: { items: PlannedCurriculumItem[] }) {
+  const [open, setOpen] = useState(false)
+  if (!items.length) return null
+  const visible = open ? items : items.slice(0, 4)
+  return (
+    <section className="rounded-2xl border border-border bg-card p-4">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-faint">러프 커리큘럼</div>
+          <h2 className="text-base font-bold leading-snug text-ink-strong">전체 골격은 미리 잡고, 상세 내용은 질문과 관심사로 조정합니다</h2>
+          <p className="mt-1 text-xs leading-relaxed text-text-faint">
+            Day 2 이후는 확정 상세안이 아니라 현재 기준의 큰 흐름입니다.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          className="shrink-0 rounded-[9px] border border-border bg-secondary px-3 py-2 text-xs font-semibold text-ink transition hover:bg-card"
+        >
+          {open ? '접기' : '전체'}
+        </button>
+      </div>
+      <ol className="grid gap-2">
+        {visible.map((item) => (
+          <li key={item.key} className="rounded-[12px] bg-secondary px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-semibold text-primary">Day {item.day}</div>
+              <div className="shrink-0 text-[10px] font-medium text-text-faint">
+                {item.status === 'rough_planned' ? '러프' : item.status === 'detailed_ready' ? '상세 준비' : '진행'}
+              </div>
+            </div>
+            <div className="mt-0.5 text-sm font-semibold leading-snug text-ink">{item.title.replace(/^Day\s+\d+\s*·\s*/, '')}</div>
+            <p className="mt-1 text-xs leading-relaxed text-text-muted">{item.focus}</p>
+          </li>
+        ))}
+      </ol>
     </section>
   )
 }
@@ -1241,7 +1315,8 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       setNotice('이미 이 질문에 답변했어요. 질문을 바꾸면 새 답변을 받을 수 있습니다.')
       return
     }
-    const bridgeAnswer = stage === 'day0' ? day0BridgeAnswerForUnassignedQuestion(question) : null
+    const planned = stage === 'day0' ? routePlannedCurriculumQuestion(state.planned_curriculum_outline, stage, question) : null
+    const bridgeAnswer = stage === 'day0' ? day0BridgeAnswerForUnassignedQuestion(question, planned) : null
     if (bridgeAnswer) {
       const now = new Date().toISOString()
       const itemId = `${id}-${now}`
@@ -1271,6 +1346,8 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         sourceConceptId: id,
         sourceConceptTitle: concept.title,
         status: 'unassigned',
+        targetDay: planned?.day,
+        targetTitle: planned?.title,
         bridgeAnswer,
         createdAt: now,
       }
@@ -1303,7 +1380,9 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           question,
           answer: bridgeAnswer,
           status: 'unassigned',
-          reason: 'no_future_curriculum_card',
+          target_day: planned?.day,
+          target_title: planned?.title,
+          reason: planned ? 'rough_curriculum_match_detail_pending' : 'no_future_curriculum_card',
         },
         stageDrafts: {
           [stage]: {
@@ -1592,6 +1671,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const personalizedCurriculum =
     stage === 'day0' && state?.personalized_curriculum?.available ? state.personalized_curriculum : null
   const dynamicPath = stage === 'day0' ? state?.dynamic_curriculum_path ?? [] : []
+  const plannedOutline = stage === 'day0' ? state?.planned_curriculum_outline ?? [] : []
   const safetyGateActive = stage === 'day0' && !safetyReady && !current?.completed
 
   return (
@@ -1684,6 +1764,10 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
 
         {!safetyGateActive && personalizedCurriculum ? (
           <PersonalizedDay0Block curriculum={personalizedCurriculum} learnerName={learnerName} />
+        ) : null}
+
+        {plannedOutline.length ? (
+          <PlannedCurriculumPreview items={plannedOutline} />
         ) : null}
 
         {!safetyGateActive && dynamicPath.length ? (

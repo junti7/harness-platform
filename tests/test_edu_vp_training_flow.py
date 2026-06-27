@@ -513,6 +513,10 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertFalse(day0.get("completed"))
         self.assertEqual(refreshed["flow_outline"][0]["key"], "day0")
         self.assertEqual(refreshed["flow_outline"], [refreshed["flow_outline"][0]])
+        self.assertGreaterEqual(len(refreshed["planned_curriculum_outline"]), 8)
+        self.assertEqual(refreshed["planned_curriculum_outline"][0]["status"], "active")
+        self.assertEqual(refreshed["planned_curriculum_outline"][1]["status"], "detailed_ready")
+        self.assertEqual(refreshed["planned_curriculum_outline"][2]["status"], "rough_planned")
 
     def test_personalized_day0_preserves_safety_gate_order(self):
         day0 = self.mod._edu_vp_build_day0({"preferred_llm": "claude"})

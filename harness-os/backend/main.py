@@ -7500,6 +7500,7 @@ def _edu_vp_refresh_state(state: dict[str, Any]) -> dict[str, Any]:
     state = _edu_vp_migrate_unconfirmed_day0_safety(state)
     state["day0"] = state.get("day0") or {}
     state["day1"] = state.get("day1") or {}
+    state["planned_curriculum_outline"] = _edu_vp_planned_curriculum_outline(state)
     p0 = _edu_vp_stage_progress(state["day0"])
     p1 = _edu_vp_stage_progress(state["day1"])
     flow_outline: list[dict[str, Any]] = []
@@ -7520,6 +7521,94 @@ def _edu_vp_refresh_state(state: dict[str, Any]) -> dict[str, Any]:
     state["ui_state"] = _edu_vp_merge_ui_state(state)
     state["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     return state
+
+
+def _edu_vp_planned_curriculum_outline(state: dict[str, Any]) -> list[dict[str, Any]]:
+    intake = state.get("intake") or {}
+    llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or "gemini"))
+    motivation = _edu_vp_curriculum_motivation(
+        str((state.get("customer") or {}).get("segment") or "worker"),
+        intake,
+    )
+    day1_title = str((state.get("day1") or {}).get("title") or "Day 1 · 실제 생활 자료로 첫 초안 만들기")
+    base = [
+        {
+            "key": "day0",
+            "day": 0,
+            "title": "Day 0 · AI 안전 이해와 작동 원리 확인",
+            "focus": "LLM 원리, 과의존 위험, 안전 사용 기준",
+            "outcome": "AI를 사람이나 보호자가 아니라 초안 도구로 이해한다.",
+            "status": "active",
+        },
+        {
+            "key": "day1",
+            "day": 1,
+            "title": day1_title,
+            "focus": "실제 자료 1개로 첫 초안 만들기",
+            "outcome": "긴 자료를 정리하고 사람이 다시 확인하는 루틴을 만든다.",
+            "status": "detailed_ready",
+        },
+        {
+            "key": "day2",
+            "day": 2,
+            "title": "Day 2 · 좋은 질문과 후속 질문 만들기",
+            "focus": "상황, 원하는 결과, 조건, 금지사항을 질문에 넣는 법",
+            "outcome": f"{llm_label}에게 막연히 묻지 않고 원하는 결과 모양을 지정한다.",
+            "status": "rough_planned",
+        },
+        {
+            "key": "day3",
+            "day": 3,
+            "title": "Day 3 · 답변 검증과 자료 확인",
+            "focus": "환각, 출처, 원문 확인, RAG 자료 활용 기준",
+            "outcome": "AI 답변을 그대로 믿지 않고 원문과 근거로 다시 확인한다.",
+            "status": "rough_planned",
+        },
+        {
+            "key": "day4",
+            "day": 4,
+            "title": "Day 4 · LLM 작동 원리 심화",
+            "focus": "Transformer, attention, token, 확률적 다음 말 선택",
+            "outcome": "생성형 AI가 문장을 만드는 구조를 더 깊게 이해한다.",
+            "status": "rough_planned",
+        },
+        {
+            "key": "day5",
+            "day": 5,
+            "title": "Day 5 · 민감정보와 고위험 판단 경계",
+            "focus": "개인정보, 건강, 법률, 돈, 가족 상의가 필요한 결정",
+            "outcome": "AI에게 맡기면 안 되는 영역과 사람에게 확인할 기준을 세운다.",
+            "status": "rough_planned",
+        },
+        {
+            "key": "day6",
+            "day": 6,
+            "title": "Day 6 · 내 말투로 고치고 저장하기",
+            "focus": "AI 초안을 내 문장, 내 상황, 실제 제출물로 다듬기",
+            "outcome": "초안을 그대로 쓰지 않고 내 책임으로 수정하는 습관을 만든다.",
+            "status": "rough_planned",
+        },
+        {
+            "key": "day7",
+            "day": 7,
+            "title": "Day 7 · 반복 루틴과 자동화 후보 고르기",
+            "focus": "반복 업무, 체크리스트, 자동화 가능/불가 구분",
+            "outcome": "사람 판단이 필요한 일과 자동화해도 되는 일을 분리한다.",
+            "status": "rough_planned",
+        },
+    ]
+    if motivation == "writing":
+        base[1]["title"] = "Day 1 · 짧은 글 초안 만들기"
+        base[1]["focus"] = "메모, 안내문, 메시지를 쉬운 초안으로 바꾸기"
+        base[6]["focus"] = "내 문체와 독자 상황에 맞게 문장 다듬기"
+    elif motivation == "child_study":
+        base[1]["title"] = day1_title
+        base[1]["focus"] = "가정통신문, 학원 일정, 아이 학습 자료 정리"
+        base[5]["focus"] = "아이 숙제, 개인정보, 부모 개입선 구분"
+    elif motivation == "daily":
+        base[1]["title"] = "Day 1 · 생활 일정과 메모 정리하기"
+        base[1]["focus"] = "일정, 준비물, 가족 공유 메모 정리"
+    return base
 
 
 def _edu_vp_curriculum_motivation(segment: str, intake: dict[str, Any]) -> str:

@@ -259,6 +259,15 @@ export type AdaptiveCurriculumMeta = {
   basis?: Record<string, unknown>
 }
 
+export type PlannedCurriculumItem = {
+  key: string
+  day: number
+  title: string
+  focus: string
+  outcome: string
+  status: 'active' | 'detailed_ready' | 'rough_planned' | string
+}
+
 export type TrainingUiState = {
   selected_stage?: StageKey
   active_curriculum_index?: number
@@ -278,6 +287,7 @@ export type TrainingState = {
   ui_state?: TrainingUiState
   dynamic_curriculum_path?: DynamicCurriculumItem[]
   adaptive_curriculum_meta?: AdaptiveCurriculumMeta
+  planned_curriculum_outline?: PlannedCurriculumItem[]
   personalized_curriculum?: PersonalizedCurriculum
 }
 
