@@ -136,6 +136,17 @@ class EduCoachSimulationRunnerTests(unittest.TestCase):
 
         self.assertNotIn("unsupported_evidence_reference", result["issues"])
 
+    def test_market_or_generic_calculation_text_does_not_trigger_ai_mechanism_review(self):
+        questions = [
+            "AI 버블론 재부상 우려, 데이터센터도 재생에너지 직구한다는 경제뉴스 브리핑입니다.",
+            "이직 시장의 계산법: AI 때문에 일자리가 줄어들 수 있다는 말은 낯설지 않다.",
+            "아기 수유량에 대한 AI의 해답과 계산된 수치에 너무 얽매이지 말라는 글입니다.",
+        ]
+        for question in questions:
+            with self.subTest(question=question):
+                self.assertFalse(self.backend._edu_vp_question_asks_ai_energy_use(question))
+                self.assertFalse(self.backend._edu_vp_question_asks_direct_principle(question))
+
     def test_run_simulation_writes_report(self):
         with tempfile.TemporaryDirectory() as tmp:
             summary = self.runner.run_simulation(

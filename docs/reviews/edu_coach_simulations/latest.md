@@ -1,33 +1,31 @@
 # EDU Coach Simulation Latest
 
-- run_id: `20260627T095926Z`
+- run_id: `20260627T104049Z`
 - candidate_source: `corpus-current-fallback`
 - llm_judge_enabled: `False`
 - record_count: `30264`
-- output: `docs/reviews/edu_coach_simulations/run_20260627T095926Z_corpus_current_fallback.jsonl`
+- output: `docs/reviews/edu_coach_simulations/run_20260627T104049Z_corpus_current_fallback.jsonl`
 
 ## Verdict Counts
 
-- `clear`: 30250
-- `needs_work`: 14
+- `clear`: 30264
 
 ## Top Issues
 
-- `missing_principle_mechanism`: 10
-- `missing_empathy_for_emotional_question`: 4
+- none
 
 ## Intent Verdict Counts
 
-- `ai_energy_use`: clear=49
+- `ai_energy_use`: clear=40
 - `ai_homework_overreliance`: clear=2256
-- `career_anxiety`: clear=5431, needs_work=3
-- `emotional_validation`: clear=5856, needs_work=8
-- `general_ai_context`: clear=6746, needs_work=3
-- `general_principle`: clear=150, needs_work=5
-- `isolation_dependency`: clear=600, needs_work=1
-- `learning_start`: clear=13008, needs_work=2
-- `privacy_boundary`: clear=643, needs_work=1
-- `professional_cost_barrier`: clear=2225, needs_work=1
+- `career_anxiety`: clear=5434
+- `emotional_validation`: clear=5864
+- `general_ai_context`: clear=6761
+- `general_principle`: clear=106
+- `isolation_dependency`: clear=601
+- `learning_start`: clear=13010
+- `privacy_boundary`: clear=644
+- `professional_cost_barrier`: clear=2226
 - `screen_dependency`: clear=3869
 
 ## Channel Counts

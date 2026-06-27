@@ -324,7 +324,7 @@ def _classify_intents(text: str) -> list[str]:
     if "ai_energy_use" in intents and (
         not ai_energy_context
         or not (generative_ai_context or infra_context)
-        or any(marker in lower for marker in ("에너지를 많이 쏟", "지질 에너지", "lipid energy", "투자", "주가", "고점", "급등", "수혜", "증권가", "매수", "매도"))
+        or any(marker in lower for marker in ("에너지를 많이 쏟", "지질 에너지", "lipid energy", "투자", "주가", "고점", "급등", "수혜", "증권가", "매수", "매도", "버블", "시장", "경제뉴스", "브리핑", "재생에너지"))
     ):
         intents.remove("ai_energy_use")
     if "isolation_dependency" in intents and not any(
@@ -345,9 +345,15 @@ def _classify_intents(text: str) -> list[str]:
         )
         explicit_principle = any(
             marker in lower
-            for marker in ("원리", "작동", "계산", "mechanism", "compute", "어떻게 답", "어떻게 만들", "왜 답", "왜 틀", "왜 거짓", "왜 환각", "왜 ai 답변", "자연스럽게 나", "다음 단어", "토큰")
+            for marker in ("원리", "작동", "mechanism", "compute", "어떻게 답", "어떻게 만들", "왜 답", "왜 틀", "왜 거짓", "왜 환각", "왜 ai 답변", "자연스럽게 나", "다음 단어", "토큰 예측", "토큰을 어떻게")
         )
-        if not (ai_energy_context or (principle_ai_system and principle_target and explicit_principle)):
+        principle_noise = any(
+            marker in lower
+            for marker in ("계산법", "계산된", "계산한다", "미래 이익", "수치", "수요와 공급", "수요 공급", "인프라 병목", "보안 위험", "자원 고갈", "유료화", "코드 10배", "경제뉴스", "주가", "실업수당", "자연현상", "일반사물", "기본교과목", "수유량", "아카이빙", "큐레이션")
+        )
+        principle_noise = principle_noise or ("적용해서" in lower and any(marker in lower for marker in ("잡아내", "해야 한다")))
+        asks_directly = any(marker in lower for marker in ("왜", "어떻게", "?", "？", "뭐야", "무엇", "설명", "알려"))
+        if principle_noise or not asks_directly or not (ai_energy_context or (principle_ai_system and principle_target and explicit_principle)):
             intents.remove("general_principle")
     if not intents:
         if any(marker.lower() in lower for marker in DOMAIN_MARKERS):

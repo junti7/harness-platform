@@ -8933,11 +8933,11 @@ def _edu_vp_question_asks_ai_energy_use(question: str) -> bool:
     q = str(question or "").strip().lower()
     if any(marker in q for marker in ("에너지를 많이 쏟", "에너지 많이 쏟", "지질 에너지", "lipid energy")):
         return False
-    if any(marker in q for marker in ("투자", "주가", "고점", "급등", "수혜", "증권가", "매수", "매도")):
+    if any(marker in q for marker in ("투자", "주가", "고점", "급등", "수혜", "증권가", "매수", "매도", "버블", "시장", "경제뉴스", "브리핑", "재생에너지")):
         return False
     energy_markers = (
         "전기", "전력", "전기세", "전기요금", "에너지", "데이터센터", "냉각", "gpu", "npu",
-        "환경", "탄소", "power", "electric", "energy", "datacenter", "data center", "cooling",
+        "탄소", "power", "electric", "energy", "datacenter", "data center", "cooling",
     )
     if not any(marker in q for marker in energy_markers):
         return False
@@ -8945,7 +8945,8 @@ def _edu_vp_question_asks_ai_energy_use(question: str) -> bool:
         "ai 답변", "ai가 답변", "ai한테 질문", "ai 질문", "생성형 ai", "llm", "gpt", "챗gpt",
     )
     infra_markers = ("데이터센터", "냉각", "gpu", "npu", "datacenter", "data center", "cooling")
-    return any(marker in q for marker in generative_ai_markers) or any(marker in q for marker in infra_markers)
+    asks_energy_mechanism = any(marker in q for marker in ("왜", "어떻게", "많이 들", "많이 먹", "필요", "연결"))
+    return any(marker in q for marker in generative_ai_markers) or (asks_energy_mechanism and any(marker in q for marker in infra_markers))
 
 
 def _edu_vp_question_asks_direct_principle(question: str) -> bool:
@@ -8961,9 +8962,17 @@ def _edu_vp_question_asks_direct_principle(question: str) -> bool:
         "환각", "오류", "틀린", "거짓", "검증", "자연스럽", "attention", "어텐션", "transformer", "트랜스포머",
     )
     explicit_mechanism_markers = (
-        "원리", "작동", "계산", "mechanism", "compute", "어떻게 답", "어떻게 만들",
-        "왜 답", "왜 틀", "왜 거짓", "왜 환각", "왜 ai 답변", "자연스럽게 나", "다음 단어", "토큰",
+        "원리", "작동", "mechanism", "compute", "어떻게 답", "어떻게 만들",
+        "왜 답", "왜 틀", "왜 거짓", "왜 환각", "왜 ai 답변", "자연스럽게 나", "다음 단어", "토큰 예측", "토큰을 어떻게",
     )
+    if any(marker in q for marker in ("계산법", "계산된", "계산한다", "미래 이익", "수치", "수요와 공급", "수요 공급")):
+        return False
+    if any(marker in q for marker in ("인프라 병목", "보안 위험", "자원 고갈", "유료화", "코드 10배", "경제뉴스", "주가", "실업수당")):
+        return False
+    if any(marker in q for marker in ("자연현상", "일반사물", "기본교과목", "수유량", "아카이빙", "큐레이션")):
+        return False
+    if "적용해서" in q and any(marker in q for marker in ("잡아내", "해야 한다")):
+        return False
     practical_help_markers = (
         "어떻게 해야", "어떻게 하면", "어떻게 사용", "활용", "사용에 대해", "시작해야", "할지",
         "하면 좋", "해야 할지", "걱정", "추천", "만들기", "교육", "강의", "career", "approach",
@@ -8974,7 +8983,10 @@ def _edu_vp_question_asks_direct_principle(question: str) -> bool:
     has_ai_system = any(marker in q for marker in ai_system_markers)
     has_target = any(marker in q for marker in ai_mechanism_targets)
     has_explicit_mechanism = any(marker in q for marker in explicit_mechanism_markers) or "why" in q or "how" in q
+    asks_directly = any(marker in q for marker in ("왜", "어떻게", "?", "？", "뭐야", "무엇", "설명", "알려"))
     if any(marker in q for marker in practical_help_markers) and not (has_ai_system and has_target and has_explicit_mechanism):
+        return False
+    if not asks_directly:
         return False
     if not (has_ai_system and has_target and has_explicit_mechanism):
         return False
