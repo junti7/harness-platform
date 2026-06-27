@@ -122,6 +122,11 @@ Implemented:
 
 - RAG can be used for coach answers only when source fit is validated.
 - UI shows a very short evidence indicator per answer.
+- If a coach answer does not visibly cite RAG data, this is intentional when the retrieved material is weak or mismatched.
+- The user-facing badge now distinguishes:
+  - `검증 자료 반영`
+  - `맞는 자료 없음`
+  - `자료 확인 전`
 - LLM timeout/fallback behavior optimized earlier.
 - Weekly similar-question reuse added conceptually in backend logic area; verify exact current behavior before extending.
 
@@ -129,6 +134,10 @@ Known product stance:
 
 - If RAG fit is weak, better show `자료 없음` than attach bad evidence.
 - User values trust more than forced RAG citation.
+- Day 1 can still use collected evidence through `evidence_cards` when `customer_facing_safe=true`.
+- Backend source path:
+  - `_edu_vp_safety_coach_evidence(...)` for Day 0/Day 1 coach answers.
+  - `_edu_vp_build_day1(...)` for Day 1 `evidence_cards`.
 
 ### 6. Planned Curriculum / Rough Roadmap
 
@@ -140,10 +149,34 @@ Implemented:
 - Day 1 is detailed-ready.
 - Day 2+ are rough planned.
 - Detailed future content can adapt based on user questions/interests.
+- Training UI now shows a `다음 훈련 상세` panel sourced from the actual backend Day 1 object.
+- This panel exposes Day 1:
+  - foundation concepts
+  - schedule blocks
+  - sample material kits
+  - tutorial steps
+  - collected evidence status/cards
+
+Where to inspect Day 1 detail:
+
+- UI: Training screen → `다음 훈련 상세` → `목록`
+- Backend: `harness-os/backend/main.py` → `_edu_vp_build_day1(...)`
+- API response: `GET /api/edu/vp-training/session` → `training_state.day1`
+- Admin event/audit API: `GET /api/admin/edu/vp-training/event-log?case_id=<id>`
 
 Backend field:
 
 - `planned_curriculum_outline`
+
+Adjustment logging:
+
+- If a Day 0 question is saved as a future/deeper curriculum candidate, frontend sync sends `event_name=safety_advanced_question_saved`.
+- Backend now writes an additional system event:
+  - `event_type=curriculum_adjustment`
+  - `event_name=future_curriculum_adjustment_candidate_recorded`
+- CEO/admin can inspect this through:
+  - `GET /api/admin/edu/vp-training/event-log?event_type=curriculum_adjustment`
+- This is the required audit trail for background tuning before later curriculum is finalized.
 
 ### 7. Motivation-Based Day 1 Curriculum
 
@@ -327,4 +360,3 @@ Tests:
 6. On main screen with `학습 동기=업무`, create or load unstarted case.
 7. Confirm Day 1 says `업무 메모와 반복 작업`, not `가정통신문과 학원 일정`.
 8. In Day 0, check question archive and training cards are visually separated.
-

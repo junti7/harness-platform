@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertCircle,
   ArrowLeft,
@@ -49,6 +49,8 @@ export type TrainingScreenProps = {
 const STAGE_ORDER: StageKey[] = ['day0', 'day1']
 const STAGE_LABEL: Record<StageKey, string> = { day0: 'Day 0', day1: 'Day 1' }
 const SAFETY_COACH_ANSWER_VERSION = '2026-06-27-rag-query-v6'
+const TRAINING_DEVICE_ID_KEY = 'vp_training_device_id'
+const TRAINING_LOCAL_DRAFT_PREFIX = 'vp_training_stage_draft'
 type SafetyConceptFeedback = Record<string, string>
 type SafetyCoachAnswers = Record<string, {
   answer: string
@@ -95,6 +97,36 @@ type DeferredSafetyQuestion = {
   createdAt: string
 }
 type DeferredSafetyQuestions = DeferredSafetyQuestion[]
+type StagePosition = {
+  anchorId?: string
+  capturedAt?: string
+}
+
+function loadTrainingDeviceId(): string {
+  try {
+    const existing = localStorage.getItem(TRAINING_DEVICE_ID_KEY)
+    if (existing) return existing
+    const created =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `device-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    localStorage.setItem(TRAINING_DEVICE_ID_KEY, created)
+    return created
+  } catch {
+    return `session-device-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  }
+}
+
+function trainingDeviceType(): 'mobile' | 'tablet' | 'mac' | 'desktop' {
+  if (typeof navigator === 'undefined') return 'desktop'
+  const ua = navigator.userAgent.toLowerCase()
+  const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches
+  const width = typeof window !== 'undefined' ? window.innerWidth : 1024
+  if (/ipad|tablet/.test(ua) || (coarse && width >= 700)) return 'tablet'
+  if (/iphone|android.*mobile|mobile/.test(ua) || (coarse && width < 700)) return 'mobile'
+  if (/macintosh|mac os x/.test(ua)) return 'mac'
+  return 'desktop'
+}
 
 function safetyAnswerKey(conceptId: string, version: string | undefined, question: string | undefined): string {
   return `${conceptId}::${version || SAFETY_COACH_ANSWER_VERSION}::${(question || '').trim()}`
@@ -248,18 +280,32 @@ function routePlannedCurriculumQuestion(
 }
 
 function day0BridgeAnswerForUnassignedQuestion(question: string, planned?: PlannedCurriculumItem | null): string | null {
-  if (planned) {
-    return `이 질문은 현재 러프 커리큘럼상 ${planned.title} 후보입니다. 아직 상세 카드는 확정 전이라 지금은 Day 0 수준으로만 답합니다. ${planned.outcome}`
-  }
   const normalized = question.toLowerCase()
+  const laterGuide = planned
+    ? `나중에 ${planned.title} 과정에서 이 내용을 더 차근차근 다루게 됩니다.`
+    : '나중에 이어지는 훈련에서 이 내용을 더 차근차근 다루게 됩니다.'
+  if (
+    normalized.includes('전기') ||
+    normalized.includes('전력') ||
+    normalized.includes('전기세') ||
+    normalized.includes('전기요금') ||
+    normalized.includes('에너지') ||
+    normalized.includes('power') ||
+    normalized.includes('electric')
+  ) {
+    return `좋은 질문입니다. AI에게 질문하면 큰 컴퓨터들이 답을 만들기 위해 아주 많은 계산을 하고, 그 컴퓨터와 서버를 식히는 냉각 장치도 같이 돌아가서 전기가 필요합니다. 집에서 휴대폰 하나만 쓰는 것처럼 보여도, 실제로는 멀리 있는 데이터센터가 함께 일하는 셈입니다. 오늘은 “AI 답변 뒤에는 계산 비용과 전기 사용이 있다” 정도만 기억하면 충분합니다. ${laterGuide}`
+  }
   if (normalized.includes('transformer') || normalized.includes('트랜스포머') || normalized.includes('machine learning') || normalized.includes('머신러닝')) {
-    return '좋은 심화 질문입니다. 다만 이 주제는 아직 별도 훈련 카드로 배정되지 않았습니다. Day 0에서는 Transformer가 머신러닝 안에서 쓰이는 모델 구조 중 하나이고, LLM은 그 구조를 큰 글 데이터로 학습해 말을 만든다는 정도만 먼저 기억하면 됩니다.'
+    return `좋은 질문입니다. Transformer는 머신러닝 안에서 쓰이는 모델 구조 중 하나이고, LLM은 그 구조를 큰 글 데이터로 학습해 말을 만드는 AI라고 보면 됩니다. 오늘은 “LLM이 사람처럼 이해해서 말하는 것이 아니라, 학습한 말의 흐름을 바탕으로 다음 말을 만든다” 정도만 먼저 잡으면 됩니다. ${laterGuide}`
   }
   if (normalized.includes('rag') || normalized.includes('자료') || normalized.includes('근거') || normalized.includes('검증') || normalized.includes('출처')) {
-    return '좋은 심화 질문입니다. 다만 이 주제는 아직 별도 훈련 카드로 배정되지 않았습니다. Day 0에서는 AI 답을 그대로 믿지 말고, 원문이나 믿을 만한 자료로 다시 확인해야 한다는 점만 먼저 기억하면 됩니다.'
+    return `좋은 질문입니다. RAG나 출처 확인은 AI 답을 그대로 믿지 않고, 믿을 만한 자료를 같이 찾아 확인하는 방법입니다. 오늘은 “AI 답은 초안이고, 중요한 내용은 원문이나 근거 자료로 다시 확인한다” 정도만 기억하면 됩니다. ${laterGuide}`
   }
   if (normalized.includes('프롬프트') || normalized.includes('질문') || normalized.includes('후속')) {
-    return '좋은 심화 질문입니다. 다만 이 주제는 아직 별도 훈련 카드로 배정되지 않았습니다. Day 0에서는 질문을 잘하려면 상황, 원하는 결과, 확인할 기준을 같이 적으면 된다는 정도만 먼저 기억하면 됩니다.'
+    return `좋은 질문입니다. AI에게 질문을 잘하려면 상황, 원하는 결과, 지켜야 할 조건을 같이 적어주는 것이 좋습니다. 예를 들어 “짧게”, “초등학생도 이해하게”, “틀릴 수 있는 부분도 알려줘”처럼 기준을 붙이면 답이 더 쓸 만해집니다. ${laterGuide}`
+  }
+  if (planned) {
+    return `좋은 질문입니다. 지금 바로 길게 들어가면 Day 0의 핵심이 흐려질 수 있어서, 오늘은 관련 주제가 뒤 훈련에 준비되어 있다는 점만 먼저 알려드립니다. ${planned.title} 과정에서 ${planned.outcome}`
   }
   return null
 }
@@ -342,10 +388,56 @@ function currentSafetyConceptFeedback(raw: unknown, deletedKeys: SafetyDeletedAn
   return out
 }
 
+function currentStageChecked(raw: unknown): Record<string, boolean> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Record<string, boolean> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof key === 'string' && key && typeof value === 'boolean') out[key] = value
+  }
+  return out
+}
+
+function localStageDraftKey(caseId: number, stage: StageKey): string {
+  return `${TRAINING_LOCAL_DRAFT_PREFIX}:${caseId}:${stage}`
+}
+
+function saveLocalStageDraft(caseId: number, stage: StageKey, draft: Record<string, unknown>) {
+  try {
+    localStorage.setItem(
+      localStageDraftKey(caseId, stage),
+      JSON.stringify({ ...draft, local_saved_at: new Date().toISOString() }),
+    )
+  } catch {
+    /* ignore local backup failures */
+  }
+}
+
+function loadLocalStageDraft(caseId: number, stage: StageKey): Record<string, unknown> {
+  try {
+    const raw = localStorage.getItem(localStageDraftKey(caseId, stage))
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
+  } catch {
+    return {}
+  }
+}
+
+function currentStagePosition(raw: unknown): StagePosition {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const item = raw as Record<string, unknown>
+  const anchorId = String(item.anchor_id || item.anchorId || '').trim()
+  const capturedAt = String(item.captured_at || item.capturedAt || '').trim()
+  return {
+    ...(anchorId ? { anchorId } : {}),
+    ...(capturedAt ? { capturedAt } : {}),
+  }
+}
+
 function evidenceBadge(value?: boolean): string {
-  if (value === true) return '자료 반영'
-  if (value === false) return '자료 없음'
-  return '자료 -'
+  if (value === true) return '검증 자료 반영'
+  if (value === false) return '맞는 자료 없음'
+  return '자료 확인 전'
 }
 
 function mergeSafetyCoachThreads(...groups: SafetyCoachThreads[]): SafetyCoachThreads {
@@ -911,6 +1003,130 @@ function PlannedCurriculumPreview({ items }: { items: PlannedCurriculumItem[] })
   )
 }
 
+function Day1DetailPreview({ stage }: { stage?: TrainingStage }) {
+  const [open, setOpen] = useState(false)
+  if (!stage?.title) return null
+  const concepts = stage.foundation_concepts ?? []
+  const schedule = stage.schedule_blocks ?? []
+  const materials = stage.sample_materials ?? []
+  const tutorials = stage.tutorial_steps ?? []
+  const evidence = stage.evidence_cards ?? []
+  const evidenceLabel =
+    stage.customer_facing_safe && evidence.length
+      ? `검증 자료 ${evidence.length}개`
+      : '맞는 수집 자료 없음'
+
+  return (
+    <section className="rounded-2xl border border-border bg-card p-4">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-text-faint">
+            <ScrollText size={13} />다음 훈련 상세
+          </div>
+          <h2 className="text-base font-bold leading-snug text-ink-strong">{stage.title}</h2>
+          {stage.learning_outcome ? (
+            <p className="mt-1 text-xs leading-relaxed text-text-muted">{stage.learning_outcome}</p>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          className="shrink-0 rounded-[9px] border border-border bg-secondary px-3 py-2 text-xs font-semibold text-ink transition hover:bg-card"
+        >
+          {open ? '접기' : '목록'}
+        </button>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-3">
+        <div className="rounded-[12px] bg-secondary px-3 py-2.5">
+          <div className="text-[11px] font-semibold text-text-faint">진행</div>
+          <div className="mt-0.5 text-sm font-semibold text-ink">{schedule.length || 0}개 블록</div>
+        </div>
+        <div className="rounded-[12px] bg-secondary px-3 py-2.5">
+          <div className="text-[11px] font-semibold text-text-faint">실습팩</div>
+          <div className="mt-0.5 text-sm font-semibold text-ink">{materials.length || 0}개</div>
+        </div>
+        <div className="rounded-[12px] bg-secondary px-3 py-2.5">
+          <div className="text-[11px] font-semibold text-text-faint">수집 자료</div>
+          <div className="mt-0.5 text-sm font-semibold text-ink">{evidenceLabel}</div>
+        </div>
+      </div>
+
+      {open ? (
+        <div className="mt-3 grid gap-3">
+          {concepts.length ? (
+            <div className="rounded-[12px] border border-border bg-secondary/70 p-3">
+              <div className="mb-2 text-xs font-semibold text-ink">기초 설명</div>
+              <ol className="grid gap-1.5">
+                {concepts.slice(0, 6).map((item, index) => (
+                  <li key={`${item.title}-${index}`} className="text-xs leading-relaxed text-text-muted">
+                    {index + 1}. {item.title}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
+          {schedule.length ? (
+            <div className="rounded-[12px] border border-border bg-secondary/70 p-3">
+              <div className="mb-2 text-xs font-semibold text-ink">시간표</div>
+              <ol className="grid gap-1.5">
+                {schedule.map((item, index) => (
+                  <li key={`${item.title}-${index}`} className="text-xs leading-relaxed text-text-muted">
+                    {item.minutes ? `${item.minutes}분 · ` : ''}{item.title}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
+          {materials.length ? (
+            <div className="rounded-[12px] border border-border bg-secondary/70 p-3">
+              <div className="mb-2 text-xs font-semibold text-ink">실습 자료</div>
+              <div className="grid gap-2">
+                {materials.map((item) => (
+                  <div key={item.kit_id || item.title} className="rounded-[10px] bg-card px-3 py-2">
+                    <div className="text-xs font-semibold text-ink">{item.title}</div>
+                    {item.description ? <p className="mt-1 text-[11px] leading-relaxed text-text-faint">{item.description}</p> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {tutorials.length ? (
+            <div className="rounded-[12px] border border-border bg-secondary/70 p-3">
+              <div className="mb-2 text-xs font-semibold text-ink">실습 순서</div>
+              <ol className="grid gap-1.5">
+                {tutorials.map((item, index) => (
+                  <li key={item.id || `${item.title}-${index}`} className="text-xs leading-relaxed text-text-muted">
+                    {index + 1}. {item.title}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
+          <div className="rounded-[12px] border border-border bg-secondary/70 p-3">
+            <div className="mb-2 text-xs font-semibold text-ink">수집 자료 반영</div>
+            {evidence.length && stage.customer_facing_safe ? (
+              <div className="grid gap-2">
+                {evidence.map((item, index) => (
+                  <div key={`${item.title}-${index}`} className="rounded-[10px] bg-card px-3 py-2">
+                    <div className="text-xs font-semibold leading-snug text-ink">{item.title}</div>
+                    {item.snippet ? <p className="mt-1 text-[11px] leading-relaxed text-text-faint">{item.snippet}</p> : null}
+                    {item.cite ? <p className="mt-1 text-[11px] leading-relaxed text-text-faint">{item.cite}</p> : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs leading-relaxed text-text-muted">
+                현재 질문과 딱 맞는 검증 자료가 없어서 사용자 답변에는 자료를 억지로 붙이지 않습니다.
+              </p>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 function SafetyOrientationBlock({
   stage,
   checked,
@@ -1037,6 +1253,7 @@ function SafetyOrientationBlock({
             <div
               key={concept.checkId}
               id={`concept-card-${concept.checkId}`}
+              data-training-anchor="true"
               className={`rounded-[12px] border bg-card p-3 transition ${
                 routedConceptId === concept.checkId
                   ? 'border-amber-500 bg-amber-50 shadow-[0_0_0_4px_rgba(245,158,11,0.2)] ring-2 ring-amber-400'
@@ -1183,6 +1400,8 @@ function SafetyOrientationBlock({
             return (
               <button
                 key={item.id}
+                id={`check-card-${item.id}`}
+                data-training-anchor="true"
                 type="button"
                 onClick={() => onToggle(item.id)}
                 className="flex w-full items-start gap-3 rounded-[12px] border border-border bg-card p-3 text-left transition active:scale-[0.99]"
@@ -1270,18 +1489,92 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const [questionArchiveOpen, setQuestionArchiveOpen] = useState(false)
   const [routedConceptId, setRoutedConceptId] = useState<string | null>(null)
   const seqRef = useRef(0)
+  const deviceIdRef = useRef(loadTrainingDeviceId())
+  const deviceTypeRef = useRef(trainingDeviceType())
+  const checkedRef = useRef<Record<string, boolean>>({})
   const conceptFeedbackRef = useRef<SafetyConceptFeedback>({})
   const coachAnswersRef = useRef<SafetyCoachAnswers>({})
   const coachThreadsRef = useRef<SafetyCoachThreads>([])
   const deferredSafetyQuestionsRef = useRef<DeferredSafetyQuestions>([])
   const deletedSafetyAnswerKeysRef = useRef<SafetyDeletedAnswerKeys>([])
+  const lastPositionRef = useRef<StagePosition>({})
+  const restoreAnchorRef = useRef<string>('')
+  const restoringPositionRef = useRef(false)
+  const positionSyncTimerRef = useRef<number | null>(null)
+
+  const stageDraftForSync = useCallback((extras: Record<string, unknown> = {}): Record<string, unknown> => {
+    const draft = {
+      safety_concept_feedback: conceptFeedbackRef.current,
+      safety_coach_answers: coachAnswersRef.current,
+      safety_coach_threads: coachThreadsRef.current,
+      deferred_safety_questions: deferredSafetyQuestionsRef.current,
+      deleted_safety_answer_keys: deletedSafetyAnswerKeysRef.current,
+      stage_checked: checkedRef.current,
+      last_position: lastPositionRef.current.anchorId
+        ? {
+            anchor_id: lastPositionRef.current.anchorId,
+            captured_at: lastPositionRef.current.capturedAt || new Date().toISOString(),
+          }
+        : lastPositionRef.current,
+      ...extras,
+    }
+    saveLocalStageDraft(caseId, stage, draft)
+    return draft
+  }, [caseId, stage])
+
+  const syncStageDraft = useCallback((eventName: string, eventPayload: Record<string, unknown> = {}) => {
+    if (!state) return
+    seqRef.current += 1
+    void syncSession({
+      caseId,
+      email,
+      selectedStage: stage,
+      clientSeq: seqRef.current,
+      eventName,
+      eventPayload: { stage, ...eventPayload },
+      stageDrafts: {
+        [stage]: stageDraftForSync(),
+      },
+    })
+      .then((next) => setState(next))
+      .catch((e) => console.error(`${eventName} sync failed`, e))
+  }, [caseId, email, stage, stageDraftForSync, state])
+
+  const claimTrainingDevice = useCallback((stageKey: StageKey, anchorId = '') => {
+    seqRef.current += 1
+    void syncSession({
+      caseId,
+      email,
+      selectedStage: stageKey,
+      clientSeq: seqRef.current,
+      eventName: 'claim_training_device',
+      eventPayload: {
+        device_id: deviceIdRef.current,
+        device_type: deviceTypeRef.current,
+        anchor_id: anchorId,
+      },
+      stageDrafts: {
+        [stageKey]: stageDraftForSync(),
+      },
+    })
+      .then((next) => {
+        setState(next)
+        seqRef.current = Math.max(seqRef.current, Number(next.ui_state?.last_client_seq ?? 0))
+      })
+      .catch((e) => console.error('claim training device failed', e))
+  }, [caseId, email, stageDraftForSync])
 
   // 단계 전환 시 로컬 입력(증거물/체크)을 그 단계 값으로 재시드.
-  function hydrateStageInputs(st: TrainingState, next: StageKey) {
+  const hydrateStageInputs = useCallback((st: TrainingState, next: StageKey) => {
     setStage(next)
     setProof(String(st[next]?.proof_artifact ?? ''))
-    setChecked({})
-    const draft = st.ui_state?.stage_drafts?.[next]
+    const serverDraft = st.ui_state?.stage_drafts?.[next]
+    const localDraft = loadLocalStageDraft(caseId, next)
+    const draft = serverDraft || localDraft
+    const serverChecked = currentStageChecked(serverDraft?.stage_checked)
+    const localChecked = currentStageChecked(localDraft?.stage_checked)
+    const nextChecked = Object.keys(serverChecked).length ? serverChecked : localChecked
+    const nextPosition = currentStagePosition(draft?.last_position)
     const feedback = draft?.safety_concept_feedback
     const answers = draft?.safety_coach_answers
     const threads = draft?.safety_coach_threads
@@ -1291,11 +1584,16 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     const nextAnswers = currentSafetyCoachAnswers(answers, nextFeedback, deleted)
     const nextThreads = currentSafetyCoachThreads(threads, deleted)
     const nextDeferred = currentDeferredSafetyQuestions(deferred, deleted)
+    checkedRef.current = nextChecked
     conceptFeedbackRef.current = nextFeedback
     coachAnswersRef.current = nextAnswers
     coachThreadsRef.current = nextThreads
     deferredSafetyQuestionsRef.current = nextDeferred
     deletedSafetyAnswerKeysRef.current = deleted
+    lastPositionRef.current = nextPosition
+    restoreAnchorRef.current = nextPosition.anchorId || ''
+    restoringPositionRef.current = Boolean(nextPosition.anchorId)
+    setChecked(nextChecked)
     setConceptFeedback(nextFeedback)
     setCoachAnswers(nextAnswers)
     setCoachThreads(nextThreads)
@@ -1308,7 +1606,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     setSafetySyncing(false)
     setNotice(null)
     setRoutedConceptId(null)
-  }
+  }, [caseId])
 
   // 마운트 시 세션 1회 로드. setState 는 async 콜백 안에서만 호출.
   useEffect(() => {
@@ -1326,8 +1624,10 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         if (!alive) return
         seqRef.current = Math.max(seqRef.current, Number(nextState.ui_state?.last_client_seq ?? 0))
         setState(nextState)
-        hydrateStageInputs(nextState, pickStage(nextState))
+        const nextStage = pickStage(nextState)
+        hydrateStageInputs(nextState, nextStage)
         setLoading(false)
+        claimTrainingDevice(nextStage, currentStagePosition(nextState.ui_state?.stage_drafts?.[nextStage]?.last_position).anchorId || '')
       } catch (e) {
         if (!alive) return
         setError(errMsg(e))
@@ -1336,13 +1636,97 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     })()
     return () => {
       alive = false
+      if (positionSyncTimerRef.current !== null) {
+        window.clearTimeout(positionSyncTimerRef.current)
+        positionSyncTimerRef.current = null
+      }
     }
-  }, [email, caseId])
+  }, [email, caseId, claimTrainingDevice, hydrateStageInputs])
+
+  useEffect(() => {
+    if (loading || !state) return
+    const anchorId = restoreAnchorRef.current
+    if (!anchorId) return
+    restoreAnchorRef.current = ''
+    window.setTimeout(() => {
+      const el = document.getElementById(anchorId)
+      if (!el) {
+        restoringPositionRef.current = false
+        return
+      }
+      el.scrollIntoView({ block: 'start', behavior: 'auto' })
+      window.scrollBy({ top: -12, left: 0, behavior: 'auto' })
+      window.setTimeout(() => {
+        restoringPositionRef.current = false
+      }, 120)
+    }, 80)
+  }, [loading, state, stage, safetyReady])
+
+  useEffect(() => {
+    if (loading || !state || questionArchiveOpen) return
+    const captureVisibleAnchor = () => {
+      if (restoringPositionRef.current) return
+      const anchors = Array.from(document.querySelectorAll<HTMLElement>('[data-training-anchor="true"]'))
+      if (!anchors.length) return
+      let best: HTMLElement | null = null
+      let bestDistance = Number.POSITIVE_INFINITY
+      for (const el of anchors) {
+        const rect = el.getBoundingClientRect()
+        if (rect.bottom < 0 || rect.top > window.innerHeight) continue
+        const distance = Math.abs(rect.top - 16)
+        if (distance < bestDistance) {
+          bestDistance = distance
+          best = el
+        }
+      }
+      const anchorId = best?.id || ''
+      if (!anchorId || lastPositionRef.current.anchorId === anchorId) return
+      const capturedAt = new Date().toISOString()
+      lastPositionRef.current = { anchorId, capturedAt }
+      if (positionSyncTimerRef.current !== null) window.clearTimeout(positionSyncTimerRef.current)
+      positionSyncTimerRef.current = window.setTimeout(() => {
+        positionSyncTimerRef.current = null
+        syncStageDraft('training_position_saved', { anchor_id: anchorId, captured_at: capturedAt })
+      }, 900)
+    }
+    captureVisibleAnchor()
+    window.addEventListener('scroll', captureVisibleAnchor, { passive: true })
+    window.addEventListener('resize', captureVisibleAnchor)
+    return () => {
+      window.removeEventListener('scroll', captureVisibleAnchor)
+      window.removeEventListener('resize', captureVisibleAnchor)
+    }
+  }, [loading, state, stage, safetyReady, questionArchiveOpen, syncStageDraft])
+
+  useEffect(() => {
+    if (loading || !state) return
+    const timer = window.setInterval(() => {
+      void fetchSession(email, caseId)
+        .then((result) => {
+          if (!result.exists) return
+          const activeDeviceId = result.state.ui_state?.active_training_device_id || ''
+          const activeCaseId = Number(result.state.ui_state?.active_training_case_id || 0)
+          if (activeDeviceId && activeDeviceId !== deviceIdRef.current && activeCaseId === caseId) {
+            try {
+              sessionStorage.setItem('vp_training_handoff_notice', `${result.state.ui_state?.active_training_device_type || '다른 기기'}에서 이어가는 중입니다.`)
+            } catch {
+              /* ignore */
+            }
+            onBack()
+            return
+          }
+          seqRef.current = Math.max(seqRef.current, Number(result.state.ui_state?.last_client_seq ?? 0))
+        })
+        .catch((e) => console.error('training handoff poll failed', e))
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [caseId, email, loading, onBack, state])
 
   function selectStage(next: StageKey) {
     if (!state || next === stage) return
     if (next === 'day1' && !state.day0?.completed) return // 잠금
     hydrateStageInputs(state, next)
+    claimTrainingDevice(next, currentStagePosition(state.ui_state?.stage_drafts?.[next]?.last_position).anchorId || '')
     seqRef.current += 1
     void syncSession({
       caseId,
@@ -1355,7 +1739,15 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   }
 
   function toggleCheck(id: string) {
-    setChecked((prev) => ({ ...prev, [id]: !prev[id] }))
+    setChecked((prev) => {
+      const next = { ...prev, [id]: !prev[id] }
+      checkedRef.current = next
+      stageDraftForSync({ stage_checked: next })
+      return next
+    })
+    window.setTimeout(() => {
+      syncStageDraft('training_check_saved', { check_id: id, checked: Boolean(checkedRef.current[id]) })
+    }, 0)
   }
 
   function updateConceptFeedback(id: string, value: string) {
@@ -1433,6 +1825,13 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           safety_coach_threads: persistedThreads,
           deferred_safety_questions: persistedDeferred,
           deleted_safety_answer_keys: nextDeleted,
+          stage_checked: checkedRef.current,
+          last_position: lastPositionRef.current.anchorId
+            ? {
+                anchor_id: lastPositionRef.current.anchorId,
+                captured_at: lastPositionRef.current.capturedAt || new Date().toISOString(),
+              }
+            : lastPositionRef.current,
         },
       },
     }).then((next) => setState(next)).catch((e) => {
@@ -1601,6 +2000,13 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
             safety_coach_threads: nextThreads,
             deferred_safety_questions: nextDeferred,
             deleted_safety_answer_keys: nextDeleted,
+            stage_checked: checkedRef.current,
+            last_position: lastPositionRef.current.anchorId
+              ? {
+                  anchor_id: lastPositionRef.current.anchorId,
+                  captured_at: lastPositionRef.current.capturedAt || new Date().toISOString(),
+                }
+              : lastPositionRef.current,
           },
         },
       })
@@ -1686,6 +2092,13 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
               safety_coach_threads: nextThreads,
               deferred_safety_questions: latestDeferred,
               deleted_safety_answer_keys: nextDeleted,
+              stage_checked: checkedRef.current,
+              last_position: lastPositionRef.current.anchorId
+                ? {
+                    anchor_id: lastPositionRef.current.anchorId,
+                    captured_at: lastPositionRef.current.capturedAt || new Date().toISOString(),
+                  }
+                : lastPositionRef.current,
             },
           },
         })
@@ -1726,6 +2139,13 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           safety_coach_threads: latestThreads,
           deferred_safety_questions: latestDeferred,
           deleted_safety_answer_keys: latestDeleted,
+          stage_checked: checkedRef.current,
+          last_position: lastPositionRef.current.anchorId
+            ? {
+                anchor_id: lastPositionRef.current.anchorId,
+                captured_at: lastPositionRef.current.capturedAt || new Date().toISOString(),
+              }
+            : lastPositionRef.current,
         },
       },
     })
@@ -1778,6 +2198,13 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           deferred_safety_questions: latestDeferred,
           deleted_safety_answer_keys: latestDeleted,
           safety_concept_confirmed_ids: confirmedConceptIds,
+          stage_checked: checkedRef.current,
+          last_position: lastPositionRef.current.anchorId
+            ? {
+                anchor_id: lastPositionRef.current.anchorId,
+                captured_at: lastPositionRef.current.capturedAt || new Date().toISOString(),
+              }
+            : lastPositionRef.current,
         },
       },
     })
@@ -1993,6 +2420,10 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           <PlannedCurriculumPreview items={plannedOutline} />
         ) : null}
 
+        {state?.day1 ? (
+          <Day1DetailPreview stage={state.day1} />
+        ) : null}
+
         {!safetyGateActive && dynamicPath.length ? (
           <DynamicPathPreview items={dynamicPath} meta={state?.adaptive_curriculum_meta} />
         ) : null}
@@ -2048,6 +2479,8 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
                   <li key={it.id}>
                     <button
                       type="button"
+                      id={`check-card-${it.id}`}
+                      data-training-anchor="true"
                       onClick={() => toggleCheck(it.id)}
                       className="flex w-full items-start gap-3 rounded-[12px] border border-border bg-card p-3.5 text-left transition active:scale-[0.99]"
                     >

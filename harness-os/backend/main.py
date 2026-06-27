@@ -3633,6 +3633,65 @@ def get_edu_db_retrieval_debug(
     }
 
 
+@app.get("/api/admin/edu/vp-training/event-log")
+def get_edu_vp_training_event_log(
+    case_id: int | None = None,
+    email: str = "",
+    event_type: str = "",
+    event_name: str = "",
+    limit: int = 100,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    _ensure_edu_case_schema()
+    safe_limit = max(1, min(int(limit or 100), 500))
+    where: list[str] = []
+    params: list[Any] = []
+    if case_id is not None:
+        where.append("case_id = %s")
+        params.append(int(case_id))
+    safe_email = _edu_normalize_email(email)
+    if safe_email:
+        where.append("email = %s")
+        params.append(safe_email)
+    if event_type:
+        where.append("event_type = %s")
+        params.append(str(event_type)[:80])
+    if event_name:
+        where.append("event_name = %s")
+        params.append(str(event_name)[:120])
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+    rows = _edu_execute(
+        f"""
+        SELECT id, case_id, email, actor_role, event_type, event_name, event_payload, created_at
+        FROM edu_vp_training_event_log
+        {where_sql}
+        ORDER BY created_at DESC
+        LIMIT %s
+        """,
+        (*params, safe_limit),
+        fetch=True,
+    )
+    events: list[dict[str, Any]] = []
+    for row in rows or []:
+        payload = row.get("event_payload") or {}
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                payload = {"raw": payload}
+        events.append({
+            "id": row.get("id"),
+            "case_id": row.get("case_id"),
+            "email": row.get("email"),
+            "actor_role": row.get("actor_role"),
+            "event_type": row.get("event_type"),
+            "event_name": row.get("event_name"),
+            "event_payload": payload,
+            "created_at": row.get("created_at").isoformat() if hasattr(row.get("created_at"), "isoformat") else str(row.get("created_at") or ""),
+        })
+    return {"ok": True, "count": len(events), "events": events}
+
+
 @app.get("/api/approvals")
 def get_approvals(
     role: str,
@@ -7324,6 +7383,12 @@ def _edu_vp_ui_state_default(state: dict[str, Any]) -> dict[str, Any]:
             "day1": _edu_vp_stage_draft_from_stage(state.get("day1")),
         },
         "safety_confirmed": {},
+        "active_training_device_id": "",
+        "active_training_device_type": "",
+        "active_training_case_id": None,
+        "active_training_stage": selected_stage,
+        "active_training_anchor_id": "",
+        "device_claimed_at": "",
         "last_client_seq": 0,
         "last_event": {},
         "last_synced_at": state.get("updated_at") or datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -7344,7 +7409,22 @@ def _edu_vp_merge_ui_state(state: dict[str, Any], incoming: dict[str, Any] | Non
                     stage_drafts[stage_key] = {**current, **incoming_stage}
         ui_state["stage_drafts"] = stage_drafts
     if isinstance(incoming, dict):
-        for field in ("selected_stage", "active_curriculum_index", "show_case_archive", "show_continue_from", "preferred_llm", "current_device", "desktop_os", "last_client_seq"):
+        for field in (
+            "selected_stage",
+            "active_curriculum_index",
+            "show_case_archive",
+            "show_continue_from",
+            "preferred_llm",
+            "current_device",
+            "desktop_os",
+            "active_training_device_id",
+            "active_training_device_type",
+            "active_training_case_id",
+            "active_training_stage",
+            "active_training_anchor_id",
+            "device_claimed_at",
+            "last_client_seq",
+        ):
             if field in incoming and incoming[field] is not None:
                 ui_state[field] = incoming[field]
         if isinstance(incoming.get("safety_confirmed"), dict):
@@ -7369,6 +7449,11 @@ def _edu_vp_merge_ui_state(state: dict[str, Any], incoming: dict[str, Any] | Non
     ui_state["preferred_llm"] = _edu_normalize_llm(str(ui_state.get("preferred_llm") or "gemini"))
     ui_state["current_device"] = str(ui_state.get("current_device") or "android").strip().lower()
     ui_state["desktop_os"] = str(ui_state.get("desktop_os") or "windows").strip().lower()
+    ui_state["active_training_device_id"] = str(ui_state.get("active_training_device_id") or "")[:120]
+    ui_state["active_training_device_type"] = str(ui_state.get("active_training_device_type") or "")[:40]
+    ui_state["active_training_stage"] = "day1" if str(ui_state.get("active_training_stage") or "") == "day1" else "day0"
+    ui_state["active_training_anchor_id"] = str(ui_state.get("active_training_anchor_id") or "")[:180]
+    ui_state["device_claimed_at"] = str(ui_state.get("device_claimed_at") or "")[:80]
     safety_confirmed = ui_state.get("safety_confirmed") or {}
     ui_state["safety_confirmed"] = safety_confirmed if isinstance(safety_confirmed, dict) else {}
     ui_state["last_client_seq"] = max(0, int(ui_state.get("last_client_seq") or 0))
@@ -11767,6 +11852,17 @@ def edu_vp_training_session_sync(
             "training_state": state,
         }
     safety_confirmation = _edu_vp_safety_confirmation_from_event(state, req.event_name, req.event_payload)
+    event_payload = req.event_payload if isinstance(req.event_payload, dict) else {}
+    device_claim: dict[str, Any] = {}
+    if req.event_name == "claim_training_device":
+        device_claim = {
+            "active_training_device_id": str(event_payload.get("device_id") or "")[:120],
+            "active_training_device_type": str(event_payload.get("device_type") or "")[:40],
+            "active_training_case_id": case_id,
+            "active_training_stage": req.selected_stage,
+            "active_training_anchor_id": str(event_payload.get("anchor_id") or "")[:180],
+            "device_claimed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
     state["ui_state"] = _edu_vp_merge_ui_state(
         state,
         {
@@ -11779,6 +11875,7 @@ def edu_vp_training_session_sync(
             "desktop_os": req.desktop_os,
             "stage_drafts": req.stage_drafts,
             "safety_confirmed": safety_confirmation,
+            **device_claim,
             "last_client_seq": incoming_seq,
             "last_event": {
                 "event_type": req.event_type,
@@ -11806,6 +11903,25 @@ def edu_vp_training_session_sync(
             "event_payload": req.event_payload,
         },
     )
+    if req.event_name == "safety_advanced_question_saved":
+        _edu_vp_append_event(
+            case_id=case_id,
+            email=req.email or str(payload["customer"].get("email") or ""),
+            event_type="curriculum_adjustment",
+            event_name="future_curriculum_adjustment_candidate_recorded",
+            payload={
+                "source_event": req.event_name,
+                "selected_stage": req.selected_stage,
+                "concept_id": str(event_payload.get("concept_id") or "")[:120],
+                "concept_title": str(event_payload.get("concept_title") or "")[:240],
+                "question": str(event_payload.get("question") or "")[:1200],
+                "target_day": event_payload.get("target_day"),
+                "target_title": str(event_payload.get("target_title") or "")[:240],
+                "reason": str(event_payload.get("reason") or "future_curriculum_detail_pending")[:240],
+                "audit_visibility": "admin_event_log",
+            },
+            actor_role="system",
+        )
     response_state = _edu_vp_attach_personalized_curriculum(state, payload)
     return {"ok": True, "case_id": case_id, "ui_state": state.get("ui_state") or {}, "training_state": response_state}
 

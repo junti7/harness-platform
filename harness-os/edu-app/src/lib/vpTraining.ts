@@ -168,9 +168,15 @@ export type TrainingStage = {
     question_prompt?: string
   }>
   schedule_blocks?: Array<{ title: string; minutes?: number; goal?: string }>
+  sample_materials?: Array<{ kit_id?: string; title: string; description?: string; files?: string[] }>
+  tutorial_steps?: Array<{ id?: string; title: string; body?: string; instruction?: string }>
   required_action?: string
   proof_artifact_hint?: string
   pass_fail_rubric?: string[]
+  evidence_cards?: Array<{ title: string; source_kind?: string; cite?: string; snippet?: string; url?: string }>
+  retrieval_mode?: string
+  customer_facing_safe?: boolean
+  fallback_used?: boolean
   checklist?: ChecklistItem[]
   proof_artifact?: string
   notes?: string
@@ -240,6 +246,12 @@ export type TrainingUiState = {
   active_curriculum_index?: number
   safety_confirmed?: Record<string, boolean>
   stage_drafts?: Record<string, Record<string, unknown>>
+  active_training_device_id?: string
+  active_training_device_type?: string
+  active_training_case_id?: number
+  active_training_stage?: StageKey
+  active_training_anchor_id?: string
+  device_claimed_at?: string
   last_client_seq?: number
 }
 

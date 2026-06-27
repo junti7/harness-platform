@@ -56,6 +56,15 @@ export default function CaseSelectScreen({
   const [menuFor, setMenuFor] = useState<TrainingCase | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [handoffNotice, setHandoffNotice] = useState<string | null>(() => {
+    try {
+      const value = sessionStorage.getItem('vp_training_handoff_notice')
+      if (value) sessionStorage.removeItem('vp_training_handoff_notice')
+      return value
+    } catch {
+      return null
+    }
+  })
   const timerRef = useRef<number | null>(null)
   const longPressedRef = useRef(false)
   // 누르기 시작 좌표 — 임계값을 넘는 '실제 스크롤/드래그' 일 때만 취소한다.
@@ -97,6 +106,7 @@ export default function CaseSelectScreen({
       longPressedRef.current = false
       return
     }
+    setHandoffNotice(null)
     onSelect(caseId)
   }
 
@@ -161,6 +171,12 @@ export default function CaseSelectScreen({
       >
         <Type size={16} className="text-primary" />글자 크기 설정
       </button>
+
+      {handoffNotice ? (
+        <div className="mb-5 rounded-[12px] border border-primary/20 bg-primary/5 px-4 py-3 text-sm leading-relaxed text-ink">
+          {handoffNotice} 이 기기에서 다시 이어가려면 아래 훈련 카드를 누르세요.
+        </div>
+      ) : null}
 
       {loading ? (
         <ul className="flex flex-col gap-3" aria-hidden>
