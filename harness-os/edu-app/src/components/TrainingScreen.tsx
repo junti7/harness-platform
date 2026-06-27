@@ -76,6 +76,11 @@ type SafetyCoachThreadGroup = {
   label: string
   items: SafetyCoachThreads
 }
+type FoundationConcept = NonNullable<TrainingStage['foundation_concepts']>[number]
+type RoutedQuestionTarget = {
+  target: FoundationConcept & { checkId: string }
+  targetIndex: number
+}
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) {
@@ -149,6 +154,51 @@ function MediaIcon({ kind }: { kind?: string }) {
 
 function conceptId(concept: NonNullable<TrainingStage['foundation_concepts']>[number], index: number): string {
   return concept.id || `safety_concept_${index}`
+}
+
+function routeKeywords(text: string): string[] {
+  const normalized = text.toLowerCase()
+  const tokens = new Set((normalized.match(/[0-9a-zA-Z가-힣]{2,}/g) ?? []).map((token) => {
+    if (token.endsWith('하나요') || token.endsWith('해요') || token.endsWith('해')) return token.replace(/(하나요|해요|해)$/, '')
+    return token.replace(/(은|는|이|가|을|를|에|의|으로|에서|에게)$/, '')
+  }))
+  const groups: Array<[string[], string[]]> = [
+    [['명사', '조사', '단어', '토큰', '이어질', '다음', '추측', '확률'], ['다음', '말', '고르는', '가능성', '숫자', '반복']],
+    [['transformer', '트랜스포머', 'attention', '어텐션', '논문', '저자'], ['transformer', 'attention', '논문', '중요한']],
+    [['다정', '친구', '사람', '감정', '마음', '의존'], ['사람', '다정', '책임', '친구', '보호자', '감정']],
+    [['안전장치', '우회', '위험', '자해', '전문가'], ['안전장치', '위험', '경계', '사람']],
+    [['돈', '법률', '건강', '개인정보', '민감정보', '일정', '제출'], ['초안', '민감정보', '원문', '전문가', '기준']],
+  ]
+  for (const [needles, expansions] of groups) {
+    if (needles.some((needle) => normalized.includes(needle))) {
+      expansions.forEach((item) => tokens.add(item))
+    }
+  }
+  return Array.from(tokens).filter((token) => token.length >= 2)
+}
+
+function routeQuestionTarget(
+  conceptItems: Array<FoundationConcept & { checkId: string }>,
+  sourceId: string,
+  question: string,
+): RoutedQuestionTarget | null {
+  const sourceIndex = conceptItems.findIndex((item) => item.checkId === sourceId)
+  if (sourceIndex < 0) return null
+  const questionTerms = routeKeywords(question)
+  if (questionTerms.length < 2) return null
+  let best: RoutedQuestionTarget | null = null
+  let bestScore = 0
+  conceptItems.forEach((item, index) => {
+    if (index <= sourceIndex) return
+    const haystack = `${item.title} ${item.body} ${item.comprehension_check ?? ''} ${item.question_prompt ?? ''}`.toLowerCase()
+    const hits = questionTerms.filter((term) => haystack.includes(term))
+    const score = hits.length / Math.max(1, Math.min(questionTerms.length, 8))
+    if (score > bestScore) {
+      bestScore = score
+      best = { target: item, targetIndex: index }
+    }
+  })
+  return best && bestScore >= 0.18 ? best : null
 }
 
 function currentSafetyCoachAnswers(raw: unknown, feedback: SafetyConceptFeedback): SafetyCoachAnswers {
@@ -671,6 +721,7 @@ function SafetyOrientationBlock({
   saving,
   error,
   notice,
+  routedConceptId,
   onToggle,
   onConceptFeedback,
   onAskCoach,
@@ -687,6 +738,7 @@ function SafetyOrientationBlock({
   saving: boolean
   error?: string | null
   notice?: string | null
+  routedConceptId?: string | null
   onToggle: (id: string) => void
   onConceptFeedback: (id: string, value: string) => void
   onAskCoach: (concept: NonNullable<TrainingStage['foundation_concepts']>[number], id: string) => void
@@ -765,7 +817,13 @@ function SafetyOrientationBlock({
               coach?.version === SAFETY_COACH_ANSWER_VERSION &&
               (coach.question ?? '').trim() === feedback.trim()
             return (
-            <div key={concept.checkId} className="rounded-[12px] border border-border bg-card p-3">
+            <div
+              key={concept.checkId}
+              id={`concept-card-${concept.checkId}`}
+              className={`rounded-[12px] border bg-card p-3 transition ${
+                routedConceptId === concept.checkId ? 'border-primary ring-2 ring-primary/25' : 'border-border'
+              }`}
+            >
               <div className="text-sm font-semibold leading-snug text-ink">{concept.title}</div>
               <p className="mt-1 text-xs leading-relaxed text-text-muted">{concept.body}</p>
               <button
@@ -951,6 +1009,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [questionArchiveOpen, setQuestionArchiveOpen] = useState(false)
+  const [routedConceptId, setRoutedConceptId] = useState<string | null>(null)
   const seqRef = useRef(0)
   const conceptFeedbackRef = useRef<SafetyConceptFeedback>({})
   const coachAnswersRef = useRef<SafetyCoachAnswers>({})
@@ -983,6 +1042,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     setSafetyReady(Boolean(st[next]?.completed || st.ui_state?.safety_confirmed?.[next]))
     setSafetySyncing(false)
     setNotice(null)
+    setRoutedConceptId(null)
   }
 
   // 마운트 시 세션 1회 로드. setState 는 async 콜백 안에서만 호출.
@@ -1057,6 +1117,25 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   function requestCoachAnswer(concept: NonNullable<TrainingStage['foundation_concepts']>[number], id: string) {
     const question = (conceptFeedback[id] ?? '').trim()
     if (!state || !question || coachLoading[id]) return
+    const conceptItems = (current?.foundation_concepts ?? []).map((item, index) => ({ ...item, checkId: conceptId(item, index) }))
+    const routed = routeQuestionTarget(conceptItems, id, question)
+    if (routed) {
+      const previousUnconfirmed = conceptItems
+        .slice(0, routed.targetIndex)
+        .filter((item) => !checked[item.checkId])
+      updateConceptFeedback(routed.target.checkId, question)
+      setRoutedConceptId(routed.target.checkId)
+      setNotice(
+        previousUnconfirmed.length
+          ? `이 질문은 뒤의 '${routed.target.title}' 카드에서 먼저 다룹니다. 그 카드로 이동했어요. 앞 카드 ${previousUnconfirmed.length}개를 확인해야 다음 단계로 넘어갈 수 있습니다.`
+          : `이 질문은 뒤의 '${routed.target.title}' 카드에서 먼저 다룹니다. 그 카드로 이동했어요.`,
+      )
+      window.setTimeout(() => {
+        document.getElementById(`concept-card-${routed.target.checkId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 50)
+      window.setTimeout(() => setRoutedConceptId((value) => (value === routed.target.checkId ? null : value)), 2600)
+      return
+    }
     const currentAnswer = coachAnswersRef.current[id]
     if (
       currentAnswer?.answer &&
@@ -1410,6 +1489,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
             saving={safetySyncing}
             error={error}
             notice={notice}
+            routedConceptId={routedConceptId}
             onToggle={toggleCheck}
             onConceptFeedback={updateConceptFeedback}
             onAskCoach={requestCoachAnswer}
