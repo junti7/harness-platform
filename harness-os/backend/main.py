@@ -8517,7 +8517,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-dedupe-thread-v4"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-rag-quality-v5"
 
 
 def _edu_vp_normalize_safety_question(question: str) -> str:
@@ -8527,6 +8527,62 @@ def _edu_vp_normalize_safety_question(question: str) -> str:
 def _edu_vp_safety_coach_answer_version(value: str | None) -> str:
     cleaned = re.sub(r"[^0-9A-Za-z._:-]", "", (value or "").strip())[:80]
     return cleaned or _EDU_VP_SAFETY_COACH_ANSWER_VERSION
+
+
+def _edu_vp_safety_coach_keywords(text: str, *, max_terms: int = 12) -> list[str]:
+    stopwords = {
+        "그리고", "그런데", "하지만", "어떻게", "이렇게", "저렇게", "이럴", "경우", "대한", "관련",
+        "사용자", "질문", "답변", "합니다", "있나요", "있어요", "무엇", "왜요", "좀", "잘",
+        "ai", "llm", "gpt", "chatgpt", "gemini", "claude",
+    }
+    terms: list[str] = []
+    seen: set[str] = set()
+    for token in re.findall(r"[0-9A-Za-z가-힣]{2,}", str(text or "").lower()):
+        if token in stopwords or token in seen:
+            continue
+        seen.add(token)
+        terms.append(token)
+        if len(terms) >= max_terms:
+            break
+    return terms
+
+
+def _edu_vp_validate_safety_coach_evidence(
+    *,
+    query: str,
+    item: dict[str, Any],
+    min_hits: int = 2,
+) -> tuple[bool, list[str]]:
+    reasons: list[str] = []
+    cite = _edu_clean_cite(str(item.get("cite") or item.get("body") or ""))
+    source = _edu_clean_cite(str(item.get("source") or item.get("title") or ""))
+    if len(cite) < 30:
+        reasons.append("cite_too_short")
+    if not source:
+        reasons.append("missing_source")
+    if _edu_is_low_quality_item(item):
+        reasons.append("low_quality_item")
+    query_terms = _edu_vp_safety_coach_keywords(query)
+    blob = " ".join(
+        str(part or "").lower()
+        for part in (
+            item.get("title"),
+            item.get("cite"),
+            item.get("body"),
+            item.get("source"),
+            item.get("keywords"),
+        )
+    )
+    hits = [term for term in query_terms if term in blob]
+    if len(hits) < min_hits:
+        reasons.append("insufficient_keyword_overlap")
+    score = float(item.get("_score") or 0.0)
+    if score and score < 2.0:
+        reasons.append("low_retrieval_score")
+    unsafe_source_markers = ("lyrics", "music video", "뮤직비디오", "직캠", "fan cam", "trailer", "예고편", "ost")
+    if any(marker in source.lower() for marker in unsafe_source_markers):
+        reasons.append("unsafe_source_marker")
+    return not reasons, reasons
 
 
 def _edu_vp_cached_safety_coach_answer(
@@ -8574,9 +8630,69 @@ def _edu_vp_cached_safety_coach_answer(
     }
 
 
+def _edu_vp_safety_coach_evidence(query: str, *, limit: int = 2) -> tuple[str, list[dict[str, Any]]]:
+    terms = _edu_vp_safety_coach_keywords(query, max_terms=10)
+    if len(terms) < 2:
+        return "", []
+    try:
+        bundle = _retrieve_evidence_bundle(query, "parent", k=max(limit * 3, 6))
+    except Exception as exc:  # noqa: BLE001
+        _edu_runtime_event(
+            "vp_training_safety_coach_evidence_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+        )
+        return "", []
+    items = list((bundle or {}).get("items") or [])
+    if not items:
+        return "", []
+    selected: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    for item in items:
+        valid, reasons = _edu_vp_validate_safety_coach_evidence(query=query, item=item)
+        if not valid:
+            rejected.append({
+                "id": str(item.get("id") or "")[:80],
+                "source": str(item.get("source") or "")[:160],
+                "reasons": reasons,
+            })
+            continue
+        cite = _edu_clean_cite(str(item.get("cite") or item.get("body") or ""))
+        source = _edu_clean_cite(str(item.get("source") or item.get("title") or ""))
+        selected.append({
+            "id": str(item.get("id") or ""),
+            "source": source[:160],
+            "cite": cite[:260],
+            "score": float(item.get("_score") or 0.0),
+            "validated": True,
+        })
+        if len(selected) >= limit:
+            break
+    if not selected:
+        if rejected:
+            _edu_runtime_event(
+                "vp_training_safety_coach_evidence_rejected",
+                rejected_count=len(rejected),
+                rejected=rejected[:5],
+            )
+        return "", []
+    lines = [
+        f"- 자료 {idx}: {item['cite']}\n  출처: {item['source']}"
+        for idx, item in enumerate(selected, start=1)
+    ]
+    return "\n".join(lines), selected
+
+
 def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
     title = concept_title or "이 단락"
     q = question.strip()
+    if any(k in q for k in ("빠져", "빠져들", "의존", "계속", "다정", "못 끊")):
+        return (
+            "다정한 말 때문에 계속 보고 싶어지는 건 이상한 일이 아니라, 대화가 즉시 위로처럼 느껴지기 때문입니다. "
+            "이럴 때는 AI에게 더 오래 설명하게 하지 말고, 먼저 10분 쉬기, 물 마시기, 가족이나 믿을 만한 사람에게 지금 감정을 말하기처럼 몸과 현실 쪽 행동을 하나 정하세요. "
+            "중요한 결정이나 돈, 건강, 가족 문제는 AI 답변을 저장만 해두고 바로 실행하지 않는 규칙을 두는 것이 좋습니다. "
+            "예를 들어 밤에 계속 대화하고 싶어지면 '오늘은 여기까지'라고 적고 알람을 끈 뒤, 다음 날 낮에 다시 읽어보면 감정과 판단을 분리하기가 쉬워집니다."
+        )
     if any(k in q for k in ("누가", "저자", "발표", "쓴 사람", "만든 사람")) and any(k in q.lower() for k in ("transformer", "논문", "attention")):
         return (
             "Transformer를 널리 알린 논문은 2017년 'Attention Is All You Need'입니다. "
@@ -8617,12 +8733,41 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
     return "질문을 조금 더 구체적으로 적어주시면, 그 부분에 맞춰 쉬운 예로 다시 설명할 수 있습니다."
 
 
-def _edu_vp_safety_coach_red_team(*, question: str, answer: str, concept_body: str) -> list[str]:
+def _edu_vp_safety_coach_red_team(
+    *,
+    question: str,
+    answer: str,
+    concept_body: str,
+    evidence_items: list[dict[str, Any]] | None = None,
+) -> list[str]:
     issues: list[str] = []
     answer_text = answer.strip()
     question_text = question.strip()
     if not answer_text:
         return ["empty_answer"]
+    leaked_markers = (
+        "[현재 단락",
+        "[사용자 질문",
+        "[코치 답변",
+        "[새 생활 예시",
+        "<<대화",
+        "위 질문에 맞는",
+    )
+    if any(marker in answer_text for marker in leaked_markers):
+        issues.append("prompt_marker_leaked")
+    mentions_evidence = any(term in answer_text for term in ("관련 자료", "내부 자료", "자료에서는", "출처", "보고서"))
+    if mentions_evidence and not evidence_items:
+        issues.append("unsupported_evidence_reference")
+    if evidence_items:
+        allowed_sources = [str(item.get("source") or "") for item in evidence_items if str(item.get("source") or "").strip()]
+        if mentions_evidence and allowed_sources and not any(source[:20] in answer_text for source in allowed_sources if len(source) >= 4):
+            generic_ok = "관련 자료" in answer_text and not any(term in answer_text for term in ("출처:", "논문", "보고서명"))
+            if not generic_ok:
+                issues.append("evidence_source_not_grounded")
+    if len(answer_text) > 1300:
+        issues.append("answer_too_long")
+    if answer_text.endswith(("하", "하.", "얘기를 하", "질문을 하", "때문에", "그리고", "하지만", "그래서")):
+        issues.append("possibly_truncated")
     overlap_terms = [
         "비 오는 날 아이 준비물",
         "우산, 장화, 여벌 양말",
@@ -8630,6 +8775,14 @@ def _edu_vp_safety_coach_red_team(*, question: str, answer: str, concept_body: s
     ]
     if any(term in answer_text for term in overlap_terms if term in concept_body):
         issues.append("source_example_repeated")
+    concept_sentences = [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?。])\s+|[。!?]\s*", concept_body)
+        if len(sentence.strip()) >= 24
+    ]
+    repeated = sum(1 for sentence in concept_sentences if sentence and sentence in answer_text)
+    if repeated >= 1:
+        issues.append("concept_body_repeated")
     question_terms = [token for token in re.findall(r"[가-힣A-Za-z0-9]+", question_text) if len(token) >= 2]
     if question_terms and not any(token in answer_text for token in question_terms[:5]):
         issues.append("question_not_addressed")
@@ -8649,23 +8802,30 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
     question = _edu_neutralize(req.question, cap=700)
     concept_title = _edu_neutralize(req.concept_title, cap=160)
     concept_body = _edu_neutralize(req.concept_body, cap=1400)
+    evidence_query = f"{concept_title} {concept_body} {question}"
+    evidence_text, evidence_items = _edu_vp_safety_coach_evidence(evidence_query, limit=1)
+    evidence_block = evidence_text or "(질문과 딱 맞는 내부 자료가 없으므로 자료를 언급하지 말 것)"
     base_prompt = (
         "너는 Harness VP 훈련의 AI 안전 오리엔테이션 코치다.\n"
         "사용자는 AI/LLM 왕초보다. 초등학교 1학년도 이해할 만큼 쉬운 한국어로 답하라.\n"
+        "출력은 답변 본문만 작성한다. 제목, 대괄호 섹션명, 프롬프트 표식, 체크리스트를 절대 출력하지 않는다.\n"
         "규칙:\n"
         "- 사용자 질문의 구체적 맥락에 직접 답한다.\n"
         "- [현재 단락 설명]을 그대로 요약하거나 복붙하지 않는다. 사용자가 이미 읽은 본문을 반복하면 실패다.\n"
         "- 먼저 질문 속 핵심 단어를 짚고, 그 질문에 대한 새 설명과 새 예시를 낸다.\n"
         "- 고정 FAQ처럼 같은 답을 반복하지 않는다.\n"
-        "- 4~6문장으로 짧게 답한다.\n"
+        "- 3~4문장으로 끝낸다. 900자 이내로 답한다.\n"
         "- 반드시 [현재 단락 설명]에 없는 새 생활 예시 1개를 포함한다.\n"
+        "- [관련 내부 자료]가 '(질문과 딱 맞는 내부 자료가 없음)'이면 자료를 절대 언급하지 않는다.\n"
+        "- [관련 내부 자료]가 있으면 한 문장만 '관련 자료에서는 ...'처럼 아주 짧게 반영한다. 출처 이름은 확실할 때만 말한다.\n"
         "- AI를 사람, 친구, 전문가, 보호자처럼 표현하지 않는다.\n"
         "- 자해, 건강, 법률, 돈, 아이 안전 등 고위험 신호가 있으면 AI 답변 대신 실제 사람/전문가/긴급 도움을 연결하라고 말한다.\n"
         "- 모르면 모른다고 말하고, 실습 전 확인해야 할 기준을 제시한다.\n\n"
         f"[현재 단락 제목]\n{concept_title}\n\n"
         f"[현재 단락 설명]\n{concept_body}\n\n"
+        f"[관련 내부 자료]\n{evidence_block}\n\n"
         f"[사용자 질문 또는 피드백]\n{question}\n\n"
-        "위 질문에 맞는 코치 답변만 출력하라."
+        "답변 본문만 출력하라."
     )
     retry_prompt = (
         f"{base_prompt}\n\n"
@@ -8677,18 +8837,24 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         used_model = ""
         answer = ""
         red_team_issues: list[str] = []
+        quality_fallback_used = False
         for attempt, prompt in enumerate((base_prompt, retry_prompt), start=1):
             if attempt > 1 and red_team_issues:
                 prompt = (
                     f"{prompt}\n\n"
                     f"[약식 Red Team 차단 사유]\n{', '.join(red_team_issues)}\n"
-                    "위 사유를 모두 고쳐 다시 답하라. 누가/저자/발표자 질문이면 사람 또는 연구팀 이름을 반드시 포함하라."
+                    "위 사유를 모두 고쳐 다시 답하라. 대괄호 표식과 원문 반복 없이 3~4문장 답변 본문만 출력하라. "
+                    "누가/저자/발표자 질문이면 사람 또는 연구팀 이름을 반드시 포함하라."
                 )
             raw, usage, used_model = _edu_generate_text(
                 prompt,
-                max_output_tokens=420,
+                max_output_tokens=720,
                 timeout_seconds=20,
                 response_mime_type="text/plain",
+                meta={
+                    "surface": "vp_training_safety_coach",
+                    "evidence_count": len(evidence_items),
+                },
             )
             answer = re.sub(r"```(?:text)?", "", raw or "").strip().rstrip("`").strip()
             if not answer:
@@ -8697,14 +8863,16 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                 question=question,
                 answer=answer,
                 concept_body=concept_body,
+                evidence_items=evidence_items,
             )
             if not red_team_issues:
                 break
             if attempt == 2:
                 answer = _edu_vp_safety_coach_fallback(concept_title, question)
                 used_model = f"{used_model}+quality_fallback"
+                quality_fallback_used = True
         _edu_log_llm_cost(usage, used_model)
-        return answer[:1600], used_model, usage, False
+        return answer[:2200], used_model, usage, quality_fallback_used
     except Exception as exc:  # noqa: BLE001
         _edu_runtime_event(
             "vp_training_safety_coach_fallback",
@@ -11111,7 +11279,7 @@ def edu_vp_training_safety_coach(
             "concept_title": (req.concept_title or "")[:240],
             "question": question[:1200],
             "normalized_question": normalized_question[:1200],
-            "answer": str(cached["answer"])[:1800],
+            "answer": str(cached["answer"])[:2600],
             "model": str(cached.get("model") or ""),
             "fallback_used": bool(cached.get("fallback_used")),
             "answer_version": answer_version,
@@ -11141,7 +11309,7 @@ def edu_vp_training_safety_coach(
         "concept_body": (req.concept_body or "")[:1800],
         "question": question[:1200],
         "normalized_question": normalized_question[:1200],
-        "answer": answer[:1800],
+        "answer": answer[:2600],
         "model": model_name,
         "usage": usage,
         "fallback_used": fallback_used,

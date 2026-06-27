@@ -210,6 +210,42 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(model, "gemini-test")
         self.assertFalse(fallback_used)
 
+    def test_safety_coach_red_team_blocks_prompt_marker_leakage(self):
+        issues = self.mod._edu_vp_safety_coach_red_team(
+            question="그런데도 다정해서 자꾸 빠져들어요. 어떻게 하나요?",
+            answer="[현재 단락 설명] AI는 보호자가 아닙니다. [사용자 질문 또는 피드백] 그런데도 얘기를 하",
+            concept_body="AI는 사용자의 삶을 책임지는 보호자가 아닙니다.",
+        )
+
+        self.assertIn("prompt_marker_leaked", issues)
+        self.assertIn("possibly_truncated", issues)
+
+    def test_safety_coach_rejects_ungrounded_evidence_reference(self):
+        issues = self.mod._edu_vp_safety_coach_red_team(
+            question="AI에 자꾸 의존하게 되면 어떻게 하나요?",
+            answer="관련 자료에서는 이런 경우 전문가 상담이 필요하다고 말합니다.",
+            concept_body="AI 답변은 사람이 확인해야 합니다.",
+            evidence_items=[],
+        )
+
+        self.assertIn("unsupported_evidence_reference", issues)
+
+    def test_safety_coach_evidence_validation_requires_relevant_source(self):
+        valid, reasons = self.mod._edu_vp_validate_safety_coach_evidence(
+            query="다정한 AI에 자꾸 빠져들고 의존하게 됩니다",
+            item={
+                "id": "x1",
+                "source": "youtube official video mv",
+                "cite": "짧은 영상 소개",
+                "body": "음악 영상 설명",
+                "_score": 0.2,
+            },
+        )
+
+        self.assertFalse(valid)
+        self.assertIn("cite_too_short", reasons)
+        self.assertIn("low_quality_item", reasons)
+
     def test_safety_coach_normalizes_question_for_duplicate_detection(self):
         normalized = self.mod._edu_vp_normalize_safety_question("  다음 글에\n이어질   조사는 어떻게 추측하나요?  ")
 
@@ -227,7 +263,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
                 case_id=123,
                 concept_id="safety_concept_ai_llm_words",
                 normalized_question="다음 글에 이어질 조사는 어떻게 추측하나요?",
-                answer_version="2026-06-27-dedupe-thread-v4",
+                answer_version="2026-06-27-rag-quality-v5",
             )
 
         self.assertEqual(cached, payload)
@@ -235,7 +271,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("safety_question_answered", query)
         self.assertEqual(params[0], 123)
         self.assertEqual(params[1], "safety_concept_ai_llm_words")
-        self.assertEqual(params[3], "2026-06-27-dedupe-thread-v4")
+        self.assertEqual(params[3], "2026-06-27-rag-quality-v5")
 
     def test_safety_confirmation_unlocks_day0_practice(self):
         state = {"intake": {"preferred_llm": "claude"}, "day0": self.mod._edu_vp_build_day0({"preferred_llm": "claude"})}
