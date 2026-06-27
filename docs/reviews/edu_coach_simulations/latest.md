@@ -1,35 +1,34 @@
 # EDU Coach Simulation Latest
 
-- run_id: `20260627T091515Z`
+- run_id: `20260627T092647Z`
 - candidate_source: `corpus-current-fallback`
 - llm_judge_enabled: `False`
 - record_count: `500`
-- output: `docs/reviews/edu_coach_simulations/run_20260627T091515Z_corpus_current_fallback.jsonl`
+- output: `docs/reviews/edu_coach_simulations/run_20260627T092647Z_corpus_current_fallback.jsonl`
 
 ## Verdict Counts
 
-- `clear`: 344
-- `needs_work`: 156
+- `clear`: 451
+- `needs_work`: 49
 
 ## Top Issues
 
-- `question_not_addressed`: 145
-- `missing_empathy_for_emotional_question`: 12
-- `missing_energy_use_mechanism`: 4
-- `unsupported_evidence_reference`: 1
+- `question_not_addressed`: 25
+- `missing_principle_mechanism`: 20
+- `missing_energy_use_mechanism`: 5
 
 ## Intent Verdict Counts
 
-- `ai_energy_use`: clear=18, needs_work=35
-- `ai_homework_overreliance`: clear=95, needs_work=18
-- `career_anxiety`: clear=52, needs_work=10
-- `emotional_validation`: clear=27, needs_work=25
-- `general_principle`: clear=50, needs_work=54
-- `isolation_dependency`: clear=46, needs_work=41
-- `learning_start`: clear=113, needs_work=43
-- `privacy_boundary`: clear=42, needs_work=7
-- `professional_cost_barrier`: clear=43, needs_work=12
-- `screen_dependency`: clear=53, needs_work=18
+- `ai_energy_use`: clear=35, needs_work=12
+- `ai_homework_overreliance`: clear=92, needs_work=7
+- `career_anxiety`: clear=52, needs_work=5
+- `emotional_validation`: clear=47, needs_work=5
+- `general_principle`: clear=89, needs_work=13
+- `isolation_dependency`: clear=41, needs_work=14
+- `learning_start`: clear=151, needs_work=9
+- `privacy_boundary`: clear=46, needs_work=4
+- `professional_cost_barrier`: clear=50, needs_work=4
+- `screen_dependency`: clear=61, needs_work=5
 
 ## Channel Counts
 

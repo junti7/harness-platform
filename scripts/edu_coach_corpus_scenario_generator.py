@@ -150,10 +150,16 @@ def _classify_intents(text: str) -> list[str]:
     lower = text.lower()
     intents = [intent for intent, markers in INTENT_RULES.items() if any(marker.lower() in lower for marker in markers)]
     ai_context = any(marker in lower for marker in ("ai", "인공지능", "챗gpt", "chatgpt", "llm", "gemini", "claude"))
-    if "ai_energy_use" in intents and not ai_context:
+    ai_energy_context = ai_context and any(
+        marker in lower for marker in ("전기", "전력", "데이터센터", "냉각", "gpu", "서버", "npu", "power", "energy")
+    )
+    if "ai_energy_use" in intents and (not ai_energy_context or any(marker in lower for marker in ("에너지를 많이 쏟", "지질 에너지", "lipid energy"))):
         intents.remove("ai_energy_use")
     if "isolation_dependency" in intents and not any(
-        marker in lower for marker in ("ai", "챗gpt", "chatgpt", "llm", "혼자", "들어줄", "외로", "아이", "학생")
+        marker in lower for marker in (
+            "ai에 의존", "ai 의존", "ai 친구", "챗gpt에 의존", "챗gpt 의존", "chatgpt에 의존",
+            "llm에 의존", "혼자", "들어줄", "외로"
+        )
     ):
         intents.remove("isolation_dependency")
     if "general_principle" in intents and any(

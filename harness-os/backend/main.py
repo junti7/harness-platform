@@ -2989,6 +2989,61 @@ def _build_trading_watchlist() -> list[dict[str, Any]]:
     return watchlist
 
 
+def _fetch_yfinance_quotes(watchlist: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """yfinance fallback — CP Gateway 없이 US 종목 호가 조회.
+    KRX 등 yfinance 미지원 종목(region != 'US')은 건너뛴다."""
+    try:
+        import yfinance as yf
+    except ImportError:
+        return []
+
+    us_items = [item for item in watchlist if item.get("region", "US") == "US" and item.get("query")]
+    if not us_items:
+        return []
+
+    symbol_to_item: dict[str, dict] = {}
+    for item in us_items:
+        sym = (item.get("query") or item.get("symbol") or "").upper().strip()
+        if sym:
+            symbol_to_item[sym] = item
+
+    if not symbol_to_item:
+        return []
+
+    try:
+        tickers = yf.Tickers(" ".join(symbol_to_item.keys()))
+    except Exception:
+        return []
+
+    fetched_at = datetime.now().isoformat(timespec="seconds")
+    rows: list[dict[str, Any]] = []
+    for sym, item in symbol_to_item.items():
+        try:
+            t = tickers.tickers.get(sym)
+            if t is None:
+                continue
+            fi = t.fast_info
+            last = fi.last_price
+            prev_close = fi.previous_close
+            change_pct = round((last - prev_close) / prev_close * 100, 3) if prev_close else None
+            rows.append({
+                "conid": item.get("conid") or sym,
+                "symbol": sym,
+                "last": round(last, 4) if last else None,
+                "bid": None,
+                "ask": None,
+                "close": round(prev_close, 4) if prev_close else None,
+                "change_pct": change_pct,
+                "currency": fi.currency or "USD",
+                "source": "yfinance",
+                "fetched_at": fetched_at,
+                "freshness_status": "fresh",
+            })
+        except Exception:
+            continue
+    return rows
+
+
 def _fetch_ibkr_quotes(watchlist: list[dict[str, Any]]) -> list[dict[str, Any]]:
     from scripts.ibkr_cp_client import IbkrCpClient, safe_check_connectivity
 
@@ -3122,12 +3177,27 @@ def _trading_api_overview() -> dict[str, Any]:
         accounts_payload = {"count": 1, "accounts": [{"id": _tws_account_id, "account_type": "paper", "currency": "USD", "description": "TWS Paper"}], "error": None}
     onboarding = compute_status(preflight, accounts_payload)
     watchlist = _build_trading_watchlist()
+    # CP Gateway 우선 시도, 실패 시 yfinance fallback (conid 불필요)
     quote_rows = _fetch_ibkr_quotes(watchlist)
-    quotes_by_conid = {row.get("conid"): row for row in quote_rows if row.get("conid")}
+    quote_source = "ibkr_cp"
+    if not quote_rows:
+        quote_rows = _fetch_yfinance_quotes(watchlist)
+        quote_source = "yfinance" if quote_rows else "none"
+
+    # CP: conid 기준 매핑 / yfinance: symbol 기준 매핑
+    quotes_by_conid: dict[str, dict] = {}
+    quotes_by_symbol: dict[str, dict] = {}
+    for row in quote_rows:
+        if row.get("conid"):
+            quotes_by_conid[str(row["conid"])] = row
+        if row.get("symbol"):
+            quotes_by_symbol[str(row["symbol"]).upper()] = row
 
     enriched_watchlist = []
     for item in watchlist:
-        quote = quotes_by_conid.get(str(item.get("conid") or ""))
+        sym = (item.get("query") or item.get("symbol") or "").upper()
+        quote = (quotes_by_conid.get(str(item.get("conid") or ""))
+                 or quotes_by_symbol.get(sym))
         enriched_watchlist.append({**item, "quote": quote})
 
     return {
@@ -3150,6 +3220,7 @@ def _trading_api_overview() -> dict[str, Any]:
             "path": str(trading_watchlist_path.relative_to(PROJECT_ROOT)),
             "item_count": trading_watchlist_items,
             "mode": "watchlist_file" if trading_watchlist_payload else "registry_fallback",
+            "quote_source": quote_source,
         },
         "registry": {
             "path": str(registry_path.relative_to(PROJECT_ROOT)),
@@ -8831,17 +8902,25 @@ def _edu_vp_question_asks_transformer_paper_authors(question: str) -> bool:
 
 def _edu_vp_question_asks_ai_energy_use(question: str) -> bool:
     q = str(question or "").strip().lower()
+    if any(marker in q for marker in ("에너지를 많이 쏟", "에너지 많이 쏟", "지질 에너지", "lipid energy")):
+        return False
     energy_markers = (
-        "전기", "전력", "전기세", "전기요금", "에너지", "데이터센터", "냉각", "gpu", "서버",
+        "전기", "전력", "전기세", "전기요금", "에너지", "데이터센터", "냉각", "gpu", "서버", "npu",
         "환경", "탄소", "power", "electric", "energy", "datacenter", "data center", "cooling",
     )
-    return any(marker in q for marker in energy_markers)
+    if not any(marker in q for marker in energy_markers):
+        return False
+    direct_ai_markers = (
+        "ai 답변", "ai가 답변", "ai한테 질문", "ai 질문", "생성형 ai", "llm", "gpt", "챗gpt",
+        "데이터센터", "냉각", "gpu", "서버", "전력", "전기세", "전기요금", "탄소", "npu",
+    )
+    return any(marker in q for marker in direct_ai_markers)
 
 
 def _edu_vp_question_asks_direct_principle(question: str) -> bool:
     q = str(question or "").strip().lower()
-    hard_principle_markers = (
-        "왜", "원리", "이유", "작동", "계산", "mechanism", "work", "compute",
+    mechanism_markers = (
+        "원리", "이유", "작동", "계산", "mechanism", "work", "compute",
         "전기", "전력", "에너지", "데이터센터", "냉각", "gpu", "서버",
     )
     practical_help_markers = (
@@ -8849,13 +8928,13 @@ def _edu_vp_question_asks_direct_principle(question: str) -> bool:
         "하면 좋", "해야 할지", "걱정", "추천", "만들기", "교육", "강의", "career", "approach",
         "homework", "accommodation", "use as",
     )
-    if any(marker in q for marker in practical_help_markers) and not any(marker in q for marker in hard_principle_markers):
+    if any(marker in q for marker in practical_help_markers) and not any(marker in q for marker in mechanism_markers):
         return False
     asks_principle = any(
         marker in q
         for marker in (
             "왜", "어떻게", "원리", "이유", "작동", "계산", "만들", "나오", "생기", "되는", "하나요",
-            "why", "how", "principle", "mechanism", "work", "compute",
+            "why", "principle", "mechanism", "compute",
         )
     )
     if not asks_principle:
@@ -9772,9 +9851,22 @@ def _edu_vp_safety_coach_question_focus(question: str) -> str:
     return "·".join(terms)
 
 
+def _edu_vp_safety_coach_has_ai_dependency_context(question: str) -> bool:
+    text = str(question or "").strip().lower()
+    return any(
+        marker in text
+        for marker in (
+            "ai에 의존", "ai 의존", "ai 친구", "챗gpt에 의존", "챗gpt 의존", "chatgpt에 의존",
+            "llm에 의존", "ai를 붙잡", "ai라도 붙잡", "ai에 기대", "ai에게 기대",
+        )
+    )
+
+
 def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
     title = concept_title or "이 단락"
     q = question.strip()
+    q_lower = q.lower()
+    focus = _edu_vp_safety_coach_question_focus(q)
     if _edu_vp_safety_coach_has_cost_barrier(q):
         return (
             "맞아요, 전문가에게 상담을 받을 때 비용이 많이 드는 건 현실적인 문제이고, 비용 부담은 실제 장벽입니다. "
@@ -9796,11 +9888,53 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
                 "문제는 기분이 좋다는 사실이 아니라, 그 좋은 느낌 때문에 AI 말이 전부 맞다고 믿거나 중요한 결정을 바로 해버리는 순간입니다. "
                 "그래서 AI의 위로는 받아도 되고, 대신 마지막 판단은 잠깐 멈춘 뒤 내 상황을 다시 확인하는 쪽으로 쓰는 게 안전합니다."
             )
-    if any(k in q for k in ("빠져", "빠져들", "의존", "계속", "다정", "못 끊")):
         return (
-            "AI에 의존하게 될까 봐 걱정되는 건 자연스러운 질문입니다. 다정한 말 때문에 계속 보고 싶어지는 것도 이상한 일이 아닙니다. "
+            f"{focus} 쪽 걱정이나 불안은 그럴 수 있습니다. AI를 쓰는 문제는 기능 문제가 아니라 아이의 마음, 공부 습관, 판단 습관까지 이어질 수 있습니다. "
+            "그래서 먼저 불안한 지점을 인정하고, 바로 금지하거나 바로 허용하기보다 '어떤 상황에서 쓰면 도움이 되고, 어떤 상황에서는 멈출지'를 나누는 게 좋습니다. "
+            "오늘은 걱정되는 장면 하나를 적고, 그 장면에서 AI가 대신하면 안 되는 부분 하나만 정해보면 됩니다."
+        )
+    if _edu_vp_safety_coach_has_ai_dependency_context(q) or any(k in q for k in ("빠져", "빠져들", "못 끊")):
+        return (
+            f"{focus} 쪽 걱정은 그럴 수 있습니다. AI에 의존하게 될까 봐 걱정되는 건 자연스러운 질문입니다. 다정한 말 때문에 계속 보고 싶어지는 것도 이상한 일이 아닙니다. "
             "아이든 어른이든 AI를 무조건 끊으라는 뜻은 아니고, 마음을 가라앉히는 임시 도구로 쓰되 중요한 결정은 바로 하지 않는 규칙이 필요합니다. "
             "예를 들어 밤에 계속 대화하고 싶어지면 '오늘은 여기까지, 내일 낮에 다시 읽기'라고 적어두면 감정과 판단을 조금 분리할 수 있습니다."
+        )
+    if _edu_vp_question_compares_transformer_ml(q):
+        return (
+            "Transformer와 machine learning은 같은 층위의 말이 아닙니다. "
+            "Machine learning은 AI 안에 있는 넓은 분야이고, Transformer는 그 안에서 언어 같은 데이터를 처리할 때 쓰이는 딥러닝 구조 중 하나입니다. "
+            "예를 들어 운동이 큰 분야라면 축구 전술은 그 안의 한 방식인 것처럼 보면 됩니다. "
+            "오늘은 machine learning은 큰 분야, Transformer는 그 안에 포함되는 특정 구조라고 기억하면 됩니다."
+        )
+    if any(k in q_lower for k in ("숙제", "과제", "homework", "수행평가", "보고서", "critical thinking", "caught")):
+        return (
+            f"{focus} 쪽이 걱정되는 건 그럴 수 있습니다. 숙제나 과제에서 AI를 쓰는 핵심은 '대신 쓰게 하느냐, 생각을 돕게 하느냐'입니다. "
+            "AI가 바로 정답이나 문장을 만들어주면 빠르지만 아이의 풀이 과정, 글쓰기 근육, 비판적 사고가 비어 있을 수 있습니다. "
+            "그래서 먼저 아이가 자기 답을 3줄로 쓰고, 그다음 AI에게 빠진 점이나 반례만 물어보게 하는 순서가 안전합니다."
+        )
+    if any(k in q_lower for k in ("코딩", "교육", "강의", "리터러시", "공부", "학습", "학생", "초등", "중등", "고등", "school", "education", "learning", "learn", "course")):
+        return (
+            f"{focus} 쪽 학습 질문은 막막할 수 있습니다. AI 교육이나 학습을 시작할 때는 도구 이름보다 아이가 어떤 힘을 기를지가 먼저입니다. "
+            "코딩, AI 리터러시, 글쓰기, 영어처럼 분야는 달라도 기준은 같습니다. AI가 답을 대신 내는 시간이 아니라 질문을 만들고, 비교하고, 고쳐보는 시간을 늘려야 합니다. "
+            "처음에는 하루 10분 정도로 작게 시작하고, 결과물보다 '내가 먼저 생각한 흔적'을 남기게 하는 방식이 좋습니다."
+        )
+    if any(k in q_lower for k in ("진로", "일자리", "직업", "대체", "밥줄", "커리어", "career", "job", "worker", "workers", "major")):
+        return (
+            f"{focus} 쪽 진로 불안은 막막하게 느껴질 수 있습니다. 다만 'AI가 다 대체한다'로 보면 너무 거칠고, 실제로는 반복 작업은 줄고 사람의 판단, 설명, 조율 능력이 더 중요해지는 쪽에 가깝습니다. "
+            "아이 진로를 볼 때는 특정 직업명이 아니라 문제를 이해하고, 사람에게 설명하고, AI 결과를 검토하는 힘을 같이 봐야 합니다. "
+            "지금은 관심 분야 하나를 고르고 그 분야에서 AI가 대신할 일과 사람이 맡을 일을 나눠 적어보는 게 좋습니다."
+        )
+    if any(k in q_lower for k in ("개인정보", "사생활", "사진", "얼굴", "성장사진", "피부", "privacy", "cybersecurity", "data", "보안")):
+        return (
+            f"{focus} 쪽은 그럴 수 있지만, 사진, 얼굴, 개인정보, 보안이 걸린 AI 사용은 재미보다 경계가 먼저입니다. "
+            "AI 앱에 한 번 올린 정보는 저장, 재사용, 외부 처리 가능성을 완전히 통제하기 어렵기 때문입니다. "
+            "아이 사진이나 민감한 정보는 올리지 않는 것을 기본으로 하고, 꼭 써야 한다면 얼굴·이름·학교처럼 식별되는 정보부터 빼고 확인하는 게 안전합니다."
+        )
+    if any(k in q_lower for k in ("유튜브", "영상", "스크린", "게임", "미디어", "자막", "youtube", "video", "screen")):
+        return (
+            f"{focus} 쪽 고민은 그럴 수 있습니다. 영상이나 스크린을 AI와 같이 쓸 때는 '많이 보느냐'보다 '보고 나서 무엇을 하느냐'가 중요합니다. "
+            "유튜브, 자막, AI 영상 도구는 도움이 될 수 있지만 계속 소비만 하면 학습보다 습관이 먼저 굳을 수 있습니다. "
+            "짧게 보고, 아이가 직접 한 문장으로 설명하거나 손으로 해보는 활동을 붙이면 화면 시간이 공부 시간으로 바뀔 가능성이 커집니다."
         )
     if _edu_vp_question_asks_attention_mechanism(q):
         return (
@@ -9830,13 +9964,6 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
             "예를 들어 길 안내를 말끔하게 써도 실제 도로 공사까지 본 것은 아닐 수 있습니다. "
             "오늘은 AI 답을 '그럴듯한 초안'으로 받고, 중요한 내용은 원문이나 실제 자료로 한 번 더 확인한다고 기억하면 됩니다."
         )
-    if _edu_vp_question_compares_transformer_ml(q):
-        return (
-            "Transformer와 machine learning은 같은 층위의 말이 아닙니다. "
-            "Machine learning은 AI 안에 있는 넓은 분야이고, Transformer는 그 안에서 언어 같은 데이터를 처리할 때 쓰이는 딥러닝 구조 중 하나입니다. "
-            "예를 들어 운동이 큰 분야라면 축구 전술은 그 안의 한 방식인 것처럼 보면 됩니다. "
-            "오늘은 machine learning은 큰 분야, Transformer는 그 안에 포함되는 특정 구조라고 기억하면 됩니다."
-        )
     if "조사" in q and ("추측" in q or "이어질" in q or "다음" in q):
         return (
             "조사는 앞말의 역할을 보고 고릅니다. 예를 들어 '학교' 뒤에는 '에', '에서', '가'가 올 수 있지만, "
@@ -9853,7 +9980,7 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
         )
     if _edu_vp_question_asks_direct_principle(q):
         return (
-            "짧게 말하면 AI 답변은 질문을 숫자로 바꾸고, 학습한 말의 패턴을 바탕으로 다음에 올 말을 계속 계산해서 만들어집니다. "
+            f"{focus} 질문의 핵심부터 보면, AI 답변은 질문을 숫자로 바꾸고, 학습한 말의 패턴을 바탕으로 다음에 올 말을 계속 계산해서 만들어집니다. "
             "사람처럼 머릿속에서 뜻을 느끼는 것이 아니라, 단어와 단어 사이의 관련도와 가능성을 빠르게 비교합니다. "
             "자동완성이 한 글자씩 후보를 보여주듯, 큰 AI는 훨씬 많은 후보를 보며 문장을 이어갑니다. "
             "오늘은 원리를 '이해하는 사람'이 아니라 '가능성 높은 다음 말을 고르는 계산'으로 기억하면 됩니다."
@@ -9876,7 +10003,6 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
             "책을 읽으며 중요한 단어에 형광펜을 칠하고, 그 단어들끼리 연결해 뜻을 잡는 모습과 비슷합니다."
         )
     if question.strip():
-        focus = _edu_vp_safety_coach_question_focus(q)
         return (
             f"{focus} 쪽이 걸리는 질문입니다. 먼저 이 질문은 '{title}' 설명을 외우라는 뜻이 아니라, 내 상황에서 어디까지 써도 되는지 정하려는 질문으로 보는 게 맞습니다. "
             "AI 답은 초안과 정리에는 도움이 되지만, 아이의 학습·건강·돈·개인정보처럼 결과가 남는 일은 바로 실행하지 말고 한 번 확인해야 합니다. "

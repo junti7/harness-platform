@@ -22,76 +22,72 @@
   },
   "intent_verdict_counts": {
     "ai_energy_use": {
-      "clear": 18,
-      "needs_work": 35
+      "clear": 35,
+      "needs_work": 12
     },
     "ai_homework_overreliance": {
-      "clear": 95,
-      "needs_work": 18
+      "clear": 92,
+      "needs_work": 7
     },
     "career_anxiety": {
       "clear": 52,
-      "needs_work": 10
+      "needs_work": 5
     },
     "emotional_validation": {
-      "clear": 27,
-      "needs_work": 25
+      "clear": 47,
+      "needs_work": 5
     },
     "general_principle": {
-      "clear": 50,
-      "needs_work": 54
+      "clear": 89,
+      "needs_work": 13
     },
     "isolation_dependency": {
-      "clear": 46,
-      "needs_work": 41
+      "clear": 41,
+      "needs_work": 14
     },
     "learning_start": {
-      "clear": 113,
-      "needs_work": 43
+      "clear": 151,
+      "needs_work": 9
     },
     "privacy_boundary": {
-      "clear": 42,
-      "needs_work": 7
+      "clear": 46,
+      "needs_work": 4
     },
     "professional_cost_barrier": {
-      "clear": 43,
-      "needs_work": 12
+      "clear": 50,
+      "needs_work": 4
     },
     "screen_dependency": {
-      "clear": 53,
-      "needs_work": 18
+      "clear": 61,
+      "needs_work": 5
     }
   },
   "llm_judge_enabled": false,
   "ok": true,
-  "output_path": "docs/reviews/edu_coach_simulations/run_20260627T091515Z_corpus_current_fallback.jsonl",
+  "output_path": "docs/reviews/edu_coach_simulations/run_20260627T092647Z_corpus_current_fallback.jsonl",
   "record_count": 500,
-  "run_id": "20260627T091515Z",
+  "run_id": "20260627T092647Z",
   "segment_counts": {
     "general": 34,
-    "parent": 464,
-    "worker": 2
+    "parent": 463,
+    "worker": 3
   },
   "top_issues": [
     [
       "question_not_addressed",
-      145
+      25
     ],
     [
-      "missing_empathy_for_emotional_question",
-      12
+      "missing_principle_mechanism",
+      20
     ],
     [
       "missing_energy_use_mechanism",
-      4
-    ],
-    [
-      "unsupported_evidence_reference",
-      1
+      5
     ]
   ],
   "verdict_counts": {
-    "clear": 344,
-    "needs_work": 156
+    "clear": 451,
+    "needs_work": 49
   }
 }

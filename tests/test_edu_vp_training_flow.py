@@ -381,6 +381,34 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("학습", answer)
         self.assertNotIn("question_not_addressed", issues)
 
+    def test_safety_coach_does_not_treat_practical_ai_education_question_as_principle(self):
+        self.assertFalse(self.mod._edu_vp_question_asks_direct_principle("AI 강의 안내: 우리 아이 코딩 교육 왜 지금 시작해야 할까요?"))
+        self.assertFalse(self.mod._edu_vp_question_asks_direct_principle("요즘 ai활용이 많은데 어떻게 사용하세요?"))
+        self.assertFalse(self.mod._edu_vp_question_asks_direct_principle("More Students Use AI for Homework, and More Believe It Harms Critical Thinking"))
+        self.assertFalse(self.mod._edu_vp_question_asks_direct_principle("Show HN: ThinkFirst - The Anti-ChatGPT for Students"))
+        self.assertTrue(self.mod._edu_vp_question_asks_direct_principle("왜 AI 답변은 사람처럼 자연스럽게 나와?"))
+
+    def test_safety_coach_energy_detector_ignores_human_energy_context(self):
+        self.assertFalse(self.mod._edu_vp_question_asks_ai_energy_use("하루에 공부를 너무 많이하면 에너지를 많이 써서 힘들어요. ai답변 사절입니다."))
+        self.assertTrue(self.mod._edu_vp_question_asks_ai_energy_use("왜 AI한테 질문을 하면 전기가 많이 들어?"))
+
+    def test_safety_coach_fallback_handles_homework_and_privacy_without_principle_detour(self):
+        homework = self.mod._edu_vp_safety_coach_fallback(
+            "수집 corpus 기반 사용자 질문",
+            "중딩 아들 AI 사용에 대해 어떻게 생각하시나요? 숙제에 그대로 쓰는 게 걱정돼요.",
+        )
+        privacy = self.mod._edu_vp_safety_coach_fallback(
+            "수집 corpus 기반 사용자 질문",
+            "AI성장사진 앱에 아이 얼굴 사진을 올려도 괜찮을까요?",
+        )
+
+        self.assertIn("숙제", homework)
+        self.assertIn("대신 쓰게 하느냐", homework)
+        self.assertNotIn("질문을 숫자로 바꾸고", homework)
+        self.assertIn("사진", privacy)
+        self.assertIn("개인정보", privacy)
+        self.assertNotIn("질문을 숫자로 바꾸고", privacy)
+
     def test_safety_coach_policy_resolver_matches_cost_barrier(self):
         context = self.mod._edu_vp_safety_coach_resolved_policy_context(
             "그렇지만 전문가에게 상담을 받을 경우 비용이 많이 들잖아요."
