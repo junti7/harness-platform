@@ -238,6 +238,31 @@ function routeKeywords(text: string): string[] {
   return Array.from(tokens).filter((token) => token.length >= 2)
 }
 
+function isDirectPrincipleQuestion(text: string): boolean {
+  const normalized = text.toLowerCase()
+  const asksPrinciple = ['왜', '어떻게', '원리', '이유', '작동', '계산', '만들'].some((term) => normalized.includes(term))
+  const principleTopics = [
+    '전기',
+    '전력',
+    '전기세',
+    '전기요금',
+    '에너지',
+    '데이터센터',
+    '냉각',
+    '서버',
+    'gpu',
+    '환경',
+    '탄소',
+    'power',
+    'electric',
+    'energy',
+    'datacenter',
+    'data center',
+    'cooling',
+  ]
+  return asksPrinciple && principleTopics.some((term) => normalized.includes(term))
+}
+
 function routeQuestionTarget(
   conceptItems: Array<FoundationConcept & { checkId: string }>,
   sourceId: string,
@@ -272,6 +297,7 @@ function routePlannedCurriculumQuestion(
   question: string,
 ): PlannedCurriculumItem | null {
   const currentDay = currentStage === 'day1' ? 1 : 0
+  if (currentStage === 'day0' && isDirectPrincipleQuestion(question)) return null
   const questionTerms = routeKeywords(question)
   if (!outline?.length || questionTerms.length < 2) return null
   let best: PlannedCurriculumItem | null = null
@@ -299,17 +325,7 @@ function day0BridgeAnswerForUnassignedQuestion(question: string, planned?: Plann
   if (planned) return null
   const normalized = question.toLowerCase()
   const laterGuide = '나중에 이어지는 훈련에서 이 내용을 더 차근차근 다루게 됩니다.'
-  if (
-    normalized.includes('전기') ||
-    normalized.includes('전력') ||
-    normalized.includes('전기세') ||
-    normalized.includes('전기요금') ||
-    normalized.includes('에너지') ||
-    normalized.includes('power') ||
-    normalized.includes('electric')
-  ) {
-    return `좋은 질문입니다. AI에게 질문하면 큰 컴퓨터들이 답을 만들기 위해 아주 많은 계산을 하고, 그 컴퓨터와 서버를 식히는 냉각 장치도 같이 돌아가서 전기가 필요합니다. 집에서 휴대폰 하나만 쓰는 것처럼 보여도, 실제로는 멀리 있는 데이터센터가 함께 일하는 셈입니다. 오늘은 “AI 답변 뒤에는 계산 비용과 전기 사용이 있다” 정도만 기억하면 충분합니다. ${laterGuide}`
-  }
+  if (isDirectPrincipleQuestion(question)) return null
   if (normalized.includes('attention') || normalized.includes('어텐션')) {
     return `좋은 질문입니다. attention은 사람이 문장마다 직접 정해주는 버튼이 아니라, 모델이 아주 많은 글을 학습하면서 “지금 단어가 앞뒤의 어떤 말과 더 관련 있는지”를 계산하도록 배운 값입니다. 예를 들어 “철수가 영희에게 우산을 줬다. 그는 비를 맞고 있었다” 같은 문장에서, 모델은 “그”가 누구를 가리킬지 보려고 주변 단어들 사이의 관련도를 계산합니다. 오늘은 attention을 “문장 안에서 중요한 연결을 찾는 계산 방식” 정도로 이해하면 충분합니다. ${laterGuide}`
   }

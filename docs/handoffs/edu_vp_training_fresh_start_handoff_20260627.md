@@ -291,6 +291,29 @@ Codex CLI 사용 시 사용자가 별도 해제하기 전까지 **caveman full**
 - `_edu_vp_safety_coach_fallback(...)`
 - `_edu_vp_safety_coach_red_team(...)`
 
+### 10. Principle Question Routing Policy
+
+문제:
+
+- `"왜 AI한테 질문을 하면 전기가 많이 들어?"` 같은 원리/이유 질문이 개념 정의 답변으로 빠질 수 있었다.
+- frontend planned curriculum guide가 붙으면 `"Day 2에서 다룬다"`처럼 회피로 보일 수 있었다.
+- 특정 질문에 하드코딩 답변을 박는 방식은 금지한다. 원칙을 route/prompt/red-team에 주입한다.
+
+현재 정책:
+
+- Day 0의 원리/이유 질문은 future curriculum로 먼저 넘기지 않는다.
+- `왜/어떻게/원리/이유/작동/계산` 유형 질문은 오늘 이해 가능한 수준에서 직접 답한다.
+- 답변 원칙: 한 줄 직접 답변 → 실제로 움직이는 것 → 쉬운 생활 비유 → 오늘 기억할 기준.
+- 전기/에너지/비용/환경 질문은 하드코딩 답변 대신 prompt와 red-team 기준으로 처리한다.
+- 전기/에너지 질문에 `생성형 AI 정의`만 답하면 red-team이 `answered_definition_instead_of_energy_question`으로 차단한다.
+- 전기/에너지 질문에 데이터센터/서버/GPU/냉각/계산 같은 원인 설명이 부족하면 `missing_energy_use_mechanism`으로 차단한다.
+
+핵심 파일:
+
+- `harness-os/edu-app/src/components/TrainingScreen.tsx`
+- `harness-os/backend/main.py`
+- `tests/test_edu_vp_training_flow.py`
+
 ## Files Most Likely To Edit Next
 
 Frontend:
@@ -327,7 +350,7 @@ Latest known results:
 
 - Frontend build: pass
 - Frontend lint: pass
-- Pytest: `42 passed`
+- Pytest: `44 passed`
 
 ## Deploy Commands
 

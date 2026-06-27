@@ -203,6 +203,41 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("missing_empathy_for_emotional_question", issues)
         self.assertIn("cold_instruction_for_emotional_question", issues)
 
+    def test_safety_coach_red_team_blocks_definition_instead_of_energy_mechanism(self):
+        issues = self.mod._edu_vp_safety_coach_red_team(
+            question="왜 AI한테 질문을 하면 전기가 많이 들어?",
+            answer="생성형 AI는 새 글, 그림, 답변처럼 무언가를 만들어내는 AI입니다. ChatGPT가 유명해서 GPT라는 말을 자주 듣지만, Claude와 Gemini도 같은 큰 흐름 안의 생성형 AI입니다.",
+            concept_body="생성형 AI는 답변을 만듭니다.",
+        )
+
+        self.assertIn("missing_energy_use_mechanism", issues)
+        self.assertIn("answered_definition_instead_of_energy_question", issues)
+
+    def test_safety_coach_switches_model_when_energy_question_gets_generic_definition(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=123,
+            stage="day0",
+            concept_id="safety_concept_generation",
+            concept_title="생성형 AI",
+            concept_body="생성형 AI는 새 답을 만드는 도구입니다.",
+            question="왜 AI한테 질문을 하면 전기가 많이 들어?",
+        )
+        bad = "생성형 AI는 새 글, 그림, 답변처럼 무언가를 만들어내는 AI입니다. ChatGPT가 유명해서 GPT라는 말을 자주 듣습니다."
+        good = "짧게 말하면 답을 만들 때 멀리 있는 데이터센터의 서버가 많은 계산을 하기 때문입니다. 특히 큰 AI는 GPU 같은 칩이 단어를 하나씩 고르며 계산하고, 뜨거워진 장비를 식히는 냉각에도 전기가 듭니다. 집에서 휴대폰만 만지는 것처럼 보여도 뒤에서는 큰 컴퓨터실이 함께 움직인다고 보면 됩니다."
+
+        with (
+            patch.object(self.mod, "_edu_vp_safety_coach_fast_answer", return_value=None),
+            patch.object(self.mod, "_edu_safety_coach_model_ladder", return_value=["gemini-test", "claude-test"]),
+            patch.object(self.mod, "_edu_generate_text", side_effect=[(bad, {"prompt_token_count": 10, "candidates_token_count": 8}, "gemini-test"), (good, {"prompt_token_count": 11, "candidates_token_count": 9}, "claude-test")]),
+            patch.object(self.mod, "_edu_log_llm_cost"),
+        ):
+            answer, model, _usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
+
+        self.assertEqual(model, "claude-test")
+        self.assertIn("데이터센터", answer)
+        self.assertIn("냉각", answer)
+        self.assertFalse(fallback_used)
+
     def test_safety_coach_switches_model_when_answer_repeats_source_example(self):
         req = self.mod.EduVpTrainingSafetyCoachRequest(
             case_id=123,

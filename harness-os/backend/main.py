@@ -8811,6 +8811,15 @@ def _edu_vp_question_asks_transformer_paper_authors(question: str) -> bool:
     )
 
 
+def _edu_vp_question_asks_ai_energy_use(question: str) -> bool:
+    q = str(question or "").strip().lower()
+    energy_markers = (
+        "전기", "전력", "전기세", "전기요금", "에너지", "데이터센터", "냉각", "gpu", "서버",
+        "환경", "탄소", "power", "electric", "energy", "datacenter", "data center", "cooling",
+    )
+    return any(marker in q for marker in energy_markers)
+
+
 def _edu_vp_safety_coach_fast_answer(concept_title: str, question: str) -> str | None:
     q = str(question or "").strip()
     if "조사" in q and ("추측" in q or "이어질" in q or "다음" in q):
@@ -9321,6 +9330,15 @@ def _edu_vp_safety_coach_red_team(
             term in answer_text for term in ("없으면", "없을 때", "혼자", "그럴 수", "작은 창구")
         ):
             issues.append("ignored_isolation_context")
+    if _edu_vp_question_asks_ai_energy_use(question_text):
+        mechanism_terms = (
+            "계산", "서버", "데이터센터", "data center", "gpu", "칩", "전기", "전력", "냉각", "식히",
+        )
+        generic_definition_only = any(term in answer_text for term in ("생성형 AI는 새 글", "ChatGPT가 유명", "회사 이름"))
+        if sum(1 for term in mechanism_terms if term.lower() in answer_text.lower()) < 2:
+            issues.append("missing_energy_use_mechanism")
+        if generic_definition_only:
+            issues.append("answered_definition_instead_of_energy_question")
     asks_transformer_paper = _edu_vp_question_asks_transformer_paper_authors(question_text)
     if asks_transformer_paper:
         required = ("Google", "Vaswani", "Shazeer")
@@ -9524,6 +9542,9 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         "- 감정 질문에는 '그럴 수 있습니다', '그 기분은 진짜입니다', '혼자면 그렇게 느낄 수 있습니다'처럼 먼저 받는다.\n"
         "- 사용자가 '들어줄 사람이 없다'고 말하면 '가족이나 친구에게 말하세요'를 첫 처방으로 쓰지 않는다. 사용자가 말한 결핍을 무시하면 실패다.\n"
         "- AI 사용을 금지하듯 말하지 않는다. 임시 위로/정리 도구로 쓸 수 있음을 인정한 뒤 경계를 설명한다.\n"
+        "- '왜/어떻게/원리/이유/작동/계산' 질문은 뒤 과정으로 넘기지 말고 오늘 이해 가능한 수준에서 바로 답한다.\n"
+        "- 원리 질문 답변 순서: 한 줄 직접 답변 → 실제로 무엇이 움직이는지 → 쉬운 생활 비유 → 오늘 기억할 기준.\n"
+        "- 전기/에너지/비용/환경 질문에는 데이터센터, 서버/GPU 같은 계산 장치, 냉각 중 최소 2가지를 쉬운 말로 설명한다.\n"
         "- 사용자 질문의 구체적 맥락에 직접 답한다.\n"
         "- [현재 단락 설명]을 그대로 요약하거나 복붙하지 않는다. 사용자가 이미 읽은 본문을 반복하면 실패다.\n"
         "- 감정 질문이 아니면 먼저 질문 속 핵심 단어를 짚고, 그 질문에 대한 새 설명과 새 예시를 낸다.\n"
