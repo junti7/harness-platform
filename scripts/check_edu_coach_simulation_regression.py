@@ -24,6 +24,20 @@ DEFAULT_MAX_RAG_PATCH_CALLS = 1
 DEFAULT_MAX_STRUCTURED_PACKET_CALLS = 1
 
 
+def _load_auto_reinforcement_report() -> Any:
+    module_name = "edu_safety_coach_auto_reinforcement_report_for_guard"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+    path = ROOT / "scripts" / "report_edu_safety_coach_auto_reinforcement.py"
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    if spec.loader is None:
+        raise RuntimeError(f"cannot load auto-reinforcement report: {path}")
+    spec.loader.exec_module(module)
+    return module
+
+
 def _load_backend_main() -> Any:
     module_name = "harness_backend_main_for_edu_coach_latency_guard"
     if module_name in sys.modules:
@@ -254,6 +268,25 @@ def check_structured_packet_contract(
     }
 
 
+def check_auto_reinforcement_health() -> dict[str, Any]:
+    report_mod = _load_auto_reinforcement_report()
+    report = report_mod.run_report(lookback_days=7, sla_minutes=5, pending_limit=10)
+    failures: list[str] = []
+    if not bool(report.get("ok")):
+        failures.append("auto_reinforcement_report_not_ok")
+    stale_pending = int(report.get("stale_pending_count") or 0)
+    if stale_pending:
+        failures.append(f"auto_reinforcement_stale_pending={stale_pending}")
+    pending = int(report.get("pending_count") or 0)
+    if pending and float(report.get("review_completion_rate") or 0.0) < 0.99:
+        failures.append(f"auto_reinforcement_completion_rate={report.get('review_completion_rate')}")
+    return {
+        "ok": not failures,
+        "failures": failures,
+        "report": report,
+    }
+
+
 def check_regression(
     *,
     min_corpus_records: int = DEFAULT_MIN_CORPUS_RECORDS,
@@ -265,6 +298,7 @@ def check_regression(
     freshness: bool = True,
     latency: bool = True,
     structured_packet: bool = True,
+    auto_reinforcement: bool = True,
 ) -> dict[str, Any]:
     if report_dir is None:
         temp_context = tempfile.TemporaryDirectory(prefix="edu_coach_regression_")
@@ -311,6 +345,12 @@ def check_regression(
         else {"ok": True, "failures": [], "skipped": True}
     )
     failures.extend(f"structured_packet:{failure}" for failure in structured_packet_summary.get("failures", []))
+    auto_reinforcement_summary = (
+        check_auto_reinforcement_health()
+        if auto_reinforcement
+        else {"ok": True, "failures": [], "skipped": True}
+    )
+    failures.extend(f"auto_reinforcement:{failure}" for failure in auto_reinforcement_summary.get("failures", []))
 
     return {
         "ok": not failures,
@@ -318,6 +358,7 @@ def check_regression(
         "freshness": freshness_summary,
         "latency": latency_summary,
         "structured_packet": structured_packet_summary,
+        "auto_reinforcement": auto_reinforcement_summary,
         "adversarial": {
             "record_count": int(adversarial.get("record_count") or 0),
             "verdict_counts": adversarial.get("verdict_counts") or {},
@@ -343,6 +384,7 @@ def main() -> int:
     parser.add_argument("--skip-freshness", action="store_true", help="skip fresh corpus collection vs committed config check")
     parser.add_argument("--skip-latency", action="store_true", help="skip fast RAG timeout and RAG patch call-count checks")
     parser.add_argument("--skip-structured-packet", action="store_true", help="skip structured packet contract check")
+    parser.add_argument("--skip-auto-reinforcement", action="store_true", help="skip downvote auto-reinforcement production health check")
     args = parser.parse_args()
     summary = check_regression(
         min_corpus_records=max(1, args.min_corpus_records),
@@ -354,6 +396,7 @@ def main() -> int:
         freshness=not bool(args.skip_freshness),
         latency=not bool(args.skip_latency),
         structured_packet=not bool(args.skip_structured_packet),
+        auto_reinforcement=not bool(args.skip_auto_reinforcement),
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
     return 0 if summary["ok"] else 1

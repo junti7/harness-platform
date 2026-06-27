@@ -41,6 +41,7 @@ class EduCoachSimulationRegressionGuardTests(unittest.TestCase):
             patch.object(self.guard, "check_freshness", return_value={"ok": True, "failures": []}),
             patch.object(self.guard, "check_latency_budget", return_value={"ok": True, "failures": []}),
             patch.object(self.guard, "check_structured_packet_contract", return_value={"ok": True, "failures": []}),
+            patch.object(self.guard, "check_auto_reinforcement_health", return_value={"ok": True, "failures": []}),
         ):
             summary = self.guard.check_regression()
 
@@ -62,6 +63,7 @@ class EduCoachSimulationRegressionGuardTests(unittest.TestCase):
             patch.object(self.guard, "check_freshness", return_value={"ok": True, "failures": []}),
             patch.object(self.guard, "check_latency_budget", return_value={"ok": True, "failures": []}),
             patch.object(self.guard, "check_structured_packet_contract", return_value={"ok": True, "failures": []}),
+            patch.object(self.guard, "check_auto_reinforcement_health", return_value={"ok": True, "failures": []}),
         ):
             summary = self.guard.check_regression()
 
@@ -92,6 +94,7 @@ class EduCoachSimulationRegressionGuardTests(unittest.TestCase):
             patch.object(self.guard, "check_freshness", return_value=freshness),
             patch.object(self.guard, "check_latency_budget", return_value={"ok": True, "failures": []}),
             patch.object(self.guard, "check_structured_packet_contract", return_value={"ok": True, "failures": []}),
+            patch.object(self.guard, "check_auto_reinforcement_health", return_value={"ok": True, "failures": []}),
         ):
             summary = self.guard.check_regression()
 
@@ -117,6 +120,7 @@ class EduCoachSimulationRegressionGuardTests(unittest.TestCase):
             patch.object(self.guard, "check_freshness", return_value={"ok": True, "failures": []}),
             patch.object(self.guard, "check_latency_budget", return_value=latency),
             patch.object(self.guard, "check_structured_packet_contract", return_value={"ok": True, "failures": []}),
+            patch.object(self.guard, "check_auto_reinforcement_health", return_value={"ok": True, "failures": []}),
         ):
             summary = self.guard.check_regression()
 
@@ -143,12 +147,39 @@ class EduCoachSimulationRegressionGuardTests(unittest.TestCase):
             patch.object(self.guard, "check_freshness", return_value={"ok": True, "failures": []}),
             patch.object(self.guard, "check_latency_budget", return_value={"ok": True, "failures": []}),
             patch.object(self.guard, "check_structured_packet_contract", return_value=structured_packet),
+            patch.object(self.guard, "check_auto_reinforcement_health", return_value={"ok": True, "failures": []}),
         ):
             summary = self.guard.check_regression()
 
         self.assertFalse(summary["ok"])
         self.assertIn("structured_packet:structured_packet_llm_calls=2>max=1", summary["failures"])
         self.assertIn("structured_packet:structured_packet_usage_missing", summary["failures"])
+
+    def test_fails_when_auto_reinforcement_health_fails(self):
+        def fake_run_simulation(*, candidate_source, report_dir):
+            if candidate_source == "adversarial-current-fallback":
+                return {"record_count": 378, "verdict_counts": {"clear": 378}, "channel_counts": {}}
+            return {
+                "record_count": 30264,
+                "verdict_counts": {"clear": 30264},
+                "channel_counts": {"YouTube": 1649},
+            }
+
+        auto_reinforcement = {
+            "ok": False,
+            "failures": ["auto_reinforcement_stale_pending=1"],
+        }
+        with (
+            patch.object(self.guard, "run_simulation", side_effect=fake_run_simulation),
+            patch.object(self.guard, "check_freshness", return_value={"ok": True, "failures": []}),
+            patch.object(self.guard, "check_latency_budget", return_value={"ok": True, "failures": []}),
+            patch.object(self.guard, "check_structured_packet_contract", return_value={"ok": True, "failures": []}),
+            patch.object(self.guard, "check_auto_reinforcement_health", return_value=auto_reinforcement),
+        ):
+            summary = self.guard.check_regression()
+
+        self.assertFalse(summary["ok"])
+        self.assertIn("auto_reinforcement:auto_reinforcement_stale_pending=1", summary["failures"])
 
 
 if __name__ == "__main__":
