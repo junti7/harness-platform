@@ -821,7 +821,9 @@ function SafetyOrientationBlock({
               key={concept.checkId}
               id={`concept-card-${concept.checkId}`}
               className={`rounded-[12px] border bg-card p-3 transition ${
-                routedConceptId === concept.checkId ? 'border-primary ring-2 ring-primary/25' : 'border-border'
+                routedConceptId === concept.checkId
+                  ? 'border-primary bg-primary/10 shadow-[0_0_0_4px_rgba(37,99,235,0.18)] ring-2 ring-primary'
+                  : 'border-border'
               }`}
             >
               <div className="text-sm font-semibold leading-snug text-ink">{concept.title}</div>
@@ -1131,9 +1133,12 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           : `이 질문은 뒤의 '${routed.target.title}' 카드에서 먼저 다룹니다. 그 카드로 이동했어요.`,
       )
       window.setTimeout(() => {
-        document.getElementById(`concept-card-${routed.target.checkId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        const el = document.getElementById(`concept-card-${routed.target.checkId}`)
+        if (!el) return
+        const top = el.getBoundingClientRect().top + window.scrollY - 12
+        window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
       }, 50)
-      window.setTimeout(() => setRoutedConceptId((value) => (value === routed.target.checkId ? null : value)), 2600)
+      window.setTimeout(() => setRoutedConceptId((value) => (value === routed.target.checkId ? null : value)), 5000)
       return
     }
     const currentAnswer = coachAnswersRef.current[id]
