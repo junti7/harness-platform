@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { AlertTriangle, ChevronRight, GraduationCap, Loader2, LogOut, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { AlertTriangle, ChevronRight, GraduationCap, Loader2, LogOut, Plus, Sparkles, Trash2, Type } from 'lucide-react'
 import type { TrainingCase } from '@/lib/vpTraining'
 
 /*
@@ -16,6 +16,7 @@ export type CaseSelectScreenProps = {
   onLogout: () => void
   onDelete: (caseId: number) => Promise<void>
   onOpenCurriculum: () => void
+  onOpenFontSize: () => void
 }
 
 type Tone = 'success' | 'primary' | 'neutral'
@@ -50,6 +51,7 @@ export default function CaseSelectScreen({
   onLogout,
   onDelete,
   onOpenCurriculum,
+  onOpenFontSize,
 }: CaseSelectScreenProps) {
   const [menuFor, setMenuFor] = useState<TrainingCase | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -150,6 +152,14 @@ export default function CaseSelectScreen({
         className="mb-5 flex items-center justify-center gap-2 rounded-[12px] border border-accent-cyan/30 bg-accent-cyan/10 py-3 text-[14px] font-semibold text-ink transition hover:bg-accent-cyan/20"
       >
         <Sparkles size={16} className="text-accent-cyan" />맞춤 커리큘럼 미리보기
+      </button>
+
+      <button
+        type="button"
+        onClick={onOpenFontSize}
+        className="mb-5 flex items-center justify-center gap-2 rounded-[12px] border border-border bg-card py-3 text-[14px] font-semibold text-ink transition hover:bg-secondary"
+      >
+        <Type size={16} className="text-primary" />글자 크기 설정
       </button>
 
       {loading ? (

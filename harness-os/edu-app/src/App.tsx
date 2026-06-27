@@ -13,13 +13,15 @@ import AuthScreen from '@/components/AuthScreen'
 import CaseSelectScreen from '@/components/CaseSelectScreen'
 import TrainingScreen from '@/components/TrainingScreen'
 import CurriculumScreen from '@/components/CurriculumScreen'
+import FontSizeScreen from '@/components/FontSizeScreen'
+import { applyFontScale, loadFontScale } from '@/lib/fontSettings'
 
 /*
  * 컨테이너 골격. 화면(AuthScreen/CaseSelectScreen/TrainingScreen)은 v0 출력으로 교체되며,
  * 로그인 세션 · 라우팅 · api 배선 · 에러 처리는 이 파일이 담당한다.
  */
 
-type View = 'auth' | 'cases' | 'training' | 'curriculum'
+type View = 'auth' | 'cases' | 'training' | 'curriculum' | 'fontSize'
 
 function errMessage(e: unknown): string {
   if (e instanceof ApiError) {
@@ -39,6 +41,10 @@ function App() {
   const [authLoading, setAuthLoading] = useState(false)
   // 세션 복원 시 곧바로 케이스를 fetch 하므로 초기값을 그에 맞춘다.
   const [casesLoading, setCasesLoading] = useState<boolean>(() => session !== null)
+
+  useEffect(() => {
+    applyFontScale(loadFontScale())
+  }, [])
 
   // setState 는 await 이후(비동기)에만 발생 → effect 경로에서 호출해도 안전.
   // 로딩 true 는 이 함수를 호출하는 이벤트 핸들러/initializer 에서 설정한다.
@@ -170,6 +176,10 @@ function App() {
     return <CurriculumScreen email={session.email} onBack={() => setView('cases')} />
   }
 
+  if (view === 'fontSize') {
+    return <FontSizeScreen onBack={() => setView('cases')} />
+  }
+
   return (
     <CaseSelectScreen
       userName={session.name}
@@ -180,6 +190,7 @@ function App() {
       onLogout={handleLogout}
       onDelete={handleDelete}
       onOpenCurriculum={() => setView('curriculum')}
+      onOpenFontSize={() => setView('fontSize')}
     />
   )
 }
