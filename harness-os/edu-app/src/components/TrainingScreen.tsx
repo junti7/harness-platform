@@ -186,19 +186,23 @@ function routeQuestionTarget(
   if (sourceIndex < 0) return null
   const questionTerms = routeKeywords(question)
   if (questionTerms.length < 2) return null
+  const scoreConcept = (item: FoundationConcept): number => {
+    const haystack = `${item.title} ${item.body} ${item.comprehension_check ?? ''} ${item.question_prompt ?? ''}`.toLowerCase()
+    const hits = questionTerms.filter((term) => haystack.includes(term))
+    return hits.length / Math.max(1, Math.min(questionTerms.length, 8))
+  }
+  const sourceScore = scoreConcept(conceptItems[sourceIndex])
   let best: RoutedQuestionTarget | null = null
   let bestScore = 0
   conceptItems.forEach((item, index) => {
     if (index <= sourceIndex) return
-    const haystack = `${item.title} ${item.body} ${item.comprehension_check ?? ''} ${item.question_prompt ?? ''}`.toLowerCase()
-    const hits = questionTerms.filter((term) => haystack.includes(term))
-    const score = hits.length / Math.max(1, Math.min(questionTerms.length, 8))
+    const score = scoreConcept(item)
     if (score > bestScore) {
       bestScore = score
       best = { target: item, targetIndex: index }
     }
   })
-  return best && bestScore >= 0.18 ? best : null
+  return best && bestScore >= 0.18 && bestScore >= sourceScore + 0.18 ? best : null
 }
 
 function currentSafetyCoachAnswers(raw: unknown, feedback: SafetyConceptFeedback): SafetyCoachAnswers {
