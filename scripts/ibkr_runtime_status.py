@@ -90,7 +90,7 @@ def main() -> int:
     if broker_syms:
         for item in portfolio:
             if abs(float(item.position or 0)) > 0:
-                print(f"  {item.contract.symbol}: {item.position}주 @ avgCost ${item.avgCost:.2f} | "
+                print(f"  {item.contract.symbol}: {item.position}주 @ avgCost ${item.averageCost:.2f} | "
                       f"현재 ${item.marketPrice:.2f} | P&L ${item.unrealizedPNL:.2f}")
     else:
         print("  (포지션 없음)")

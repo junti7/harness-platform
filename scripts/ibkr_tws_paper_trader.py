@@ -412,7 +412,7 @@ def reconcile_positions_ibkr(ib: IB, state: dict, broker_positions: dict,
         ib.qualifyContracts(contract)
         bars = fetch_bars_ibkr(ib, contract, days=TURTLE_ATR_PERIOD + 25)
         atr = core.compute_atr(bars) if len(bars) >= TURTLE_ATR_PERIOD + 1 else 0
-        entry = float(getattr(bp, "avgCost", 0) or 0)
+        entry = float(getattr(bp, "averageCost", 0) or 0)
         qty = int(abs(float(getattr(bp, "position", 0) or 0)))
         stop = round(entry - TURTLE_STOP_MULT * atr, 2) if atr > 0 and entry > 0 else None
         stop_id = None
