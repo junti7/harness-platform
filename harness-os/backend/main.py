@@ -8882,7 +8882,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-rag-infused-v14"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-rag-gated-v15"
 _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
 _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_PATH = PROJECT_ROOT / "configs" / "education" / "edu_coach_policy_registry.json"
 _EDU_VP_SAFETY_COACH_POLICY_CANDIDATE_PATH = PROJECT_ROOT / "docs" / "reviews" / "edu_coach_simulations" / "policy_candidates.jsonl"
@@ -9069,6 +9069,24 @@ def _edu_vp_safety_coach_blend_rag_sentence(answer: str, question: str, evidence
     if len(candidate) > 2200:
         return base[:2200].strip(), False
     return candidate, True
+
+
+def _edu_vp_safety_coach_answer_uses_evidence(answer: str, evidence_items: list[dict[str, Any]] | None) -> bool:
+    if not evidence_items:
+        return False
+    answer_text = str(answer or "").lower()
+    if any(term in answer_text for term in ("관련 자료", "내부 자료", "자료에서는", "근거 자료", "출처:")):
+        return True
+    for item in evidence_items[:3]:
+        cite = _edu_clean_cite(str(item.get("cite") or item.get("body") or ""))
+        terms = _edu_vp_safety_coach_keywords(cite, max_terms=8)
+        meaningful = [term for term in terms if len(term) >= 2]
+        if len(meaningful) < 2:
+            continue
+        hits = sum(1 for term in meaningful if term.lower() in answer_text)
+        if hits >= 2:
+            return True
+    return False
 
 
 def _edu_vp_safety_coach_evidence_with_timeout(
@@ -10217,6 +10235,8 @@ def _edu_vp_safety_coach_red_team(
             break
     if evidence_items:
         allowed_sources = [str(item.get("source") or "") for item in evidence_items if str(item.get("source") or "").strip()]
+        if not _edu_vp_safety_coach_answer_uses_evidence(answer_text, evidence_items):
+            issues.append("missing_rag_integration")
         if mentions_evidence and allowed_sources and not any(source[:20] in answer_text for source in allowed_sources if len(source) >= 4):
             generic_ok = "관련 자료" in answer_text and not any(term in answer_text for term in ("출처:", "논문", "보고서명"))
             if not generic_ok:
@@ -10801,6 +10821,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                     usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
                     usage["_safety_coach_red_team_issues"] = red_team_issues  # type: ignore[index]
                     usage["_safety_coach_llm_judge"] = llm_judge_review  # type: ignore[index]
+                    usage["_safety_coach_rag_infused"] = False  # type: ignore[index]
                     usage["_safety_coach_reinforcement_policies"] = reinforcement_policies  # type: ignore[index]
                     usage["_safety_coach_policy_context"] = {
                         "schema_version": policy_context.get("schema_version"),
@@ -10864,6 +10885,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                     usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
                     usage["_safety_coach_red_team_issues"] = []  # type: ignore[index]
                     usage["_safety_coach_llm_judge"] = llm_judge_review  # type: ignore[index]
+                    usage["_safety_coach_rag_infused"] = _edu_vp_safety_coach_answer_uses_evidence(answer, evidence_items)  # type: ignore[index]
                     usage["_safety_coach_reinforcement_policies"] = reinforcement_policies  # type: ignore[index]
                     usage["_safety_coach_policy_context"] = {
                         "schema_version": policy_context.get("schema_version"),
@@ -10887,6 +10909,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
             usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
             usage["_safety_coach_red_team_issues"] = red_team_issues  # type: ignore[index]
             usage["_safety_coach_llm_judge"] = llm_judge_review  # type: ignore[index]
+            usage["_safety_coach_rag_infused"] = False  # type: ignore[index]
             usage["_safety_coach_reinforcement_policies"] = reinforcement_policies  # type: ignore[index]
             usage["_safety_coach_policy_context"] = {
                 "schema_version": policy_context.get("schema_version"),
@@ -13696,11 +13719,14 @@ def edu_vp_training_safety_coach(
     _edu_public_gate(request)
     answer, model_name, usage, fallback_used = _edu_vp_generate_safety_coach_answer(req)
     evidence_meta = usage.get("_safety_coach_evidence_meta") if isinstance(usage, dict) else None
+    rag_infused = usage.get("_safety_coach_rag_infused") if isinstance(usage, dict) else None
     red_team_issues = usage.get("_safety_coach_red_team_issues") if isinstance(usage, dict) else None
     llm_judge = usage.get("_safety_coach_llm_judge") if isinstance(usage, dict) else None
     reinforcement_policies = usage.get("_safety_coach_reinforcement_policies") if isinstance(usage, dict) else None
     policy_context = usage.get("_safety_coach_policy_context") if isinstance(usage, dict) else None
-    evidence_used = bool(isinstance(evidence_meta, dict) and int(evidence_meta.get("selected_count") or 0) > 0)
+    evidence_used = bool(rag_infused) if rag_infused is not None else bool(
+        isinstance(evidence_meta, dict) and int(evidence_meta.get("selected_count") or 0) > 0
+    )
     log_payload = {
         "stage": stage,
         "concept_id": concept_id,

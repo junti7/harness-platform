@@ -1144,6 +1144,89 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertEqual(sentence, "")
 
+    def test_safety_coach_red_team_requires_selected_rag_to_be_used(self):
+        issues = self.mod._edu_vp_safety_coach_red_team(
+            question="다음 글에 이어질 최적의 명사는 어떻게 추측해?",
+            answer=(
+                "명사는 앞뒤 말이 만들고 있는 장면을 보고 고릅니다. 예를 들어 비 오는 날에는 우산이 자연스럽습니다. "
+                "중요한 내용은 사람이 다시 확인해야 합니다."
+            ),
+            concept_body="LLM은 다음에 올 법한 말을 이어 붙입니다.",
+            evidence_items=[
+                {
+                    "source": "YouTube family learning digest",
+                    "cite": "명사 추측을 정답기가 아니라 질문 비교 도구로 다룰 때 사고력이 남는다고 설명한다.",
+                }
+            ],
+        )
+
+        self.assertIn("missing_rag_integration", issues)
+
+    def test_safety_coach_red_team_accepts_natural_rag_integration(self):
+        issues = self.mod._edu_vp_safety_coach_red_team(
+            question="다음 글에 이어질 최적의 명사는 어떻게 추측해?",
+            answer=(
+                "명사는 앞뒤 말이 만들고 있는 장면을 보고 고릅니다. 관련 자료도 명사 추측을 정답기가 아니라 "
+                "질문 비교 도구로 다룰 때 사고력이 남는다는 점을 보여줍니다. 중요한 내용은 사람이 다시 확인해야 합니다."
+            ),
+            concept_body="LLM은 다음에 올 법한 말을 이어 붙입니다.",
+            evidence_items=[
+                {
+                    "source": "YouTube family learning digest",
+                    "cite": "명사 추측을 정답기가 아니라 질문 비교 도구로 다룰 때 사고력이 남는다고 설명한다.",
+                }
+            ],
+        )
+
+        self.assertNotIn("missing_rag_integration", issues)
+
+    def test_safety_coach_model_retries_when_selected_rag_is_ignored(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=123,
+            stage="day0",
+            concept_id="safety_concept_attention",
+            concept_title="Transformer의 핵심: attention",
+            concept_body="attention은 중요한 단어끼리 연결해 문장의 흐름을 잡는 방법입니다.",
+            question="attention은 누가 어떻게 설정하는거야?",
+        )
+        weak = (
+            "attention은 사람이 문장마다 직접 정하지 않습니다. 모델이 입력 문장 안에서 단어 사이 관련도를 계산합니다. "
+            "예를 들어 이름과 대명사를 함께 보는 식으로 연결을 잡습니다."
+        )
+        fixed = (
+            "attention은 사람이 문장마다 직접 정하지 않습니다. 모델이 입력 문장 안에서 단어 사이 관련도를 계산합니다. "
+            "관련 자료도 attention 설정을 정답 암기가 아니라 질문 비교 도구로 다룰 때 이해가 오래 남는다는 점을 보여줍니다. "
+            "오늘은 attention을 사람이 넣는 표시가 아니라 모델이 계산하는 연결 강도로 기억하면 됩니다."
+        )
+        evidence_items = [
+            {
+                "source": "YouTube family learning digest",
+                "cite": "attention 설정을 정답 암기가 아니라 질문 비교 도구로 다룰 때 이해가 오래 남는다고 설명한다.",
+            }
+        ]
+
+        with (
+            patch.object(self.mod, "_edu_vp_safety_coach_reinforcement_policies", return_value=[]),
+            patch.object(self.mod, "_edu_vp_safety_coach_evidence_with_timeout", return_value=("", evidence_items, {"selected_count": 1, "rejected_count": 0, "rejected": []})),
+            patch.object(self.mod, "_edu_safety_coach_model_ladder", return_value=["model-a", "model-b"]),
+            patch.object(
+                self.mod,
+                "_edu_generate_text",
+                side_effect=[
+                    (weak, {"prompt_token_count": 10, "candidates_token_count": 8}, "model-a"),
+                    (fixed, {"prompt_token_count": 12, "candidates_token_count": 9}, "model-b"),
+                ],
+            ) as mocked_generate,
+            patch.object(self.mod, "_edu_log_llm_cost"),
+        ):
+            answer, model, usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
+
+        self.assertEqual(mocked_generate.call_count, 2)
+        self.assertEqual(model, "model-b")
+        self.assertEqual(answer, fixed)
+        self.assertFalse(fallback_used)
+        self.assertTrue(usage["_safety_coach_rag_infused"])
+
     def test_safety_coach_drops_rag_when_blended_answer_would_truncate(self):
         long_answer = "가" * 2190
         blended, used = self.mod._edu_vp_safety_coach_blend_rag_sentence(
