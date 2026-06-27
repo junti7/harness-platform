@@ -1,16 +1,18 @@
 """
-IBKR TWS Paper Trading — Turtle Trading 자동화
-ib_insync 기반. TWS가 실행 중이어야 함 (포트 7497, 페이퍼 트레이딩).
+IBKR TWS Paper Trading — Turtle Trading 자동화 (Phase B2)
+ib_insync 기반. IB Gateway가 실행 중이어야 함.
+
+Phase B2 (2026-06-27): core/turtle_strategy.py 통합.
+  S1/S2 신호, 추세필터, 상관한도, heat cap, 피라미딩, 분산 sleeve,
+  체결게이트, 상주손절, 고아/유령 reconcile.
 
 실행:
   python scripts/ibkr_tws_paper_trader.py            # dry-run
   python scripts/ibkr_tws_paper_trader.py --execute  # 실제 paper 주문
 
 전제조건:
-  1. TWS 실행 중 (페이퍼 계정 vvgfmt298 로그인)
-  2. TWS > Edit > Global Configuration > API > Settings
-     - Enable ActiveX and Socket Clients: ✅
-     - Socket port: 7497
+  1. IB Gateway 실행 중 (페이퍼 계정 vvgfmt298 로그인)
+  2. API 포트 4002 활성화 (IB Gateway > Configure > API > Settings)
 """
 
 from __future__ import annotations
@@ -18,7 +20,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone, timedelta
+import time as _time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import asyncio
@@ -34,35 +37,68 @@ sys.path.insert(0, str(ROOT))
 from dotenv import load_dotenv
 load_dotenv(ROOT / ".env", override=True)
 
-from ib_insync import IB, Stock, MarketOrder, util
+from ib_insync import IB, Stock, MarketOrder, StopOrder, util
 from core.trading_universe import build_trading_universe, load_trading_universe, write_trading_universe
+import core.turtle_strategy as core
+from core.atomic_io import update_json_atomic
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 
 TWS_HOST = "127.0.0.1"
-# IBKR_TRADING_MODE=paper → 4002 (IB Gateway 페이퍼)
-# IBKR_TRADING_MODE=live  → 4001 (IB Gateway 실전)
 import os as _os
 IBKR_TRADING_MODE = _os.getenv("IBKR_TRADING_MODE", "paper").strip().lower()
 TWS_PORT = 4002 if IBKR_TRADING_MODE == "paper" else 4001
-TWS_CLIENT_ID = 10       # 임의 클라이언트 ID (충돌 방지)
+TWS_CLIENT_ID = 10
 
-LOG_PATH       = ROOT / "docs/reports/ibkr_tws_paper_log.jsonl"
-STATE_PATH     = ROOT / "docs/reports/ibkr_tws_positions.json"
-TRADING_UNIVERSE_LOOKBACK_DAYS = int(_os.getenv("TRADING_UNIVERSE_LOOKBACK_DAYS", "45"))
-TRADING_UNIVERSE_MAX_SYMBOLS = int(_os.getenv("TRADING_UNIVERSE_MAX_SYMBOLS", "24"))
-TRADING_UNIVERSE_REFRESH_ON_RUN = _os.getenv("TRADING_UNIVERSE_REFRESH_ON_RUN", "true").lower() == "true"
-# UNIVERSE_FALLBACK 제거 — core/trading_universe.py의 _load_seed_registry()가 단일 소스
+LOG_PATH   = ROOT / "docs/reports/ibkr_tws_paper_log.jsonl"
+STATE_PATH = ROOT / "docs/reports/ibkr_tws_positions.json"
 
-TURTLE_S2       = 55
-TURTLE_ATR_DAYS = 20
-TURTLE_STOP_MULT = 2.0
-TURTLE_RISK_PCT  = 0.01   # 계좌 1%
-MAX_POSITIONS    = 6
+TRADING_UNIVERSE_LOOKBACK_DAYS    = int(_os.getenv("TRADING_UNIVERSE_LOOKBACK_DAYS", "45"))
+TRADING_UNIVERSE_MAX_SYMBOLS      = int(_os.getenv("TRADING_UNIVERSE_MAX_SYMBOLS", "24"))
+TRADING_UNIVERSE_REFRESH_ON_RUN   = _os.getenv("TRADING_UNIVERSE_REFRESH_ON_RUN", "true").lower() == "true"
+
+# 사이징/리스크 — core 단일 출처
+TURTLE_STOP_MULT    = core.TURTLE_STOP_MULT
+TURTLE_ATR_PERIOD   = core.TURTLE_ATR_PERIOD
+TURTLE_RISK_PCT     = core.TURTLE_RISK_PCT
+TURTLE_MAX_RISK_PCT = float(_os.getenv("PAPER_MAX_TRADE_RISK_PCT", "0.02"))
+
+MAX_POSITIONS = int(_os.getenv("PAPER_TRADING_MAX_POSITIONS", "6"))
+
+# 포트폴리오 heat 상한
+PAPER_MAX_PORTFOLIO_HEAT = float(_os.getenv("PAPER_MAX_PORTFOLIO_HEAT", "0.10"))
+
+# 상관 한도
+MAX_UNITS_PER_GROUP = int(_os.getenv("PAPER_MAX_CORR_UNITS", "3"))
+
+# 추세 필터
+TREND_FILTER_ENABLED = _os.getenv("PAPER_TREND_FILTER", "true").lower() == "true"
+TREND_MA_DAYS        = int(_os.getenv("PAPER_TREND_MA_DAYS", "100"))
+
+# 피라미딩 (롱 전용)
+PAPER_PYRAMID_ENABLED = _os.getenv("PAPER_PYRAMID_ENABLED", "true").lower() == "true"
+PAPER_MAX_UNITS       = int(_os.getenv("PAPER_MAX_UNITS", "4"))
+PAPER_PYRAMID_STEP_N  = float(_os.getenv("PAPER_PYRAMID_STEP_N", "0.5"))
+
+# 분산 sleeve (측정 무상관: TLT +0.04, GLD -0.23, DBC +0.16, UUP +0.18 vs SMH)
+PAPER_DIVERSIFY_ENABLED = _os.getenv("PAPER_DIVERSIFY_ENABLED", "true").lower() == "true"
+DIVERSIFIERS_META = [
+    {"symbol": "TLT", "exchange": "SMART", "currency": "USD", "region": "US",
+     "name": "iShares 20+ Year Treasury Bond ETF", "harness_score": 0},
+    {"symbol": "GLD", "exchange": "SMART", "currency": "USD", "region": "US",
+     "name": "SPDR Gold Shares", "harness_score": 0},
+    {"symbol": "DBC", "exchange": "SMART", "currency": "USD", "region": "US",
+     "name": "Invesco DB Commodity Index ETF", "harness_score": 0},
+    {"symbol": "UUP", "exchange": "SMART", "currency": "USD", "region": "US",
+     "name": "Invesco DB US Dollar Index Bullish", "harness_score": 0},
+]
+
+# 체결 게이트
+FILL_TIMEOUT_S = int(_os.getenv("PAPER_FILL_TIMEOUT_S", "90"))
+FILL_POLL_S    = float(_os.getenv("PAPER_FILL_POLL_S", "3"))
 
 # ── 외환 환율 (포지션 사이징 USD 환산용) ──────────────────────────────────────
 
-import time as _time
 import urllib.request as _urllib_req
 
 _FOREX_FALLBACK: dict[str, float] = {
@@ -72,31 +108,20 @@ _FOREX_FALLBACK: dict[str, float] = {
     "HKD": 1 / 7.8,
     "USD": 1.0,
 }
-# 캐시: currency → (usd_per_local, fetched_at_epoch)
 _forex_cache: dict[str, tuple[float, float]] = {}
-# 환율 출처 추적: currency → "live_api" | "ibkr_historical" | "hardcoded" | "usd"
-# 포지션 사이징에서 "hardcoded"(근사값)일 때 해외 진입을 차단하기 위해 사용(over-sizing 방지).
 _forex_source: dict[str, str] = {}
 _FOREX_CACHE_TTL = 1800  # 30분
 
 
 def get_usd_rate(ib: "IB | None", currency: str) -> float:
-    """
-    로컬 통화 1단위 → USD 반환. 절대 예외 없음.
-    우선순위: open.er-api.com 실시간 → IBKR 전일 종가 → 하드코딩 근사값
-    출처는 _forex_source에 기록(usd_rate_is_reliable로 신뢰성 판정).
-    """
+    """로컬 통화 1단위 → USD. 실시간 API → IBKR 전일종가 → 하드코딩 순 우선."""
     if currency == "USD":
         _forex_source["USD"] = "usd"
         return 1.0
-
-    # 캐시 확인 (30분 TTL) — 출처는 이미 기록돼 있음
     if currency in _forex_cache:
         rate, fetched_at = _forex_cache[currency]
         if _time.time() - fetched_at < _FOREX_CACHE_TTL:
             return rate
-
-    # 1순위: 실시간 환율 API (전체 통화 한 번에 캐시)
     try:
         url = "https://open.er-api.com/v6/latest/USD"
         with _urllib_req.urlopen(url, timeout=5) as resp:
@@ -111,8 +136,6 @@ def get_usd_rate(ib: "IB | None", currency: str) -> float:
                 return _forex_cache[currency][0]
     except Exception:
         pass
-
-    # 2순위: IBKR 전일 종가
     if ib is not None:
         try:
             from ib_insync import Forex
@@ -130,8 +153,6 @@ def get_usd_rate(ib: "IB | None", currency: str) -> float:
                 return usd_per_local
         except Exception:
             pass
-
-    # 3순위: 하드코딩 fallback (근사값 — 사이징 신뢰 불가)
     rate = _FOREX_FALLBACK.get(currency, 1.0)
     _forex_cache[currency] = (rate, _time.time())
     _forex_source[currency] = "hardcoded"
@@ -139,8 +160,6 @@ def get_usd_rate(ib: "IB | None", currency: str) -> float:
 
 
 def usd_rate_is_reliable(currency: str) -> bool:
-    """포지션 사이징에 쓸 만큼 환율이 신뢰 가능한가. 하드코딩 근사값이면 False.
-    USD(1.0)·실시간 API·IBKR 전일종가는 신뢰. get_usd_rate 호출 *후* 확인한다."""
     return _forex_source.get(currency) in ("usd", "live_api", "ibkr_historical")
 
 
@@ -155,13 +174,13 @@ def load_universe() -> list[dict]:
         )
         if universe:
             write_trading_universe(universe)
-    # 점수 게이트(2026-06-21 통일): Alpaca 와 동일 문턱(HARNESS_MIN_SCORE)으로 고확신 종목만 매매(IBKR 무필터 폐지).
     from core.trading_universe import HARNESS_MIN_SCORE
     rows, _ = load_trading_universe(broker="ibkr", min_score=HARNESS_MIN_SCORE)
     return rows
 
 
-def summarize_universe_drift(existing_symbols: set[str], tracked_symbols: set[str], universe_symbols: set[str]) -> dict[str, list[str]]:
+def summarize_universe_drift(existing_symbols: set[str], tracked_symbols: set[str],
+                              universe_symbols: set[str]) -> dict[str, list[str]]:
     return {
         "broker_positions_outside_universe": sorted(existing_symbols - universe_symbols),
         "tracked_positions_outside_universe": sorted(tracked_symbols - universe_symbols),
@@ -184,9 +203,6 @@ def load_state() -> dict:
             state = json.loads(STATE_PATH.read_text())
             if not isinstance(state, dict):
                 state = {}
-            # positions/pending_orders 가 손상 shape(list/str 등)면 빈 dict 로 교정한다(Red Team
-            # 2026-06-20 MAJOR). 이후 .keys()/membership/len() 이 dict 를 전제하므로, 손상 상태에서
-            # 주문 파이프라인 owner 가 AttributeError 로 죽지 않게 한다. 유효 데이터엔 영향 없음.
             for _k in ("positions", "pending_orders"):
                 if not isinstance(state.get(_k), dict):
                     state[_k] = {}
@@ -196,84 +212,109 @@ def load_state() -> dict:
     return {"positions": {}, "pending_orders": {}, "last_run": None}
 
 
-def save_state(s: dict) -> None:
-    # 원자적 쓰기(Red Team 2026-06-20 MAJOR): monitor/backend 가 같은 파일을 교차로 읽으므로
-    # 비원자적 write_text 는 torn-read(JSONDecodeError)를 유발할 수 있다. tmp+rename 으로 방지.
-    from core.atomic_io import atomic_write_json
-    atomic_write_json(STATE_PATH, s)
+# ── state 원자화 helpers ───────────────────────────────────────────────────────
+
+def state_set_position(symbol: str, data: dict) -> None:
+    def _m(s: dict) -> None:
+        s.setdefault("positions", {})[symbol] = data
+    update_json_atomic(STATE_PATH, _m)
 
 
-# ── 가격 히스토리 + Turtle 계산 ───────────────────────────────────────────────
+def state_pop_position(symbol: str) -> None:
+    def _m(s: dict) -> None:
+        s.setdefault("positions", {}).pop(symbol, None)
+    update_json_atomic(STATE_PATH, _m)
 
-def calc_turtle_signal(ib: IB, contract: Stock) -> dict | None:
-    """55일 최고가 브레이크아웃 + 20일 ATR 계산"""
+
+def state_set_last_run(ts: str) -> None:
+    def _m(s: dict) -> None:
+        s["last_run"] = ts
+    update_json_atomic(STATE_PATH, _m)
+
+
+# ── IBKR bars 어댑터 ──────────────────────────────────────────────────────────
+
+def ibkr_bars_to_core(bars) -> list[dict]:
+    """ib_insync BarData → core.turtle_strategy 형식 {h,l,c,o}."""
+    return [{"h": float(b.high), "l": float(b.low), "c": float(b.close), "o": float(b.open)}
+            for b in bars]
+
+
+def fetch_bars_ibkr(ib: IB, contract: Stock, days: int = 150) -> list[dict]:
+    """IBKR 일봉 조회 → core 형식 반환. 실패 시 빈 리스트."""
     try:
         bars = ib.reqHistoricalData(
             contract,
             endDateTime="",
-            durationStr="90 D",
+            durationStr=f"{days} D",
             barSizeSetting="1 day",
             whatToShow="TRADES",
             useRTH=True,
             formatDate=1,
         )
-        if not bars or len(bars) < TURTLE_S2 + 2:
-            return None
-
-        closes = [b.close for b in bars]
-        highs  = [b.high  for b in bars]
-        lows   = [b.low   for b in bars]
-
-        current_price = closes[-1]
-
-        # S2 진입: 55일 최고가 돌파
-        s2_high = max(highs[-TURTLE_S2 - 1:-1])
-        signal  = "breakout_long" if current_price > s2_high else "neutral"
-
-        # 20일 ATR
-        tr_list = []
-        for i in range(-TURTLE_ATR_DAYS, 0):
-            tr = max(
-                highs[i] - lows[i],
-                abs(highs[i] - closes[i - 1]),
-                abs(lows[i]  - closes[i - 1]),
-            )
-            tr_list.append(tr)
-        atr = sum(tr_list) / len(tr_list)
-
-        return {
-            "symbol":        contract.symbol,
-            "current_price": round(current_price, 2),
-            "s2_high":       round(s2_high, 2),
-            "atr":           round(atr, 4),
-            "signal":        signal,
-        }
+        return ibkr_bars_to_core(bars) if bars else []
     except Exception as e:
-        print(f"  [{contract.symbol}] 신호 계산 실패: {e}")
+        print(f"  [{getattr(contract, 'symbol', '?')}] bars 조회 실패: {e}")
+        return []
+
+
+# ── 체결 게이트 / 주문 취소 / 상주손절 ───────────────────────────────────────
+
+def wait_for_fill_ibkr(ib: IB, trade,
+                        timeout_s: int = FILL_TIMEOUT_S,
+                        poll_s: float = FILL_POLL_S) -> tuple[str, float, float]:
+    """체결 확인 게이트 — terminal 상태(Filled/Cancelled/Inactive/ApiCancelled)까지 폴링."""
+    terminal = {"Filled", "Cancelled", "Inactive", "ApiCancelled"}
+    deadline = _time.monotonic() + timeout_s
+    while True:
+        ib.sleep(poll_s)
+        status = trade.orderStatus.status or ""
+        if status in terminal or _time.monotonic() >= deadline:
+            break
+    fq = float(trade.orderStatus.filled or 0)
+    fp = float(trade.orderStatus.avgFillPrice or 0)
+    return trade.orderStatus.status or "Unknown", fq, fp
+
+
+def cancel_ibkr_order(ib: IB, order_id: int | None) -> None:
+    """IBKR 주문 취소 (이미 체결/소멸이면 무시)."""
+    if not order_id:
+        return
+    try:
+        for tr in ib.trades():
+            if tr.order.orderId == order_id:
+                ib.cancelOrder(tr.order)
+                ib.sleep(1)
+                return
+    except Exception:
+        pass
+
+
+def place_resident_stop(ib: IB, contract: Stock, qty: int, stop_price: float,
+                         account: str) -> int | None:
+    """브로커에 GTC 손절 주문을 상주. 성공 시 orderId, 실패 시 None."""
+    try:
+        stop_order = StopOrder("SELL", qty, stop_price)
+        stop_order.tif = "GTC"
+        stop_order.account = account
+        trade = ib.placeOrder(contract, stop_order)
+        ib.sleep(1)
+        return trade.order.orderId
+    except Exception as e:
+        print(f"  [{getattr(contract, 'symbol', '?')}] 상주손절 실패: {e}")
         return None
 
 
-# ── 주문 생명주기 정합(reconcile) ─────────────────────────────────────────────
+# ── 주문 생명주기 정합 (pending_orders) ───────────────────────────────────────
 
 def reconcile_pending_orders(ib: IB, state: dict, paper_account: str) -> dict:
-    """기존 `pending_orders` 를 **브로커 실제 상태와 대조**해 주문 생명주기를 정리한다.
-
-    배경(2026-06-20 ontology red team §3#2): 진입 주문은 미체결이면 `pending_orders` 에 적재되는데,
-    이후 어떤 실행에서도 reconcile 가 없어 ① 체결돼도 영영 pending 에 남고(→ exit 모니터는 positions
-    만 보므로 손절/청산이 안 걸림), ② 취소/거절되면 orphan 으로 남아 재진입을 영구 차단하고 대시보드를
-    오표시한다. 이 함수가 매 실행 초입에 정합한다(브로커 *읽기*만 — 주문을 새로 내거나 취소하지 않음):
-      - 브로커 포지션에 존재(=체결) → `positions` 로 승격(exit 모니터링 대상화) 후 pending 제거
-      - 여전히 live open order(openTrades) → status 갱신 후 유지
-      - 둘 다 아님(취소/거절/만료) → pending 에서 purge
-
-    반환: {"promoted", "purged", "kept": [...], "live_symbols": set} (live_symbols 는 재진입 중복방지 보강용).
-    """
+    """기존 pending_orders를 브로커 실상태와 대조해 정리.
+    체결 → positions 승격, 취소/거절 → purge."""
     pending = state.get("pending_orders") or {}
     summary = {"promoted": [], "purged": [], "kept": [], "live_symbols": set()}
     if not pending:
         return summary
 
-    # 브로커 실제 상태 스냅샷
     try:
         broker_positions = {
             p.contract.symbol: p
@@ -283,13 +324,12 @@ def reconcile_pending_orders(ib: IB, state: dict, paper_account: str) -> dict:
     except Exception:
         broker_positions = {}
 
-    # 세션 가시성 갭(다른 clientId/이전 세션 주문 누락) 방지를 위해 계정 전체 open order 를 끌어온다.
     try:
         ib.reqAllOpenOrders()
         ib.sleep(1)
     except Exception:
         pass
-    live_by_id: dict[int, str] = {}      # orderId → status
+    live_by_id: dict[int, str] = {}
     live_symbols: set[str] = set()
     try:
         for tr in ib.openTrades():
@@ -317,12 +357,11 @@ def reconcile_pending_orders(ib: IB, state: dict, paper_account: str) -> dict:
             continue
         oid = meta.get("order_id")
 
-        # 1) 체결되어 실제 포지션 → 승격(Turtle 파라미터 entry_price/atr/stop_loss 는 진입 시 값 유지,
-        #    수량만 실제 체결로 갱신). exit 모니터가 손절/청산을 걸 수 있게 된다.
         if sym in broker_positions:
-            filled_qty = abs(float(getattr(broker_positions[sym], "position", meta.get("qty", 0)) or 0)) \
-                or meta.get("qty", 0)
-            promoted = {**meta, "status": "Filled", "qty": filled_qty, "filled_reconciled_at": now_iso()}
+            filled_qty = abs(float(getattr(broker_positions[sym], "position",
+                                           meta.get("qty", 0)) or 0)) or meta.get("qty", 0)
+            promoted = {**meta, "status": "Filled", "qty": filled_qty,
+                        "filled_reconciled_at": now_iso()}
             state.setdefault("positions", {})[sym] = promoted
             pending.pop(sym, None)
             summary["promoted"].append(sym)
@@ -330,13 +369,11 @@ def reconcile_pending_orders(ib: IB, state: dict, paper_account: str) -> dict:
                        "order_id": oid, "qty": filled_qty})
             continue
 
-        # 2) 아직 live open order → 유지(상태 갱신)
         if (oid in live_by_id) or (sym in live_symbols):
             meta["status"] = live_by_id.get(oid, meta.get("status")) or meta.get("status")
             summary["kept"].append(sym)
             continue
 
-        # 3) 포지션도 아니고 live order 도 아님 → 취소/거절/만료 → purge(orphan 제거)
         pending.pop(sym, None)
         summary["purged"].append(sym)
         log_entry({"ts": now_iso(), "action": "pending_purged_stale", "symbol": sym,
@@ -345,39 +382,275 @@ def reconcile_pending_orders(ib: IB, state: dict, paper_account: str) -> dict:
     return summary
 
 
+# ── 브로커 포지션 조회 ─────────────────────────────────────────────────────────
+
+def get_broker_positions(ib: IB, paper_account: str) -> dict:
+    """ib.portfolio() → {symbol: PortfolioItem}. 현재가(marketPrice) 포함."""
+    try:
+        return {
+            item.contract.symbol: item
+            for item in ib.portfolio(account=paper_account)
+            if abs(float(item.position or 0)) > 0
+        }
+    except Exception:
+        return {}
+
+
+# ── reconcile + manage ────────────────────────────────────────────────────────
+
+def reconcile_positions_ibkr(ib: IB, state: dict, broker_positions: dict,
+                               universe_set: set, paper_account: str, dry_run: bool) -> list[dict]:
+    """고아 입양 (브로커 O / state X) + 유령 정리 (브로커 X / state O)."""
+    actions = []
+    tracked_syms = set(state.get("positions", {}).keys())
+
+    # 고아 입양: 브로커에는 있지만 state에 없는 유니버스 종목
+    for sym, bp in broker_positions.items():
+        if sym in tracked_syms or sym.upper() not in universe_set:
+            continue
+        contract = Stock(sym, "SMART", "USD")
+        ib.qualifyContracts(contract)
+        bars = fetch_bars_ibkr(ib, contract, days=TURTLE_ATR_PERIOD + 25)
+        atr = core.compute_atr(bars) if len(bars) >= TURTLE_ATR_PERIOD + 1 else 0
+        entry = float(getattr(bp, "avgCost", 0) or 0)
+        qty = int(abs(float(getattr(bp, "position", 0) or 0)))
+        stop = round(entry - TURTLE_STOP_MULT * atr, 2) if atr > 0 and entry > 0 else None
+        stop_id = None
+        if not dry_run and stop and stop > 0 and qty > 0:
+            stop_id = place_resident_stop(ib, contract, qty, stop, paper_account)
+        rec = {
+            "entry_ts": now_iso(), "system": "S2",
+            "entry_price": entry, "atr": atr, "stop_loss": stop,
+            "qty": qty, "side": "buy",
+            "resident_stop_id": stop_id, "adopted": True,
+        }
+        if not dry_run:
+            state_set_position(sym, rec)
+        state.setdefault("positions", {})[sym] = rec
+        act = {"ts": now_iso(), "action": "adopt_orphan", "symbol": sym,
+               "stop_loss": stop, "qty": qty, "dry_run": dry_run,
+               "resident_stop_id": stop_id}
+        log_entry(act)
+        actions.append(act)
+
+    # 유령 정리: state에는 있지만 브로커에 없는 종목 (상주손절 발동/외부 청산)
+    for sym in list(tracked_syms):
+        if sym in broker_positions:
+            continue
+        tracked = state.get("positions", {}).get(sym, {})
+        if not dry_run:
+            cancel_ibkr_order(ib, tracked.get("resident_stop_id"))
+            state_pop_position(sym)
+        state.get("positions", {}).pop(sym, None)
+        act = {"ts": now_iso(), "action": "ghost_reconcile", "symbol": sym,
+               "dry_run": dry_run, "note": "state had position, broker did not"}
+        log_entry(act)
+        actions.append(act)
+
+    return actions
+
+
+def manage_positions_ibkr(ib: IB, state: dict, broker_positions: dict,
+                           universe_set: set, paper_account: str, dry_run: bool) -> list[dict]:
+    """reconcile + 손절/청산 관리."""
+    actions = []
+    actions.extend(reconcile_positions_ibkr(
+        ib, state, broker_positions, universe_set, paper_account, dry_run))
+
+    for sym in list(state.get("positions", {}).keys()):
+        if sym not in broker_positions:
+            continue
+        tracked = state["positions"][sym]
+        bp = broker_positions[sym]
+        cp = float(getattr(bp, "marketPrice", 0) or 0)
+        if not cp:
+            cp = tracked.get("entry_price", 0)
+        stop = tracked.get("stop_loss")
+        system = tracked.get("system", "S2")
+        qty = int(abs(float(getattr(bp, "position", tracked.get("qty", 0)) or 0)))
+
+        reason = None
+
+        # 손절 백업 체크 (1차 방어선은 상주손절)
+        if stop and cp > 0 and cp <= stop:
+            reason = f"stop_loss_hit (${cp:.2f} <= stop ${stop:.2f})"
+
+        # 청산 신호 체크
+        if not reason:
+            contract = Stock(sym, "SMART", "USD")
+            ib.qualifyContracts(contract)
+            bars = fetch_bars_ibkr(ib, contract, days=35)
+            if bars:
+                triggered, msg = core.exit_signal(bars, system, side="long")
+                if triggered:
+                    reason = f"exit_signal: {msg}"
+
+        if not reason:
+            continue
+
+        action = {"ts": now_iso(), "action": "exit", "symbol": sym,
+                  "side": "sell", "qty": qty, "reason": reason,
+                  "current_price": cp, "dry_run": dry_run}
+
+        if not dry_run:
+            try:
+                cancel_ibkr_order(ib, tracked.get("resident_stop_id"))
+                contract = Stock(sym, "SMART", "USD")
+                ib.qualifyContracts(contract)
+                order = MarketOrder("SELL", qty)
+                order.tif = "GTC"
+                order.account = paper_account
+                trade = ib.placeOrder(contract, order)
+                status, filled_qty, fill_price = wait_for_fill_ibkr(ib, trade)
+                action["order_status"] = status
+                action["filled_qty"] = filled_qty
+                action["fill_price"] = fill_price
+                action["status"] = "filled" if filled_qty > 0 else "not_filled"
+                if filled_qty > 0:
+                    state_pop_position(sym)
+                    state.get("positions", {}).pop(sym, None)
+            except Exception as e:
+                action["status"] = "error"
+                action["error"] = str(e)
+        else:
+            action["status"] = "dry_run"
+
+        log_entry(action)
+        actions.append(action)
+
+    return actions
+
+
+# ── 피라미딩 (롱 전용) ────────────────────────────────────────────────────────
+
+def pyramid_positions_ibkr(ib: IB, state: dict, broker_positions: dict,
+                            account_value: float, paper_account: str, dry_run: bool) -> list[dict]:
+    """½N 유리 이동마다 유닛 추가 (최대 PAPER_MAX_UNITS). 롱 전용."""
+    if not PAPER_PYRAMID_ENABLED:
+        return []
+    actions = []
+
+    for sym, tracked in list(state.get("positions", {}).items()):
+        if tracked.get("side") != "buy" or sym not in broker_positions:
+            continue
+        bp = broker_positions[sym]
+        cp = float(getattr(bp, "marketPrice", 0) or 0)
+        if not cp:
+            continue
+
+        pd = core.pyramid_decision(
+            tracked, cp, account_value,
+            enabled=PAPER_PYRAMID_ENABLED,
+            max_units=PAPER_MAX_UNITS,
+            step_n=PAPER_PYRAMID_STEP_N,
+        )
+        if pd is None:
+            continue
+
+        # heat 상한 확인 (기존 risk를 신규치로 교체 시 합산 heat)
+        old_risk = tracked.get("risk_usd") or 0
+        new_risk = pd["new_risk"]
+        cur_heat = core.portfolio_heat(state.get("positions", {}), account_value)
+        prospective_heat = cur_heat + (new_risk - old_risk) / account_value if account_value else 1.0
+        if prospective_heat > PAPER_MAX_PORTFOLIO_HEAT:
+            act = {"ts": now_iso(), "action": "pyramid_skip", "symbol": sym,
+                   "reason": "heat_cap", "unit_to": pd["unit"]}
+            log_entry(act)
+            actions.append(act)
+            continue
+
+        action = {"ts": now_iso(), "action": "pyramid_add", "symbol": sym,
+                  "unit": pd["unit"], "qty_add": pd["qty_add"],
+                  "price": cp, "new_total_qty": pd["new_total"], "new_stop": pd["new_stop"],
+                  "dry_run": dry_run}
+
+        if not dry_run:
+            try:
+                contract = Stock(sym, "SMART", "USD")
+                ib.qualifyContracts(contract)
+                order = MarketOrder("BUY", pd["qty_add"])
+                order.tif = "GTC"
+                order.account = paper_account
+                trade = ib.placeOrder(contract, order)
+                status, filled_qty, fill_price = wait_for_fill_ibkr(ib, trade)
+                action["order_status"] = status
+                if filled_qty <= 0:
+                    action["status"] = "not_filled"
+                    log_entry(action)
+                    actions.append(action)
+                    continue
+                fill_price = fill_price or cp
+                N = pd["N"] or tracked.get("atr", 0)
+                new_total = int(tracked.get("qty", 0)) + int(filled_qty)
+                new_stop = round(fill_price - TURTLE_STOP_MULT * N, 2)
+                new_risk = round(new_total * TURTLE_STOP_MULT * N, 2)
+                # 상주손절 교체
+                cancel_ibkr_order(ib, tracked.get("resident_stop_id"))
+                new_stop_id = place_resident_stop(ib, contract, new_total, new_stop, paper_account)
+                updated = dict(tracked)
+                updated.update({
+                    "qty": new_total, "stop_loss": new_stop,
+                    "last_unit_price": fill_price,
+                    "unit_count": pd["unit"],
+                    "resident_stop_id": new_stop_id,
+                    "risk_usd": new_risk,
+                })
+                state_set_position(sym, updated)
+                state["positions"][sym] = dict(updated)
+                action.update({
+                    "status": "filled", "fill_price": fill_price,
+                    "new_total_qty": new_total, "new_stop": new_stop,
+                    "resident_stop_id": new_stop_id,
+                })
+            except Exception as e:
+                action["status"] = "error"
+                action["error"] = str(e)
+        else:
+            action["status"] = "dry_run"
+            sim = dict(tracked)
+            sim.update({"qty": pd["new_total"], "stop_loss": pd["new_stop"],
+                        "last_unit_price": cp, "unit_count": pd["unit"],
+                        "risk_usd": pd["new_risk"]})
+            state["positions"][sym] = sim
+
+        log_entry(action)
+        actions.append(action)
+
+    return actions
+
+
 # ── 메인 ──────────────────────────────────────────────────────────────────────
 
 def run(execute: bool = False) -> None:
     dry_run = not execute
     universe = load_universe()
-    # Finding 3(Red Team 2026-06-10): MAX_POSITIONS 한도가 선착순으로 채워져 저점수 종목이
-    # 슬롯을 선점하는 문제 방지. 진입 후보를 harness_score 내림차순으로 정렬해 *동일 스캔에서
-    # 동시 돌파* 시 고확신 종목이 한정 슬롯을 먼저 차지하게 한다.
-    # (Turtle 원칙 준수: 기존 보유 포지션을 점수로 교체하지 않음 — 진입 우선순위만 조정)
+    if PAPER_DIVERSIFY_ENABLED:
+        existing_syms = {row["symbol"] for row in universe}
+        universe = universe + [d for d in DIVERSIFIERS_META if d["symbol"] not in existing_syms]
+
     universe = sorted(universe, key=lambda r: float(r.get("harness_score") or 0), reverse=True)
+    universe_set = {row["symbol"].upper() for row in universe}
 
     print("=" * 62)
-    print(f"IBKR TWS Paper Trader — {'DRY RUN' if dry_run else '*** EXECUTE ***'}")
+    print(f"IBKR TWS Paper Trader B2 — {'DRY RUN' if dry_run else '*** EXECUTE ***'}")
     print(f"실행시각: {now_iso()}")
-    print(f"포트: {TWS_PORT} (페이퍼 트레이딩)")
-    print(f"유니버스: {len(universe)}종목")
+    print(f"포트: {TWS_PORT} | 유니버스: {len(universe)}종목")
     print("=" * 62)
 
     ib = IB()
     try:
         ib.connect(TWS_HOST, TWS_PORT, clientId=TWS_CLIENT_ID, timeout=10)
     except Exception as e:
-        print(f"[ERROR] TWS 연결 실패: {e}")
-        print("  → IB Gateway가 실행 중인지, API 포트 4002가 활성화됐는지 확인하세요.")
+        print(f"[ERROR] IB Gateway 연결 실패: {e}")
+        print("  → IB Gateway 실행 중인지, API 포트 4002 활성화됐는지 확인하세요.")
         return
 
-    # 계좌 확인
     accounts = ib.managedAccounts()
     paper_account = next((a for a in accounts if a.startswith("DU")), accounts[0] if accounts else "")
     print(f"연결된 계좌: {accounts} | 사용: {paper_account}")
 
     nav_vals = ib.accountValues(account=paper_account)
-    nav = next((float(v.value) for v in nav_vals if v.tag == "NetLiquidation" and v.currency == "USD"), 0)
+    nav  = next((float(v.value) for v in nav_vals if v.tag == "NetLiquidation" and v.currency == "USD"), 0)
     cash = next((float(v.value) for v in nav_vals if v.tag == "TotalCashValue" and v.currency == "USD"), 0)
     print(f"NAV: ${nav:,.2f} | 현금: ${cash:,.2f}")
 
@@ -389,24 +662,52 @@ def run(execute: bool = False) -> None:
         state["baseline"] = {"nav": nav, "set_at": now_iso()}
         print(f"\n[베이스라인 설정] NAV ${nav:,.2f}")
 
-    # 주문 생명주기 정합: 기존 pending_orders 를 브로커 실상태와 맞춘다(체결→positions 승격,
-    # 취소/거절→purge). 신호 스캔 *전*에 해야 dedup 가드/MAX_POSITIONS 카운트가 실상태를 반영한다.
+    # pending_orders 정합 (이전 세션 잔여 처리)
     recon = reconcile_pending_orders(ib, state, paper_account)
     if recon["promoted"] or recon["purged"] or recon["kept"]:
-        print(f"\n[pending 정합] 체결승격 {recon['promoted'] or '-'} | 미체결유지 {recon['kept'] or '-'} | 정리(취소/거절) {recon['purged'] or '-'}")
-    broker_open_symbols = recon["live_symbols"]
-    # 저장 시 모니터의 동시 청산(positions pop)을 덮지 않도록, *이번 실행에서 트레이더가 추가한*
-    # positions 키만 추적한다(reconcile 승격 + 즉시 체결 진입). pending_orders 는 트레이더 전적 소유.
-    added_positions: set[str] = set(recon["promoted"])
+        print(f"\n[pending 정합] 승격={recon['promoted'] or '-'} | "
+              f"유지={recon['kept'] or '-'} | 정리={recon['purged'] or '-'}")
 
-    # 현재 포지션
-    positions = ib.positions(account=paper_account)
-    pos_symbols = {p.contract.symbol for p in positions}
-    managed_symbols = set(state["positions"].keys()) | set(state["pending_orders"].keys())
-    drift = summarize_universe_drift(pos_symbols, managed_symbols, {row["symbol"] for row in universe})
+    # 브로커 포지션 (marketPrice 포함)
+    broker_positions = get_broker_positions(ib, paper_account)
+    pos_symbols = set(broker_positions.keys())
+    tracked_symbols = set(state["positions"].keys())
+    drift = summarize_universe_drift(pos_symbols, tracked_symbols, universe_set)
     print(f"\n현재 포지션: {pos_symbols or '없음'}")
     if drift["broker_positions_outside_universe"] or drift["tracked_positions_outside_universe"]:
-        print(f"레거시 포지션 불일치: broker={drift['broker_positions_outside_universe'] or '-'} | tracked={drift['tracked_positions_outside_universe'] or '-'}")
+        print(f"레거시 불일치: broker={drift['broker_positions_outside_universe'] or '-'} | "
+              f"tracked={drift['tracked_positions_outside_universe'] or '-'}")
+
+    # 포지션 관리 (reconcile + 손절/청산)
+    print("\n── 포지션 관리 ──")
+    mgmt_actions = manage_positions_ibkr(
+        ib, state, broker_positions, universe_set, paper_account, dry_run)
+    exit_acts = [a for a in mgmt_actions if a.get("action") == "exit"]
+    recon_acts = [a for a in mgmt_actions if a.get("action") in ("adopt_orphan", "ghost_reconcile")]
+    status_tag = "DRY-RUN" if dry_run else "실행"
+    for a in recon_acts:
+        if a["action"] == "adopt_orphan":
+            print(f"  [{status_tag}] ADOPT {a['symbol']} — 고아입양 stop=${a.get('stop_loss')}")
+        else:
+            print(f"  [{status_tag}] GHOST {a['symbol']} — 유령정리")
+    for a in exit_acts:
+        print(f"  [{status_tag}] EXIT {a['symbol']} — {a['reason']}")
+    if not mgmt_actions:
+        print("  청산/정합 대상 없음")
+
+    # 피라미딩
+    print("\n── 피라미딩 ──")
+    # 피라미딩 후 broker_positions 새로 고침
+    broker_positions = get_broker_positions(ib, paper_account)
+    pyramid_acts = pyramid_positions_ibkr(
+        ib, state, broker_positions, nav, paper_account, dry_run)
+    adds = [a for a in pyramid_acts if a.get("action") == "pyramid_add"]
+    if adds:
+        for a in adds:
+            print(f"  [{status_tag}] PYRAMID {a['symbol']} 유닛{a['unit']}/{PAPER_MAX_UNITS} "
+                  f"+{a['qty_add']}주 @${a['price']} → 총{a['new_total_qty']}주 stop=${a['new_stop']}")
+    else:
+        print("  추가 대상 없음")
 
     # 신호 스캔
     print("\n── 신호 스캔 ──")
@@ -420,139 +721,172 @@ def run(execute: bool = False) -> None:
         name     = u_item.get("name", "")
 
         routing_exchange = "SMART"
-        primary_exchange = exchange if routing_exchange != exchange else ""
+        primary_exchange = exchange if exchange != routing_exchange else ""
         contract = Stock(sym, routing_exchange, currency, primaryExchange=primary_exchange)
         ib.qualifyContracts(contract)
-        sig = calc_turtle_signal(ib, contract)
 
-        if sig is None:
+        # bars 조회 (S2+2=57, ATR+1=21, MA+15=115 중 최대 → 150 여유 포함)
+        bars = fetch_bars_ibkr(ib, contract, days=150)
+        if not bars:
+            print(f"  [{region}] {sym}: bars 없음")
+            continue
+
+        sig = core.signal_from_bars(sym, bars)
+        if sig["signal"] == "insufficient_data":
             print(f"  [{region}] {sym}: 데이터 부족")
             continue
 
-        signal  = sig["signal"]
-        price   = sig["current_price"]
-        atr     = sig["atr"]
-        s2_high = sig["s2_high"]
-        dist    = (price - s2_high) / s2_high * 100
+        signal    = sig["signal"]
+        price     = sig["current_price"]
+        atr       = sig["atr"]
+        system    = sig.get("system")
+        s2_high   = sig.get("s2_high", 0)
+        dist      = (price - s2_high) / s2_high * 100 if s2_high else 0
 
-        if signal == "breakout_long":
-            # 포지션 사이징: ATR을 USD로 환산 후 계좌 1% 리스크 기준
-            usd_rate = get_usd_rate(ib, currency)
-            # Fail-safe(Red Team 2026-06-10 Infra 2): 해외 통화 환율이 하드코딩 근사값으로
-            # 폴백된 상태면 사이징이 틀려 1% 리스크 한도를 초과할 수 있다(over-sizing).
-            # Turtle Never 규칙(단일 트레이드 리스크 1% 초과 금지)에 따라 진입을 차단한다.
-            if not usd_rate_is_reliable(currency):
-                print(f"     → ⚠️ 환율 신뢰 불가({currency}, 하드코딩 폴백) — 사이징 부정확 위험으로 진입 차단(스킵)")
-                log_entry({
-                    "ts": now_iso(), "action": "enter_blocked_fx_unreliable", "symbol": sym,
-                    "region": region, "currency": currency, "price": price, "atr": atr,
-                    "usd_rate": round(usd_rate, 8), "fx_source": _forex_source.get(currency, "unknown"), "system": "S2",
-                })
-                continue
-            atr_usd  = atr * usd_rate
-            shares   = int((nav * TURTLE_RISK_PCT) / atr_usd) if atr_usd > 0 else 0
-            stop_loss = round(price - TURTLE_STOP_MULT * atr, 2)
-            pos_val_local = round(shares * price, 2)
-            pos_val_usd   = round(shares * price * usd_rate, 2)
-
-            curr_sym = {"KRW": "₩", "JPY": "¥", "TWD": "NT$", "HKD": "HK$"}.get(currency, "$")
-            print(f"\n  [{region}] {sym}({name}) S2 브레이크아웃 @ {curr_sym}{price:.2f}")
-            print(f"     S2고점={curr_sym}{s2_high:.2f}({dist:+.1f}%) ATR={atr:.2f}{currency} (${atr_usd:.4f}) 수량={shares}주")
-            print(f"     포지션={curr_sym}{pos_val_local:,.0f} (≈${pos_val_usd:,.0f}) 손절={curr_sym}{stop_loss:.2f}")
-
-            # 이미 보유 중이면 스킵. broker_open_symbols(브로커 실시간 미체결 주문)도 포함해,
-            # 로컬 pending 이 어떤 이유로 누락돼도 같은 종목 *중복 주문*을 내지 않게 한다
-            # (ontology red team §3#2: 동일 주문 중복 전송 방지의 최종 가드).
-            if (sym in pos_symbols or sym in state["positions"]
-                    or sym in state["pending_orders"] or sym in broker_open_symbols):
-                print(f"     → 이미 보유/미체결 주문 존재 — 스킵")
-                continue
-
-            # 최대 포지션 수 초과
-            if len(state["positions"]) + len(state["pending_orders"]) >= MAX_POSITIONS:
-                print(f"     → MAX_POSITIONS({MAX_POSITIONS}) 도달 — 대기")
-                continue
-
-            if shares <= 0:
-                print(f"     → 수량 0 — 스킵")
-                continue
-
-            if not dry_run:
-                order = MarketOrder("BUY", shares)
-                order.tif = "GTC"  # 장 마감 후에도 유효 (DAY 자동설정 방지)
-                trade = ib.placeOrder(contract, order)
-                ib.sleep(2)
-                status = (trade.orderStatus.status or "").lower()
-                if status in {"cancelled", "inactive", "apicancelled"}:
-                    print(f"     → 주문 거절/취소 ({trade.order.orderId}, status={trade.orderStatus.status})")
-                    log_entry({
-                        "ts": now_iso(), "action": "enter_rejected", "symbol": sym,
-                        "region": region, "exchange": exchange, "currency": currency,
-                        "qty": shares, "price": price, "status": trade.orderStatus.status,
-                        "atr": atr, "atr_usd": round(atr_usd, 6), "usd_rate": round(usd_rate, 8),
-                        "stop_loss": stop_loss, "system": "S2", "dry_run": False,
-                    })
-                    continue
-                target_bucket = "positions" if status == "filled" else "pending_orders"
-                if target_bucket == "positions":
-                    added_positions.add(sym)
-                state[target_bucket][sym] = {
-                    "entry_ts": now_iso(),
-                    "entry_price": price,
-                    "atr": atr,
-                    "stop_loss": stop_loss,
-                    "qty": shares,
-                    "exchange": routing_exchange,
-                    "currency": currency,
-                    "region": region,
-                    "order_id": trade.order.orderId,
-                    "status": trade.orderStatus.status,
-                }
-                print(f"     → 주문 제출 (orderId={trade.order.orderId}, status={trade.orderStatus.status}, bucket={target_bucket})")
-                log_entry({
-                    "ts": now_iso(), "action": "enter", "symbol": sym,
-                    "region": region, "exchange": routing_exchange, "currency": currency,
-                    "qty": shares, "price": price,
-                    "atr": atr, "atr_usd": round(atr_usd, 6),
-                    "usd_rate": round(usd_rate, 8),
-                    "stop_loss": stop_loss, "system": "S2",
-                    "dry_run": False, "status": trade.orderStatus.status, "bucket": target_bucket,
-                })
-            else:
-                print(f"     → [DRY RUN] 매수 예정")
-            entered.append(sym)
-        else:
+        if signal != "breakout_long":
             curr_sym = {"KRW": "₩", "JPY": "¥", "TWD": "NT$", "HKD": "HK$"}.get(currency, "$")
             print(f"  [{region}] {sym}: 중립 {curr_sym}{price:.2f} | S2고점 {curr_sym}{s2_high:.2f}({dist:+.1f}%)")
+            continue
 
-    state["last_run"] = now_iso()
-    # 락 하에 디스크 최신본을 다시 읽어 트레이더 *델타만* 병합 저장(2026-06-21 multi-writer race
-    # 수정). 통째 save 는 모니터의 동시 변경(nav_history/청산)을 덮어쓰므로 금지.
-    from core.atomic_io import update_json_atomic
+        curr_sym = {"KRW": "₩", "JPY": "¥", "TWD": "NT$", "HKD": "HK$"}.get(currency, "$")
+        print(f"\n  [{region}] {sym}({name}) {system} 브레이크아웃 @ {curr_sym}{price:.2f}")
+        print(f"     S2고점={curr_sym}{s2_high:.2f}({dist:+.1f}%) ATR={atr:.4f}")
 
-    def _trader_persist(fresh: dict) -> None:
-        if not isinstance(fresh.get("positions"), dict):
-            fresh["positions"] = {}
-        # pending_orders 는 트레이더 전적 소유 → 자기 계산본으로 대체(reconcile/진입 반영본)
-        fresh["pending_orders"] = state.get("pending_orders", {}) if isinstance(state.get("pending_orders"), dict) else {}
-        # positions 는 *추가만*: 이번 실행에서 승격/체결한 키만 set(모니터의 동시 청산 pop 보존)
-        for sym in added_positions:
-            if sym in state.get("positions", {}):
-                fresh["positions"][sym] = state["positions"][sym]
-        if not fresh.get("baseline") and state.get("baseline"):
-            fresh["baseline"] = state["baseline"]
-        fresh["last_run"] = state.get("last_run")
+        # 중복 보유 체크
+        if (sym in pos_symbols or sym in state["positions"]
+                or sym in state["pending_orders"]):
+            print(f"     → 이미 보유/대기 — 스킵")
+            continue
 
-    update_json_atomic(STATE_PATH, _trader_persist)
+        # 포지션 수 상한
+        if len(state["positions"]) + len(state["pending_orders"]) >= MAX_POSITIONS:
+            print(f"     → MAX_POSITIONS({MAX_POSITIONS}) 도달 — 대기")
+            continue
+
+        # 추세 필터 (F1)
+        closes = [float(b.get("c", 0)) for b in bars if b.get("c")]
+        trend_ok, trend_note = core.trend_filter_ok(
+            closes, price, ma_days=TREND_MA_DAYS, enabled=TREND_FILTER_ENABLED)
+        if not trend_ok:
+            print(f"     → 추세필터 차단: {trend_note}")
+            log_entry({"ts": now_iso(), "action": "trend_blocked", "symbol": sym,
+                       "note": trend_note, "system": system})
+            continue
+
+        # 상관 한도 (F2)
+        held = set(state.get("positions", {}).keys()) | pos_symbols
+        blocked, block_reason = core.correlation_block(
+            sym, held, max_units=MAX_UNITS_PER_GROUP)
+        if blocked:
+            print(f"     → 상관한도 차단: {block_reason}")
+            log_entry({"ts": now_iso(), "action": "corr_blocked", "symbol": sym,
+                       "note": block_reason, "system": system})
+            continue
+
+        # 환율 신뢰성 (해외 종목 사이징 오버 방지)
+        usd_rate = get_usd_rate(ib, currency)
+        if not usd_rate_is_reliable(currency):
+            print(f"     → 환율 신뢰 불가({currency}, 하드코딩 폴백) — 스킵")
+            log_entry({"ts": now_iso(), "action": "enter_blocked_fx_unreliable", "symbol": sym,
+                       "currency": currency, "fx_source": _forex_source.get(currency, "unknown")})
+            continue
+
+        # TurtleGate (사이징 + 5항목 검증)
+        gate = core.turtle_gate_check(sig, nav, TURTLE_MAX_RISK_PCT)
+        shares = gate["shares"]
+        stop_loss = gate["stop_loss"]
+
+        if shares <= 0:
+            print(f"     → 수량 0 — 스킵")
+            continue
+        if not gate["passed"]:
+            print(f"     → TurtleGate BLOCK: {gate['checks']}")
+            log_entry({"ts": now_iso(), "action": "gate_blocked", "symbol": sym,
+                       "checks": gate["checks"], "system": system})
+            continue
+
+        # 포트폴리오 heat 상한
+        cur_heat = core.portfolio_heat(state.get("positions", {}), nav)
+        new_heat = gate["risk_dollars"] / nav if nav else 0
+        if cur_heat + new_heat > PAPER_MAX_PORTFOLIO_HEAT:
+            print(f"     → heat 초과 (현재 {cur_heat*100:.1f}% + 신규 {new_heat*100:.1f}% > {PAPER_MAX_PORTFOLIO_HEAT*100:.0f}%)")
+            log_entry({"ts": now_iso(), "action": "heat_blocked", "symbol": sym,
+                       "cur_heat": round(cur_heat, 4), "new_heat": round(new_heat, 4),
+                       "cap": PAPER_MAX_PORTFOLIO_HEAT})
+            continue
+
+        atr_usd = atr * usd_rate
+        pos_val_local = round(shares * price, 2)
+        pos_val_usd   = round(shares * price * usd_rate, 2)
+        print(f"     수량={shares}주 | 포지션≈${pos_val_usd:,.0f} | "
+              f"손절={curr_sym}{stop_loss:.2f} | 리스크={gate['risk_pct']:.3f}% | heat↑{new_heat*100:.1f}%")
+
+        if not dry_run:
+            order = MarketOrder("BUY", shares)
+            order.tif = "GTC"
+            order.account = paper_account
+            trade = ib.placeOrder(contract, order)
+
+            status, filled_qty, fill_price = wait_for_fill_ibkr(ib, trade)
+            print(f"     체결: status={status} qty={filled_qty} avg=${fill_price:.2f}")
+
+            if filled_qty <= 0:
+                print(f"     → 미체결/거절 — 원장 미기록")
+                log_entry({"ts": now_iso(), "action": "enter_not_filled", "symbol": sym,
+                           "order_status": status, "system": system, "dry_run": False})
+                continue
+
+            fill_price = fill_price or price
+            actual_stop = round(fill_price - TURTLE_STOP_MULT * atr, 2)
+            qty_i = int(filled_qty)
+
+            # 상주손절 발행
+            stop_id = place_resident_stop(ib, contract, qty_i, actual_stop, paper_account)
+
+            rec = {
+                "entry_ts": now_iso(), "system": system,
+                "entry_price": fill_price, "atr": atr, "stop_loss": actual_stop,
+                "qty": qty_i, "side": "buy",
+                "resident_stop_id": stop_id,
+                "n_at_entry": atr,
+                "last_unit_price": fill_price,
+                "unit_count": 1,
+                "risk_usd": round(qty_i * TURTLE_STOP_MULT * atr, 2),
+                "currency": currency, "region": region,
+            }
+            state_set_position(sym, rec)
+            state["positions"][sym] = dict(rec)
+
+            log_entry({
+                "ts": now_iso(), "action": "enter", "symbol": sym,
+                "region": region, "currency": currency,
+                "qty": qty_i, "fill_price": fill_price,
+                "atr": atr, "atr_usd": round(atr_usd, 6),
+                "stop_loss": actual_stop, "system": system,
+                "resident_stop_id": stop_id,
+                "risk_pct": gate["risk_pct"], "dry_run": False,
+            })
+            print(f"     → 진입 완료 (stop_id={stop_id}, stop=${actual_stop})")
+        else:
+            print(f"     → [DRY RUN] 매수 예정")
+            log_entry({"ts": now_iso(), "action": "enter_dry_run", "symbol": sym,
+                       "qty": shares, "price": price, "stop_loss": stop_loss,
+                       "system": system, "dry_run": True})
+
+        entered.append(sym)
+
+    # last_run 원자적 갱신
+    state_set_last_run(now_iso())
     ib.disconnect()
 
     print(f"\n{'=' * 62}")
-    print(f"완료 | 진입: {len(entered)}건 | 유니버스: {len(universe)}종목")
+    print(f"완료 | 진입: {len(entered)}건 | 청산: {len(exit_acts)}건 | 유니버스: {len(universe)}종목")
+    print(f"추적 포지션: {list(state['positions'].keys()) or '없음'}")
     print("=" * 62)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="IBKR TWS Paper Trader")
+    parser = argparse.ArgumentParser(description="IBKR TWS Paper Trader (B2)")
     parser.add_argument("--execute", action="store_true")
     args = parser.parse_args()
     run(execute=args.execute)
