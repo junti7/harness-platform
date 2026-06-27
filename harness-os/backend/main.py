@@ -9097,6 +9097,13 @@ def _edu_vp_safety_coach_evidence_with_timeout(
     timeout_seconds: float | None = None,
 ) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
     timeout = max(0.2, float(timeout_seconds or os.getenv("EDU_SAFETY_COACH_RAG_TIMEOUT_SECONDS") or "2.0"))
+    started_at = time.monotonic()
+
+    def with_elapsed(meta: dict[str, Any]) -> dict[str, Any]:
+        meta["elapsed_ms"] = int(round((time.monotonic() - started_at) * 1000))
+        meta["timeout_ms"] = int(round(timeout * 1000))
+        return meta
+
     future = _EDU_VP_SAFETY_COACH_EVIDENCE_EXECUTOR.submit(
         _edu_vp_safety_coach_evidence,
         query,
@@ -9104,25 +9111,26 @@ def _edu_vp_safety_coach_evidence_with_timeout(
         limit=limit,
     )
     try:
-        return future.result(timeout=timeout)
+        text, items, meta = future.result(timeout=timeout)
+        return text, items, with_elapsed(meta if isinstance(meta, dict) else {})
     except FuturesTimeoutError:
         future.cancel()
-        return "", [], {
+        return "", [], with_elapsed({
             "query": query[:500],
             "selected_count": 0,
             "rejected_count": 0,
             "rejected": [],
             "skip_reason": "retrieve_timeout",
-        }
+        })
     except Exception as exc:  # noqa: BLE001
-        return "", [], {
+        return "", [], with_elapsed({
             "query": query[:500],
             "selected_count": 0,
             "rejected_count": 0,
             "rejected": [],
             "skip_reason": "retrieve_failed",
             "error_type": type(exc).__name__,
-        }
+        })
 
 
 def _edu_vp_generate_text_with_timeout(
@@ -10701,7 +10709,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
     evidence_timeout = float(
         os.getenv(
             "EDU_SAFETY_COACH_FAST_RAG_TIMEOUT_SECONDS" if fast_answer else "EDU_SAFETY_COACH_RAG_TIMEOUT_SECONDS",
-            "1.2" if fast_answer else "2.0",
+            "0.6" if fast_answer else "1.5",
         )
     )
     evidence_text, evidence_items, evidence_meta = _edu_vp_safety_coach_evidence_with_timeout(
@@ -10729,6 +10737,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
             "_safety_coach_evidence_meta": evidence_meta,
             "_safety_coach_red_team_issues": [] if not red_team_issues else red_team_issues,
             "_safety_coach_rag_infused": final_evidence_used,
+            "_safety_coach_rag_patch_applied": False,
             "_safety_coach_reinforcement_policies": [],
             "_safety_coach_policy_context": {
                 "schema_version": policy_context.get("schema_version"),
@@ -10822,6 +10831,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                     usage["_safety_coach_red_team_issues"] = red_team_issues  # type: ignore[index]
                     usage["_safety_coach_llm_judge"] = llm_judge_review  # type: ignore[index]
                     usage["_safety_coach_rag_infused"] = False  # type: ignore[index]
+                    usage["_safety_coach_rag_patch_applied"] = False  # type: ignore[index]
                     usage["_safety_coach_reinforcement_policies"] = reinforcement_policies  # type: ignore[index]
                     usage["_safety_coach_policy_context"] = {
                         "schema_version": policy_context.get("schema_version"),
@@ -10880,12 +10890,44 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
             red_team_issues = [str(item) for item in quality_review.get("issues") or [] if str(item).strip()]
             llm_judge_review = quality_review.get("llm_judge") if isinstance(quality_review.get("llm_judge"), dict) else {}
             model_issues = red_team_issues
+            if red_team_issues == ["missing_rag_integration"]:
+                patched_answer, patched = _edu_vp_safety_coach_blend_rag_sentence(answer, question, evidence_items)
+                if patched:
+                    patched_review = _edu_vp_safety_coach_quality_review(
+                        question=question,
+                        answer=patched_answer,
+                        concept_body=concept_body,
+                        evidence_items=evidence_items,
+                        reinforcement_policies=reinforcement_policies,
+                        policy_context=policy_context,
+                        llm_judge_enabled=False,
+                    )
+                    patched_issues = [str(item) for item in patched_review.get("issues") or [] if str(item).strip()]
+                    if not patched_issues:
+                        if isinstance(usage, dict):
+                            usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
+                            usage["_safety_coach_red_team_issues"] = []  # type: ignore[index]
+                            usage["_safety_coach_llm_judge"] = llm_judge_review  # type: ignore[index]
+                            usage["_safety_coach_rag_infused"] = True  # type: ignore[index]
+                            usage["_safety_coach_rag_patch_applied"] = True  # type: ignore[index]
+                            usage["_safety_coach_reinforcement_policies"] = reinforcement_policies  # type: ignore[index]
+                            usage["_safety_coach_policy_context"] = {
+                                "schema_version": policy_context.get("schema_version"),
+                                "intent_classes": policy_context.get("intent_classes"),
+                                "policy_ids": policy_context.get("policy_ids"),
+                            }  # type: ignore[index]
+                        patched_model = f"{used_model}+rag_patch"
+                        _edu_log_llm_cost(usage, patched_model)
+                        return patched_answer[:2200], patched_model, usage, False
+                    red_team_issues = patched_issues
+                    model_issues = patched_issues
             if not red_team_issues:
                 if isinstance(usage, dict):
                     usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
                     usage["_safety_coach_red_team_issues"] = []  # type: ignore[index]
                     usage["_safety_coach_llm_judge"] = llm_judge_review  # type: ignore[index]
                     usage["_safety_coach_rag_infused"] = _edu_vp_safety_coach_answer_uses_evidence(answer, evidence_items)  # type: ignore[index]
+                    usage["_safety_coach_rag_patch_applied"] = False  # type: ignore[index]
                     usage["_safety_coach_reinforcement_policies"] = reinforcement_policies  # type: ignore[index]
                     usage["_safety_coach_policy_context"] = {
                         "schema_version": policy_context.get("schema_version"),
@@ -10910,6 +10952,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
             usage["_safety_coach_red_team_issues"] = red_team_issues  # type: ignore[index]
             usage["_safety_coach_llm_judge"] = llm_judge_review  # type: ignore[index]
             usage["_safety_coach_rag_infused"] = False  # type: ignore[index]
+            usage["_safety_coach_rag_patch_applied"] = False  # type: ignore[index]
             usage["_safety_coach_reinforcement_policies"] = reinforcement_policies  # type: ignore[index]
             usage["_safety_coach_policy_context"] = {
                 "schema_version": policy_context.get("schema_version"),

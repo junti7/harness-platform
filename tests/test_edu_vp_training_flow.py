@@ -1180,7 +1180,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertNotIn("missing_rag_integration", issues)
 
-    def test_safety_coach_model_retries_when_selected_rag_is_ignored(self):
+    def test_safety_coach_patches_selected_rag_before_retrying_model(self):
         req = self.mod.EduVpTrainingSafetyCoachRequest(
             case_id=123,
             stage="day0",
@@ -1192,11 +1192,6 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         weak = (
             "attention은 사람이 문장마다 직접 정하지 않습니다. 모델이 입력 문장 안에서 단어 사이 관련도를 계산합니다. "
             "예를 들어 이름과 대명사를 함께 보는 식으로 연결을 잡습니다."
-        )
-        fixed = (
-            "attention은 사람이 문장마다 직접 정하지 않습니다. 모델이 입력 문장 안에서 단어 사이 관련도를 계산합니다. "
-            "관련 자료도 attention 설정을 정답 암기가 아니라 질문 비교 도구로 다룰 때 이해가 오래 남는다는 점을 보여줍니다. "
-            "오늘은 attention을 사람이 넣는 표시가 아니라 모델이 계산하는 연결 강도로 기억하면 됩니다."
         )
         evidence_items = [
             {
@@ -1212,20 +1207,19 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             patch.object(
                 self.mod,
                 "_edu_generate_text",
-                side_effect=[
-                    (weak, {"prompt_token_count": 10, "candidates_token_count": 8}, "model-a"),
-                    (fixed, {"prompt_token_count": 12, "candidates_token_count": 9}, "model-b"),
-                ],
+                return_value=(weak, {"prompt_token_count": 10, "candidates_token_count": 8}, "model-a"),
             ) as mocked_generate,
             patch.object(self.mod, "_edu_log_llm_cost"),
         ):
             answer, model, usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
 
-        self.assertEqual(mocked_generate.call_count, 2)
-        self.assertEqual(model, "model-b")
-        self.assertEqual(answer, fixed)
+        self.assertEqual(mocked_generate.call_count, 1)
+        self.assertEqual(model, "model-a+rag_patch")
+        self.assertIn("관련 자료도", answer)
+        self.assertIn("질문 비교 도구", answer)
         self.assertFalse(fallback_used)
         self.assertTrue(usage["_safety_coach_rag_infused"])
+        self.assertTrue(usage["_safety_coach_rag_patch_applied"])
 
     def test_safety_coach_drops_rag_when_blended_answer_would_truncate(self):
         long_answer = "가" * 2190
@@ -1296,6 +1290,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("명사는", answer)
         self.assertEqual(usage["_safety_coach_evidence_meta"]["skip_reason"], "retrieve_timeout")
         self.assertTrue(usage["_safety_coach_evidence_meta"]["fast_template_no_rag"])
+        self.assertGreaterEqual(usage["_safety_coach_evidence_meta"]["elapsed_ms"], 1)
+        self.assertEqual(usage["_safety_coach_evidence_meta"]["timeout_ms"], 200)
         self.assertFalse(usage["_safety_coach_rag_infused"])
 
     def test_attention_setting_question_does_not_use_author_fast_template(self):
