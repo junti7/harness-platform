@@ -975,12 +975,12 @@ function SafetyOrientationBlock({
               id={`concept-card-${concept.checkId}`}
               className={`rounded-[12px] border bg-card p-3 transition ${
                 routedConceptId === concept.checkId
-                  ? 'border-primary bg-primary/10 shadow-[0_0_0_4px_rgba(37,99,235,0.2)] ring-2 ring-primary'
+                  ? 'border-amber-500 bg-amber-50 shadow-[0_0_0_4px_rgba(245,158,11,0.2)] ring-2 ring-amber-400'
                   : 'border-border'
               }`}
             >
               {routedConceptId === concept.checkId ? (
-                <div className="-mx-1 mb-3 rounded-[10px] border border-primary/30 bg-primary/12 px-3 py-2 text-xs font-semibold leading-relaxed text-primary">
+                <div className="-mx-1 mb-3 rounded-[10px] border border-amber-300 bg-amber-100 px-3 py-2 text-xs font-semibold leading-relaxed text-amber-900 shadow-sm">
                   이 카드에 질문과 가장 가까운 설명이 있어요.
                 </div>
               ) : null}
