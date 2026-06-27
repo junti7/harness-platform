@@ -7514,9 +7514,36 @@ def _edu_vp_store_state(case_id: int, state: dict[str, Any]) -> None:
     )
 
 
+def _edu_vp_migrate_unstarted_day1_motivation(state: dict[str, Any]) -> dict[str, Any]:
+    intake = state.get("intake") or {}
+    day1 = state.get("day1") or {}
+    if not isinstance(intake, dict) or not isinstance(day1, dict):
+        return state
+    progress = _edu_vp_stage_progress(day1)
+    if progress.get("completed") or int(progress.get("pct") or 0) > 0:
+        return state
+    motivation = _edu_vp_curriculum_motivation(
+        str((state.get("customer") or {}).get("segment") or intake.get("segment") or "worker"),
+        intake,
+    )
+    expected_title = {
+        "work": "Day 1 · 업무 메모와 반복 작업을 AI로 정리해보기",
+        "writing": "Day 1 · 짧은 글 초안 만들기",
+        "daily": "Day 1 · 생활 일정과 메모 정리하기",
+        "child_study": "Day 1 · 가정통신문과 학원 일정을 AI로 정리해보기",
+    }.get(motivation, "")
+    current_title = str(day1.get("title") or "")
+    if expected_title and current_title and current_title != expected_title:
+        rebuilt = _edu_vp_build_day1(intake)
+        rebuilt["motivation_migrated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        state["day1"] = rebuilt
+    return state
+
+
 def _edu_vp_refresh_state(state: dict[str, Any]) -> dict[str, Any]:
     state = _edu_vp_normalize_state_keys(state)
     state = _edu_vp_migrate_unconfirmed_day0_safety(state)
+    state = _edu_vp_migrate_unstarted_day1_motivation(state)
     state["day0"] = state.get("day0") or {}
     state["day1"] = state.get("day1") or {}
     state["planned_curriculum_outline"] = _edu_vp_planned_curriculum_outline(state)

@@ -657,6 +657,26 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("업무 메모와 반복 작업", outline[1]["title"])
         self.assertNotIn("가정통신문", outline[1]["title"])
 
+    def test_refresh_migrates_unstarted_legacy_day1_to_motivation(self):
+        state = {
+            "intake": {
+                "preferred_llm": "claude",
+                "segment": "parent",
+                "motivation": "work",
+                "biggest_friction": "업무 답장이 막막함",
+                "learning_goal": "업무와 반복 작업에 AI를 활용하기",
+            },
+            "customer": {"segment": "parent"},
+            "day0": {"title": "Day 0 · AI 안전 이해와 작동 원리 확인"},
+            "day1": {"title": "Day 1 · 가정통신문과 학원 일정을 AI로 정리해보기"},
+        }
+
+        with patch.object(self.mod, "_retrieve_evidence_bundle", return_value={"mode": "fallback", "items": []}):
+            refreshed = self.mod._edu_vp_refresh_state(state)
+
+        self.assertIn("업무 메모와 반복 작업", refreshed["day1"]["title"])
+        self.assertIn("업무 메모와 반복 작업", refreshed["planned_curriculum_outline"][1]["title"])
+
     def test_work_motivation_seeds_dynamic_curriculum_path(self):
         path, _meta = self.mod._edu_vp_build_dynamic_curriculum_path(
             {
