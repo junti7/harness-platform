@@ -244,6 +244,91 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("missing_principle_mechanism", issues)
         self.assertIn("answered_definition_instead_of_principle_question", issues)
 
+    def test_safety_coach_red_team_blocks_repeated_downvoted_answer_pattern(self):
+        rejected = "Transformer는 문장에서 중요한 말을 찾아 서로 연결하는 방법입니다. 책을 읽으며 중요한 단어에 형광펜을 칠하고, 그 단어들끼리 연결해 뜻을 잡는 모습과 비슷합니다."
+
+        issues = self.mod._edu_vp_safety_coach_red_team(
+            question="그런데 AI가 답변을 하는 작업은 왜 엄청난 전기가 든다고 해?",
+            answer=rejected,
+            concept_body="Transformer의 핵심은 attention입니다.",
+            reinforcement_policies=[
+                {
+                    "question": "그런데 AI가 답변을 하는 작업은 왜 엄청난 전기가 든다고 해?",
+                    "rejected_answer": rejected,
+                    "issues": ["answered_definition_instead_of_principle_question"],
+                    "improvement_note": "전기 질문에는 데이터센터, 서버/GPU, 냉각을 먼저 설명한다.",
+                    "similarity": 1.0,
+                }
+            ],
+        )
+
+        self.assertIn("repeated_downvoted_answer_pattern", issues)
+
+    def test_safety_coach_reinforcement_policy_lookup_matches_similar_downvote_review(self):
+        payload = {
+            "question": "그런데 AI가 답변을 하는 작업은 왜 엄청난 전기가 든다고 해?",
+            "answer": "Transformer는 문장에서 중요한 말을 찾아 서로 연결하는 방법입니다.",
+            "answer_version": "2026-06-27-auto-reinforcement-v10",
+            "concept_title": "Transformer",
+            "auto_reinforcement": {
+                "verdict": "needs_improvement",
+                "issues": ["answered_definition_instead_of_principle_question"],
+                "improvement_note": "전기 질문에는 데이터센터, 서버/GPU, 냉각을 먼저 설명한다.",
+                "review_source": "llm",
+            },
+        }
+
+        with patch.object(self.mod, "_edu_execute", return_value=[{"event_payload": payload, "created_at": None}]) as mocked_execute:
+            policies = self.mod._edu_vp_safety_coach_reinforcement_policies(
+                question="AI 답변 작업이 왜 전기를 많이 써?",
+                concept_title="Transformer",
+                answer_version="2026-06-27-auto-reinforcement-v10",
+            )
+
+        self.assertEqual(len(policies), 1)
+        self.assertIn("데이터센터", policies[0]["improvement_note"])
+        self.assertGreaterEqual(policies[0]["similarity"], 0.72)
+        query = mocked_execute.call_args.args[0]
+        self.assertIn("answer_auto_reinforcement_reviewed", query)
+
+    def test_safety_coach_auto_reinforcement_prompt_blocks_bad_repeat_and_switches_model(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=123,
+            stage="day0",
+            concept_id="safety_concept_transformer_attention",
+            concept_title="Transformer",
+            concept_body="Transformer의 핵심은 attention입니다.",
+            question="그런데 AI가 답변을 하는 작업은 왜 엄청난 전기가 든다고 해?",
+            answer_version="2026-06-27-auto-reinforcement-v10",
+        )
+        bad = "Transformer는 문장에서 중요한 말을 찾아 서로 연결하는 방법입니다. 책을 읽으며 중요한 단어에 형광펜을 칠하고, 그 단어들끼리 연결해 뜻을 잡는 모습과 비슷합니다."
+        good = "AI 답변에 전기가 많이 든다고 하는 이유는 데이터센터의 서버가 답을 만들기 위해 많은 계산을 하기 때문입니다. 특히 GPU 같은 칩이 단어 후보를 계속 비교하고, 뜨거워진 장비를 식히는 냉각에도 전기가 들어갑니다. 휴대폰만 쓰는 것처럼 보여도 뒤에서는 큰 컴퓨터실이 같이 움직인다고 보면 됩니다."
+        policies = [
+            {
+                "question": req.question,
+                "rejected_answer": bad,
+                "issues": ["answered_definition_instead_of_principle_question"],
+                "improvement_note": "전기 질문에는 데이터센터, 서버/GPU, 냉각을 먼저 설명한다.",
+                "similarity": 1.0,
+            }
+        ]
+
+        with (
+            patch.object(self.mod, "_edu_vp_safety_coach_reinforcement_policies", return_value=policies),
+            patch.object(self.mod, "_edu_safety_coach_model_ladder", return_value=["model-a", "model-b"]),
+            patch.object(self.mod, "_edu_generate_text", side_effect=[(bad, {"prompt_token_count": 10, "candidates_token_count": 8}, "model-a"), (good, {"prompt_token_count": 11, "candidates_token_count": 9}, "model-b")]) as mocked_generate,
+            patch.object(self.mod, "_edu_log_llm_cost"),
+        ):
+            answer, model, usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
+
+        prompt = mocked_generate.call_args_list[0].args[0]
+        self.assertIn("[자동강화 규칙]", prompt)
+        self.assertIn("전기 질문에는 데이터센터", prompt)
+        self.assertEqual(model, "model-b")
+        self.assertIn("데이터센터", answer)
+        self.assertFalse(fallback_used)
+        self.assertEqual(usage["_safety_coach_reinforcement_policies"], policies)
+
     def test_safety_coach_switches_model_when_energy_question_gets_generic_definition(self):
         req = self.mod.EduVpTrainingSafetyCoachRequest(
             case_id=123,
@@ -537,11 +622,31 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertFalse(cached["fallback_used"])
         self.assertTrue(cached["evidence_used"])
         self.assertEqual(cached["evidence_meta"], {"selected_count": 1})
-        query, params = mocked_execute.call_args.args[:2]
+        query, params = mocked_execute.call_args_list[0].args[:2]
         self.assertIn("safety_question_answered", query)
         self.assertEqual(params[0], 123)
         self.assertEqual(params[1], "safety_concept_ai_llm_words")
         self.assertEqual(params[3], "2026-06-27-rag-query-v6")
+
+    def test_safety_coach_cached_answer_does_not_reuse_downvoted_answer(self):
+        payload = {
+            "answer": "Transformer는 문장에서 중요한 말을 찾아 서로 연결하는 방법입니다.",
+            "model": "fallback",
+            "fallback_used": True,
+        }
+
+        with (
+            patch.object(self.mod, "_edu_execute", return_value=[{"event_payload": payload}]),
+            patch.object(self.mod, "_edu_vp_safety_coach_answer_downvoted", return_value=True),
+        ):
+            cached = self.mod._edu_vp_cached_safety_coach_answer(
+                case_id=123,
+                concept_id="safety_concept_transformer_attention",
+                normalized_question="그런데 ai가 답변을 하는 작업은 왜 엄청난 전기가 든다고 해?",
+                answer_version="2026-06-27-auto-reinforcement-v10",
+            )
+
+        self.assertIsNone(cached)
 
     def test_safety_coach_recent_cache_reuses_similar_answer_within_week(self):
         payload = {
@@ -566,7 +671,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(cached["answer"], payload["answer"])
         self.assertEqual(cached["reuse_scope"], "recent_similar")
         self.assertGreaterEqual(cached["similarity"], 0.82)
-        query, params = mocked_execute.call_args.args[:2]
+        query, params = mocked_execute.call_args_list[0].args[:2]
         self.assertIn("created_at >= NOW()", query)
         self.assertEqual(params[0], "7")
 

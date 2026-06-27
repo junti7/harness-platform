@@ -8768,7 +8768,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-principle-general-v9"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-auto-reinforcement-v10"
 _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
 _EDU_VP_SAFETY_COACH_EXECUTOR = ThreadPoolExecutor(
     max_workers=int(os.getenv("EDU_SAFETY_COACH_MAX_WORKERS") or "4"),
@@ -8924,7 +8924,155 @@ def _edu_vp_safety_question_similarity(a: str, b: str) -> float:
     same_action = any(marker in na and marker in nb for marker in action_markers)
     if same_concept and same_action:
         score = max(score, 0.86)
+    if _edu_vp_question_asks_ai_energy_use(na) and _edu_vp_question_asks_ai_energy_use(nb):
+        score = max(score, 0.9)
+    if _edu_vp_question_asks_direct_principle(na) and _edu_vp_question_asks_direct_principle(nb):
+        score = max(score, 0.78)
     return score
+
+
+def _edu_vp_safety_answer_similarity(a: str, b: str) -> float:
+    na = _edu_vp_normalize_safety_question(a)
+    nb = _edu_vp_normalize_safety_question(b)
+    if not na or not nb:
+        return 0.0
+    if na == nb:
+        return 1.0
+    terms_a = set(_edu_vp_safety_coach_keywords(na, max_terms=32))
+    terms_b = set(_edu_vp_safety_coach_keywords(nb, max_terms=32))
+    if not terms_a or not terms_b:
+        return 0.0
+    overlap = len(terms_a & terms_b)
+    containment = overlap / max(1, min(len(terms_a), len(terms_b)))
+    jaccard = overlap / max(1, len(terms_a | terms_b))
+    return max(jaccard, containment * 0.9)
+
+
+def _edu_vp_safety_coach_answer_downvoted(*, answer: str, answer_version: str) -> bool:
+    answer_text = str(answer or "").strip()
+    if len(answer_text) < 2:
+        return False
+    try:
+        rows = _edu_execute(
+            """
+            SELECT TRUE AS downvoted
+            FROM edu_vp_training_event_log
+            WHERE event_type = 'safety_coach_feedback'
+              AND event_name = 'answer_feedback_recorded'
+              AND event_payload->>'rating' = 'down'
+              AND event_payload->>'answer_version' = %s
+              AND event_payload->>'answer' = %s
+              AND created_at >= NOW() - INTERVAL '180 days'
+            LIMIT 1
+            """,
+            (answer_version[:80], answer_text[:2600]),
+            fetch=True,
+        )
+        return any(bool(row.get("downvoted")) for row in rows or [] if isinstance(row, dict))
+    except Exception as exc:  # noqa: BLE001
+        _edu_runtime_event(
+            "vp_training_safety_coach_downvote_lookup_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+        )
+        return False
+
+
+def _edu_vp_safety_coach_reinforcement_policies(
+    *,
+    question: str,
+    concept_title: str = "",
+    answer_version: str = "",
+    limit: int = 3,
+    max_age_days: int = 90,
+    threshold: float = 0.72,
+) -> list[dict[str, Any]]:
+    normalized_question = _edu_vp_normalize_safety_question(question)
+    if len(normalized_question) < 2 or not _edu_vp_safety_cache_allowed(question):
+        return []
+    try:
+        rows = _edu_execute(
+            """
+            SELECT event_payload, created_at
+            FROM edu_vp_training_event_log
+            WHERE event_type = 'safety_coach_feedback'
+              AND event_name = 'answer_auto_reinforcement_reviewed'
+              AND event_payload->'auto_reinforcement'->>'verdict' = 'needs_improvement'
+              AND created_at >= NOW() - (%s || ' days')::INTERVAL
+            ORDER BY created_at DESC
+            LIMIT 160
+            """,
+            (str(max(1, min(max_age_days, 365))),),
+            fetch=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _edu_runtime_event(
+            "vp_training_safety_coach_reinforcement_lookup_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+        )
+        return []
+    candidates: list[dict[str, Any]] = []
+    for row in rows or []:
+        payload = row.get("event_payload") or {}
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                continue
+        if not isinstance(payload, dict):
+            continue
+        prior_question = str(payload.get("question") or "").strip()
+        if not prior_question or not _edu_vp_safety_cache_allowed(prior_question):
+            continue
+        review = payload.get("auto_reinforcement")
+        if not isinstance(review, dict) or str(review.get("verdict") or "") != "needs_improvement":
+            continue
+        if answer_version and str(payload.get("answer_version") or "") not in {"", answer_version}:
+            # Old-version feedback still matters when highly similar, but keep exact-version rules ahead.
+            version_penalty = 0.04
+        else:
+            version_penalty = 0.0
+        score = _edu_vp_safety_question_similarity(normalized_question, prior_question)
+        if concept_title and str(payload.get("concept_title") or "").strip():
+            concept_score = _edu_vp_safety_question_similarity(concept_title, str(payload.get("concept_title") or ""))
+            score = max(score, min(0.96, (score * 0.82) + (concept_score * 0.18)))
+        score = max(0.0, score - version_penalty)
+        if score < threshold:
+            continue
+        issues = review.get("issues")
+        if not isinstance(issues, list):
+            issues = []
+        candidates.append(
+            {
+                "question": prior_question[:500],
+                "rejected_answer": str(payload.get("answer") or "").strip()[:900],
+                "issues": [str(item).strip()[:80] for item in issues if str(item).strip()][:6],
+                "improvement_note": str(review.get("improvement_note") or "").strip()[:500],
+                "similarity": round(score, 4),
+                "review_source": str(review.get("review_source") or ""),
+                "model": str(review.get("model") or ""),
+                "created_at": row.get("created_at").isoformat() if hasattr(row.get("created_at"), "isoformat") else str(row.get("created_at") or ""),
+            }
+        )
+    candidates.sort(key=lambda item: float(item.get("similarity") or 0), reverse=True)
+    return candidates[: max(1, min(limit, 5))]
+
+
+def _edu_vp_safety_coach_reinforcement_prompt(policies: list[dict[str, Any]]) -> str:
+    if not policies:
+        return "(없음)"
+    lines: list[str] = []
+    for idx, policy in enumerate(policies[:5], start=1):
+        issues = ", ".join(policy.get("issues") or []) or "unspecified"
+        note = str(policy.get("improvement_note") or "").strip() or "같은 질문에는 먼저 질문에 직접 답하고, 이전 답변을 반복하지 않는다."
+        rejected = re.sub(r"\s+", " ", str(policy.get("rejected_answer") or "").strip())[:260]
+        prior_question = re.sub(r"\s+", " ", str(policy.get("question") or "").strip())[:180]
+        lines.append(
+            f"{idx}. 유사도 {policy.get('similarity')}: 이전 질문 '{prior_question}'에서 싫어요를 받았다. "
+            f"문제: {issues}. 향후 규칙: {note} 이전 답변 반복 금지: {rejected}"
+        )
+    return "\n".join(lines)
 
 
 def _edu_vp_safety_keyword_stem(token: str) -> str:
@@ -9041,6 +9189,8 @@ def _edu_vp_cached_safety_coach_answer(
     answer = str(payload.get("answer") or "").strip()
     if not answer:
         return None
+    if _edu_vp_safety_coach_answer_downvoted(answer=answer, answer_version=answer_version):
+        return None
     return {
         "answer": answer,
         "model": str(payload.get("model") or ""),
@@ -9103,6 +9253,8 @@ def _edu_vp_recent_safety_coach_answer(
         return None
     answer = str(best_payload.get("answer") or "").strip()
     if not answer:
+        return None
+    if _edu_vp_safety_coach_answer_downvoted(answer=answer, answer_version=answer_version):
         return None
     return {
         "answer": answer,
@@ -9315,6 +9467,7 @@ def _edu_vp_safety_coach_red_team(
     answer: str,
     concept_body: str,
     evidence_items: list[dict[str, Any]] | None = None,
+    reinforcement_policies: list[dict[str, Any]] | None = None,
 ) -> list[str]:
     issues: list[str] = []
     answer_text = answer.strip()
@@ -9334,6 +9487,13 @@ def _edu_vp_safety_coach_red_team(
     mentions_evidence = any(term in answer_text for term in ("관련 자료", "내부 자료", "자료에서는", "출처", "보고서"))
     if mentions_evidence and not evidence_items:
         issues.append("unsupported_evidence_reference")
+    for policy in (reinforcement_policies or [])[:5]:
+        rejected_answer = str(policy.get("rejected_answer") or "").strip()
+        if len(rejected_answer) < 12:
+            continue
+        if _edu_vp_safety_answer_similarity(answer_text, rejected_answer) >= 0.72:
+            issues.append("repeated_downvoted_answer_pattern")
+            break
     if evidence_items:
         allowed_sources = [str(item.get("source") or "") for item in evidence_items if str(item.get("source") or "").strip()]
         if mentions_evidence and allowed_sources and not any(source[:20] in answer_text for source in allowed_sources if len(source) >= 4):
@@ -9579,7 +9739,13 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
     question = _edu_neutralize(req.question, cap=700)
     concept_title = _edu_neutralize(req.concept_title, cap=160)
     concept_body = _edu_neutralize(req.concept_body, cap=1400)
-    fast_answer = _edu_vp_safety_coach_fast_answer(concept_title, question)
+    answer_version = _edu_vp_safety_coach_answer_version(req.answer_version)
+    reinforcement_policies = _edu_vp_safety_coach_reinforcement_policies(
+        question=question,
+        concept_title=concept_title,
+        answer_version=answer_version,
+    )
+    fast_answer = None if reinforcement_policies else _edu_vp_safety_coach_fast_answer(concept_title, question)
     if fast_answer:
         usage: dict[str, int] = {
             "_safety_coach_evidence_meta": {
@@ -9590,6 +9756,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                 "skip_reason": "fast_template",
             },
             "_safety_coach_red_team_issues": [],
+            "_safety_coach_reinforcement_policies": [],
         }
         return fast_answer[:2200], "fast-template", usage, False
     evidence_query = f"{question} {concept_title}"
@@ -9600,6 +9767,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         limit=1,
     )
     evidence_block = evidence_text or "(질문과 딱 맞는 내부 자료가 없으므로 자료를 언급하지 말 것)"
+    reinforcement_block = _edu_vp_safety_coach_reinforcement_prompt(reinforcement_policies)
     base_prompt = (
         "너는 Harness VP 훈련의 AI 안전 오리엔테이션 코치다.\n"
         "사용자는 AI/LLM 왕초보다. 초등학교 1학년도 이해할 만큼 쉬운 한국어로 답하라.\n"
@@ -9624,6 +9792,9 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         "- 다만 사용자가 AI 대화에서 위로를 느낄 수 있다는 사실은 부정하지 않는다.\n"
         "- 자해, 건강, 법률, 돈, 아이 안전 등 고위험 신호가 있으면 AI 답변 대신 실제 사람/전문가/긴급 도움을 연결하라고 말한다.\n"
         "- 모르면 모른다고 말하고, 실습 전 확인해야 할 기준을 제시한다.\n\n"
+        "[자동강화 규칙]\n"
+        f"{reinforcement_block}\n\n"
+        "자동강화 규칙이 있으면 반드시 반영한다. 이전에 싫어요를 받은 답변과 같은 구조나 같은 핵심 설명을 반복하면 실패다.\n\n"
         f"[현재 단락 제목]\n{concept_title}\n\n"
         f"[현재 단락 설명]\n{concept_body}\n\n"
         f"[관련 내부 자료]\n{evidence_block}\n\n"
@@ -9658,6 +9829,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                 if isinstance(usage, dict):
                     usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
                     usage["_safety_coach_red_team_issues"] = red_team_issues  # type: ignore[index]
+                    usage["_safety_coach_reinforcement_policies"] = reinforcement_policies  # type: ignore[index]
                 return answer[:2200], used_model, usage, True
             call_timeout = _edu_vp_safety_coach_model_timeout(model_name, remaining - 0.5)
             try:
@@ -9701,12 +9873,14 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                 answer=answer,
                 concept_body=concept_body,
                 evidence_items=evidence_items,
+                reinforcement_policies=reinforcement_policies,
             )
             model_issues = red_team_issues
             if not red_team_issues:
                 if isinstance(usage, dict):
                     usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
                     usage["_safety_coach_red_team_issues"] = []  # type: ignore[index]
+                    usage["_safety_coach_reinforcement_policies"] = reinforcement_policies  # type: ignore[index]
                 _edu_log_llm_cost(usage, used_model)
                 return answer[:2200], used_model, usage, False
             _edu_runtime_event(
@@ -9723,6 +9897,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         if isinstance(usage, dict):
             usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
             usage["_safety_coach_red_team_issues"] = red_team_issues  # type: ignore[index]
+            usage["_safety_coach_reinforcement_policies"] = reinforcement_policies  # type: ignore[index]
         return answer[:2200], used_model, usage, quality_fallback_used
     except Exception as exc:  # noqa: BLE001
         _edu_runtime_event(
@@ -12527,6 +12702,7 @@ def edu_vp_training_safety_coach(
     answer, model_name, usage, fallback_used = _edu_vp_generate_safety_coach_answer(req)
     evidence_meta = usage.get("_safety_coach_evidence_meta") if isinstance(usage, dict) else None
     red_team_issues = usage.get("_safety_coach_red_team_issues") if isinstance(usage, dict) else None
+    reinforcement_policies = usage.get("_safety_coach_reinforcement_policies") if isinstance(usage, dict) else None
     evidence_used = bool(isinstance(evidence_meta, dict) and int(evidence_meta.get("selected_count") or 0) > 0)
     log_payload = {
         "stage": stage,
@@ -12544,6 +12720,7 @@ def edu_vp_training_safety_coach(
         "evidence_meta": evidence_meta if isinstance(evidence_meta, dict) else {},
         "evidence_used": evidence_used,
         "red_team_issues": red_team_issues if isinstance(red_team_issues, list) else [],
+        "auto_reinforcement_applied": reinforcement_policies if isinstance(reinforcement_policies, list) else [],
     }
     _edu_vp_append_event(
         case_id=case_id,

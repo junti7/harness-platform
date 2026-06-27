@@ -310,7 +310,31 @@ Codex CLI 사용 시 사용자가 별도 해제하기 전까지 **caveman full**
 - LLM 품질 실패나 timeout 뒤 fallback으로 내려가도 같은 원리 정책을 지킨다. 단락 제목이 `Transformer`여도 원리 질문이면 Transformer 정의로 답하지 않는다.
 - `왜/어떻게/원리/이유/작동/계산` + AI/LLM/답변/문장/attention/Transformer/틀림/환각/확인 등 주제면 일반 원리 질문으로 본다.
 - 일반 원리 질문에 단락 정의만 답하면 red-team이 `missing_principle_mechanism` 또는 `answered_definition_instead_of_principle_question`으로 차단한다.
-- answer version `2026-06-27-principle-general-v9`부터 기존 cached bad answer를 재사용하지 않는다.
+- answer version `2026-06-27-auto-reinforcement-v10`부터 기존 cached bad answer를 재사용하지 않는다.
+
+### 11. Downvote Auto-Reinforcement Loop
+
+문제:
+
+- 기존 `싫어요 → 자동강화 분석 예약됨`은 리뷰 이벤트를 저장했지만, 다음 답변 생성에 직접 주입되지 않았다.
+- 같은 나쁜 답변이 cache/recent reuse로 다시 나갈 수 있었다.
+
+현재 정책:
+
+- downvote 즉시 `answer_feedback_recorded`를 저장한다.
+- 백그라운드 리뷰가 `needs_improvement`이면 `answer_auto_reinforcement_reviewed`에 `issues`, `improvement_note`, `rejected_answer`를 남긴다.
+- 다음 안전 코치 답변 생성 시 유사 질문의 `needs_improvement` 리뷰를 최근 90일 범위에서 검색한다.
+- 유사도 기준을 넘은 정책은 `[자동강화 규칙]` prompt block으로 주입된다.
+- 자동강화 규칙이 있으면 fast-template을 우회해 LLM이 개선 규칙을 반영하게 한다.
+- red-team은 이전 downvote 답변과 유사한 새 답변을 `repeated_downvoted_answer_pattern`으로 차단한다.
+- cache/recent reuse는 같은 version에서 downvote된 답변을 재사용하지 않는다.
+
+시뮬레이션 결과:
+
+- 가정: `"그런데 AI가 답변을 하는 작업은 왜 엄청난 전기가 든다고 해?"`에 대해 Transformer 정의 답변이 downvote되고 `needs_improvement`로 리뷰됨.
+- 다음 동일/유사 질문에서 policy count `1`, prompt auto-reinforcement block `True`, improvement note injection `True`.
+- 첫 모델이 같은 Transformer 정의 답변을 반복하면 red-team issues: `repeated_downvoted_answer_pattern`, `missing_energy_use_mechanism`, `missing_principle_mechanism`, `answered_definition_instead_of_principle_question`.
+- 두 번째 모델 답변이 채택되고, 최종 답변은 데이터센터/서버/GPU/냉각 설명을 포함한다.
 
 핵심 파일:
 
