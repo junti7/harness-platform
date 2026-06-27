@@ -31,9 +31,9 @@ class EduCoachSimulationRegressionGuardTests(unittest.TestCase):
             if candidate_source == "adversarial-current-fallback":
                 return {"record_count": 378, "verdict_counts": {"clear": 378}, "channel_counts": {}}
             return {
-                "record_count": 30264,
-                "verdict_counts": {"clear": 30264},
-                "channel_counts": {"YouTube": 1649},
+                "record_count": 49453,
+                "verdict_counts": {"clear": 49453},
+                "channel_counts": {"YouTube": 1963},
             }
 
         with (
@@ -53,8 +53,8 @@ class EduCoachSimulationRegressionGuardTests(unittest.TestCase):
             if candidate_source == "adversarial-current-fallback":
                 return {"record_count": 378, "verdict_counts": {"clear": 377, "needs_work": 1}, "channel_counts": {}}
             return {
-                "record_count": 30263,
-                "verdict_counts": {"clear": 30262, "needs_work": 1},
+                "record_count": 49452,
+                "verdict_counts": {"clear": 49451, "needs_work": 1},
                 "channel_counts": {"YouTube": 100},
             }
 
@@ -70,24 +70,24 @@ class EduCoachSimulationRegressionGuardTests(unittest.TestCase):
         self.assertFalse(summary["ok"])
         self.assertIn("adversarial_needs_work=1", summary["failures"])
         self.assertIn("corpus_needs_work=1", summary["failures"])
-        self.assertIn("corpus_records=30263<min=30264", summary["failures"])
-        self.assertIn("youtube_records=100<min=1649", summary["failures"])
+        self.assertIn("corpus_records=49452<min=49453", summary["failures"])
+        self.assertIn("youtube_records=100<min=1963", summary["failures"])
 
     def test_fails_when_fresh_corpus_exceeds_committed_config(self):
         def fake_run_simulation(*, candidate_source, report_dir):
             if candidate_source == "adversarial-current-fallback":
                 return {"record_count": 378, "verdict_counts": {"clear": 378}, "channel_counts": {}}
             return {
-                "record_count": 30264,
-                "verdict_counts": {"clear": 30264},
-                "channel_counts": {"YouTube": 1649},
+                "record_count": 49453,
+                "verdict_counts": {"clear": 49453},
+                "channel_counts": {"YouTube": 1963},
             }
 
         freshness = {
             "ok": False,
-            "failures": ["fresh_youtube=1700>committed_youtube=1649"],
-            "committed_youtube": 1649,
-            "fresh_youtube": 1700,
+            "failures": ["fresh_youtube=1964>committed_youtube=1963"],
+            "committed_youtube": 1963,
+            "fresh_youtube": 1964,
         }
         with (
             patch.object(self.guard, "run_simulation", side_effect=fake_run_simulation),
@@ -99,16 +99,16 @@ class EduCoachSimulationRegressionGuardTests(unittest.TestCase):
             summary = self.guard.check_regression()
 
         self.assertFalse(summary["ok"])
-        self.assertIn("freshness:fresh_youtube=1700>committed_youtube=1649", summary["failures"])
+        self.assertIn("freshness:fresh_youtube=1964>committed_youtube=1963", summary["failures"])
 
     def test_fails_when_latency_guard_fails(self):
         def fake_run_simulation(*, candidate_source, report_dir):
             if candidate_source == "adversarial-current-fallback":
                 return {"record_count": 378, "verdict_counts": {"clear": 378}, "channel_counts": {}}
             return {
-                "record_count": 30264,
-                "verdict_counts": {"clear": 30264},
-                "channel_counts": {"YouTube": 1649},
+                "record_count": 49453,
+                "verdict_counts": {"clear": 49453},
+                "channel_counts": {"YouTube": 1963},
             }
 
         latency = {
@@ -133,9 +133,9 @@ class EduCoachSimulationRegressionGuardTests(unittest.TestCase):
             if candidate_source == "adversarial-current-fallback":
                 return {"record_count": 378, "verdict_counts": {"clear": 378}, "channel_counts": {}}
             return {
-                "record_count": 30264,
-                "verdict_counts": {"clear": 30264},
-                "channel_counts": {"YouTube": 1649},
+                "record_count": 49453,
+                "verdict_counts": {"clear": 49453},
+                "channel_counts": {"YouTube": 1963},
             }
 
         structured_packet = {
@@ -160,9 +160,9 @@ class EduCoachSimulationRegressionGuardTests(unittest.TestCase):
             if candidate_source == "adversarial-current-fallback":
                 return {"record_count": 378, "verdict_counts": {"clear": 378}, "channel_counts": {}}
             return {
-                "record_count": 30264,
-                "verdict_counts": {"clear": 30264},
-                "channel_counts": {"YouTube": 1649},
+                "record_count": 49453,
+                "verdict_counts": {"clear": 49453},
+                "channel_counts": {"YouTube": 1963},
             }
 
         auto_reinforcement = {

@@ -291,6 +291,13 @@ def _candidate_question(text: str) -> str:
     text = _clean(text)
     if not text:
         return ""
+    direct_questions = [
+        match.strip(" '\"“”‘’[]()")
+        for match in re.findall(r"[^.!?。！？]{6,180}[?？]+", text)
+        if match.strip()
+    ]
+    if direct_questions:
+        return direct_questions[-1][:260].strip()
     question_marks = re.split(r"(?<=[?？])\s+", text)
     for part in question_marks:
         if "?" in part or "？" in part:
