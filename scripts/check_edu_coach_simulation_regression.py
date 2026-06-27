@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from edu_coach_corpus_scenario_generator import OUTPUT_CONFIG, collect_corpus_scenarios
 from edu_coach_simulation_runner import run_simulation
 
 
@@ -28,11 +29,45 @@ def _channel_count(summary: dict[str, Any], channel: str) -> int:
     return int(channel_counts.get(channel) or 0)
 
 
+def _family_count(payload: dict[str, Any], family: str) -> int:
+    family_counts = payload.get("source_family_counts")
+    if not isinstance(family_counts, dict):
+        return 0
+    return int(family_counts.get(family) or 0)
+
+
+def check_freshness(*, config_path: Path = OUTPUT_CONFIG) -> dict[str, Any]:
+    committed = json.loads(config_path.read_text(encoding="utf-8"))
+    fresh = collect_corpus_scenarios(max_cases=0)
+    committed_cases = int(committed.get("case_count") or 0)
+    fresh_cases = int(fresh.get("case_count") or 0)
+    committed_youtube = _family_count(committed, "youtube")
+    fresh_youtube = _family_count(fresh, "youtube")
+    failures: list[str] = []
+    if str(committed.get("selection_mode") or "") != "max_quality_corpus_no_family_quota":
+        failures.append(f"selection_mode={committed.get('selection_mode')}")
+    if int(committed.get("synthetic_used_count") or 0) != 0:
+        failures.append(f"synthetic_used_count={committed.get('synthetic_used_count')}")
+    if fresh_cases > committed_cases:
+        failures.append(f"fresh_cases={fresh_cases}>committed_cases={committed_cases}")
+    if fresh_youtube > committed_youtube:
+        failures.append(f"fresh_youtube={fresh_youtube}>committed_youtube={committed_youtube}")
+    return {
+        "ok": not failures,
+        "failures": failures,
+        "committed_cases": committed_cases,
+        "fresh_cases": fresh_cases,
+        "committed_youtube": committed_youtube,
+        "fresh_youtube": fresh_youtube,
+    }
+
+
 def check_regression(
     *,
     min_corpus_records: int = DEFAULT_MIN_CORPUS_RECORDS,
     min_youtube_records: int = DEFAULT_MIN_YOUTUBE_RECORDS,
     report_dir: Path | None = None,
+    freshness: bool = True,
 ) -> dict[str, Any]:
     if report_dir is None:
         temp_context = tempfile.TemporaryDirectory(prefix="edu_coach_regression_")
@@ -62,10 +97,13 @@ def check_regression(
         failures.append(f"corpus_records={corpus_records}<min={min_corpus_records}")
     if youtube_records < min_youtube_records:
         failures.append(f"youtube_records={youtube_records}<min={min_youtube_records}")
+    freshness_summary = check_freshness() if freshness else {"ok": True, "failures": [], "skipped": True}
+    failures.extend(f"freshness:{failure}" for failure in freshness_summary.get("failures", []))
 
     return {
         "ok": not failures,
         "failures": failures,
+        "freshness": freshness_summary,
         "adversarial": {
             "record_count": int(adversarial.get("record_count") or 0),
             "verdict_counts": adversarial.get("verdict_counts") or {},
@@ -85,11 +123,13 @@ def main() -> int:
     parser.add_argument("--min-corpus-records", type=int, default=DEFAULT_MIN_CORPUS_RECORDS)
     parser.add_argument("--min-youtube-records", type=int, default=DEFAULT_MIN_YOUTUBE_RECORDS)
     parser.add_argument("--report-dir", type=Path, default=None, help="optional report directory; default uses a temp dir")
+    parser.add_argument("--skip-freshness", action="store_true", help="skip fresh corpus collection vs committed config check")
     args = parser.parse_args()
     summary = check_regression(
         min_corpus_records=max(1, args.min_corpus_records),
         min_youtube_records=max(1, args.min_youtube_records),
         report_dir=args.report_dir,
+        freshness=not bool(args.skip_freshness),
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
     return 0 if summary["ok"] else 1
