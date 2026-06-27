@@ -52,6 +52,26 @@ def fetch(sym: str) -> list[dict]:
     return sorted(d.get("bars") or [], key=lambda b: b.get("t", ""))
 
 
+_SYM_CACHE: dict = {}
+
+
+def fetch_cached(sym: str) -> list[dict]:
+    if sym not in _SYM_CACHE:
+        _SYM_CACHE[sym] = fetch(sym)
+    return _SYM_CACHE[sym]
+
+
+# #1 분산: 무상관/역상관 sleeve + AI-SW 레이어. 측정상관(vs SMH): TLT +0.04, UUP -0.23, GLD +0.18,
+# DBC +0.16 / AI-SW(PLTR·SNOW·CRWD·DDOG) ~0.42-0.48. 각자 별도 상관그룹으로 독립 취급.
+DIVERSIFIERS = ["TLT", "GLD", "DBC", "UUP"]
+AISW = ["PLTR", "SNOW", "CRWD", "DDOG"]
+CORR_GROUP_DIV = {**CORR_GROUP,
+                  "PLTR": "AISW", "SNOW": "AISW", "CRWD": "AISW", "DDOG": "AISW",
+                  "TLT": "BOND", "GLD": "GOLD", "DBC": "COMMOD", "UUP": "USD",
+                  # 측정상관 반영 재보정: ROBO/QQQ 는 SEMI(0.78/0.91)
+                  "ROBO": "SEMI", "QQQ": "SEMI", "BOTZ": "ROBOT"}
+
+
 def atr(bars, i, period=ATR_PERIOD):
     if i < period:
         return 0.0
@@ -248,14 +268,17 @@ def summarize(corrected, trades, curve):
     }
 
 
-def run_ls(pyramid: bool = False, allow_short: bool = True, label: str = "") -> dict:
-    """롱+숏(+선택 피라미딩) 1N 사이징 백테스트. #2 검증용.
+def run_ls(pyramid: bool = False, allow_short: bool = True, label: str = "",
+           universe: list | None = None, corr_group: dict | None = None) -> dict:
+    """롱+숏(+선택 피라미딩) 1N 사이징 백테스트. #2/#1 검증용.
 
     회계: equity = cash_base(실현) + Σ미실현. 진입 시 cash 불변(미실현으로 추적), 청산 시 실현 반영.
     gross 노출 ≤ equity(무레버리지). 피라미딩: ½N 유리 이동마다 유닛 추가(최대 4), stop 상향.
+    universe/corr_group 미지정 시 기본 AI-8. #1 분산 검증 시 무상관 sleeve·AI-SW 포함 유니버스 전달.
     """
-    data = _BAR_CACHE or {s: fetch(s) for s in UNIVERSE}
-    _BAR_CACHE.update(data)
+    uni = universe or UNIVERSE
+    cg = corr_group if corr_group is not None else CORR_GROUP
+    data = {s: fetch_cached(s) for s in uni}
     idx = {s: {b["t"][:10]: k for k, b in enumerate(bars)} for s, bars in data.items()}
     all_dates = sorted({b["t"][:10] for bars in data.values() for b in bars})
     MAX_UNITS = 4
@@ -287,8 +310,8 @@ def run_ls(pyramid: bool = False, allow_short: bool = True, label: str = "") -> 
         for eq in EQUIVALENT_SETS:
             if sym in eq and (held & (eq - {sym})):
                 return True
-        grp = CORR_GROUP.get(sym)
-        if grp and sum(1 for h in held if CORR_GROUP.get(h) == grp) >= MAX_CORR_UNITS:
+        grp = cg.get(sym)
+        if grp and sum(1 for h in held if cg.get(h) == grp) >= MAX_CORR_UNITS:
             return True
         return False
 
@@ -339,7 +362,7 @@ def run_ls(pyramid: bool = False, allow_short: bool = True, label: str = "") -> 
 
         # 2) 신규 진입
         equity = cashb[0] + unreal()
-        for sym in UNIVERSE:
+        for sym in uni:
             if sym in pos or date not in idx[sym] or len(pos) >= MAX_POSITIONS:
                 continue
             i = idx[sym][date]
@@ -416,10 +439,14 @@ def main():
     rows = [
         run_backtest(corrected=True, size_div=2.0, label="수정 2N(진짜1%)"),
         run_backtest(corrected=True, size_div=1.0, label="수정 1N(클래식2%)"),
-        run_ls(allow_short=False, pyramid=False, label="롱전용 1N(재확인)"),
-        run_ls(allow_short=True, pyramid=False, label="롱+숏 1N"),
-        run_ls(allow_short=True, pyramid=True, label="롱+숏+피라미딩 1N"),
-        run_ls(allow_short=False, pyramid=True, label="롱전용+피라미딩 1N"),
+        run_ls(allow_short=False, pyramid=True, label="①AI8+피라미딩(베이스)"),
+        run_ls(allow_short=False, pyramid=True, label="②+무상관sleeve",
+               universe=UNIVERSE + DIVERSIFIERS, corr_group=CORR_GROUP_DIV),
+        run_ls(allow_short=False, pyramid=True, label="③+AISW+sleeve",
+               universe=UNIVERSE + ["SNOW", "CRWD", "DDOG"] + DIVERSIFIERS,
+               corr_group=CORR_GROUP_DIV),
+        run_ls(allow_short=False, pyramid=True, label="④sleeve만(AI없이)",
+               universe=DIVERSIFIERS + ["SPY"], corr_group=CORR_GROUP_DIV),
     ]
     bh = buy_hold("SMH")
     bhq = buy_hold("QQQ")
