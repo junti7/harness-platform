@@ -83,10 +83,13 @@ EQUIVALENT_ETF_SETS = [frozenset({"SMH", "SOXX"}), frozenset({"BOTZ", "ROBO"})]
 # 측정상관 기준 재보정(2026-06-27): ROBO(0.78)·BOTZ(0.78)·QQQ(0.91)는 반도체와 사실상 한 몸 →
 # SEMI 그룹으로 통합(기존 ROBOT/별도 분리가 한도를 새게 했던 leak 차단). 무상관 sleeve는 각자 독립 그룹.
 CORR_GROUP = {
+    # SEMI = AI 하드웨어 복합체(반도체·파운드리·메모리·패키징·포토닉스 — 측정상관 0.7~0.9)
     "SMH": "SEMI", "SOXX": "SEMI", "NVDA": "SEMI", "TSM": "SEMI", "MU": "SEMI",
     "AVGO": "SEMI", "ASX": "SEMI", "QQQ": "SEMI", "ROBO": "SEMI", "BOTZ": "SEMI",
+    "COHR": "SEMI",
     "SYM": "ROBOT",
     "TSLA": "AUTO",
+    "GOOG": "AIPLATFORM", "META": "AIPLATFORM",   # AI 플랫폼(측정상관 ~0.48)
     "PLTR": "AISW", "SNOW": "AISW", "CRWD": "AISW", "DDOG": "AISW",
     "VRT": "POWER", "CEG": "POWER", "VST": "POWER", "GEV": "POWER", "PWR": "POWER",
     # 무상관/역상관 분산 sleeve — 각자 독립 그룹(상호·반도체와 무상관)
