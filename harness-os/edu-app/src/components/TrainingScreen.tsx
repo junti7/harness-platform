@@ -47,7 +47,7 @@ export type TrainingScreenProps = {
 
 const STAGE_ORDER: StageKey[] = ['day0', 'day1']
 const STAGE_LABEL: Record<StageKey, string> = { day0: 'Day 0', day1: 'Day 1' }
-const SAFETY_COACH_ANSWER_VERSION = '2026-06-27-rag-quality-v5'
+const SAFETY_COACH_ANSWER_VERSION = '2026-06-27-rag-query-v6'
 type SafetyConceptFeedback = Record<string, string>
 type SafetyCoachAnswers = Record<string, {
   answer: string
@@ -778,6 +778,12 @@ function SafetyOrientationBlock({
                 id={`${concept.checkId}-feedback`}
                 value={feedback}
                 onChange={(e) => onConceptFeedback(concept.checkId, e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
+                  e.preventDefault()
+                  if (!feedback.trim() || loading || hasCurrentAnswer) return
+                  onAskCoach(concept, concept.checkId)
+                }}
                 rows={2}
                 placeholder={concept.question_prompt ?? '예: 이 부분이 잘 이해되지 않아요.'}
                 className="mt-1 w-full resize-y rounded-[10px] border border-border bg-secondary px-3 py-2 text-xs leading-relaxed text-ink outline-none transition placeholder:text-text-faint focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"

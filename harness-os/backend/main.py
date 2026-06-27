@@ -8517,7 +8517,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-rag-quality-v5"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-rag-query-v6"
 
 
 def _edu_vp_normalize_safety_question(question: str) -> str:
@@ -8630,10 +8630,23 @@ def _edu_vp_cached_safety_coach_answer(
     }
 
 
-def _edu_vp_safety_coach_evidence(query: str, *, limit: int = 2) -> tuple[str, list[dict[str, Any]]]:
+def _edu_vp_safety_coach_evidence(
+    query: str,
+    *,
+    validation_text: str = "",
+    limit: int = 2,
+) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
     terms = _edu_vp_safety_coach_keywords(query, max_terms=10)
+    meta: dict[str, Any] = {
+        "query": query[:500],
+        "keywords": terms,
+        "selected_count": 0,
+        "rejected_count": 0,
+        "rejected": [],
+    }
     if len(terms) < 2:
-        return "", []
+        meta["skip_reason"] = "too_few_query_terms"
+        return "", [], meta
     try:
         bundle = _retrieve_evidence_bundle(query, "parent", k=max(limit * 3, 6))
     except Exception as exc:  # noqa: BLE001
@@ -8642,14 +8655,19 @@ def _edu_vp_safety_coach_evidence(query: str, *, limit: int = 2) -> tuple[str, l
             error_type=type(exc).__name__,
             error=str(exc)[:240],
         )
-        return "", []
+        meta["skip_reason"] = "retrieve_failed"
+        meta["error_type"] = type(exc).__name__
+        return "", [], meta
     items = list((bundle or {}).get("items") or [])
+    meta["candidate_count"] = len(items)
     if not items:
-        return "", []
+        meta["skip_reason"] = "no_candidates"
+        return "", [], meta
     selected: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
+    validation_query = " ".join(part for part in (query, validation_text) if part).strip()
     for item in items:
-        valid, reasons = _edu_vp_validate_safety_coach_evidence(query=query, item=item)
+        valid, reasons = _edu_vp_validate_safety_coach_evidence(query=validation_query, item=item)
         if not valid:
             rejected.append({
                 "id": str(item.get("id") or "")[:80],
@@ -8675,12 +8693,18 @@ def _edu_vp_safety_coach_evidence(query: str, *, limit: int = 2) -> tuple[str, l
                 rejected_count=len(rejected),
                 rejected=rejected[:5],
             )
-        return "", []
+        meta["skip_reason"] = "all_candidates_rejected"
+        meta["rejected_count"] = len(rejected)
+        meta["rejected"] = rejected[:5]
+        return "", [], meta
     lines = [
         f"- 자료 {idx}: {item['cite']}\n  출처: {item['source']}"
         for idx, item in enumerate(selected, start=1)
     ]
-    return "\n".join(lines), selected
+    meta["selected_count"] = len(selected)
+    meta["rejected_count"] = len(rejected)
+    meta["rejected"] = rejected[:5]
+    return "\n".join(lines), selected, meta
 
 
 def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
@@ -8792,6 +8816,16 @@ def _edu_vp_safety_coach_red_team(
         required = ("Google", "Vaswani", "Shazeer")
         if not all(term in answer_text for term in required):
             issues.append("missing_transformer_paper_authors")
+    compares_transformer_ml = "transformer" in question_text.lower() and any(
+        term in question_text.lower() for term in ("machine learning", "머신러닝", "기계학습")
+    )
+    if compares_transformer_ml:
+        lower_answer = answer_text.lower()
+        has_hierarchy = any(term in answer_text for term in ("큰 분야", "넓은 분야", "포함", "안에", "부분")) or "subset" in lower_answer
+        bad_peer_framing = any(term in answer_text for term in ("모두 AI 기술 중 하나", "각각 다른 방식", "둘 다 방식"))
+        bad_transformer_def = any(term in answer_text for term in ("특정 데이터셋에 대해 학습한 모델을 사용하는 방식", "학습한 모델을 사용하는 방식"))
+        if not has_hierarchy or bad_peer_framing or bad_transformer_def:
+            issues.append("transformer_ml_hierarchy_error")
     anthropomorphic_terms = ("AI가 이해해서", "AI가 판단해서", "마음으로", "스스로 책임")
     if any(term in answer_text for term in anthropomorphic_terms):
         issues.append("anthropomorphic_or_overtrusting")
@@ -8802,8 +8836,13 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
     question = _edu_neutralize(req.question, cap=700)
     concept_title = _edu_neutralize(req.concept_title, cap=160)
     concept_body = _edu_neutralize(req.concept_body, cap=1400)
-    evidence_query = f"{concept_title} {concept_body} {question}"
-    evidence_text, evidence_items = _edu_vp_safety_coach_evidence(evidence_query, limit=1)
+    evidence_query = f"{question} {concept_title}"
+    evidence_validation_text = concept_body
+    evidence_text, evidence_items, evidence_meta = _edu_vp_safety_coach_evidence(
+        evidence_query,
+        validation_text=evidence_validation_text,
+        limit=1,
+    )
     evidence_block = evidence_text or "(질문과 딱 맞는 내부 자료가 없으므로 자료를 언급하지 말 것)"
     base_prompt = (
         "너는 Harness VP 훈련의 AI 안전 오리엔테이션 코치다.\n"
@@ -8857,10 +8896,11 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                         timeout_seconds=20,
                         response_mime_type="text/plain",
                         meta={
-                            "surface": "vp_training_safety_coach",
-                            "evidence_count": len(evidence_items),
-                            "quality_model": model_name,
-                        },
+                        "surface": "vp_training_safety_coach",
+                        "evidence_count": len(evidence_items),
+                        "evidence_selected_count": int(evidence_meta.get("selected_count") or 0),
+                        "quality_model": model_name,
+                    },
                         model_ladder=[model_name],
                     )
                 except Exception as exc:  # noqa: BLE001
@@ -8884,6 +8924,9 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                 )
                 model_issues = red_team_issues
                 if not red_team_issues:
+                    if isinstance(usage, dict):
+                        usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
+                        usage["_safety_coach_red_team_issues"] = []  # type: ignore[index]
                     _edu_log_llm_cost(usage, used_model)
                     return answer[:2200], used_model, usage, False
             if model_call_failed:
@@ -8892,6 +8935,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                 "vp_training_safety_coach_model_quality_failed",
                 model=model_name,
                 issues=model_issues,
+                evidence_meta=evidence_meta,
                 concept_title=concept_title[:120],
                 question=question[:240],
             )
@@ -8899,6 +8943,9 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         used_model = f"{used_model or model_ladder[-1]}+quality_fallback"
         quality_fallback_used = True
         _edu_log_llm_cost(usage, used_model)
+        if isinstance(usage, dict):
+            usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
+            usage["_safety_coach_red_team_issues"] = red_team_issues  # type: ignore[index]
         return answer[:2200], used_model, usage, quality_fallback_used
     except Exception as exc:  # noqa: BLE001
         _edu_runtime_event(
@@ -11353,6 +11400,8 @@ def edu_vp_training_safety_coach(
         }
     _edu_public_gate(request)
     answer, model_name, usage, fallback_used = _edu_vp_generate_safety_coach_answer(req)
+    evidence_meta = usage.get("_safety_coach_evidence_meta") if isinstance(usage, dict) else None
+    red_team_issues = usage.get("_safety_coach_red_team_issues") if isinstance(usage, dict) else None
     log_payload = {
         "stage": stage,
         "concept_id": concept_id,
@@ -11366,6 +11415,8 @@ def edu_vp_training_safety_coach(
         "fallback_used": fallback_used,
         "answer_version": answer_version,
         "duplicate_reused": False,
+        "evidence_meta": evidence_meta if isinstance(evidence_meta, dict) else {},
+        "red_team_issues": red_team_issues if isinstance(red_team_issues, list) else [],
     }
     _edu_vp_append_event(
         case_id=case_id,

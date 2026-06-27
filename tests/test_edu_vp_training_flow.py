@@ -264,6 +264,45 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertIn("unsupported_evidence_reference", issues)
 
+    def test_safety_coach_red_team_blocks_transformer_machine_learning_peer_framing(self):
+        issues = self.mod._edu_vp_safety_coach_red_team(
+            question="Transformer 이론과 Machine Learning과는 어떤 차이가 있는지 알려줘.",
+            answer=(
+                "Transformer와 Machine Learning 모두 AI 기술 중 하나이며, 각각 다른 방식으로 데이터를 "
+                "학습하고 문제를 해결하는 데 도움이 됩니다. Transformer는 특정 데이터셋에 대해 학습한 "
+                "모델을 사용하는 방식입니다."
+            ),
+            concept_body="Transformer는 생성형 AI의 중요한 기반입니다.",
+        )
+
+        self.assertIn("transformer_ml_hierarchy_error", issues)
+
+    def test_safety_coach_evidence_query_prioritizes_user_question(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=123,
+            stage="day0",
+            concept_id="safety_concept_transformer_origin",
+            concept_title="생성형 AI는 어떻게 시작됐나",
+            concept_body="오늘 쓰는 ChatGPT, Claude, Gemini 같은 생성형 AI는 Transformer라는 방법에서 크게 발전했습니다.",
+            question="Transformer 이론과 Machine Learning과는 어떤 차이가 있는지 알려줘.",
+        )
+
+        with (
+            patch.object(self.mod, "_edu_vp_safety_coach_evidence", return_value=("", [], {"query": ""})) as mocked_evidence,
+            patch.object(self.mod, "_edu_safety_coach_model_ladder", return_value=["gemini-test"]),
+            patch.object(self.mod, "_edu_generate_text", return_value=(
+                "Machine Learning은 컴퓨터가 데이터에서 규칙을 배우게 하는 큰 분야입니다. Transformer는 그 안에서 특히 글의 단어 관계를 잘 보는 딥러닝 구조입니다.",
+                {"prompt_token_count": 10, "candidates_token_count": 8},
+                "gemini-test",
+            )),
+            patch.object(self.mod, "_edu_log_llm_cost"),
+        ):
+            self.mod._edu_vp_generate_safety_coach_answer(req)
+
+        evidence_query = mocked_evidence.call_args.args[0]
+        self.assertTrue(evidence_query.startswith("Transformer 이론과 Machine Learning"))
+        self.assertIn("validation_text", mocked_evidence.call_args.kwargs)
+
     def test_safety_coach_evidence_validation_requires_relevant_source(self):
         valid, reasons = self.mod._edu_vp_validate_safety_coach_evidence(
             query="다정한 AI에 자꾸 빠져들고 의존하게 됩니다",
@@ -297,7 +336,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
                 case_id=123,
                 concept_id="safety_concept_ai_llm_words",
                 normalized_question="다음 글에 이어질 조사는 어떻게 추측하나요?",
-                answer_version="2026-06-27-rag-quality-v5",
+                answer_version="2026-06-27-rag-query-v6",
             )
 
         self.assertEqual(cached, payload)
@@ -305,7 +344,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("safety_question_answered", query)
         self.assertEqual(params[0], 123)
         self.assertEqual(params[1], "safety_concept_ai_llm_words")
-        self.assertEqual(params[3], "2026-06-27-rag-quality-v5")
+        self.assertEqual(params[3], "2026-06-27-rag-query-v6")
 
     def test_safety_confirmation_unlocks_day0_practice(self):
         state = {"intake": {"preferred_llm": "claude"}, "day0": self.mod._edu_vp_build_day0({"preferred_llm": "claude"})}
