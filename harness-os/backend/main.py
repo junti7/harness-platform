@@ -8838,39 +8838,66 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         answer = ""
         red_team_issues: list[str] = []
         quality_fallback_used = False
-        for attempt, prompt in enumerate((base_prompt, retry_prompt), start=1):
-            if attempt > 1 and red_team_issues:
-                prompt = (
-                    f"{prompt}\n\n"
-                    f"[약식 Red Team 차단 사유]\n{', '.join(red_team_issues)}\n"
-                    "위 사유를 모두 고쳐 다시 답하라. 대괄호 표식과 원문 반복 없이 3~4문장 답변 본문만 출력하라. "
-                    "누가/저자/발표자 질문이면 사람 또는 연구팀 이름을 반드시 포함하라."
+        model_ladder = _edu_safety_coach_model_ladder()
+        for model_name in model_ladder:
+            model_call_failed = False
+            model_issues: list[str] = []
+            for attempt, prompt in enumerate((base_prompt, retry_prompt), start=1):
+                if attempt > 1 and red_team_issues:
+                    prompt = (
+                        f"{prompt}\n\n"
+                        f"[약식 Red Team 차단 사유]\n{', '.join(red_team_issues)}\n"
+                        "위 사유를 모두 고쳐 다시 답하라. 대괄호 표식과 원문 반복 없이 3~4문장 답변 본문만 출력하라. "
+                        "누가/저자/발표자 질문이면 사람 또는 연구팀 이름을 반드시 포함하라."
+                    )
+                try:
+                    raw, usage, used_model = _edu_generate_text(
+                        prompt,
+                        max_output_tokens=720,
+                        timeout_seconds=20,
+                        response_mime_type="text/plain",
+                        meta={
+                            "surface": "vp_training_safety_coach",
+                            "evidence_count": len(evidence_items),
+                            "quality_model": model_name,
+                        },
+                        model_ladder=[model_name],
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    _edu_runtime_event(
+                        "vp_training_safety_coach_model_call_failed",
+                        model=model_name,
+                        attempt=attempt,
+                        error_type=type(exc).__name__,
+                        error=str(exc)[:240],
+                    )
+                    model_call_failed = True
+                    break
+                answer = re.sub(r"```(?:text)?", "", raw or "").strip().rstrip("`").strip()
+                if not answer:
+                    raise ValueError("empty safety coach answer")
+                red_team_issues = _edu_vp_safety_coach_red_team(
+                    question=question,
+                    answer=answer,
+                    concept_body=concept_body,
+                    evidence_items=evidence_items,
                 )
-            raw, usage, used_model = _edu_generate_text(
-                prompt,
-                max_output_tokens=720,
-                timeout_seconds=20,
-                response_mime_type="text/plain",
-                meta={
-                    "surface": "vp_training_safety_coach",
-                    "evidence_count": len(evidence_items),
-                },
+                model_issues = red_team_issues
+                if not red_team_issues:
+                    _edu_log_llm_cost(usage, used_model)
+                    return answer[:2200], used_model, usage, False
+            if model_call_failed:
+                continue
+            _edu_runtime_event(
+                "vp_training_safety_coach_model_quality_failed",
+                model=model_name,
+                issues=model_issues,
+                concept_title=concept_title[:120],
+                question=question[:240],
             )
-            answer = re.sub(r"```(?:text)?", "", raw or "").strip().rstrip("`").strip()
-            if not answer:
-                raise ValueError("empty safety coach answer")
-            red_team_issues = _edu_vp_safety_coach_red_team(
-                question=question,
-                answer=answer,
-                concept_body=concept_body,
-                evidence_items=evidence_items,
-            )
-            if not red_team_issues:
-                break
-            if attempt == 2:
-                answer = _edu_vp_safety_coach_fallback(concept_title, question)
-                used_model = f"{used_model}+quality_fallback"
-                quality_fallback_used = True
+        answer = _edu_vp_safety_coach_fallback(concept_title, question)
+        used_model = f"{used_model or model_ladder[-1]}+quality_fallback"
+        quality_fallback_used = True
         _edu_log_llm_cost(usage, used_model)
         return answer[:2200], used_model, usage, quality_fallback_used
     except Exception as exc:  # noqa: BLE001
@@ -9755,6 +9782,29 @@ def _edu_model_ladder() -> list[str]:
     return ordered
 
 
+def _edu_safety_coach_model_ladder() -> list[str]:
+    configured = [x.strip() for x in (os.getenv("EDU_SAFETY_COACH_MODEL_LADDER") or "").split(",") if x.strip()]
+    defaults = [
+        "gemini-2.5-flash",
+        "claude-haiku-4-5",
+        "gpt-5-mini",
+        "gpt-4o-mini",
+    ]
+    ordered: list[str] = []
+    for candidate in [*configured, *defaults]:
+        if not candidate or candidate in ordered:
+            continue
+        if candidate.startswith("claude") and not os.getenv("ANTHROPIC_API_KEY"):
+            continue
+        if (candidate.startswith("gpt") or candidate.startswith("o")) and not os.getenv("OPENAI_API_KEY"):
+            continue
+        if candidate.startswith("gemini") and not (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")):
+            continue
+        if candidate:
+            ordered.append(candidate)
+    return ordered or _edu_model_ladder()
+
+
 def _edu_generate_text(
     prompt: str,
     *,
@@ -9762,10 +9812,11 @@ def _edu_generate_text(
     timeout_seconds: float,
     response_mime_type: str = "application/json",
     meta: dict[str, Any] | None = None,
+    model_ladder: list[str] | None = None,
 ) -> tuple[str, dict[str, int], str]:
     """Edu 상담 응답용 경량 provider fallback."""
     last_exc: Exception | None = None
-    ladder = _edu_model_ladder()
+    ladder = model_ladder or _edu_model_ladder()
     for index, model_name in enumerate(ladder, start=1):
         provider = "google"
         try:

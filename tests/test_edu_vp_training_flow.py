@@ -210,6 +210,40 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(model, "gemini-test")
         self.assertFalse(fallback_used)
 
+    def test_safety_coach_switches_model_after_quality_failures(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=123,
+            stage="day0",
+            concept_id="safety_concept_ai_llm_words",
+            concept_title="먼저 말부터 정리하기: AI와 LLM",
+            concept_body="비 오는 날 아이 준비물 알려줘 우산, 장화, 여벌 양말 학교 공지나 실제 날씨",
+            question="다음 글에 이어질 조사는 어떻게 추측하나요?",
+        )
+        weak = "비 오는 날 아이 준비물 알려줘라고 쓰면 우산, 장화, 여벌 양말처럼 답합니다."
+        fixed = (
+            "조사는 앞말이 문장에서 하는 일을 보고 고릅니다. 예를 들어 '학교 __ 갔다'에서는 "
+            "장소로 향한다는 뜻이 자연스러워 '에'가 잘 맞습니다."
+        )
+
+        with (
+            patch.object(self.mod, "_edu_safety_coach_model_ladder", return_value=["gemini-2.5-flash", "claude-haiku-4-5"]),
+            patch.object(self.mod, "_edu_generate_text", side_effect=[
+                (weak, {"prompt_token_count": 10, "candidates_token_count": 8}, "gemini-2.5-flash"),
+                (weak, {"prompt_token_count": 12, "candidates_token_count": 9}, "gemini-2.5-flash"),
+                (fixed, {"prompt_token_count": 11, "candidates_token_count": 7}, "claude-haiku-4-5"),
+            ]) as mocked_generate,
+            patch.object(self.mod, "_edu_log_llm_cost"),
+            patch.object(self.mod, "_edu_runtime_event"),
+        ):
+            answer, model, _usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
+
+        self.assertEqual(mocked_generate.call_count, 3)
+        self.assertEqual(mocked_generate.call_args_list[0].kwargs["model_ladder"], ["gemini-2.5-flash"])
+        self.assertEqual(mocked_generate.call_args_list[2].kwargs["model_ladder"], ["claude-haiku-4-5"])
+        self.assertEqual(model, "claude-haiku-4-5")
+        self.assertIn("조사는", answer)
+        self.assertFalse(fallback_used)
+
     def test_safety_coach_red_team_blocks_prompt_marker_leakage(self):
         issues = self.mod._edu_vp_safety_coach_red_team(
             question="그런데도 다정해서 자꾸 빠져들어요. 어떻게 하나요?",
