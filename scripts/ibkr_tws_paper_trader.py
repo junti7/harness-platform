@@ -383,7 +383,13 @@ def reconcile_pending_orders(ib: IB, state: dict, paper_account: str) -> dict:
                                            meta.get("qty", 0)) or 0)) or meta.get("qty", 0)
             qty_promo = int(filled_qty)
             # pending → positions 승격 시 resident stop 발행 — 실패 시 즉시 청산 (무방비 방지)
-            stop_val = meta.get("stop_loss")
+            # stop은 실제 체결가(averageCost) 기준으로 재계산 (quote-time과 갭 보정)
+            actual_entry = float(getattr(bp_item, "averageCost", 0) or 0)
+            atr_val = float(meta.get("atr", 0) or 0)
+            if actual_entry > 0 and atr_val > 0:
+                stop_val = round(actual_entry - TURTLE_STOP_MULT * atr_val, 2)
+            else:
+                stop_val = meta.get("stop_loss")
             try:
                 stop_val = float(stop_val) if stop_val is not None else None
             except (TypeError, ValueError):
@@ -417,7 +423,9 @@ def reconcile_pending_orders(ib: IB, state: dict, paper_account: str) -> dict:
                 continue
             promoted = {**meta, "status": "Filled", "qty": qty_promo,
                         "resident_stop_id": stop_id,
-                        "filled_reconciled_at": now_iso()}
+                        "filled_reconciled_at": now_iso(),
+                        "stop_loss": stop_val,
+                        "entry_price": actual_entry if actual_entry > 0 else meta.get("entry_price")}
             state.setdefault("positions", {})[sym] = promoted
             pending.pop(sym, None)
             summary["promoted"].append(sym)
@@ -441,10 +449,11 @@ def reconcile_pending_orders(ib: IB, state: dict, paper_account: str) -> dict:
 # ── 계약 생성 헬퍼 ────────────────────────────────────────────────────────────
 
 def make_contract(sym: str, tracked: dict) -> Stock:
-    """position record의 currency/exchange로 정확한 계약 생성 — 비USD 지원."""
+    """position record의 currency/exchange/primary_exchange로 정확한 계약 생성 — 비USD 지원."""
     currency = tracked.get("currency", "USD") or "USD"
     exchange = tracked.get("exchange", "SMART") or "SMART"
-    primary = exchange if exchange not in ("SMART", "", None) else ""
+    # primary_exchange: 브로커 원본 primaryExch (NYSE/TSE/HKEX 등). exchange가 SMART면 primary로 교정
+    primary = (tracked.get("primary_exchange") or "") or (exchange if exchange not in ("SMART", "", None) else "")
     return Stock(sym, "SMART", currency, primaryExchange=primary)
 
 
@@ -475,11 +484,12 @@ def reconcile_positions_ibkr(ib: IB, state: dict, broker_positions: dict,
     for sym, bp in broker_positions.items():
         if sym in tracked_syms or sym.upper() not in universe_set:
             continue
-        # 브로커 계약에서 currency/exchange 읽기 (비USD 지원)
+        # 브로커 계약에서 currency/exchange/primaryExch 읽기 (비USD 지원)
         bp_con = getattr(bp, "contract", None)
         currency = (getattr(bp_con, "currency", "USD") or "USD") if bp_con else "USD"
         exchange = (getattr(bp_con, "exchange", "SMART") or "SMART") if bp_con else "SMART"
-        tracked_meta = {"currency": currency, "exchange": exchange}
+        primary_exchange = (getattr(bp_con, "primaryExch", "") or "") if bp_con else ""
+        tracked_meta = {"currency": currency, "exchange": exchange, "primary_exchange": primary_exchange}
         contract = make_contract(sym, tracked_meta)
         ib.qualifyContracts(contract)
         bars = fetch_bars_ibkr(ib, contract, days=TURTLE_ATR_PERIOD + 25)
@@ -502,7 +512,7 @@ def reconcile_positions_ibkr(ib: IB, state: dict, broker_positions: dict,
             "qty": qty, "side": "buy",
             "resident_stop_id": stop_id, "adopted": True,
             "resident_stop_missing": resident_stop_missing,
-            "currency": currency, "exchange": exchange,
+            "currency": currency, "exchange": exchange, "primary_exchange": primary_exchange,
         }
         if not dry_run:
             state_set_position(sym, rec)
