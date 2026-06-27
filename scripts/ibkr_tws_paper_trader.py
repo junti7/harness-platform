@@ -35,7 +35,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from dotenv import load_dotenv
-load_dotenv(ROOT / ".env", override=True)
+load_dotenv(ROOT / ".env")  # OS 환경변수 우선 (override 제거 — paper/live 포트 보호)
 
 from ib_insync import IB, Stock, MarketOrder, StopOrder, util
 from core.trading_universe import build_trading_universe, load_trading_universe, write_trading_universe
@@ -232,6 +232,26 @@ def state_set_last_run(ts: str) -> None:
     update_json_atomic(STATE_PATH, _m)
 
 
+def state_set_pending(symbol: str, data: dict) -> None:
+    def _m(s: dict) -> None:
+        s.setdefault("pending_orders", {})[symbol] = data
+    update_json_atomic(STATE_PATH, _m)
+
+
+def state_pop_pending(symbol: str) -> None:
+    def _m(s: dict) -> None:
+        s.setdefault("pending_orders", {}).pop(symbol, None)
+    update_json_atomic(STATE_PATH, _m)
+
+
+def state_flush_pending_and_positions(mem_state: dict) -> None:
+    """reconcile 후 pending_orders + positions 전체를 원자적으로 flush."""
+    def _m(s: dict) -> None:
+        s["pending_orders"] = mem_state.get("pending_orders", {})
+        s["positions"] = mem_state.get("positions", {})
+    update_json_atomic(STATE_PATH, _m)
+
+
 # ── IBKR bars 어댑터 ──────────────────────────────────────────────────────────
 
 def ibkr_bars_to_core(bars) -> list[dict]:
@@ -416,13 +436,21 @@ def reconcile_positions_ibkr(ib: IB, state: dict, broker_positions: dict,
         qty = int(abs(float(getattr(bp, "position", 0) or 0)))
         stop = round(entry - TURTLE_STOP_MULT * atr, 2) if atr > 0 and entry > 0 else None
         stop_id = None
+        resident_stop_missing = False
         if not dry_run and stop and stop > 0 and qty > 0:
             stop_id = place_resident_stop(ib, contract, qty, stop, paper_account)
+            if stop_id is None:
+                # B1: 손절 발행 실패 — 고아입양은 유지하되 경보 기록
+                resident_stop_missing = True
+                print(f"  ⚠️  [{sym}] 고아입양 상주손절 발행 실패 — resident_stop_missing=True")
+                log_entry({"ts": now_iso(), "action": "adopt_orphan_stop_failed",
+                           "symbol": sym, "qty": qty, "stop": stop})
         rec = {
             "entry_ts": now_iso(), "system": "S2",
             "entry_price": entry, "atr": atr, "stop_loss": stop,
             "qty": qty, "side": "buy",
             "resident_stop_id": stop_id, "adopted": True,
+            "resident_stop_missing": resident_stop_missing,
         }
         if not dry_run:
             state_set_position(sym, rec)
@@ -584,9 +612,21 @@ def pyramid_positions_ibkr(ib: IB, state: dict, broker_positions: dict,
                 new_total = int(tracked.get("qty", 0)) + int(filled_qty)
                 new_stop = round(fill_price - TURTLE_STOP_MULT * N, 2)
                 new_risk = round(new_total * TURTLE_STOP_MULT * N, 2)
-                # 상주손절 교체
-                cancel_ibkr_order(ib, tracked.get("resident_stop_id"))
+                # B1: 새 stop 먼저 발행 → 성공 확인 후 기존 stop 취소 (순서 역전)
                 new_stop_id = place_resident_stop(ib, contract, new_total, new_stop, paper_account)
+                if new_stop_id is None:
+                    # 새 stop 실패 → 추가 유닛 즉시 시장가 청산
+                    print(f"  ⚠️  [{sym}] 피라미딩 상주손절 실패 — 추가 {int(filled_qty)}주 즉시 청산")
+                    rb_order = MarketOrder("SELL", int(filled_qty))
+                    rb_order.tif = "GTC"
+                    rb_order.account = paper_account
+                    rb_trade = ib.placeOrder(contract, rb_order)
+                    wait_for_fill_ibkr(ib, rb_trade)
+                    action["status"] = "pyramid_stop_failed_reversed"
+                    log_entry(action)
+                    actions.append(action)
+                    continue
+                cancel_ibkr_order(ib, tracked.get("resident_stop_id"))  # 새 stop 성공 후 구 stop 취소
                 updated = dict(tracked)
                 updated.update({
                     "qty": new_total, "stop_loss": new_stop,
@@ -644,7 +684,6 @@ def run(execute: bool = False) -> None:
         print(f"[ERROR] IB Gateway 연결 실패: {e}")
         print("  → IB Gateway 실행 중인지, API 포트 4002 활성화됐는지 확인하세요.")
         return
-
     accounts = ib.managedAccounts()
     paper_account = next((a for a in accounts if a.startswith("DU")), accounts[0] if accounts else "")
     print(f"연결된 계좌: {accounts} | 사용: {paper_account}")
@@ -664,6 +703,8 @@ def run(execute: bool = False) -> None:
 
     # pending_orders 정합 (이전 세션 잔여 처리)
     recon = reconcile_pending_orders(ib, state, paper_account)
+    # B3: reconcile 결과(promoted positions + purged pending) 원자적 flush
+    state_flush_pending_and_positions(state)
     if recon["promoted"] or recon["purged"] or recon["kept"]:
         print(f"\n[pending 정합] 승격={recon['promoted'] or '-'} | "
               f"유지={recon['kept'] or '-'} | 정리={recon['purged'] or '-'}")
@@ -709,7 +750,10 @@ def run(execute: bool = False) -> None:
     else:
         print("  추가 대상 없음")
 
-    # 신호 스캔
+    # 신호 스캔 전 broker snapshot 최신화 (manage/pyramid 반영)
+    broker_positions = get_broker_positions(ib, paper_account)
+    pos_symbols = set(broker_positions.keys())
+
     print("\n── 신호 스캔 ──")
     entered = []
 
@@ -791,10 +835,14 @@ def run(execute: bool = False) -> None:
                        "currency": currency, "fx_source": _forex_source.get(currency, "unknown")})
             continue
 
-        # TurtleGate (사이징 + 5항목 검증)
-        gate = core.turtle_gate_check(sig, nav, TURTLE_MAX_RISK_PCT)
+        # B2: TurtleGate — 비USD 종목은 ATR을 USD 환산 후 사이징 (수량 왜곡 방지)
+        atr_usd = atr * usd_rate
+        sig_for_gate = dict(sig)
+        if currency != "USD":
+            sig_for_gate["atr"] = round(atr_usd, 6)  # USD 환산 ATR로 사이징
+        gate = core.turtle_gate_check(sig_for_gate, nav, TURTLE_MAX_RISK_PCT)
         shares = gate["shares"]
-        stop_loss = gate["stop_loss"]
+        stop_loss = gate["stop_loss"]  # 손절가는 현지통화 sig 기준 유지
 
         if shares <= 0:
             print(f"     → 수량 0 — 스킵")
@@ -816,8 +864,7 @@ def run(execute: bool = False) -> None:
             continue
 
         atr_usd = atr * usd_rate
-        pos_val_local = round(shares * price, 2)
-        pos_val_usd   = round(shares * price * usd_rate, 2)
+        pos_val_usd = round(shares * price * usd_rate, 2)
         print(f"     수량={shares}주 | 포지션≈${pos_val_usd:,.0f} | "
               f"손절={curr_sym}{stop_loss:.2f} | 리스크={gate['risk_pct']:.3f}% | heat↑{new_heat*100:.1f}%")
 
@@ -827,14 +874,34 @@ def run(execute: bool = False) -> None:
             order.account = paper_account
             trade = ib.placeOrder(contract, order)
 
+            # B4: 체결 확인 전 pending_orders 기록 (crash/timeout 복구 대비)
+            pending_rec = {
+                "order_id": trade.order.orderId,
+                "qty": shares, "system": system,
+                "entry_price": price, "stop_loss": stop_loss,
+                "atr": atr, "currency": currency, "region": region,
+                "side": "buy", "status": "Submitted",
+                "submitted_at": now_iso(),
+            }
+            state.setdefault("pending_orders", {})[sym] = pending_rec
+            state_set_pending(sym, pending_rec)
+
             status, filled_qty, fill_price = wait_for_fill_ibkr(ib, trade)
             print(f"     체결: status={status} qty={filled_qty} avg=${fill_price:.2f}")
 
             if filled_qty <= 0:
-                print(f"     → 미체결/거절 — 원장 미기록")
+                # timeout/미체결 — pending 유지하고 다음 run reconcile에 위임
+                updated_pending = {**pending_rec, "status": status, "last_checked": now_iso()}
+                state["pending_orders"][sym] = updated_pending
+                state_set_pending(sym, updated_pending)
+                print(f"     → 미체결/거절({status}) — pending 유지, 다음 run reconcile 처리")
                 log_entry({"ts": now_iso(), "action": "enter_not_filled", "symbol": sym,
                            "order_status": status, "system": system, "dry_run": False})
                 continue
+
+            # 체결 완료 → pending 제거
+            state_pop_pending(sym)
+            state.get("pending_orders", {}).pop(sym, None)
 
             fill_price = fill_price or price
             actual_stop = round(fill_price - TURTLE_STOP_MULT * atr, 2)
@@ -842,6 +909,19 @@ def run(execute: bool = False) -> None:
 
             # 상주손절 발행
             stop_id = place_resident_stop(ib, contract, qty_i, actual_stop, paper_account)
+
+            # B1: 상주손절 실패 → 즉시 시장가 청산 (무방비 포지션 방지)
+            if stop_id is None:
+                print(f"     ⚠️  상주손절 발행 실패 — 즉시 청산 (gap-down 보호)")
+                abort_order = MarketOrder("SELL", qty_i)
+                abort_order.tif = "GTC"
+                abort_order.account = paper_account
+                abort_trade = ib.placeOrder(contract, abort_order)
+                wait_for_fill_ibkr(ib, abort_trade)
+                log_entry({"ts": now_iso(), "action": "enter_abort_stop_failed",
+                           "symbol": sym, "qty": qty_i, "fill_price": fill_price,
+                           "system": system})
+                continue
 
             rec = {
                 "entry_ts": now_iso(), "system": system,
@@ -851,7 +931,7 @@ def run(execute: bool = False) -> None:
                 "n_at_entry": atr,
                 "last_unit_price": fill_price,
                 "unit_count": 1,
-                "risk_usd": round(qty_i * TURTLE_STOP_MULT * atr, 2),
+                "risk_usd": round(qty_i * TURTLE_STOP_MULT * atr_usd, 2),  # B2: USD 환산
                 "currency": currency, "region": region,
             }
             state_set_position(sym, rec)
@@ -875,14 +955,19 @@ def run(execute: bool = False) -> None:
 
         entered.append(sym)
 
-    # last_run 원자적 갱신
-    state_set_last_run(now_iso())
-    ib.disconnect()
-
     print(f"\n{'=' * 62}")
     print(f"완료 | 진입: {len(entered)}건 | 청산: {len(exit_acts)}건 | 유니버스: {len(universe)}종목")
     print(f"추적 포지션: {list(state['positions'].keys()) or '없음'}")
     print("=" * 62)
+
+    # last_run + disconnect (finally 보장 — 예외 후에도 연결 해제)
+    try:
+        state_set_last_run(now_iso())
+    finally:
+        try:
+            ib.disconnect()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
