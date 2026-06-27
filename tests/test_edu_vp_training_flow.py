@@ -441,6 +441,61 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("no_listener_available", emotional["taxonomy"]["constraint_type"])
         self.assertIn("lonely", emotional["taxonomy"]["emotion_state"])
 
+    def test_safety_coach_parses_structured_answer_packet(self):
+        raw = """```json
+        {"taxonomy":{"topic_domain":["ai_principle"]},"runtime_intent":{"primary":"principle_question"},"rag_synthesis":{"usable":false},"answer_plan":{"opening_move":"direct_answer"},"final_answer":"AI 답변은 가능성이 높은 다음 말을 계산해서 만듭니다."}
+        ```"""
+
+        packet = self.mod._edu_vp_parse_safety_coach_answer_packet(raw)
+
+        self.assertIsNotNone(packet)
+        assert packet is not None
+        self.assertEqual(packet["runtime_intent"]["primary"], "principle_question")
+        self.assertIn("다음 말", packet["final_answer"])
+
+    def test_safety_coach_structured_packet_flag_uses_single_model_call(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=123,
+            stage="day0",
+            concept_id="safety_concept_attention",
+            concept_title="Transformer의 핵심: attention",
+            concept_body="attention은 중요한 단어끼리 연결해 문장의 흐름을 잡는 방법입니다.",
+            question="attention은 누가 어떻게 설정하는거야?",
+        )
+        packet = {
+            "taxonomy": {"topic_domain": ["ai_principle"], "user_need": ["mechanism_explanation"]},
+            "runtime_intent": {"primary": "principle_question", "secondary": [], "latent_need": "attention 설정 주체 설명"},
+            "rag_synthesis": {"usable": False, "fresh_angle": "", "reader_relevance": "", "example_seed": "", "evidence_risk": "weak_match"},
+            "answer_plan": {
+                "opening_move": "direct_answer",
+                "core_explanation": ["사람이 문장마다 직접 설정하지 않는다", "모델이 관련도를 계산한다"],
+                "fresh_example": "대명사와 이름 연결",
+                "boundary": "사람처럼 이해하는 것은 아니다",
+                "closing_rule": "계산된 연결 강도",
+            },
+            "final_answer": (
+                "attention은 사람이 문장마다 직접 설정하는 값이 아닙니다. 모델은 학습한 방식에 따라 입력 문장 안에서 "
+                "단어 사이 관련도를 계산합니다. 예를 들어 이름과 대명사를 함께 보며 누가 누구인지 연결하는 것처럼 보면 됩니다. "
+                "오늘은 attention을 사람이 넣는 표시가 아니라 모델이 계산하는 연결 강도로 기억하면 됩니다."
+            ),
+        }
+
+        with (
+            patch.dict("os.environ", {"EDU_SAFETY_COACH_STRUCTURED_PACKET_ENABLED": "true"}),
+            patch.object(self.mod, "_edu_vp_safety_coach_reinforcement_policies", return_value=[]),
+            patch.object(self.mod, "_edu_vp_safety_coach_evidence_with_timeout", return_value=("", [], {"selected_count": 0, "rejected_count": 0, "rejected": [], "skip_reason": "test"})),
+            patch.object(self.mod, "_edu_safety_coach_model_ladder", return_value=["model-a", "model-b"]),
+            patch.object(self.mod, "_edu_generate_text", return_value=(self.mod.json.dumps(packet, ensure_ascii=False), {"prompt_token_count": 10, "candidates_token_count": 8}, "model-a")) as mocked_generate,
+            patch.object(self.mod, "_edu_log_llm_cost"),
+        ):
+            answer, model, usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
+
+        self.assertEqual(mocked_generate.call_count, 1)
+        self.assertEqual(model, "model-a+structured_packet")
+        self.assertFalse(fallback_used)
+        self.assertIn("attention은", answer)
+        self.assertEqual(usage["_safety_coach_structured_packet"]["runtime_intent"]["primary"], "principle_question")
+
     def test_safety_coach_quality_issues_apply_policy_contract(self):
         context = self.mod._edu_vp_safety_coach_resolved_policy_context(
             "상담사가 비싸면 AI한테 물어봐도 되나요?"

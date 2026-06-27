@@ -9637,6 +9637,82 @@ def _edu_vp_safety_coach_policy_prompt(policy_context: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _edu_vp_parse_safety_coach_answer_packet(raw: str) -> dict[str, Any] | None:
+    text = (raw or "").strip()
+    if not text:
+        return None
+    text = re.sub(r"^```(?:json)?", "", text).strip().rstrip("`").strip()
+    try:
+        data = json.loads(text)
+    except Exception:
+        match = re.search(r"\{.*\}", text, flags=re.S)
+        if not match:
+            return None
+        try:
+            data = json.loads(match.group(0))
+        except Exception:
+            return None
+    if not isinstance(data, dict):
+        return None
+    final_answer = str(data.get("final_answer") or "").strip()
+    if len(final_answer) < 10:
+        return None
+    for key in ("taxonomy", "runtime_intent", "rag_synthesis", "answer_plan"):
+        if not isinstance(data.get(key), dict):
+            data[key] = {}
+    data["final_answer"] = final_answer
+    return data
+
+
+def _edu_vp_safety_coach_answer_packet_prompt(
+    *,
+    question: str,
+    concept_title: str,
+    concept_body: str,
+    evidence_block: str,
+    policy_context: dict[str, Any],
+    reinforcement_policies: list[dict[str, Any]],
+) -> str:
+    policy_block = _edu_vp_safety_coach_policy_prompt(policy_context)
+    reinforcement_block = _edu_vp_safety_coach_reinforcement_prompt(reinforcement_policies)
+    taxonomy = policy_context.get("taxonomy") if isinstance(policy_context.get("taxonomy"), dict) else {}
+    runtime_intent = policy_context.get("runtime_intent") if isinstance(policy_context.get("runtime_intent"), dict) else {}
+    return "\n".join(
+        [
+            "너는 Harness VP 훈련의 AI 안전 오리엔테이션 코치다.",
+            "한 번의 응답으로 구조화된 JSON만 출력한다. markdown 금지.",
+            "목표: 규칙 기반 FAQ 답이 아니라, 사용자 질문을 이해하고 RAG를 답변 각도/예시/실천 기준에 녹인 자연스러운 한국어 답을 만든다.",
+            "final_answer는 사용자에게 보일 본문이다. 3~5문장, 900자 이내, 초등학교 1학년도 이해할 쉬운 한국어.",
+            "규칙:",
+            "- 사용자 질문에 바로 답한다. 뒤 과정으로 넘기지 않는다.",
+            "- 감정/외로움/의존/기분이 있으면 첫 문장은 감정을 인정한다.",
+            "- 비용 장벽은 먼저 현실 부담으로 인정하고 무료/저비용/공공 창구를 제시한다.",
+            "- 전기/에너지 질문은 데이터센터, 서버/GPU, 냉각 중 최소 2가지를 설명한다.",
+            "- [관련 내부 자료]가 없으면 자료를 언급하지 않는다.",
+            "- [관련 내부 자료]가 있으면 final_answer의 각도, 예시, 실천 기준 중 하나에 반영한다.",
+            "- AI를 사람, 친구, 전문가, 보호자처럼 표현하지 않는다.",
+            "- 출력 JSON schema:",
+            '{"taxonomy":{"topic_domain":[],"user_need":[],"constraint_type":[],"emotion_state":[],"risk_level":"low|medium|high","answer_shape":[]},"runtime_intent":{"primary":"","secondary":[],"latent_need":"","answer_style":"","must_answer_now":true},"rag_synthesis":{"usable":true,"fresh_angle":"","reader_relevance":"","example_seed":"","evidence_risk":"none|weak_match|stale|source_low_confidence"},"answer_plan":{"opening_move":"","core_explanation":[],"fresh_example":"","boundary":"","closing_rule":""},"final_answer":""}',
+            "[기존 taxonomy]",
+            json.dumps(taxonomy, ensure_ascii=False, sort_keys=True),
+            "[기존 runtime_intent]",
+            json.dumps(runtime_intent, ensure_ascii=False, sort_keys=True),
+            "[정책]",
+            policy_block,
+            "[자동강화]",
+            reinforcement_block,
+            "[현재 단락 제목]",
+            concept_title,
+            "[현재 단락 설명]",
+            concept_body,
+            "[관련 내부 자료]",
+            evidence_block,
+            "[사용자 질문]",
+            question,
+        ]
+    )
+
+
 def _edu_vp_safety_coach_policy_contract_issues(
     *,
     answer: str,
@@ -10883,6 +10959,91 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
     evidence_block = evidence_text or "(질문과 딱 맞는 내부 자료가 없으므로 자료를 언급하지 말 것)"
     reinforcement_block = _edu_vp_safety_coach_reinforcement_prompt(reinforcement_policies)
     policy_block = _edu_vp_safety_coach_policy_prompt(policy_context)
+    structured_packet_enabled = os.getenv("EDU_SAFETY_COACH_STRUCTURED_PACKET_ENABLED", "").strip().lower() in {"1", "true", "yes"}
+    if structured_packet_enabled:
+        packet_prompt = _edu_vp_safety_coach_answer_packet_prompt(
+            question=question,
+            concept_title=concept_title,
+            concept_body=concept_body,
+            evidence_block=evidence_block,
+            policy_context=policy_context,
+            reinforcement_policies=reinforcement_policies,
+        )
+        packet_model_ladder = _edu_safety_coach_model_ladder()
+        packet_model = packet_model_ladder[0]
+        packet_timeout = _edu_vp_safety_coach_model_timeout(
+            packet_model,
+            float(os.getenv("EDU_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS") or _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS) - 0.5,
+        )
+        try:
+            raw_packet, packet_usage, used_packet_model = _edu_vp_generate_text_with_timeout(
+                packet_prompt,
+                max_output_tokens=760,
+                timeout_seconds=packet_timeout,
+                response_mime_type="application/json",
+                meta={
+                    "surface": "vp_training_safety_coach_structured_packet",
+                    "evidence_count": len(evidence_items),
+                    "evidence_selected_count": int(evidence_meta.get("selected_count") or 0),
+                    "policy_ids": policy_context.get("policy_ids"),
+                    "intent_classes": policy_context.get("intent_classes"),
+                    "runtime_intent": (policy_context.get("runtime_intent") or {}).get("primary") if isinstance(policy_context.get("runtime_intent"), dict) else "",
+                    "timeout_seconds": packet_timeout,
+                },
+                model_ladder=[packet_model],
+            )
+            packet = _edu_vp_parse_safety_coach_answer_packet(raw_packet)
+            if packet:
+                packet_answer = str(packet.get("final_answer") or "").strip()
+                packet_review = _edu_vp_safety_coach_quality_review(
+                    question=question,
+                    answer=packet_answer,
+                    concept_body=concept_body,
+                    evidence_items=evidence_items,
+                    reinforcement_policies=reinforcement_policies,
+                    policy_context=policy_context,
+                    llm_judge_enabled=False,
+                )
+                packet_issues = [str(item) for item in packet_review.get("issues") or [] if str(item).strip()]
+                if not packet_issues:
+                    if isinstance(packet_usage, dict):
+                        packet_usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
+                        packet_usage["_safety_coach_red_team_issues"] = []  # type: ignore[index]
+                        packet_usage["_safety_coach_llm_judge"] = {}  # type: ignore[index]
+                        packet_usage["_safety_coach_rag_infused"] = _edu_vp_safety_coach_answer_uses_evidence(packet_answer, evidence_items)  # type: ignore[index]
+                        packet_usage["_safety_coach_rag_patch_applied"] = False  # type: ignore[index]
+                        packet_usage["_safety_coach_structured_packet"] = {
+                            "enabled": True,
+                            "schema_keys": [key for key in ("taxonomy", "runtime_intent", "rag_synthesis", "answer_plan", "final_answer") if key in packet],
+                            "runtime_intent": packet.get("runtime_intent") if isinstance(packet.get("runtime_intent"), dict) else {},
+                            "rag_synthesis": packet.get("rag_synthesis") if isinstance(packet.get("rag_synthesis"), dict) else {},
+                        }  # type: ignore[index]
+                        packet_usage["_safety_coach_reinforcement_policies"] = reinforcement_policies  # type: ignore[index]
+                        packet_usage["_safety_coach_policy_context"] = {
+                            "schema_version": policy_context.get("schema_version"),
+                            "intent_classes": policy_context.get("intent_classes"),
+                            "taxonomy": policy_context.get("taxonomy"),
+                            "runtime_intent": policy_context.get("runtime_intent"),
+                            "policy_ids": policy_context.get("policy_ids"),
+                        }  # type: ignore[index]
+                    packet_model_name = f"{used_packet_model}+structured_packet"
+                    _edu_log_llm_cost(packet_usage, packet_model_name)
+                    return packet_answer[:2200], packet_model_name, packet_usage, False
+                _edu_runtime_event(
+                    "vp_training_safety_coach_structured_packet_quality_failed",
+                    model=used_packet_model,
+                    issues=packet_issues,
+                    evidence_meta=evidence_meta,
+                    concept_title=concept_title[:120],
+                    question=question[:240],
+                )
+        except Exception as exc:  # noqa: BLE001
+            _edu_runtime_event(
+                "vp_training_safety_coach_structured_packet_failed",
+                error_type=type(exc).__name__,
+                error=str(exc)[:240],
+                concept_title=concept_title[:120],
+            )
     base_prompt = (
         "너는 Harness VP 훈련의 AI 안전 오리엔테이션 코치다.\n"
         "사용자는 AI/LLM 왕초보다. 초등학교 1학년도 이해할 만큼 쉬운 한국어로 답하라.\n"
