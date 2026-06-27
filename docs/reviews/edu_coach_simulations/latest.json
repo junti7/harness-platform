@@ -1,44 +1,101 @@
 {
-  "candidate_source": "current-fallback",
+  "candidate_source": "corpus-current-fallback",
+  "channel_counts": {
+    "AI타임스": 1,
+    "ERIC": 4,
+    "EdSurge": 2,
+    "EvidenceBank": 14,
+    "GooglePlay_콴다": 2,
+    "HackerNews": 14,
+    "Khan_Blog": 1,
+    "MIT_Tech": 2,
+    "Mollick": 1,
+    "Naver_블로그": 150,
+    "Naver_지식iN": 145,
+    "Naver_카페글": 140,
+    "OpenAlex": 3,
+    "Reddit_r/AsianParents": 2,
+    "Reddit_r/ChatGPT": 1,
+    "Reddit_r/EdTech": 4,
+    "Reddit_r/korea": 6,
+    "RestWorld": 1,
+    "SemanticScholar": 4,
+    "TechCrunch": 1,
+    "The74": 1,
+    "YouTube": 1
+  },
   "intent_verdict_counts": {
     "ai_energy_use": {
-      "clear": 1
+      "clear": 6,
+      "needs_work": 46
     },
-    "ai_error_mechanism": {
-      "clear": 1
+    "ai_homework_overreliance": {
+      "clear": 23,
+      "needs_work": 87
     },
-    "attention_mechanism": {
-      "clear": 1
+    "career_anxiety": {
+      "clear": 17,
+      "needs_work": 42
     },
     "emotional_validation": {
-      "clear": 2
+      "clear": 4,
+      "needs_work": 48
     },
     "general_principle": {
-      "clear": 6
+      "clear": 34,
+      "needs_work": 211
     },
     "isolation_dependency": {
-      "clear": 1
+      "clear": 8,
+      "needs_work": 75
     },
-    "noun_prediction": {
-      "clear": 1
+    "learning_start": {
+      "clear": 34,
+      "needs_work": 99
     },
-    "particle_prediction": {
-      "clear": 1
+    "privacy_boundary": {
+      "clear": 10,
+      "needs_work": 38
     },
     "professional_cost_barrier": {
-      "clear": 1
+      "clear": 10,
+      "needs_work": 43
     },
-    "transformer_authors": {
-      "clear": 1
+    "screen_dependency": {
+      "clear": 12,
+      "needs_work": 57
     }
   },
   "llm_judge_enabled": false,
   "ok": true,
-  "output_path": "docs/reviews/edu_coach_simulations/run_20260627T085854Z_current_fallback.jsonl",
-  "record_count": 10,
-  "run_id": "20260627T085854Z",
-  "top_issues": [],
+  "output_path": "docs/reviews/edu_coach_simulations/run_20260627T091000Z_corpus_current_fallback.jsonl",
+  "record_count": 500,
+  "run_id": "20260627T091000Z",
+  "segment_counts": {
+    "general": 49,
+    "parent": 449,
+    "worker": 2
+  },
+  "top_issues": [
+    [
+      "question_not_addressed",
+      393
+    ],
+    [
+      "missing_principle_mechanism",
+      29
+    ],
+    [
+      "missing_empathy_for_emotional_question",
+      12
+    ],
+    [
+      "missing_energy_use_mechanism",
+      4
+    ]
+  ],
   "verdict_counts": {
-    "clear": 10
+    "clear": 102,
+    "needs_work": 398
   }
 }

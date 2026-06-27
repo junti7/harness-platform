@@ -11,6 +11,7 @@
 - 기존 `EDU_SIMULATION_GATING.md`는 UX/security/product gate다. 이 체크리스트는 AI 코치 답변 품질 gate다.
 - 세 gate 중 하나라도 `block`이면 release/확장 판정은 `block`.
 - Case-by-case 답변 하드코딩이 아니라 intent, constraint, failure, policy, twin, scenario artifact를 축적한다.
+- GIGO 방지를 위해 corpus 기반 scenario는 source channel, intent confidence, PII/noise marker, quality score gate를 통과한 항목만 simulation에 사용한다.
 
 ---
 
@@ -35,8 +36,8 @@
 | P1-1 | current fallback 답변 대상으로 simulation 실행 | `docs/reviews/edu_coach_simulations/run_*.jsonl` | done |
 | P1-2 | latest summary 생성 | `docs/reviews/edu_coach_simulations/latest.json`, `latest.md` | done |
 | P1-3 | known bad/good gold-set을 deterministic gate에 통과시켜 calibration sanity check | runner `--candidate-source gold-set` | done |
-| P1-4 | 500개 question variant 생성 | scenario mutation 확장 | next |
-| P1-5 | top failure cluster report 생성 | failure cluster markdown | next |
+| P1-4 | GIGO quality gate를 통과한 500개 corpus-grounded question variant 생성 | `configs/education/edu_coach_corpus_scenarios.json` | done |
+| P1-5 | top failure cluster report 생성 | `docs/reviews/edu_coach_simulations/corpus_coverage_*.md`, latest simulation | done |
 
 ---
 

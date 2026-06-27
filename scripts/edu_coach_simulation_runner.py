@@ -17,6 +17,7 @@ REPORT_DIR = ROOT / "docs" / "reviews" / "edu_coach_simulations"
 POLICY_PATH = CONFIG_DIR / "edu_coach_policy_registry.json"
 SCENARIO_PATH = CONFIG_DIR / "edu_coach_scenarios.json"
 GOLD_SET_PATH = REPORT_DIR / "gold_set_seed_2026-06-27.jsonl"
+CORPUS_SCENARIO_PATH = CONFIG_DIR / "edu_coach_corpus_scenarios.json"
 
 
 @dataclass(frozen=True)
@@ -96,6 +97,14 @@ def load_gold_set(path: Path = GOLD_SET_PATH) -> list[dict[str, Any]]:
         rows.append(row)
     if not rows:
         raise ValueError("gold set has no rows")
+    return rows
+
+
+def load_corpus_scenarios(path: Path = CORPUS_SCENARIO_PATH) -> list[dict[str, Any]]:
+    payload = _read_json(path)
+    rows = [item for item in payload.get("cases", []) if isinstance(item, dict)]
+    if not rows:
+        raise ValueError("corpus scenario registry has no cases")
     return rows
 
 
@@ -236,6 +245,28 @@ def _gold_set_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return candidates
 
 
+def _corpus_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    candidates = []
+    for row in rows:
+        question = str(row.get("question") or "")
+        candidates.append(
+            {
+                "case_id": str(row.get("case_id") or ""),
+                "candidate_id": str(row.get("case_id") or ""),
+                "candidate_source": "corpus_current_fallback",
+                "expected_label": "unknown",
+                "question": question,
+                "answer": "",
+                "intent_labels": [str(label) for label in row.get("intent_labels", [])],
+                "concept_title": "수집 corpus 기반 사용자 질문",
+                "concept_body": str(row.get("evidence_excerpt") or ""),
+                "source_channel": str(row.get("source_channel") or ""),
+                "segment": str(row.get("segment") or ""),
+            }
+        )
+    return candidates
+
+
 def run_simulation(
     *,
     candidate_source: str = "current-fallback",
@@ -264,6 +295,20 @@ def run_simulation(
                 llm_judge_enabled=llm_judge_enabled,
             )
             records.append({**item, **result})
+    elif candidate_source == "corpus-current-fallback":
+        raw_candidates = _corpus_candidates(load_corpus_scenarios())
+        for item in raw_candidates[:limit]:
+            answer = backend._edu_vp_safety_coach_fallback(item.get("concept_title") or "", item["question"])
+            result = evaluate_answer(
+                backend=backend,
+                registry=registry,
+                question=item["question"],
+                answer=answer,
+                concept_body=item.get("concept_body", ""),
+                intent_labels=item.get("intent_labels", []),
+                llm_judge_enabled=llm_judge_enabled,
+            )
+            records.append({**item, "answer": answer, **result})
     else:
         for case in scenarios[:limit]:
             if candidate_source == "current-fallback":
@@ -271,7 +316,7 @@ def run_simulation(
             elif candidate_source == "scenario-gold":
                 candidates = _scenario_gold_candidates(case)
             else:
-                raise ValueError("candidate_source must be current-fallback, scenario-gold, or gold-set")
+                raise ValueError("candidate_source must be current-fallback, scenario-gold, gold-set, or corpus-current-fallback")
             for candidate in candidates:
                 result = evaluate_answer(
                     backend=backend,
@@ -306,6 +351,8 @@ def run_simulation(
             issue_counts[str(issue)] += 1
         for intent in record.get("intent_labels", []):
             intent_counts[str(intent)][record["verdict"]] += 1
+    channel_counts = Counter(str(record.get("source_channel") or "") for record in records if record.get("source_channel"))
+    segment_counts = Counter(str(record.get("segment") or "") for record in records if record.get("segment"))
 
     summary = {
         "ok": True,
@@ -317,6 +364,8 @@ def run_simulation(
         "verdict_counts": dict(verdict_counts),
         "top_issues": issue_counts.most_common(20),
         "intent_verdict_counts": {intent: dict(counts) for intent, counts in sorted(intent_counts.items())},
+        "channel_counts": dict(channel_counts),
+        "segment_counts": dict(segment_counts),
     }
     latest_json = report_dir / "latest.json"
     latest_md = report_dir / "latest.md"
@@ -353,6 +402,10 @@ def _render_markdown_summary(summary: dict[str, Any]) -> str:
     for intent, counts in sorted(summary.get("intent_verdict_counts", {}).items()):
         count_text = ", ".join(f"{verdict}={count}" for verdict, count in sorted(counts.items()))
         lines.append(f"- `{intent}`: {count_text}")
+    if summary.get("channel_counts"):
+        lines.extend(["", "## Channel Counts", ""])
+        for channel, count in sorted(summary.get("channel_counts", {}).items(), key=lambda item: (-item[1], item[0])):
+            lines.append(f"- `{channel}`: {count}")
     lines.append("")
     return "\n".join(lines)
 
@@ -361,7 +414,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run deterministic EDU AI coach answer-quality simulations.")
     parser.add_argument(
         "--candidate-source",
-        choices=["current-fallback", "scenario-gold", "gold-set"],
+        choices=["current-fallback", "scenario-gold", "gold-set", "corpus-current-fallback"],
         default="current-fallback",
         help="which answer candidates to score",
     )
