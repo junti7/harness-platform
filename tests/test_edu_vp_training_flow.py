@@ -140,7 +140,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertFalse(fallback_used)
         mocked_cost.assert_called_once()
 
-    def test_safety_coach_retries_when_answer_repeats_source_example(self):
+    def test_safety_coach_switches_model_when_answer_repeats_source_example(self):
         req = self.mod.EduVpTrainingSafetyCoachRequest(
             case_id=123,
             stage="day0",
@@ -159,9 +159,11 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         )
 
         with (
+            patch.object(self.mod, "_edu_vp_safety_coach_fast_answer", return_value=None),
+            patch.object(self.mod, "_edu_safety_coach_model_ladder", return_value=["gemini-test", "claude-test"]),
             patch.object(self.mod, "_edu_generate_text", side_effect=[
                 (first, {"prompt_token_count": 10, "candidates_token_count": 8}, "gemini-test"),
-                (second, {"prompt_token_count": 12, "candidates_token_count": 9}, "gemini-test"),
+                (second, {"prompt_token_count": 12, "candidates_token_count": 9}, "claude-test"),
             ]) as mocked_generate,
             patch.object(self.mod, "_edu_log_llm_cost"),
         ):
@@ -171,7 +173,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("조사는", answer)
         self.assertIn("학교 __ 갔다", answer)
         self.assertNotIn("우산, 장화, 여벌 양말", answer)
-        self.assertEqual(model, "gemini-test")
+        self.assertEqual(model, "claude-test")
         self.assertFalse(fallback_used)
 
     def test_safety_coach_red_team_requires_transformer_paper_authors(self):
@@ -194,9 +196,11 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         )
 
         with (
+            patch.object(self.mod, "_edu_vp_safety_coach_fast_answer", return_value=None),
+            patch.object(self.mod, "_edu_safety_coach_model_ladder", return_value=["gemini-test", "claude-test"]),
             patch.object(self.mod, "_edu_generate_text", side_effect=[
                 (weak, {"prompt_token_count": 10, "candidates_token_count": 8}, "gemini-test"),
-                (fixed, {"prompt_token_count": 12, "candidates_token_count": 9}, "gemini-test"),
+                (fixed, {"prompt_token_count": 12, "candidates_token_count": 9}, "claude-test"),
             ]) as mocked_generate,
             patch.object(self.mod, "_edu_log_llm_cost"),
         ):
@@ -207,7 +211,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("Vaswani", answer)
         self.assertIn("Shazeer", answer)
         self.assertNotEqual(answer, weak)
-        self.assertEqual(model, "gemini-test")
+        self.assertEqual(model, "claude-test")
         self.assertFalse(fallback_used)
 
     def test_safety_coach_switches_model_after_quality_failures(self):
@@ -226,10 +230,10 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         )
 
         with (
+            patch.object(self.mod, "_edu_vp_safety_coach_fast_answer", return_value=None),
             patch.object(self.mod, "_edu_safety_coach_model_ladder", return_value=["gemini-2.5-flash", "claude-haiku-4-5"]),
             patch.object(self.mod, "_edu_generate_text", side_effect=[
                 (weak, {"prompt_token_count": 10, "candidates_token_count": 8}, "gemini-2.5-flash"),
-                (weak, {"prompt_token_count": 12, "candidates_token_count": 9}, "gemini-2.5-flash"),
                 (fixed, {"prompt_token_count": 11, "candidates_token_count": 7}, "claude-haiku-4-5"),
             ]) as mocked_generate,
             patch.object(self.mod, "_edu_log_llm_cost"),
@@ -237,11 +241,41 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         ):
             answer, model, _usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
 
-        self.assertEqual(mocked_generate.call_count, 3)
+        self.assertEqual(mocked_generate.call_count, 2)
         self.assertEqual(mocked_generate.call_args_list[0].kwargs["model_ladder"], ["gemini-2.5-flash"])
-        self.assertEqual(mocked_generate.call_args_list[2].kwargs["model_ladder"], ["claude-haiku-4-5"])
+        self.assertEqual(mocked_generate.call_args_list[1].kwargs["model_ladder"], ["claude-haiku-4-5"])
         self.assertEqual(model, "claude-haiku-4-5")
         self.assertIn("조사는", answer)
+        self.assertFalse(fallback_used)
+
+    def test_safety_coach_switches_model_after_fast_call_failure(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=123,
+            stage="day0",
+            concept_id="safety_concept_ai_llm_words",
+            concept_title="먼저 말부터 정리하기: AI와 LLM",
+            concept_body="LLM은 다음에 올 법한 말을 이어 붙입니다.",
+            question="다음 글에 이어질 최적의 명사는 어떻게 추측해?",
+        )
+        fixed = "명사는 앞뒤 말이 만드는 장면을 보고 고릅니다. 예를 들어 '비 오는 날 ___를 챙겨'라면 우산이 자연스럽습니다."
+
+        with (
+            patch.object(self.mod, "_edu_vp_safety_coach_fast_answer", return_value=None),
+            patch.object(self.mod, "_edu_safety_coach_model_ladder", return_value=["gemini-2.5-flash", "claude-haiku-4-5"]),
+            patch.object(self.mod, "_edu_generate_text", side_effect=[
+                TimeoutError("gemini slow"),
+                (fixed, {"prompt_token_count": 11, "candidates_token_count": 7}, "claude-haiku-4-5"),
+            ]) as mocked_generate,
+            patch.object(self.mod, "_edu_log_llm_cost"),
+            patch.object(self.mod, "_edu_runtime_event"),
+        ):
+            answer, model, _usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
+
+        self.assertEqual(mocked_generate.call_count, 2)
+        self.assertEqual(mocked_generate.call_args_list[0].kwargs["model_ladder"], ["gemini-2.5-flash"])
+        self.assertEqual(mocked_generate.call_args_list[1].kwargs["model_ladder"], ["claude-haiku-4-5"])
+        self.assertEqual(model, "claude-haiku-4-5")
+        self.assertIn("명사는", answer)
         self.assertFalse(fallback_used)
 
     def test_safety_coach_red_team_blocks_prompt_marker_leakage(self):
@@ -329,6 +363,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             "answer": "조사는 앞말의 역할을 보고 고릅니다.",
             "model": "gemini-test",
             "fallback_used": False,
+            "evidence_meta": {"selected_count": 1},
+            "evidence_used": True,
         }
 
         with patch.object(self.mod, "_edu_execute", return_value=[{"event_payload": payload}]) as mocked_execute:
@@ -339,12 +375,45 @@ class EduVpTrainingFlowTests(unittest.TestCase):
                 answer_version="2026-06-27-rag-query-v6",
             )
 
-        self.assertEqual(cached, payload)
+        self.assertEqual(cached["answer"], payload["answer"])
+        self.assertEqual(cached["model"], payload["model"])
+        self.assertFalse(cached["fallback_used"])
+        self.assertTrue(cached["evidence_used"])
+        self.assertEqual(cached["evidence_meta"], {"selected_count": 1})
         query, params = mocked_execute.call_args.args[:2]
         self.assertIn("safety_question_answered", query)
         self.assertEqual(params[0], 123)
         self.assertEqual(params[1], "safety_concept_ai_llm_words")
         self.assertEqual(params[3], "2026-06-27-rag-query-v6")
+
+    def test_safety_coach_fallback_handles_noun_prediction_question(self):
+        answer = self.mod._edu_vp_safety_coach_fallback(
+            "먼저 말부터 정리하기: AI와 LLM",
+            "다음 글에 이어질 최적의 명사는 어떻게 추측해?",
+        )
+
+        self.assertIn("명사는", answer)
+        self.assertIn("문맥", answer)
+        self.assertIn("우산", answer)
+
+    def test_safety_coach_uses_fast_template_for_common_prediction_questions(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=123,
+            stage="day0",
+            concept_id="safety_concept_ai_llm_words",
+            concept_title="먼저 말부터 정리하기: AI와 LLM",
+            concept_body="LLM은 다음에 올 법한 말을 이어 붙입니다.",
+            question="다음 글에 이어질 최적의 명사는 어떻게 추측해?",
+        )
+
+        with patch.object(self.mod, "_edu_generate_text") as mocked_generate:
+            answer, model, usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
+
+        mocked_generate.assert_not_called()
+        self.assertEqual(model, "fast-template")
+        self.assertFalse(fallback_used)
+        self.assertIn("명사는", answer)
+        self.assertEqual(usage["_safety_coach_evidence_meta"]["skip_reason"], "fast_template")
 
     def test_safety_confirmation_unlocks_day0_practice(self):
         state = {"intake": {"preferred_llm": "claude"}, "day0": self.mod._edu_vp_build_day0({"preferred_llm": "claude"})}

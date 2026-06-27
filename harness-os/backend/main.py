@@ -18,6 +18,7 @@ import html
 import subprocess
 import shutil
 import base64
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -8518,6 +8519,59 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
 
 
 _EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-rag-query-v6"
+_EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
+_EDU_VP_SAFETY_COACH_EXECUTOR = ThreadPoolExecutor(
+    max_workers=int(os.getenv("EDU_SAFETY_COACH_MAX_WORKERS") or "4"),
+    thread_name_prefix="edu-safety-coach",
+)
+
+
+def _edu_vp_safety_coach_model_timeout(model_name: str, remaining_seconds: float) -> float:
+    if remaining_seconds <= 0:
+        return 0.0
+    base = 2.8
+    if str(model_name or "").startswith("claude"):
+        base = 3.8
+    elif str(model_name or "").startswith(("gpt", "o")):
+        base = 3.8
+    return max(1.8, min(base, remaining_seconds))
+
+
+def _edu_vp_safety_coach_fast_answer(concept_title: str, question: str) -> str | None:
+    q = str(question or "").strip()
+    lower_q = q.lower()
+    if "조사" in q and ("추측" in q or "이어질" in q or "다음" in q):
+        return _edu_vp_safety_coach_fallback(concept_title, q)
+    if "명사" in q and ("추측" in q or "이어질" in q or "다음" in q or "최적" in q):
+        return _edu_vp_safety_coach_fallback(concept_title, q)
+    if any(k in q for k in ("누가", "저자", "발표", "쓴 사람", "만든 사람")) and any(k in lower_q for k in ("transformer", "논문", "attention")):
+        return _edu_vp_safety_coach_fallback(concept_title, q)
+    return None
+
+
+def _edu_vp_generate_text_with_timeout(
+    prompt: str,
+    *,
+    max_output_tokens: int,
+    timeout_seconds: float,
+    response_mime_type: str,
+    meta: dict[str, Any],
+    model_ladder: list[str],
+) -> tuple[str, dict[str, int], str]:
+    future = _EDU_VP_SAFETY_COACH_EXECUTOR.submit(
+        _edu_generate_text,
+        prompt,
+        max_output_tokens=max_output_tokens,
+        timeout_seconds=timeout_seconds,
+        response_mime_type=response_mime_type,
+        meta=meta,
+        model_ladder=model_ladder,
+    )
+    try:
+        return future.result(timeout=timeout_seconds)
+    except FuturesTimeoutError as exc:
+        future.cancel()
+        raise TimeoutError(f"safety coach model timeout after {timeout_seconds:.2f}s") from exc
 
 
 def _edu_vp_normalize_safety_question(question: str) -> str:
@@ -8627,6 +8681,8 @@ def _edu_vp_cached_safety_coach_answer(
         "answer": answer,
         "model": str(payload.get("model") or ""),
         "fallback_used": bool(payload.get("fallback_used")),
+        "evidence_meta": payload.get("evidence_meta") if isinstance(payload.get("evidence_meta"), dict) else {},
+        "evidence_used": bool(payload.get("evidence_used")),
     }
 
 
@@ -8730,6 +8786,13 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
             "'학교 __ 갔다'라면 장소로 향한다는 뜻이 자연스러워서 '에'가 더 그럴듯합니다. "
             "LLM은 이런 예문을 아주 많이 본 뒤, 지금 문장과 비슷한 경우에 많이 이어졌던 조사를 고릅니다. "
             "그래서 문법 선생님처럼 규칙을 이해해서 보증하는 것이 아니라, 많이 본 말의 흐름을 바탕으로 고르는 것입니다."
+        )
+    if "명사" in q and ("추측" in q or "이어질" in q or "다음" in q or "최적" in q):
+        return (
+            "명사는 앞뒤 말이 만들고 있는 장면을 보고 고릅니다. 예를 들어 '비 오는 날 아이에게 ___를 챙겨 주세요'라면 "
+            "문맥상 '우산'이나 '장화' 같은 물건 이름이 잘 맞습니다. LLM은 비슷한 문장을 아주 많이 본 뒤, "
+            "지금 문장 흐름에서 자주 이어졌던 명사를 후보로 올리고 그중 가능성이 높은 말을 고릅니다. "
+            "다만 실제 정답을 아는 것이 아니라 그럴듯한 이어 말 고르기라서, 중요한 내용은 사람이 다시 확인해야 합니다."
         )
     if "AI와 LLM" in title:
         return (
@@ -8836,6 +8899,19 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
     question = _edu_neutralize(req.question, cap=700)
     concept_title = _edu_neutralize(req.concept_title, cap=160)
     concept_body = _edu_neutralize(req.concept_body, cap=1400)
+    fast_answer = _edu_vp_safety_coach_fast_answer(concept_title, question)
+    if fast_answer:
+        usage: dict[str, int] = {
+            "_safety_coach_evidence_meta": {
+                "query": f"{question} {concept_title}"[:500],
+                "selected_count": 0,
+                "rejected_count": 0,
+                "rejected": [],
+                "skip_reason": "fast_template",
+            },
+            "_safety_coach_red_team_issues": [],
+        }
+        return fast_answer[:2200], "fast-template", usage, False
     evidence_query = f"{question} {concept_title}"
     evidence_validation_text = concept_body
     evidence_text, evidence_items, evidence_meta = _edu_vp_safety_coach_evidence(
@@ -8866,71 +8942,85 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         f"[사용자 질문 또는 피드백]\n{question}\n\n"
         "답변 본문만 출력하라."
     )
-    retry_prompt = (
-        f"{base_prompt}\n\n"
-        "이전 답변이 단락 본문을 반복했거나 질문에 직접 답하지 못했다. "
-        "이번에는 본문 예시를 쓰지 말고, 사용자 질문의 핵심에 바로 답하라."
-    )
     try:
+        started_at = time.monotonic()
+        total_budget = float(os.getenv("EDU_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS") or _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS)
+
+        def remaining_budget() -> float:
+            return total_budget - (time.monotonic() - started_at)
+
         usage: dict[str, int] = {}
         used_model = ""
         answer = ""
         red_team_issues: list[str] = []
-        quality_fallback_used = False
         model_ladder = _edu_safety_coach_model_ladder()
         for model_name in model_ladder:
-            model_call_failed = False
             model_issues: list[str] = []
-            for attempt, prompt in enumerate((base_prompt, retry_prompt), start=1):
-                if attempt > 1 and red_team_issues:
-                    prompt = (
-                        f"{prompt}\n\n"
-                        f"[약식 Red Team 차단 사유]\n{', '.join(red_team_issues)}\n"
-                        "위 사유를 모두 고쳐 다시 답하라. 대괄호 표식과 원문 반복 없이 3~4문장 답변 본문만 출력하라. "
-                        "누가/저자/발표자 질문이면 사람 또는 연구팀 이름을 반드시 포함하라."
-                    )
-                try:
-                    raw, usage, used_model = _edu_generate_text(
-                        prompt,
-                        max_output_tokens=720,
-                        timeout_seconds=20,
-                        response_mime_type="text/plain",
-                        meta={
+            remaining = remaining_budget()
+            if remaining < 3.0:
+                _edu_runtime_event(
+                    "vp_training_safety_coach_deadline_fallback",
+                    remaining_seconds=round(remaining, 3),
+                    model=model_name,
+                    total_budget_seconds=total_budget,
+                    evidence_meta=evidence_meta,
+                )
+                answer = _edu_vp_safety_coach_fallback(concept_title, question)
+                used_model = f"{used_model or model_name}+deadline_fallback"
+                if isinstance(usage, dict):
+                    usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
+                    usage["_safety_coach_red_team_issues"] = red_team_issues  # type: ignore[index]
+                return answer[:2200], used_model, usage, True
+            call_timeout = _edu_vp_safety_coach_model_timeout(model_name, remaining - 0.5)
+            try:
+                raw, usage, used_model = _edu_vp_generate_text_with_timeout(
+                    base_prompt,
+                    max_output_tokens=520,
+                    timeout_seconds=call_timeout,
+                    response_mime_type="text/plain",
+                    meta={
                         "surface": "vp_training_safety_coach",
                         "evidence_count": len(evidence_items),
                         "evidence_selected_count": int(evidence_meta.get("selected_count") or 0),
                         "quality_model": model_name,
+                        "timeout_seconds": call_timeout,
                     },
-                        model_ladder=[model_name],
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    _edu_runtime_event(
-                        "vp_training_safety_coach_model_call_failed",
-                        model=model_name,
-                        attempt=attempt,
-                        error_type=type(exc).__name__,
-                        error=str(exc)[:240],
-                    )
-                    model_call_failed = True
-                    break
-                answer = re.sub(r"```(?:text)?", "", raw or "").strip().rstrip("`").strip()
-                if not answer:
-                    raise ValueError("empty safety coach answer")
-                red_team_issues = _edu_vp_safety_coach_red_team(
-                    question=question,
-                    answer=answer,
-                    concept_body=concept_body,
-                    evidence_items=evidence_items,
+                    model_ladder=[model_name],
                 )
-                model_issues = red_team_issues
-                if not red_team_issues:
-                    if isinstance(usage, dict):
-                        usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
-                        usage["_safety_coach_red_team_issues"] = []  # type: ignore[index]
-                    _edu_log_llm_cost(usage, used_model)
-                    return answer[:2200], used_model, usage, False
-            if model_call_failed:
+            except Exception as exc:  # noqa: BLE001
+                _edu_runtime_event(
+                    "vp_training_safety_coach_model_call_failed",
+                    model=model_name,
+                    timeout_seconds=call_timeout,
+                    remaining_seconds=round(remaining, 3),
+                    error_type=type(exc).__name__,
+                    error=str(exc)[:240],
+                )
                 continue
+            answer = re.sub(r"```(?:text)?", "", raw or "").strip().rstrip("`").strip()
+            if not answer:
+                _edu_runtime_event(
+                    "vp_training_safety_coach_model_quality_failed",
+                    model=model_name,
+                    issues=["empty_answer"],
+                    evidence_meta=evidence_meta,
+                    concept_title=concept_title[:120],
+                    question=question[:240],
+                )
+                continue
+            red_team_issues = _edu_vp_safety_coach_red_team(
+                question=question,
+                answer=answer,
+                concept_body=concept_body,
+                evidence_items=evidence_items,
+            )
+            model_issues = red_team_issues
+            if not red_team_issues:
+                if isinstance(usage, dict):
+                    usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
+                    usage["_safety_coach_red_team_issues"] = []  # type: ignore[index]
+                _edu_log_llm_cost(usage, used_model)
+                return answer[:2200], used_model, usage, False
             _edu_runtime_event(
                 "vp_training_safety_coach_model_quality_failed",
                 model=model_name,
@@ -8941,7 +9031,6 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
             )
         answer = _edu_vp_safety_coach_fallback(concept_title, question)
         used_model = f"{used_model or model_ladder[-1]}+quality_fallback"
-        quality_fallback_used = True
         _edu_log_llm_cost(usage, used_model)
         if isinstance(usage, dict):
             usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
@@ -9884,7 +9973,7 @@ def _edu_generate_text(
                 if OpenAI is None:
                     raise RuntimeError("openai package not installed")
                 provider = "openai"
-                client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+                client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=timeout_seconds)
                 resp = client.responses.create(
                     model=model_name,
                     input=prompt,
@@ -9898,7 +9987,7 @@ def _edu_generate_text(
                 }
             elif model_name.startswith("claude"):
                 provider = "anthropic"
-                client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+                client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), timeout=timeout_seconds)
                 resp = client.messages.create(
                     model=model_name,
                     max_tokens=max_output_tokens,
@@ -11372,7 +11461,7 @@ def edu_vp_training_safety_coach(
     )
     if cached:
         cached_evidence_meta = cached.get("evidence_meta") if isinstance(cached, dict) else None
-        cached_evidence_used = bool(
+        cached_evidence_used = bool(cached.get("evidence_used")) or bool(
             isinstance(cached_evidence_meta, dict) and int(cached_evidence_meta.get("selected_count") or 0) > 0
         )
         log_payload = {

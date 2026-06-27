@@ -15,7 +15,7 @@
 
 const API_BASE = import.meta.env.VITE_HARNESS_OS_API_BASE ?? ''
 const SECRET = import.meta.env.VITE_HARNESS_SECRET ?? ''
-const REQUEST_TIMEOUT_MS = 25_000
+const REQUEST_TIMEOUT_MS = 16_000
 
 export const VP_TRAINING = {
   accountRegister: '/api/edu/vp-training/account/register',
