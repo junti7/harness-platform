@@ -4824,10 +4824,15 @@ def get_ibkr_monitor(_: None = Depends(_require_secret)) -> dict[str, Any]:
                     continue
                 positions.append({
                     "symbol": sym,
+                    "exchange": meta.get("exchange", "SMART"),
+                    "currency": meta.get("currency", "USD"),
+                    "primary_exchange": meta.get("primary_exchange", ""),
                     "qty": meta.get("qty", 0),
                     "entry_price": meta.get("entry_price", 0.0),
                     "stop_loss": meta.get("stop_loss", 0.0),
                     "action": "HOLD",
+                    "resident_stop_missing": bool(meta.get("resident_stop_missing", False)),
+                    "adopted": bool(meta.get("adopted", False)),
                 })
             # 진입 대기(미체결) 주문도 cold-start 화면에 노출(handoff: TSM/MU/SK하이닉스 PreSubmitted).
             # 현재가/갭은 background 모니터가 캐시를 채우면 갱신되므로 여기선 durable 메타만 싣는다.
@@ -8835,6 +8840,17 @@ def _edu_vp_question_asks_ai_energy_use(question: str) -> bool:
 
 def _edu_vp_question_asks_direct_principle(question: str) -> bool:
     q = str(question or "").strip().lower()
+    hard_principle_markers = (
+        "왜", "원리", "이유", "작동", "계산", "mechanism", "work", "compute",
+        "전기", "전력", "에너지", "데이터센터", "냉각", "gpu", "서버",
+    )
+    practical_help_markers = (
+        "어떻게 해야", "어떻게 하면", "어떻게 사용", "활용", "사용에 대해", "시작해야", "할지",
+        "하면 좋", "해야 할지", "걱정", "추천", "만들기", "교육", "강의", "career", "approach",
+        "homework", "accommodation", "use as",
+    )
+    if any(marker in q for marker in practical_help_markers) and not any(marker in q for marker in hard_principle_markers):
+        return False
     asks_principle = any(
         marker in q
         for marker in (
@@ -9469,7 +9485,7 @@ def _edu_vp_safety_keyword_stem(token: str) -> str:
 def _edu_vp_safety_coach_keywords(text: str, *, max_terms: int = 12) -> list[str]:
     stopwords = {
         "그리고", "그런데", "하지만", "어떻게", "이렇게", "저렇게", "이럴", "경우", "대한", "관련",
-        "사용자", "질문", "답변", "합니다", "있나요", "있어요", "무엇", "왜요", "좀", "잘",
+        "이런", "상황", "상황이면", "해야", "해요", "사용자", "질문", "답변", "합니다", "있나요", "있어요", "무엇", "왜요", "좀", "잘",
         "ai", "llm", "gpt", "chatgpt", "gemini", "claude",
     }
     terms: list[str] = []
@@ -9749,6 +9765,13 @@ def _edu_vp_safety_coach_has_cost_barrier(question: str) -> bool:
     return any(marker in text for marker in cost_markers) and any(marker in text for marker in help_markers)
 
 
+def _edu_vp_safety_coach_question_focus(question: str) -> str:
+    terms = _edu_vp_safety_coach_keywords(question, max_terms=3)
+    if not terms:
+        return "이 질문"
+    return "·".join(terms)
+
+
 def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
     title = concept_title or "이 단락"
     q = question.strip()
@@ -9775,8 +9798,8 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
             )
     if any(k in q for k in ("빠져", "빠져들", "의존", "계속", "다정", "못 끊")):
         return (
-            "다정한 말 때문에 계속 보고 싶어지는 건 이상한 일이 아닙니다. 힘든 순간에는 바로 받아주는 대화가 실제 위로처럼 느껴질 수 있습니다. "
-            "AI를 무조건 끊으라는 뜻은 아니고, 마음을 가라앉히는 임시 도구로 쓰되 중요한 결정은 바로 하지 않는 규칙이 필요합니다. "
+            "AI에 의존하게 될까 봐 걱정되는 건 자연스러운 질문입니다. 다정한 말 때문에 계속 보고 싶어지는 것도 이상한 일이 아닙니다. "
+            "아이든 어른이든 AI를 무조건 끊으라는 뜻은 아니고, 마음을 가라앉히는 임시 도구로 쓰되 중요한 결정은 바로 하지 않는 규칙이 필요합니다. "
             "예를 들어 밤에 계속 대화하고 싶어지면 '오늘은 여기까지, 내일 낮에 다시 읽기'라고 적어두면 감정과 판단을 조금 분리할 수 있습니다."
         )
     if _edu_vp_question_asks_attention_mechanism(q):
@@ -9853,10 +9876,11 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
             "책을 읽으며 중요한 단어에 형광펜을 칠하고, 그 단어들끼리 연결해 뜻을 잡는 모습과 비슷합니다."
         )
     if question.strip():
+        focus = _edu_vp_safety_coach_question_focus(q)
         return (
-            f"그 부분이 걸릴 수 있습니다. '{title}'을 배울 때도 사람마다 제일 불안하거나 궁금한 지점이 다릅니다. "
-            "AI 답은 도움이 되는 초안이 될 수 있지만, 마음이 급하거나 중요한 판단이 섞이면 바로 실행하지 말고 한 번 멈춰서 확인하는 편이 안전합니다. "
-            "지금 질문은 그대로 저장해두고, 같은 상황에서 내가 실제로 할 수 있는 작은 행동 1개까지 같이 정리해보면 좋습니다."
+            f"{focus} 쪽이 걸리는 질문입니다. 먼저 이 질문은 '{title}' 설명을 외우라는 뜻이 아니라, 내 상황에서 어디까지 써도 되는지 정하려는 질문으로 보는 게 맞습니다. "
+            "AI 답은 초안과 정리에는 도움이 되지만, 아이의 학습·건강·돈·개인정보처럼 결과가 남는 일은 바로 실행하지 말고 한 번 확인해야 합니다. "
+            "지금은 1) 걱정되는 지점 하나를 적고, 2) AI에게 대안 2개를 물어본 뒤, 3) 실제 행동은 가장 작은 것 하나만 고르는 순서로 가면 됩니다."
         )
     return "질문을 조금 더 구체적으로 적어주시면, 그 부분에 맞춰 쉬운 예로 다시 설명할 수 있습니다."
 
@@ -9919,7 +9943,7 @@ def _edu_vp_safety_coach_red_team(
     repeated = sum(1 for sentence in concept_sentences if sentence and sentence in answer_text)
     if repeated >= 1:
         issues.append("concept_body_repeated")
-    question_terms = [token for token in re.findall(r"[가-힣A-Za-z0-9]+", question_text) if len(token) >= 2]
+    question_terms = _edu_vp_safety_coach_keywords(question_text, max_terms=8)
     if question_terms and not any(token in answer_text for token in question_terms[:5]):
         issues.append("question_not_addressed")
     if _edu_vp_safety_coach_needs_empathy(question_text):

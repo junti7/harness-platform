@@ -50,6 +50,12 @@ LOW_QUALITY_MARKERS = [
 
 PII_MARKERS = ["전화번호", "주소", "주민등록", "비밀번호", "계좌", "카톡 id", "카카오톡 id"]
 
+DOMAIN_MARKERS = [
+    "ai", "인공지능", "챗gpt", "chatgpt", "llm", "gemini", "claude", "교육", "학습", "공부",
+    "숙제", "과제", "학생", "아이", "자녀", "학부모", "초등", "중등", "고등", "학교", "교사",
+    "teacher", "student", "education", "learning", "homework",
+]
+
 SEGMENT_HINTS = {
     "parent": ["아이", "자녀", "학부모", "엄마", "아빠", "초등", "중학생", "고등학생", "부모", "맘카페"],
     "worker": ["직장", "회사", "업무", "커리어", "이직", "사무직", "도태"],
@@ -143,6 +149,17 @@ def _candidate_question(text: str) -> str:
 def _classify_intents(text: str) -> list[str]:
     lower = text.lower()
     intents = [intent for intent, markers in INTENT_RULES.items() if any(marker.lower() in lower for marker in markers)]
+    ai_context = any(marker in lower for marker in ("ai", "인공지능", "챗gpt", "chatgpt", "llm", "gemini", "claude"))
+    if "ai_energy_use" in intents and not ai_context:
+        intents.remove("ai_energy_use")
+    if "isolation_dependency" in intents and not any(
+        marker in lower for marker in ("ai", "챗gpt", "chatgpt", "llm", "혼자", "들어줄", "외로", "아이", "학생")
+    ):
+        intents.remove("isolation_dependency")
+    if "general_principle" in intents and any(
+        marker in lower for marker in ("어떻게 해야", "어떻게 사용", "활용", "추천", "시작해야", "교육", "강의", "career", "approach")
+    ) and not any(marker in lower for marker in ("원리", "작동", "계산", "mechanism", "compute", "데이터센터", "전기")):
+        intents.remove("general_principle")
     if not intents:
         intents = ["uncategorized_user_voice"]
     if "professional_cost_barrier" in intents and "emotional_validation" not in intents and any(k in lower for k in ("걱정", "불안", "마음")):
@@ -163,6 +180,8 @@ def _quality_gate(*, text: str, question: str, channel: str, intents: list[str])
         reasons.append("low_quality_marker")
     if "uncategorized_user_voice" in intents and len(intents) == 1:
         reasons.append("uncategorized_intent")
+    if not any(marker.lower() in normalized for marker in DOMAIN_MARKERS):
+        reasons.append("domain_mismatch")
     pii_hits = [marker for marker in PII_MARKERS if marker.lower() in normalized]
     if pii_hits:
         reasons.append("pii_risk")

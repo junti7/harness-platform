@@ -367,6 +367,20 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("Transformer는 그 안", answer)
         self.assertEqual(issues, [])
 
+    def test_safety_coach_generic_fallback_anchors_on_question_focus(self):
+        question = "이런 상황이면 어떻게 해야 해요? 초등학생 수학 점수가 떨어져서 AI 학습을 시작해야 할지 걱정돼요"
+        answer = self.mod._edu_vp_safety_coach_fallback("수집 corpus 기반 사용자 질문", question)
+        issues = self.mod._edu_vp_safety_coach_red_team(
+            question=question,
+            answer=answer,
+            concept_body="초등학생 수학 점수가 떨어져서 AI 학습을 시작해야 할지 걱정됩니다.",
+        )
+
+        self.assertIn("초등학생", answer)
+        self.assertIn("수학", answer)
+        self.assertIn("학습", answer)
+        self.assertNotIn("question_not_addressed", issues)
+
     def test_safety_coach_policy_resolver_matches_cost_barrier(self):
         context = self.mod._edu_vp_safety_coach_resolved_policy_context(
             "그렇지만 전문가에게 상담을 받을 경우 비용이 많이 들잖아요."

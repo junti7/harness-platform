@@ -51,6 +51,17 @@ class EduCoachCorpusScenarioGeneratorTests(unittest.TestCase):
         self.assertIn("low_quality_marker", metadata["noise_reasons"])
         self.assertIn("pii_risk", metadata["noise_reasons"])
 
+    def test_quality_gate_rejects_domain_mismatch(self):
+        allowed, metadata = self.generator._quality_gate(
+            text="여수 야간관광 프로그램이 조기 마감됐다.",
+            question="이런 상황이면 어떻게 해야 해요? 여수 야간관광 프로그램이 조기 마감됐다",
+            channel="AI타임스",
+            intents=["general_principle"],
+        )
+
+        self.assertFalse(allowed)
+        self.assertIn("domain_mismatch", metadata["noise_reasons"])
+
     def test_write_outputs(self):
         payload = self.generator.collect_corpus_scenarios(max_cases=5)
         with tempfile.TemporaryDirectory() as tmp:
