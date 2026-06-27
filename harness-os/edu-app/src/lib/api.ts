@@ -32,6 +32,7 @@ export const VP_TRAINING = {
   feedback: '/api/edu/vp-training/feedback',
   safetyRoute: '/api/edu/vp-training/safety-route',
   safetyCoach: '/api/edu/vp-training/safety-coach',
+  safetyCoachFeedback: '/api/edu/vp-training/safety-coach/feedback',
   materials: (kitId: string) => `/api/edu/vp-training/materials/${encodeURIComponent(kitId)}`,
 } as const
 

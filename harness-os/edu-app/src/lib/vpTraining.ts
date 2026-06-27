@@ -380,6 +380,38 @@ export async function askSafetyCoach(input: {
   })
 }
 
+export async function rateSafetyCoachAnswer(input: {
+  caseId: number
+  email: string
+  stage: StageKey
+  conceptId: string
+  conceptTitle: string
+  conceptBody: string
+  question: string
+  answer: string
+  answerVersion: string
+  rating: 'up' | 'down'
+  model?: string
+  fallbackUsed?: boolean
+  evidenceUsed?: boolean
+}): Promise<{ ok: boolean; rating: 'up' | 'down'; auto_reinforcement_status?: string }> {
+  return vpPost<{ ok: boolean; rating: 'up' | 'down'; auto_reinforcement_status?: string }>(VP_TRAINING.safetyCoachFeedback, {
+    case_id: input.caseId,
+    email: input.email,
+    stage: input.stage,
+    concept_id: input.conceptId,
+    concept_title: input.conceptTitle,
+    concept_body: input.conceptBody,
+    question: input.question,
+    answer: input.answer,
+    answer_version: input.answerVersion,
+    rating: input.rating,
+    model: input.model ?? '',
+    fallback_used: Boolean(input.fallbackUsed),
+    evidence_used: Boolean(input.evidenceUsed),
+  })
+}
+
 /** 단계 완료/증거물 커밋. day0 completed=true 면 day1 이 해금된다. */
 export async function saveStageArtifact(input: {
   caseId: number

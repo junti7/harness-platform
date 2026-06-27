@@ -14,12 +14,15 @@ import {
   ShieldCheck,
   Sparkles,
   Target,
+  ThumbsDown,
+  ThumbsUp,
   Trash2,
 } from 'lucide-react'
 import { ApiError } from '@/lib/api'
 import {
   askSafetyCoach,
   fetchSession,
+  rateSafetyCoachAnswer,
   routeSafetyQuestion,
   saveStageArtifact,
   syncSession,
@@ -65,6 +68,7 @@ type SafetyCoachThreadItem = {
   id: string
   conceptId: string
   conceptTitle: string
+  conceptBody?: string
   question: string
   answer: string
   model?: string
@@ -74,6 +78,12 @@ type SafetyCoachThreadItem = {
   createdAt: string
 }
 type SafetyCoachThreads = SafetyCoachThreadItem[]
+type SafetyCoachAnswerRating = 'up' | 'down'
+type SafetyCoachAnswerFeedback = Record<string, {
+  rating: SafetyCoachAnswerRating
+  status?: 'saved' | 'queued' | 'error'
+  reviewedAt?: string
+}>
 type SafetyCoachThreadGroup = {
   stage: StageKey
   label: string
@@ -341,6 +351,24 @@ function currentSafetyCoachThreads(raw: unknown, deletedKeys: SafetyDeletedAnswe
       return row.version === SAFETY_COACH_ANSWER_VERSION && Boolean(row.question?.trim()) && Boolean(row.answer?.trim())
     })
     .slice(-40)
+}
+
+function currentSafetyCoachAnswerFeedback(raw: unknown, deletedKeys: SafetyDeletedAnswerKeys = []): SafetyCoachAnswerFeedback {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const deleted = new Set(deletedKeys)
+  const out: SafetyCoachAnswerFeedback = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (deleted.has(key)) continue
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+    const row = value as { rating?: string; status?: string; reviewedAt?: string }
+    if (row.rating !== 'up' && row.rating !== 'down') continue
+    out[key] = {
+      rating: row.rating,
+      status: row.status === 'queued' || row.status === 'error' ? row.status : 'saved',
+      reviewedAt: typeof row.reviewedAt === 'string' ? row.reviewedAt : undefined,
+    }
+  }
+  return out
 }
 
 function currentDeferredSafetyQuestions(raw: unknown, deletedKeys: SafetyDeletedAnswerKeys = []): DeferredSafetyQuestions {
@@ -1277,6 +1305,7 @@ function SafetyOrientationBlock({
   conceptFeedback,
   coachAnswers,
   coachThreads,
+  coachFeedback,
   coachLoading,
   coachErrors,
   saving,
@@ -1286,6 +1315,7 @@ function SafetyOrientationBlock({
   onToggle,
   onConceptFeedback,
   onAskCoach,
+  onRateCoachAnswer,
   onDeleteCoachAnswer,
   onSaveQuestions,
   onReady,
@@ -1295,6 +1325,7 @@ function SafetyOrientationBlock({
   conceptFeedback: SafetyConceptFeedback
   coachAnswers: SafetyCoachAnswers
   coachThreads: SafetyCoachThreads
+  coachFeedback: SafetyCoachAnswerFeedback
   coachLoading: Record<string, boolean>
   coachErrors: Record<string, string>
   saving: boolean
@@ -1304,6 +1335,12 @@ function SafetyOrientationBlock({
   onToggle: (id: string) => void
   onConceptFeedback: (id: string, value: string) => void
   onAskCoach: (concept: NonNullable<TrainingStage['foundation_concepts']>[number], id: string) => void
+  onRateCoachAnswer: (
+    concept: NonNullable<TrainingStage['foundation_concepts']>[number],
+    id: string,
+    item: SafetyCoachAnswers[string] | SafetyCoachThreadItem,
+    rating: SafetyCoachAnswerRating,
+  ) => void
   onDeleteCoachAnswer: (id: string) => void
   onSaveQuestions: () => void
   onReady: () => void
@@ -1320,6 +1357,49 @@ function SafetyOrientationBlock({
     conceptItems.length > 0 &&
     conceptItems.every((item) => checked[item.checkId])
   const hasQuestions = Object.values(conceptFeedback).some((value) => value.trim())
+  const renderAnswerRating = (
+    concept: NonNullable<TrainingStage['foundation_concepts']>[number],
+    id: string,
+    item: SafetyCoachAnswers[string] | SafetyCoachThreadItem,
+  ) => {
+    const key = safetyAnswerKey(id, item.version, item.question)
+    const selected = coachFeedback[key]?.rating
+    return (
+      <div className="mt-2 flex items-center gap-1.5" aria-label="AI 코치 답변 평가">
+        <button
+          type="button"
+          onClick={() => onRateCoachAnswer(concept, id, item, 'up')}
+          className={`inline-flex h-8 w-8 items-center justify-center rounded-[8px] border transition ${
+            selected === 'up'
+              ? 'border-primary bg-primary text-primary-foreground'
+              : 'border-border bg-secondary text-text-muted hover:bg-card hover:text-primary'
+          }`}
+          title="좋아요"
+          aria-label="좋아요"
+        >
+          <ThumbsUp size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={() => onRateCoachAnswer(concept, id, item, 'down')}
+          className={`inline-flex h-8 w-8 items-center justify-center rounded-[8px] border transition ${
+            selected === 'down'
+              ? 'border-danger bg-danger-soft text-danger'
+              : 'border-border bg-secondary text-text-muted hover:bg-card hover:text-danger'
+          }`}
+          title="싫어요"
+          aria-label="싫어요"
+        >
+          <ThumbsDown size={14} />
+        </button>
+        {selected ? (
+          <span className="text-[11px] leading-relaxed text-text-faint">
+            {selected === 'up' ? '좋아요 반영됨' : '자동강화 분석 예약됨'}
+          </span>
+        ) : null}
+      </div>
+    )
+  }
 
   return (
     <section className="rounded-2xl border border-danger/20 bg-danger-soft/45 p-4">
@@ -1359,13 +1439,21 @@ function SafetyOrientationBlock({
           </div>
           {historyOpen ? (
             <div className="mt-3 grid gap-2">
-              {coachThreads.slice().reverse().map((item) => (
-                <div key={item.id} className="rounded-[10px] border border-border bg-secondary px-3 py-2">
-                  <div className="mb-1 text-[11px] font-semibold text-primary">{item.conceptTitle}</div>
-                  <p className="text-xs font-semibold leading-relaxed text-ink">Q. {item.question}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-text-muted">A. {item.answer}</p>
-                </div>
-              ))}
+              {coachThreads.slice().reverse().map((item) => {
+                const concept = conceptItems.find((row) => row.checkId === item.conceptId)
+                const ratingConcept = concept ?? {
+                  title: item.conceptTitle,
+                  body: item.conceptBody ?? '',
+                }
+                return (
+                  <div key={item.id} className="rounded-[10px] border border-border bg-secondary px-3 py-2">
+                    <div className="mb-1 text-[11px] font-semibold text-primary">{item.conceptTitle}</div>
+                    <p className="text-xs font-semibold leading-relaxed text-ink">Q. {item.question}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-text-muted">A. {item.answer}</p>
+                    {renderAnswerRating(ratingConcept, item.conceptId, item)}
+                  </div>
+                )
+              })}
             </div>
           ) : null}
         </div>
@@ -1512,6 +1600,7 @@ function SafetyOrientationBlock({
                     </span>
                   </div>
                   {renderCoachAnswer(coach.answer)}
+                  {renderAnswerRating(concept, concept.checkId, coach)}
                 </div>
               ) : null}
             </div>
@@ -1621,6 +1710,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const [conceptFeedback, setConceptFeedback] = useState<SafetyConceptFeedback>({})
   const [coachAnswers, setCoachAnswers] = useState<SafetyCoachAnswers>({})
   const [coachThreads, setCoachThreads] = useState<SafetyCoachThreads>([])
+  const [coachAnswerFeedback, setCoachAnswerFeedback] = useState<SafetyCoachAnswerFeedback>({})
   const [deferredSafetyQuestions, setDeferredSafetyQuestions] = useState<DeferredSafetyQuestions>([])
   const [deletedSafetyAnswerKeys, setDeletedSafetyAnswerKeys] = useState<SafetyDeletedAnswerKeys>([])
   const [coachLoading, setCoachLoading] = useState<Record<string, boolean>>({})
@@ -1639,6 +1729,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const conceptFeedbackRef = useRef<SafetyConceptFeedback>({})
   const coachAnswersRef = useRef<SafetyCoachAnswers>({})
   const coachThreadsRef = useRef<SafetyCoachThreads>([])
+  const coachAnswerFeedbackRef = useRef<SafetyCoachAnswerFeedback>({})
   const deferredSafetyQuestionsRef = useRef<DeferredSafetyQuestions>([])
   const deletedSafetyAnswerKeysRef = useRef<SafetyDeletedAnswerKeys>([])
   const lastPositionRef = useRef<StagePosition>({})
@@ -1651,6 +1742,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       safety_concept_feedback: conceptFeedbackRef.current,
       safety_coach_answers: coachAnswersRef.current,
       safety_coach_threads: coachThreadsRef.current,
+      safety_coach_answer_feedback: coachAnswerFeedbackRef.current,
       deferred_safety_questions: deferredSafetyQuestionsRef.current,
       deleted_safety_answer_keys: deletedSafetyAnswerKeysRef.current,
       stage_checked: checkedRef.current,
@@ -1722,16 +1814,19 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     const feedback = draft?.safety_concept_feedback
     const answers = draft?.safety_coach_answers
     const threads = draft?.safety_coach_threads
+    const answerFeedback = draft?.safety_coach_answer_feedback
     const deferred = draft?.deferred_safety_questions
     const deleted = currentDeletedSafetyAnswerKeys(draft?.deleted_safety_answer_keys)
     const nextFeedback = currentSafetyConceptFeedback(feedback, deleted)
     const nextAnswers = currentSafetyCoachAnswers(answers, nextFeedback, deleted)
     const nextThreads = currentSafetyCoachThreads(threads, deleted)
+    const nextAnswerFeedback = currentSafetyCoachAnswerFeedback(answerFeedback, deleted)
     const nextDeferred = currentDeferredSafetyQuestions(deferred, deleted)
     checkedRef.current = nextChecked
     conceptFeedbackRef.current = nextFeedback
     coachAnswersRef.current = nextAnswers
     coachThreadsRef.current = nextThreads
+    coachAnswerFeedbackRef.current = nextAnswerFeedback
     deferredSafetyQuestionsRef.current = nextDeferred
     deletedSafetyAnswerKeysRef.current = deleted
     lastPositionRef.current = nextPosition
@@ -1741,6 +1836,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     setConceptFeedback(nextFeedback)
     setCoachAnswers(nextAnswers)
     setCoachThreads(nextThreads)
+    setCoachAnswerFeedback(nextAnswerFeedback)
     setDeferredSafetyQuestions(nextDeferred)
     setDeletedSafetyAnswerKeys(deleted)
     setCoachLoading({})
@@ -1967,6 +2063,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           safety_concept_feedback: nextFeedback,
           safety_coach_answers: persistedAnswers,
           safety_coach_threads: persistedThreads,
+          safety_coach_answer_feedback: coachAnswerFeedbackRef.current,
           deferred_safety_questions: persistedDeferred,
           deleted_safety_answer_keys: nextDeleted,
           stage_checked: checkedRef.current,
@@ -1981,6 +2078,80 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     }).then((next) => setState(next)).catch((e) => {
       console.error('delete safety answer sync failed', e)
       setCoachErrors((prev) => ({ ...prev, [id]: errMsg(e) }))
+    })
+  }
+
+  function rateCoachAnswer(
+    concept: NonNullable<TrainingStage['foundation_concepts']>[number],
+    id: string,
+    item: SafetyCoachAnswers[string] | SafetyCoachThreadItem,
+    rating: SafetyCoachAnswerRating,
+  ) {
+    if (!state || !item.answer) return
+    const answerVersion = item.version || SAFETY_COACH_ANSWER_VERSION
+    const key = safetyAnswerKey(id, answerVersion, item.question)
+    const savedAt = new Date().toISOString()
+    const nextFeedback: SafetyCoachAnswerFeedback = {
+      ...coachAnswerFeedbackRef.current,
+      [key]: {
+        rating,
+        status: rating === 'down' ? 'queued' : 'saved',
+        reviewedAt: savedAt,
+      },
+    }
+    coachAnswerFeedbackRef.current = nextFeedback
+    setCoachAnswerFeedback(nextFeedback)
+    setNotice(rating === 'up' ? '좋아요를 반영했어요. 좋은 답변 패턴으로 보관합니다.' : '싫어요를 반영했어요. 백그라운드에서 답변을 정밀 분석합니다.')
+    seqRef.current += 1
+    void syncSession({
+      caseId,
+      email,
+      selectedStage: stage,
+      clientSeq: seqRef.current,
+      eventName: 'safety_coach_answer_feedback_saved',
+      eventPayload: {
+        stage,
+        concept_id: id,
+        concept_title: concept.title,
+        question: item.question ?? '',
+        answer: item.answer,
+        answer_version: answerVersion,
+        rating,
+      },
+      stageDrafts: {
+        [stage]: stageDraftForSync({ safety_coach_answer_feedback: nextFeedback }),
+      },
+    })
+      .then((next) => setState(next))
+      .catch((e) => {
+        console.error('safety coach feedback sync failed', e)
+        setCoachAnswerFeedback((prev) => {
+          const fallback = { ...prev, [key]: { ...nextFeedback[key], status: 'error' as const } }
+          coachAnswerFeedbackRef.current = fallback
+          return fallback
+        })
+      })
+    void rateSafetyCoachAnswer({
+      caseId,
+      email,
+      stage,
+      conceptId: id,
+      conceptTitle: concept.title,
+      conceptBody: concept.body,
+      question: item.question ?? '',
+      answer: item.answer,
+      answerVersion,
+      rating,
+      model: item.model,
+      fallbackUsed: item.fallbackUsed,
+      evidenceUsed: item.evidenceUsed,
+    }).catch((e) => {
+      console.error('safety coach answer rating failed', e)
+      setCoachAnswerFeedback((prev) => {
+        const fallback = { ...prev, [key]: { ...nextFeedback[key], status: 'error' as const } }
+        coachAnswerFeedbackRef.current = fallback
+        return fallback
+      })
     })
   }
 
@@ -2082,6 +2253,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         id: itemId,
         conceptId: id,
         conceptTitle: concept.title,
+        conceptBody: concept.body,
         question,
         answer: bridgeAnswer,
         model: 'curriculum-backlog',
@@ -2142,6 +2314,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
             safety_concept_feedback: latestFeedback,
             safety_coach_answers: nextAnswers,
             safety_coach_threads: nextThreads,
+            safety_coach_answer_feedback: coachAnswerFeedbackRef.current,
             deferred_safety_questions: nextDeferred,
             deleted_safety_answer_keys: nextDeleted,
             stage_checked: checkedRef.current,
@@ -2190,6 +2363,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           id: `${id}-${Date.now()}`,
           conceptId: id,
           conceptTitle: concept.title,
+          conceptBody: concept.body,
           question,
           answer: finalAnswer,
           model: res.model,
@@ -2239,6 +2413,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
               safety_concept_feedback: latestFeedback,
               safety_coach_answers: nextAnswers,
               safety_coach_threads: nextThreads,
+              safety_coach_answer_feedback: coachAnswerFeedbackRef.current,
               deferred_safety_questions: latestDeferred,
               deleted_safety_answer_keys: nextDeleted,
               stage_checked: checkedRef.current,
@@ -2286,6 +2461,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           safety_concept_feedback: latestFeedback,
           safety_coach_answers: latestAnswers,
           safety_coach_threads: latestThreads,
+          safety_coach_answer_feedback: coachAnswerFeedbackRef.current,
           deferred_safety_questions: latestDeferred,
           deleted_safety_answer_keys: latestDeleted,
           stage_checked: checkedRef.current,
@@ -2344,6 +2520,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           safety_concept_feedback: latestFeedback,
           safety_coach_answers: latestAnswers,
           safety_coach_threads: latestThreads,
+          safety_coach_answer_feedback: coachAnswerFeedbackRef.current,
           deferred_safety_questions: latestDeferred,
           deleted_safety_answer_keys: latestDeleted,
           safety_concept_confirmed_ids: confirmedConceptIds,
@@ -2546,6 +2723,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
             conceptFeedback={conceptFeedback}
             coachAnswers={coachAnswers}
             coachThreads={coachThreads}
+            coachFeedback={coachAnswerFeedback}
             coachLoading={coachLoading}
             coachErrors={coachErrors}
             saving={safetySyncing}
@@ -2555,6 +2733,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
             onToggle={toggleCheck}
             onConceptFeedback={updateConceptFeedback}
             onAskCoach={requestCoachAnswer}
+            onRateCoachAnswer={rateCoachAnswer}
             onDeleteCoachAnswer={deleteCoachAnswer}
             onSaveQuestions={saveSafetyQuestions}
             onReady={confirmSafetyOrientation}

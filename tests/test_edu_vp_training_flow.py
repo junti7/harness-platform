@@ -140,6 +140,37 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertFalse(fallback_used)
         mocked_cost.assert_called_once()
 
+    def test_safety_coach_downvote_review_records_improvement_when_llm_finds_issue(self):
+        raw = '{"verdict":"needs_improvement","issues":["question_not_answered"],"improvement_note":"질문에 먼저 직접 답한다.","confidence":0.82}'
+
+        with patch.object(self.mod, "_edu_generate_text", return_value=(raw, {"prompt_token_count": 9, "candidates_token_count": 7}, "claude-test")):
+            review = self.mod._edu_vp_safety_coach_feedback_review(
+                question="attention은 누가 설정해?",
+                answer="Transformer 논문 저자는 Google 연구자입니다.",
+                concept_title="Transformer",
+                concept_body="attention은 관련도를 계산합니다.",
+            )
+
+        self.assertEqual(review["verdict"], "needs_improvement")
+        self.assertIn("question_not_answered", review["issues"])
+        self.assertEqual(review["review_source"], "llm")
+        self.assertEqual(review["model"], "claude-test")
+
+    def test_safety_coach_downvote_review_records_user_mistake_when_no_issue_found(self):
+        raw = '{"verdict":"user_mistake","issues":[],"improvement_note":"","confidence":0.76}'
+
+        with patch.object(self.mod, "_edu_generate_text", return_value=(raw, {"prompt_token_count": 8, "candidates_token_count": 5}, "claude-test")):
+            review = self.mod._edu_vp_safety_coach_feedback_review(
+                question="AI 답은 왜 확인해야 해?",
+                answer="AI 답은 초안이라 실제 공지나 원문으로 다시 확인해야 합니다.",
+                concept_title="AI 안전",
+                concept_body="AI 답은 초안입니다.",
+            )
+
+        self.assertEqual(review["verdict"], "user_mistake")
+        self.assertEqual(review["issues"], [])
+        self.assertEqual(review["review_source"], "llm")
+
     def test_safety_coach_switches_model_when_answer_repeats_source_example(self):
         req = self.mod.EduVpTrainingSafetyCoachRequest(
             case_id=123,

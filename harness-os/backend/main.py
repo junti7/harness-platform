@@ -29,7 +29,7 @@ import httpx
 import anthropic
 import psycopg2
 from psycopg2 import sql
-from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import BackgroundTasks, Body, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from fastapi.responses import FileResponse
@@ -6128,6 +6128,22 @@ class EduVpTrainingSafetyCoachRequest(BaseModel):
     answer_version: str = ""
 
 
+class EduVpTrainingSafetyCoachFeedbackRequest(BaseModel):
+    case_id: int
+    email: str = ""
+    stage: str = "day0"
+    concept_id: str = ""
+    concept_title: str = ""
+    concept_body: str = ""
+    question: str = ""
+    answer: str = ""
+    answer_version: str = ""
+    rating: str = ""
+    model: str = ""
+    fallback_used: bool = False
+    evidence_used: bool = False
+
+
 class EduVpTrainingSafetyRouteConcept(BaseModel):
     id: str = ""
     title: str = ""
@@ -9278,6 +9294,145 @@ def _edu_vp_safety_coach_red_team(
     return issues
 
 
+def _edu_vp_safety_coach_downvote_heuristic_review(*, question: str, answer: str) -> dict[str, Any]:
+    issues: list[str] = []
+    answer_text = (answer or "").strip()
+    question_text = (question or "").strip()
+    if not answer_text:
+        issues.append("empty_answer")
+    if len(answer_text) > 1300:
+        issues.append("answer_too_long")
+    if answer_text.endswith(("하", "하.", "얘기를 하", "질문을 하", "때문에", "그리고", "하지만", "그래서")):
+        issues.append("possibly_truncated")
+    q_terms = _edu_vp_safety_coach_keywords(question_text, max_terms=8)
+    if q_terms and not any(term in answer_text for term in q_terms[:5]):
+        issues.append("question_not_directly_addressed")
+    if any(term in answer_text for term in ("항상", "절대", "완벽", "100%", "무조건")):
+        issues.append("overconfident_language")
+    if not issues:
+        return {
+            "verdict": "user_mistake",
+            "issues": [],
+            "improvement_note": "",
+            "confidence": 0.55,
+            "review_source": "heuristic",
+        }
+    return {
+        "verdict": "needs_improvement",
+        "issues": issues,
+        "improvement_note": "다음 답변에서는 질문 키워드에 더 직접 답하고, 단정적 표현이나 잘린 문장을 피한다.",
+        "confidence": 0.7,
+        "review_source": "heuristic",
+    }
+
+
+def _edu_vp_safety_coach_parse_feedback_review(raw: str) -> dict[str, Any] | None:
+    text = (raw or "").strip()
+    if not text:
+        return None
+    text = re.sub(r"^```(?:json)?", "", text).strip().rstrip("`").strip()
+    try:
+        data = json.loads(text)
+    except Exception:
+        match = re.search(r"\{.*\}", text, flags=re.S)
+        if not match:
+            return None
+        try:
+            data = json.loads(match.group(0))
+        except Exception:
+            return None
+    if not isinstance(data, dict):
+        return None
+    verdict = str(data.get("verdict") or "").strip().lower()
+    if verdict not in {"needs_improvement", "user_mistake"}:
+        return None
+    issues = data.get("issues")
+    if not isinstance(issues, list):
+        issues = []
+    return {
+        "verdict": verdict,
+        "issues": [str(item).strip()[:120] for item in issues if str(item).strip()][:8],
+        "improvement_note": str(data.get("improvement_note") or "").strip()[:800],
+        "confidence": max(0.0, min(1.0, float(data.get("confidence") or 0.0))),
+        "review_source": "llm",
+    }
+
+
+def _edu_vp_safety_coach_feedback_review(
+    *,
+    question: str,
+    answer: str,
+    concept_title: str = "",
+    concept_body: str = "",
+) -> dict[str, Any]:
+    heuristic = _edu_vp_safety_coach_downvote_heuristic_review(question=question, answer=answer)
+    prompt = "\n".join(
+        [
+            _EDU_INJECTION_GUARD,
+            "부대표 AI 교육 코치 답변에 사용자가 싫어요를 눌렀다.",
+            "질문과 답변을 정밀 점검해라. 실제 오류, 누락, 오해 가능성이 있으면 needs_improvement.",
+            "오류나 보완점이 발견되지 않으면 user_mistake.",
+            "반드시 JSON만 출력:",
+            '{"verdict":"needs_improvement|user_mistake","issues":["short issue"],"improvement_note":"future answer rule","confidence":0.0}',
+            "<<대화_데이터>>",
+            f"단락 제목: {concept_title[:240]}",
+            f"단락 설명: {concept_body[:1200]}",
+            f"사용자 질문: {question[:1200]}",
+            f"AI 답변: {answer[:2600]}",
+            "<<대화_데이터_끝>>",
+        ]
+    )
+    try:
+        raw, usage, model = _edu_generate_text(
+            prompt,
+            max_output_tokens=420,
+            timeout_seconds=8,
+            response_mime_type="application/json",
+            meta={"surface": "vp_training_safety_coach_feedback_review"},
+            model_ladder=_edu_safety_coach_model_ladder(),
+        )
+        parsed = _edu_vp_safety_coach_parse_feedback_review(raw)
+        if parsed:
+            parsed["usage"] = usage
+            parsed["model"] = model
+            return parsed
+    except Exception as exc:  # noqa: BLE001
+        _edu_runtime_event(
+            "vp_training_safety_coach_feedback_review_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+        )
+    return heuristic
+
+
+def _edu_vp_review_safety_coach_downvote_async(
+    *,
+    case_id: int,
+    email: str,
+    payload: dict[str, Any],
+) -> None:
+    review = _edu_vp_safety_coach_feedback_review(
+        question=str(payload.get("question") or ""),
+        answer=str(payload.get("answer") or ""),
+        concept_title=str(payload.get("concept_title") or ""),
+        concept_body=str(payload.get("concept_body") or ""),
+    )
+    _edu_vp_append_event(
+        case_id=case_id,
+        email=email,
+        event_type="safety_coach_feedback",
+        event_name="answer_auto_reinforcement_reviewed",
+        payload={
+            **payload,
+            "auto_reinforcement": {
+                **review,
+                "future_logic": "reuse_good_answers; improve_downvoted_answers_when_issue_found; record_user_mistake_when_no_issue_found",
+            },
+        },
+        actor_role="system",
+    )
+
+
 def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -> tuple[str, str, dict[str, int], bool]:
     question = _edu_neutralize(req.question, cap=700)
     concept_title = _edu_neutralize(req.concept_title, cap=160)
@@ -12255,6 +12410,67 @@ def edu_vp_training_safety_coach(
         "answer_version": answer_version,
         "duplicate_reused": False,
         "evidence_used": evidence_used,
+    }
+
+
+@app.post("/api/edu/vp-training/safety-coach/feedback")
+def edu_vp_training_safety_coach_feedback(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    req: EduVpTrainingSafetyCoachFeedbackRequest,
+    _: None = Depends(_require_secret),
+) -> dict[str, Any]:
+    _ensure_edu_case_schema()
+    case_id = int(req.case_id)
+    payload = _edu_load_case_payload(case_id)
+    owner_email = _edu_normalize_email(str(payload["customer"].get("email") or ""))
+    caller_email = _edu_normalize_email(req.email)
+    if caller_email and caller_email != owner_email:
+        raise HTTPException(403, "forbidden")
+    _edu_vp_assert_access(request, owner_email)
+    rating = str(req.rating or "").strip().lower()
+    if rating not in {"up", "down"}:
+        raise HTTPException(400, "rating must be up or down")
+    question = str(req.question or "").strip()
+    answer = str(req.answer or "").strip()
+    if len(question) < 2 or len(answer) < 2:
+        raise HTTPException(400, "question and answer are required")
+    stage = req.stage if req.stage in {"day0", "day1"} else "day0"
+    feedback_payload = {
+        "stage": stage,
+        "concept_id": str(req.concept_id or "")[:120],
+        "concept_title": str(req.concept_title or "")[:240],
+        "concept_body": str(req.concept_body or "")[:1800],
+        "question": question[:1200],
+        "answer": answer[:2600],
+        "answer_version": _edu_vp_safety_coach_answer_version(req.answer_version),
+        "rating": rating,
+        "model": str(req.model or "")[:120],
+        "fallback_used": bool(req.fallback_used),
+        "evidence_used": bool(req.evidence_used),
+        "feedback_saved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    _edu_vp_append_event(
+        case_id=case_id,
+        email=owner_email,
+        event_type="safety_coach_feedback",
+        event_name="answer_feedback_recorded",
+        payload={
+            **feedback_payload,
+            "reuse_policy": "actively_reuse_when_rating_up" if rating == "up" else "review_before_future_reuse",
+        },
+    )
+    if rating == "down":
+        background_tasks.add_task(
+            _edu_vp_review_safety_coach_downvote_async,
+            case_id=case_id,
+            email=owner_email,
+            payload=feedback_payload,
+        )
+    return {
+        "ok": True,
+        "rating": rating,
+        "auto_reinforcement_status": "queued" if rating == "down" else "reuse_candidate_recorded",
     }
 
 

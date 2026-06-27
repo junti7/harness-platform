@@ -229,6 +229,42 @@ Codex CLI 사용 시 사용자가 별도 해제하기 전까지 **caveman full**
 - `_edu_vp_validate_safety_coach_evidence(...)`
 - `_edu_vp_build_day1(...)`
 
+### 8. Coach Answer Feedback Auto-Reinforcement
+
+사용자 요구:
+
+- AI 코치의 각 답변별로 `좋아요` / `싫어요` 피드백을 받을 수 있어야 한다.
+- `좋아요`를 받은 답변은 향후에도 적극 활용할 좋은 답변 패턴으로 기록한다.
+- `싫어요`를 받은 답변은 LLM이 백그라운드에서 해당 질문과 답변을 정밀 분석한다.
+- 분석 결과 오류나 보완점이 있으면 `needs_improvement`로 기록하고 향후 답변 개선 rule을 남긴다.
+- 오류나 보완점이 없으면 `user_mistake`로 기록한다.
+
+현재 동작:
+
+- 현재 답변 카드와 질문 아카이브 항목 모두 thumbs up/down 버튼을 표시한다.
+- feedback 선택 상태는 `safety_coach_answer_feedback`으로 저장/복원한다.
+- frontend는 `POST /api/edu/vp-training/safety-coach/feedback`을 호출한다.
+- backend는 즉시 `answer_feedback_recorded` event를 남긴다.
+- `좋아요`는 `actively_reuse_when_rating_up` reuse policy로 기록한다.
+- `싫어요`는 FastAPI `BackgroundTasks`로 LLM review를 예약한다.
+- review 결과는 `answer_auto_reinforcement_reviewed` event로 저장한다.
+- LLM review 실패 시 heuristic review로 fallback한다.
+
+핵심 파일:
+
+- `harness-os/edu-app/src/components/TrainingScreen.tsx`
+- `harness-os/edu-app/src/lib/api.ts`
+- `harness-os/edu-app/src/lib/vpTraining.ts`
+- `harness-os/backend/main.py`
+- `tests/test_edu_vp_training_flow.py`
+
+핵심 backend:
+
+- `EduVpTrainingSafetyCoachFeedbackRequest`
+- `_edu_vp_safety_coach_feedback_review(...)`
+- `_edu_vp_review_safety_coach_downvote_async(...)`
+- `/api/edu/vp-training/safety-coach/feedback`
+
 ## Files Most Likely To Edit Next
 
 Frontend:
@@ -265,7 +301,7 @@ Latest known results:
 
 - Frontend build: pass
 - Frontend lint: pass
-- Pytest: `37 passed`
+- Pytest: `39 passed`
 
 ## Deploy Commands
 
@@ -332,4 +368,3 @@ When the user asks for code changes in this workspace:
 - Deploy to Mac Mini.
 - Exclude unrelated dirty files.
 - Report changed files, verification, commit, deploy state.
-
