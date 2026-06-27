@@ -978,9 +978,12 @@ function SafetyOrientationBlock({
       </div>
 
       {coachThreads.length ? (
-        <div className="mb-3 rounded-[12px] border border-border bg-card p-3">
+        <div className="mb-4 rounded-[14px] border border-primary/25 bg-sky-50/85 p-3 shadow-[0_0_0_1px_rgba(37,99,235,0.06)]">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
+              <div className="mb-1 inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
+                질문 아카이브
+              </div>
               <div className="text-xs font-semibold text-ink">내 질문 모아보기</div>
               <p className="mt-0.5 text-xs leading-relaxed text-text-faint">
                 지금까지 남긴 질문 {coachThreads.length}개를 한 번에 다시 볼 수 있어요.
@@ -1010,6 +1013,15 @@ function SafetyOrientationBlock({
 
       {concepts.length ? (
         <div className="grid gap-2">
+          {coachThreads.length ? (
+            <div className="mb-1 flex items-center gap-2" aria-label="훈련 카드 시작">
+              <span className="h-px flex-1 bg-danger/20" />
+              <span className="rounded-full border border-danger/20 bg-card px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-danger">
+                훈련 카드
+              </span>
+              <span className="h-px flex-1 bg-danger/20" />
+            </div>
+          ) : null}
           {conceptItems.map((concept) => {
             const on = Boolean(checked[concept.checkId])
             const feedback = conceptFeedback[concept.checkId] ?? ''
