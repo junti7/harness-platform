@@ -47,7 +47,7 @@ export type TrainingScreenProps = {
 
 const STAGE_ORDER: StageKey[] = ['day0', 'day1']
 const STAGE_LABEL: Record<StageKey, string> = { day0: 'Day 0', day1: 'Day 1' }
-const SAFETY_COACH_ANSWER_VERSION = '2026-06-27-redteam-v3'
+const SAFETY_COACH_ANSWER_VERSION = '2026-06-27-dedupe-thread-v4'
 type SafetyConceptFeedback = Record<string, string>
 type SafetyCoachAnswers = Record<string, {
   answer: string
@@ -55,7 +55,20 @@ type SafetyCoachAnswers = Record<string, {
   fallbackUsed?: boolean
   question?: string
   version?: string
+  duplicateReused?: boolean
 }>
+type SafetyCoachThreadItem = {
+  id: string
+  conceptId: string
+  conceptTitle: string
+  question: string
+  answer: string
+  model?: string
+  fallbackUsed?: boolean
+  version: string
+  createdAt: string
+}
+type SafetyCoachThreads = SafetyCoachThreadItem[]
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) {
@@ -142,6 +155,23 @@ function currentSafetyCoachAnswers(raw: unknown, feedback: SafetyConceptFeedback
     if (typeof item.answer === 'string' && item.answer.trim()) out[id] = item
   }
   return out
+}
+
+function currentSafetyCoachThreads(raw: unknown): SafetyCoachThreads {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((item): item is SafetyCoachThreadItem => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return false
+      const row = item as SafetyCoachThreadItem
+      return row.version === SAFETY_COACH_ANSWER_VERSION && Boolean(row.question?.trim()) && Boolean(row.answer?.trim())
+    })
+    .slice(-40)
+}
+
+function appendSafetyCoachThread(threads: SafetyCoachThreads, item: SafetyCoachThreadItem): SafetyCoachThreads {
+  const key = `${item.conceptId}::${item.version}::${item.question.trim()}`
+  const withoutDuplicate = threads.filter((thread) => `${thread.conceptId}::${thread.version}::${thread.question.trim()}` !== key)
+  return [...withoutDuplicate, item].slice(-40)
 }
 
 function languageLabel(value?: string): string {
@@ -533,6 +563,7 @@ function SafetyOrientationBlock({
   checked,
   conceptFeedback,
   coachAnswers,
+  coachThreads,
   coachLoading,
   coachErrors,
   saving,
@@ -548,6 +579,7 @@ function SafetyOrientationBlock({
   checked: Record<string, boolean>
   conceptFeedback: SafetyConceptFeedback
   coachAnswers: SafetyCoachAnswers
+  coachThreads: SafetyCoachThreads
   coachLoading: Record<string, boolean>
   coachErrors: Record<string, string>
   saving: boolean
@@ -559,6 +591,7 @@ function SafetyOrientationBlock({
   onSaveQuestions: () => void
   onReady: () => void
 }) {
+  const [historyOpen, setHistoryOpen] = useState(false)
   const concepts = stage.foundation_concepts ?? []
   const blocks = stage.schedule_blocks ?? []
   const safetyItems = stageChecklist(stage).filter((item) => item.id.startsWith('understand_'))
@@ -586,6 +619,37 @@ function SafetyOrientationBlock({
         </div>
       </div>
 
+      {coachThreads.length ? (
+        <div className="mb-3 rounded-[12px] border border-border bg-card p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-ink">내 질문 모아보기</div>
+              <p className="mt-0.5 text-xs leading-relaxed text-text-faint">
+                지금까지 남긴 질문 {coachThreads.length}개를 한 번에 다시 볼 수 있어요.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setHistoryOpen((v) => !v)}
+              className="shrink-0 rounded-[9px] border border-border bg-secondary px-3 py-2 text-xs font-semibold text-ink transition hover:bg-card"
+            >
+              {historyOpen ? '접기' : '보기'}
+            </button>
+          </div>
+          {historyOpen ? (
+            <div className="mt-3 grid gap-2">
+              {coachThreads.slice().reverse().map((item) => (
+                <div key={item.id} className="rounded-[10px] border border-border bg-secondary px-3 py-2">
+                  <div className="mb-1 text-[11px] font-semibold text-primary">{item.conceptTitle}</div>
+                  <p className="text-xs font-semibold leading-relaxed text-ink">Q. {item.question}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-text-muted">A. {item.answer}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {concepts.length ? (
         <div className="grid gap-2">
           {conceptItems.map((concept) => {
@@ -594,6 +658,10 @@ function SafetyOrientationBlock({
             const coach = coachAnswers[concept.checkId]
             const loading = Boolean(coachLoading[concept.checkId])
             const coachError = coachErrors[concept.checkId]
+            const hasCurrentAnswer =
+              Boolean(coach?.answer) &&
+              coach?.version === SAFETY_COACH_ANSWER_VERSION &&
+              (coach.question ?? '').trim() === feedback.trim()
             return (
             <div key={concept.checkId} className="rounded-[12px] border border-border bg-card p-3">
               <div className="text-sm font-semibold leading-snug text-ink">{concept.title}</div>
@@ -629,12 +697,17 @@ function SafetyOrientationBlock({
                 <button
                   type="button"
                   onClick={() => onAskCoach(concept, concept.checkId)}
-                  disabled={loading}
+                  disabled={loading || hasCurrentAnswer}
                   className="mt-2 inline-flex h-9 items-center gap-1.5 rounded-[9px] bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {loading ? <Loader2 size={13} className="animate-spin" /> : null}
-                  {loading ? '답변 생성 중' : '질문에 답변 받기'}
+                  {loading ? '답변 생성 중' : hasCurrentAnswer ? '이미 답변 완료' : '질문에 답변 받기'}
                 </button>
+              ) : null}
+              {hasCurrentAnswer ? (
+                <p className="mt-1 text-[11px] leading-relaxed text-text-faint">
+                  같은 질문은 다시 생성하지 않아요. 질문을 바꾸면 새 답변을 받을 수 있습니다.
+                </p>
               ) : null}
               {coachError ? (
                 <div className="mt-2 rounded-[10px] bg-danger-soft px-3 py-2 text-xs leading-relaxed text-danger">
@@ -758,6 +831,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const [checked, setChecked] = useState<Record<string, boolean>>({})
   const [conceptFeedback, setConceptFeedback] = useState<SafetyConceptFeedback>({})
   const [coachAnswers, setCoachAnswers] = useState<SafetyCoachAnswers>({})
+  const [coachThreads, setCoachThreads] = useState<SafetyCoachThreads>([])
   const [coachLoading, setCoachLoading] = useState<Record<string, boolean>>({})
   const [coachErrors, setCoachErrors] = useState<Record<string, string>>({})
   const [whyOpen, setWhyOpen] = useState(false)
@@ -766,6 +840,9 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const seqRef = useRef(0)
+  const conceptFeedbackRef = useRef<SafetyConceptFeedback>({})
+  const coachAnswersRef = useRef<SafetyCoachAnswers>({})
+  const coachThreadsRef = useRef<SafetyCoachThreads>([])
 
   // 단계 전환 시 로컬 입력(증거물/체크)을 그 단계 값으로 재시드.
   function hydrateStageInputs(st: TrainingState, next: StageKey) {
@@ -775,12 +852,19 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     const draft = st.ui_state?.stage_drafts?.[next]
     const feedback = draft?.safety_concept_feedback
     const answers = draft?.safety_coach_answers
+    const threads = draft?.safety_coach_threads
     const nextFeedback =
       feedback && typeof feedback === 'object' && !Array.isArray(feedback)
         ? (feedback as SafetyConceptFeedback)
         : {}
+    const nextAnswers = currentSafetyCoachAnswers(answers, nextFeedback)
+    const nextThreads = currentSafetyCoachThreads(threads)
+    conceptFeedbackRef.current = nextFeedback
+    coachAnswersRef.current = nextAnswers
+    coachThreadsRef.current = nextThreads
     setConceptFeedback(nextFeedback)
-    setCoachAnswers(currentSafetyCoachAnswers(answers, nextFeedback))
+    setCoachAnswers(nextAnswers)
+    setCoachThreads(nextThreads)
     setCoachLoading({})
     setCoachErrors({})
     setWhyOpen(false)
@@ -841,13 +925,18 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   }
 
   function updateConceptFeedback(id: string, value: string) {
-    setConceptFeedback((prev) => ({ ...prev, [id]: value }))
+    setConceptFeedback((prev) => {
+      const next = { ...prev, [id]: value }
+      conceptFeedbackRef.current = next
+      return next
+    })
     setCoachAnswers((prev) => {
       const current = prev[id]
       if (!current) return prev
       if ((current.question ?? '').trim() === value.trim()) return prev
       const next = { ...prev }
       delete next[id]
+      coachAnswersRef.current = next
       return next
     })
     setCoachErrors((prev) => ({ ...prev, [id]: '' }))
@@ -856,6 +945,15 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   function requestCoachAnswer(concept: NonNullable<TrainingStage['foundation_concepts']>[number], id: string) {
     const question = (conceptFeedback[id] ?? '').trim()
     if (!state || !question || coachLoading[id]) return
+    const currentAnswer = coachAnswersRef.current[id]
+    if (
+      currentAnswer?.answer &&
+      currentAnswer.version === SAFETY_COACH_ANSWER_VERSION &&
+      (currentAnswer.question ?? '').trim() === question
+    ) {
+      setNotice('이미 이 질문에 답변했어요. 질문을 바꾸면 새 답변을 받을 수 있습니다.')
+      return
+    }
     setCoachLoading((prev) => ({ ...prev, [id]: true }))
     setCoachErrors((prev) => ({ ...prev, [id]: '' }))
     void askSafetyCoach({
@@ -866,17 +964,37 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       conceptTitle: concept.title,
       conceptBody: concept.body,
       question,
-    })
+      answerVersion: SAFETY_COACH_ANSWER_VERSION,
+      })
       .then((res) => {
         const answerRecord = {
           answer: res.answer,
           model: res.model,
           fallbackUsed: Boolean(res.fallback_used),
           question,
-          version: SAFETY_COACH_ANSWER_VERSION,
+          version: res.answer_version || SAFETY_COACH_ANSWER_VERSION,
+          duplicateReused: Boolean(res.duplicate_reused),
         }
-        const nextAnswers = { ...coachAnswers, [id]: answerRecord }
+        const threadItem: SafetyCoachThreadItem = {
+          id: `${id}-${Date.now()}`,
+          conceptId: id,
+          conceptTitle: concept.title,
+          question,
+          answer: res.answer,
+          model: res.model,
+          fallbackUsed: Boolean(res.fallback_used),
+          version: res.answer_version || SAFETY_COACH_ANSWER_VERSION,
+          createdAt: new Date().toISOString(),
+        }
+        const latestAnswers = coachAnswersRef.current
+        const latestThreads = coachThreadsRef.current
+        const latestFeedback = conceptFeedbackRef.current
+        const nextAnswers = { ...latestAnswers, [id]: answerRecord }
+        const nextThreads = appendSafetyCoachThread(latestThreads, threadItem)
+        coachAnswersRef.current = nextAnswers
+        coachThreadsRef.current = nextThreads
         setCoachAnswers(nextAnswers)
+        setCoachThreads(nextThreads)
         seqRef.current += 1
         return syncSession({
           caseId,
@@ -892,12 +1010,14 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
             answer: res.answer,
             model: res.model,
             fallback_used: Boolean(res.fallback_used),
-            answer_version: SAFETY_COACH_ANSWER_VERSION,
+            answer_version: res.answer_version || SAFETY_COACH_ANSWER_VERSION,
+            duplicate_reused: Boolean(res.duplicate_reused),
           },
           stageDrafts: {
             [stage]: {
-              safety_concept_feedback: conceptFeedback,
+              safety_concept_feedback: latestFeedback,
               safety_coach_answers: nextAnswers,
+              safety_coach_threads: nextThreads,
             },
           },
         })
@@ -916,6 +1036,9 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
 
   function saveSafetyQuestions() {
     if (!state || safetySyncing) return
+    const latestFeedback = conceptFeedbackRef.current
+    const latestAnswers = coachAnswersRef.current
+    const latestThreads = coachThreadsRef.current
     setSafetySyncing(true)
     setError(null)
     seqRef.current += 1
@@ -925,11 +1048,12 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       selectedStage: stage,
       clientSeq: seqRef.current,
       eventName: 'safety_orientation_feedback_saved',
-      eventPayload: { stage, concept_feedback: conceptFeedback },
+      eventPayload: { stage, concept_feedback: latestFeedback },
       stageDrafts: {
         [stage]: {
-          safety_concept_feedback: conceptFeedback,
-          safety_coach_answers: coachAnswers,
+          safety_concept_feedback: latestFeedback,
+          safety_coach_answers: latestAnswers,
+          safety_coach_threads: latestThreads,
         },
       },
     })
@@ -946,6 +1070,9 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
 
   function confirmSafetyOrientation() {
     if (!state || safetySyncing) return
+    const latestFeedback = conceptFeedbackRef.current
+    const latestAnswers = coachAnswersRef.current
+    const latestThreads = coachThreadsRef.current
     const confirmedCheckIds = stageChecklist(current).filter((item) => item.id.startsWith('understand_') && checked[item.id]).map((item) => item.id)
     const confirmedConceptIds = (current?.foundation_concepts ?? [])
       .map((concept, index) => conceptId(concept, index))
@@ -963,13 +1090,15 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         stage,
         confirmed_check_ids: confirmedCheckIds,
         confirmed_concept_ids: confirmedConceptIds,
-        concept_feedback: conceptFeedback,
-        coach_answers: coachAnswers,
+        concept_feedback: latestFeedback,
+        coach_answers: latestAnswers,
+        coach_threads: latestThreads,
       },
       stageDrafts: {
         [stage]: {
-          safety_concept_feedback: conceptFeedback,
-          safety_coach_answers: coachAnswers,
+          safety_concept_feedback: latestFeedback,
+          safety_coach_answers: latestAnswers,
+          safety_coach_threads: latestThreads,
           safety_concept_confirmed_ids: confirmedConceptIds,
         },
       },
@@ -1145,6 +1274,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
             checked={checked}
             conceptFeedback={conceptFeedback}
             coachAnswers={coachAnswers}
+            coachThreads={coachThreads}
             coachLoading={coachLoading}
             coachErrors={coachErrors}
             saving={safetySyncing}

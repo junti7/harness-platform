@@ -328,6 +328,8 @@ export type SafetyCoachResponse = {
   answer: string
   model?: string
   fallback_used?: boolean
+  answer_version?: string
+  duplicate_reused?: boolean
 }
 
 export async function askSafetyCoach(input: {
@@ -338,6 +340,7 @@ export async function askSafetyCoach(input: {
   conceptTitle: string
   conceptBody: string
   question: string
+  answerVersion: string
 }): Promise<SafetyCoachResponse> {
   return vpPost<SafetyCoachResponse>(VP_TRAINING.safetyCoach, {
     case_id: input.caseId,
@@ -347,6 +350,7 @@ export async function askSafetyCoach(input: {
     concept_title: input.conceptTitle,
     concept_body: input.conceptBody,
     question: input.question,
+    answer_version: input.answerVersion,
   })
 }
 

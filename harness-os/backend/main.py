@@ -6064,6 +6064,7 @@ class EduVpTrainingSafetyCoachRequest(BaseModel):
     concept_title: str = ""
     concept_body: str = ""
     question: str = ""
+    answer_version: str = ""
 
 
 class EduVpTrainingCurriculumRequest(BaseModel):
@@ -8514,6 +8515,63 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
             "success_signal": "기분 좋은 확신과 현실 검증을 구분한다.",
         },
     ]
+
+
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-dedupe-thread-v4"
+
+
+def _edu_vp_normalize_safety_question(question: str) -> str:
+    return re.sub(r"\s+", " ", (question or "").strip()).lower()
+
+
+def _edu_vp_safety_coach_answer_version(value: str | None) -> str:
+    cleaned = re.sub(r"[^0-9A-Za-z._:-]", "", (value or "").strip())[:80]
+    return cleaned or _EDU_VP_SAFETY_COACH_ANSWER_VERSION
+
+
+def _edu_vp_cached_safety_coach_answer(
+    *,
+    case_id: int,
+    concept_id: str,
+    normalized_question: str,
+    answer_version: str,
+) -> dict[str, Any] | None:
+    if not normalized_question or not concept_id:
+        return None
+    rows = _edu_execute(
+        """
+        SELECT event_payload
+        FROM edu_vp_training_event_log
+        WHERE case_id = %s
+          AND event_type = 'safety_coach'
+          AND event_name = 'safety_question_answered'
+          AND event_payload->>'concept_id' = %s
+          AND event_payload->>'normalized_question' = %s
+          AND event_payload->>'answer_version' = %s
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        (case_id, concept_id[:120], normalized_question[:1200], answer_version[:80]),
+        fetch=True,
+    )
+    if not rows:
+        return None
+    payload = rows[0].get("event_payload") or {}
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(payload, dict):
+        return None
+    answer = str(payload.get("answer") or "").strip()
+    if not answer:
+        return None
+    return {
+        "answer": answer,
+        "model": str(payload.get("model") or ""),
+        "fallback_used": bool(payload.get("fallback_used")),
+    }
 
 
 def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
@@ -11026,7 +11084,6 @@ def edu_vp_training_safety_coach(
     _: None = Depends(_require_secret),
 ) -> dict[str, Any]:
     _ensure_edu_case_schema()
-    _edu_public_gate(request)
     case_id = int(req.case_id)
     payload = _edu_load_case_payload(case_id)
     owner_email = _edu_normalize_email(str(payload["customer"].get("email") or ""))
@@ -11037,17 +11094,59 @@ def edu_vp_training_safety_coach(
     question = (req.question or "").strip()
     if len(question) < 2:
         raise HTTPException(400, "question is required")
+    stage = req.stage if req.stage in {"day0", "day1"} else "day0"
+    concept_id = (req.concept_id or "")[:120]
+    answer_version = _edu_vp_safety_coach_answer_version(req.answer_version)
+    normalized_question = _edu_vp_normalize_safety_question(question)
+    cached = _edu_vp_cached_safety_coach_answer(
+        case_id=case_id,
+        concept_id=concept_id,
+        normalized_question=normalized_question,
+        answer_version=answer_version,
+    )
+    if cached:
+        log_payload = {
+            "stage": stage,
+            "concept_id": concept_id,
+            "concept_title": (req.concept_title or "")[:240],
+            "question": question[:1200],
+            "normalized_question": normalized_question[:1200],
+            "answer": str(cached["answer"])[:1800],
+            "model": str(cached.get("model") or ""),
+            "fallback_used": bool(cached.get("fallback_used")),
+            "answer_version": answer_version,
+            "duplicate_reused": True,
+        }
+        _edu_vp_append_event(
+            case_id=case_id,
+            email=owner_email,
+            event_type="safety_coach",
+            event_name="safety_question_reused",
+            payload=log_payload,
+        )
+        return {
+            "ok": True,
+            "answer": str(cached["answer"]),
+            "model": str(cached.get("model") or ""),
+            "fallback_used": bool(cached.get("fallback_used")),
+            "answer_version": answer_version,
+            "duplicate_reused": True,
+        }
+    _edu_public_gate(request)
     answer, model_name, usage, fallback_used = _edu_vp_generate_safety_coach_answer(req)
     log_payload = {
-        "stage": req.stage if req.stage in {"day0", "day1"} else "day0",
-        "concept_id": (req.concept_id or "")[:120],
+        "stage": stage,
+        "concept_id": concept_id,
         "concept_title": (req.concept_title or "")[:240],
         "concept_body": (req.concept_body or "")[:1800],
         "question": question[:1200],
+        "normalized_question": normalized_question[:1200],
         "answer": answer[:1800],
         "model": model_name,
         "usage": usage,
         "fallback_used": fallback_used,
+        "answer_version": answer_version,
+        "duplicate_reused": False,
     }
     _edu_vp_append_event(
         case_id=case_id,
@@ -11061,6 +11160,8 @@ def edu_vp_training_safety_coach(
         "answer": answer,
         "model": model_name,
         "fallback_used": fallback_used,
+        "answer_version": answer_version,
+        "duplicate_reused": False,
     }
 
 

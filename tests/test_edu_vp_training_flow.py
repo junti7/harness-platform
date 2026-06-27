@@ -210,6 +210,33 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(model, "gemini-test")
         self.assertFalse(fallback_used)
 
+    def test_safety_coach_normalizes_question_for_duplicate_detection(self):
+        normalized = self.mod._edu_vp_normalize_safety_question("  다음 글에\n이어질   조사는 어떻게 추측하나요?  ")
+
+        self.assertEqual(normalized, "다음 글에 이어질 조사는 어떻게 추측하나요?")
+
+    def test_safety_coach_cached_answer_reads_matching_event_payload(self):
+        payload = {
+            "answer": "조사는 앞말의 역할을 보고 고릅니다.",
+            "model": "gemini-test",
+            "fallback_used": False,
+        }
+
+        with patch.object(self.mod, "_edu_execute", return_value=[{"event_payload": payload}]) as mocked_execute:
+            cached = self.mod._edu_vp_cached_safety_coach_answer(
+                case_id=123,
+                concept_id="safety_concept_ai_llm_words",
+                normalized_question="다음 글에 이어질 조사는 어떻게 추측하나요?",
+                answer_version="2026-06-27-dedupe-thread-v4",
+            )
+
+        self.assertEqual(cached, payload)
+        query, params = mocked_execute.call_args.args[:2]
+        self.assertIn("safety_question_answered", query)
+        self.assertEqual(params[0], 123)
+        self.assertEqual(params[1], "safety_concept_ai_llm_words")
+        self.assertEqual(params[3], "2026-06-27-dedupe-thread-v4")
+
     def test_safety_confirmation_unlocks_day0_practice(self):
         state = {"intake": {"preferred_llm": "claude"}, "day0": self.mod._edu_vp_build_day0({"preferred_llm": "claude"})}
         unlocked = self.mod._edu_vp_unlock_day0_practice(state)
