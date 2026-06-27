@@ -9715,6 +9715,48 @@ def _edu_vp_safety_coach_parse_feedback_review(raw: str) -> dict[str, Any] | Non
     }
 
 
+def _edu_vp_safety_coach_merge_feedback_review(
+    *,
+    llm_review: dict[str, Any],
+    heuristic_review: dict[str, Any],
+) -> dict[str, Any]:
+    llm_issues = [
+        str(item).strip()
+        for item in (llm_review.get("issues") if isinstance(llm_review.get("issues"), list) else [])
+        if str(item).strip() and str(item).strip() != "user_mistake"
+    ]
+    heuristic_issues = [
+        str(item).strip()
+        for item in (heuristic_review.get("issues") if isinstance(heuristic_review.get("issues"), list) else [])
+        if str(item).strip()
+    ]
+    merged_issues: list[str] = []
+    for issue in [*heuristic_issues, *llm_issues]:
+        if issue not in merged_issues:
+            merged_issues.append(issue)
+    heuristic_needs_improvement = str(heuristic_review.get("verdict") or "") == "needs_improvement"
+    llm_needs_improvement = str(llm_review.get("verdict") or "") == "needs_improvement"
+    merged = dict(llm_review)
+    if heuristic_needs_improvement or (llm_needs_improvement and merged_issues):
+        merged["verdict"] = "needs_improvement"
+        merged["issues"] = merged_issues[:8]
+        heuristic_note = str(heuristic_review.get("improvement_note") or "").strip()
+        llm_note = str(llm_review.get("improvement_note") or "").strip()
+        if heuristic_needs_improvement and (
+            not llm_note
+            or "user_mistake" in llm_note.lower()
+            or "전문가와 상담" in llm_note
+            or "권장합니다" in llm_note
+        ):
+            merged["improvement_note"] = heuristic_note
+        elif heuristic_needs_improvement and heuristic_note and heuristic_note not in llm_note:
+            merged["improvement_note"] = f"{heuristic_note} {llm_note}".strip()[:800]
+        merged["review_source"] = "llm+heuristic" if llm_review.get("review_source") == "llm" else "heuristic"
+        merged["heuristic_issues"] = heuristic_issues[:8]
+        return merged
+    return llm_review
+
+
 def _edu_vp_safety_coach_feedback_review(
     *,
     question: str,
@@ -9752,7 +9794,10 @@ def _edu_vp_safety_coach_feedback_review(
         if parsed:
             parsed["usage"] = usage
             parsed["model"] = model
-            return parsed
+            return _edu_vp_safety_coach_merge_feedback_review(
+                llm_review=parsed,
+                heuristic_review=heuristic,
+            )
     except Exception as exc:  # noqa: BLE001
         _edu_runtime_event(
             "vp_training_safety_coach_feedback_review_failed",

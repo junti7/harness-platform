@@ -153,7 +153,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertEqual(review["verdict"], "needs_improvement")
         self.assertIn("question_not_answered", review["issues"])
-        self.assertEqual(review["review_source"], "llm")
+        self.assertEqual(review["review_source"], "llm+heuristic")
         self.assertEqual(review["model"], "claude-test")
 
     def test_safety_coach_downvote_review_records_user_mistake_when_no_issue_found(self):
@@ -170,6 +170,24 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(review["verdict"], "user_mistake")
         self.assertEqual(review["issues"], [])
         self.assertEqual(review["review_source"], "llm")
+
+    def test_safety_coach_downvote_review_merges_heuristic_when_llm_returns_user_mistake_issue(self):
+        raw = '{"verdict":"needs_improvement","issues":["user_mistake"],"improvement_note":"AI 답변은 사용자가 직접 전문가와 상담하는 것을 권장합니다.","confidence":0.9}'
+
+        with patch.object(self.mod, "_edu_generate_text", return_value=(raw, {"prompt_token_count": 9, "candidates_token_count": 6}, "gemini-test")):
+            review = self.mod._edu_vp_safety_coach_feedback_review(
+                question="그렇지만 전문가에게 상담을 받을 경우 비용이 많이 들잖아요.",
+                answer="전문가 상담이 가장 안전합니다. 비용이 많이 들지 않는다는 점도 고려해야 합니다. 가족이나 친구에게 먼저 이야기해보세요.",
+                concept_title="안전한 사용의 네 가지 기준",
+                concept_body="건강, 법률, 돈 문제는 전문가 확인이 필요합니다.",
+            )
+
+        self.assertEqual(review["verdict"], "needs_improvement")
+        self.assertEqual(review["review_source"], "llm+heuristic")
+        self.assertNotIn("user_mistake", review["issues"])
+        self.assertIn("contradicted_user_cost_constraint", review["issues"])
+        self.assertIn("missing_low_cost_help_options", review["issues"])
+        self.assertIn("무료·저비용", review["improvement_note"])
 
     def test_safety_coach_fallback_empathizes_with_isolated_dependency_question(self):
         answer = self.mod._edu_vp_safety_coach_fallback(
