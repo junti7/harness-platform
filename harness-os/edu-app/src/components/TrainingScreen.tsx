@@ -926,6 +926,7 @@ function SafetyOrientationBlock({
   onReady: () => void
 }) {
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const concepts = stage.foundation_concepts ?? []
   const blocks = stage.schedule_blocks ?? []
   const safetyItems = stageChecklist(stage).filter((item) => item.id.startsWith('understand_'))
@@ -996,6 +997,7 @@ function SafetyOrientationBlock({
               Boolean(coach?.answer) &&
               coach?.version === SAFETY_COACH_ANSWER_VERSION &&
               (coach.question ?? '').trim() === feedback.trim()
+            const confirmingDelete = confirmDeleteId === concept.checkId
             return (
             <div
               key={concept.checkId}
@@ -1064,12 +1066,35 @@ function SafetyOrientationBlock({
                   </p>
                   <button
                     type="button"
-                    onClick={() => onDeleteCoachAnswer(concept.checkId)}
-                    className="inline-flex h-7 shrink-0 items-center gap-1 rounded-[8px] border border-border bg-secondary px-2 text-[11px] font-semibold text-text-muted transition hover:bg-card hover:text-danger"
+                    onClick={() => {
+                      if (confirmingDelete) {
+                        setConfirmDeleteId(null)
+                        onDeleteCoachAnswer(concept.checkId)
+                        return
+                      }
+                      setConfirmDeleteId(concept.checkId)
+                      window.setTimeout(() => {
+                        setConfirmDeleteId((value) => (value === concept.checkId ? null : value))
+                      }, 6000)
+                    }}
+                    className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-[8px] border px-2 text-[11px] font-semibold transition ${
+                      confirmingDelete
+                        ? 'border-danger bg-danger-soft text-danger hover:brightness-95'
+                        : 'border-border bg-secondary text-text-muted hover:bg-card hover:text-danger'
+                    }`}
                   >
                     <Trash2 size={12} />
-                    삭제
+                    {confirmingDelete ? '삭제 확인' : '삭제'}
                   </button>
+                  {confirmingDelete ? (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteId(null)}
+                      className="inline-flex h-7 shrink-0 items-center rounded-[8px] border border-border bg-card px-2 text-[11px] font-semibold text-text-muted"
+                    >
+                      취소
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
               {coachError ? (
