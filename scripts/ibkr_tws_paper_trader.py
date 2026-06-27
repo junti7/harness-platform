@@ -378,15 +378,28 @@ def reconcile_pending_orders(ib: IB, state: dict, paper_account: str) -> dict:
         oid = meta.get("order_id")
 
         if sym in broker_positions:
-            filled_qty = abs(float(getattr(broker_positions[sym], "position",
+            bp_item = broker_positions[sym]
+            filled_qty = abs(float(getattr(bp_item, "position",
                                            meta.get("qty", 0)) or 0)) or meta.get("qty", 0)
-            promoted = {**meta, "status": "Filled", "qty": filled_qty,
+            # pending → positions 승격 시 resident stop 발행 (없으면 무방비 방지)
+            stop_val = meta.get("stop_loss")
+            stop_id = None
+            if stop_val and stop_val > 0 and int(filled_qty) > 0:
+                try:
+                    promo_contract = make_contract(sym, meta)
+                    ib.qualifyContracts(promo_contract)
+                    stop_id = place_resident_stop(ib, promo_contract, int(filled_qty),
+                                                  stop_val, paper_account)
+                except Exception:
+                    pass
+            promoted = {**meta, "status": "Filled", "qty": int(filled_qty),
+                        "resident_stop_id": stop_id,
                         "filled_reconciled_at": now_iso()}
             state.setdefault("positions", {})[sym] = promoted
             pending.pop(sym, None)
             summary["promoted"].append(sym)
             log_entry({"ts": now_iso(), "action": "pending_filled_promoted", "symbol": sym,
-                       "order_id": oid, "qty": filled_qty})
+                       "order_id": oid, "qty": filled_qty, "resident_stop_id": stop_id})
             continue
 
         if (oid in live_by_id) or (sym in live_symbols):
@@ -402,18 +415,29 @@ def reconcile_pending_orders(ib: IB, state: dict, paper_account: str) -> dict:
     return summary
 
 
+# ── 계약 생성 헬퍼 ────────────────────────────────────────────────────────────
+
+def make_contract(sym: str, tracked: dict) -> Stock:
+    """position record의 currency/exchange로 정확한 계약 생성 — 비USD 지원."""
+    currency = tracked.get("currency", "USD") or "USD"
+    exchange = tracked.get("exchange", "SMART") or "SMART"
+    primary = exchange if exchange not in ("SMART", "", None) else ""
+    return Stock(sym, "SMART", currency, primaryExchange=primary)
+
+
 # ── 브로커 포지션 조회 ─────────────────────────────────────────────────────────
 
-def get_broker_positions(ib: IB, paper_account: str) -> dict:
-    """ib.portfolio() → {symbol: PortfolioItem}. 현재가(marketPrice) 포함."""
+def get_broker_positions(ib: IB, paper_account: str) -> dict | None:
+    """ib.portfolio() → {symbol: PortfolioItem}. API 실패 시 None (빈 dict와 구분)."""
     try:
         return {
             item.contract.symbol: item
             for item in ib.portfolio(account=paper_account)
             if abs(float(item.position or 0)) > 0
         }
-    except Exception:
-        return {}
+    except Exception as e:
+        print(f"  ❌ broker positions 조회 실패: {e}")
+        return None
 
 
 # ── reconcile + manage ────────────────────────────────────────────────────────
@@ -428,7 +452,12 @@ def reconcile_positions_ibkr(ib: IB, state: dict, broker_positions: dict,
     for sym, bp in broker_positions.items():
         if sym in tracked_syms or sym.upper() not in universe_set:
             continue
-        contract = Stock(sym, "SMART", "USD")
+        # 브로커 계약에서 currency/exchange 읽기 (비USD 지원)
+        bp_con = getattr(bp, "contract", None)
+        currency = (getattr(bp_con, "currency", "USD") or "USD") if bp_con else "USD"
+        exchange = (getattr(bp_con, "exchange", "SMART") or "SMART") if bp_con else "SMART"
+        tracked_meta = {"currency": currency, "exchange": exchange}
+        contract = make_contract(sym, tracked_meta)
         ib.qualifyContracts(contract)
         bars = fetch_bars_ibkr(ib, contract, days=TURTLE_ATR_PERIOD + 25)
         atr = core.compute_atr(bars) if len(bars) >= TURTLE_ATR_PERIOD + 1 else 0
@@ -440,7 +469,6 @@ def reconcile_positions_ibkr(ib: IB, state: dict, broker_positions: dict,
         if not dry_run and stop and stop > 0 and qty > 0:
             stop_id = place_resident_stop(ib, contract, qty, stop, paper_account)
             if stop_id is None:
-                # B1: 손절 발행 실패 — 고아입양은 유지하되 경보 기록
                 resident_stop_missing = True
                 print(f"  ⚠️  [{sym}] 고아입양 상주손절 발행 실패 — resident_stop_missing=True")
                 log_entry({"ts": now_iso(), "action": "adopt_orphan_stop_failed",
@@ -451,6 +479,7 @@ def reconcile_positions_ibkr(ib: IB, state: dict, broker_positions: dict,
             "qty": qty, "side": "buy",
             "resident_stop_id": stop_id, "adopted": True,
             "resident_stop_missing": resident_stop_missing,
+            "currency": currency, "exchange": exchange,
         }
         if not dry_run:
             state_set_position(sym, rec)
@@ -505,7 +534,7 @@ def manage_positions_ibkr(ib: IB, state: dict, broker_positions: dict,
 
         # 청산 신호 체크
         if not reason:
-            contract = Stock(sym, "SMART", "USD")
+            contract = make_contract(sym, tracked)
             ib.qualifyContracts(contract)
             bars = fetch_bars_ibkr(ib, contract, days=35)
             if bars:
@@ -523,7 +552,7 @@ def manage_positions_ibkr(ib: IB, state: dict, broker_positions: dict,
         if not dry_run:
             try:
                 cancel_ibkr_order(ib, tracked.get("resident_stop_id"))
-                contract = Stock(sym, "SMART", "USD")
+                contract = make_contract(sym, tracked)
                 ib.qualifyContracts(contract)
                 order = MarketOrder("SELL", qty)
                 order.tif = "GTC"
@@ -594,7 +623,7 @@ def pyramid_positions_ibkr(ib: IB, state: dict, broker_positions: dict,
 
         if not dry_run:
             try:
-                contract = Stock(sym, "SMART", "USD")
+                contract = make_contract(sym, tracked)
                 ib.qualifyContracts(contract)
                 order = MarketOrder("BUY", pd["qty_add"])
                 order.tif = "GTC"
@@ -709,8 +738,12 @@ def run(execute: bool = False) -> None:
         print(f"\n[pending 정합] 승격={recon['promoted'] or '-'} | "
               f"유지={recon['kept'] or '-'} | 정리={recon['purged'] or '-'}")
 
-    # 브로커 포지션 (marketPrice 포함)
+    # 브로커 포지션 (marketPrice 포함) — 실패 시 ghost 오청산 방지를 위해 run 중단
     broker_positions = get_broker_positions(ib, paper_account)
+    if broker_positions is None:
+        print("[ERROR] 브로커 포지션 조회 실패 — 포지션 관리/신규 진입 전체 생략 (다음 run 재시도)")
+        log_entry({"ts": now_iso(), "action": "run_aborted", "reason": "broker_positions_unavailable"})
+        return
     pos_symbols = set(broker_positions.keys())
     tracked_symbols = set(state["positions"].keys())
     drift = summarize_universe_drift(pos_symbols, tracked_symbols, universe_set)
@@ -751,7 +784,7 @@ def run(execute: bool = False) -> None:
         print("  추가 대상 없음")
 
     # 신호 스캔 전 broker snapshot 최신화 (manage/pyramid 반영)
-    broker_positions = get_broker_positions(ib, paper_account)
+    broker_positions = get_broker_positions(ib, paper_account) or {}
     pos_symbols = set(broker_positions.keys())
 
     print("\n── 신호 스캔 ──")
@@ -835,27 +868,44 @@ def run(execute: bool = False) -> None:
                        "currency": currency, "fx_source": _forex_source.get(currency, "unknown")})
             continue
 
-        # B2: TurtleGate — 비USD 종목은 ATR을 USD 환산 후 사이징 (수량 왜곡 방지)
+        # TurtleGate — USD: core gate 직접 사용 / 비USD: USD ATR로 사이징, 현지통화로 stop
         atr_usd = atr * usd_rate
-        sig_for_gate = dict(sig)
-        if currency != "USD":
-            sig_for_gate["atr"] = round(atr_usd, 6)  # USD 환산 ATR로 사이징
-        gate = core.turtle_gate_check(sig_for_gate, nav, TURTLE_MAX_RISK_PCT)
-        shares = gate["shares"]
-        stop_loss = gate["stop_loss"]  # 손절가는 현지통화 sig 기준 유지
+        if currency == "USD":
+            gate = core.turtle_gate_check(sig, nav, TURTLE_MAX_RISK_PCT)
+            shares    = gate["shares"]
+            stop_loss = gate["stop_loss"]          # USD는 gate가 정확하게 계산
+            risk_dollars = gate["risk_dollars"]
+            risk_pct_val = gate["risk_pct"]
+            gate_passed  = gate["passed"]
+            gate_checks  = gate.get("checks", {})
+        else:
+            # 수량: USD 기준 ATR로 sizing (현지통화 ATR로 나누면 수량 왜곡)
+            shares    = core.size_shares(nav, atr_usd)
+            # 손절가: 현지통화 ATR 기준 (stop order는 현지통화로 제출)
+            stop_loss = round(price - core.TURTLE_STOP_MULT * atr, 2)
+            risk_dollars = round(shares * core.TURTLE_STOP_MULT * atr_usd, 2)
+            risk_pct_val = round(risk_dollars / nav * 100, 3) if nav else 0
+            gate_checks = {
+                "signal":      sig["signal"] == "breakout_long",
+                "atr":         atr > 0,
+                "risk_pct":    risk_pct_val / 100 <= TURTLE_MAX_RISK_PCT * 1.05,
+                "stop_loss":   stop_loss > 0,
+                "exit_system": sig.get("system") in ("S1", "S2"),
+            }
+            gate_passed = all(gate_checks.values()) and shares > 0
 
         if shares <= 0:
             print(f"     → 수량 0 — 스킵")
             continue
-        if not gate["passed"]:
-            print(f"     → TurtleGate BLOCK: {gate['checks']}")
+        if not gate_passed:
+            print(f"     → TurtleGate BLOCK: {gate_checks}")
             log_entry({"ts": now_iso(), "action": "gate_blocked", "symbol": sym,
-                       "checks": gate["checks"], "system": system})
+                       "checks": gate_checks, "system": system})
             continue
 
         # 포트폴리오 heat 상한
         cur_heat = core.portfolio_heat(state.get("positions", {}), nav)
-        new_heat = gate["risk_dollars"] / nav if nav else 0
+        new_heat = risk_dollars / nav if nav else 0
         if cur_heat + new_heat > PAPER_MAX_PORTFOLIO_HEAT:
             print(f"     → heat 초과 (현재 {cur_heat*100:.1f}% + 신규 {new_heat*100:.1f}% > {PAPER_MAX_PORTFOLIO_HEAT*100:.0f}%)")
             log_entry({"ts": now_iso(), "action": "heat_blocked", "symbol": sym,
@@ -863,10 +913,9 @@ def run(execute: bool = False) -> None:
                        "cap": PAPER_MAX_PORTFOLIO_HEAT})
             continue
 
-        atr_usd = atr * usd_rate
         pos_val_usd = round(shares * price * usd_rate, 2)
         print(f"     수량={shares}주 | 포지션≈${pos_val_usd:,.0f} | "
-              f"손절={curr_sym}{stop_loss:.2f} | 리스크={gate['risk_pct']:.3f}% | heat↑{new_heat*100:.1f}%")
+              f"손절={curr_sym}{stop_loss:.2f} | 리스크={risk_pct_val:.3f}% | heat↑{new_heat*100:.1f}%")
 
         if not dry_run:
             order = MarketOrder("BUY", shares)
@@ -880,6 +929,7 @@ def run(execute: bool = False) -> None:
                 "qty": shares, "system": system,
                 "entry_price": price, "stop_loss": stop_loss,
                 "atr": atr, "currency": currency, "region": region,
+                "exchange": exchange,  # 복구 시 make_contract에 사용
                 "side": "buy", "status": "Submitted",
                 "submitted_at": now_iso(),
             }
@@ -931,8 +981,8 @@ def run(execute: bool = False) -> None:
                 "n_at_entry": atr,
                 "last_unit_price": fill_price,
                 "unit_count": 1,
-                "risk_usd": round(qty_i * TURTLE_STOP_MULT * atr_usd, 2),  # B2: USD 환산
-                "currency": currency, "region": region,
+                "risk_usd": round(qty_i * TURTLE_STOP_MULT * atr_usd, 2),
+                "currency": currency, "region": region, "exchange": exchange,
             }
             state_set_position(sym, rec)
             state["positions"][sym] = dict(rec)
