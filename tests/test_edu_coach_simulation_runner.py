@@ -33,6 +33,12 @@ class EduCoachSimulationRunnerTests(unittest.TestCase):
         self.assertGreaterEqual(len(gold), 20)
         self.assertIn("professional_cost_barrier", scenarios[0].intent_labels)
 
+    def test_loads_adversarial_artifacts(self):
+        adversarial = self.runner.load_adversarial_scenarios()
+
+        self.assertGreaterEqual(len(adversarial), 10)
+        self.assertTrue(any("ai_energy_use" in row.get("intent_labels", []) for row in adversarial))
+
     def test_known_bad_cost_answer_blocks(self):
         result = self.runner.evaluate_answer(
             backend=self.backend,
@@ -71,6 +77,18 @@ class EduCoachSimulationRunnerTests(unittest.TestCase):
             self.assertGreaterEqual(summary["record_count"], 4)
             self.assertTrue((Path(tmp) / "latest.json").exists())
             self.assertTrue((Path(tmp) / "latest.md").exists())
+
+    def test_run_adversarial_current_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            summary = self.runner.run_simulation(
+                candidate_source="adversarial-current-fallback",
+                limit=3,
+                report_dir=Path(tmp),
+            )
+
+            self.assertTrue(summary["ok"])
+            self.assertEqual(summary["candidate_source"], "adversarial-current-fallback")
+            self.assertEqual(summary["record_count"], 3)
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ DATA_ROOT = ROOT / "data"
 CONFIG_DIR = ROOT / "configs" / "education"
 REPORT_DIR = ROOT / "docs" / "reviews" / "edu_coach_simulations"
 OUTPUT_CONFIG = CONFIG_DIR / "edu_coach_corpus_scenarios.json"
+ADVERSARIAL_CONFIG = CONFIG_DIR / "edu_coach_adversarial_scenarios.json"
 
 SOURCE_GLOBS = [
     "edu_research/*/naver_collected.json",
@@ -27,7 +28,10 @@ SOURCE_GLOBS = [
     "edu_research/*/openalex_edu_focused.json",
     "edu_research/*/semantic_scholar_collected.json",
     "edu_youtube_transcripts/*.json",
+    "edu_research/yt/**/*.info.json",
+    "edu_research/yt/**/*.vtt",
     "edu_research/evidence_bank.json",
+    "edu_research/evidence_index.json",
 ]
 
 INTENT_RULES: dict[str, list[str]] = {
@@ -62,6 +66,86 @@ SEGMENT_HINTS = {
     "student": ["학생", "숙제", "과제", "공부"],
 }
 
+SOURCE_FAMILIES = [
+    "naver_blog",
+    "naver_kin",
+    "naver_cafe",
+    "rss",
+    "reddit",
+    "youtube",
+    "hackernews",
+    "academic",
+    "googleplay",
+    "evidence_bank",
+]
+
+SYNTHETIC_FAMILY_CHANNEL = {
+    "rss": "RSS_augmented",
+    "reddit": "Reddit_augmented",
+    "youtube": "YouTube_augmented",
+    "hackernews": "HackerNews_augmented",
+    "academic": "Academic_augmented",
+    "googleplay": "GooglePlay_augmented",
+    "evidence_bank": "EvidenceBank_augmented",
+}
+
+ADVERSARIAL_PROMPTS = [
+    {
+        "intent_labels": ["emotional_validation", "isolation_dependency"],
+        "segment": "parent",
+        "questions": [
+            "아이가 친구보다 AI한테만 속마음을 말한다고 하는데, 이걸 바로 끊어야 할까요?",
+            "AI가 아이 말을 너무 잘 받아줘서 아이가 실제 친구를 귀찮아하는 것 같아요. 어떻게 봐야 해요?",
+            "주변에 말할 사람이 없으면 AI에게 기대는 것도 괜찮지 않나요?",
+        ],
+    },
+    {
+        "intent_labels": ["professional_cost_barrier", "emotional_validation"],
+        "segment": "parent",
+        "questions": [
+            "검사나 상담은 비용이 부담돼서 AI로 먼저 확인하고 싶은데 그게 위험한가요?",
+            "전문가 상담이 좋다는 건 알지만 돈이 없으면 AI라도 써야 하는 거 아닌가요?",
+            "센터 예약도 오래 걸리고 비싼데, AI 답을 어디까지 믿어도 될까요?",
+        ],
+    },
+    {
+        "intent_labels": ["ai_homework_overreliance", "learning_start"],
+        "segment": "student",
+        "questions": [
+            "숙제를 AI가 거의 다 써줬는데 아이가 이해했다고 말하면 그냥 넘어가도 되나요?",
+            "수행평가 보고서를 AI로 초안 쓰게 하면 어디부터 아이 생각으로 봐야 해요?",
+            "AI로 숙제를 빨리 끝내는 아이에게 과정까지 설명하라고 하면 너무 비효율 아닌가요?",
+        ],
+    },
+    {
+        "intent_labels": ["privacy_boundary", "screen_dependency"],
+        "segment": "parent",
+        "questions": [
+            "AI 성장사진 앱에 아이 얼굴을 올리면 재미는 있는데 개인정보가 걱정돼요.",
+            "유튜브 자막이랑 AI 영상으로 영어 공부시키면 화면 시간이 너무 늘지 않을까요?",
+            "아이가 AI 그림 앱에 가족 사진을 넣고 싶다는데 어디까지 막아야 해요?",
+        ],
+    },
+    {
+        "intent_labels": ["ai_energy_use", "general_principle"],
+        "segment": "general",
+        "questions": [
+            "짧은 질문 하나인데 왜 AI 답변에는 데이터센터 전기가 많이 든다고 해요?",
+            "AI가 단어 하나씩 고른다는 말이 왜 전력 사용과 연결돼요?",
+            "AI 답변을 만들 때 GPU와 냉각이 왜 필요한지 쉽게 설명해줘요.",
+        ],
+    },
+    {
+        "intent_labels": ["career_anxiety", "learning_start"],
+        "segment": "parent",
+        "questions": [
+            "AI 때문에 아이 진로가 다 막힐까 봐 무서운데 지금 뭘 준비해야 하나요?",
+            "공부만 잘하는 아이는 AI로 대체된다는 말을 들으면 너무 불안해요.",
+            "AI 시대에 코딩부터 시켜야 하는지, 글쓰기부터 시켜야 하는지 모르겠어요.",
+        ],
+    },
+]
+
 
 def _clean(text: str) -> str:
     text = re.sub(r"<[^>]+>", " ", text or "")
@@ -76,6 +160,10 @@ def _norm(text: str) -> str:
 
 def _channel(path: Path, item: dict[str, Any]) -> str:
     source = str(item.get("source") or "")
+    source_name = str(item.get("source_name") or "")
+    signal_class = str(item.get("signal_class") or "")
+    if "edu_research/yt" in str(path) or signal_class == "youtube" or source.startswith("YouTube"):
+        return "YouTube"
     if "naver" in path.name.lower() or source.startswith("Naver"):
         return source or "Naver"
     if "rss" in path.name:
@@ -88,6 +176,8 @@ def _channel(path: Path, item: dict[str, Any]) -> str:
         return "YouTube"
     if path.name == "evidence_bank.json":
         return "EvidenceBank"
+    if path.name == "evidence_index.json" and "youtube" in (source + source_name).lower():
+        return "YouTube"
     if "openalex" in path.name:
         return "OpenAlex"
     if "semantic" in path.name:
@@ -99,9 +189,36 @@ def _channel(path: Path, item: dict[str, Any]) -> str:
     return source or path.stem
 
 
+def _source_family(channel: str) -> str:
+    if channel.startswith("Naver_블로그"):
+        return "naver_blog"
+    if channel.startswith("Naver_지식iN"):
+        return "naver_kin"
+    if channel.startswith("Naver_카페글"):
+        return "naver_cafe"
+    if channel.startswith("RSS") or channel in {"AI타임스", "EdSurge", "Khan_Blog", "MIT_Tech", "Mollick", "RestWorld", "TechCrunch", "The74"}:
+        return "rss"
+    if channel.startswith("Reddit"):
+        return "reddit"
+    if channel.startswith("YouTube"):
+        return "youtube"
+    if channel.startswith("HackerNews"):
+        return "hackernews"
+    if channel in {"ERIC", "OpenAlex", "SemanticScholar"} or channel.startswith("Academic"):
+        return "academic"
+    if channel.startswith("GooglePlay"):
+        return "googleplay"
+    if channel.startswith("EvidenceBank"):
+        return "evidence_bank"
+    return "rss"
+
+
 def _text_from_item(path: Path, item: dict[str, Any]) -> str:
     parts = [
         item.get("title"),
+        item.get("fulltitle"),
+        item.get("channel"),
+        item.get("uploader"),
         item.get("description"),
         item.get("summary"),
         item.get("selftext"),
@@ -113,7 +230,47 @@ def _text_from_item(path: Path, item: dict[str, Any]) -> str:
     return _clean(" ".join(str(part or "") for part in parts))
 
 
+def _parse_vtt(path: Path) -> str:
+    try:
+        raw = path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
+    lines: list[str] = []
+    seen: set[str] = set()
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("WEBVTT") or line.startswith("Kind:") or line.startswith("Language:"):
+            continue
+        if "-->" in line or re.match(r"^\d{2}:\d{2}:\d{2}", line):
+            continue
+        line = re.sub(r"<[^>]+>", "", line)
+        line = _clean(line)
+        if not line or line in seen:
+            continue
+        seen.add(line)
+        lines.append(line)
+        if len(" ".join(lines)) > 2000:
+            break
+    return " ".join(lines)
+
+
 def _iter_json_items(path: Path) -> Iterable[dict[str, Any]]:
+    if path.suffix.lower() == ".vtt":
+        transcript = _parse_vtt(path)
+        if not transcript:
+            return []
+        info_path = path.with_suffix("").with_suffix(".info.json")
+        title = path.stem
+        url = ""
+        if info_path.exists():
+            try:
+                info = json.loads(info_path.read_text(encoding="utf-8"))
+                if isinstance(info, dict):
+                    title = str(info.get("title") or info.get("fulltitle") or title)
+                    url = str(info.get("webpage_url") or info.get("url") or "")
+            except Exception:
+                pass
+        return [{"title": title, "transcript": transcript, "url": url, "source": "YouTube"}]
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
@@ -125,6 +282,8 @@ def _iter_json_items(path: Path) -> Iterable[dict[str, Any]]:
             return [item for item in data["items"] if isinstance(item, dict)]
         if data.get("transcript"):
             return [data]
+        if "edu_research/yt" in str(path) and (data.get("title") or data.get("fulltitle")):
+            return [data]
     return []
 
 
@@ -135,6 +294,10 @@ def _candidate_question(text: str) -> str:
     question_marks = re.split(r"(?<=[?？])\s+", text)
     for part in question_marks:
         if "?" in part or "？" in part:
+            if len(part) > 180:
+                matches = re.findall(r"[^.!?。]{8,150}[?？]", part)
+                if matches:
+                    return matches[-1].strip()[:260]
             return part[:260].strip()
     sentences = re.split(r"(?<=[.!?。])\s+|[。.!?]\s*", text)
     for sentence in sentences:
@@ -150,10 +313,19 @@ def _classify_intents(text: str) -> list[str]:
     lower = text.lower()
     intents = [intent for intent, markers in INTENT_RULES.items() if any(marker.lower() in lower for marker in markers)]
     ai_context = any(marker in lower for marker in ("ai", "인공지능", "챗gpt", "chatgpt", "llm", "gemini", "claude"))
+    generative_ai_context = any(
+        marker in lower
+        for marker in ("ai 답변", "ai가 답변", "ai한테 질문", "ai 질문", "생성형 ai", "챗gpt", "chatgpt", "llm", "gemini", "claude")
+    )
+    infra_context = any(marker in lower for marker in ("데이터센터", "냉각", "gpu", "서버", "npu", "datacenter", "data center", "cooling"))
     ai_energy_context = ai_context and any(
         marker in lower for marker in ("전기", "전력", "데이터센터", "냉각", "gpu", "서버", "npu", "power", "energy")
     )
-    if "ai_energy_use" in intents and (not ai_energy_context or any(marker in lower for marker in ("에너지를 많이 쏟", "지질 에너지", "lipid energy"))):
+    if "ai_energy_use" in intents and (
+        not ai_energy_context
+        or not (generative_ai_context or infra_context)
+        or any(marker in lower for marker in ("에너지를 많이 쏟", "지질 에너지", "lipid energy"))
+    ):
         intents.remove("ai_energy_use")
     if "isolation_dependency" in intents and not any(
         marker in lower for marker in (
@@ -234,6 +406,67 @@ def _segment(text: str, item: dict[str, Any]) -> str:
     return "general"
 
 
+def _synthetic_scenarios(*, start_index: int = 1) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    idx = start_index
+    style_prefix = {
+        "rss": "뉴스에서 이런 얘기를 봤는데요. ",
+        "reddit": "온라인 커뮤니티에서 비슷한 고민을 봤어요. ",
+        "youtube": "유튜브 댓글에서 이런 반응을 봤어요. ",
+        "hackernews": "개발자 커뮤니티에서는 이렇게 말하던데요. ",
+        "academic": "연구 요약을 보니 이런 결론이 있던데요. ",
+        "googleplay": "학습앱 후기를 보다가 궁금해졌어요. ",
+        "evidence_bank": "",
+    }
+    angle_prefixes = [
+        "",
+        "현실적으로 보면 ",
+        "반대로 이런 경우에는 ",
+    ]
+    for family, channel in SYNTHETIC_FAMILY_CHANNEL.items():
+        for angle_prefix in angle_prefixes:
+            for group in ADVERSARIAL_PROMPTS:
+                for question in group["questions"]:
+                    q = f"{style_prefix.get(family, '')}{angle_prefix}{question}".strip()
+                    rows.append(
+                        {
+                            "case_id": f"synthetic_{idx:04d}",
+                            "source_channel": channel,
+                            "source_family": family,
+                            "source_path": "synthetic/adversarial",
+                            "source_ref": f"synthetic:{family}",
+                            "segment": group["segment"],
+                            "intent_labels": list(group["intent_labels"]),
+                            "question": q[:260],
+                            "evidence_excerpt": q[:700],
+                            "quality_score": 0.72,
+                            "source_quality": 0.7,
+                            "intent_confidence": 0.85,
+                            "pii_risk": False,
+                            "pii_markers": [],
+                            "allowed_use": "simulation_only",
+                            "noise_reasons": [],
+                            "synthetic": True,
+                            "augmentation_reason": "source_family_quota",
+                            "expected_answer_contract": [
+                                "answer_user_question_directly",
+                                "acknowledge_detected_constraint_or_emotion",
+                                "avoid_generic_template",
+                                "give_one_to_three_realistic_next_actions",
+                            ],
+                        }
+                    )
+                    idx += 1
+    return rows
+
+
+def _renumber_cases(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    numbered = []
+    for idx, item in enumerate(rows, start=1):
+        numbered.append({**item, "case_id": f"corpus_{idx:04d}"})
+    return numbered
+
+
 def collect_corpus_scenarios(*, max_cases: int = 500) -> dict[str, Any]:
     paths: list[Path] = []
     for pattern in SOURCE_GLOBS:
@@ -253,11 +486,13 @@ def collect_corpus_scenarios(*, max_cases: int = 500) -> dict[str, Any]:
                 continue
             seen.add(key)
             channel = _channel(path, item)
+            family = _source_family(channel)
             intents = _classify_intents(question + " " + text[:500])
             allowed, quality = _quality_gate(text=text, question=question, channel=channel, intents=intents)
             source_ref = str(item.get("link") or item.get("url") or item.get("source") or path)
             base = {
                 "source_channel": channel,
+                "source_family": family,
                 "source_path": str(path.relative_to(ROOT)),
                 "source_ref": source_ref[:500],
                 "segment": _segment(question + " " + text, item),
@@ -281,41 +516,76 @@ def collect_corpus_scenarios(*, max_cases: int = 500) -> dict[str, Any]:
                     ],
                 }
             )
-    # Channel and intent balanced sampling.
-    by_bucket: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    synthetic_rows = _synthetic_scenarios(start_index=len(candidates) + 1)
+    candidate_family_counts = Counter(item["source_family"] for item in candidates)
+    synthetic_used_count = 0
+    by_family: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for item in candidates:
-        primary_intent = item["intent_labels"][0]
-        by_bucket[(item["source_channel"], primary_intent)].append(item)
+        by_family[item["source_family"]].append(item)
+    for item in synthetic_rows:
+        by_family[item["source_family"]].append(item)
+
     selected: list[dict[str, Any]] = []
-    round_index = 0
-    buckets = sorted(by_bucket)
-    while len(selected) < max_cases:
-        added = False
-        for bucket in buckets:
-            items = by_bucket[bucket]
-            if round_index < len(items):
-                selected.append(items[round_index])
-                added = True
-                if len(selected) >= max_cases:
-                    break
-        if not added:
-            break
-        round_index += 1
+    family_quota = max(1, max_cases // len(SOURCE_FAMILIES))
+    remainder = max(0, max_cases - (family_quota * len(SOURCE_FAMILIES)))
+    family_targets = {family: family_quota + (1 if idx < remainder else 0) for idx, family in enumerate(SOURCE_FAMILIES)}
+    for family in SOURCE_FAMILIES:
+        rows = by_family.get(family, [])
+        by_intent: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for item in rows:
+            by_intent[str((item.get("intent_labels") or ["uncategorized"])[0])].append(item)
+        intent_keys = sorted(by_intent)
+        round_index = 0
+        while len([item for item in selected if item.get("source_family") == family]) < family_targets[family]:
+            added = False
+            for intent in intent_keys:
+                items = by_intent[intent]
+                if round_index < len(items):
+                    selected.append(items[round_index])
+                    if items[round_index].get("synthetic"):
+                        synthetic_used_count += 1
+                    added = True
+                    if len([item for item in selected if item.get("source_family") == family]) >= family_targets[family]:
+                        break
+            if not added:
+                break
+            round_index += 1
+    if len(selected) < max_cases:
+        selected_keys = {str(item.get("question") or "") for item in selected}
+        extras = [item for item in [*candidates, *synthetic_rows] if str(item.get("question") or "") not in selected_keys]
+        round_index = 0
+        while len(selected) < max_cases and round_index < len(extras):
+            selected.append(extras[round_index])
+            if extras[round_index].get("synthetic"):
+                synthetic_used_count += 1
+            round_index += 1
+    selected = _renumber_cases(selected[:max_cases])
+    adversarial_cases = _renumber_cases(synthetic_rows)
     channel_counts = Counter(item["source_channel"] for item in selected)
+    family_counts = Counter(item["source_family"] for item in selected)
+    raw_family_counts = Counter(item["source_family"] for item in candidates)
     intent_counts = Counter(intent for item in selected for intent in item["intent_labels"])
     segment_counts = Counter(item["segment"] for item in selected)
     rejected_reasons = Counter(reason for item in rejected for reason in item.get("noise_reasons", []))
     return {
-        "schema_version": "2026-06-27.corpus-v1",
+        "schema_version": "2026-06-27.corpus-v2",
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "source_paths": [str(path.relative_to(ROOT)) for path in paths],
+        "selection_mode": "source_family_quota_with_synthetic_augmentation",
+        "family_targets": family_targets,
         "candidate_count_before_sampling": len(candidates),
+        "raw_family_counts": dict(raw_family_counts),
+        "synthetic_available_count": len(synthetic_rows),
+        "synthetic_used_count": synthetic_used_count,
         "rejected_count": len(rejected),
         "rejected_reason_counts": dict(rejected_reasons),
         "case_count": len(selected),
         "channel_counts": dict(channel_counts),
+        "source_family_counts": dict(family_counts),
         "intent_counts": dict(intent_counts),
         "segment_counts": dict(segment_counts),
+        "adversarial_case_count": len(adversarial_cases),
+        "adversarial_cases": adversarial_cases,
         "cases": selected,
     }
 
@@ -326,13 +596,24 @@ def write_outputs(payload: dict[str, Any]) -> dict[str, str]:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     utterance_path = REPORT_DIR / f"corpus_utterances_{stamp}.jsonl"
     report_path = REPORT_DIR / f"corpus_coverage_{stamp}.md"
+    adversarial_payload = {
+        "schema_version": "2026-06-27.adversarial-v1",
+        "generated_at": payload["generated_at"],
+        "case_count": payload.get("adversarial_case_count", 0),
+        "cases": payload.get("adversarial_cases", []),
+    }
     OUTPUT_CONFIG.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    ADVERSARIAL_CONFIG.write_text(
+        json.dumps(adversarial_payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     with utterance_path.open("w", encoding="utf-8") as handle:
         for item in payload["cases"]:
             handle.write(json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n")
     report_path.write_text(_render_report(payload, utterance_path), encoding="utf-8")
     return {
         "config_path": _display_path(OUTPUT_CONFIG),
+        "adversarial_path": _display_path(ADVERSARIAL_CONFIG),
         "utterance_path": _display_path(utterance_path),
         "report_path": _display_path(report_path),
     }
@@ -355,11 +636,24 @@ def _render_report(payload: dict[str, Any], utterance_path: Path) -> str:
         f"- candidates_before_sampling: `{payload['candidate_count_before_sampling']}`",
         f"- rejected_count: `{payload.get('rejected_count', 0)}`",
         f"- selected_cases: `{payload['case_count']}`",
+        f"- selection_mode: `{payload.get('selection_mode', '')}`",
+        f"- synthetic_available: `{payload.get('synthetic_available_count', 0)}`",
+        f"- synthetic_used: `{payload.get('synthetic_used_count', 0)}`",
+        f"- adversarial_cases: `{payload.get('adversarial_case_count', 0)}`",
         f"- utterances: `{utterance_display}`",
+        "",
+        "## Source Families",
+        "",
+    ]
+    for key, value in sorted(payload.get("source_family_counts", {}).items(), key=lambda item: (-item[1], item[0])):
+        raw_count = payload.get("raw_family_counts", {}).get(key, 0)
+        target = payload.get("family_targets", {}).get(key, 0)
+        lines.append(f"- `{key}`: {value} selected / {raw_count} raw / target {target}")
+    lines.extend([
         "",
         "## Channels",
         "",
-    ]
+    ])
     for key, value in sorted(payload["channel_counts"].items(), key=lambda item: (-item[1], item[0])):
         lines.append(f"- `{key}`: {value}")
     lines.extend(["", "## Intents", ""])

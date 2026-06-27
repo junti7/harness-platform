@@ -18,6 +18,7 @@ POLICY_PATH = CONFIG_DIR / "edu_coach_policy_registry.json"
 SCENARIO_PATH = CONFIG_DIR / "edu_coach_scenarios.json"
 GOLD_SET_PATH = REPORT_DIR / "gold_set_seed_2026-06-27.jsonl"
 CORPUS_SCENARIO_PATH = CONFIG_DIR / "edu_coach_corpus_scenarios.json"
+ADVERSARIAL_SCENARIO_PATH = CONFIG_DIR / "edu_coach_adversarial_scenarios.json"
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,14 @@ def load_corpus_scenarios(path: Path = CORPUS_SCENARIO_PATH) -> list[dict[str, A
     rows = [item for item in payload.get("cases", []) if isinstance(item, dict)]
     if not rows:
         raise ValueError("corpus scenario registry has no cases")
+    return rows
+
+
+def load_adversarial_scenarios(path: Path = ADVERSARIAL_SCENARIO_PATH) -> list[dict[str, Any]]:
+    payload = _read_json(path)
+    rows = [item for item in payload.get("cases", []) if isinstance(item, dict)]
+    if not rows:
+        raise ValueError("adversarial scenario registry has no cases")
     return rows
 
 
@@ -309,6 +318,20 @@ def run_simulation(
                 llm_judge_enabled=llm_judge_enabled,
             )
             records.append({**item, "answer": answer, **result})
+    elif candidate_source == "adversarial-current-fallback":
+        raw_candidates = _corpus_candidates(load_adversarial_scenarios())
+        for item in raw_candidates[:limit]:
+            answer = backend._edu_vp_safety_coach_fallback(item.get("concept_title") or "", item["question"])
+            result = evaluate_answer(
+                backend=backend,
+                registry=registry,
+                question=item["question"],
+                answer=answer,
+                concept_body=item.get("concept_body", ""),
+                intent_labels=item.get("intent_labels", []),
+                llm_judge_enabled=llm_judge_enabled,
+            )
+            records.append({**item, "answer": answer, **result})
     else:
         for case in scenarios[:limit]:
             if candidate_source == "current-fallback":
@@ -316,7 +339,7 @@ def run_simulation(
             elif candidate_source == "scenario-gold":
                 candidates = _scenario_gold_candidates(case)
             else:
-                raise ValueError("candidate_source must be current-fallback, scenario-gold, gold-set, or corpus-current-fallback")
+                raise ValueError("candidate_source must be current-fallback, scenario-gold, gold-set, corpus-current-fallback, or adversarial-current-fallback")
             for candidate in candidates:
                 result = evaluate_answer(
                     backend=backend,
@@ -414,7 +437,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run deterministic EDU AI coach answer-quality simulations.")
     parser.add_argument(
         "--candidate-source",
-        choices=["current-fallback", "scenario-gold", "gold-set", "corpus-current-fallback"],
+        choices=["current-fallback", "scenario-gold", "gold-set", "corpus-current-fallback", "adversarial-current-fallback"],
         default="current-fallback",
         help="which answer candidates to score",
     )

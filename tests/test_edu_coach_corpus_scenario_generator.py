@@ -33,6 +33,13 @@ class EduCoachCorpusScenarioGeneratorTests(unittest.TestCase):
         self.assertGreaterEqual(payload["channel_counts"].get("Naver_카페글", 0), 1)
         self.assertGreaterEqual(payload["channel_counts"].get("Naver_지식iN", 0), 1)
         self.assertGreaterEqual(len(payload["intent_counts"]), 3)
+        self.assertIn("source_family_counts", payload)
+        self.assertIn("raw_family_counts", payload)
+        self.assertEqual(payload["selection_mode"], "source_family_quota_with_synthetic_augmentation")
+        self.assertGreaterEqual(payload["source_family_counts"].get("youtube", 0), 1)
+        self.assertGreaterEqual(payload["source_family_counts"].get("rss", 0), 1)
+        self.assertGreater(payload["synthetic_available_count"], 0)
+        self.assertGreater(payload["adversarial_case_count"], 0)
         self.assertIn("source_paths", payload)
         self.assertTrue(all(item["allowed_use"] == "simulation_only" for item in payload["cases"]))
         self.assertTrue(all(item["quality_score"] >= 0.52 for item in payload["cases"]))
@@ -70,10 +77,12 @@ class EduCoachCorpusScenarioGeneratorTests(unittest.TestCase):
                 patch.object(self.generator, "CONFIG_DIR", tmp_path),
                 patch.object(self.generator, "REPORT_DIR", tmp_path),
                 patch.object(self.generator, "OUTPUT_CONFIG", tmp_path / "edu_coach_corpus_scenarios.json"),
+                patch.object(self.generator, "ADVERSARIAL_CONFIG", tmp_path / "edu_coach_adversarial_scenarios.json"),
             ):
                 paths = self.generator.write_outputs(payload)
 
         self.assertIn("config_path", paths)
+        self.assertIn("adversarial_path", paths)
         self.assertIn("utterance_path", paths)
         self.assertIn("report_path", paths)
 

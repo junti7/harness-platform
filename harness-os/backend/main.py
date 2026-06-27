@@ -8931,11 +8931,11 @@ def _edu_vp_question_asks_ai_energy_use(question: str) -> bool:
     )
     if not any(marker in q for marker in energy_markers):
         return False
-    direct_ai_markers = (
+    generative_ai_markers = (
         "ai 답변", "ai가 답변", "ai한테 질문", "ai 질문", "생성형 ai", "llm", "gpt", "챗gpt",
-        "데이터센터", "냉각", "gpu", "서버", "전력", "전기세", "전기요금", "탄소", "npu",
     )
-    return any(marker in q for marker in direct_ai_markers)
+    infra_markers = ("데이터센터", "냉각", "gpu", "서버", "npu", "datacenter", "data center", "cooling")
+    return any(marker in q for marker in generative_ai_markers) or any(marker in q for marker in infra_markers)
 
 
 def _edu_vp_question_asks_direct_principle(question: str) -> bool:
@@ -9890,6 +9890,13 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
     q = question.strip()
     q_lower = q.lower()
     focus = _edu_vp_safety_coach_question_focus(q)
+    if _edu_vp_question_asks_ai_energy_use(q):
+        return (
+            "AI 답변에 전기가 많이 든다고 하는 이유는 답을 만들 때 멀리 있는 데이터센터의 서버가 많은 계산을 하기 때문입니다. "
+            "큰 AI는 GPU 같은 계산 장치가 단어 후보를 계속 비교하고, 뜨거워진 장비를 식히는 냉각에도 전기가 들어갑니다. "
+            "휴대폰 화면에서는 짧은 질문처럼 보여도, 뒤에서는 큰 컴퓨터실이 함께 움직이는 셈입니다. "
+            "오늘은 AI 질문 비용을 '내 기기 전기'가 아니라 '서버 계산과 냉각 비용'으로 기억하면 됩니다."
+        )
     if _edu_vp_safety_coach_has_cost_barrier(q):
         return (
             "맞아요, 전문가에게 상담을 받을 때 비용이 많이 드는 건 현실적인 문제이고, 비용 부담은 실제 장벽입니다. "
@@ -10064,7 +10071,7 @@ def _edu_vp_safety_coach_red_team(
     )
     if any(marker in answer_text for marker in leaked_markers):
         issues.append("prompt_marker_leaked")
-    mentions_evidence = any(term in answer_text for term in ("관련 자료", "내부 자료", "자료에서는", "출처", "보고서"))
+    mentions_evidence = any(term in answer_text for term in ("관련 자료", "내부 자료", "자료에서는", "출처", "근거 자료", "인용"))
     if mentions_evidence and not evidence_items:
         issues.append("unsupported_evidence_reference")
     for policy in (reinforcement_policies or [])[:5]:
