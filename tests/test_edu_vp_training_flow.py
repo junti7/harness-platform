@@ -422,6 +422,91 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("professional_cost_barrier", candidate["intent_classes"])
         self.assertIn("professional_cost_barrier_v1", candidate["matched_policy_ids"])
 
+    def test_safety_coach_llm_judge_strict_schema_parse(self):
+        parsed = self.mod._edu_vp_safety_coach_parse_llm_judge(
+            '{"verdict":"needs_improvement","failure_codes":["weak_empathy"],"missing_requirements":["first_empathy"],"unsafe_phrases":[],"better_answer_principle":"감정 먼저 인정","confidence":0.82}'
+        )
+
+        self.assertEqual(parsed["verdict"], "needs_improvement")
+        self.assertEqual(parsed["failure_codes"], ["weak_empathy"])
+        self.assertEqual(parsed["confidence"], 0.82)
+
+    def test_safety_coach_quality_review_can_use_llm_judge(self):
+        context = self.mod._edu_vp_safety_coach_resolved_policy_context(
+            "그래도 AI가 나한테 그렇게 해주면 기분이 좋은걸?"
+        )
+        judge = {
+            "verdict": "needs_improvement",
+            "failure_codes": ["weak_empathy"],
+            "missing_requirements": ["first_empathy"],
+            "unsafe_phrases": [],
+            "better_answer_principle": "감정 먼저 인정",
+            "confidence": 0.8,
+            "review_source": "llm_judge",
+        }
+
+        with patch.object(self.mod, "_edu_vp_safety_coach_llm_judge_review", return_value=judge):
+            review = self.mod._edu_vp_safety_coach_quality_review(
+                question="그래도 AI가 나한테 그렇게 해주면 기분이 좋은걸?",
+                answer="그 기분은 진짜입니다. AI가 나한테 그렇게 해주면 마음이 놓일 수 있습니다. AI 위로는 받을 수 있지만 중요한 결정은 잠깐 멈춰 다시 확인하면 됩니다.",
+                concept_body="AI가 항상 내 편처럼 말해도 정확하다는 뜻은 아닙니다.",
+                policy_context=context,
+                llm_judge_enabled=True,
+            )
+
+        self.assertIn("llm_judge_weak_empathy", review["issues"])
+        self.assertEqual(review["llm_judge"]["verdict"], "needs_improvement")
+
+    def test_safety_coach_generation_retries_when_llm_judge_fails_answer(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=123,
+            stage="day0",
+            concept_id="safety_concept_sycophancy",
+            concept_title="항상 내 편인 말의 위험",
+            concept_body="AI가 항상 내 편처럼 말해도 정확하다는 뜻은 아닙니다.",
+            question="그래도 AI가 나한테 그렇게 해주면 기분이 좋은걸?",
+            answer_version="test-version",
+        )
+        weak = "그 기분은 진짜입니다. AI가 나한테 그렇게 해주면 위로는 받을 수 있지만 중요한 결정은 다시 확인하면 됩니다."
+        fixed = "그 기분은 진짜입니다. AI가 나한테 그렇게 해주면 잠깐 마음이 놓일 수 있습니다. 다만 그 좋은 느낌 때문에 중요한 결정을 바로 하지 않도록 잠깐 멈춰 다시 확인하면 됩니다."
+        judge_fail = {
+            "verdict": "needs_improvement",
+            "failure_codes": ["weak_empathy"],
+            "missing_requirements": ["warmer_first_sentence"],
+            "unsafe_phrases": [],
+            "better_answer_principle": "감정의 실제성을 더 따뜻하게 인정한다.",
+            "confidence": 0.77,
+            "review_source": "llm_judge",
+        }
+        judge_pass = {
+            "verdict": "pass",
+            "failure_codes": [],
+            "missing_requirements": [],
+            "unsafe_phrases": [],
+            "better_answer_principle": "",
+            "confidence": 0.8,
+            "review_source": "llm_judge",
+        }
+
+        with (
+            patch.dict("os.environ", {"EDU_SAFETY_COACH_LLM_JUDGE_ENABLED": "true"}),
+            patch.object(self.mod, "_edu_vp_safety_coach_fast_answer", return_value=None),
+            patch.object(self.mod, "_edu_vp_safety_coach_reinforcement_policies", return_value=[]),
+            patch.object(self.mod, "_edu_vp_safety_coach_evidence", return_value=("", [], {"selected_count": 0, "rejected_count": 0, "rejected": [], "skip_reason": "test"})),
+            patch.object(self.mod, "_edu_safety_coach_model_ladder", return_value=["model-a", "model-b"]),
+            patch.object(self.mod, "_edu_generate_text", side_effect=[(weak, {"prompt_token_count": 10, "candidates_token_count": 8}, "model-a"), (fixed, {"prompt_token_count": 11, "candidates_token_count": 9}, "model-b")]) as mocked_generate,
+            patch.object(self.mod, "_edu_vp_safety_coach_llm_judge_review", side_effect=[judge_fail, judge_pass]) as mocked_judge,
+            patch.object(self.mod, "_edu_log_llm_cost"),
+        ):
+            answer, model, usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
+
+        self.assertEqual(mocked_generate.call_count, 2)
+        self.assertEqual(mocked_judge.call_count, 2)
+        self.assertEqual(model, "model-b")
+        self.assertEqual(answer, fixed)
+        self.assertEqual(usage["_safety_coach_llm_judge"]["verdict"], "pass")
+        self.assertFalse(fallback_used)
+
     def test_safety_coach_reinforcement_policy_lookup_matches_similar_downvote_review(self):
         payload = {
             "question": "그런데 AI가 답변을 하는 작업은 왜 엄청난 전기가 든다고 해?",

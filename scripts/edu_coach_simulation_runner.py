@@ -152,15 +152,19 @@ def evaluate_answer(
     answer: str,
     concept_body: str,
     intent_labels: list[str],
+    llm_judge_enabled: bool = False,
 ) -> dict[str, Any]:
-    if hasattr(backend, "_edu_vp_safety_coach_quality_issues") and hasattr(backend, "_edu_vp_safety_coach_resolved_policy_context"):
+    if hasattr(backend, "_edu_vp_safety_coach_quality_review") and hasattr(backend, "_edu_vp_safety_coach_resolved_policy_context"):
         policy_context = backend._edu_vp_safety_coach_resolved_policy_context(question)
-        issues = backend._edu_vp_safety_coach_quality_issues(
+        review = backend._edu_vp_safety_coach_quality_review(
             question=question,
             answer=answer,
             concept_body=concept_body,
             policy_context=policy_context,
+            llm_judge_enabled=llm_judge_enabled,
         )
+        issues = [str(item) for item in review.get("issues") or [] if str(item).strip()]
+        llm_judge = review.get("llm_judge") if isinstance(review.get("llm_judge"), dict) else {}
     else:
         red_team_issues = backend._edu_vp_safety_coach_red_team(
             question=question,
@@ -172,10 +176,12 @@ def evaluate_answer(
         for issue in [*red_team_issues, *contract_issues]:
             if issue not in issues:
                 issues.append(issue)
+        llm_judge = {}
     return {
         "verdict": _verdict_for(issues, registry, backend),
         "issues": issues,
         "issue_severity": {issue: _severity_for(issue, registry, backend) for issue in issues},
+        "llm_judge": llm_judge,
     }
 
 
@@ -235,6 +241,7 @@ def run_simulation(
     candidate_source: str = "current-fallback",
     limit: int | None = None,
     report_dir: Path = REPORT_DIR,
+    llm_judge_enabled: bool = False,
 ) -> dict[str, Any]:
     backend = _load_backend_main()
     registry = load_policy_registry()
@@ -254,6 +261,7 @@ def run_simulation(
                 answer=item["answer"],
                 concept_body=item.get("concept_body", ""),
                 intent_labels=item.get("intent_labels", []),
+                llm_judge_enabled=llm_judge_enabled,
             )
             records.append({**item, **result})
     else:
@@ -272,6 +280,7 @@ def run_simulation(
                     answer=candidate["answer"],
                     concept_body=case.concept_body,
                     intent_labels=case.intent_labels,
+                    llm_judge_enabled=llm_judge_enabled,
                 )
                 records.append(
                     {
@@ -302,6 +311,7 @@ def run_simulation(
         "ok": True,
         "run_id": run_id,
         "candidate_source": candidate_source,
+        "llm_judge_enabled": llm_judge_enabled,
         "record_count": len(records),
         "output_path": _display_path(output_path),
         "verdict_counts": dict(verdict_counts),
@@ -323,6 +333,7 @@ def _render_markdown_summary(summary: dict[str, Any]) -> str:
         "",
         f"- run_id: `{summary['run_id']}`",
         f"- candidate_source: `{summary['candidate_source']}`",
+        f"- llm_judge_enabled: `{summary.get('llm_judge_enabled', False)}`",
         f"- record_count: `{summary['record_count']}`",
         f"- output: `{summary['output_path']}`",
         "",
@@ -355,8 +366,9 @@ def main() -> int:
         help="which answer candidates to score",
     )
     parser.add_argument("--limit", type=int, default=None, help="optional number of scenario/gold rows to run")
+    parser.add_argument("--llm-judge", action="store_true", help="enable opt-in strict-schema LLM judge")
     args = parser.parse_args()
-    summary = run_simulation(candidate_source=args.candidate_source, limit=args.limit)
+    summary = run_simulation(candidate_source=args.candidate_source, limit=args.limit, llm_judge_enabled=bool(args.llm_judge))
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 

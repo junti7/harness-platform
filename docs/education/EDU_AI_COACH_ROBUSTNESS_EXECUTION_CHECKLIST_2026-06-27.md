@@ -47,7 +47,7 @@
 | P2-1 | runtime policy resolver를 backend 코드에 분리 구현 | edu safety coach service module | done |
 | P2-2 | answer generator가 policy registry를 직접 읽도록 연결 | backend integration | done |
 | P2-3 | downvote review가 policy candidate artifact를 생성하도록 확장 | policy promotion queue | done |
-| P2-4 | LLM judge strict schema 추가 | judge worker | next |
+| P2-4 | LLM judge strict schema 추가 | judge worker | done |
 | P2-5 | judge-vs-human agreement 측정 | gold-set calibration report | next |
 
 ---
