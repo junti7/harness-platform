@@ -1363,10 +1363,18 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     )
     const nextThreads = currentSafetyCoachThreads(persistedThreads, nextDeleted)
     const nextDeferred = currentDeferredSafetyQuestions(persistedDeferred, nextDeleted)
+    const currentQuestion = (currentAnswer.question ?? '').trim()
+    const currentDraftQuestion = (conceptFeedbackRef.current[id] ?? '').trim()
+    const nextFeedback =
+      currentQuestion && currentDraftQuestion === currentQuestion
+        ? { ...conceptFeedbackRef.current, [id]: '' }
+        : conceptFeedbackRef.current
+    conceptFeedbackRef.current = nextFeedback
     coachAnswersRef.current = nextAnswers
     coachThreadsRef.current = nextThreads
     deferredSafetyQuestionsRef.current = nextDeferred
     deletedSafetyAnswerKeysRef.current = nextDeleted
+    setConceptFeedback(nextFeedback)
     setCoachAnswers(nextAnswers)
     setCoachThreads(nextThreads)
     setDeferredSafetyQuestions(nextDeferred)
@@ -1388,7 +1396,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       },
       stageDrafts: {
         [stage]: {
-          safety_concept_feedback: conceptFeedbackRef.current,
+          safety_concept_feedback: nextFeedback,
           safety_coach_answers: persistedAnswers,
           safety_coach_threads: persistedThreads,
           deferred_safety_questions: persistedDeferred,
