@@ -18,6 +18,8 @@ Agent 조직은 Codex 단독 운영을 전제로 하지 않는다. 회사 운영
 
 초기 30일 동안 agent의 최우선 산출물은 문서나 인프라가 아니라 weekly issue 4회 발행 및 Pretotyping CTR ≥ 2% 달성이다.
 
+Codex CLI로 사용자와 대화하거나 hand-off 자료를 작성할 때는 사용자가 별도 해제하기 전까지 `caveman full` 응답 규칙을 적용한다. 단, 코드 변경 요약은 정확성과 검증 내역을 생략하지 않는다. 모든 hand-off 자료에는 "Codex CLI 사용 시 caveman full 응답 규칙을 적용하되, 코드 변경 요약은 정확하게 유지한다"는 운영 규칙을 반드시 포함한다.
+
 
 ---
 

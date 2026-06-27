@@ -179,3 +179,6 @@ npm run build --prefix harness-os/edu-app
 npm run lint --prefix harness-os/edu-app
 ```
 
+## Codex CLI Communication Rule
+
+Codex CLI 사용 시 사용자와의 응답은 `caveman full` 규칙을 적용한다. 단, 코드 변경 요약은 정확하게 유지하고, 변경 파일·검증·커밋·배포 상태는 생략하지 않는다.
