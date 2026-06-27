@@ -8771,14 +8771,37 @@ def _edu_vp_safety_coach_model_timeout(model_name: str, remaining_seconds: float
     return max(1.8, min(base, remaining_seconds))
 
 
-def _edu_vp_safety_coach_fast_answer(concept_title: str, question: str) -> str | None:
+def _edu_vp_question_asks_attention_mechanism(question: str) -> bool:
     q = str(question or "").strip()
     lower_q = q.lower()
+    if not any(k in lower_q for k in ("attention", "어텐션")):
+        return False
+    mechanism_markers = (
+        "어떻게", "설정", "정하", "정해", "값", "가중치", "weight", "계산", "작동", "누가 어떻게",
+        "누가 설정", "누가 정", "어디를 보", "중요한 단어", "관련도",
+    )
+    return any(marker in q or marker in lower_q for marker in mechanism_markers)
+
+
+def _edu_vp_question_asks_transformer_paper_authors(question: str) -> bool:
+    q = str(question or "").strip()
+    lower_q = q.lower()
+    if _edu_vp_question_asks_attention_mechanism(q):
+        return False
+    author_markers = ("저자", "쓴 사람", "만든 사람", "누가 발표", "누가 썼", "발표했", "authored", "author")
+    paper_markers = ("논문", "paper", "attention is all you need")
+    return any(marker in q or marker in lower_q for marker in author_markers) and any(
+        marker in q or marker in lower_q for marker in paper_markers
+    )
+
+
+def _edu_vp_safety_coach_fast_answer(concept_title: str, question: str) -> str | None:
+    q = str(question or "").strip()
     if "조사" in q and ("추측" in q or "이어질" in q or "다음" in q):
         return _edu_vp_safety_coach_fallback(concept_title, q)
     if "명사" in q and ("추측" in q or "이어질" in q or "다음" in q or "최적" in q):
         return _edu_vp_safety_coach_fallback(concept_title, q)
-    if any(k in q for k in ("누가", "저자", "발표", "쓴 사람", "만든 사람")) and any(k in lower_q for k in ("transformer", "논문", "attention")):
+    if _edu_vp_question_asks_transformer_paper_authors(q):
         return _edu_vp_safety_coach_fallback(concept_title, q)
     return None
 
@@ -9127,7 +9150,14 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
             "중요한 결정이나 돈, 건강, 가족 문제는 AI 답변을 저장만 해두고 바로 실행하지 않는 규칙을 두는 것이 좋습니다. "
             "예를 들어 밤에 계속 대화하고 싶어지면 '오늘은 여기까지'라고 적고 알람을 끈 뒤, 다음 날 낮에 다시 읽어보면 감정과 판단을 분리하기가 쉬워집니다."
         )
-    if any(k in q for k in ("누가", "저자", "발표", "쓴 사람", "만든 사람")) and any(k in q.lower() for k in ("transformer", "논문", "attention")):
+    if _edu_vp_question_asks_attention_mechanism(q):
+        return (
+            "attention은 사람이 문장마다 직접 정해주는 값이 아니라, 모델이 학습하면서 단어 사이의 관련도를 계산하도록 배운 방식입니다. "
+            "개발자는 Transformer 구조와 학습 방법을 설계하지만, 실제 질문을 받을 때 어느 단어를 얼마나 볼지는 모델이 입력 문장 안에서 계산합니다. "
+            "예를 들어 '그가 우산을 들었다'에서 '그'가 누구인지 보려면 주변 이름과 행동을 함께 보는데, 이런 연결 강도를 attention 값이라고 생각하면 됩니다. "
+            "오늘은 attention을 '문장 안에서 중요한 연결을 찾는 계산 방식'으로 기억하면 충분합니다."
+        )
+    if _edu_vp_question_asks_transformer_paper_authors(q):
         return (
             "Transformer를 널리 알린 논문은 2017년 'Attention Is All You Need'입니다. "
             "이 논문은 Google 연구팀의 Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, "
@@ -9227,8 +9257,7 @@ def _edu_vp_safety_coach_red_team(
     question_terms = [token for token in re.findall(r"[가-힣A-Za-z0-9]+", question_text) if len(token) >= 2]
     if question_terms and not any(token in answer_text for token in question_terms[:5]):
         issues.append("question_not_addressed")
-    asks_who = any(k in question_text for k in ("누가", "저자", "발표", "쓴 사람", "만든 사람"))
-    asks_transformer_paper = asks_who and any(k in question_text.lower() for k in ("transformer", "논문", "attention"))
+    asks_transformer_paper = _edu_vp_question_asks_transformer_paper_authors(question_text)
     if asks_transformer_paper:
         required = ("Google", "Vaswani", "Shazeer")
         if not all(term in answer_text for term in required):

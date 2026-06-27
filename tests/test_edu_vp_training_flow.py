@@ -470,6 +470,55 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("명사는", answer)
         self.assertEqual(usage["_safety_coach_evidence_meta"]["skip_reason"], "fast_template")
 
+    def test_attention_setting_question_does_not_use_author_fast_template(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=123,
+            stage="day0",
+            concept_id="safety_concept_attention",
+            concept_title="Transformer의 핵심: attention",
+            concept_body="attention은 중요한 단어끼리 연결해 문장의 흐름을 잡는 방법입니다.",
+            question="attention은 누가 어떻게 설정하는거야?",
+        )
+        model_answer = (
+            "attention은 사람이 문장마다 직접 설정하지 않습니다. 개발자는 Transformer 구조와 학습 방식을 만들고, "
+            "모델은 학습 과정에서 단어 사이 관련도를 계산하는 파라미터를 조정합니다. 실제 질문을 받을 때는 입력 문장 안에서 "
+            "어떤 단어를 얼마나 볼지 attention weight를 계산합니다."
+        )
+
+        with (
+            patch.object(self.mod, "_edu_safety_coach_model_ladder", return_value=["claude-test"]),
+            patch.object(self.mod, "_edu_generate_text", return_value=(model_answer, {"prompt_token_count": 10, "candidates_token_count": 8}, "claude-test")) as mocked_generate,
+            patch.object(self.mod, "_edu_log_llm_cost"),
+        ):
+            answer, model, _usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
+
+        mocked_generate.assert_called_once()
+        self.assertEqual(model, "claude-test")
+        self.assertFalse(fallback_used)
+        self.assertIn("직접 설정하지 않습니다", answer)
+        self.assertIn("attention weight", answer)
+        self.assertNotIn("Vaswani", answer)
+
+    def test_attention_setting_question_does_not_require_paper_authors_in_red_team(self):
+        issues = self.mod._edu_vp_safety_coach_red_team(
+            question="attention은 누가 어떻게 설정하는거야?",
+            answer="attention은 사람이 문장마다 직접 설정하지 않고, 모델이 입력 문장 안 단어들의 관련도를 계산해 정합니다.",
+            concept_body="attention은 중요한 단어끼리 연결해 문장의 흐름을 잡는 방법입니다.",
+            evidence_items=[],
+        )
+
+        self.assertNotIn("missing_transformer_paper_authors", issues)
+
+    def test_transformer_paper_author_question_still_requires_authors(self):
+        issues = self.mod._edu_vp_safety_coach_red_team(
+            question="Transformer 논문은 누가 발표했나요?",
+            answer="Transformer 논문은 2017년에 발표되었습니다.",
+            concept_body="Transformer는 2017년 Attention Is All You Need 논문으로 널리 알려졌습니다.",
+            evidence_items=[],
+        )
+
+        self.assertIn("missing_transformer_paper_authors", issues)
+
     def test_safety_confirmation_unlocks_day0_practice(self):
         state = {"intake": {"preferred_llm": "claude"}, "day0": self.mod._edu_vp_build_day0({"preferred_llm": "claude"})}
         unlocked = self.mod._edu_vp_unlock_day0_practice(state)
