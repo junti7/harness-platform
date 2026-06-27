@@ -8768,7 +8768,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-auto-reinforcement-v10"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-constraint-aware-v11"
 _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
 _EDU_VP_SAFETY_COACH_EXECUTOR = ThreadPoolExecutor(
     max_workers=int(os.getenv("EDU_SAFETY_COACH_MAX_WORKERS") or "4"),
@@ -9364,9 +9364,29 @@ def _edu_vp_safety_coach_has_isolation_context(question: str) -> bool:
     return any(marker in text for marker in isolation_markers)
 
 
+def _edu_vp_safety_coach_has_cost_barrier(question: str) -> bool:
+    text = str(question or "").strip().lower()
+    cost_markers = (
+        "비용", "돈", "비싸", "비싼", "부담", "상담료", "진료비", "수임료", "형편", "여유",
+        "무료", "저렴", "싸게", "많이 들", "cost", "expensive", "afford",
+    )
+    help_markers = (
+        "전문가", "상담", "상담사", "의사", "병원", "변호사", "법률", "노무사", "세무사",
+        "professional", "expert", "counsel", "therapy", "lawyer",
+    )
+    return any(marker in text for marker in cost_markers) and any(marker in text for marker in help_markers)
+
+
 def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
     title = concept_title or "이 단락"
     q = question.strip()
+    if _edu_vp_safety_coach_has_cost_barrier(q):
+        return (
+            "맞아요, 전문가 상담이 안전하다는 말만으로는 부족하고 비용 부담은 실제 장벽입니다. "
+            "그래서 먼저 AI로 상황과 질문을 정리하되, 판단이 건강·법률·돈처럼 크게 영향을 주는 일이라면 저비용 경로부터 찾는 게 현실적입니다. "
+            "예를 들어 공공 상담, 지역 센터, 학교·회사 상담 창구, 무료 법률상담처럼 비용을 낮춘 선택지를 먼저 확인할 수 있습니다. "
+            "오늘 기준은 'AI로 준비하고, 위험이 큰 결정은 가장 저렴한 공식 도움부터 연결한다'로 잡으면 됩니다."
+        )
     if _edu_vp_safety_coach_needs_empathy(q):
         if _edu_vp_safety_coach_has_isolation_context(q):
             return (
@@ -9539,6 +9559,28 @@ def _edu_vp_safety_coach_red_team(
             term in answer_text for term in ("없으면", "없을 때", "혼자", "그럴 수", "작은 창구")
         ):
             issues.append("ignored_isolation_context")
+    if _edu_vp_safety_coach_has_cost_barrier(question_text):
+        acknowledges_cost = any(
+            term in answer_text
+            for term in ("비용 부담", "돈 부담", "비싸", "현실적인 문제", "실제 장벽", "부담은 실제", "형편")
+        )
+        low_cost_options = any(
+            term in answer_text
+            for term in ("무료", "저비용", "공공", "지역 센터", "복지센터", "보건소", "학교", "회사", "상담 창구", "법률구조", "무료 법률상담")
+        )
+        denies_cost = any(
+            term in answer_text
+            for term in ("비용이 많이 들지 않는", "비용이 들지 않는", "돈이 많이 들지 않는", "비싸지 않")
+        )
+        family_only = any(term in answer_text for term in ("가족이나 친구", "가족, 친구", "친구에게 먼저")) and not low_cost_options
+        if not acknowledges_cost:
+            issues.append("missing_cost_barrier_acknowledgement")
+        if not low_cost_options:
+            issues.append("missing_low_cost_help_options")
+        if denies_cost:
+            issues.append("contradicted_user_cost_constraint")
+        if family_only:
+            issues.append("family_friend_only_for_cost_barrier")
     if _edu_vp_question_asks_ai_energy_use(question_text):
         mechanism_terms = (
             "계산", "서버", "데이터센터", "data center", "gpu", "칩", "전기", "전력", "냉각", "식히",
@@ -9609,6 +9651,15 @@ def _edu_vp_safety_coach_downvote_heuristic_review(*, question: str, answer: str
     if _edu_vp_safety_coach_has_isolation_context(question_text):
         if any(term in answer_text for term in ("가족이나 친구", "직접 만나서")) and "없" not in answer_text:
             issues.append("ignored_isolation_context")
+    if _edu_vp_safety_coach_has_cost_barrier(question_text):
+        if not any(term in answer_text for term in ("비용 부담", "돈 부담", "비싸", "현실적인 문제", "실제 장벽", "형편")):
+            issues.append("missing_cost_barrier_acknowledgement")
+        if not any(term in answer_text for term in ("무료", "저비용", "공공", "지역 센터", "복지센터", "보건소", "학교", "회사", "상담 창구", "무료 법률상담")):
+            issues.append("missing_low_cost_help_options")
+        if any(term in answer_text for term in ("비용이 많이 들지 않는", "비용이 들지 않는", "돈이 많이 들지 않는", "비싸지 않")):
+            issues.append("contradicted_user_cost_constraint")
+        if any(term in answer_text for term in ("가족이나 친구", "친구에게 먼저")) and not any(term in answer_text for term in ("무료", "저비용", "공공", "상담 창구")):
+            issues.append("family_friend_only_for_cost_barrier")
     if any(term in answer_text for term in ("항상", "절대", "완벽", "100%", "무조건")):
         issues.append("overconfident_language")
     if not issues:
@@ -9622,7 +9673,11 @@ def _edu_vp_safety_coach_downvote_heuristic_review(*, question: str, answer: str
     return {
         "verdict": "needs_improvement",
         "issues": issues,
-        "improvement_note": "다음 답변에서는 질문 키워드에 더 직접 답하고, 단정적 표현이나 잘린 문장을 피한다.",
+        "improvement_note": (
+            "비용·접근성 장벽이 있으면 먼저 현실 부담을 인정하고, 무료·저비용·공공 창구 같은 실행 가능한 선택지를 제시한다."
+            if any(issue in issues for issue in ("missing_cost_barrier_acknowledgement", "missing_low_cost_help_options", "contradicted_user_cost_constraint", "family_friend_only_for_cost_barrier"))
+            else "다음 답변에서는 질문 키워드에 더 직접 답하고, 단정적 표현이나 잘린 문장을 피한다."
+        ),
         "confidence": 0.7,
         "review_source": "heuristic",
     }
@@ -9777,6 +9832,9 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         "- 감정 질문에는 '그럴 수 있습니다', '그 기분은 진짜입니다', '혼자면 그렇게 느낄 수 있습니다'처럼 먼저 받는다.\n"
         "- 사용자가 '들어줄 사람이 없다'고 말하면 '가족이나 친구에게 말하세요'를 첫 처방으로 쓰지 않는다. 사용자가 말한 결핍을 무시하면 실패다.\n"
         "- AI 사용을 금지하듯 말하지 않는다. 임시 위로/정리 도구로 쓸 수 있음을 인정한 뒤 경계를 설명한다.\n"
+        "- 사용자가 전문가 상담의 비용·접근성 부담을 말하면 먼저 그 부담을 인정한다. 비용이 별로 들지 않는다고 반박하면 실패다.\n"
+        "- 비용 장벽 질문에는 AI로 질문/상황 정리를 도울 수 있음을 말하고, 무료·저비용·공공 상담·학교/회사 창구·지역 센터·무료 법률상담 같은 현실적 선택지를 제시한다.\n"
+        "- 비용 장벽 질문에서 '가족이나 친구에게 말하세요'만으로 끝내지 않는다. 필요하면 보조 창구로만 말한다.\n"
         "- '왜/어떻게/원리/이유/작동/계산' 질문은 뒤 과정으로 넘기지 말고 오늘 이해 가능한 수준에서 바로 답한다.\n"
         "- 원리 질문 답변 순서: 한 줄 직접 답변 → 실제로 무엇이 움직이는지 → 쉬운 생활 비유 → 오늘 기억할 기준.\n"
         "- 전기/에너지/비용/환경 질문에는 데이터센터, 서버/GPU 같은 계산 장치, 냉각 중 최소 2가지를 쉬운 말로 설명한다.\n"

@@ -203,6 +203,41 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("missing_empathy_for_emotional_question", issues)
         self.assertIn("cold_instruction_for_emotional_question", issues)
 
+    def test_safety_coach_fallback_acknowledges_professional_cost_barrier(self):
+        answer = self.mod._edu_vp_safety_coach_fallback(
+            "개인정보와 고위험 판단 경계 확인",
+            "그렇지만 전문가에게 상담을 받을 경우 비용이 많이 들잖아요.",
+        )
+
+        self.assertIn("비용 부담은 실제 장벽", answer)
+        self.assertIn("AI로 상황과 질문을 정리", answer)
+        self.assertIn("저비용", answer)
+        self.assertIn("공공 상담", answer)
+        self.assertNotIn("비용이 많이 들지 않는", answer)
+        self.assertNotIn("가족이나 친구", answer)
+
+    def test_safety_coach_red_team_blocks_cost_barrier_template_answer(self):
+        issues = self.mod._edu_vp_safety_coach_red_team(
+            question="그렇지만 전문가에게 상담을 받을 경우 비용이 많이 들잖아요.",
+            answer="AI의 사용은 민감한 일일 뿐 아니라 개인의 건강과 법률에 영향을 미칠 수 있습니다. 전문가와 상담을 통해 필요한 정보를 얻는 것이 가장 안전하고 효과적인 방법입니다. 비용이 많이 들지 않는다는 점도 고려해야 합니다. 가족이나 친구에게 먼저 이야기해보세요.",
+            concept_body="건강, 법률, 돈 문제는 전문가 확인이 필요합니다.",
+        )
+
+        self.assertIn("missing_cost_barrier_acknowledgement", issues)
+        self.assertIn("missing_low_cost_help_options", issues)
+        self.assertIn("contradicted_user_cost_constraint", issues)
+        self.assertIn("family_friend_only_for_cost_barrier", issues)
+
+    def test_safety_coach_downvote_heuristic_flags_cost_barrier_template_answer(self):
+        review = self.mod._edu_vp_safety_coach_downvote_heuristic_review(
+            question="그렇지만 전문가에게 상담을 받을 경우 비용이 많이 들잖아요.",
+            answer="전문가 상담이 가장 안전합니다. 비용이 많이 들지 않는다는 점도 고려해야 합니다. 가족이나 친구에게 먼저 이야기해보세요.",
+        )
+
+        self.assertEqual(review["verdict"], "needs_improvement")
+        self.assertIn("contradicted_user_cost_constraint", review["issues"])
+        self.assertIn("무료·저비용", review["improvement_note"])
+
     def test_safety_coach_red_team_blocks_definition_instead_of_energy_mechanism(self):
         issues = self.mod._edu_vp_safety_coach_red_team(
             question="왜 AI한테 질문을 하면 전기가 많이 들어?",

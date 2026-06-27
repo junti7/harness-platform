@@ -310,7 +310,7 @@ Codex CLI 사용 시 사용자가 별도 해제하기 전까지 **caveman full**
 - LLM 품질 실패나 timeout 뒤 fallback으로 내려가도 같은 원리 정책을 지킨다. 단락 제목이 `Transformer`여도 원리 질문이면 Transformer 정의로 답하지 않는다.
 - `왜/어떻게/원리/이유/작동/계산` + AI/LLM/답변/문장/attention/Transformer/틀림/환각/확인 등 주제면 일반 원리 질문으로 본다.
 - 일반 원리 질문에 단락 정의만 답하면 red-team이 `missing_principle_mechanism` 또는 `answered_definition_instead_of_principle_question`으로 차단한다.
-- answer version `2026-06-27-auto-reinforcement-v10`부터 기존 cached bad answer를 재사용하지 않는다.
+- answer version `2026-06-27-constraint-aware-v11`부터 기존 cached bad answer를 재사용하지 않는다.
 
 ### 11. Downvote Auto-Reinforcement Loop
 
@@ -328,6 +328,21 @@ Codex CLI 사용 시 사용자가 별도 해제하기 전까지 **caveman full**
 - 자동강화 규칙이 있으면 fast-template을 우회해 LLM이 개선 규칙을 반영하게 한다.
 - red-team은 이전 downvote 답변과 유사한 새 답변을 `repeated_downvoted_answer_pattern`으로 차단한다.
 - cache/recent reuse는 같은 version에서 downvote된 답변을 재사용하지 않는다.
+
+### 12. Constraint-Aware Safety Coaching
+
+문제:
+
+- `"전문가 상담은 비용이 많이 들잖아요"`처럼 사용자가 현실 제약을 말했는데, safety template이 `전문가 상담`, `가족이나 친구`를 반복했다.
+- 비용 장벽을 `"비용이 많이 들지 않는다는 점도 고려"`처럼 반박해 사용자의 전제를 무시했다.
+
+현재 정책:
+
+- 비용·접근성 장벽 질문은 먼저 부담을 인정한다.
+- `전문가에게 가라`만 반복하지 않고, AI로 질문/상황을 정리하는 보조 사용법과 무료·저비용·공공 상담·학교/회사 창구·지역 센터·무료 법률상담 같은 현실적 선택지를 제시한다.
+- `비용이 많이 들지 않는다`처럼 사용자 제약을 부정하면 `contradicted_user_cost_constraint`로 차단한다.
+- 비용 장벽 질문을 가족/친구 조언만으로 끝내면 `family_friend_only_for_cost_barrier`로 차단한다.
+- 저비용 대안이 없으면 `missing_low_cost_help_options`, 비용 부담 인정이 없으면 `missing_cost_barrier_acknowledgement`로 차단한다.
 
 시뮬레이션 결과:
 
