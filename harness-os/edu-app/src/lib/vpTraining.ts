@@ -330,6 +330,7 @@ export type SafetyCoachResponse = {
   fallback_used?: boolean
   answer_version?: string
   duplicate_reused?: boolean
+  evidence_used?: boolean
 }
 
 export async function askSafetyCoach(input: {

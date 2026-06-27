@@ -56,6 +56,7 @@ type SafetyCoachAnswers = Record<string, {
   question?: string
   version?: string
   duplicateReused?: boolean
+  evidenceUsed?: boolean
 }>
 type SafetyCoachThreadItem = {
   id: string
@@ -65,6 +66,7 @@ type SafetyCoachThreadItem = {
   answer: string
   model?: string
   fallbackUsed?: boolean
+  evidenceUsed?: boolean
   version: string
   createdAt: string
 }
@@ -179,6 +181,12 @@ function appendSafetyCoachThread(threads: SafetyCoachThreads, item: SafetyCoachT
   return [...withoutDuplicate, item].slice(-40)
 }
 
+function evidenceBadge(value?: boolean): string {
+  if (value === true) return '자료 반영'
+  if (value === false) return '자료 없음'
+  return '자료 -'
+}
+
 function mergeSafetyCoachThreads(...groups: SafetyCoachThreads[]): SafetyCoachThreads {
   return groups.flat().reduce<SafetyCoachThreads>((acc, item) => appendSafetyCoachThread(acc, item), [])
 }
@@ -246,7 +254,12 @@ function QuestionArchivePanel({
                 <div className="mt-2 grid gap-2">
                   {group.items.slice().reverse().map((item) => (
                     <article key={`${group.stage}-${item.id}`} className="rounded-[10px] border border-border bg-card px-3 py-2 print:border-border">
-                      <div className="mb-1 text-[11px] font-semibold text-primary">{item.conceptTitle}</div>
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-primary">{item.conceptTitle}</span>
+                        <span className="shrink-0 text-[9px] font-medium text-text-faint/70">
+                          {evidenceBadge(item.evidenceUsed)}
+                        </span>
+                      </div>
                       <p className="text-xs font-semibold leading-relaxed text-ink">Q. {item.question}</p>
                       <p className="mt-1 text-xs leading-relaxed text-text-muted">A. {item.answer}</p>
                     </article>
@@ -813,11 +826,14 @@ function SafetyOrientationBlock({
                 <div className="mt-2 rounded-[10px] border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-text-muted">
                   <div className="mb-1 flex items-center justify-between gap-2">
                     <span className="font-semibold text-primary">AI 코치 답변</span>
-                    {coach.model ? (
-                      <span className="shrink-0 text-[10px] font-medium text-text-faint">
-                        {coach.fallbackUsed ? 'fallback' : coach.model}
-                      </span>
-                    ) : null}
+                    <span className="flex shrink-0 items-center gap-1.5 text-[10px] font-medium text-text-faint">
+                      <span className="text-text-faint/70">{evidenceBadge(coach.evidenceUsed)}</span>
+                      {coach.model ? (
+                        <span>
+                          {coach.fallbackUsed ? 'fallback' : coach.model}
+                        </span>
+                      ) : null}
+                    </span>
                   </div>
                   {coach.answer}
                 </div>
@@ -1070,6 +1086,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           question,
           version: res.answer_version || SAFETY_COACH_ANSWER_VERSION,
           duplicateReused: Boolean(res.duplicate_reused),
+          evidenceUsed: res.evidence_used,
         }
         const threadItem: SafetyCoachThreadItem = {
           id: `${id}-${Date.now()}`,
@@ -1079,6 +1096,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           answer: res.answer,
           model: res.model,
           fallbackUsed: Boolean(res.fallback_used),
+          evidenceUsed: res.evidence_used,
           version: res.answer_version || SAFETY_COACH_ANSWER_VERSION,
           createdAt: new Date().toISOString(),
         }
@@ -1108,6 +1126,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
             fallback_used: Boolean(res.fallback_used),
             answer_version: res.answer_version || SAFETY_COACH_ANSWER_VERSION,
             duplicate_reused: Boolean(res.duplicate_reused),
+            evidence_used: res.evidence_used,
           },
           stageDrafts: {
             [stage]: {

@@ -11371,6 +11371,10 @@ def edu_vp_training_safety_coach(
         answer_version=answer_version,
     )
     if cached:
+        cached_evidence_meta = cached.get("evidence_meta") if isinstance(cached, dict) else None
+        cached_evidence_used = bool(
+            isinstance(cached_evidence_meta, dict) and int(cached_evidence_meta.get("selected_count") or 0) > 0
+        )
         log_payload = {
             "stage": stage,
             "concept_id": concept_id,
@@ -11382,6 +11386,7 @@ def edu_vp_training_safety_coach(
             "fallback_used": bool(cached.get("fallback_used")),
             "answer_version": answer_version,
             "duplicate_reused": True,
+            "evidence_used": cached_evidence_used,
         }
         _edu_vp_append_event(
             case_id=case_id,
@@ -11397,11 +11402,13 @@ def edu_vp_training_safety_coach(
             "fallback_used": bool(cached.get("fallback_used")),
             "answer_version": answer_version,
             "duplicate_reused": True,
+            "evidence_used": cached_evidence_used,
         }
     _edu_public_gate(request)
     answer, model_name, usage, fallback_used = _edu_vp_generate_safety_coach_answer(req)
     evidence_meta = usage.get("_safety_coach_evidence_meta") if isinstance(usage, dict) else None
     red_team_issues = usage.get("_safety_coach_red_team_issues") if isinstance(usage, dict) else None
+    evidence_used = bool(isinstance(evidence_meta, dict) and int(evidence_meta.get("selected_count") or 0) > 0)
     log_payload = {
         "stage": stage,
         "concept_id": concept_id,
@@ -11416,6 +11423,7 @@ def edu_vp_training_safety_coach(
         "answer_version": answer_version,
         "duplicate_reused": False,
         "evidence_meta": evidence_meta if isinstance(evidence_meta, dict) else {},
+        "evidence_used": evidence_used,
         "red_team_issues": red_team_issues if isinstance(red_team_issues, list) else [],
     }
     _edu_vp_append_event(
@@ -11432,6 +11440,7 @@ def edu_vp_training_safety_coach(
         "fallback_used": fallback_used,
         "answer_version": answer_version,
         "duplicate_reused": False,
+        "evidence_used": evidence_used,
     }
 
 
