@@ -99,7 +99,11 @@ def load_gold_set(path: Path = GOLD_SET_PATH) -> list[dict[str, Any]]:
     return rows
 
 
-def _severity_for(issue: str, registry: dict[str, Any]) -> str:
+def _severity_for(issue: str, registry: dict[str, Any], backend: Any | None = None) -> str:
+    if backend is not None and hasattr(backend, "_edu_vp_safety_coach_issue_severity"):
+        severity = str(backend._edu_vp_safety_coach_issue_severity(issue) or "").strip()
+        if severity in {"critical", "major", "minor"}:
+            return severity
     entry = registry.get("failure_taxonomy", {}).get(issue)
     if isinstance(entry, dict):
         severity = str(entry.get("severity") or "").strip()
@@ -108,8 +112,8 @@ def _severity_for(issue: str, registry: dict[str, Any]) -> str:
     return "major"
 
 
-def _verdict_for(issues: list[str], registry: dict[str, Any]) -> str:
-    if any(_severity_for(issue, registry) == "critical" for issue in issues):
+def _verdict_for(issues: list[str], registry: dict[str, Any], backend: Any | None = None) -> str:
+    if any(_severity_for(issue, registry, backend) == "critical" for issue in issues):
         return "block"
     if issues:
         return "needs_work"
@@ -149,20 +153,29 @@ def evaluate_answer(
     concept_body: str,
     intent_labels: list[str],
 ) -> dict[str, Any]:
-    red_team_issues = backend._edu_vp_safety_coach_red_team(
-        question=question,
-        answer=answer,
-        concept_body=concept_body,
-    )
-    contract_issues = _policy_contract_issues(answer, intent_labels, registry)
-    issues: list[str] = []
-    for issue in [*red_team_issues, *contract_issues]:
-        if issue not in issues:
-            issues.append(issue)
+    if hasattr(backend, "_edu_vp_safety_coach_quality_issues") and hasattr(backend, "_edu_vp_safety_coach_resolved_policy_context"):
+        policy_context = backend._edu_vp_safety_coach_resolved_policy_context(question)
+        issues = backend._edu_vp_safety_coach_quality_issues(
+            question=question,
+            answer=answer,
+            concept_body=concept_body,
+            policy_context=policy_context,
+        )
+    else:
+        red_team_issues = backend._edu_vp_safety_coach_red_team(
+            question=question,
+            answer=answer,
+            concept_body=concept_body,
+        )
+        contract_issues = _policy_contract_issues(answer, intent_labels, registry)
+        issues = []
+        for issue in [*red_team_issues, *contract_issues]:
+            if issue not in issues:
+                issues.append(issue)
     return {
-        "verdict": _verdict_for(issues, registry),
+        "verdict": _verdict_for(issues, registry, backend),
         "issues": issues,
-        "issue_severity": {issue: _severity_for(issue, registry) for issue in issues},
+        "issue_severity": {issue: _severity_for(issue, registry, backend) for issue in issues},
     }
 
 

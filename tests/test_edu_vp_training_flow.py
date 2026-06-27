@@ -367,6 +367,61 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("Transformer는 그 안", answer)
         self.assertEqual(issues, [])
 
+    def test_safety_coach_policy_resolver_matches_cost_barrier(self):
+        context = self.mod._edu_vp_safety_coach_resolved_policy_context(
+            "그렇지만 전문가에게 상담을 받을 경우 비용이 많이 들잖아요."
+        )
+        policy_block = self.mod._edu_vp_safety_coach_policy_prompt(context)
+
+        self.assertIn("professional_cost_barrier", context["intent_classes"])
+        self.assertIn("professional_cost_barrier_v1", context["policy_ids"])
+        self.assertIn("cost_acknowledgement", policy_block)
+        self.assertIn("family_friend_only", policy_block)
+
+    def test_safety_coach_quality_issues_apply_policy_contract(self):
+        context = self.mod._edu_vp_safety_coach_resolved_policy_context(
+            "상담사가 비싸면 AI한테 물어봐도 되나요?"
+        )
+
+        issues = self.mod._edu_vp_safety_coach_quality_issues(
+            question="상담사가 비싸면 AI한테 물어봐도 되나요?",
+            answer="전문가 상담이 안전합니다. 비용이 많이 들지 않는다는 점도 고려해야 합니다. 가족이나 친구에게 먼저 이야기해보세요.",
+            concept_body="건강, 법률, 돈은 전문가에게 확인합니다.",
+            policy_context=context,
+        )
+
+        self.assertIn("contradicted_user_cost_constraint", issues)
+        self.assertIn("policy_forbidden_cost_denial", issues)
+        self.assertIn("policy_forbidden_family_friend_only", issues)
+
+    def test_safety_coach_downvote_review_creates_policy_candidate(self):
+        review = {
+            "verdict": "needs_improvement",
+            "issues": ["contradicted_user_cost_constraint", "missing_low_cost_help_options"],
+            "improvement_note": "비용 부담을 먼저 인정하고 저비용 공식 창구를 제시한다.",
+            "review_source": "heuristic",
+        }
+        payload = {
+            "question": "그렇지만 전문가에게 상담을 받을 경우 비용이 많이 들잖아요.",
+            "answer": "비용이 많이 들지 않는다는 점도 고려해야 합니다. 가족이나 친구에게 먼저 이야기해보세요.",
+            "answer_version": "test-version",
+            "concept_id": "safe_use",
+            "concept_title": "안전한 사용의 네 가지 기준",
+        }
+
+        candidate = self.mod._edu_vp_safety_coach_policy_candidate_from_downvote(
+            case_id=123,
+            email="vp@example.com",
+            payload=payload,
+            review=review,
+        )
+
+        self.assertIsNotNone(candidate)
+        self.assertEqual(candidate["promotion_status"], "candidate")
+        self.assertEqual(candidate["highest_severity"], "critical")
+        self.assertIn("professional_cost_barrier", candidate["intent_classes"])
+        self.assertIn("professional_cost_barrier_v1", candidate["matched_policy_ids"])
+
     def test_safety_coach_reinforcement_policy_lookup_matches_similar_downvote_review(self):
         payload = {
             "question": "그런데 AI가 답변을 하는 작업은 왜 엄청난 전기가 든다고 해?",
@@ -487,10 +542,13 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         prompt = mocked_generate.call_args_list[0].args[0]
         self.assertIn("[자동강화 규칙]", prompt)
         self.assertIn("전기 질문에는 데이터센터", prompt)
+        self.assertIn("[적용된 답변 품질 정책]", prompt)
+        self.assertIn("ai_energy_use_v1", prompt)
         self.assertEqual(model, "model-b")
         self.assertIn("데이터센터", answer)
         self.assertFalse(fallback_used)
         self.assertEqual(usage["_safety_coach_reinforcement_policies"], policies)
+        self.assertIn("ai_energy_use_v1", usage["_safety_coach_policy_context"]["policy_ids"])
 
     def test_safety_coach_switches_model_when_energy_question_gets_generic_definition(self):
         req = self.mod.EduVpTrainingSafetyCoachRequest(

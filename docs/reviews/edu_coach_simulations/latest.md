@@ -1,9 +1,9 @@
 # EDU Coach Simulation Latest
 
-- run_id: `20260627T083514Z`
+- run_id: `20260627T084438Z`
 - candidate_source: `current-fallback`
 - record_count: `10`
-- output: `docs/reviews/edu_coach_simulations/run_20260627T083514Z_current_fallback.jsonl`
+- output: `docs/reviews/edu_coach_simulations/run_20260627T084438Z_current_fallback.jsonl`
 
 ## Verdict Counts
 

@@ -33,9 +33,9 @@
     }
   },
   "ok": true,
-  "output_path": "docs/reviews/edu_coach_simulations/run_20260627T083514Z_current_fallback.jsonl",
+  "output_path": "docs/reviews/edu_coach_simulations/run_20260627T084438Z_current_fallback.jsonl",
   "record_count": 10,
-  "run_id": "20260627T083514Z",
+  "run_id": "20260627T084438Z",
   "top_issues": [],
   "verdict_counts": {
     "clear": 10

@@ -8779,6 +8779,10 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
 
 _EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-robustness-sim-v12"
 _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
+_EDU_VP_SAFETY_COACH_POLICY_REGISTRY_PATH = PROJECT_ROOT / "configs" / "education" / "edu_coach_policy_registry.json"
+_EDU_VP_SAFETY_COACH_POLICY_CANDIDATE_PATH = PROJECT_ROOT / "docs" / "reviews" / "edu_coach_simulations" / "policy_candidates.jsonl"
+_EDU_VP_SAFETY_COACH_POLICY_REGISTRY_CACHE: dict[str, Any] = {"mtime": None, "registry": None}
+_EDU_VP_SAFETY_COACH_POLICY_REGISTRY_LOCK = threading.Lock()
 _EDU_VP_SAFETY_COACH_EXECUTOR = ThreadPoolExecutor(
     max_workers=int(os.getenv("EDU_SAFETY_COACH_MAX_WORKERS") or "4"),
     thread_name_prefix="edu-safety-coach",
@@ -9159,6 +9163,145 @@ def _edu_vp_safety_coach_reinforcement_prompt(policies: list[dict[str, Any]]) ->
             f"문제: {issues}. 향후 규칙: {note} 이전 답변 반복 금지: {rejected}"
         )
     return "\n".join(lines)
+
+
+def _edu_vp_safety_coach_policy_registry() -> dict[str, Any]:
+    path = _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_PATH
+    try:
+        mtime = path.stat().st_mtime
+    except FileNotFoundError:
+        return {"schema_version": "missing", "failure_taxonomy": {}, "policies": []}
+    except Exception as exc:  # noqa: BLE001
+        _edu_runtime_event(
+            "vp_training_safety_coach_policy_registry_stat_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+        )
+        return {"schema_version": "error", "failure_taxonomy": {}, "policies": []}
+    with _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_LOCK:
+        if _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_CACHE.get("mtime") == mtime:
+            cached = _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_CACHE.get("registry")
+            if isinstance(cached, dict):
+                return cached
+        try:
+            registry = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            _edu_runtime_event(
+                "vp_training_safety_coach_policy_registry_load_failed",
+                error_type=type(exc).__name__,
+                error=str(exc)[:240],
+            )
+            return {"schema_version": "error", "failure_taxonomy": {}, "policies": []}
+        if not isinstance(registry, dict):
+            registry = {"schema_version": "invalid", "failure_taxonomy": {}, "policies": []}
+        if not isinstance(registry.get("failure_taxonomy"), dict):
+            registry["failure_taxonomy"] = {}
+        if not isinstance(registry.get("policies"), list):
+            registry["policies"] = []
+        _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_CACHE["mtime"] = mtime
+        _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_CACHE["registry"] = registry
+        return registry
+
+
+def _edu_vp_safety_coach_issue_severity(issue: str) -> str:
+    registry = _edu_vp_safety_coach_policy_registry()
+    entry = registry.get("failure_taxonomy", {}).get(str(issue or ""))
+    if isinstance(entry, dict):
+        severity = str(entry.get("severity") or "").strip()
+        if severity in {"critical", "major", "minor"}:
+            return severity
+    if str(issue or "").startswith("policy_forbidden_"):
+        return "major"
+    return "major"
+
+
+def _edu_vp_safety_coach_resolved_policy_context(question: str) -> dict[str, Any]:
+    registry = _edu_vp_safety_coach_policy_registry()
+    intent_classes = sorted(_edu_vp_safety_question_intent_classes(question))
+    policies: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for policy in registry.get("policies") or []:
+        if not isinstance(policy, dict):
+            continue
+        policy_id = str(policy.get("policy_id") or "").strip()
+        intent_class = str(policy.get("intent_class") or "").strip()
+        if not policy_id or not intent_class or policy_id in seen:
+            continue
+        applies_with = [str(item) for item in policy.get("applies_with") or [] if str(item).strip()]
+        if intent_class in intent_classes or any(item in intent_classes for item in applies_with):
+            policies.append(policy)
+            seen.add(policy_id)
+    policies.sort(key=lambda item: int(item.get("priority") or 0), reverse=True)
+    return {
+        "schema_version": str(registry.get("schema_version") or ""),
+        "intent_classes": intent_classes,
+        "policy_ids": [str(policy.get("policy_id") or "") for policy in policies],
+        "policies": policies[:5],
+    }
+
+
+def _edu_vp_safety_coach_policy_prompt(policy_context: dict[str, Any]) -> str:
+    policies = policy_context.get("policies")
+    if not isinstance(policies, list) or not policies:
+        return "(적용 정책 없음)"
+    lines: list[str] = [
+        f"감지된 intent: {', '.join(policy_context.get('intent_classes') or []) or 'unknown'}",
+        f"registry schema: {policy_context.get('schema_version') or 'unknown'}",
+    ]
+    for idx, policy in enumerate(policies[:5], start=1):
+        policy_id = str(policy.get("policy_id") or "")
+        must_include = ", ".join(str(item) for item in policy.get("must_include") or []) or "(없음)"
+        must_not_include = ", ".join(str(item) for item in policy.get("must_not_include") or []) or "(없음)"
+        risk_level = str(policy.get("risk_level") or "")
+        lines.append(
+            f"{idx}. {policy_id} risk={risk_level}: 반드시 포함할 원칙 [{must_include}], 피할 원칙 [{must_not_include}]"
+        )
+    return "\n".join(lines)
+
+
+def _edu_vp_safety_coach_policy_contract_issues(
+    *,
+    answer: str,
+    policy_context: dict[str, Any] | None,
+) -> list[str]:
+    answer_text = str(answer or "")
+    policies = (policy_context or {}).get("policies")
+    if not isinstance(policies, list):
+        return []
+    issues: list[str] = []
+    for policy in policies:
+        if not isinstance(policy, dict):
+            continue
+        must_not = policy.get("must_not_include_any")
+        if isinstance(must_not, dict):
+            for requirement, terms in must_not.items():
+                if isinstance(terms, list) and any(str(term) and str(term) in answer_text for term in terms):
+                    issue = f"policy_forbidden_{requirement}"
+                    if issue not in issues:
+                        issues.append(issue)
+    return issues
+
+
+def _edu_vp_safety_coach_quality_issues(
+    *,
+    question: str,
+    answer: str,
+    concept_body: str,
+    evidence_items: list[dict[str, Any]] | None = None,
+    reinforcement_policies: list[dict[str, Any]] | None = None,
+    policy_context: dict[str, Any] | None = None,
+) -> list[str]:
+    issues = _edu_vp_safety_coach_red_team(
+        question=question,
+        answer=answer,
+        concept_body=concept_body,
+        evidence_items=evidence_items,
+        reinforcement_policies=reinforcement_policies,
+    )
+    for issue in _edu_vp_safety_coach_policy_contract_issues(answer=answer, policy_context=policy_context):
+        if issue not in issues:
+            issues.append(issue)
+    return issues
 
 
 def _edu_vp_safety_keyword_stem(token: str) -> str:
@@ -9899,6 +10042,74 @@ def _edu_vp_safety_coach_feedback_review(
     return heuristic
 
 
+def _edu_vp_safety_coach_policy_candidate_from_downvote(
+    *,
+    case_id: int,
+    email: str,
+    payload: dict[str, Any],
+    review: dict[str, Any],
+) -> dict[str, Any] | None:
+    if str(review.get("verdict") or "") != "needs_improvement":
+        return None
+    issues = [
+        str(item).strip()
+        for item in (review.get("issues") if isinstance(review.get("issues"), list) else [])
+        if str(item).strip() and str(item).strip() != "user_mistake"
+    ]
+    if not issues:
+        return None
+    question = str(payload.get("question") or "")
+    policy_context = _edu_vp_safety_coach_resolved_policy_context(question)
+    severities = {issue: _edu_vp_safety_coach_issue_severity(issue) for issue in issues}
+    highest_severity = "critical" if "critical" in severities.values() else "major" if "major" in severities.values() else "minor"
+    candidate_id_seed = "|".join(
+        [
+            str(payload.get("answer_version") or ""),
+            question[:300],
+            str(payload.get("answer") or "")[:300],
+            ",".join(issues),
+        ]
+    )
+    return {
+        "candidate_id": f"edu_coach_policy_candidate_{hashlib.sha1(candidate_id_seed.encode('utf-8')).hexdigest()[:16]}",
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "case_id": case_id,
+        "email_hash": hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()[:16] if email else "",
+        "source_event": "answer_auto_reinforcement_reviewed",
+        "question": question[:1200],
+        "answer": str(payload.get("answer") or "")[:2600],
+        "answer_version": str(payload.get("answer_version") or "")[:80],
+        "concept_id": str(payload.get("concept_id") or "")[:120],
+        "concept_title": str(payload.get("concept_title") or "")[:240],
+        "issues": issues[:8],
+        "issue_severity": severities,
+        "highest_severity": highest_severity,
+        "intent_classes": policy_context.get("intent_classes") or [],
+        "matched_policy_ids": policy_context.get("policy_ids") or [],
+        "improvement_note": str(review.get("improvement_note") or "")[:800],
+        "review_source": str(review.get("review_source") or ""),
+        "promotion_status": "candidate",
+        "required_next_step": "cluster_with_similar_downvotes_then_generate_policy_backed_tests",
+    }
+
+
+def _edu_vp_append_safety_coach_policy_candidate(candidate: dict[str, Any] | None) -> bool:
+    if not candidate:
+        return False
+    try:
+        _EDU_VP_SAFETY_COACH_POLICY_CANDIDATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with _EDU_VP_SAFETY_COACH_POLICY_CANDIDATE_PATH.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(candidate, ensure_ascii=False, sort_keys=True) + "\n")
+        return True
+    except Exception as exc:  # noqa: BLE001
+        _edu_runtime_event(
+            "vp_training_safety_coach_policy_candidate_write_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+        )
+        return False
+
+
 def _edu_vp_review_safety_coach_downvote_async(
     *,
     case_id: int,
@@ -9925,6 +10136,19 @@ def _edu_vp_review_safety_coach_downvote_async(
         },
         actor_role="system",
     )
+    candidate = _edu_vp_safety_coach_policy_candidate_from_downvote(
+        case_id=case_id,
+        email=email,
+        payload=payload,
+        review=review,
+    )
+    if _edu_vp_append_safety_coach_policy_candidate(candidate):
+        _edu_runtime_event(
+            "vp_training_safety_coach_policy_candidate_recorded",
+            candidate_id=str(candidate.get("candidate_id") if isinstance(candidate, dict) else ""),
+            issue_count=len(candidate.get("issues") or []) if isinstance(candidate, dict) else 0,
+            highest_severity=str(candidate.get("highest_severity") or "") if isinstance(candidate, dict) else "",
+        )
 
 
 def _edu_vp_reprocess_pending_safety_coach_downvotes(*, limit: int = 20) -> dict[str, Any]:
@@ -9977,6 +10201,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
     concept_title = _edu_neutralize(req.concept_title, cap=160)
     concept_body = _edu_neutralize(req.concept_body, cap=1400)
     answer_version = _edu_vp_safety_coach_answer_version(req.answer_version)
+    policy_context = _edu_vp_safety_coach_resolved_policy_context(question)
     reinforcement_policies = _edu_vp_safety_coach_reinforcement_policies(
         question=question,
         concept_title=concept_title,
@@ -9994,6 +10219,11 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
             },
             "_safety_coach_red_team_issues": [],
             "_safety_coach_reinforcement_policies": [],
+            "_safety_coach_policy_context": {
+                "schema_version": policy_context.get("schema_version"),
+                "intent_classes": policy_context.get("intent_classes"),
+                "policy_ids": policy_context.get("policy_ids"),
+            },
         }
         return fast_answer[:2200], "fast-template", usage, False
     evidence_query = f"{question} {concept_title}"
@@ -10005,6 +10235,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
     )
     evidence_block = evidence_text or "(질문과 딱 맞는 내부 자료가 없으므로 자료를 언급하지 말 것)"
     reinforcement_block = _edu_vp_safety_coach_reinforcement_prompt(reinforcement_policies)
+    policy_block = _edu_vp_safety_coach_policy_prompt(policy_context)
     base_prompt = (
         "너는 Harness VP 훈련의 AI 안전 오리엔테이션 코치다.\n"
         "사용자는 AI/LLM 왕초보다. 초등학교 1학년도 이해할 만큼 쉬운 한국어로 답하라.\n"
@@ -10035,6 +10266,9 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         "[자동강화 규칙]\n"
         f"{reinforcement_block}\n\n"
         "자동강화 규칙이 있으면 반드시 반영한다. 이전에 싫어요를 받은 답변과 같은 구조나 같은 핵심 설명을 반복하면 실패다.\n\n"
+        "[적용된 답변 품질 정책]\n"
+        f"{policy_block}\n\n"
+        "적용된 답변 품질 정책이 있으면 반드시 반영한다. 정책의 must_include는 답변 구조로 반영하고, must_not_include는 표현을 바꿔서라도 피한다.\n\n"
         f"[현재 단락 제목]\n{concept_title}\n\n"
         f"[현재 단락 설명]\n{concept_body}\n\n"
         f"[관련 내부 자료]\n{evidence_block}\n\n"
@@ -10070,6 +10304,11 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                     usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
                     usage["_safety_coach_red_team_issues"] = red_team_issues  # type: ignore[index]
                     usage["_safety_coach_reinforcement_policies"] = reinforcement_policies  # type: ignore[index]
+                    usage["_safety_coach_policy_context"] = {
+                        "schema_version": policy_context.get("schema_version"),
+                        "intent_classes": policy_context.get("intent_classes"),
+                        "policy_ids": policy_context.get("policy_ids"),
+                    }  # type: ignore[index]
                 return answer[:2200], used_model, usage, True
             call_timeout = _edu_vp_safety_coach_model_timeout(model_name, remaining - 0.5)
             try:
@@ -10084,6 +10323,8 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                         "evidence_selected_count": int(evidence_meta.get("selected_count") or 0),
                         "quality_model": model_name,
                         "timeout_seconds": call_timeout,
+                        "policy_ids": policy_context.get("policy_ids"),
+                        "intent_classes": policy_context.get("intent_classes"),
                     },
                     model_ladder=[model_name],
                 )
@@ -10108,12 +10349,13 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                     question=question[:240],
                 )
                 continue
-            red_team_issues = _edu_vp_safety_coach_red_team(
+            red_team_issues = _edu_vp_safety_coach_quality_issues(
                 question=question,
                 answer=answer,
                 concept_body=concept_body,
                 evidence_items=evidence_items,
                 reinforcement_policies=reinforcement_policies,
+                policy_context=policy_context,
             )
             model_issues = red_team_issues
             if not red_team_issues:
@@ -10121,6 +10363,11 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                     usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
                     usage["_safety_coach_red_team_issues"] = []  # type: ignore[index]
                     usage["_safety_coach_reinforcement_policies"] = reinforcement_policies  # type: ignore[index]
+                    usage["_safety_coach_policy_context"] = {
+                        "schema_version": policy_context.get("schema_version"),
+                        "intent_classes": policy_context.get("intent_classes"),
+                        "policy_ids": policy_context.get("policy_ids"),
+                    }  # type: ignore[index]
                 _edu_log_llm_cost(usage, used_model)
                 return answer[:2200], used_model, usage, False
             _edu_runtime_event(
@@ -10138,6 +10385,11 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
             usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
             usage["_safety_coach_red_team_issues"] = red_team_issues  # type: ignore[index]
             usage["_safety_coach_reinforcement_policies"] = reinforcement_policies  # type: ignore[index]
+            usage["_safety_coach_policy_context"] = {
+                "schema_version": policy_context.get("schema_version"),
+                "intent_classes": policy_context.get("intent_classes"),
+                "policy_ids": policy_context.get("policy_ids"),
+            }  # type: ignore[index]
         return answer[:2200], used_model, usage, quality_fallback_used
     except Exception as exc:  # noqa: BLE001
         _edu_runtime_event(
@@ -12943,6 +13195,7 @@ def edu_vp_training_safety_coach(
     evidence_meta = usage.get("_safety_coach_evidence_meta") if isinstance(usage, dict) else None
     red_team_issues = usage.get("_safety_coach_red_team_issues") if isinstance(usage, dict) else None
     reinforcement_policies = usage.get("_safety_coach_reinforcement_policies") if isinstance(usage, dict) else None
+    policy_context = usage.get("_safety_coach_policy_context") if isinstance(usage, dict) else None
     evidence_used = bool(isinstance(evidence_meta, dict) and int(evidence_meta.get("selected_count") or 0) > 0)
     log_payload = {
         "stage": stage,
@@ -12961,6 +13214,7 @@ def edu_vp_training_safety_coach(
         "evidence_used": evidence_used,
         "red_team_issues": red_team_issues if isinstance(red_team_issues, list) else [],
         "auto_reinforcement_applied": reinforcement_policies if isinstance(reinforcement_policies, list) else [],
+        "policy_context": policy_context if isinstance(policy_context, dict) else {},
     }
     _edu_vp_append_event(
         case_id=case_id,
