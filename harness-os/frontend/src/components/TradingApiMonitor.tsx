@@ -254,22 +254,47 @@ export function TradingApiMonitor({ tradingApi, apiBase, authHeaders }: Props) {
 
       <article className="panel watchlist-panel">
         <div className="watchlist-header">
-          <h3>관심종목 실시간 호가</h3>
-          <span className="data-label">소스: {localApi.watchlist_meta.mode} · {localApi.watchlist_meta.item_count}개 항목</span>
+          <h3>관심종목 호가</h3>
+          <div className="watchlist-header-meta">
+            <span className="data-label">{localApi.watchlist_meta.item_count}개 항목</span>
+            {localApi.watchlist_meta.quote_source === 'yfinance' && (
+              <span className="quote-source-chip yfinance">Yahoo Finance</span>
+            )}
+            {localApi.watchlist_meta.quote_source === 'ibkr_cp' && (
+              <span className="quote-source-chip ibkr">IBKR CP</span>
+            )}
+            {(localApi.watchlist_meta.quote_source === 'none' || !localApi.watchlist_meta.quote_source) && (
+              <span className="quote-source-chip none">호가 없음</span>
+            )}
+          </div>
           <label className="toggle-label">
             <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
-            <span>비활성 항목 표시 ({inactiveCount})</span>
+            <span>비활성 포함 ({inactiveCount})</span>
           </label>
         </div>
+
+        {(localApi.watchlist_meta.quote_source === 'none' || !localApi.watchlist_meta.quote_source) && (
+          <div className="cp-gateway-dormant">
+            <span className="cp-gateway-chip">IBKR CP Gateway 비활성</span>
+            <p className="data-meta">
+              실시간 호가는 IBKR Client Portal Gateway(포트 5001)가 필요합니다.
+              현재 미가동 상태이며 <strong>자동매매에는 영향 없습니다.</strong>
+            </p>
+            <p className="data-meta">
+              IBKR Turtle Monitor 탭에서 실제 보유 종목의 현재가를 확인하세요.
+            </p>
+          </div>
+        )}
+
         <form className="watchlist-add" onSubmit={addItem}>
           {(['id', 'query', 'name', 'exchange', 'region', 'reason'] as const).map(field => {
             const getPlaceholder = (f: string) => {
               switch (f) {
                 case 'id': return 'ID (예: us-QQQ)'
-                case 'query': return '검색 쿼리'
+                case 'query': return '심볼 (예: QQQ)'
                 case 'name': return '종목명'
                 case 'exchange': return '거래소'
-                case 'region': return '지역'
+                case 'region': return '지역 (US/KRX)'
                 case 'reason': return '감시 사유'
                 default: return f
               }
@@ -285,47 +310,70 @@ export function TradingApiMonitor({ tradingApi, apiBase, authHeaders }: Props) {
           })}
           <button type="submit" disabled={adding}>{adding ? '추가 중…' : '추가'}</button>
         </form>
+
         {visible.length === 0 ? (
-          <p className="data-empty">승인된 관심종목 금융상품이 없습니다</p>
+          <p className="data-empty">관심종목이 없습니다</p>
         ) : (
           <div className="table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>항목</th><th>심볼</th><th>거래소</th><th>감시 사유</th>
-                  <th>최근가</th><th>매수가</th><th>매도가</th><th>대비%</th>
-                  <th>상태</th><th>신뢰도</th><th>활성 여부</th>
+                  <th>종목</th><th>지역</th><th>감시 사유</th>
+                  <th className="num">현재가</th><th className="num">전일 대비</th><th className="num">전일종가</th>
+                  <th>호가 상태</th><th>활성</th>
                 </tr>
               </thead>
               <tbody>
-                {visible.map((row, i) => (
-                  <tr key={`${row.item_id ?? row.conid ?? 'w'}-${i}`}>
-                    <td>{row.name_hint ?? row.item_id ?? row.query ?? '없음'}</td>
-                    <td>{row.quote?.symbol ?? row.symbol ?? '없음'}</td>
-                    <td>{row.exchange ?? row.exchange_hint ?? '없음'}</td>
-                    <td>{row.watch_reason ?? '없음'}</td>
-                    <td className="num">{formatMaybeNumber(row.quote?.last)}</td>
-                    <td className="num">{formatMaybeNumber(row.quote?.bid)}</td>
-                    <td className="num">{formatMaybeNumber(row.quote?.ask)}</td>
-                    <td className="num">{formatMaybeNumber(row.quote?.change_pct)}</td>
-                    <td>
-                      <span className={`freshness-chip ${row.quote?.freshness_status ?? 'unknown'}`}>
-                        {freshnessLabel(row.quote?.freshness_status)}
-                      </span>
-                    </td>
-                    <td>{row.confidence ?? '없음'}</td>
-                    <td>
-                      <button
-                        type="button"
-                        className={`watchlist-toggle ${row.active === false ? 'inactive' : 'active'}`}
-                        onClick={() => void toggleItem(row.item_id ?? '', row.active === false ? 'activate' : 'deactivate')}
-                        disabled={!row.item_id || mutatingItem === row.item_id}
-                      >
-                        {mutatingItem === row.item_id ? '…' : row.active === false ? '활성화' : '비활성화'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {visible.map((row, i) => {
+                  const hasQuote = row.quote?.last != null
+                  const sym = row.quote?.symbol ?? row.symbol ?? row.query ?? '—'
+                  const currency = row.quote?.currency ?? row.currency ?? 'USD'
+                  const currSym = currency === 'KRW' ? '₩' : currency === 'JPY' ? '¥' : '$'
+                  const changePctNum = row.quote?.change_pct != null ? Number(row.quote.change_pct) : null
+                  const isKrx = (row.region ?? '').toUpperCase() === 'KRX'
+                  return (
+                    <tr key={`${row.item_id ?? row.conid ?? 'w'}-${i}`} className={row.active === false ? 'row-inactive' : ''}>
+                      <td>
+                        <span className="symbol-cell">
+                          <strong>{sym}</strong>
+                          <small>{row.name_hint ?? row.item_id ?? '—'}</small>
+                        </span>
+                      </td>
+                      <td><span className="region-chip">{row.region ?? '—'}</span></td>
+                      <td className="watch-reason-cell">{row.watch_reason ?? '—'}</td>
+                      <td className="num">
+                        {hasQuote
+                          ? `${currSym}${formatMaybeNumber(row.quote?.last)}`
+                          : isKrx ? <span className="data-meta">KRX 미지원</span> : '—'}
+                      </td>
+                      <td className={`num ${changePctNum != null ? (changePctNum >= 0 ? 'pnl-pos' : 'pnl-neg') : ''}`}>
+                        {changePctNum != null ? `${changePctNum >= 0 ? '+' : ''}${changePctNum.toFixed(2)}%` : '—'}
+                      </td>
+                      <td className="num">
+                        {row.quote?.close != null ? `${currSym}${formatMaybeNumber(row.quote.close)}` : '—'}
+                      </td>
+                      <td>
+                        {hasQuote ? (
+                          <span className={`freshness-chip ${row.quote?.freshness_status ?? 'unknown'}`}>
+                            {row.quote?.source === 'yfinance' ? 'yf·' : ''}{freshnessLabel(row.quote?.freshness_status)}
+                          </span>
+                        ) : (
+                          <span className="freshness-chip unknown">{isKrx ? 'KRX' : '미조회'}</span>
+                        )}
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className={`watchlist-toggle ${row.active === false ? 'inactive' : 'active'}`}
+                          onClick={() => void toggleItem(row.item_id ?? '', row.active === false ? 'activate' : 'deactivate')}
+                          disabled={!row.item_id || mutatingItem === row.item_id}
+                        >
+                          {mutatingItem === row.item_id ? '…' : row.active === false ? '활성화' : '비활성화'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

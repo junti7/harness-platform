@@ -56,6 +56,7 @@ export type TradingWatchlistItem = {
     currency?: string
     fetched_at?: string
     freshness_status?: string
+    source?: string
   } | null
 }
 
@@ -109,6 +110,7 @@ export type TradingApiPayload = {
     path: string
     item_count: number
     mode: string
+    quote_source?: string
   }
   registry: {
     path: string
