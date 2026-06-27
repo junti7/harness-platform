@@ -322,6 +322,26 @@ function currentDeletedSafetyAnswerKeys(raw: unknown): SafetyDeletedAnswerKeys {
   return Array.from(new Set(raw.map((item) => String(item || '').trim()).filter(Boolean))).slice(-120)
 }
 
+function safetyQuestionWasDeleted(conceptId: string, question: string | undefined, deletedKeys: SafetyDeletedAnswerKeys): boolean {
+  const q = (question || '').trim()
+  if (!q) return false
+  return deletedKeys.some((key) => {
+    const [deletedConceptId, , deletedQuestion] = key.split('::')
+    return deletedConceptId === conceptId && deletedQuestion === q
+  })
+}
+
+function currentSafetyConceptFeedback(raw: unknown, deletedKeys: SafetyDeletedAnswerKeys = []): SafetyConceptFeedback {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: SafetyConceptFeedback = {}
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    const text = String(value ?? '')
+    if (safetyQuestionWasDeleted(id, text, deletedKeys)) continue
+    out[id] = text
+  }
+  return out
+}
+
 function evidenceBadge(value?: boolean): string {
   if (value === true) return '자료 반영'
   if (value === false) return '자료 없음'
@@ -1252,10 +1272,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     const threads = draft?.safety_coach_threads
     const deferred = draft?.deferred_safety_questions
     const deleted = currentDeletedSafetyAnswerKeys(draft?.deleted_safety_answer_keys)
-    const nextFeedback =
-      feedback && typeof feedback === 'object' && !Array.isArray(feedback)
-        ? (feedback as SafetyConceptFeedback)
-        : {}
+    const nextFeedback = currentSafetyConceptFeedback(feedback, deleted)
     const nextAnswers = currentSafetyCoachAnswers(answers, nextFeedback, deleted)
     const nextThreads = currentSafetyCoachThreads(threads, deleted)
     const nextDeferred = currentDeferredSafetyQuestions(deferred, deleted)
