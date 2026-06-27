@@ -60,6 +60,14 @@ UNIVERSE = (
     else [t for t, _, _, _, _ in _UNIVERSE_META]
 )
 
+# #1 무상관 분산 sleeve(2026-06-27 CEO 확정): 측정상관(vs SMH) TLT +0.04·UUP -0.23·GLD +0.18·
+# DBC +0.16 = AI 테마와 무상관/역상관. 백테스트 검증: 추가 시 MAR 0.90→1.41(CAGR↑·MaxDD↓).
+# 미국상장 ETF라 Alpaca 거래가능. 실거래(IBKR)에선 선물/해외자산으로 더 확장 예정(별도 페이즈).
+DIVERSIFIERS = ["TLT", "GLD", "DBC", "UUP"]
+PAPER_DIVERSIFY_ENABLED = os.getenv("PAPER_DIVERSIFY_ENABLED", "true").lower() == "true"
+if PAPER_DIVERSIFY_ENABLED:
+    UNIVERSE = UNIVERSE + [d for d in DIVERSIFIERS if d not in UNIVERSE]
+
 MAX_POSITIONS = int(os.getenv("PAPER_TRADING_MAX_POSITIONS", "6"))
 
 # P0(2026-06-27 red_team_block 후속): 체결 확인 / 상주 손절 운영 파라미터
@@ -72,11 +80,17 @@ STOP_TIF = os.getenv("PAPER_STOP_TIF", "gtc")                   # 상주 손절 
 #  ① 동등 ETF(보유종목 대부분 중복)는 동시 보유 금지 — SMH↔SOXX, BOTZ↔ROBO.
 #  ② 같은 상관 그룹 동시 보유 유닛 수 상한(기본 3).
 EQUIVALENT_ETF_SETS = [frozenset({"SMH", "SOXX"}), frozenset({"BOTZ", "ROBO"})]
+# 측정상관 기준 재보정(2026-06-27): ROBO(0.78)·BOTZ(0.78)·QQQ(0.91)는 반도체와 사실상 한 몸 →
+# SEMI 그룹으로 통합(기존 ROBOT/별도 분리가 한도를 새게 했던 leak 차단). 무상관 sleeve는 각자 독립 그룹.
 CORR_GROUP = {
     "SMH": "SEMI", "SOXX": "SEMI", "NVDA": "SEMI", "TSM": "SEMI", "MU": "SEMI",
-    "AVGO": "SEMI", "ASX": "SEMI", "QQQ": "SEMI",
-    "BOTZ": "ROBOT", "ROBO": "ROBOT", "SYM": "ROBOT",
-    "TSLA": "AUTO", "PLTR": "SOFTWARE", "VRT": "POWER",
+    "AVGO": "SEMI", "ASX": "SEMI", "QQQ": "SEMI", "ROBO": "SEMI", "BOTZ": "SEMI",
+    "SYM": "ROBOT",
+    "TSLA": "AUTO",
+    "PLTR": "AISW", "SNOW": "AISW", "CRWD": "AISW", "DDOG": "AISW",
+    "VRT": "POWER", "CEG": "POWER", "VST": "POWER", "GEV": "POWER", "PWR": "POWER",
+    # 무상관/역상관 분산 sleeve — 각자 독립 그룹(상호·반도체와 무상관)
+    "TLT": "BOND", "GLD": "GOLD", "DBC": "COMMOD", "UUP": "USD",
 }
 MAX_UNITS_PER_GROUP = int(os.getenv("PAPER_MAX_CORR_UNITS", "3"))
 

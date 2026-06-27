@@ -80,6 +80,23 @@ def test_corr_block_allows_when_room():
     assert not blocked
 
 
+def test_corr_group_recalibrated_robo_qqq_are_semi():
+    # #1 재보정: ROBO·QQQ·BOTZ 는 측정상관상 SEMI. SEMI 3개 보유 시 차단되어야(leak 차단)
+    assert t.CORR_GROUP["ROBO"] == "SEMI" and t.CORR_GROUP["QQQ"] == "SEMI" and t.CORR_GROUP["BOTZ"] == "SEMI"
+    blocked, reason = t.correlation_block("QQQ", held={"NVDA", "SMH", "MU"})  # 3 SEMI
+    assert blocked and "corr_group_full" in reason
+
+
+def test_diversifier_sleeve_in_universe_and_independent():
+    # #1 무상관 sleeve 가 유니버스에 포함되고 각자 독립 그룹
+    for d in ("TLT", "GLD", "DBC", "UUP"):
+        assert d in t.UNIVERSE
+    assert {t.CORR_GROUP[d] for d in ("TLT", "GLD", "DBC", "UUP")} == {"BOND", "GOLD", "COMMOD", "USD"}
+    # SEMI 가 가득 차도 무상관 자산은 진입 허용(분산 슬롯 확보)
+    assert not t.correlation_block("TLT", held={"NVDA", "SMH", "MU"})[0]
+    assert not t.correlation_block("GLD", held={"NVDA", "SMH", "MU", "TLT"})[0]
+
+
 def test_should_enter_applies_correlation(monkeypatch):
     monkeypatch.setattr(t, "passes_trend_filter", lambda s, p: (True, "ok"))
     sig = {"signal": "breakout_long", "current_price": 600.0, "atr": 20.0, "symbol": "SOXX"}
