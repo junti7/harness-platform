@@ -81,6 +81,16 @@ type RoutedQuestionTarget = {
   target: FoundationConcept & { checkId: string }
   targetIndex: number
 }
+type DeferredSafetyQuestion = {
+  id: string
+  question: string
+  sourceConceptId: string
+  sourceConceptTitle: string
+  status: 'unassigned'
+  bridgeAnswer: string
+  createdAt: string
+}
+type DeferredSafetyQuestions = DeferredSafetyQuestion[]
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) {
@@ -205,6 +215,20 @@ function routeQuestionTarget(
   return best && bestScore >= 0.18 && bestScore >= sourceScore + 0.18 ? best : null
 }
 
+function day0BridgeAnswerForUnassignedQuestion(question: string): string | null {
+  const normalized = question.toLowerCase()
+  if (normalized.includes('transformer') || normalized.includes('트랜스포머') || normalized.includes('machine learning') || normalized.includes('머신러닝')) {
+    return '좋은 심화 질문입니다. 다만 이 주제는 아직 별도 훈련 카드로 배정되지 않았습니다. Day 0에서는 Transformer가 머신러닝 안에서 쓰이는 모델 구조 중 하나이고, LLM은 그 구조를 큰 글 데이터로 학습해 말을 만든다는 정도만 먼저 기억하면 됩니다.'
+  }
+  if (normalized.includes('rag') || normalized.includes('자료') || normalized.includes('근거') || normalized.includes('검증') || normalized.includes('출처')) {
+    return '좋은 심화 질문입니다. 다만 이 주제는 아직 별도 훈련 카드로 배정되지 않았습니다. Day 0에서는 AI 답을 그대로 믿지 말고, 원문이나 믿을 만한 자료로 다시 확인해야 한다는 점만 먼저 기억하면 됩니다.'
+  }
+  if (normalized.includes('프롬프트') || normalized.includes('질문') || normalized.includes('후속')) {
+    return '좋은 심화 질문입니다. 다만 이 주제는 아직 별도 훈련 카드로 배정되지 않았습니다. Day 0에서는 질문을 잘하려면 상황, 원하는 결과, 확인할 기준을 같이 적으면 된다는 정도만 먼저 기억하면 됩니다.'
+  }
+  return null
+}
+
 function currentSafetyCoachAnswers(raw: unknown, feedback: SafetyConceptFeedback): SafetyCoachAnswers {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
   const out: SafetyCoachAnswers = {}
@@ -229,9 +253,26 @@ function currentSafetyCoachThreads(raw: unknown): SafetyCoachThreads {
     .slice(-40)
 }
 
+function currentDeferredSafetyQuestions(raw: unknown): DeferredSafetyQuestions {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((item): item is DeferredSafetyQuestion => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return false
+      const row = item as DeferredSafetyQuestion
+      return Boolean(row.question?.trim()) && Boolean(row.bridgeAnswer?.trim())
+    })
+    .slice(-40)
+}
+
 function appendSafetyCoachThread(threads: SafetyCoachThreads, item: SafetyCoachThreadItem): SafetyCoachThreads {
   const key = `${item.conceptId}::${item.version}::${item.question.trim()}`
   const withoutDuplicate = threads.filter((thread) => `${thread.conceptId}::${thread.version}::${thread.question.trim()}` !== key)
+  return [...withoutDuplicate, item].slice(-40)
+}
+
+function appendDeferredSafetyQuestion(items: DeferredSafetyQuestions, item: DeferredSafetyQuestion): DeferredSafetyQuestions {
+  const key = `${item.sourceConceptId}::${item.question.trim()}`
+  const withoutDuplicate = items.filter((row) => `${row.sourceConceptId}::${row.question.trim()}` !== key)
   return [...withoutDuplicate, item].slice(-40)
 }
 
@@ -258,14 +299,33 @@ function safetyCoachThreadGroups(
   })
 }
 
+function mergeDeferredSafetyQuestions(...groups: DeferredSafetyQuestions[]): DeferredSafetyQuestions {
+  return groups.flat().reduce<DeferredSafetyQuestions>((acc, item) => appendDeferredSafetyQuestion(acc, item), [])
+}
+
+function deferredSafetyQuestionItems(
+  state: TrainingState | null,
+  activeStage: StageKey,
+  activeItems: DeferredSafetyQuestions,
+): DeferredSafetyQuestions {
+  const drafts = state?.ui_state?.stage_drafts ?? {}
+  const all = STAGE_ORDER.map((key) => {
+    const draftItems = currentDeferredSafetyQuestions(drafts[key]?.deferred_safety_questions)
+    return key === activeStage ? mergeDeferredSafetyQuestions(draftItems, activeItems) : draftItems
+  })
+  return mergeDeferredSafetyQuestions(...all)
+}
+
 function QuestionArchivePanel({
   groups,
+  deferred,
   onClose,
 }: {
   groups: SafetyCoachThreadGroup[]
+  deferred: DeferredSafetyQuestions
   onClose: () => void
 }) {
-  const hasItems = groups.some((group) => group.items.length > 0)
+  const hasItems = groups.some((group) => group.items.length > 0) || deferred.length > 0
   return (
     <section className="mb-4 rounded-2xl border border-border bg-card p-4 print:border-0 print:p-0 print:shadow-none">
       <div className="mb-3 flex items-start justify-between gap-3 print:hidden">
@@ -324,6 +384,23 @@ function QuestionArchivePanel({
               )}
             </div>
           ))}
+          {deferred.length ? (
+            <div className="rounded-[12px] border border-border bg-secondary p-3 print:break-inside-avoid print:bg-card">
+              <h3 className="text-sm font-bold text-ink">심화 질문 · 배정 전</h3>
+              <p className="mt-1 text-xs leading-relaxed text-text-faint">
+                아직 별도 훈련 카드로 구성되지 않은 질문입니다. 커리큘럼 보강 후보로 남깁니다.
+              </p>
+              <div className="mt-2 grid gap-2">
+                {deferred.slice().reverse().map((item) => (
+                  <article key={item.id} className="rounded-[10px] border border-border bg-card px-3 py-2 print:border-border">
+                    <div className="mb-1 text-[11px] font-semibold text-primary">{item.sourceConceptTitle}</div>
+                    <p className="text-xs font-semibold leading-relaxed text-ink">Q. {item.question}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-text-muted">A. {item.bridgeAnswer}</p>
+                  </article>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
     </section>
@@ -1012,6 +1089,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const [conceptFeedback, setConceptFeedback] = useState<SafetyConceptFeedback>({})
   const [coachAnswers, setCoachAnswers] = useState<SafetyCoachAnswers>({})
   const [coachThreads, setCoachThreads] = useState<SafetyCoachThreads>([])
+  const [deferredSafetyQuestions, setDeferredSafetyQuestions] = useState<DeferredSafetyQuestions>([])
   const [coachLoading, setCoachLoading] = useState<Record<string, boolean>>({})
   const [coachErrors, setCoachErrors] = useState<Record<string, string>>({})
   const [whyOpen, setWhyOpen] = useState(false)
@@ -1025,6 +1103,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const conceptFeedbackRef = useRef<SafetyConceptFeedback>({})
   const coachAnswersRef = useRef<SafetyCoachAnswers>({})
   const coachThreadsRef = useRef<SafetyCoachThreads>([])
+  const deferredSafetyQuestionsRef = useRef<DeferredSafetyQuestions>([])
 
   // 단계 전환 시 로컬 입력(증거물/체크)을 그 단계 값으로 재시드.
   function hydrateStageInputs(st: TrainingState, next: StageKey) {
@@ -1035,18 +1114,22 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     const feedback = draft?.safety_concept_feedback
     const answers = draft?.safety_coach_answers
     const threads = draft?.safety_coach_threads
+    const deferred = draft?.deferred_safety_questions
     const nextFeedback =
       feedback && typeof feedback === 'object' && !Array.isArray(feedback)
         ? (feedback as SafetyConceptFeedback)
         : {}
     const nextAnswers = currentSafetyCoachAnswers(answers, nextFeedback)
     const nextThreads = currentSafetyCoachThreads(threads)
+    const nextDeferred = currentDeferredSafetyQuestions(deferred)
     conceptFeedbackRef.current = nextFeedback
     coachAnswersRef.current = nextAnswers
     coachThreadsRef.current = nextThreads
+    deferredSafetyQuestionsRef.current = nextDeferred
     setConceptFeedback(nextFeedback)
     setCoachAnswers(nextAnswers)
     setCoachThreads(nextThreads)
+    setDeferredSafetyQuestions(nextDeferred)
     setCoachLoading({})
     setCoachErrors({})
     setWhyOpen(false)
@@ -1158,6 +1241,86 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       setNotice('이미 이 질문에 답변했어요. 질문을 바꾸면 새 답변을 받을 수 있습니다.')
       return
     }
+    const bridgeAnswer = stage === 'day0' ? day0BridgeAnswerForUnassignedQuestion(question) : null
+    if (bridgeAnswer) {
+      const now = new Date().toISOString()
+      const itemId = `${id}-${now}`
+      const answerRecord: SafetyCoachAnswers[string] = {
+        question,
+        answer: bridgeAnswer,
+        model: 'curriculum-backlog',
+        fallbackUsed: false,
+        evidenceUsed: false,
+        version: SAFETY_COACH_ANSWER_VERSION,
+      }
+      const threadItem: SafetyCoachThreadItem = {
+        id: itemId,
+        conceptId: id,
+        conceptTitle: concept.title,
+        question,
+        answer: bridgeAnswer,
+        model: 'curriculum-backlog',
+        fallbackUsed: false,
+        evidenceUsed: false,
+        version: SAFETY_COACH_ANSWER_VERSION,
+        createdAt: now,
+      }
+      const deferredItem: DeferredSafetyQuestion = {
+        id: itemId,
+        question,
+        sourceConceptId: id,
+        sourceConceptTitle: concept.title,
+        status: 'unassigned',
+        bridgeAnswer,
+        createdAt: now,
+      }
+      const latestAnswers = coachAnswersRef.current
+      const latestThreads = coachThreadsRef.current
+      const latestFeedback = conceptFeedbackRef.current
+      const latestDeferred = deferredSafetyQuestionsRef.current
+      const nextAnswers = { ...latestAnswers, [id]: answerRecord }
+      const nextThreads = appendSafetyCoachThread(latestThreads, threadItem)
+      const nextDeferred = appendDeferredSafetyQuestion(latestDeferred, deferredItem)
+      coachAnswersRef.current = nextAnswers
+      coachThreadsRef.current = nextThreads
+      deferredSafetyQuestionsRef.current = nextDeferred
+      setCoachAnswers(nextAnswers)
+      setCoachThreads(nextThreads)
+      setDeferredSafetyQuestions(nextDeferred)
+      setCoachErrors((prev) => ({ ...prev, [id]: '' }))
+      setNotice('심화 질문으로 저장했어요. 아직 배정된 훈련 카드는 없습니다.')
+      seqRef.current += 1
+      void syncSession({
+        caseId,
+        email,
+        selectedStage: stage,
+        clientSeq: seqRef.current,
+        eventName: 'safety_advanced_question_saved',
+        eventPayload: {
+          stage,
+          concept_id: id,
+          concept_title: concept.title,
+          question,
+          answer: bridgeAnswer,
+          status: 'unassigned',
+          reason: 'no_future_curriculum_card',
+        },
+        stageDrafts: {
+          [stage]: {
+            safety_concept_feedback: latestFeedback,
+            safety_coach_answers: nextAnswers,
+            safety_coach_threads: nextThreads,
+            deferred_safety_questions: nextDeferred,
+          },
+        },
+      })
+        .then((next) => setState(next))
+        .catch((e) => {
+          console.error('advanced safety question sync failed', e)
+          setCoachErrors((prev) => ({ ...prev, [id]: errMsg(e) }))
+      })
+      return
+    }
     setCoachLoading((prev) => ({ ...prev, [id]: true }))
     setCoachErrors((prev) => ({ ...prev, [id]: '' }))
     void askSafetyCoach({
@@ -1195,6 +1358,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         const latestAnswers = coachAnswersRef.current
         const latestThreads = coachThreadsRef.current
         const latestFeedback = conceptFeedbackRef.current
+        const latestDeferred = deferredSafetyQuestionsRef.current
         const nextAnswers = { ...latestAnswers, [id]: answerRecord }
         const nextThreads = appendSafetyCoachThread(latestThreads, threadItem)
         coachAnswersRef.current = nextAnswers
@@ -1225,6 +1389,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
               safety_concept_feedback: latestFeedback,
               safety_coach_answers: nextAnswers,
               safety_coach_threads: nextThreads,
+              deferred_safety_questions: latestDeferred,
             },
           },
         })
@@ -1246,6 +1411,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     const latestFeedback = conceptFeedbackRef.current
     const latestAnswers = coachAnswersRef.current
     const latestThreads = coachThreadsRef.current
+    const latestDeferred = deferredSafetyQuestionsRef.current
     setSafetySyncing(true)
     setError(null)
     seqRef.current += 1
@@ -1261,6 +1427,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           safety_concept_feedback: latestFeedback,
           safety_coach_answers: latestAnswers,
           safety_coach_threads: latestThreads,
+          deferred_safety_questions: latestDeferred,
         },
       },
     })
@@ -1280,6 +1447,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     const latestFeedback = conceptFeedbackRef.current
     const latestAnswers = coachAnswersRef.current
     const latestThreads = coachThreadsRef.current
+    const latestDeferred = deferredSafetyQuestionsRef.current
     const confirmedCheckIds = stageChecklist(current).filter((item) => item.id.startsWith('understand_') && checked[item.id]).map((item) => item.id)
     const confirmedConceptIds = (current?.foundation_concepts ?? [])
       .map((concept, index) => conceptId(concept, index))
@@ -1300,12 +1468,14 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         concept_feedback: latestFeedback,
         coach_answers: latestAnswers,
         coach_threads: latestThreads,
+        deferred_safety_questions: latestDeferred,
       },
       stageDrafts: {
         [stage]: {
           safety_concept_feedback: latestFeedback,
           safety_coach_answers: latestAnswers,
           safety_coach_threads: latestThreads,
+          deferred_safety_questions: latestDeferred,
           safety_concept_confirmed_ids: confirmedConceptIds,
         },
       },
@@ -1352,6 +1522,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
 
   // ── 렌더 ──────────────────────────────────────────────
   const questionGroups = safetyCoachThreadGroups(state, stage, coachThreads)
+  const deferredQuestions = deferredSafetyQuestionItems(state, stage, deferredSafetyQuestions)
   const header = (
     <header className="mb-5 flex items-center gap-3 print:hidden">
       <button
@@ -1428,7 +1599,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       {header}
 
       {questionArchiveOpen ? (
-        <QuestionArchivePanel groups={questionGroups} onClose={() => setQuestionArchiveOpen(false)} />
+        <QuestionArchivePanel groups={questionGroups} deferred={deferredQuestions} onClose={() => setQuestionArchiveOpen(false)} />
       ) : null}
 
       <div className={questionArchiveOpen ? 'print:hidden' : ''}>
