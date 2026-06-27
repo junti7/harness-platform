@@ -374,6 +374,8 @@ def _classify_intents(text: str) -> list[str]:
 
 def _quality_gate(*, text: str, question: str, channel: str, intents: list[str]) -> tuple[bool, dict[str, Any]]:
     normalized = _norm(f"{question} {text[:500]}")
+    question_lower = question.lower()
+    question_stripped = question.strip()
     reasons: list[str] = []
     if len(question) < 18:
         reasons.append("question_too_short")
@@ -385,6 +387,20 @@ def _quality_gate(*, text: str, question: str, channel: str, intents: list[str])
         reasons.append("low_quality_marker")
     if "uncategorized_user_voice" in intents and len(intents) == 1:
         reasons.append("uncategorized_intent")
+    user_question_markers = (
+        "?", "？", "어떻게", "왜", "뭐", "무엇", "괜찮", "될까요", "할까요", "해야", "걱정",
+        "불안", "무서", "의존", "비용", "비싸", "고민", "궁금", "어디서", "어디까지",
+    )
+    if not any(marker in question_lower for marker in user_question_markers):
+        reasons.append("not_user_question_shape")
+    directive_only = (
+        "?" not in question_stripped
+        and "？" not in question_stripped
+        and question_stripped.endswith(("주세요", "주세요.", "하세요", "하세요.", "하십시오", "하십시오."))
+        and not any(marker in question_lower for marker in ("걱정", "불안", "고민", "궁금", "어떻게", "왜", "괜찮", "될까요", "할까요"))
+    )
+    if directive_only:
+        reasons.append("directive_not_user_question")
     if not any(marker.lower() in normalized for marker in DOMAIN_MARKERS):
         reasons.append("domain_mismatch")
     pii_hits = [marker for marker in PII_MARKERS if marker.lower() in normalized]

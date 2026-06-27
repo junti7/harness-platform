@@ -70,6 +70,17 @@ class EduCoachCorpusScenarioGeneratorTests(unittest.TestCase):
         self.assertFalse(allowed)
         self.assertIn("domain_mismatch", metadata["noise_reasons"])
 
+    def test_quality_gate_rejects_directive_only_non_question(self):
+        allowed, metadata = self.generator._quality_gate(
+            text="AI를 무서워하기보다 숙제나 학습에 활용해보고 장단점을 토론하며 디지털 리터러시를 키워주세요.",
+            question="AI를 무서워하기보다 숙제나 학습에 활용해보고 장단점을 토론하며 디지털 리터러시를 키워주세요.",
+            channel="RSS",
+            intents=["learning_start", "emotional_validation"],
+        )
+
+        self.assertFalse(allowed)
+        self.assertIn("directive_not_user_question", metadata["noise_reasons"])
+
     def test_write_outputs(self):
         payload = self.generator.collect_corpus_scenarios(max_cases=5)
         with tempfile.TemporaryDirectory() as tmp:

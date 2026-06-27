@@ -231,6 +231,57 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("문제는 기분이 좋다는 사실이 아니라", answer)
         self.assertNotIn("중요한 지점입니다", answer)
 
+    def test_safety_coach_fallback_blocks_concept_definition_for_non_concept_questions(self):
+        cases = [
+            (
+                'AI가 아이에게 "너는 특별해"라고 계속 말해주면 자존감에 좋은 거 아니야?',
+                ("자존감", "실제 행동", "사람 관계"),
+            ),
+            (
+                "부모보다 AI가 아이 말을 더 잘 들어주면 그게 꼭 나쁜 일은 아니지 않아?",
+                ("꼭 나쁜 일", "사람 관계", "작은 연결"),
+            ),
+            (
+                "AI가 틀릴 수도 있다는 말만 계속하면 아이가 기술을 무서워하지 않을까?",
+                ("겁주기", "확인", "다루는 법"),
+            ),
+        ]
+
+        for question, expected_terms in cases:
+            with self.subTest(question=question):
+                answer = self.mod._edu_vp_safety_coach_fallback("먼저 말부터 정리하기: AI와 LLM", question)
+
+                for term in expected_terms:
+                    self.assertIn(term, answer)
+                self.assertNotIn("AI는 큰 이름이고, LLM은", answer)
+                self.assertNotIn("비 오는 날 준비물", answer)
+
+    def test_safety_coach_concept_definition_fallback_requires_concept_question(self):
+        self.assertFalse(
+            self.mod._edu_vp_safety_coach_question_asks_current_concept(
+                concept_title="먼저 말부터 정리하기: AI와 LLM",
+                question='AI가 아이에게 "너는 특별해"라고 계속 말해주면 자존감에 좋은 거 아니야?',
+            )
+        )
+        self.assertTrue(
+            self.mod._edu_vp_safety_coach_question_asks_current_concept(
+                concept_title="먼저 말부터 정리하기: AI와 LLM",
+                question="AI와 LLM은 무슨 차이야?",
+            )
+        )
+
+    def test_safety_coach_empathy_detector_ignores_non_emotional_special_not_context(self):
+        self.assertFalse(
+            self.mod._edu_vp_safety_coach_needs_empathy(
+                "수학 공부할 때 AI로 문제 풀이하는 건 이제 별로 특별하지 않습니다. 내가 푼 풀이 보고 어디서 틀렸는지 찾아줘."
+            )
+        )
+        self.assertTrue(
+            self.mod._edu_vp_safety_coach_needs_empathy(
+                'AI가 아이에게 "너는 특별해"라고 계속 말해주면 자존감에 좋은 거 아니야?'
+            )
+        )
+
     def test_safety_coach_red_team_blocks_cold_answer_to_emotional_question(self):
         issues = self.mod._edu_vp_safety_coach_red_team(
             question="그래도 AI가 나한테 그렇게 해주면 기분이 좋은걸?",

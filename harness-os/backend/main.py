@@ -9197,6 +9197,8 @@ def _edu_vp_safety_question_intent_classes(question: str) -> set[str]:
         classes.add("professional_cost_barrier")
     if _edu_vp_safety_coach_has_isolation_context(text):
         classes.add("isolation_dependency")
+    if _edu_vp_safety_coach_has_sycophancy_context(text):
+        classes.add("emotional_validation")
     if _edu_vp_safety_coach_needs_empathy(text):
         classes.add("emotional_validation")
     if "조사" in text and any(marker in text for marker in ("추측", "이어", "다음")):
@@ -10197,9 +10199,18 @@ def _edu_vp_safety_coach_needs_empathy(question: str) -> bool:
     text = str(question or "").strip().lower()
     if not text:
         return False
+    if _edu_vp_safety_coach_has_sycophancy_context(question):
+        return True
+    if _edu_vp_safety_coach_has_relationship_displacement_context(question):
+        return True
+    if _edu_vp_safety_coach_has_technology_fear_context(question):
+        return True
     emotional_markers = (
         "외로", "혼자", "내 얘기", "들어줄 사람", "아무도", "기분", "좋은걸", "좋은 걸",
         "위로", "의존", "기대고", "힘들", "막막", "서운", "불안", "무섭", "우울", "속상",
+        "자존감", "칭찬", "계속 말해", "다정하게", "좋은 말",
+        "말을 더 잘 들어", "더 잘 들어주", "부모보다", "꼭 나쁜",
+        "무서워", "무서워하지", "두려워", "겁먹", "기술을 무서",
     )
     return any(marker in text for marker in emotional_markers)
 
@@ -10243,6 +10254,65 @@ def _edu_vp_safety_coach_has_ai_dependency_context(question: str) -> bool:
     )
 
 
+def _edu_vp_safety_coach_has_sycophancy_context(question: str) -> bool:
+    text = str(question or "").strip().lower()
+    ai_markers = ("ai", "챗gpt", "chatgpt", "llm", "claude", "gemini")
+    praise_markers = (
+        "너는 특별", "특별해", "특별하", "자존감", "칭찬", "좋은 말", "다정하게",
+        "계속 말해", "계속 해주", "항상 내 편", "무조건 맞", "응원해",
+    )
+    child_markers = ("아이", "자녀", "학생", "애가", "아들", "딸")
+    return any(marker in text for marker in ai_markers) and any(marker in text for marker in praise_markers) and (
+        any(marker in text for marker in child_markers) or "자존감" in text
+    )
+
+
+def _edu_vp_safety_coach_has_relationship_displacement_context(question: str) -> bool:
+    text = str(question or "").strip().lower()
+    ai_markers = ("ai", "챗gpt", "chatgpt", "llm", "claude", "gemini")
+    direct_relationship_patterns = (
+        "부모보다 ai", "ai가 아이 말을 더 잘", "ai가 아이 말을 잘", "ai가 더 잘 들어",
+        "말을 더 잘 들어주", "더 잘 들어주면", "꼭 나쁜 일은 아니",
+        "꼭 나쁜 일인가", "그게 꼭 나쁜",
+    )
+    return any(marker in text for marker in ai_markers) and any(marker in text for marker in direct_relationship_patterns)
+
+
+def _edu_vp_safety_coach_has_technology_fear_context(question: str) -> bool:
+    text = str(question or "").strip().lower()
+    ai_markers = ("ai", "챗gpt", "chatgpt", "llm", "기술")
+    direct_fear_patterns = (
+        "틀릴 수도 있다는 말만", "기술을 무서워", "기술을 두려워", "ai를 무서워",
+        "ai가 틀릴 수 있다는 말", "무서워하지 않을까", "겁먹지 않을까",
+    )
+    return any(marker in text for marker in ai_markers) and any(marker in text for marker in direct_fear_patterns)
+
+
+def _edu_vp_safety_coach_question_asks_current_concept(*, concept_title: str, question: str) -> bool:
+    title = str(concept_title or "").strip().lower()
+    text = str(question or "").strip().lower()
+    if not title or not text:
+        return False
+    definition_markers = (
+        "무슨 뜻", "뭐야", "무엇", "설명", "정의", "차이", "같은 거", "원리", "어떻게 작동",
+        "뜻이야", "개념", "알려줘", "쉽게 말해", "what is", "explain", "define",
+    )
+    if not any(marker in text for marker in definition_markers):
+        return False
+    concept_groups = {
+        "ai_llm": ("ai와 llm", "ai", "llm", "large language model", "언어 모델"),
+        "generative_ai": ("생성형 ai", "gpt", "chatgpt", "claude", "gemini", "생성형"),
+        "transformer": ("transformer", "트랜스포머", "attention", "어텐션"),
+    }
+    if "ai와 llm" in title:
+        return any(marker in text for marker in concept_groups["ai_llm"])
+    if "생성형 ai" in title or "gpt" in title:
+        return any(marker in text for marker in concept_groups["generative_ai"])
+    if "transformer" in title or "트랜스포머" in title:
+        return any(marker in text for marker in concept_groups["transformer"])
+    return False
+
+
 def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
     title = concept_title or "이 단락"
     q = question.strip()
@@ -10263,7 +10333,39 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
             "예를 들어 공공 상담, 지역 센터, 학교·회사 상담 창구, 무료 법률상담처럼 비용을 낮춘 선택지를 먼저 확인할 수 있습니다. "
             "오늘 기준은 'AI로 준비하고, 위험이 큰 결정은 가장 저렴한 공식 도움부터 연결한다'로 잡으면 됩니다."
         )
+    if any(marker in q_lower for marker in ("어디서 틀렸는지", "왜 틀렸는지", "내가 푼 풀이", "풀이 보고 어디서")) and any(
+        marker in q_lower for marker in ("수학", "문제", "풀이", "공부")
+    ):
+        return (
+            "수학 문제 풀이에서 AI를 쓰는 핵심은 정답을 바로 받는 것이 아니라, 내가 푼 과정의 어느 지점에서 생각이 바뀌었는지 확인하는 것입니다. "
+            "AI는 풀이 단계를 비교하면서 맞게 접근한 부분, 틀리기 시작한 지점, 왜 틀렸는지 후보를 정리해 줄 수 있습니다. "
+            "다만 AI 설명도 틀릴 수 있으니 최종 정답보다 '내 풀이와 AI 설명이 어디서 달라지는지'를 보는 용도로 쓰는 게 좋습니다. "
+            "오늘 기준은 먼저 직접 풀고, 그다음 AI에게 풀이의 갈림길을 찾게 하는 것입니다."
+        )
     if _edu_vp_safety_coach_needs_empathy(q):
+        if _edu_vp_safety_coach_has_sycophancy_context(q):
+            return (
+                "그렇게 느낄 수 있습니다. 아이에게 '너는 특별해' 같은 말을 들려주면 순간적으로 기분이 좋아지고 자신감이 올라갈 수 있습니다. "
+                "다만 그 말이 계속 반복되면 아이가 실제 노력, 관계, 실패 경험보다 기분 좋은 확인에 기대게 될 수 있습니다. "
+                "그래서 AI의 칭찬은 완전히 나쁜 것이 아니라, 구체적인 행동과 연결될 때만 도움이 됩니다. "
+                "예를 들어 '너는 특별해'보다 '네가 오늘 직접 고친 부분이 이거야'처럼 노력과 증거를 짚게 하는 식이 좋습니다. "
+                "오늘 기준은 '기분 좋은 칭찬은 받아도 되지만, 자존감은 실제 행동과 사람 관계 안에서 확인한다'로 잡으면 됩니다."
+            )
+        if _edu_vp_safety_coach_has_relationship_displacement_context(q):
+            return (
+                "꼭 나쁜 일이라고만 볼 필요는 없습니다. 아이가 AI에게 말을 꺼내면서 마음이 가라앉거나 생각을 정리할 수 있다면 그 자체는 도움이 될 수 있습니다. "
+                "다만 부모보다 AI가 더 잘 들어주는 상태가 오래 굳어지면, 아이가 실제 사람과 부딪히며 설명하고 오해를 풀고 도움을 요청하는 연습을 덜 하게 될 수 있습니다. "
+                "그래서 기준은 'AI 사용 자체가 문제냐'가 아니라 'AI 대화 뒤에 사람 관계와 실제 행동이 더 좋아지느냐'입니다. "
+                "부모는 AI를 경쟁 상대로 보기보다, 아이가 AI에게 한 말을 단서로 삼아 '그 얘기를 나한테도 한 문장만 들려줄래?'처럼 작은 연결을 만드는 쪽이 좋습니다."
+            )
+        if _edu_vp_safety_coach_has_technology_fear_context(q):
+            return (
+                "맞아요. AI를 무서워하거나 무조건 막기만 하면 아이가 기술을 피해야 할 대상으로 느낄 수 있습니다. "
+                "목표는 겁주기가 아니라, AI를 새로운 도구로 인식하고 함께 배우게 하는 것입니다. "
+                "그래서 'AI는 틀릴 수 있어'에서 끝내기보다 'AI가 준 답을 어디서 확인하면 좋을까?'처럼 확인 행동을 같이 가르치는 편이 좋습니다. "
+                "예를 들어 AI 답을 받은 뒤 원문, 학교 공지, 계산 과정, 부모와의 짧은 확인 중 하나를 붙이면 아이는 AI를 피하는 게 아니라 다루는 법을 배웁니다. "
+                "오늘 기준은 '무서워하거나 멀리하지 말고, 도구로 쓰되 확인하며 쓴다'입니다."
+            )
         if _edu_vp_safety_coach_has_isolation_context(q):
             return (
                 "그렇게 느낄 수 있습니다. 주변에 내 얘기를 들어줄 사람이 없으면 AI라도 붙잡고 싶어지는 건 자연스러운 반응입니다. "
@@ -10380,19 +10482,19 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
             "자동완성이 한 글자씩 후보를 보여주듯, 큰 AI는 훨씬 많은 후보를 보며 문장을 이어갑니다. "
             "오늘은 원리를 '이해하는 사람'이 아니라 '가능성 높은 다음 말을 고르는 계산'으로 기억하면 됩니다."
         )
-    if "AI와 LLM" in title:
+    if "AI와 LLM" in title and _edu_vp_safety_coach_question_asks_current_concept(concept_title=title, question=q):
         return (
             "AI는 큰 이름이고, LLM은 그중에서 말을 만드는 AI입니다. "
             "예를 들어 '비 오는 날 준비물 알려줘'라고 쓰면, LLM은 비와 준비물에 어울리는 말을 이어 붙여 "
             "'우산, 장화, 여벌 양말' 같은 답을 만듭니다. 다만 실제 공지나 날씨는 사람이 다시 확인해야 합니다."
         )
-    if "생성형 AI" in title or "GPT" in title:
+    if ("생성형 AI" in title or "GPT" in title) and _edu_vp_safety_coach_question_asks_current_concept(concept_title=title, question=q):
         return (
             "생성형 AI는 새 글, 그림, 답변처럼 무언가를 만들어내는 AI입니다. "
             "ChatGPT가 유명해서 GPT라는 말을 자주 듣지만, Claude와 Gemini도 같은 큰 흐름 안의 생성형 AI입니다. "
             "핵심은 회사 이름이 아니라 많은 예시를 보고 새 답을 만드는 방식입니다."
         )
-    if "Transformer" in title:
+    if "Transformer" in title and _edu_vp_safety_coach_question_asks_current_concept(concept_title=title, question=q):
         return (
             "Transformer는 문장에서 중요한 말을 찾아 서로 연결하는 방법입니다. "
             "책을 읽으며 중요한 단어에 형광펜을 칠하고, 그 단어들끼리 연결해 뜻을 잡는 모습과 비슷합니다."

@@ -17,8 +17,8 @@ from edu_coach_simulation_runner import run_simulation
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MIN_CORPUS_RECORDS = 49453
-DEFAULT_MIN_YOUTUBE_RECORDS = 1963
+DEFAULT_MIN_CORPUS_RECORDS = 22862
+DEFAULT_MIN_YOUTUBE_RECORDS = 402
 DEFAULT_MAX_FAST_RAG_TIMEOUT_MS = 450
 DEFAULT_MAX_RAG_PATCH_CALLS = 1
 DEFAULT_MAX_STRUCTURED_PACKET_CALLS = 1
@@ -83,6 +83,7 @@ def check_freshness(*, config_path: Path = OUTPUT_CONFIG) -> dict[str, Any]:
     if str(committed.get("selection_mode") or "") not in {
         "max_quality_corpus_no_family_quota",
         "max_quality_corpus_union_no_family_quota",
+        "max_quality_question_corpus_union_no_family_quota",
     }:
         failures.append(f"selection_mode={committed.get('selection_mode')}")
     if int(committed.get("synthetic_used_count") or 0) != 0:
