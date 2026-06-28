@@ -69,6 +69,14 @@
    - CEO가 Red Team을 명시 주문한 작업은 완료 증거 JSON에 Claude + Gemini artifact path와 verdict를 남기고,
      `scripts/agent_completion_guard.py --require-red-team` 통과 전 `red_team_clear` 또는 완료 보고를 하지 않는다.
    이 조항은 자동 cross-LLM Red Team 실행 의무가 아니다. Red Team은 §2.1에 따라 CEO가 명시 주문할 때만 수행한다.
+9. **[완료 환각 방지 불변식 — 2026-06-28 CEO 지시, 모든 LLM 공통, 절대]** LLM은 요구를 이해한 것과 실행을 끝낸 것을 혼동한다. 따라서 자연어 "완료했습니다"는 증거가 아니며, 아래 절차 없이는 완료 보고가 금지된다.
+   - 완료 전 원래 사용자 요구사항을 항목별 체크리스트로 복원한다. 대화 중 추가된 최신 요구사항도 포함한다.
+   - 각 항목마다 `pass|fail|not_verified` 상태와 증거를 매핑한다. 증거는 파일/줄, 테스트 출력, API 응답, DB/log/process 상태, source URL 원문 대조, 렌더링 결과처럼 재확인 가능한 형태여야 한다.
+   - 하나라도 `fail` 또는 `not_verified`가 있으면 `complete`로 말하지 않는다. `residual_risk` 또는 `blocked`로 보고하고, 남은 항목을 명시한다.
+   - 테스트를 느슨하게 바꿔 통과시키는 방식은 금지한다. 테스트 변경이 필요하면 기존 테스트가 왜 요구와 어긋났는지 별도 증거를 남긴다.
+   - 명시 요청 없이 기존 로직, 안전장치, 출처 검증, 배포 guard, cache invalidation을 삭제하거나 축소하는 것은 금지한다.
+   - 복잡한 멀티스텝 작업은 가능한 한 단계별로 쪼개고, 각 단계마다 체크리스트와 증거를 갱신한다. 한 번에 처리했다면 완료 보고 전에 전체 체크리스트 대조를 다시 수행한다.
+   - 이 불변식은 `scripts/agent_completion_guard.py`를 대체하지 않는다. 코드·배포·UI·고객-facing 답변 변경은 §2.8의 completion evidence guard도 반드시 통과해야 한다.
 
 ## 3. 모델별 부트스트랩 매핑 (어느 파일을 읽나)
 
