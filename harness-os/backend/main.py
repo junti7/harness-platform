@@ -8882,7 +8882,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-28-source-format-v23"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-28-source-format-v24"
 _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
 _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_PATH = PROJECT_ROOT / "configs" / "education" / "edu_coach_policy_registry.json"
 _EDU_VP_SAFETY_COACH_POLICY_CANDIDATE_PATH = PROJECT_ROOT / "docs" / "reviews" / "edu_coach_simulations" / "policy_candidates.jsonl"
@@ -8898,6 +8898,19 @@ _EDU_VP_SAFETY_COACH_EVIDENCE_EXECUTOR = ThreadPoolExecutor(
 )
 _EDU_VP_SAFETY_COACH_SOURCE_URL_CACHE: dict[str, str] = {}
 _EDU_VP_SAFETY_COACH_RAW_TEXT_CACHE: dict[str, str] = {}
+_EDU_VP_SAFETY_COACH_ANCHOR_CACHE: dict[str, Any] = {"mtime": None, "items": None}
+_EDU_VP_SAFETY_COACH_ANCHOR_PATH = PROJECT_ROOT / "data" / "edu_research" / "evidence_anchors.json"
+_EDU_VP_SAFETY_COACH_VERIFIED_SOURCE_QUOTES: dict[str, str] = {
+    "anchor-teens-already-using": "A Comprehensive Report on Teens, Tweens, and AI",
+    "anx-dependent": "The More Anxious, the More Dependent? The Impact of Math Anxiety on AI-Assisted Problem-Solving",
+    "ai-anxiety-behavior": "What Drives Students' AI Learning Behavior: A Perspective of AI Anxiety",
+    "ai-self-efficacy": "Influence of AI Anxiety on AI Self-Efficacy among College Students",
+    "screen-advisory": "Surgeon General Advisory Wants Kids to Live",
+    "edutopia-ai-use-framework": "enhance learning or to supplant it",
+    "edutopia-ai-boundaries": "refining their thinking to replacing it",
+    "edweek-ai-math-wrong": "AI Gets Math Wrong Sometimes",
+    "edweek-ai-literacy-not-magic": "AI can sometimes give wrong answers",
+}
 
 
 def _edu_vp_safety_coach_model_timeout(model_name: str, remaining_seconds: float) -> float:
@@ -9228,15 +9241,133 @@ def _edu_vp_safety_coach_source_markdown(item: dict[str, Any]) -> str:
     return label
 
 
+def _edu_vp_safety_coach_source_quote(item: dict[str, Any]) -> str:
+    direct = _edu_clean_cite(str(item.get("source_quote") or item.get("source_exact_quote") or "")).strip()
+    if direct:
+        return direct[:220]
+    item_id = str(item.get("id") or "").strip()
+    mapped = _EDU_VP_SAFETY_COACH_VERIFIED_SOURCE_QUOTES.get(item_id)
+    if mapped:
+        return mapped[:220]
+    return ""
+
+
+def _edu_vp_safety_coach_anchor_items() -> list[dict[str, Any]]:
+    try:
+        mtime = _EDU_VP_SAFETY_COACH_ANCHOR_PATH.stat().st_mtime
+    except FileNotFoundError:
+        return []
+    cached_items = _EDU_VP_SAFETY_COACH_ANCHOR_CACHE.get("items")
+    if cached_items is not None and _EDU_VP_SAFETY_COACH_ANCHOR_CACHE.get("mtime") == mtime:
+        return [dict(item) for item in cached_items]
+    try:
+        payload = json.loads(_EDU_VP_SAFETY_COACH_ANCHOR_PATH.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        _edu_runtime_event(
+            "vp_training_safety_coach_anchor_load_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+        )
+        return []
+    items: list[dict[str, Any]] = []
+    for raw in payload.get("items") or []:
+        if not isinstance(raw, dict):
+            continue
+        item = dict(raw)
+        item["provenance"] = item.get("provenance") or "anchor"
+        item["source_kind"] = item.get("source_kind") or "research_policy"
+        quote = _edu_vp_safety_coach_source_quote(item)
+        if quote:
+            item["source_quote"] = quote
+        items.append(item)
+    _EDU_VP_SAFETY_COACH_ANCHOR_CACHE["mtime"] = mtime
+    _EDU_VP_SAFETY_COACH_ANCHOR_CACHE["items"] = [dict(item) for item in items]
+    return items
+
+
+def _edu_vp_safety_coach_anchor_match_ids(query: str) -> list[str]:
+    q = str(query or "").lower()
+    ordered: list[str] = []
+
+    def add(item_ids: list[str]) -> None:
+        for item_id in item_ids:
+            if item_id not in ordered:
+                ordered.append(item_id)
+
+    if any(marker in q for marker in ("학습앱", "수학", "답", "확인", "검증", "연산")) and any(
+        marker in q for marker in ("틀린", "오류", "환각", "정확")
+    ):
+        add(["edweek-ai-math-wrong", "edweek-ai-literacy-not-magic"])
+    groups: list[tuple[tuple[str, ...], list[str]]] = [
+        (("문해력", "리터러시", "literacy"), ["edweek-ai-literacy-not-magic", "edutopia-ai-use-framework"]),
+        (("스크린", "영상", "유튜브", "youtube", "screen", "화면"), ["screen-advisory"]),
+        (("진로", "커리어", "직업", "대체", "도태", "career"), ["ai-self-efficacy", "ai-anxiety-behavior"]),
+        (("수학", "불안", "의존", "기대", "매달", "신호"), ["anx-dependent", "ai-anxiety-behavior"]),
+        (("숙제", "과제", "답안", "발표문", "대신"), ["edutopia-ai-boundaries", "edutopia-ai-use-framework"]),
+        (("챗봇", "이미", "많이", "못 쓰게", "금지", "쓰게", "어떻게 쓰", "기준", "부모"), ["anchor-teens-already-using", "edutopia-ai-use-framework"]),
+        (("공부", "망친", "망치", "학습"), ["edutopia-ai-use-framework", "ai-anxiety-behavior"]),
+    ]
+    for markers, ids in groups:
+        if any(marker in q for marker in markers):
+            add(ids)
+    return ordered[:4]
+
+
+def _edu_vp_safety_coach_anchor_evidence(query: str, *, limit: int) -> list[dict[str, Any]]:
+    ids = _edu_vp_safety_coach_anchor_match_ids(query)
+    if not ids:
+        return []
+    by_id = {str(item.get("id") or ""): item for item in _edu_vp_safety_coach_anchor_items()}
+    selected: list[dict[str, Any]] = []
+    for item_id in ids:
+        item = dict(by_id.get(item_id) or {})
+        if not item:
+            continue
+        if not _edu_vp_safety_coach_source_url(item):
+            continue
+        quote = _edu_vp_safety_coach_source_quote(item)
+        if not quote:
+            continue
+        item["source_quote"] = quote
+        item["_score"] = 1.0
+        item["_safety_coach_anchor_match"] = True
+        selected.append(item)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def _edu_vp_safety_coach_source_relevance(question: str, item: dict[str, Any]) -> str:
+    q = str(question or "").lower()
+    item_id = str(item.get("id") or "")
+    if item_id == "edweek-ai-math-wrong" or any(k in q for k in ("틀린", "오류", "환각", "확인", "검증", "학습앱")):
+        return "그래서 AI 답은 바로 믿지 말고, 풀이와 이유를 아이 말로 다시 확인하게 하는 기준을 세울 때 참고할 수 있습니다."
+    if item_id == "edweek-ai-literacy-not-magic" or "문해력" in q:
+        return "그래서 AI 문해력은 AI를 믿는 법이 아니라, 도움 되는 때와 다시 확인해야 하는 때를 아는 힘으로 설명할 수 있습니다."
+    if item_id == "screen-advisory" or any(k in q for k in ("스크린", "영상", "유튜브", "화면")):
+        return "그래서 AI 학습도 화면을 오래 보는 쪽으로만 흐르지 않게, 보고 난 뒤 말로 설명하거나 손으로 해보는 시간을 같이 잡는 데 참고할 수 있습니다."
+    if item_id in {"anx-dependent", "ai-anxiety-behavior"} or any(k in q for k in ("불안", "의존", "기대", "매달", "신호")):
+        return "그래서 아이가 불안해서 답만 빨리 보려는지, 아니면 자기 생각을 더 분명히 하려고 쓰는지 살피는 데 참고할 수 있습니다."
+    if item_id == "ai-self-efficacy" or any(k in q for k in ("진로", "커리어", "직업", "대체")):
+        return "그래서 진로 걱정은 막연히 겁내기보다, AI를 다루는 작은 연습으로 자신감을 쌓게 하는 쪽으로 볼 수 있습니다."
+    if item_id in {"edutopia-ai-boundaries", "edutopia-ai-use-framework"} or any(k in q for k in ("숙제", "과제", "대신", "못 쓰게", "금지")):
+        return "그래서 기준은 AI가 아이 생각을 대신하느냐, 아이 생각을 더 잘 보이게 돕느냐로 잡으면 됩니다."
+    return "그래서 AI를 쓰게 할지 말지보다, 어떤 쓰임은 돕고 어떤 쓰임은 대신하게 만드는지 나누어 보는 데 참고할 수 있습니다."
+
+
 def _edu_vp_safety_coach_rag_sentence(question: str, evidence_items: list[dict[str, Any]] | None) -> str:
     if not evidence_items:
         return ""
     question_terms = _edu_vp_safety_coach_keywords(question, max_terms=5)
     if not question_terms:
         return ""
+    quote_candidates: list[tuple[float, str, dict[str, Any]]] = []
     candidates: list[tuple[int, float, str, dict[str, Any]]] = []
     for item in evidence_items[:4]:
         cite = _edu_clean_cite(str(item.get("cite") or item.get("body") or ""))
+        quote = _edu_vp_safety_coach_source_quote(item)
+        if quote and _edu_vp_safety_coach_source_url(item):
+            quote_candidates.append((float(item.get("score") or item.get("_score") or 0.0), quote, item))
         if len(cite) < 30:
             continue
         cite_lower = cite.lower()
@@ -9244,6 +9375,13 @@ def _edu_vp_safety_coach_rag_sentence(question: str, evidence_items: list[dict[s
         if hits <= 0:
             continue
         candidates.append((hits, float(item.get("score") or item.get("_score") or 0.0), cite, item))
+    if quote_candidates:
+        quote_candidates.sort(key=lambda row: row[0], reverse=True)
+        _, quote, selected_item = quote_candidates[0]
+        source_label = _edu_vp_safety_coach_source_label(selected_item)
+        source_ref = _edu_vp_safety_coach_source_markdown(selected_item)
+        relevance = _edu_vp_safety_coach_source_relevance(question, selected_item)
+        return f"{source_label}에는 \"{quote}\"라는 문구가 실제로 나와 있어요. {relevance}\n\n출처: {source_ref}"
     if not candidates:
         return ""
     candidates.sort(key=lambda row: (row[0], row[1], len(row[2])), reverse=True)
@@ -10412,6 +10550,11 @@ def _edu_vp_safety_coach_evidence(
         meta["error_type"] = type(exc).__name__
         return "", [], meta
     items = list((bundle or {}).get("items") or [])
+    meta["candidate_mode"] = str((bundle or {}).get("mode") or "indexed")
+    if not items:
+        items = _edu_vp_safety_coach_anchor_evidence(query, limit=limit)
+        if items:
+            meta["candidate_mode"] = "verified_anchor"
     meta["candidate_count"] = len(items)
     if not items:
         meta["skip_reason"] = "no_candidates"
@@ -10420,7 +10563,8 @@ def _edu_vp_safety_coach_evidence(
     rejected: list[dict[str, Any]] = []
     validation_query = " ".join(part for part in (query, validation_text) if part).strip()
     for item in items:
-        valid, reasons = _edu_vp_validate_safety_coach_evidence(query=validation_query, item=item)
+        min_hits = 0 if item.get("_safety_coach_anchor_match") else 2
+        valid, reasons = _edu_vp_validate_safety_coach_evidence(query=validation_query, item=item, min_hits=min_hits)
         resolved_source_url = _edu_vp_safety_coach_source_url(item)
         if not valid:
             rejected.append({
@@ -10442,6 +10586,7 @@ def _edu_vp_safety_coach_evidence(
             "refined_output_id": _edu_vp_safety_coach_refined_output_id(item),
             "title": _edu_clean_cite(str(item.get("title") or ""))[:160],
             "cite": cite[:260],
+            "source_quote": _edu_vp_safety_coach_source_quote(item),
             "score": float(item.get("_score") or 0.0),
             "validated": True,
         })

@@ -68,7 +68,48 @@
       "evergreen": true,
       "cite": "Common Sense Media 조사를 보면, 이미 10대 상당수가 AI 챗봇을 일상으로 쓰고 있어요. 그러니까 '쓰게 할까 말까'가 아니라 '어떻게 쓰게 할까'가 진짜 질문인 거죠.",
       "source": "Common Sense Media, Copenhagen Summit 발표 (2026)",
-      "source_url": "https://www.commonsensemedia.org/research/a-comprehensive-report-on-teens-tweens-and-ai"
+      "source_url": "https://www.commonsensemedia.org/research/a-comprehensive-report-on-teens-tweens-and-ai",
+      "source_quote": "A Comprehensive Report on Teens, Tweens, and AI"
+    },
+    {
+      "id": "edutopia-ai-use-framework",
+      "type": "교육 가이드",
+      "segment": "parent",
+      "evergreen": true,
+      "cite": "AI를 아이 공부에 쓸 때는 공부를 더 잘하게 돕는지, 아니면 공부를 대신하게 만드는지부터 나누어 봐야 해요. 같은 AI 사용이라도 질문을 고치는 건 도움이고, 생각 없이 답을 베끼는 건 대신 시키는 쪽입니다.",
+      "source": "Edutopia, 'Student Use of AI: A Helpful Framework'",
+      "source_url": "https://www.edutopia.org/article/student-use-ai-helpful-framework",
+      "source_quote": "enhance learning or to supplant it"
+    },
+    {
+      "id": "edutopia-ai-boundaries",
+      "type": "교육 가이드",
+      "segment": "parent",
+      "evergreen": true,
+      "cite": "AI 사용 기준은 '아이 생각을 다듬는 데 쓰는가, 아이 생각을 대신하는가'로 잡으면 이해하기 쉬워요. 아이가 먼저 해본 뒤 질문을 고치거나 빠진 점을 찾는 쪽은 도움이고, 글이나 답을 통째로 받는 건 경계해야 합니다.",
+      "source": "Edutopia, 'Student AI Use: How Do You Define What's Acceptable?'",
+      "source_url": "https://www.edutopia.org/article/question-acceptable-student-ai",
+      "source_quote": "refining their thinking to replacing it"
+    },
+    {
+      "id": "edweek-ai-math-wrong",
+      "type": "교육 기사",
+      "segment": "parent",
+      "evergreen": true,
+      "cite": "AI 학습 도구도 틀릴 수 있어요. 특히 수학처럼 답이 딱 있는 문제에서도 틀릴 수 있으니, 아이가 받은 답은 풀이 과정을 다시 말해보게 하고 사람이 한 번 확인하는 습관이 필요합니다.",
+      "source": "Education Week, 'AI Gets Math Wrong Sometimes. How Teachers Deal With Its Shortcomings'",
+      "source_url": "https://www.edweek.org/teaching-learning/ai-gets-math-wrong-sometimes-how-teachers-deal-with-its-shortcomings/2024/09",
+      "source_quote": "AI Gets Math Wrong Sometimes"
+    },
+    {
+      "id": "edweek-ai-literacy-not-magic",
+      "type": "교육 기사",
+      "segment": "parent",
+      "evergreen": true,
+      "cite": "AI 문해력은 AI를 신기한 마법처럼 믿는 게 아니라, 언제 도움이 되고 언제 틀릴 수 있는지 아는 힘이에요. 아이에게는 'AI 답도 다시 확인해야 한다'는 말을 먼저 익히게 하는 게 좋습니다.",
+      "source": "Education Week, 'It's Not Magic: How These Schools Are Teaching AI Literacy'",
+      "source_url": "https://www.edweek.org/technology/its-not-magic-how-these-schools-are-teaching-ai-literacy/2025/10",
+      "source_quote": "AI can sometimes give wrong answers"
     },
     {
       "id": "anx-dependent",
@@ -77,7 +118,8 @@
       "evergreen": true,
       "cite": "작년에 나온 한 연구를 보면, 불안이 큰 아이일수록 오히려 AI에 더 기대게 된다고 해요. 마음이 급하니까 자꾸 답부터 찾는 거죠.",
       "source": "ERIC, 'The More Anxious, the More Dependent? Math Anxiety on AI-Assisted Problem-Solving' (2025)",
-      "source_url": "https://eric.ed.gov/?id=EJ1477358"
+      "source_url": "https://eric.ed.gov/?id=EJ1477358",
+      "source_quote": "The More Anxious, the More Dependent? The Impact of Math Anxiety on AI-Assisted Problem-Solving"
     },
     {
       "id": "ai-anxiety-behavior",
@@ -86,7 +128,8 @@
       "evergreen": true,
       "cite": "아이들이 AI를 쓰는 방식 자체가 'AI에 대한 불안'에서 나온다는 연구도 있어요. 잘 모르니까 더 매달리는 거예요.",
       "source": "ERIC, 'What Drives Students' AI Learning Behavior: A Perspective of AI Anxiety' (2024)",
-      "source_url": "https://eric.ed.gov/?id=EJ1439579"
+      "source_url": "https://eric.ed.gov/?id=EJ1439579",
+      "source_quote": "What Drives Students' AI Learning Behavior: A Perspective of AI Anxiety"
     },
     {
       "id": "parental-anxiety-scale",
@@ -149,7 +192,8 @@
       "evergreen": true,
       "cite": "최근엔 '아이들을 화면 밖에서 더 살게 하자'는 권고까지 나왔어요. 그만큼 다들 같은 고민을 하고 있다는 거죠.",
       "source": "EdSurge, 'Surgeon General Advisory Wants Kids to Live Beyond the Confines of Screens'",
-      "source_url": "https://www.edsurge.com/news/2026-05-21-surgeon-general-advisory-wants-kids-to-live-beyond-the-confines-of-screens"
+      "source_url": "https://www.edsurge.com/news/2026-05-21-surgeon-general-advisory-wants-kids-to-live-beyond-the-confines-of-screens",
+      "source_quote": "Surgeon General Advisory Wants Kids to Live"
     },
     {
       "id": "ai-anxiety-career",
@@ -167,7 +211,8 @@
       "evergreen": true,
       "cite": "AI에 대한 불안이 클수록 'AI를 잘 다룰 수 있다'는 자신감이 떨어진다는 연구가 있어요. 그래서 시작이 제일 중요해요.",
       "source": "ERIC, 'Influence of AI Anxiety on AI Self-Efficacy among College Students' (2025)",
-      "source_url": "https://eric.ed.gov/?id=EJ1472686"
+      "source_url": "https://eric.ed.gov/?id=EJ1472686",
+      "source_quote": "Influence of AI Anxiety on AI Self-Efficacy among College Students"
     },
     {
       "id": "ai-literacy-gap",

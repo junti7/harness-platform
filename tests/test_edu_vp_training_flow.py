@@ -1562,6 +1562,50 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertNotIn("라고요라는", sentence)
         self.assertNotIn("다고요라는", sentence)
 
+    def test_safety_coach_rag_sentence_prefers_verified_source_quote(self):
+        sentence = self.mod._edu_vp_safety_coach_rag_sentence(
+            "AI 학습앱이 틀린 답을 줄 수도 있다면 어떻게 확인해야 해?",
+            [
+                {
+                    "id": "edweek-ai-math-wrong",
+                    "source": "Education Week, 'AI Gets Math Wrong Sometimes. How Teachers Deal With Its Shortcomings'",
+                    "source_url": "https://www.edweek.org/teaching-learning/ai-gets-math-wrong-sometimes-how-teachers-deal-with-its-shortcomings/2024/09",
+                    "source_quote": "AI Gets Math Wrong Sometimes",
+                    "cite": "AI 학습 도구도 틀릴 수 있으니 풀이 과정을 다시 말해보게 해야 합니다.",
+                    "score": 1.0,
+                }
+            ],
+        )
+
+        self.assertIn('"AI Gets Math Wrong Sometimes"', sentence)
+        self.assertIn("실제로 나와 있어요", sentence)
+        self.assertIn("출처: [Education Week", sentence)
+        self.assertNotIn("AI 학습 도구도 틀릴 수 있으니 풀이 과정을 다시 말해보게 해야 합니다.라는 말도", sentence)
+
+    def test_safety_coach_verified_anchor_evidence_covers_ai_parent_questions(self):
+        questions = [
+            "AI가 아이 공부를 망친다는 말이 진짜야?",
+            "아이들이 이미 AI 챗봇을 많이 쓰고 있다면 부모는 뭘 정해야 해?",
+            "AI를 아예 못 쓰게 하는 것보다 어떻게 쓰게 하는 게 좋아?",
+            "아이가 AI에 너무 기대게 될까 봐 걱정돼. 어떤 신호를 봐야 해?",
+            "수학을 불안해하는 아이가 AI 답에 더 의존할 수 있어?",
+            "AI 학습앱이 틀린 답을 줄 수도 있다면 어떻게 확인해야 해?",
+            "아이에게 AI 문해력을 가르친다는 게 무슨 뜻이야?",
+            "AI 시대에 부모가 아이 교육에서 가장 먼저 잡아줘야 할 기준은 뭐야?",
+            "아이 스크린 시간이 늘어나는 게 걱정돼. AI 영상이나 유튜브 학습은 어떻게 봐야 해?",
+            "AI 때문에 아이 진로가 불안한데 지금 뭘 준비해야 해?",
+        ]
+
+        for question in questions:
+            with self.subTest(question=question):
+                evidence_text, selected, meta = self.mod._edu_vp_safety_coach_evidence(question, limit=1)
+
+                self.assertEqual(meta["selected_count"], 1)
+                self.assertEqual(meta["candidate_mode"], "verified_anchor")
+                self.assertTrue(selected[0]["source_url"].startswith("https://"))
+                self.assertTrue(selected[0]["source_quote"])
+                self.assertIn("출처:", evidence_text)
+
     def test_safety_coach_red_team_requires_selected_rag_to_be_used(self):
         issues = self.mod._edu_vp_safety_coach_red_team(
             question="다음 글에 이어질 최적의 명사는 어떻게 추측해?",
