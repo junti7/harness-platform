@@ -114,11 +114,23 @@
       "name": "macmini edu-app bundle rebuild",
       "target": "macmini edu-app production bundle",
       "command": "PATH=/opt/homebrew/bin:$PATH npm run build --prefix harness-os/edu-app",
-      "result": "vite build succeeded; generated dist/assets/index-HyAxFSEx.js"
+      "result": "vite build succeeded after emphasis fix; generated dist/assets/index-DacvyTij.js"
+    },
+    {
+      "name": "macmini post-emphasis backend answer check",
+      "target": "macmini backend and production RAG data",
+      "command": "direct EduVpTrainingSafetyCoachRequest for homework question after deploy",
+      "result": "rag=true; has_source=true; source appears only in the final source line; body_has_markdown_link_before_source=false; markdown_leak=false; summary break present via 간단히 말하면"
+    },
+    {
+      "name": "post-emphasis render policy check",
+      "target": "frontend renderer regex behavior for actual answer text",
+      "command": "node fixture mirroring renderInlineCoachMarkdown against Mac Mini answer shape",
+      "result": "strong labels/actions are limited to action sentences plus structure labels; importantPointStrong=false"
     }
   ],
   "deploy": {
-    "method": "scripts/deploy_to_macmini.sh data/edu_research/evidence_anchors.json harness-os/backend/main.py scripts/build_edu_evidence_index.py scripts/refresh_edu_evidence_bank.py scripts/backfill_edu_evidence_source_urls.py scripts/check_edu_coach_simulation_regression.py; then scripts/deploy_to_macmini.sh harness-os/backend/main.py docs/reports/completion_evidence/edu_rag_source_url_backfill_20260628.json",
-    "result": "Mac Mini selective checkout passed origin diff=0 for deployed paths; backend launchd reload succeeded; production RAG data backfill completed"
+    "method": "scripts/deploy_to_macmini.sh data/edu_research/evidence_anchors.json harness-os/backend/main.py scripts/build_edu_evidence_index.py scripts/refresh_edu_evidence_bank.py scripts/backfill_edu_evidence_source_urls.py scripts/check_edu_coach_simulation_regression.py; then scripts/deploy_to_macmini.sh harness-os/backend/main.py docs/reports/completion_evidence/edu_rag_source_url_backfill_20260628.json; then scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_rag_source_url_backfill_20260628.json",
+    "result": "Mac Mini selective checkout passed origin diff=0 for deployed paths; backend launchd reload succeeded; production RAG data backfill completed; post-emphasis bundle rebuild and HTTP 200 check passed"
   }
 }
