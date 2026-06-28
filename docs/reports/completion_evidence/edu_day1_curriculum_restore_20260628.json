@@ -1,6 +1,6 @@
 {
   "task": "Restore VP training Day 1 content and fix Day 0/Day 1 progress navigation consistency",
-  "status": "residual_risk",
+  "status": "complete",
   "date": "2026-06-28",
   "governance_bootstrap": [
     {
@@ -37,6 +37,24 @@
       "target": "macmini api health",
       "command": "curl -fsS --max-time 5 http://100.97.175.44:8000/api/health",
       "result": "passed: {\"ok\":true,\"generated_at\":\"2026-06-28T21:52:54\"}"
+    },
+    {
+      "name": "macmini edu VP training regression tests",
+      "target": "macmini pytest",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && .venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q'",
+      "result": "passed: 112 passed, 2 warnings, 59 subtests passed"
+    },
+    {
+      "name": "production case 72 state calculation",
+      "target": "macmini database runtime",
+      "command": "ssh macmini python import of harness-os/backend/main.py with _edu_vp_load_state(72), _edu_vp_refresh_state, _edu_vp_attach_personalized_curriculum, _edu_vp_case_card_progress",
+      "result": "passed: selected_stage=day1, case_card_label=Day 1, case_card_pct=0, overall_progress={completed_stages:1,total_stages:2,pct:50}, flow_outline day0 pct=100 and day1 pct=0, day1_materials=['day1-work-reply-kit','day1-meeting-notes-kit']"
+    },
+    {
+      "name": "production backend health after deploy",
+      "target": "macmini api health",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:8000/api/health",
+      "result": "passed: {\"ok\":true,\"generated_at\":\"2026-06-28T21:55:58\"}"
     }
   ],
   "regression_coverage": [
@@ -48,7 +66,7 @@
     "docs/education/edu_parents_first_parent_landing.html"
   ],
   "deploy": {
-    "method": "pending scripts/deploy_to_macmini.sh after origin/main push",
-    "result": "pending"
+    "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_day1_curriculum_restore_20260628.json",
+    "result": "passed: backend launchd reload completed, deployed paths match origin/main"
   }
 }
