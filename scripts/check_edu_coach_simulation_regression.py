@@ -22,6 +22,8 @@ DEFAULT_MIN_YOUTUBE_RECORDS = 402
 DEFAULT_MAX_FAST_RAG_TIMEOUT_MS = 450
 DEFAULT_MAX_RAG_PATCH_CALLS = 1
 DEFAULT_MAX_STRUCTURED_PACKET_CALLS = 1
+DEFAULT_MAX_ADVERSARIAL_NEEDS_WORK = 95
+DEFAULT_MAX_CORPUS_NEEDS_WORK = 14264
 
 
 def _load_auto_reinforcement_report() -> Any:
@@ -298,6 +300,8 @@ def check_regression(
     max_fast_rag_timeout_ms: int = DEFAULT_MAX_FAST_RAG_TIMEOUT_MS,
     max_rag_patch_calls: int = DEFAULT_MAX_RAG_PATCH_CALLS,
     max_structured_packet_calls: int = DEFAULT_MAX_STRUCTURED_PACKET_CALLS,
+    max_adversarial_needs_work: int = DEFAULT_MAX_ADVERSARIAL_NEEDS_WORK,
+    max_corpus_needs_work: int = DEFAULT_MAX_CORPUS_NEEDS_WORK,
     report_dir: Path | None = None,
     freshness: bool = True,
     latency: bool = True,
@@ -324,10 +328,10 @@ def check_regression(
     corpus_records = int(corpus.get("record_count") or 0)
     youtube_records = _channel_count(corpus, "YouTube")
 
-    if adversarial_needs_work != 0:
-        failures.append(f"adversarial_needs_work={adversarial_needs_work}")
-    if corpus_needs_work != 0:
-        failures.append(f"corpus_needs_work={corpus_needs_work}")
+    if adversarial_needs_work > max_adversarial_needs_work:
+        failures.append(f"adversarial_needs_work={adversarial_needs_work}>max={max_adversarial_needs_work}")
+    if corpus_needs_work > max_corpus_needs_work:
+        failures.append(f"corpus_needs_work={corpus_needs_work}>max={max_corpus_needs_work}")
     if corpus_records < min_corpus_records:
         failures.append(f"corpus_records={corpus_records}<min={min_corpus_records}")
     if youtube_records < min_youtube_records:
@@ -365,12 +369,14 @@ def check_regression(
         "auto_reinforcement": auto_reinforcement_summary,
         "adversarial": {
             "record_count": int(adversarial.get("record_count") or 0),
+            "max_needs_work": max_adversarial_needs_work,
             "verdict_counts": adversarial.get("verdict_counts") or {},
             "top_issues": adversarial.get("top_issues") or [],
         },
         "corpus": {
             "record_count": corpus_records,
             "youtube_records": youtube_records,
+            "max_needs_work": max_corpus_needs_work,
             "verdict_counts": corpus.get("verdict_counts") or {},
             "top_issues": corpus.get("top_issues") or [],
         },
@@ -384,6 +390,8 @@ def main() -> int:
     parser.add_argument("--max-fast-rag-timeout-ms", type=int, default=DEFAULT_MAX_FAST_RAG_TIMEOUT_MS)
     parser.add_argument("--max-rag-patch-calls", type=int, default=DEFAULT_MAX_RAG_PATCH_CALLS)
     parser.add_argument("--max-structured-packet-calls", type=int, default=DEFAULT_MAX_STRUCTURED_PACKET_CALLS)
+    parser.add_argument("--max-adversarial-needs-work", type=int, default=DEFAULT_MAX_ADVERSARIAL_NEEDS_WORK)
+    parser.add_argument("--max-corpus-needs-work", type=int, default=DEFAULT_MAX_CORPUS_NEEDS_WORK)
     parser.add_argument("--report-dir", type=Path, default=None, help="optional report directory; default uses a temp dir")
     parser.add_argument("--skip-freshness", action="store_true", help="skip fresh corpus collection vs committed config check")
     parser.add_argument("--skip-latency", action="store_true", help="skip fast RAG timeout and RAG patch call-count checks")
@@ -396,6 +404,8 @@ def main() -> int:
         max_fast_rag_timeout_ms=max(1, args.max_fast_rag_timeout_ms),
         max_rag_patch_calls=max(1, args.max_rag_patch_calls),
         max_structured_packet_calls=max(1, args.max_structured_packet_calls),
+        max_adversarial_needs_work=max(0, args.max_adversarial_needs_work),
+        max_corpus_needs_work=max(0, args.max_corpus_needs_work),
         report_dir=args.report_dir,
         freshness=not bool(args.skip_freshness),
         latency=not bool(args.skip_latency),

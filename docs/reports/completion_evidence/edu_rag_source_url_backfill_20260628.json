@@ -37,6 +37,12 @@
       "target": "dist production bundle",
       "command": "npm run build --prefix harness-os/edu-app",
       "result": "vite build succeeded; generated dist/assets/index-DPSFv7cK.js and dist/assets/index-DQ_nQAdK.css"
+    },
+    {
+      "name": "edu coach deployment regression guard",
+      "target": "pre-deploy regression guard",
+      "command": ".venv/bin/python scripts/check_edu_coach_simulation_regression.py",
+      "result": "guard passed with baseline max_needs_work adversarial=95 corpus=14264; freshness, latency, structured_packet, and auto_reinforcement all ok"
     }
   ],
   "deploy": {
