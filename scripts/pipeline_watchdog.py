@@ -227,6 +227,46 @@ def _gateway_port_open() -> bool:
         return False
 
 
+def _ibc_running() -> bool:
+    """IBC 프로세스(ibcstart.sh 또는 IbcGateway java)가 현재 살아 있는지 확인.
+
+    IBC가 이미 기동 중이면 추가 재시작을 막아 중복 로그인 시도·게이트웨이 충돌을 방지한다.
+    pgrep 비가용 시 False 반환(보수적: 재시작 허용).
+    """
+    try:
+        r = subprocess.run(
+            ["pgrep", "-f", "ibcstart.sh"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0:
+            return True
+        r2 = subprocess.run(
+            ["pgrep", "-f", "IbcGateway"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return r2.returncode == 0
+    except Exception:
+        return False
+
+
+def _sync_gateway_status_if_stale() -> None:
+    """포트 4002가 열려 있는데 런타임 상태 파일이 ready 가 아닌 경우 kickstart 로 동기화.
+
+    start_ibgateway_ibc.sh 의 첫 번째 분기가 포트 감지 → ready 기록 → exit 0 을 수행하므로
+    watchdog 는 트리거만 한다(중복 로직 없음).
+    """
+    snapshot = _gateway_status_snapshot()
+    if snapshot and snapshot.get("status") == "ready":
+        return
+    try:
+        subprocess.run(
+            ["launchctl", "kickstart", f"gui/{os.getuid()}/com.harness.ibgateway"],
+            capture_output=True, timeout=10,
+        )
+    except Exception:
+        pass
+
+
 def _gw_seconds_since_last_restart() -> float | None:
     try:
         if not GW_COOLDOWN_PATH.exists():
@@ -266,7 +306,7 @@ def _installation_missing_recently() -> bool:
 def ensure_gateway_up() -> list[str]:
     """IB Gateway(포트 4002) 다운/로그아웃 감지 시 IBC로 자동 재시작(쿨다운+단일실행락). 거래불가 사태 근본대책.
 
-    동시성: 5분 주기 watchdog 실행이 겹쳐도(launchd 중첩) 단 하나만 런처를 띄우도록 flock(LOCK_EX|LOCK_NB)으로
+    동시성: 1분 주기 watchdog 실행이 겹쳐도(launchd 중첩) 단 하나만 런처를 띄우도록 flock(LOCK_EX|LOCK_NB)으로
     보호한다. 쿨다운 타임스탬프는 spawn *직전*에 기록해(폭주/watchdog 사망 시에도 재시작 storm 방지),
     Popen 자체가 예외로 실패한 경우에만 쿨다운을 해제해 다음 주기 즉시 재시도(가용성 보호)한다.
 
@@ -276,6 +316,9 @@ def ensure_gateway_up() -> list[str]:
     단, finding의 취지(보유자 추적)를 반영해 락 파일에 pid/시각/host를 기록하고 경합 시 노출한다(관측성).
     """
     if _gateway_port_open():
+        # 포트는 열려 있지만 상태 파일이 stale(waiting_for_2fa/offline 등)이면 kickstart 로 ready 동기화.
+        # start_ibgateway_ibc.sh 가 포트 감지 → ready 기록 → exit 0 을 수행하므로 watchdog는 트리거만.
+        _sync_gateway_status_if_stale()
         return []
     if IBGATEWAY_DISABLE_FLAG.exists():
         return ["⏸️ IB Gateway 비활성 플래그 감지 — 자동 재시작 건너뜀(의도적 중단 존중). 재개하려면 runtime/ibgateway_disabled 삭제"]
@@ -320,6 +363,13 @@ def ensure_gateway_up() -> list[str]:
             return [
                 "🚨 IB Gateway 다운 + 설치물/경로 불일치 지속 — 최근 진단상 `gatewaystartmacos.sh` 또는 `IB Gateway.app`를 찾지 못했습니다. "
                 "반복 재시작은 중단하고 설치 위치/환경변수(IBC_LAUNCHER_PATH, IBGATEWAY_APP_PATH) 점검이 필요합니다."
+            ]
+        # IBC 프로세스가 이미 실행 중이면(2FA 대기·로그인 중) 중복 재시작 금지.
+        # 중복 기동 시 게이트웨이 세션 충돌·2FA 창 다중 팝업이 발생한다.
+        if _ibc_running():
+            return [
+                "⏳ IBC 기동 중(2FA 대기 또는 로그인 진행) — 중복 재시작 건너뜀. "
+                "IBKR Mobile 앱에서 로그인 알림을 승인하면 자동 복구됩니다."
             ]
         if not GATEWAY_START_SCRIPT.exists():
             return [f"🚨 IB Gateway 다운 + 재시작 스크립트 부재({GATEWAY_START_SCRIPT.name}) — 수동 재로그인 필요"]
