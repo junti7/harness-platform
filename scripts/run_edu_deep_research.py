@@ -155,7 +155,7 @@ def collect_rss(sources: list[dict], logger: HarnessLogger,
                 tracker: SaturationTracker, dry_run: bool,
                 max_rss_items: int = 50) -> dict:
     rss_sources = [s for s in sources
-                   if (s.get("type") in ("rss", "rss_daily") or bool(s.get("generated")))
+                   if (s.get("type") in ("rss", "rss_daily", "rss_search") or bool(s.get("generated")))
                    and s.get("legal_risk", "low") != "high"
                    and s.get("active", True) is not False]
     stats = {"attempted": len(rss_sources), "new": 0, "duplicate": 0, "error": 0}
