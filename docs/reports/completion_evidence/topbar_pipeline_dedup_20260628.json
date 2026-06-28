@@ -1,0 +1,32 @@
+{
+  "task": "topbar_pipeline_dedup_20260628",
+  "date": "2026-06-28",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-28T21:15:00+09:00",
+      "summary": "Mobile-First Interface Rule. 중복 네비게이션 항목 제거."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-28T21:15:00+09:00",
+      "summary": "Completion requires real entrypoint verification."
+    }
+  ],
+  "problem": "pipeline 뷰가 TopBar에 standalone '자료수집' 버튼(line 159)으로 이미 노출 중이었음. 분석 그룹에 '수집 현황'으로 중복 추가됐음. 중복 제거.",
+  "changes": [
+    {
+      "path": "harness-os/frontend/src/components/TopBar.tsx",
+      "summary": "분석 그룹에서 { view: 'pipeline', label: '수집 현황' } 제거. '자료수집' standalone 버튼만 유지."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Mac Mini dist 재빌드 및 배포",
+      "target": "macmini production http://100.97.175.44:8000/",
+      "command": "bash scripts/deploy_to_macmini.sh harness-os/frontend/src/components/TopBar.tsx",
+      "result": "exit 0, dist 재빌드 완료, diff=0"
+    }
+  ]
+}
