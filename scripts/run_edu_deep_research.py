@@ -1568,7 +1568,7 @@ def main():
         try:
             recent_rows = execute_query(
                 "SELECT raw_data->>'title' AS title, source FROM raw_signals "
-                "WHERE domain = 'edu_consulting' ORDER BY created_at DESC LIMIT 500",
+                "WHERE domain = 'edu_consulting' ORDER BY ingested_at DESC LIMIT 500",
                 fetch=True,
             ) or []
             ensure_fresh_topic_registry("edu_consulting", [dict(r) for r in recent_rows])

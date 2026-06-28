@@ -116,8 +116,9 @@
       "reliability_score": 0.8,
       "expected_signal_type": "한국 에듀테크 기업 동향, 투자, 비즈니스 모델",
       "legal_risk": "low",
-      "active": true,
-      "note": "URL 복구 2026-06-09(liveness 검증)"
+      "active": false,
+      "note": "URL 복구 2026-06-09(liveness 검증)",
+      "notes": "피드 응답 없음 (0 entries) — 2026-06-28 비활성화"
     },
     {
       "name": "교육부_보도자료",
@@ -213,7 +214,7 @@
     },
     {
       "name": "GoogleNews_학생진로AI",
-      "url": "https://news.google.com/rss/search?q=AI+%EC%8B%9C%EB%8C%80+%EC%A7%84%EB%A1%9C+OR+%EC%A0%84%EA%B3%B5+%EC%84%A0%ED%83%9D+OR+future+jobs+students+AI&hl=ko&gl=KR&ceid=KR:ko",
+      "url": "https://news.google.com/rss/search?q=AI+진로+학생&hl=ko&gl=KR&ceid=KR:ko",
       "type": "rss",
       "signal_class": "media",
       "rq_tags": [
@@ -224,7 +225,8 @@
       "stale_minutes": 1440,
       "reliability_score": 0.76,
       "expected_signal_type": "career_major",
-      "legal_risk": "low"
+      "legal_risk": "low",
+      "notes": "100 entries 확인 — 단순 쿼리로 수정(2026-06-28)"
     },
     {
       "name": "GoogleNews_디지털의존",
@@ -582,8 +584,9 @@
       "stale_minutes": 720,
       "reliability_score": 0.78,
       "legal_risk": "low",
-      "active": true,
-      "note": "URL 복구 2026-06-09(liveness 검증)"
+      "active": false,
+      "note": "URL 복구 2026-06-09(liveness 검증)",
+      "notes": "피드 응답 없음 (0 entries) — 2026-06-28 비활성화"
     },
     {
       "name": "The74Million",
