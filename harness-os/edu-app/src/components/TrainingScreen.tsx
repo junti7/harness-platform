@@ -1411,7 +1411,6 @@ function SafetyOrientationBlock({
   onAskCoach,
   onRateCoachAnswer,
   onDeleteCoachAnswer,
-  onSaveQuestions,
   onReady,
 }: {
   stage: TrainingStage
@@ -1436,21 +1435,15 @@ function SafetyOrientationBlock({
     rating: SafetyCoachAnswerRating,
   ) => void
   onDeleteCoachAnswer: (id: string) => void
-  onSaveQuestions: () => void
   onReady: () => void
 }) {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const concepts = stage.foundation_concepts ?? []
-  const blocks = stage.schedule_blocks ?? []
-  const safetyItems = stageChecklist(stage).filter((item) => item.id.startsWith('understand_'))
   const conceptItems = concepts.map((concept, index) => ({ ...concept, checkId: conceptId(concept, index) }))
   const ready =
-    safetyItems.length > 0 &&
-    safetyItems.every((item) => checked[item.id]) &&
     conceptItems.length > 0 &&
     conceptItems.every((item) => checked[item.checkId])
-  const hasQuestions = Object.values(conceptFeedback).some((value) => value.trim())
   const renderAnswerRating = (
     concept: NonNullable<TrainingStage['foundation_concepts']>[number],
     id: string,
@@ -1703,55 +1696,6 @@ function SafetyOrientationBlock({
         </div>
       ) : null}
 
-      {blocks.length ? (
-        <div className="mt-3 rounded-[12px] border border-border bg-card p-3">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-faint">오늘의 순서</div>
-          <ol className="grid gap-2">
-            {blocks.slice(0, 4).map((block) => (
-              <li key={block.title} className="flex gap-2 text-xs leading-relaxed text-text-muted">
-                <span className="mt-0.5 shrink-0 font-semibold text-primary">{block.minutes ?? '-'}분</span>
-                <span>
-                  <span className="font-semibold text-ink">{block.title}</span>
-                  {block.goal ? ` · ${block.goal}` : ''}
-                </span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      ) : null}
-
-      {safetyItems.length ? (
-        <div className="mt-3 grid gap-2">
-          {safetyItems.map((item) => {
-            const on = Boolean(checked[item.id])
-            return (
-              <button
-                key={item.id}
-                id={`check-card-${item.id}`}
-                data-training-anchor="true"
-                type="button"
-                onClick={() => onToggle(item.id)}
-                className="flex w-full items-start gap-3 rounded-[12px] border border-border bg-card p-3 text-left transition active:scale-[0.99]"
-              >
-                <span
-                  className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition ${
-                    on ? 'border-primary bg-primary text-primary-foreground' : 'border-border-strong'
-                  }`}
-                >
-                  {on ? <Check size={14} strokeWidth={3} /> : null}
-                </span>
-                <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="text-sm font-semibold text-ink">{item.title}</span>
-                  {item.instruction ? (
-                    <span className="text-xs leading-relaxed text-text-faint">{item.instruction}</span>
-                  ) : null}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      ) : null}
-
       {error ? (
         <div className="mt-3 flex items-start gap-2 rounded-[10px] bg-danger-soft px-3.5 py-3 text-sm text-danger">
           <AlertCircle size={17} className="mt-0.5 shrink-0" />
@@ -1765,17 +1709,6 @@ function SafetyOrientationBlock({
         </div>
       ) : null}
 
-      {hasQuestions ? (
-        <button
-          type="button"
-          onClick={onSaveQuestions}
-          disabled={saving}
-          className="mt-3 flex h-10 w-full items-center justify-center rounded-[10px] border border-border bg-card text-sm font-semibold text-ink transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          질문만 먼저 저장
-        </button>
-      ) : null}
-
       <button
         type="button"
         onClick={onReady}
@@ -1786,7 +1719,7 @@ function SafetyOrientationBlock({
       </button>
       {!ready ? (
         <p className="mt-2 text-center text-xs leading-relaxed text-text-faint">
-          설명 단락과 안전 확인을 모두 체크하면 실제 AI 실습이 열립니다. 이해되지 않으면 질문을 먼저 남겨주세요.
+          설명 단락을 모두 체크하면 실제 AI 실습이 열립니다. 이해되지 않으면 질문을 남겨주세요.
         </p>
       ) : null}
     </section>
@@ -2085,9 +2018,11 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   }
 
   function updateConceptFeedback(id: string, value: string) {
+    let nextFeedback: SafetyConceptFeedback = conceptFeedbackRef.current
     setConceptFeedback((prev) => {
       const next = { ...prev, [id]: value }
       conceptFeedbackRef.current = next
+      nextFeedback = next
       return next
     })
     setCoachAnswers((prev) => {
@@ -2100,6 +2035,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       return next
     })
     setCoachErrors((prev) => ({ ...prev, [id]: '' }))
+    stageDraftForSync({ safety_concept_feedback: nextFeedback })
   }
 
   function deleteCoachAnswer(id: string) {
@@ -2533,52 +2469,6 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       })
   }
 
-  function saveSafetyQuestions() {
-    if (!state || safetySyncing) return
-    const latestFeedback = conceptFeedbackRef.current
-    const latestAnswers = coachAnswersRef.current
-    const latestThreads = coachThreadsRef.current
-    const latestDeferred = deferredSafetyQuestionsRef.current
-    const latestDeleted = deletedSafetyAnswerKeysRef.current
-    setSafetySyncing(true)
-    setError(null)
-    seqRef.current += 1
-    void syncSession({
-      caseId,
-      email,
-      selectedStage: stage,
-      clientSeq: seqRef.current,
-      eventName: 'safety_orientation_feedback_saved',
-      eventPayload: { stage, concept_feedback: latestFeedback },
-      stageDrafts: {
-        [stage]: {
-          safety_concept_feedback: latestFeedback,
-          safety_coach_answers: latestAnswers,
-          safety_coach_threads: latestThreads,
-          safety_coach_answer_feedback: coachAnswerFeedbackRef.current,
-          deferred_safety_questions: latestDeferred,
-          deleted_safety_answer_keys: latestDeleted,
-          stage_checked: checkedRef.current,
-          last_position: lastPositionRef.current.anchorId
-            ? {
-                anchor_id: lastPositionRef.current.anchorId,
-                captured_at: lastPositionRef.current.capturedAt || new Date().toISOString(),
-              }
-            : lastPositionRef.current,
-        },
-      },
-    })
-      .then((next) => {
-        setState(next)
-        setNotice('질문을 저장했어요. 이해되는 단락부터 체크해도 됩니다.')
-      })
-      .catch((e) => {
-        console.error('safety feedback sync failed', e)
-        setError(errMsg(e))
-      })
-      .finally(() => setSafetySyncing(false))
-  }
-
   function confirmSafetyOrientation() {
     if (!state || safetySyncing) return
     const latestFeedback = conceptFeedbackRef.current
@@ -2586,7 +2476,6 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     const latestThreads = coachThreadsRef.current
     const latestDeferred = deferredSafetyQuestionsRef.current
     const latestDeleted = deletedSafetyAnswerKeysRef.current
-    const confirmedCheckIds = stageChecklist(current).filter((item) => item.id.startsWith('understand_') && checked[item.id]).map((item) => item.id)
     const confirmedConceptIds = (current?.foundation_concepts ?? [])
       .map((concept, index) => conceptId(concept, index))
       .filter((id) => checked[id])
@@ -2601,7 +2490,6 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       eventName: 'safety_orientation_confirmed',
       eventPayload: {
         stage,
-        confirmed_check_ids: confirmedCheckIds,
         confirmed_concept_ids: confirmedConceptIds,
         concept_feedback: latestFeedback,
         coach_answers: latestAnswers,
@@ -2829,7 +2717,6 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
             onAskCoach={requestCoachAnswer}
             onRateCoachAnswer={rateCoachAnswer}
             onDeleteCoachAnswer={deleteCoachAnswer}
-            onSaveQuestions={saveSafetyQuestions}
             onReady={confirmSafetyOrientation}
           />
         ) : null}

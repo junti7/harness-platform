@@ -7597,19 +7597,13 @@ def _edu_vp_safety_confirmation_from_event(state: dict[str, Any], event_name: st
     stage = str(event_payload.get("stage") or "day0")
     if stage != "day0":
         return None
-    confirmed_ids = {str(item) for item in (event_payload.get("confirmed_check_ids") or []) if str(item).strip()}
     confirmed_concept_ids = {str(item) for item in (event_payload.get("confirmed_concept_ids") or []) if str(item).strip()}
-    required_ids = {
-        str(item.get("id"))
-        for item in (state.get("day0") or {}).get("checklist", [])
-        if isinstance(item, dict) and str(item.get("id") or "").startswith("understand_")
-    }
     required_concept_ids = {
         str(item.get("id"))
         for item in (state.get("day0") or {}).get("foundation_concepts", [])
         if isinstance(item, dict) and str(item.get("id") or "").startswith("safety_concept_")
     }
-    if required_ids and required_ids.issubset(confirmed_ids) and required_concept_ids.issubset(confirmed_concept_ids):
+    if required_concept_ids and required_concept_ids.issubset(confirmed_concept_ids):
         return {"day0": True}
     return None
 
@@ -8319,7 +8313,6 @@ def _edu_vp_apply_curriculum_to_day0(
     )
 
     dynamic_topics = top_topics or ["첫 질문/기본 사용", "주의점/한계(환각·개인정보)"]
-    safety_checklist = _edu_vp_day0_safety_checklist(llm_label)
     practice_checklist = [
         {
             "id": "open_tool",
@@ -8344,7 +8337,7 @@ def _edu_vp_apply_curriculum_to_day0(
             "success_signal": "선택한 결과와 선택 이유가 남는다.",
         }
     )
-    day0["checklist"] = safety_checklist
+    day0["checklist"] = []
 
     blocks = [
         {"title": "AI 노출 리스크 이해", "minutes": 12, "goal": "다정한 답변, 과신, 정서 의존, 개인정보 입력 위험을 먼저 이해한다."},
@@ -8367,8 +8360,12 @@ def _edu_vp_apply_curriculum_to_day0(
     else:
         day0["schedule_blocks"] = _edu_vp_schedule_blocks("day0")
         day0["estimated_minutes"] = _edu_vp_total_minutes(day0["schedule_blocks"])
-    day0["completion_rule"] = "먼저 안전 확인을 완료해야 맞춤 실습이 열립니다. 서버가 이해 확인을 저장한 뒤에만 실제 질문과 결과 저장으로 넘어갑니다."
-    day0["blocked_step_options"] = [item["id"] for item in safety_checklist]
+    day0["completion_rule"] = "AI를 쓰기 전에 먼저 알아야 할 설명 단락을 확인하고, 궁금한 점은 코치에게 질문한 뒤 Day 1 실습으로 넘어갑니다."
+    day0["blocked_step_options"] = [
+        str(item.get("id"))
+        for item in (day0.get("foundation_concepts") or [])
+        if isinstance(item, dict) and item.get("id")
+    ]
 
     practice = dict(day0.get("post_safety_practice") or {})
     tutorial_steps = list(practice.get("tutorial_steps") or _edu_vp_tutorial_steps("day0", intake))
@@ -12333,15 +12330,15 @@ def _edu_vp_day1_materials(llm_label: str, motivation: str = "child_study") -> l
 
 def _edu_vp_build_day0(intake: dict[str, Any]) -> dict[str, Any]:
     llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or "gemini"))
-    safety_checklist = _edu_vp_day0_safety_checklist(llm_label)
     schedule_blocks = _edu_vp_schedule_blocks("day0")
+    foundation_concepts = _edu_vp_foundation_concepts("day0", llm_label)
     return {
         "title": "Day 0 · AI 안전 이해와 작동 원리 확인",
         "learning_why": "오늘은 AI를 바로 믿고 쓰는 날이 아니라, 잘못 노출될 때의 피해와 LLM(큰 언어 모델)의 작동 원리를 먼저 이해한 뒤 생활 문제를 정리하는 초안 도구로 제한해 써보는 날입니다.",
         "learning_outcome": "이 구간을 마치면 LLM(큰 언어 모델)/생성형 AI가 사람처럼 판단하는 존재가 아니라 문장 생성 도구라는 점을 이해하고, AI의 동조·확신·안전장치 한계를 확인한 뒤 실습으로 넘어갈 준비를 마치게 됩니다.",
         "estimated_minutes": _edu_vp_total_minutes(schedule_blocks),
-        "completion_rule": "먼저 AI 노출 리스크, LLM(큰 언어 모델) 작동 원리, 동조와 안전장치 한계, 안전 사용 기준을 확인합니다. 서버가 이해 확인을 저장한 뒤에만 실제 로그인과 첫 질문 실습이 열립니다.",
-        "foundation_concepts": _edu_vp_foundation_concepts("day0", llm_label),
+        "completion_rule": "AI를 쓰기 전에 먼저 알아야 할 설명 단락을 확인하고, 궁금한 점은 코치에게 질문한 뒤 Day 1 실습으로 넘어갑니다.",
+        "foundation_concepts": foundation_concepts,
         "schedule_blocks": schedule_blocks,
         "required_action": "AI가 사람처럼 느껴지는 이유, LLM(큰 언어 모델)의 문장 생성 원리, 동조·과속 위험, 개인정보와 고위험 판단 경계를 먼저 확인한다.",
         "proof_artifact_hint": "안전 확인을 마친 뒤 실습이 열리면 결과를 붙여 넣으세요.",
@@ -12352,10 +12349,10 @@ def _edu_vp_build_day0(intake: dict[str, Any]) -> dict[str, Any]:
             "AI가 사람이 아니라 문장 생성 도구라는 점을 이해했다",
             "민감정보와 고위험 판단 경계를 확인했다",
             "AI의 동조와 큰 확신을 현실 검증과 구분했다",
-            "안전 확인 저장 후에만 실습으로 이동했다",
+            "궁금한 점을 질문하거나 이해 확인 후 Day 1 실습으로 이동했다",
         ],
-        "blocked_step_options": [item["id"] for item in safety_checklist],
-        "checklist": safety_checklist,
+        "blocked_step_options": [str(item.get("id")) for item in foundation_concepts if item.get("id")],
+        "checklist": [],
     }
 
 

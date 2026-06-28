@@ -24,7 +24,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
     def setUpClass(cls):
         cls.mod = _load_backend_main()
 
-    def test_day0_builds_deterministic_checklist(self):
+    def test_day0_builds_deterministic_safety_concepts(self):
         card = self.mod._edu_vp_build_day0(
             {
                 "preferred_llm": "claude",
@@ -50,13 +50,9 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("Generative Pre-trained Transformer", card["foundation_concepts"][1]["body"])
         self.assertIn("comprehension_check", card["foundation_concepts"][0])
         self.assertIn("question_prompt", card["foundation_concepts"][0])
-        self.assertEqual(len(card["checklist"]), 4)
-        self.assertEqual(card["checklist"][0]["id"], "understand_not_human")
-        self.assertEqual(card["checklist"][1]["id"], "understand_generation")
-        self.assertEqual(card["checklist"][2]["id"], "understand_boundaries")
-        self.assertEqual(card["checklist"][3]["id"], "understand_sycophancy")
+        self.assertEqual(card["checklist"], [])
         self.assertEqual(card["sample_materials"], [])
-        self.assertEqual(card["blocked_step_options"], [item["id"] for item in card["checklist"]])
+        self.assertEqual(card["blocked_step_options"], [item["id"] for item in card["foundation_concepts"]])
 
     def test_ui_state_preserves_safety_confirmation(self):
         state = {
@@ -75,7 +71,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertFalse(ui_state["safety_confirmed"]["day1"])
         self.assertEqual(ui_state["last_client_seq"], 3)
 
-    def test_safety_confirmation_requires_required_check_ids(self):
+    def test_safety_confirmation_requires_required_concept_ids(self):
         state = {"day0": self.mod._edu_vp_build_day0({"preferred_llm": "claude"})}
         concept_ids = [item["id"] for item in state["day0"]["foundation_concepts"]]
 
@@ -89,12 +85,6 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             "safety_orientation_confirmed",
             {
                 "stage": "day0",
-                "confirmed_check_ids": [
-                    "understand_not_human",
-                    "understand_generation",
-                    "understand_boundaries",
-                    "understand_sycophancy",
-                ],
             },
         )
         confirmed = self.mod._edu_vp_safety_confirmation_from_event(
@@ -102,12 +92,6 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             "safety_orientation_confirmed",
             {
                 "stage": "day0",
-                "confirmed_check_ids": [
-                    "understand_not_human",
-                    "understand_generation",
-                    "understand_boundaries",
-                    "understand_sycophancy",
-                ],
                 "confirmed_concept_ids": concept_ids,
             },
         )
@@ -2071,12 +2055,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertEqual(day0["title"], "Day 0 · AI 안전 이해와 작동 원리 확인")
         self.assertNotIn("첫 답변", day0["required_action"])
-        self.assertEqual([item["id"] for item in day0["checklist"]], [
-            "understand_not_human",
-            "understand_generation",
-            "understand_boundaries",
-            "understand_sycophancy",
-        ])
+        self.assertEqual(day0["checklist"], [])
+        self.assertEqual(day0["blocked_step_options"], [item["id"] for item in day0["foundation_concepts"]])
         self.assertEqual(day0["sample_materials"], [])
         self.assertEqual(day0["tutorial_steps"], [])
         self.assertNotIn("post_safety_practice", day0)
@@ -2102,10 +2082,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(personalized["checklist"][0]["id"], "understand_not_human")
-        self.assertEqual(personalized["checklist"][1]["id"], "understand_generation")
-        self.assertEqual(personalized["checklist"][2]["id"], "understand_boundaries")
-        self.assertEqual(personalized["checklist"][3]["id"], "understand_sycophancy")
+        self.assertEqual(personalized["checklist"], [])
+        self.assertEqual(personalized["blocked_step_options"], [item["id"] for item in personalized["foundation_concepts"]])
         self.assertNotIn("post_safety_practice", personalized)
         self.assertEqual([block["title"] for block in personalized["schedule_blocks"][:4]], [
             "AI 노출 리스크 이해",
