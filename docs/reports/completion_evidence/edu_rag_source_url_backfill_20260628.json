@@ -1,6 +1,6 @@
 {
   "task": "edu RAG source_url preservation and backfill",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -49,10 +49,28 @@
       "target": "macmini backend code path and production RAG data",
       "command": "EDU_SAFETY_COACH_RAG_TIMEOUT_SECONDS=5 direct EduVpTrainingSafetyCoachRequest for homework question",
       "result": "selected_count=3 elapsed_ms=2347 timeout_ms=5000; rag=True; answer_has_source_link=True with Jonathan Haidt WEF source URL"
+    },
+    {
+      "name": "macmini production data source_url backfill",
+      "target": "macmini db and production RAG data files",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/backfill_edu_evidence_source_urls.py'",
+      "result": "evidence_index.json items=20676 url_present=20676 still_missing=0; evidence_bank.json items=44 url_present=44 still_missing=0"
+    },
+    {
+      "name": "macmini production default answer check",
+      "target": "macmini backend service code path and production RAG data",
+      "command": "direct EduVpTrainingSafetyCoachRequest for homework question on Mac Mini after deploy with default timeout",
+      "result": "selected_count=3 skip=None elapsed_ms=2320 timeout_ms=5000; rag=True; answer_has_source_link=True; final answer includes Jonathan Haidt WEF link"
+    },
+    {
+      "name": "macmini backend service liveness",
+      "target": "macmini service url",
+      "command": "curl --max-time 5 http://127.0.0.1:8000/",
+      "result": "HTTP 200 returned production frontend HTML"
     }
   ],
   "deploy": {
-    "method": "pending scripts/deploy_to_macmini.sh after commit and push",
-    "result": "pending Mac Mini deploy and remote data backfill"
+    "method": "scripts/deploy_to_macmini.sh data/edu_research/evidence_anchors.json harness-os/backend/main.py scripts/build_edu_evidence_index.py scripts/refresh_edu_evidence_bank.py scripts/backfill_edu_evidence_source_urls.py scripts/check_edu_coach_simulation_regression.py; then scripts/deploy_to_macmini.sh harness-os/backend/main.py docs/reports/completion_evidence/edu_rag_source_url_backfill_20260628.json",
+    "result": "Mac Mini selective checkout passed origin diff=0 for deployed paths; backend launchd reload succeeded; production RAG data backfill completed"
   }
 }
