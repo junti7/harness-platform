@@ -84,13 +84,25 @@
       "name": "post-markdown full regression",
       "target": "tests, deployment guard, production bundle",
       "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py tests/test_edu_customer_facing_retrieval.py tests/test_edu_evidence_quality.py tests/test_agent_completion_guard.py tests/test_llm_governance_bootstrap.py -q; .venv/bin/python scripts/check_edu_coach_simulation_regression.py; npm run build --prefix harness-os/edu-app",
-      "result": "118 passed; deployment regression guard ok; edu-app production build ok"
+      "result": "120 passed, 5 warnings, 12 subtests passed; deployment regression guard ok; edu-app production build ok with dist/assets/index-C1msxd1J.js"
     },
     {
       "name": "conclusion break and semantic bold labels",
       "target": "backend formatter and frontend label renderer",
-      "command": "pytest targeted conclusion-label tests; headless Chrome render fixture",
-      "result": "API answer has no ** markers; conclusion starts after a blank line; rendered strong labels are important point, conclusion, and source"
+      "command": "pytest targeted conclusion-label tests; node fixture with TrainingScreen action-emphasis regex",
+      "result": "API answer has no ** markers; conclusion starts after a blank line; rendered strong labels include the action sentence, conclusion, and source; importantPointStrong=false"
+    },
+    {
+      "name": "rag source placement contract",
+      "target": "backend answer formatter and tests",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py::EduVpTrainingFlowTests::test_safety_coach_blends_rag_before_conclusion_and_keeps_link_in_source_only -q",
+      "result": "RAG source label appears in body as plain text; markdown URL appears only in the final source line after the conclusion"
+    },
+    {
+      "name": "frontend action emphasis fixture",
+      "target": "frontend renderer regex behavior",
+      "command": "node fixture mirroring renderInlineCoachMarkdown split and emphasis policy",
+      "result": "strong=[quoted question action sentence, conclusion label, source label]; actionStrong=true; conclusionStrong=true; sourceLabelStrong=true; importantPointStrong=false"
     },
     {
       "name": "macmini v20 no-markdown API answer check",

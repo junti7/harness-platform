@@ -526,7 +526,15 @@ function coachModelBadge(coach: { model?: string; fallbackUsed?: boolean }): str
   return coach.model
 }
 
-const SAFETY_COACH_ALLOWED_BOLD_LABELS = new Set(['막아야 할 선', '해도 되는 선', '간단히 말하면,', '중요한 점', '결론은', '출처:'])
+const SAFETY_COACH_ALLOWED_BOLD_LABELS = new Set(['막아야 할 선', '해도 되는 선', '간단히 말하면,', '결론은', '출처:'])
+
+const SAFETY_COACH_ACTION_EMPHASIS_PATTERNS = [
+  /"[^"]+"\s*,\s*"[^"]+"\s*같은\s+질문을\s+[^.!?。]*아이(?:가|에게)?\s*직접\s*생각하게\s*하(?:는|게|세요|도록)[^.!?。]*[.!?。]?/g,
+  /[^.!?。]*같은\s+질문을\s+[^.!?。]*아이(?:가|에게)?\s*직접\s*생각하게\s*하(?:는|게|세요|도록)[^.!?。]*[.!?。]?/g,
+  /아이(?:가|에게)?\s*직접\s*생각하게\s*하(?:는|게|세요|도록)[^.!?。]*[.!?。]?/g,
+  /AI(?:가|를)?\s*대신\s*(?:하|해주|만들|쓰)(?:게|지)\s*[^.!?。]*[.!?。]?/g,
+  /아이(?:가)?\s*먼저\s*[^.!?。]*(?:써|풀|생각|고민|시도)[^.!?。]*[.!?。]?/g,
+]
 
 function sanitizeCoachAnswerForDisplay(value: string): string {
   return String(value || '')
@@ -545,9 +553,13 @@ function renderInlineCoachMarkdown(text: string, keyPrefix: string) {
   const labelPattern = Array.from(SAFETY_COACH_ALLOWED_BOLD_LABELS)
     .map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('|')
-  const parts = safeText.split(new RegExp(`(\`[^\`]+\`|\\[[^\\]]+\\]\\(https?:\\/\\/[^)\\s]+\\)|${labelPattern})`, 'g')).filter(Boolean)
+  const actionPattern = SAFETY_COACH_ACTION_EMPHASIS_PATTERNS.map((pattern) => pattern.source).join('|')
+  const parts = safeText.split(new RegExp(`(\`[^\`]+\`|\\[[^\\]]+\\]\\(https?:\\/\\/[^)\\s]+\\)|${labelPattern}|${actionPattern})`, 'g')).filter(Boolean)
   return parts.map((part, partIndex) => {
-    if (SAFETY_COACH_ALLOWED_BOLD_LABELS.has(part.trim())) {
+    if (SAFETY_COACH_ALLOWED_BOLD_LABELS.has(part.trim()) || SAFETY_COACH_ACTION_EMPHASIS_PATTERNS.some((pattern) => {
+      pattern.lastIndex = 0
+      return pattern.test(part)
+    })) {
       return <strong key={`${keyPrefix}-${partIndex}`} className="font-bold text-ink">{part}</strong>
     }
     if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {

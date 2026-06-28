@@ -9145,6 +9145,7 @@ def _edu_vp_safety_coach_rag_sentence(question: str, evidence_items: list[dict[s
     candidates.sort(key=lambda row: (row[0], row[1], len(row[2])), reverse=True)
     selected = candidates[0][2]
     selected_item = candidates[0][3]
+    source_label = _edu_vp_safety_coach_source_label(selected_item)
     source_ref = _edu_vp_safety_coach_source_markdown(selected_item)
     sentence_parts = [
         part.strip()
@@ -9167,14 +9168,14 @@ def _edu_vp_safety_coach_rag_sentence(question: str, evidence_items: list[dict[s
     if excerpt.endswith("라고요"):
         stem = excerpt[:-3].strip(" ,;:-.!?。")
         if len(stem) >= 24:
-            return f"{source_ref}에는 {stem}라는 걱정도 나와 있어요.\n\n출처: {source_ref}"
+            return f"{source_label}에는 {stem}라는 걱정도 나와 있어요.\n\n출처: {source_ref}"
     if excerpt.endswith("다고요"):
         stem = excerpt[:-3].strip(" ,;:-.!?。")
         if len(stem) >= 24:
-            return f"{source_ref}에는 {stem}다는 걱정도 나와 있어요.\n\n출처: {source_ref}"
+            return f"{source_label}에는 {stem}다는 걱정도 나와 있어요.\n\n출처: {source_ref}"
     if excerpt.endswith("다"):
-        return f"{source_ref}에는 {excerpt}는 말도 나와 있어요.\n\n출처: {source_ref}"
-    return f"{source_ref}에는 {excerpt}라는 말도 나와 있어요.\n\n출처: {source_ref}"
+        return f"{source_label}에는 {excerpt}는 말도 나와 있어요.\n\n출처: {source_ref}"
+    return f"{source_label}에는 {excerpt}라는 말도 나와 있어요.\n\n출처: {source_ref}"
 
 
 def _edu_vp_safety_coach_blend_rag_sentence(answer: str, question: str, evidence_items: list[dict[str, Any]] | None) -> tuple[str, bool]:
@@ -9182,16 +9183,27 @@ def _edu_vp_safety_coach_blend_rag_sentence(answer: str, question: str, evidence
     rag_sentence = _edu_vp_safety_coach_rag_sentence(question, evidence_items)
     if not base or not rag_sentence or rag_sentence in base:
         return base, False
+    rag_body = rag_sentence
+    rag_source = ""
+    if "\n\n출처:" in rag_sentence:
+        rag_body, rag_source = rag_sentence.split("\n\n출처:", 1)
+        rag_body = rag_body.strip()
+        rag_source = f"출처:{rag_source}".strip()
     sentences = [sentence.strip() for sentence in re.split(r"(?<=[.!?。])\s+", base) if sentence.strip()]
     if not sentences:
-        return f"{base} {rag_sentence}"[:2200].strip(), True
+        candidate = f"{base} {rag_body}".strip()
+        if rag_source:
+            candidate = f"{candidate}\n\n{rag_source}".strip()
+        return candidate[:2200].strip(), True
     insert_at = len(sentences)
     for index, sentence in enumerate(sentences):
-        if sentence.startswith(("간단히 말하면", "오늘은", "오늘 기준", "오늘 기억")):
+        if sentence.startswith(("간단히 말하면", "결론은", "오늘은", "오늘 기준", "오늘 기억")):
             insert_at = index
             break
-    sentences.insert(insert_at, rag_sentence)
+    sentences.insert(insert_at, rag_body)
     candidate = " ".join(sentences).strip()
+    if rag_source:
+        candidate = f"{candidate}\n\n{rag_source}".strip()
     if len(candidate) > 2200:
         return base[:2200].strip(), False
     return candidate, True
@@ -10495,7 +10507,6 @@ _EDU_VP_SAFETY_COACH_ALLOWED_BOLD_LABELS = (
     "막아야 할 선",
     "해도 되는 선",
     "간단히 말하면,",
-    "중요한 점",
     "결론은",
     "출처:",
 )

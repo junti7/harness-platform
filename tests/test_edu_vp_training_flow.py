@@ -1083,7 +1083,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertTrue(fallback_used)
         self.assertTrue(usage["_safety_coach_rag_infused"])
         self.assertTrue(usage["_safety_coach_rag_patch_applied"])
-        self.assertIn("[privacy guide '아이 사진 업로드 전 확인'](https://example.org/privacy-photo)에는", answer)
+        self.assertIn("privacy guide '아이 사진 업로드 전 확인'에는", answer)
+        self.assertNotIn("[privacy guide '아이 사진 업로드 전 확인'](https://example.org/privacy-photo)에는", answer)
         self.assertIn("출처: [privacy guide '아이 사진 업로드 전 확인'](https://example.org/privacy-photo)", answer)
         self.assertIn("얼굴, 학교 이름, 위치 정보", answer)
         self.assertNotIn("여러 위험", answer)
@@ -1467,7 +1468,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(model, "fast-template+rag")
         self.assertFalse(fallback_used)
         self.assertIn("명사는", answer)
-        self.assertIn("[YouTube family learning digest](https://example.org/family-learning)에는", answer)
+        self.assertIn("YouTube family learning digest에는", answer)
+        self.assertNotIn("[YouTube family learning digest](https://example.org/family-learning)에는", answer)
         self.assertIn("출처: [YouTube family learning digest](https://example.org/family-learning)", answer)
         self.assertIn("질문 비교 도구", answer)
         self.assertTrue(usage["_safety_coach_rag_infused"])
@@ -1514,7 +1516,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             ],
         )
 
-        self.assertIn("[learning risk digest 'AI와 숙제 경계'](https://example.org/learning-risk)에는", sentence)
+        self.assertIn("learning risk digest 'AI와 숙제 경계'에는", sentence)
+        self.assertNotIn("[learning risk digest 'AI와 숙제 경계'](https://example.org/learning-risk)에는", sentence)
         self.assertIn("출처: [learning risk digest 'AI와 숙제 경계'](https://example.org/learning-risk)", sentence)
         self.assertIn("걱정도 나와 있어요", sentence)
         self.assertNotIn("라고요라는", sentence)
@@ -1596,7 +1599,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertEqual(mocked_generate.call_count, 1)
         self.assertEqual(model, "model-a+rag_patch")
-        self.assertIn("[YouTube family learning digest](https://example.org/attention-learning)에는", answer)
+        self.assertIn("YouTube family learning digest에는", answer)
+        self.assertNotIn("[YouTube family learning digest](https://example.org/attention-learning)에는", answer)
         self.assertIn("출처: [YouTube family learning digest](https://example.org/attention-learning)", answer)
         self.assertIn("질문 비교 도구", answer)
         self.assertFalse(fallback_used)
@@ -1613,6 +1617,27 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertEqual(blended, long_answer)
         self.assertFalse(used)
+
+    def test_safety_coach_blends_rag_before_conclusion_and_keeps_link_in_source_only(self):
+        blended, used = self.mod._edu_vp_safety_coach_blend_rag_sentence(
+            "아이 숙제를 AI가 통째로 대신하는 것과 AI를 도구처럼 쓰는 것은 완전히 다릅니다. 결론은 AI가 대신 하게 하지 않는 것입니다.",
+            "AI가 아이 숙제를 대신 해주는 건 어디까지 막아야 해?",
+            [
+                {
+                    "source": "Naver 카페글",
+                    "source_url": "https://example.org/naver",
+                    "title": "AI와 친한 아이가 살아남습니다",
+                    "cite": "AI가 대신 해주는 것이 아니라, AI를 활용해 더 깊이 생각하고 더 창의적인 완성한 것을 만들도록 지도해 주세요.",
+                    "score": 4.0,
+                }
+            ],
+        )
+
+        self.assertTrue(used)
+        self.assertLess(blended.index("Naver 카페글"), blended.index("결론은"))
+        self.assertNotIn("[Naver 카페글 'AI와 친한 아이가 살아남습니다'](https://example.org/naver)에는", blended)
+        self.assertIn("출처: [Naver 카페글 'AI와 친한 아이가 살아남습니다'](https://example.org/naver)", blended)
+        self.assertGreater(blended.index("출처:"), blended.index("결론은"))
 
     def test_safety_coach_prepare_answer_strips_markdown_and_keeps_summary_break(self):
         answer = self.mod._edu_vp_safety_coach_prepare_answer(
@@ -1655,13 +1680,13 @@ class EduVpTrainingFlowTests(unittest.TestCase):
     def test_safety_coach_prepare_answer_breaks_before_conclusion_label(self):
         answer = self.mod._edu_vp_safety_coach_prepare_answer(
             "아이 숙제를 AI가 통째로 대신하는 것과 AI를 도구처럼 쓰는 것은 완전히 다릅니다. "
-            "대신 질문을 함께 하면서 아이가 직접 생각하게 하는 게 중요한 점입니다. "
+            '대신 "이 부분이 무슨 뜻이지?", "AI가 이렇게 답했는데 정말 맞나?" 같은 질문을 함께 하면서 아이가 직접 생각하게 하는 게 중요한 점입니다. '
             "결론은 \"AI가 대신 하게 하지 말고, AI를 활용해서 더 깊이 생각하게 만드세요\"입니다. "
             "출처: [Naver 카페글](https://example.org/source)"
         )
 
         self.assertNotIn("**", answer)
-        self.assertIn("중요한 점입니다.", answer)
+        self.assertIn('"AI가 이렇게 답했는데 정말 맞나?" 같은 질문을 함께 하면서 아이가 직접 생각하게 하는 게 중요한 점입니다.', answer)
         self.assertIn("\n\n결론은", answer)
         self.assertIn("\n\n출처: [Naver 카페글](https://example.org/source)", answer)
 
