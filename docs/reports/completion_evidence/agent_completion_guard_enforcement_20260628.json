@@ -25,8 +25,24 @@
       "target": "pre-push git hook and llm dispatch scripts",
       "command": "bash -n .githooks/pre-push scripts/redteam_review.sh && .venv/bin/python -m py_compile scripts/agent_completion_guard.py scripts/dispatch_llm_task_packet.py scripts/run_persona.py",
       "result": "passed"
+    },
+    {
+      "name": "macmini completion guard and bootstrap tests",
+      "target": "macmini service and repo runtime",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && .venv/bin/python -m pytest tests/test_agent_completion_guard.py tests/test_llm_governance_bootstrap.py -q'",
+      "result": "6 passed"
+    },
+    {
+      "name": "macmini backend health after deploy",
+      "target": "macmini api service",
+      "command": "ssh macmini 'curl -fsS http://127.0.0.1:8000/api/health'",
+      "result": "{\"ok\":true}"
     }
   ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh .githooks/pre-push .github/copilot-instructions.md AGENTS.md CLAUDE.md GEMINI.md docs/governance/LLM_GROUND_RULES.md docs/governance/STAFF_PENALTY_LEDGER.md scripts/dispatch_llm_task_packet.py scripts/redteam_review.sh scripts/run_persona.py scripts/agent_completion_guard.py tests/test_agent_completion_guard.py tests/test_llm_governance_bootstrap.py docs/reports/llm_outputs/agent_completion_guard_redteam_claude_20260628.md docs/reports/llm_outputs/agent_completion_guard_redteam_gemini_20260628.md docs/reports/completion_evidence/agent_completion_guard_enforcement_20260628.json",
+    "result": "Mac Mini selected checkout completed, backend reloaded, all 16 deployed paths diff 0 against origin/main"
+  },
   "red_team": {
     "models": ["Claude", "Gemini"],
     "artifacts": [
