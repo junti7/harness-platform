@@ -1,0 +1,37 @@
+{
+  "task": "brunch_max_items_20260628",
+  "date": "2026-06-28",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-28T20:50:00+09:00",
+      "summary": "Must/Never 확인. 소스 설정 변경."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-28T20:50:00+09:00",
+      "summary": "Completion requires real entrypoint verification."
+    }
+  ],
+  "problem": "Brunch 3개 소스가 기본 max_rss_items(50)를 따라 소스당 50건만 수집. 각 소스가 100건 제공하므로 max_items:100 설정으로 300건/회 달성 가능.",
+  "changes": [
+    {
+      "path": "configs/sources/edu_consulting.json",
+      "summary": "Brunch_AI교육_학부모, Brunch_자녀교육_AI, Brunch_AI리터러시 3개 소스에 max_items:100 추가."
+    }
+  ],
+  "verification": [
+    {
+      "name": "collect_rss per-source max_items 지원 확인",
+      "command": "grep 'src.get(\"max_items\"' scripts/run_edu_deep_research.py",
+      "result": "line 166: cap = src.get('max_items', max_rss_items) — 소스별 override 지원 확인"
+    },
+    {
+      "name": "Mac Mini 배포",
+      "target": "macmini production",
+      "command": "bash scripts/deploy_to_macmini.sh configs/sources/edu_consulting.json",
+      "result": "exit 0, diff=0 — 배포 검증 통과"
+    }
+  ]
+}
