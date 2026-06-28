@@ -51,7 +51,7 @@ export type TrainingScreenProps = {
 
 const STAGE_ORDER: StageKey[] = ['day0', 'day1']
 const STAGE_LABEL: Record<StageKey, string> = { day0: 'Day 0', day1: 'Day 1' }
-const SAFETY_COACH_ANSWER_VERSION = '2026-06-28-natural-rag-v17'
+const SAFETY_COACH_ANSWER_VERSION = '2026-06-28-first-grade-v18'
 const TRAINING_DEVICE_ID_KEY = 'vp_training_device_id'
 const TRAINING_LOCAL_DRAFT_PREFIX = 'vp_training_stage_draft'
 type SafetyConceptFeedback = Record<string, string>

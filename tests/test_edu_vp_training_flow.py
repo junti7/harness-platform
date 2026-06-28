@@ -456,11 +456,12 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertIn("숙제", homework)
         self.assertIn("막아야 할 선", homework)
-        self.assertIn("허용할 선", homework)
-        self.assertIn("핵심 과정을 AI가 대신", homework)
+        self.assertIn("해도 되는 선", homework)
+        self.assertIn("먼저 생각할 일을 AI가 대신", homework)
+        self.assertIn("다른 생각", homework)
         self.assertNotIn("질문을 숫자로 바꾸고", homework)
         self.assertIn("사진", privacy)
-        self.assertIn("개인정보", privacy)
+        self.assertIn("개인 정보", privacy)
         self.assertNotIn("질문을 숫자로 바꾸고", privacy)
 
     def test_safety_coach_fallback_uses_natural_openings_across_intents(self):
@@ -500,8 +501,21 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         )
         self.assertIn("전부 막을 필요는 없습니다", homework_answer)
         self.assertIn("막아야 할 선", homework_answer)
-        self.assertIn("허용할 선", homework_answer)
+        self.assertIn("해도 되는 선", homework_answer)
         self.assertNotIn("아이·숙제·대신", homework_answer)
+
+    def test_safety_coach_final_answer_uses_first_grade_words(self):
+        forbidden_terms = ("반례", "허용", "결과물", "핵심 과정", "비판적 사고", "초안", "검증", "인간 역량", "말이라는 걱정")
+        answer = self.mod._edu_vp_safety_coach_fallback(
+            "수집 corpus 기반 사용자 질문",
+            "AI가 아이 숙제를 대신 해주는 건 어디까지 막아야 해?",
+        )
+
+        for term in forbidden_terms:
+            self.assertNotIn(term, answer)
+        self.assertIn("다른 생각", answer)
+        self.assertIn("숙제를 대신", answer)
+        self.assertIn("해도 되는 선", answer)
 
     def test_safety_coach_policy_resolver_matches_cost_barrier(self):
         context = self.mod._edu_vp_safety_coach_resolved_policy_context(
@@ -646,6 +660,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         current = self.mod._EDU_VP_SAFETY_COACH_ANSWER_VERSION
 
         self.assertEqual(self.mod._edu_vp_safety_coach_answer_version("2026-06-27-constraint-aware-v11"), current)
+        self.assertEqual(self.mod._edu_vp_safety_coach_answer_version("2026-06-28-natural-rag-v17"), current)
         self.assertEqual(self.mod._edu_vp_safety_coach_answer_version("test-version"), current)
         self.assertEqual(self.mod._edu_vp_safety_coach_answer_version(current), current)
 
@@ -1059,7 +1074,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertTrue(fallback_used)
         self.assertTrue(usage["_safety_coach_rag_infused"])
         self.assertTrue(usage["_safety_coach_rag_patch_applied"])
-        self.assertIn("관련 자료", answer)
+        self.assertIn("자료에는", answer)
         self.assertIn("얼굴, 학교 이름, 위치 정보", answer)
         self.assertNotIn("여러 위험", answer)
 
@@ -1355,7 +1370,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(model, "fast-template+rag")
         self.assertFalse(fallback_used)
         self.assertIn("명사는", answer)
-        self.assertIn("관련 자료를 같이 보면", answer)
+        self.assertIn("자료에는", answer)
         self.assertIn("질문 비교 도구", answer)
         self.assertTrue(usage["_safety_coach_rag_infused"])
         self.assertEqual(usage["_safety_coach_evidence_meta"]["selected_count"], 1)
@@ -1398,8 +1413,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             ],
         )
 
-        self.assertIn("관련 자료를 같이 보면", sentence)
-        self.assertIn("우려도 참고", sentence)
+        self.assertIn("자료에는", sentence)
+        self.assertIn("걱정도 나와 있어요", sentence)
         self.assertNotIn("라고요라는", sentence)
         self.assertNotIn("다고요라는", sentence)
 
@@ -1425,8 +1440,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         issues = self.mod._edu_vp_safety_coach_red_team(
             question="다음 글에 이어질 최적의 명사는 어떻게 추측해?",
             answer=(
-                "명사는 앞뒤 말이 만들고 있는 장면을 보고 고릅니다. 관련 자료를 같이 보면, 명사 추측을 정답기가 아니라 "
-                "질문 비교 도구로 다룰 때 사고력이 남는다는 점도 참고할 수 있습니다. 중요한 내용은 사람이 다시 확인해야 합니다."
+                "명사는 앞뒤 말이 만들고 있는 장면을 보고 고릅니다. 자료에는 명사 추측을 정답기가 아니라 "
+                "질문 비교 도구로 다룰 때 사고력이 남는다는 말도 나와 있어요. 중요한 내용은 사람이 다시 확인해야 합니다."
             ),
             concept_body="LLM은 다음에 올 법한 말을 이어 붙입니다.",
             evidence_items=[
@@ -1474,7 +1489,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertEqual(mocked_generate.call_count, 1)
         self.assertEqual(model, "model-a+rag_patch")
-        self.assertIn("관련 자료를 같이 보면", answer)
+        self.assertIn("자료에는", answer)
         self.assertIn("질문 비교 도구", answer)
         self.assertFalse(fallback_used)
         self.assertTrue(usage["_safety_coach_rag_infused"])

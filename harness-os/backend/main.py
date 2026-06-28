@@ -8882,7 +8882,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-28-natural-rag-v17"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-28-first-grade-v18"
 _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
 _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_PATH = PROJECT_ROOT / "configs" / "education" / "edu_coach_policy_registry.json"
 _EDU_VP_SAFETY_COACH_POLICY_CANDIDATE_PATH = PROJECT_ROOT / "docs" / "reviews" / "edu_coach_simulations" / "policy_candidates.jsonl"
@@ -9061,14 +9061,14 @@ def _edu_vp_safety_coach_rag_sentence(question: str, evidence_items: list[dict[s
     if excerpt.endswith("라고요"):
         stem = excerpt[:-3].strip(" ,;:-.!?。")
         if len(stem) >= 24:
-            return f"관련 자료를 같이 보면, {stem}라는 우려도 참고할 수 있습니다."
+            return f"자료에는 {stem}라는 걱정도 나와 있어요."
     if excerpt.endswith("다고요"):
         stem = excerpt[:-3].strip(" ,;:-.!?。")
         if len(stem) >= 24:
-            return f"관련 자료를 같이 보면, {stem}다는 우려도 참고할 수 있습니다."
+            return f"자료에는 {stem}다는 걱정도 나와 있어요."
     if excerpt.endswith("다"):
-        return f"관련 자료를 같이 보면, {excerpt}는 점도 참고할 수 있습니다."
-    return f"관련 자료를 같이 보면, {excerpt}라는 점도 참고할 수 있습니다."
+        return f"자료에는 {excerpt}는 말도 나와 있어요."
+    return f"자료에는 {excerpt}라는 말도 나와 있어요."
 
 
 def _edu_vp_safety_coach_blend_rag_sentence(answer: str, question: str, evidence_items: list[dict[str, Any]] | None) -> tuple[str, bool]:
@@ -9970,7 +9970,7 @@ def _edu_vp_safety_coach_answer_addresses_detected_intent(question: str, answer:
         (_edu_vp_question_asks_ai_energy_use(q), ("데이터센터", "gpu", "냉각", "서버", "전기", "전력", "계산")),
         (_edu_vp_safety_coach_has_cost_barrier(q), ("비용 부담", "저비용", "공공", "무료 법률상담", "상담 창구", "지역 센터")),
         (_edu_vp_safety_coach_has_isolation_context(q), ("그렇게 느낄 수", "혼자", "AI라도", "작은 창구", "들어줄")),
-        (any(k in q for k in ("숙제", "과제", "수행평가", "homework")), ("대신 쓰", "생각을 돕", "자기 답", "반례", "풀이 과정")),
+        (any(k in q for k in ("숙제", "과제", "수행평가", "homework")), ("대신 쓰", "생각을 돕", "자기 답", "다른 생각", "풀이 과정")),
         (any(k in q for k in ("개인정보", "사생활", "사진", "얼굴", "보안", "privacy")), ("개인정보", "얼굴", "저장", "재사용", "식별")),
         (any(k in q for k in ("유튜브", "영상", "스크린", "게임", "youtube", "screen")), ("화면 시간", "스크린", "보고 나서", "소비", "설명")),
         (any(k in q for k in ("진로", "커리어", "직장", "대체", "도태", "career", "job")), ("진로", "반복 작업", "판단", "설명", "조율", "검토")),
@@ -10334,7 +10334,45 @@ def _edu_vp_safety_coach_question_asks_current_concept(*, concept_title: str, qu
     return False
 
 
-def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
+def _edu_vp_safety_coach_simplify_for_first_grader(answer: str) -> str:
+    text = str(answer or "")
+    replacements = (
+        ("비판적 사고", "스스로 생각하는 힘"),
+        ("허용하는 쪽", "괜찮습니다"),
+        ("허용할 선", "해도 되는 선"),
+        ("허용하는", "해도 되는"),
+        ("허용", "해도 됨"),
+        ("반례", "다른 생각"),
+        ("결과물을 대신 만들면", "숙제를 대신 해주면"),
+        ("결과물", "완성한 것"),
+        ("핵심 과정을", "먼저 생각할 일을"),
+        ("핵심 과정", "가장 중요한 생각"),
+        ("인간 역량", "스스로 하는 힘"),
+        ("통째로 무너뜨리는 길", "크게 약하게 만들 수 있다는 말"),
+        ("논문", "글"),
+        ("셈인데", "것이라서"),
+        ("핵심", "중요한 점"),
+        ("식별되는", "누군지 알 수 있는"),
+        ("대안", "다른 방법"),
+        ("근거 자료", "믿을 만한 자료"),
+        ("근거", "믿을 만한 이유"),
+        ("검증", "다시 확인"),
+        ("초안", "첫 글"),
+        ("의존", "너무 기대"),
+        ("개인정보", "개인 정보"),
+    )
+    for old, new in replacements:
+        text = text.replace(old, new)
+    text = text.replace("말이라는 걱정도 나와 있어요", "말도 나와 있어요")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _edu_vp_safety_coach_prepare_answer(answer: str) -> str:
+    return _edu_vp_safety_coach_simplify_for_first_grader(answer)[:2200].strip()
+
+
+def _edu_vp_safety_coach_fallback_raw(concept_title: str, question: str) -> str:
     title = concept_title or "이 단락"
     q = question.strip()
     q_lower = q.lower()
@@ -10418,10 +10456,10 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
         )
     if any(k in q_lower for k in ("숙제", "과제", "homework", "수행평가", "보고서", "critical thinking", "caught")):
         return (
-            "전부 막을 필요는 없습니다. 다만 아이가 스스로 생각해야 할 핵심 과정을 AI가 대신하는 것은 막는 게 좋습니다. "
+            "전부 막을 필요는 없습니다. 다만 아이가 먼저 생각할 일을 AI가 대신하는 것은 막는 게 좋습니다. "
             "막아야 할 선은 숙제나 과제의 답안, 글 전체, 풀이 과정, 발표문을 AI가 대신 만들어주는 경우입니다. "
-            "허용할 선은 아이가 먼저 자기 답을 써본 뒤 빠진 점, 반례, 쉬운 설명을 물어보는 정도입니다. "
-            "간단히 말하면, AI가 결과물을 대신 만들면 멈추고 아이 생각을 더 낫게 만드는 질문 도구로 쓰면 허용하는 쪽이 안전합니다."
+            "해도 되는 선은 아이가 먼저 자기 답을 써본 뒤 빠진 점, 다른 생각, 쉬운 설명을 물어보는 정도입니다. "
+            "간단히 말하면, AI가 숙제를 대신 해주면 멈추고 아이 생각을 더 좋게 만드는 질문 도구로 쓰면 괜찮습니다."
         )
     if any(k in q_lower for k in ("코딩", "교육", "강의", "리터러시", "공부", "학습", "학생", "초등", "중등", "고등", "school", "education", "learning", "learn", "course")):
         return (
@@ -10527,6 +10565,10 @@ def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
             "지금은 1) 걱정되는 지점 하나를 적고, 2) AI에게 대안 2개를 물어본 뒤, 3) 실제 행동은 가장 작은 것 하나만 고르는 순서로 가면 됩니다."
         )
     return "질문을 조금 더 구체적으로 적어주시면, 그 부분에 맞춰 쉬운 예로 다시 설명할 수 있습니다."
+
+
+def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
+    return _edu_vp_safety_coach_prepare_answer(_edu_vp_safety_coach_fallback_raw(concept_title, question))
 
 
 def _edu_vp_safety_coach_red_team(
@@ -11078,7 +11120,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
             }:
                 evidence_meta["skip_reason"] = "fast_template"
             evidence_meta["fast_template_no_rag"] = True
-        return final_answer[:2200], final_model, usage, False
+        return _edu_vp_safety_coach_prepare_answer(final_answer), final_model, usage, False
     evidence_block = evidence_text or "(질문과 딱 맞는 내부 자료가 없으므로 자료를 언급하지 말 것)"
     reinforcement_block = _edu_vp_safety_coach_reinforcement_prompt(reinforcement_policies)
     policy_block = _edu_vp_safety_coach_policy_prompt(policy_context)
@@ -11151,7 +11193,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                         }  # type: ignore[index]
                     packet_model_name = f"{used_packet_model}+structured_packet"
                     _edu_log_llm_cost(packet_usage, packet_model_name)
-                    return packet_answer[:2200], packet_model_name, packet_usage, False
+                    return _edu_vp_safety_coach_prepare_answer(packet_answer), packet_model_name, packet_usage, False
                 _edu_runtime_event(
                     "vp_training_safety_coach_structured_packet_quality_failed",
                     model=used_packet_model,
@@ -11190,7 +11232,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         "- 반드시 [현재 단락 설명]에 없는 새 생활 예시 1개를 포함한다.\n"
         "- [관련 내부 자료]가 '(질문과 딱 맞는 내부 자료가 없음)'이면 자료를 절대 언급하지 않는다.\n"
         "- [관련 내부 자료]가 있으면 정의를 반복하지 말고 사용자 질문에 붙는 새 관점, 실전 예시, 최근 흐름 중 하나를 한 문장으로 자연스럽게 녹인다.\n"
-        "- [관련 내부 자료]가 있으면 '관련 자료를 같이 보면, ...도 참고할 수 있습니다'처럼 아주 짧게 반영한다. 출처 이름은 확실할 때만 말한다.\n"
+        "- [관련 내부 자료]가 있으면 '자료에는 ...라는 말도 나와 있어요'처럼 아주 짧고 쉬운 말로 반영한다. 출처 이름은 확실할 때만 말한다.\n"
         "- AI를 사람, 친구, 전문가, 보호자처럼 표현하지 않는다.\n"
         "- 다만 사용자가 AI 대화에서 위로를 느낄 수 있다는 사실은 부정하지 않는다.\n"
         "- 자해, 건강, 법률, 돈, 아이 안전 등 고위험 신호가 있으면 AI 답변 대신 실제 사람/전문가/긴급 도움을 연결하라고 말한다.\n"
@@ -11251,7 +11293,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                         "runtime_intent": policy_context.get("runtime_intent"),
                         "policy_ids": policy_context.get("policy_ids"),
                     }  # type: ignore[index]
-                return answer[:2200], used_model, usage, True
+                return _edu_vp_safety_coach_prepare_answer(answer), used_model, usage, True
             call_timeout = _edu_vp_safety_coach_model_timeout(model_name, remaining - 0.5)
             try:
                 raw, usage, used_model = _edu_vp_generate_text_with_timeout(
@@ -11334,7 +11376,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                             }  # type: ignore[index]
                         patched_model = f"{used_model}+rag_patch"
                         _edu_log_llm_cost(usage, patched_model)
-                        return patched_answer[:2200], patched_model, usage, False
+                        return _edu_vp_safety_coach_prepare_answer(patched_answer), patched_model, usage, False
                     red_team_issues = patched_issues
                     model_issues = patched_issues
             if not red_team_issues:
@@ -11353,7 +11395,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                         "policy_ids": policy_context.get("policy_ids"),
                     }  # type: ignore[index]
                 _edu_log_llm_cost(usage, used_model)
-                return answer[:2200], used_model, usage, False
+                return _edu_vp_safety_coach_prepare_answer(answer), used_model, usage, False
             _edu_runtime_event(
                 "vp_training_safety_coach_model_quality_failed",
                 model=model_name,
@@ -11379,7 +11421,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                 "runtime_intent": policy_context.get("runtime_intent"),
                 "policy_ids": policy_context.get("policy_ids"),
             }  # type: ignore[index]
-        return answer[:2200], used_model, usage, True
+        return _edu_vp_safety_coach_prepare_answer(answer), used_model, usage, True
     except Exception as exc:  # noqa: BLE001
         _edu_runtime_event(
             "vp_training_safety_coach_fallback",
