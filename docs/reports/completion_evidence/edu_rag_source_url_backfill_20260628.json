@@ -85,6 +85,18 @@
       "target": "tests, deployment guard, production bundle",
       "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py tests/test_edu_customer_facing_retrieval.py tests/test_edu_evidence_quality.py tests/test_agent_completion_guard.py tests/test_llm_governance_bootstrap.py -q; .venv/bin/python scripts/check_edu_coach_simulation_regression.py; npm run build --prefix harness-os/edu-app",
       "result": "118 passed; deployment regression guard ok; edu-app production build ok"
+    },
+    {
+      "name": "macmini v20 no-markdown API answer check",
+      "target": "macmini backend and production RAG data",
+      "command": "direct EduVpTrainingSafetyCoachRequest for homework question after v20 deploy",
+      "result": "answer_version=2026-06-28-source-format-v20; rag=True; selected_count=3; source_link=True; raw_marker=False; markdown_leak=False"
+    },
+    {
+      "name": "macmini edu-app bundle rebuild",
+      "target": "macmini edu-app production bundle",
+      "command": "PATH=/opt/homebrew/bin:$PATH npm run build --prefix harness-os/edu-app",
+      "result": "vite build succeeded; generated dist/assets/index-HyAxFSEx.js"
     }
   ],
   "deploy": {
