@@ -8,7 +8,7 @@
     "note": "⚠️ 고위험 채널(맘카페 로그인영역·설문·광고)은 legal_review_approve 별도 충족 후 추가 | 죽은 RSS 36개 점검: 19 URL복구 + 17 비활성(2026-06-09)",
     "updated_at": "2026-06-28",
     "version": "v0.4",
-    "total_sources": 90
+    "total_sources": 93
   },
   "sources": [
     {
@@ -1313,6 +1313,51 @@
       "legal_risk": "low",
       "active": true,
       "note": "신규 추가(2026-06-28) — 36 entries 확인"
+    },
+    {
+      "name": "Brunch_AI교육_학부모",
+      "url": "https://news.google.com/rss/search?q=site:brunch.co.kr+AI+교육+학부모&hl=ko&gl=KR&ceid=KR:ko",
+      "type": "rss_search",
+      "language": "ko",
+      "active": true,
+      "legal_risk": "low",
+      "tags": [
+        "brunch",
+        "ai_education",
+        "parenting",
+        "korean"
+      ],
+      "notes": "100 entries 확인(2026-06-28). Google News site: 쿼리로 Brunch 학부모 AI교육 글 수집."
+    },
+    {
+      "name": "Brunch_자녀교육_AI",
+      "url": "https://news.google.com/rss/search?q=site:brunch.co.kr+자녀+교육+AI&hl=ko&gl=KR&ceid=KR:ko",
+      "type": "rss_search",
+      "language": "ko",
+      "active": true,
+      "legal_risk": "low",
+      "tags": [
+        "brunch",
+        "ai_education",
+        "parenting",
+        "korean"
+      ],
+      "notes": "100 entries 확인(2026-06-28). Brunch 자녀교육 AI 관련 글."
+    },
+    {
+      "name": "Brunch_AI리터러시",
+      "url": "https://news.google.com/rss/search?q=site:brunch.co.kr+AI+리터러시+OR+디지털교육&hl=ko&gl=KR&ceid=KR:ko",
+      "type": "rss_search",
+      "language": "ko",
+      "active": true,
+      "legal_risk": "low",
+      "tags": [
+        "brunch",
+        "ai_literacy",
+        "digital_education",
+        "korean"
+      ],
+      "notes": "100 entries 확인(2026-06-28). Brunch AI리터러시·디지털교육 글."
     }
   ],
   "youtube_targets": {
