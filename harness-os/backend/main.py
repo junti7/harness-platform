@@ -10818,6 +10818,20 @@ def _edu_vp_safety_coach_format_answer(answer: str) -> str:
     text = re.sub(r"\s+(출처:\s*)", r"\n\n\1", text)
     text = re.sub(r"\s+(간단히 말하면,)", r"\n\n\1", text)
     text = re.sub(r"\s+(결론은\s*)", r"\n\n\1", text)
+    if len(text) >= 120 and not any(marker in text for marker in ("간단히 말하면", "결론은")):
+        source_part = ""
+        body = text
+        if "\n\n출처:" in text:
+            body, source_tail = text.split("\n\n출처:", 1)
+            source_part = f"\n\n출처: {source_tail.strip()}"
+        lower_body = body.lower()
+        if any(marker in lower_body for marker in ("문해력", "리터러시", "literacy")):
+            summary = "간단히 말하면, AI 문해력은 AI를 쓰되 다시 확인하는 연습입니다."
+        elif any(marker in lower_body for marker in ("틀릴", "틀린", "오류", "확인", "wrong")):
+            summary = "간단히 말하면, AI 답은 바로 믿기보다 아이가 자기 말로 설명하고 사람이 한 번 확인하게 하면 됩니다."
+        else:
+            summary = "간단히 말하면, AI가 대신하게 두기보다 아이가 먼저 생각하고 확인하게 하는 쪽이 안전합니다."
+        text = f"{body.strip()}\n\n{summary}{source_part}"
     return text.strip()
 
 

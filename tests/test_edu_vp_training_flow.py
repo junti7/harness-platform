@@ -1618,6 +1618,18 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             with self.subTest(question=question):
                 self.assertEqual(self.mod._edu_vp_safety_coach_anchor_match_ids(question), [])
 
+    def test_safety_coach_prepare_answer_adds_summary_before_source_when_missing(self):
+        answer = self.mod._edu_vp_safety_coach_prepare_answer(
+            "AI는 아이의 생각을 대신하게 할 수도 있고, 생각을 더 잘 보이게 돕는 도구가 될 수 있습니다. "
+            "아이에게는 AI 답도 다시 확인해야 한다는 말을 먼저 익히게 하는 게 좋습니다. "
+            "Education Week에는 \"AI can sometimes give wrong answers\"라는 문구가 실제로 나와 있어요.\n\n"
+            "출처: [Education Week](https://www.edweek.org/technology/its-not-magic-how-these-schools-are-teaching-ai-literacy/2025/10)"
+        )
+
+        self.assertIn("\n\n간단히 말하면,", answer)
+        self.assertIn("\n\n출처:", answer)
+        self.assertLess(answer.index("간단히 말하면"), answer.index("출처:"))
+
     def test_safety_coach_fallback_answers_common_ai_parent_intents_directly(self):
         cases = [
             ("AI가 아이 공부를 망친다는 말이 진짜야?", "무조건 망친다고 보기는 어렵습니다"),

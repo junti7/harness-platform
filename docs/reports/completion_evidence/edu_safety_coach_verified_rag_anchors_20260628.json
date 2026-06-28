@@ -22,7 +22,7 @@
     {
       "requirement": "RAG candidates must attach to final answers when relevant, with source attribution and a clickable URL.",
       "status": "pass",
-      "evidence": "Full available-question evaluation docs/reviews/edu_coach_simulations/full_available_safety_coach_eval_20260628T093301Z.json evaluated 54,936 deduped questions; rag_expected=12,968, rag_pass=12,968, rag_fail=0. The final answer path checks 출처: and http link when RAG is expected."
+      "evidence": "Full available-question evaluation docs/reviews/edu_coach_simulations/full_available_safety_coach_eval_20260628T094100Z.json evaluated 54,936 deduped questions; rag_expected=12,968, rag_pass=12,968, rag_fail=0. The final answer path checks 출처: and http link when RAG is expected."
     },
     {
       "requirement": "Do not attribute Korean paraphrases to source pages unless the source actually contains the quoted phrase.",
@@ -32,7 +32,7 @@
     {
       "requirement": "Avoid markdown rendering leakage such as raw ** in user-facing answers.",
       "status": "pass",
-      "evidence": "Full available-question evaluation docs/reviews/edu_coach_simulations/full_available_safety_coach_eval_20260628T093301Z.json had no markdown_bold_marker_leak count. The 10-question source verification also returned ok=true."
+      "evidence": "Full available-question evaluation docs/reviews/edu_coach_simulations/full_available_safety_coach_eval_20260628T094100Z.json had no markdown_bold_marker_leak count. The 10-question source verification also returned ok=true."
     },
     {
       "requirement": "Fallback answer quality must not regress into generic templates when model deadlines occur.",
@@ -52,7 +52,7 @@
     {
       "requirement": "Residual risk must not be hidden if the full corpus still contains quality issues.",
       "status": "pass",
-      "evidence": "Full evaluation still reports verdict:needs_work=27,166, mostly question_not_addressed from raw source snippets and non-question titles such as event/news/article fragments. This is recorded as residual risk rather than completion."
+      "evidence": "Full evaluation still reports verdict:needs_work=26,819, mostly question_not_addressed from raw source snippets and non-question titles such as event/news/article fragments. This is recorded as residual risk rather than completion."
     }
   ],
   "verification": [
@@ -78,7 +78,7 @@
       "name": "edu safety coach regression tests",
       "target": "pytest",
       "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py tests/test_edu_evidence_quality.py tests/test_edu_customer_facing_retrieval.py tests/test_embeddings.py -q",
-      "result": "123 passed, 5 warnings, 36 subtests passed after anchor match tightening and fallback template replacement."
+      "result": "124 passed, 5 warnings, 36 subtests passed after anchor match tightening, fallback template replacement, and summary-before-source formatting guard."
     },
     {
       "name": "edu coach simulation regression guard",
