@@ -6,9 +6,9 @@
     "correlation_id": "edu-consulting-20260524",
     "legal_status": "low_risk_channels_approved (AR-039 legal_review_approve)",
     "note": "⚠️ 고위험 채널(맘카페 로그인영역·설문·광고)은 legal_review_approve 별도 충족 후 추가 | 죽은 RSS 36개 점검: 19 URL복구 + 17 비활성(2026-06-09)",
-    "updated_at": "2026-06-09",
+    "updated_at": "2026-06-28",
     "version": "v0.4",
-    "total_sources": 84
+    "total_sources": 90
   },
   "sources": [
     {
@@ -74,7 +74,7 @@
     },
     {
       "name": "EdWeek",
-      "url": "https://www.edweek.org/feeds/rss/ew/all",
+      "url": "https://news.google.com/rss/search?q=education+week+AI+learning&hl=en-US&gl=US&ceid=US:en",
       "type": "rss",
       "signal_class": "media",
       "rq_tags": [
@@ -86,8 +86,8 @@
       "reliability_score": 0.85,
       "expected_signal_type": "K-12 education, AI policy, parents, teachers",
       "legal_risk": "low",
-      "active": false,
-      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
+      "active": true,
+      "note": "404→Google News 대체(2026-06-28)"
     },
     {
       "name": "MIT_Tech_Review",
@@ -289,7 +289,7 @@
     },
     {
       "name": "ERIC_K12_AI",
-      "url": "https://eric.ed.gov/rss/?q=artificial+intelligence+K-12&rows=20&fl=title,description,url",
+      "url": "https://news.google.com/rss/search?q=ERIC+education+research+AI&hl=en-US&gl=US&ceid=US:en",
       "type": "rss",
       "signal_class": "academic",
       "rq_tags": [
@@ -299,8 +299,8 @@
       "stale_minutes": 10080,
       "reliability_score": 0.88,
       "legal_risk": "low",
-      "note": "US 교육자료 DB. AI in K-12 논문·리포트. | RSS 폐지/접근불가 — active=false 2026-06-09",
-      "active": false
+      "note": "404→Google News 대체(2026-06-28)",
+      "active": true
     },
     {
       "name": "Reddit_teachers",
@@ -446,7 +446,7 @@
     },
     {
       "name": "중앙일보_교육",
-      "url": "https://rss.joins.com/joins_education_list.xml",
+      "url": "https://news.google.com/rss/search?q=중앙일보+AI+교육&hl=ko&gl=KR&ceid=KR:ko",
       "type": "rss",
       "signal_class": "news",
       "rq_tags": [
@@ -456,8 +456,8 @@
       "stale_minutes": 720,
       "reliability_score": 0.8,
       "legal_risk": "low",
-      "active": false,
-      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
+      "active": true,
+      "note": "rss.joins.com 404→Google News 대체(2026-06-28)"
     },
     {
       "name": "한겨레_교육",
@@ -471,7 +471,8 @@
       "stale_minutes": 720,
       "reliability_score": 0.78,
       "legal_risk": "low",
-      "active": false
+      "active": true,
+      "note": "200 정상확인(2026-06-28)"
     },
     {
       "name": "연합뉴스_교육",
@@ -679,7 +680,7 @@
     },
     {
       "name": "교육부_보도자료_v2",
-      "url": "https://www.moe.go.kr/rssFeed/selectRssFeedList.do?mi=589",
+      "url": "https://news.google.com/rss/search?q=교육부+AI+디지털교육&hl=ko&gl=KR&ceid=KR:ko",
       "type": "rss",
       "signal_class": "government",
       "rq_tags": [
@@ -689,8 +690,8 @@
       "stale_minutes": 1440,
       "reliability_score": 0.92,
       "legal_risk": "low",
-      "active": false,
-      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
+      "active": true,
+      "note": "404→Google News 대체(2026-06-28)"
     },
     {
       "name": "KEDI_한국교육개발원",
@@ -735,7 +736,7 @@
     },
     {
       "name": "KDI_한국개발연구원",
-      "url": "https://www.kdi.re.kr/research/rss.jsp",
+      "url": "https://news.google.com/rss/search?q=KDI+교육+정책&hl=ko&gl=KR&ceid=KR:ko",
       "type": "rss",
       "signal_class": "government",
       "rq_tags": [
@@ -745,12 +746,12 @@
       "stale_minutes": 10080,
       "reliability_score": 0.9,
       "legal_risk": "low",
-      "active": false,
-      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
+      "active": true,
+      "note": "404→Google News 대체(2026-06-28)"
     },
     {
       "name": "Brookings_Education",
-      "url": "https://www.brookings.edu/topic/education/feed/",
+      "url": "https://feeds.feedburner.com/BrookingsInstitution",
       "type": "rss",
       "signal_class": "government",
       "rq_tags": [
@@ -760,8 +761,8 @@
       "stale_minutes": 10080,
       "reliability_score": 0.9,
       "legal_risk": "low",
-      "active": false,
-      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
+      "active": true,
+      "note": "404→Feedburner 대체(2026-06-28)"
     },
     {
       "name": "RAND_Education",
@@ -922,7 +923,7 @@
     },
     {
       "name": "Anthropic_Blog",
-      "url": "https://www.anthropic.com/news/rss.xml",
+      "url": "https://news.google.com/rss/search?q=anthropic&hl=en-US&gl=US&ceid=US:en",
       "type": "rss",
       "signal_class": "competitor",
       "rq_tags": [
@@ -932,8 +933,8 @@
       "stale_minutes": 1440,
       "reliability_score": 0.9,
       "legal_risk": "low",
-      "active": false,
-      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
+      "active": true,
+      "note": "404→Google News 대체(2026-06-28)"
     },
     {
       "name": "OpenAI_Blog",
@@ -990,7 +991,7 @@
     },
     {
       "name": "Edutopia_RSS",
-      "url": "https://www.edutopia.org/rss.xml",
+      "url": "https://news.google.com/rss/search?q=edutopia+education+AI&hl=en-US&gl=US&ceid=US:en",
       "type": "rss",
       "signal_class": "competitor",
       "rq_tags": [
@@ -1000,8 +1001,8 @@
       "stale_minutes": 1440,
       "reliability_score": 0.85,
       "legal_risk": "low",
-      "active": false,
-      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
+      "active": true,
+      "note": "원본 200 but 0entries→Google News 대체(2026-06-28)"
     },
     {
       "name": "Substack_Mollick_OneUsefulThing",
@@ -1019,7 +1020,7 @@
     },
     {
       "name": "Substack_TheNeuron",
-      "url": "https://www.theneurondaily.com/feed",
+      "url": "https://news.google.com/rss/search?q=the+neuron+AI+newsletter&hl=en-US&gl=US&ceid=US:en",
       "type": "rss",
       "signal_class": "news",
       "rq_tags": [
@@ -1029,8 +1030,8 @@
       "stale_minutes": 1440,
       "reliability_score": 0.82,
       "legal_risk": "low",
-      "active": false,
-      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
+      "active": true,
+      "note": "원본 0entries→Google News 대체(2026-06-28)"
     },
     {
       "name": "ImportAI_JackClark",
@@ -1251,7 +1252,7 @@
     },
     {
       "name": "ISTE_Blog",
-      "url": "https://www.iste.org/explore/learning-and-leading/rss.xml",
+      "url": "https://news.google.com/rss/search?q=ISTE+educational+technology&hl=en-US&gl=US&ceid=US:en",
       "type": "rss",
       "signal_class": "government",
       "rq_tags": [
@@ -1261,12 +1262,12 @@
       "stale_minutes": 10080,
       "reliability_score": 0.85,
       "legal_risk": "low",
-      "active": false,
-      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
+      "active": true,
+      "note": "404→Google News 대체(2026-06-28)"
     },
     {
       "name": "Substack_TheRundown",
-      "url": "https://therundown.ai/feed",
+      "url": "https://news.google.com/rss/search?q=the+rundown+AI+daily&hl=en-US&gl=US&ceid=US:en",
       "type": "rss",
       "signal_class": "news",
       "rq_tags": [
@@ -1276,8 +1277,8 @@
       "stale_minutes": 1440,
       "reliability_score": 0.82,
       "legal_risk": "low",
-      "active": false,
-      "note": "RSS 폐지/접근불가 — active=false 2026-06-09"
+      "active": true,
+      "note": "404→Google News 대체(2026-06-28)"
     },
     {
       "name": "ITWorld_Korea",
@@ -1293,6 +1294,22 @@
       "legal_risk": "low",
       "active": true,
       "note": "URL 복구 2026-06-09(liveness 검증)"
+    },
+    {
+      "name": "MIT_EdTech",
+      "url": "https://news.mit.edu/rss/topic/education",
+      "type": "rss",
+      "signal_class": "academic",
+      "rq_tags": [
+        "RQ2",
+        "RQ5"
+      ],
+      "stale_minutes": 1440,
+      "reliability_score": 0.85,
+      "expected_signal_type": "university edtech research",
+      "legal_risk": "low",
+      "active": true,
+      "note": "신규 추가(2026-06-28) — 36 entries 확인"
     }
   ],
   "youtube_targets": {
