@@ -1199,12 +1199,14 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
     def test_safety_coach_evidence_validation_backfills_source_url_from_refined_output_id(self):
         self.mod._EDU_VP_SAFETY_COACH_SOURCE_URL_CACHE.clear()
+        self.mod._EDU_VP_SAFETY_COACH_RAW_TEXT_CACHE.clear()
+        cite = "아이 숙제에서 AI가 대신 답을 만들어 주기보다 아이가 먼저 생각하고 질문을 만드는 데 쓰도록 지도하라는 내용입니다."
 
         def fake_execute_query(query, params=None, fetch=False):
             self.assertIn("FROM refined_outputs", query)
             self.assertEqual(params, (8105,))
             self.assertTrue(fetch)
-            return [{"raw_data": {"url": "https://example.org/raw-homework-source"}}]
+            return [{"raw_data": {"url": "https://example.org/raw-homework-source", "description": cite}}]
 
         with patch.object(self.mod, "execute_query", side_effect=fake_execute_query):
             valid, reasons = self.mod._edu_vp_validate_safety_coach_evidence(
@@ -1214,7 +1216,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
                     "source": "Naver_카페글",
                     "source_name": "Naver_카페글",
                     "title": "AI와 친한 아이가 살아남습니다",
-                    "cite": "아이 숙제에서 AI가 대신 답을 만들어 주기보다 아이가 먼저 생각하고 질문을 만드는 데 쓰도록 지도하라는 내용입니다.",
+                    "cite": cite,
                     "body": "아이 숙제 AI 대신 답 생각 질문",
                     "_score": 0.91,
                 },
@@ -1227,21 +1229,55 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             "https://example.org/raw-homework-source",
         )
 
+    def test_safety_coach_evidence_validation_rejects_refined_synthesis_not_in_source(self):
+        self.mod._EDU_VP_SAFETY_COACH_SOURCE_URL_CACHE.clear()
+        self.mod._EDU_VP_SAFETY_COACH_RAW_TEXT_CACHE.clear()
+
+        def fake_execute_query(query, params=None, fetch=False):
+            self.assertIn("FROM refined_outputs", query)
+            self.assertEqual(params, (8105,))
+            self.assertTrue(fetch)
+            return [{
+                "raw_data": {
+                    "url": "https://example.org/raw-homework-source",
+                    "description": "대한 의존도가 높아진다면 아이의 생각은 없어지고 GPT 결과 판단력이 낮아질까봐 걱정된다는 내용입니다.",
+                }
+            }]
+
+        with patch.object(self.mod, "execute_query", side_effect=fake_execute_query):
+            valid, reasons = self.mod._edu_vp_validate_safety_coach_evidence(
+                query="아이 숙제 AI 대신 쓰는 것 어디까지 막아야 하나요",
+                item={
+                    "id": "fresh-8105-1",
+                    "source": "Naver_카페글",
+                    "source_name": "Naver_카페글",
+                    "title": "AI와 친한 아이가 살아남습니다",
+                    "cite": "AI가 대신 해주는 것이 아니라, AI를 활용해 더 깊이 생각하고 더 창의적인 결과물을 만들도록 지도해 주세요.",
+                    "body": "아이 숙제 AI 대신 답 생각 질문",
+                    "_score": 0.91,
+                },
+            )
+
+        self.assertFalse(valid)
+        self.assertIn("cite_not_supported_by_source", reasons)
+
     def test_safety_coach_selected_evidence_uses_backfilled_source_url(self):
         self.mod._EDU_VP_SAFETY_COACH_SOURCE_URL_CACHE.clear()
+        self.mod._EDU_VP_SAFETY_COACH_RAW_TEXT_CACHE.clear()
+        cite = "아이 숙제에서 AI가 대신 답을 만들어 주기보다 아이가 먼저 생각하고 질문을 만드는 데 쓰도록 지도하라는 내용입니다."
         item = {
             "id": "fresh-8105-1",
             "source": "'AI와 친한 아이가 살아남습니다'",
             "source_name": "Naver_카페글",
             "title": "AI와 친한 아이가 살아남습니다",
-            "cite": "아이 숙제에서 AI가 대신 답을 만들어 주기보다 아이가 먼저 생각하고 질문을 만드는 데 쓰도록 지도하라는 내용입니다.",
+            "cite": cite,
             "body": "아이 숙제 AI 대신 답 생각 질문",
             "_score": 0.91,
         }
 
         with (
             patch.object(self.mod, "_retrieve_evidence_bundle", return_value={"items": [item]}),
-            patch.object(self.mod, "execute_query", return_value=[{"raw_data": {"url": "https://example.org/raw-homework-source"}}]),
+            patch.object(self.mod, "execute_query", return_value=[{"raw_data": {"url": "https://example.org/raw-homework-source", "description": cite}}]),
         ):
             evidence_text, selected, meta = self.mod._edu_vp_safety_coach_evidence(
                 "AI가 아이 숙제를 대신 해주는 건 어디까지 막아야 해?",

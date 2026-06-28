@@ -33,6 +33,8 @@
   <dict>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>EMBEDDING_PROVIDER_MODE</key>
+    <string>ollama</string>
   </dict>
 </dict>
 </plist>

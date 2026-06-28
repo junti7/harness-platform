@@ -26,15 +26,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from dotenv import load_dotenv  # noqa: E402
-load_dotenv(PROJECT_ROOT / ".env", override=True)
+load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 from core.database import execute_query  # noqa: E402
 from core.logger import HarnessLogger  # noqa: E402
 from core.embeddings import embed_documents, embedding_backend_signature  # noqa: E402
 from scripts.refresh_edu_evidence_bank import (  # noqa: E402
     _load_anchors,
-    _cite_from_refined,
-    _cites_from_refined,
+    _cites_from_raw_data,
     _source_label,
     infer_segment,
     infer_source_kind,
@@ -72,8 +71,9 @@ def _fetch_all_refined() -> list[dict]:
         created = r["created_at"]
         src = _source_label(r["source"], r["raw_data"])
         source_kind = infer_source_kind(src, r["raw_data"], r["source"])
-        # 항목당 여러 개의 다양한 cite 추출
-        for n, cite in enumerate(_cites_from_refined(body)):
+        # Customer-facing citations must come from source-owned raw text, not
+        # from Tier 3 LLM synthesis in refined_outputs.final_body.
+        for n, cite in enumerate(_cites_from_raw_data(r["raw_data"])):
             if is_low_quality_evidence(cite, src, r["raw_data"], r["source"]):
                 continue
             prefix = cite[:16]

@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from google import genai
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-load_dotenv(PROJECT_ROOT / ".env", override=True)
+load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 
 def _normalize_gemini_env() -> None:

@@ -8882,7 +8882,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-28-source-format-v21"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-28-source-format-v22"
 _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
 _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_PATH = PROJECT_ROOT / "configs" / "education" / "edu_coach_policy_registry.json"
 _EDU_VP_SAFETY_COACH_POLICY_CANDIDATE_PATH = PROJECT_ROOT / "docs" / "reviews" / "edu_coach_simulations" / "policy_candidates.jsonl"
@@ -8897,6 +8897,7 @@ _EDU_VP_SAFETY_COACH_EVIDENCE_EXECUTOR = ThreadPoolExecutor(
     thread_name_prefix="edu-safety-coach-evidence",
 )
 _EDU_VP_SAFETY_COACH_SOURCE_URL_CACHE: dict[str, str] = {}
+_EDU_VP_SAFETY_COACH_RAW_TEXT_CACHE: dict[str, str] = {}
 
 
 def _edu_vp_safety_coach_model_timeout(model_name: str, remaining_seconds: float) -> float:
@@ -9113,6 +9114,109 @@ def _edu_vp_safety_coach_source_url(item: dict[str, Any]) -> str:
         )
         _EDU_VP_SAFETY_COACH_SOURCE_URL_CACHE[cache_key] = ""
         return ""
+
+
+def _edu_vp_safety_coach_raw_text_from_item(item: dict[str, Any]) -> str:
+    raw_data = item.get("raw_data")
+    if isinstance(raw_data, str):
+        try:
+            raw_data = json.loads(raw_data)
+        except json.JSONDecodeError:
+            raw_data = None
+    parts: list[str] = []
+    if isinstance(raw_data, dict):
+        for key in ("full_content", "description", "summary", "abstract", "content", "transcript", "title"):
+            value = str(raw_data.get(key) or "").strip()
+            if value:
+                parts.append(value)
+    for key in ("source_excerpt", "raw_excerpt"):
+        value = str(item.get(key) or "").strip()
+        if value:
+            parts.append(value)
+    if parts:
+        return " ".join(parts)
+
+    refined_output_id = _edu_vp_safety_coach_refined_output_id(item)
+    if not refined_output_id:
+        return ""
+    cache_key = f"refined:{refined_output_id}"
+    if cache_key in _EDU_VP_SAFETY_COACH_RAW_TEXT_CACHE:
+        return _EDU_VP_SAFETY_COACH_RAW_TEXT_CACHE[cache_key]
+    try:
+        rows = execute_query(
+            """
+            SELECT rs.raw_data, rs.full_content
+            FROM refined_outputs ro
+            JOIN filtered_signals fs ON fs.id = ro.filtered_signal_id
+            JOIN raw_signals rs ON rs.id = fs.raw_signal_id
+            WHERE ro.id = %s
+            LIMIT 1
+            """,
+            (int(refined_output_id),),
+            fetch=True,
+        ) or []
+        if not rows:
+            _EDU_VP_SAFETY_COACH_RAW_TEXT_CACHE[cache_key] = ""
+            return ""
+        row = rows[0] or {}
+        fetched_raw = row.get("raw_data")
+        if isinstance(fetched_raw, str):
+            try:
+                fetched_raw = json.loads(fetched_raw)
+            except json.JSONDecodeError:
+                fetched_raw = None
+        fetched_parts: list[str] = []
+        if isinstance(fetched_raw, dict):
+            for key in ("full_content", "description", "summary", "abstract", "content", "transcript", "title"):
+                value = str(fetched_raw.get(key) or "").strip()
+                if value:
+                    fetched_parts.append(value)
+        full_content = str(row.get("full_content") or "").strip()
+        if full_content:
+            fetched_parts.append(full_content)
+        text = " ".join(fetched_parts)
+        _EDU_VP_SAFETY_COACH_RAW_TEXT_CACHE[cache_key] = text
+        return text
+    except Exception as exc:  # noqa: BLE001
+        _edu_runtime_event(
+            "vp_training_safety_coach_raw_text_resolve_failed",
+            refined_output_id=refined_output_id,
+            error_type=type(exc).__name__,
+            error=str(exc)[:200],
+        )
+        _EDU_VP_SAFETY_COACH_RAW_TEXT_CACHE[cache_key] = ""
+        return ""
+
+
+def _edu_vp_safety_coach_normalize_source_support(text: str) -> str:
+    normalized = re.sub(r"[\s\"'‘’“”`·,;:!?().\[\]{}<>《》〈〉~…\-_/|]+", "", str(text or "").lower())
+    return normalized
+
+
+def _edu_vp_safety_coach_cite_supported_by_source(item: dict[str, Any], cite: str) -> bool:
+    """Require generated pipeline evidence to quote source-owned raw text.
+
+    Curated anchors and direct non-pipeline items may not have a raw DB row; they
+    are handled by their own source_url gate. Pipeline/refined items must not
+    attribute Tier 3 synthesis sentences to the original URL.
+    """
+    if str(item.get("provenance") or "").strip() == "anchor":
+        return True
+    if not _edu_vp_safety_coach_refined_output_id(item):
+        return True
+    raw_text = _edu_vp_safety_coach_raw_text_from_item(item)
+    if not raw_text:
+        return False
+    cite_norm = _edu_vp_safety_coach_normalize_source_support(cite)
+    raw_norm = _edu_vp_safety_coach_normalize_source_support(raw_text)
+    if len(cite_norm) < 20:
+        return False
+    if cite_norm in raw_norm:
+        return True
+    compact = cite_norm[:120]
+    if len(compact) >= 40 and compact in raw_norm:
+        return True
+    return False
 
 
 def _edu_vp_safety_coach_source_markdown(item: dict[str, Any]) -> str:
@@ -10114,22 +10218,44 @@ def _edu_vp_validate_safety_coach_evidence(
         reasons.append("missing_source")
     if not _edu_vp_safety_coach_source_url(item):
         reasons.append("missing_source_url")
+    if not _edu_vp_safety_coach_cite_supported_by_source(item, cite):
+        reasons.append("cite_not_supported_by_source")
     if _edu_is_low_quality_item(item):
         reasons.append("low_quality_item")
     query_terms = _edu_vp_safety_coach_keywords(query)
     blob = " ".join(
         str(part or "").lower()
         for part in (
-            item.get("title"),
             item.get("cite"),
             item.get("body"),
-            item.get("source"),
             item.get("keywords"),
         )
     )
     hits = [term for term in query_terms if term in blob]
     if len(hits) < min_hits:
         reasons.append("insufficient_keyword_overlap")
+    q_lower = str(query or "").lower()
+    cite_lower = cite.lower()
+    intent_requirements: list[tuple[tuple[str, ...], tuple[str, ...], str]] = [
+        (
+            ("숙제", "과제", "수행평가", "homework"),
+            ("숙제", "과제", "수행평가", "답", "정답", "컨닝", "풀이", "글쓰기", "보고서", "베끼"),
+            "missing_homework_context",
+        ),
+        (
+            ("사진", "얼굴", "개인정보", "사생활", "privacy"),
+            ("사진", "얼굴", "개인정보", "개인 정보", "사생활", "위치", "저장", "재사용", "식별"),
+            "missing_privacy_context",
+        ),
+        (
+            ("유튜브", "영상", "스크린", "게임", "youtube", "screen"),
+            ("유튜브", "영상", "스크린", "화면", "게임", "시청", "소비", "시간"),
+            "missing_screen_context",
+        ),
+    ]
+    for query_markers, cite_markers, reason in intent_requirements:
+        if any(marker in q_lower for marker in query_markers) and not any(marker in cite_lower for marker in cite_markers):
+            reasons.append(reason)
     score = float(item.get("_score") or 0.0)
     min_score = float(os.getenv("EDU_RAG_MIN_SCORE", "0.30"))
     if score and score < min_score:

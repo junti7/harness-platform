@@ -196,6 +196,45 @@ def _first_sentence(text: str, limit: int = 180) -> str:
     return (cut[: last + 1] if last > limit * 0.5 else cut).strip()
 
 
+def _raw_text_candidates(raw_data=None) -> list[str]:
+    """Return source-owned text fields only.
+
+    These fields come from collection/search results, not from Tier 3 LLM
+    synthesis. Customer-facing RAG citations must be grounded in these strings.
+    """
+    rd = normalize_raw_data(raw_data)
+    values: list[str] = []
+    for key in ("full_content", "description", "summary", "abstract", "content", "transcript"):
+        value = str(rd.get(key) or "").strip()
+        if value:
+            values.append(value)
+    return values
+
+
+def _cites_from_raw_data(raw_data=None, *, max_cites: int = 4) -> list[str]:
+    cites: list[str] = []
+    seen_prefix: set[str] = set()
+    for value in _raw_text_candidates(raw_data):
+        text = re.sub(r"\s+", " ", value).strip()
+        if not text:
+            continue
+        pieces = re.split(r"(?<=[.!?。])\s+|\s{2,}", text)
+        for piece in pieces or [text]:
+            cite = _first_sentence(piece, limit=220)
+            if len(cite) < 30:
+                continue
+            if any(m in cite for m in _META_MARKERS):
+                continue
+            prefix = cite[:18]
+            if prefix in seen_prefix:
+                continue
+            seen_prefix.add(prefix)
+            cites.append(cite)
+            if len(cites) >= max_cites:
+                return cites
+    return cites
+
+
 # 알맹이 없는 일반적 공감/도입 문구 — cite로 부적합 (이런 것만 반복되면 '고리타분')
 _GENERIC_MARKERS = (
     "걱정되시죠", "걱정이", "불안하신가요", "불안감", "고민이 많", "고민이 깊",
@@ -339,7 +378,8 @@ def _fetch_fresh_items(window_days: int, max_fresh: int) -> list[dict]:
         # 비관련/저관련 항목은 제외
         if body.get("is_relevant") is False:
             continue
-        cite = _cite_from_refined(body)
+        raw_cites = _cites_from_raw_data(r["raw_data"], max_cites=1)
+        cite = raw_cites[0] if raw_cites else None
         if not cite or cite in seen_cites:
             continue
         src_label = _source_label(r["source"], r["raw_data"])

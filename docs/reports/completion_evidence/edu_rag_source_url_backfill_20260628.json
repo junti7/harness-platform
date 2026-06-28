@@ -145,6 +145,24 @@
       "target": "macmini backend code path, production RAG data, and production bundle",
       "command": "direct EduVpTrainingSafetyCoachRequest for homework question with answer_version=2026-06-28-source-format-v21 after deploy; PATH=/opt/homebrew/bin:$PATH npm run build --prefix harness-os/edu-app; curl http://127.0.0.1:8000/",
       "result": "backend_version=2026-06-28-source-format-v21; frontend_version=2026-06-28-source-format-v21; generated dist/assets/index-BW1Y4Fzu.js; HTTP 200; rag=true; has_source=true; body_has_markdown_link_before_source=false; markdown_leak=false; summary_break=true"
+    },
+    {
+      "name": "source-citation consistency root cause diagnosis",
+      "target": "Naver Cafe URL and production DB lineage",
+      "command": "curl https://cafe.naver.com/dochithink/2314987; DB queries over raw_signals, filtered_signals, refined_outputs for URL and phrase",
+      "result": "The phrase 'AI가 대신 해주는 것이 아니라...' was not present in the raw Naver Cafe source; it was generated inside refined_outputs.final_body action_now for refined_output_id=8105 and incorrectly attributed to raw source_url"
+    },
+    {
+      "name": "source-citation consistency cleanup",
+      "target": "local RAG artifacts and future builders",
+      "command": "EMBEDDING_PROVIDER_MODE=ollama scripts/build_edu_evidence_index.py --rebuild; scripts/refresh_edu_evidence_bank.py; scripts/audit_edu_evidence_source_consistency.py --fix; scripts/audit_edu_evidence_source_consistency.py",
+      "result": "evidence_index rebuilt from source-owned raw text only; title-only cites excluded; final audit rejected=0 with evidence_index count=505, evidence_bank count=39, missing_url=0; unsupported items written to data/edu_research/evidence_source_consistency_dlq.jsonl"
+    },
+    {
+      "name": "v22 runtime guard",
+      "target": "backend safety coach evidence validator and frontend cache version",
+      "command": "pytest suite, local v22 homework question probe with EMBEDDING_PROVIDER_MODE=ollama",
+      "result": "answer_version bumped to 2026-06-28-source-format-v22; runtime rejects cite_not_supported_by_source and intent-missing evidence; homework probe had has_fake_phrase=false, has_dochithink=false, and no source when all candidates failed strict validation"
     }
   ],
   "deploy": {

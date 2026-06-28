@@ -1,6 +1,6 @@
 import unittest
 
-from scripts.refresh_edu_evidence_bank import extract_source_url, infer_segment, infer_source_kind, is_low_quality_evidence
+from scripts.refresh_edu_evidence_bank import _cites_from_raw_data, extract_source_url, infer_segment, infer_source_kind, is_low_quality_evidence
 
 
 class EduEvidenceQualityTests(unittest.TestCase):
@@ -77,6 +77,19 @@ class EduEvidenceQualityTests(unittest.TestCase):
                 "YouTube_topic",
             )
         )
+
+    def test_raw_data_cites_use_source_owned_text_not_synthesis(self):
+        raw_data = {
+            "title": "AI와 친한 아이가 살아남습니다",
+            "description": "대한 의존도가 높아진다면 아이의 생각은 없어지고 GPT 결과 판단력이 낮아질까봐 걱정된다는 내용입니다.",
+            "synthesized_action": "AI가 대신 해주는 것이 아니라, AI를 활용해 더 깊이 생각하고 더 창의적인 결과물을 만들도록 지도해 주세요.",
+        }
+
+        cites = _cites_from_raw_data(raw_data)
+
+        self.assertTrue(cites)
+        self.assertIn("GPT 결과 판단력", cites[0])
+        self.assertNotIn("더 창의적인 결과물", " ".join(cites))
 
 
 if __name__ == "__main__":
