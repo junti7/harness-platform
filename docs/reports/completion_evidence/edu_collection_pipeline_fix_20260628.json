@@ -1,0 +1,70 @@
+{
+  "task": "edu_collection_pipeline_fix_20260628",
+  "date": "2026-06-28",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-28T20:00:00+09:00",
+      "summary": "Checked Must/Never, deployment SoT (scripts/deploy_to_macmini.sh only), completion evidence requirement before push."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-28T20:00:00+09:00",
+      "summary": "Completion requires real user-facing or runtime verification before reporting done; no silent deletion of existing guards."
+    }
+  ],
+  "problem": "edu_consulting 수집 파이프라인 4가지 보완: (1) Reddit 크레덴셜 없어도 공개 JSON API로 수집, (2) topic_registry가 edu에 미적용, (3) 비활성 RSS 18개 방치, (4) physical_ai forum RSS 미활성화.",
+  "changes": [
+    {
+      "path": "scripts/run_edu_deep_research.py",
+      "lines": "1322-1354",
+      "summary": "collect_reddit: 크레덴셜 없거나 OAuth 실패 시 reddit.com 공개 JSON fallback으로 자동 전환. skipped 반환 제거."
+    },
+    {
+      "path": "scripts/run_edu_deep_research.py",
+      "lines": "39, 157-160, 1566-1577",
+      "summary": "ensure_fresh_topic_registry + merged_sources_with_generated import 및 main()에서 호출. collect_rss 필터에 generated=True 소스 허용 추가."
+    },
+    {
+      "path": "configs/sources/edu_consulting.json",
+      "summary": "12개 dead RSS URL을 Google News/Feedburner 대체 URL로 교체 + active:true 복구. MIT_EdTech 신규 추가. 총 13개 소스 복구."
+    },
+    {
+      "path": "configs/sources/physical_ai.json",
+      "summary": "forum_thread_discovery(Google News RSS, 100 entries 확인)를 enabled:true, activation_policy:always_on으로 활성화."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Reddit 공개 JSON API 실증",
+      "target": "reddit.com public JSON endpoint",
+      "command": "curl 'https://www.reddit.com/r/Parenting/search.json?q=AI+children&restrict_sr=1&sort=new&limit=25'",
+      "result": "25 posts returned — 크레덴셜 없이 정상 수집 확인"
+    },
+    {
+      "name": "edu_consulting 복구 소스 RSS 검증",
+      "target": "configs/sources/edu_consulting.json 활성 소스",
+      "command": ".venv/bin/python -c \"import feedparser; ...\"",
+      "result": "13개 소스 전부 entries>0 확인 (EdWeek 98, ERIC 79, 중앙일보 100, 한겨레 30, 교육부 100, KDI 54, Brookings 15, Anthropic 100, Edutopia 16, TheNeuron 79, ISTE 75, TheRundown 80, MIT 36)"
+    },
+    {
+      "name": "physical_ai forum_thread_discovery 검증",
+      "target": "https://news.google.com/rss/search?q=robotics+forum",
+      "command": ".venv/bin/python -c \"import feedparser; f=feedparser.parse('...')\"",
+      "result": "100 entries 확인"
+    },
+    {
+      "name": "Mac Mini 배포",
+      "target": "macmini production",
+      "command": "bash scripts/deploy_to_macmini.sh",
+      "result": "exit 0, 배포 검증 통과 — 4 commits pushed to origin"
+    }
+  ],
+  "commits": [
+    "a204ff0 fix: add public JSON API fallback to reddit collector",
+    "50af0e3 feat: integrate topic_registry into edu_consulting pipeline",
+    "e448179 fix: restore 12 dead RSS sources + add MIT EdTech in edu_consulting",
+    "b8dd97b fix: enable forum_thread_discovery in physical_ai sources"
+  ]
+}
