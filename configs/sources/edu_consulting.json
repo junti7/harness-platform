@@ -1327,7 +1327,8 @@
         "parenting",
         "korean"
       ],
-      "notes": "100 entries 확인(2026-06-28). Google News site: 쿼리로 Brunch 학부모 AI교육 글 수집."
+      "notes": "100 entries 확인(2026-06-28). Google News site: 쿼리로 Brunch 학부모 AI교육 글 수집.",
+      "max_items": 100
     },
     {
       "name": "Brunch_자녀교육_AI",
@@ -1342,7 +1343,8 @@
         "parenting",
         "korean"
       ],
-      "notes": "100 entries 확인(2026-06-28). Brunch 자녀교육 AI 관련 글."
+      "notes": "100 entries 확인(2026-06-28). Brunch 자녀교육 AI 관련 글.",
+      "max_items": 100
     },
     {
       "name": "Brunch_AI리터러시",
@@ -1357,7 +1359,8 @@
         "digital_education",
         "korean"
       ],
-      "notes": "100 entries 확인(2026-06-28). Brunch AI리터러시·디지털교육 글."
+      "notes": "100 entries 확인(2026-06-28). Brunch AI리터러시·디지털교육 글.",
+      "max_items": 100
     }
   ],
   "youtube_targets": {
