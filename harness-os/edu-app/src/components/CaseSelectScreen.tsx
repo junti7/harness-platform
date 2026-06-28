@@ -11,6 +11,7 @@ export type CaseSelectScreenProps = {
   userName: string
   cases: TrainingCase[]
   loading?: boolean
+  error?: string | null
   onSelect: (caseId: number) => void
   onNew: () => void
   onLogout: () => void
@@ -46,6 +47,7 @@ export default function CaseSelectScreen({
   userName,
   cases,
   loading,
+  error,
   onSelect,
   onNew,
   onLogout,
@@ -187,6 +189,14 @@ export default function CaseSelectScreen({
             />
           ))}
         </ul>
+      ) : error ? (
+        <div className="mt-6 flex flex-col items-center gap-3 rounded-2xl border border-danger/20 bg-danger-soft px-6 py-10 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-card text-danger">
+            <AlertTriangle size={24} />
+          </span>
+          <p className="text-sm font-semibold text-danger">훈련 목록을 불러오지 못했어요</p>
+          <p className="text-xs leading-relaxed text-text-muted">{error}</p>
+        </div>
       ) : cases.length === 0 ? (
         <div className="mt-6 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border bg-card px-6 py-12 text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent text-accent-foreground">

@@ -38,6 +38,7 @@ function App() {
   const [cases, setCases] = useState<TrainingCase[]>([])
   const [selectedCaseId, setSelectedCaseId] = useState<number | null>(null)
   const [authError, setAuthError] = useState<string | null>(null)
+  const [casesError, setCasesError] = useState<string | null>(null)
   const [authLoading, setAuthLoading] = useState(false)
   // 세션 복원 시 곧바로 케이스를 fetch 하므로 초기값을 그에 맞춘다.
   const [casesLoading, setCasesLoading] = useState<boolean>(() => session !== null)
@@ -50,10 +51,12 @@ function App() {
   // 로딩 true 는 이 함수를 호출하는 이벤트 핸들러/initializer 에서 설정한다.
   const refreshCases = useCallback(async (email: string) => {
     try {
+      setCasesError(null)
       setCases(await listCases(email))
     } catch (e) {
       console.error('listCases failed', e)
       setCases([])
+      setCasesError(errMessage(e))
     } finally {
       setCasesLoading(false)
     }
@@ -147,6 +150,7 @@ function App() {
     clearSession()
     setSession(null)
     setCases([])
+    setCasesError(null)
     setSelectedCaseId(null)
     setView('auth')
   }, [])
@@ -185,6 +189,7 @@ function App() {
       userName={session.name}
       cases={cases}
       loading={casesLoading}
+      error={casesError}
       onSelect={handleSelect}
       onNew={handleNew}
       onLogout={handleLogout}

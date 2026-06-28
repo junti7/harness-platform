@@ -1,0 +1,59 @@
+{
+  "task": "edu case list should not show empty training state when case loading fails",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-28T21:11:40+09:00",
+      "summary": "Completion reporting requires requirement-to-evidence mapping, real runtime or user-facing verification, completion guard evidence, and exact residual risk reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-28T21:11:40+09:00",
+      "summary": "Code, deployment, UI, and customer-facing changes require real verification and completion evidence guard before reporting complete."
+    }
+  ],
+  "requirements_checklist": [
+    {
+      "requirement": "Do not imply training history was deleted when the cases API request fails.",
+      "status": "pass",
+      "evidence": "harness-os/edu-app/src/App.tsx now stores listCases failures in casesError instead of silently treating failures as an empty list."
+    },
+    {
+      "requirement": "The case selection screen should show a loading/error state separately from the true no-cases state.",
+      "status": "pass",
+      "evidence": "harness-os/edu-app/src/components/CaseSelectScreen.tsx now renders '훈련 목록을 불러오지 못했어요' with the API error before the real '아직 시작한 훈련이 없어요' empty state."
+    },
+    {
+      "requirement": "Confirm existing user history was not physically deleted.",
+      "status": "pass",
+      "evidence": "Mac Mini production DB inspection found active case 72 for junti7@gmail.com with status vp_training_day0 and many snapshots; older deleted cases are soft-deleted via status=deleted."
+    }
+  ],
+  "verification": [
+    {
+      "name": "edu app production bundle build",
+      "target": "dist build",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "tsc and vite build succeeded; dist assets generated."
+    },
+    {
+      "name": "edu app lint",
+      "target": "eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "eslint completed successfully with exit code 0."
+    },
+    {
+      "name": "edu VP training regression tests",
+      "target": "pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "109 passed, 3 warnings, 59 subtests passed."
+    },
+    {
+      "name": "Mac Mini production DB check",
+      "target": "production database",
+      "command": "ssh macmini DB query for edu_cases and edu_case_snapshots",
+      "result": "junti7@gmail.com has active case 72 with status vp_training_day0; case 72 has 11087 edu_case_snapshots."
+    }
+  ]
+}
