@@ -82,6 +82,30 @@
       "result": "vite build succeeded and produced dist assets."
     },
     {
+      "name": "Mac Mini targeted regression tests",
+      "target": "Mac Mini deployed repo",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && .venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q'",
+      "result": "108 passed, 2 warnings, 59 subtests passed."
+    },
+    {
+      "name": "Mac Mini all available edu safety-coach question evaluation",
+      "target": "Mac Mini deployed backend deterministic path plus source URL checks",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/evaluate_edu_safety_coach_available_questions.py --sample-limit 80 --output scratch/full_available_safety_coach_eval_question_eligible_macmini_20260628.json'",
+      "result": "57,068 unique inputs evaluated; answer_quality_skipped_non_user_question=48,874; answer_quality_eligible=8,194; answer_quality_eligible_verdict:clear=5,770; answer_quality_eligible_verdict:needs_work=2,424; question_not_addressed=2,229; rag_expected=13,215; rag_pass=13,215; source_quote_verified=24,508; source_urls_checked=9; no hard RAG/source/markdown failures."
+    },
+    {
+      "name": "Mac Mini completion evidence guard",
+      "target": "Mac Mini deployed evidence file",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/agent_completion_guard.py --require-deploy --require-red-team docs/reports/completion_evidence/edu_safety_coach_verified_rag_anchors_20260628.json'",
+      "result": "completion_guard: CLEAR with status=residual_risk."
+    },
+    {
+      "name": "Mac Mini service API spot check",
+      "target": "http://127.0.0.1:8000/api/edu/vp-training/safety-coach",
+      "command": "ssh macmini Python urllib POST using local .env secret lookup",
+      "result": "not completed: HARNESS_OS_SECRET_KEY was not present in non-interactive launchd/shell environment and frontend/edu-app .env secret lookup did not produce a usable secret. No secret value was printed."
+    },
+    {
       "name": "Claude red-team attempt",
       "target": "Claude CLI",
       "command": "git diff -- ... | claude -p 'Red-team review this diff...' --max-budget-usd 2",
@@ -111,6 +135,6 @@
   },
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py scripts/evaluate_edu_safety_coach_available_questions.py scripts/edu_coach_simulation_runner.py tests/test_edu_vp_training_flow.py docs/reviews/edu_coach_simulations/full_available_safety_coach_eval_20260628T_question_eligible.json docs/reviews/edu_coach_simulations/red_team_claude_question_eligible_20260628.md docs/reviews/edu_coach_simulations/red_team_gemini_question_eligible_20260628.md docs/reports/completion_evidence/edu_safety_coach_verified_rag_anchors_20260628.json",
-    "result": "pending deployment after this evidence file is committed"
+    "result": "commit 56bf294 deployed to Mac Mini; deploy guard passed, backend launchd reloaded, port 8000 served, and origin diff check returned 0 for all deployed files."
   }
 }
