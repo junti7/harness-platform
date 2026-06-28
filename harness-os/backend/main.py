@@ -8882,7 +8882,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-28-rag-retrieval-v16"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-28-natural-rag-v17"
 _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
 _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_PATH = PROJECT_ROOT / "configs" / "education" / "edu_coach_policy_registry.json"
 _EDU_VP_SAFETY_COACH_POLICY_CANDIDATE_PATH = PROJECT_ROOT / "docs" / "reviews" / "edu_coach_simulations" / "policy_candidates.jsonl"
@@ -9184,7 +9184,7 @@ def _edu_vp_normalize_safety_question(question: str) -> str:
 
 def _edu_vp_safety_coach_answer_version(value: str | None) -> str:
     cleaned = re.sub(r"[^0-9A-Za-z._:-]", "", (value or "").strip())[:80]
-    return cleaned or _EDU_VP_SAFETY_COACH_ANSWER_VERSION
+    return cleaned if cleaned == _EDU_VP_SAFETY_COACH_ANSWER_VERSION else _EDU_VP_SAFETY_COACH_ANSWER_VERSION
 
 
 def _edu_vp_safety_cache_allowed(question: str) -> bool:

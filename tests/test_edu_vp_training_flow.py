@@ -642,6 +642,13 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(parsed["failure_codes"], ["weak_empathy"])
         self.assertEqual(parsed["confidence"], 0.82)
 
+    def test_safety_coach_answer_version_ignores_stale_client_version(self):
+        current = self.mod._EDU_VP_SAFETY_COACH_ANSWER_VERSION
+
+        self.assertEqual(self.mod._edu_vp_safety_coach_answer_version("2026-06-27-constraint-aware-v11"), current)
+        self.assertEqual(self.mod._edu_vp_safety_coach_answer_version("test-version"), current)
+        self.assertEqual(self.mod._edu_vp_safety_coach_answer_version(current), current)
+
     def test_safety_coach_quality_review_can_use_llm_judge(self):
         context = self.mod._edu_vp_safety_coach_resolved_policy_context(
             "그래도 AI가 나한테 그렇게 해주면 기분이 좋은걸?"
