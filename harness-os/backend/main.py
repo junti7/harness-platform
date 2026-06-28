@@ -9026,20 +9026,32 @@ def _edu_vp_safety_coach_rag_sentence(question: str, evidence_items: list[dict[s
     question_terms = _edu_vp_safety_coach_keywords(question, max_terms=5)
     if not question_terms:
         return ""
-    selected = None
+    candidates: list[tuple[int, float, str]] = []
     for item in evidence_items[:4]:
         cite = _edu_clean_cite(str(item.get("cite") or item.get("body") or ""))
         if len(cite) < 30:
             continue
         cite_lower = cite.lower()
-        if question_terms and not any(term.lower() in cite_lower for term in question_terms):
+        hits = sum(1 for term in question_terms if term.lower() in cite_lower)
+        if hits <= 0:
             continue
-        selected = cite
-        break
-    if not selected:
+        candidates.append((hits, float(item.get("score") or item.get("_score") or 0.0), cite))
+    if not candidates:
         return ""
-    first_sentence = re.split(r"(?<=[.!?。])\s+|[。!?]\s*", selected.strip(), maxsplit=1)[0].strip()
-    excerpt = re.sub(r"\s+", " ", first_sentence)[:150].strip(" ,;:-.!?。")
+    candidates.sort(key=lambda row: (row[0], row[1], len(row[2])), reverse=True)
+    selected = candidates[0][2]
+    sentence_parts = [
+        part.strip()
+        for part in re.split(r"(?<=[.!?。])\s+|[。!?]\s*", selected.strip())
+        if len(part.strip()) >= 24
+    ]
+    sentence_candidates: list[tuple[int, int, str]] = []
+    for part in sentence_parts or [selected.strip()]:
+        part_lower = part.lower()
+        hits = sum(1 for term in question_terms if term.lower() in part_lower)
+        sentence_candidates.append((hits, len(part), part))
+    sentence_candidates.sort(key=lambda row: (row[0], row[1]), reverse=True)
+    excerpt = re.sub(r"\s+", " ", sentence_candidates[0][2])[:150].strip(" ,;:-.!?。")
     for prefix in ("최근 수집 자료는 ", "수집 자료는 ", "관련 자료는 ", "자료는 "):
         if excerpt.startswith(prefix):
             excerpt = excerpt[len(prefix):]
@@ -11212,14 +11224,17 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                     total_budget_seconds=total_budget,
                     evidence_meta=evidence_meta,
                 )
-                answer = _edu_vp_safety_coach_fallback(concept_title, question)
+                fallback_answer = _edu_vp_safety_coach_fallback(concept_title, question)
+                answer, rag_infused = _edu_vp_safety_coach_blend_rag_sentence(fallback_answer, question, evidence_items)
                 used_model = f"{used_model or model_name}+deadline_fallback"
+                if rag_infused:
+                    used_model = f"{used_model}+rag"
                 if isinstance(usage, dict):
                     usage["_safety_coach_evidence_meta"] = evidence_meta  # type: ignore[index]
                     usage["_safety_coach_red_team_issues"] = red_team_issues  # type: ignore[index]
                     usage["_safety_coach_llm_judge"] = llm_judge_review  # type: ignore[index]
-                    usage["_safety_coach_rag_infused"] = False  # type: ignore[index]
-                    usage["_safety_coach_rag_patch_applied"] = False  # type: ignore[index]
+                    usage["_safety_coach_rag_infused"] = rag_infused  # type: ignore[index]
+                    usage["_safety_coach_rag_patch_applied"] = rag_infused  # type: ignore[index]
                     usage["_safety_coach_reinforcement_policies"] = reinforcement_policies  # type: ignore[index]
                     usage["_safety_coach_policy_context"] = {
                         "schema_version": policy_context.get("schema_version"),

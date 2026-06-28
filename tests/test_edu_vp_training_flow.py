@@ -967,6 +967,53 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("명사는", answer)
         self.assertIsInstance(fallback_used, bool)
 
+    def test_safety_coach_deadline_fallback_preserves_validated_rag_generically(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=123,
+            stage="day0",
+            concept_id="safety_privacy",
+            concept_title="개인정보와 사진은 조심하기",
+            concept_body="AI에는 아이 얼굴 사진과 개인정보를 함부로 넣지 않습니다.",
+            question="아이 사진을 AI 앱에 올려도 되는지 어디까지 막아야 하나요?",
+        )
+        evidence_items = [
+            {
+                "id": "generic-ai-risk",
+                "source": "general source",
+                "cite": "AI 사용에는 여러 위험이 있으니 보호자가 아이와 함께 확인해야 합니다.",
+                "score": 5.0,
+                "validated": True,
+            },
+            {
+                "id": "privacy-photo",
+                "source": "privacy guide",
+                "cite": (
+                    "앱에 아이 사진을 올리기 전에는 얼굴, 학교 이름, 위치 정보 같은 개인정보가 "
+                    "저장되거나 재사용될 수 있는지 먼저 확인해야 합니다."
+                ),
+                "score": 4.0,
+                "validated": True,
+            },
+        ]
+
+        with (
+            patch.dict("os.environ", {"EDU_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS": "0.4"}),
+            patch.object(self.mod, "_edu_vp_safety_coach_fast_answer", return_value=None),
+            patch.object(self.mod, "_edu_vp_safety_coach_reinforcement_policies", return_value=[]),
+            patch.object(self.mod, "_edu_vp_safety_coach_evidence_with_timeout", return_value=("", evidence_items, {"selected_count": 2})),
+            patch.object(self.mod, "_edu_safety_coach_model_ladder", return_value=["gpt-4o-mini"]),
+            patch.object(self.mod, "_edu_runtime_event"),
+        ):
+            answer, model, usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
+
+        self.assertEqual(model, "gpt-4o-mini+deadline_fallback+rag")
+        self.assertTrue(fallback_used)
+        self.assertTrue(usage["_safety_coach_rag_infused"])
+        self.assertTrue(usage["_safety_coach_rag_patch_applied"])
+        self.assertIn("관련 자료", answer)
+        self.assertIn("얼굴, 학교 이름, 위치 정보", answer)
+        self.assertNotIn("여러 위험", answer)
+
     def test_safety_coach_red_team_blocks_prompt_marker_leakage(self):
         issues = self.mod._edu_vp_safety_coach_red_team(
             question="그런데도 다정해서 자꾸 빠져들어요. 어떻게 하나요?",
