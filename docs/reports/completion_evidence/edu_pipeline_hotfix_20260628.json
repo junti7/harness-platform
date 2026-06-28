@@ -1,0 +1,48 @@
+{
+  "task": "edu_pipeline_hotfix_20260628",
+  "date": "2026-06-28",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-28T20:35:00+09:00",
+      "summary": "Deployment SoT, completion evidence requirement before push."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-28T20:35:00+09:00",
+      "summary": "Completion requires real entrypoint verification before reporting done."
+    }
+  ],
+  "problem": "edu run 실행 결과 2개 버그 발견: (1) topic_registry 쿼리에서 created_at 컬럼 없음(실제: ingested_at), (2) 플래텀/한국경제/GoogleNews_학생진로AI 소스 entries 0.",
+  "changes": [
+    {
+      "path": "scripts/run_edu_deep_research.py",
+      "lines": "1571",
+      "summary": "ORDER BY created_at → ORDER BY ingested_at (raw_signals 실제 컬럼명)"
+    },
+    {
+      "path": "configs/sources/edu_consulting.json",
+      "summary": "플래텀_에듀테크, 한국경제 active:false. GoogleNews_학생진로AI URL 단순화(100 entries 확인)."
+    }
+  ],
+  "verification": [
+    {
+      "name": "raw_signals 컬럼명 확인",
+      "target": "Mac Mini DB",
+      "command": "SELECT column_name FROM information_schema.columns WHERE table_name='raw_signals'",
+      "result": "ingested_at 컬럼 존재 확인 (created_at 없음)"
+    },
+    {
+      "name": "GoogleNews_학생진로AI 신규 URL",
+      "command": ".venv/bin/python -c \"import feedparser; f=feedparser.parse('...'); print(len(f.entries))\"",
+      "result": "100 entries 확인"
+    },
+    {
+      "name": "edu run 410건 수집 성공",
+      "target": "macmini production DB",
+      "command": "SELECT COUNT(*) FROM raw_signals WHERE domain='edu_consulting' AND ingested_at > NOW() - INTERVAL '10 minutes'",
+      "result": "410건 신규 수집 (총 49,290건)"
+    }
+  ]
+}
