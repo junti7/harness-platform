@@ -41,8 +41,8 @@
     },
     {
       "requirement": "Do not report completion until the latest pushed code is deployed and verified on Mac Mini service/API.",
-      "status": "not_verified",
-      "evidence": "The local full available-question evaluation is complete. Latest source changes still need commit, push, Mac Mini deploy, Mac Mini full/spot verification, and final API probe before completion can be reported."
+      "status": "pass",
+      "evidence": "Commits through aa4c3dc were pushed to origin/main and deployed with scripts/deploy_to_macmini.sh. Mac Mini deploy verified origin diff=0 for backend/test/report/evidence files, backend reload on port 8000, Mac Mini full evaluation, and final 10-question API probe."
     },
     {
       "requirement": "Evaluate every available question, not only the 10-question API pilot.",
@@ -61,6 +61,18 @@
       "target": "local backend deterministic final-answer path",
       "command": ".venv/bin/python scripts/evaluate_edu_safety_coach_available_questions.py --sample-limit 80",
       "result": "54,936 unique questions evaluated; rag_expected=12,968; rag_pass=12,968; source_quote_verified=24,062; source_urls_checked=9; no rag_fail/source_quote_missing/source_quote_verify_fail/markdown_bold_marker_leak/generic_template counts; residual quality issues remain in raw corpus snippets. Script output-path handling was updated to support Mac Mini /tmp report paths without crashing after report write."
+    },
+    {
+      "name": "all available edu safety-coach question evaluation on Mac Mini",
+      "target": "Mac Mini backend deterministic final-answer path",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/evaluate_edu_safety_coach_available_questions.py --sample-limit 80 --output scratch/full_available_safety_coach_eval_macmini_20260628T1838.json'",
+      "result": "57,068 unique Mac Mini-local questions evaluated; rag_expected=13,215; rag_pass=13,215; source_quote_verified=24,508; source_urls_checked=9; no hard RAG/source/markdown/generic-template failures. Mac Mini had more local jsonl inputs than the repo-tracked local set."
+    },
+    {
+      "name": "10-question Mac Mini service API probe",
+      "target": "http://127.0.0.1:8000/api/edu/vp-training/safety-coach",
+      "command": "ssh macmini python API probe using X-Edu-Training-Auth and X-Harness-Secret, with unique concept_id per question",
+      "result": "10/10 HTTP 200 and ok=true; all_evidence_used=true; all_have_source_and_link=true; all_have_verified_quote_marker=true; all_have_summary_break=true; all_source_spacing_ok=true; any_markdown_bold_leak=false; any_old_generic_template=false."
     },
     {
       "name": "10-question local RAG source quote verification",
@@ -94,7 +106,7 @@
     }
   ],
   "deploy": {
-    "method": "pending: scripts/deploy_to_macmini.sh after push",
-    "result": "first RAG anchor deployment succeeded; latest full-evaluation, anchor-match tightening, and fallback-template replacement changes are not yet deployed at this residual evidence step."
+    "method": "scripts/deploy_to_macmini.sh",
+    "result": "deployed through commit aa4c3dc; deploy guard passed, backend launchd reloaded, port 8000 served, and origin diff check returned 0 for all deployed files."
   }
 }
