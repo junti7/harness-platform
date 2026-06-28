@@ -515,8 +515,15 @@ function currentStagePosition(raw: unknown): StagePosition {
 
 function evidenceBadge(value?: boolean): string {
   if (value === true) return '검증 자료 반영'
-  if (value === false) return '맞는 자료 없음'
+  if (value === false) return '일반 원칙 답변'
   return '자료 확인 전'
+}
+
+function coachModelBadge(coach: { model?: string; fallbackUsed?: boolean }): string {
+  if (coach.fallbackUsed) return '기본 안전 코치'
+  if (!coach.model) return ''
+  if (coach.model.includes('fast-template')) return '빠른 안전 코치'
+  return coach.model
 }
 
 function renderInlineCoachMarkdown(text: string, keyPrefix: string) {
@@ -1638,9 +1645,9 @@ function SafetyOrientationBlock({
                     <span className="font-semibold text-primary">AI 코치 답변</span>
                     <span className="flex shrink-0 items-center gap-1.5 text-[10px] font-medium text-text-faint">
                       <span className="text-text-faint/70">{evidenceBadge(coach.evidenceUsed)}</span>
-                      {coach.model ? (
+                      {coachModelBadge(coach) ? (
                         <span>
-                          {coach.fallbackUsed ? 'fallback' : coach.model}
+                          {coachModelBadge(coach)}
                         </span>
                       ) : null}
                     </span>
