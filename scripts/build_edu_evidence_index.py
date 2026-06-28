@@ -38,6 +38,7 @@ from scripts.refresh_edu_evidence_bank import (  # noqa: E402
     _source_label,
     infer_segment,
     infer_source_kind,
+    extract_source_url,
     is_low_quality_evidence,
     EDU_DIR,
 )
@@ -79,6 +80,7 @@ def _fetch_all_refined() -> list[dict]:
             if prefix in seen_prefix:
                 continue  # 전역 중복(다른 항목과도) 제거
             seen_prefix.add(prefix)
+            source_url = extract_source_url(r["raw_data"])
             items.append({
                 "id": f"fresh-{r['id']}-{n}",
                 "type": "최신 동향",
@@ -87,7 +89,10 @@ def _fetch_all_refined() -> list[dict]:
                 "cite": cite,
                 "source": src,
                 "source_name": r["source"],
+                "source_url": source_url,
+                "source_ref": source_url or f"refined_output:{r['id']}",
                 "source_kind": source_kind,
+                "refined_output_id": r["id"],
                 "collected_at": created.isoformat() if hasattr(created, "isoformat") else str(created),
             })
     return items
@@ -99,6 +104,8 @@ def _corpus() -> list[dict]:
         "id": a["id"], "type": a.get("type", "근거"), "segment": a.get("segment", "both"),
         "provenance": "anchor", "cite": a["cite"], "source": a.get("source", ""),
         "source_name": a.get("source_name", ""),
+        "source_url": a.get("source_url") or a.get("url") or a.get("link") or "",
+        "source_ref": a.get("source_ref") or a.get("source_url") or a.get("url") or "",
         "source_kind": a.get("source_kind") or infer_source_kind(a.get("source", "")),
     } for a in _load_anchors() if a.get("cite")]
     by_id = {a["id"]: a for a in anchors}
@@ -145,7 +152,7 @@ def build(rebuild: bool = False) -> dict:
         meta = corpus_by_id.get(cid)
         if not meta:
             continue
-        for key in ("type", "segment", "provenance", "cite", "source", "source_name", "source_kind", "collected_at"):
+        for key in ("type", "segment", "provenance", "cite", "source", "source_name", "source_url", "source_ref", "source_kind", "refined_output_id", "collected_at"):
             if meta.get(key):
                 item[key] = meta[key]
 

@@ -1,0 +1,46 @@
+{
+  "task": "edu RAG source_url preservation and backfill",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-28T16:12:00+09:00",
+      "summary": "Completion requires verification at the user-facing/runtime entrypoint before reporting done."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-28T16:12:00+09:00",
+      "summary": "Code and customer-facing answer changes require real API, DB, service, or production-like evidence."
+    }
+  ],
+  "verification": [
+    {
+      "name": "source_url backfill local data files",
+      "target": "local db and data/edu_research runtime artifacts",
+      "command": ".venv/bin/python scripts/backfill_edu_evidence_source_urls.py",
+      "result": "evidence_index.json url_present=1803 still_missing=0; evidence_bank.json url_present=19 still_missing=0"
+    },
+    {
+      "name": "safety coach real retrieval simulation",
+      "target": "local backend API code path and RAG data",
+      "command": "direct EduVpTrainingSafetyCoachRequest for 'AI가 아이 숙제를 대신 해주는 건 어디까지 막아야 해?'",
+      "result": "RAG infused answer contained a concrete source URL and source label; rejected candidates include source_url_present diagnostics"
+    },
+    {
+      "name": "pytest regression suite",
+      "target": "tests and backend source_url gates",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py tests/test_edu_customer_facing_retrieval.py tests/test_edu_evidence_quality.py tests/test_agent_completion_guard.py tests/test_llm_governance_bootstrap.py -q",
+      "result": "115 passed, 5 warnings, 12 subtests passed"
+    },
+    {
+      "name": "edu frontend production bundle build",
+      "target": "dist production bundle",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "vite build succeeded; generated dist/assets/index-DPSFv7cK.js and dist/assets/index-DQ_nQAdK.css"
+    }
+  ],
+  "deploy": {
+    "method": "pending scripts/deploy_to_macmini.sh after commit and push",
+    "result": "pending Mac Mini deploy and remote data backfill"
+  }
+}

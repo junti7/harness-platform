@@ -60,7 +60,8 @@ _MEDIA_CASE_SOURCE_MARKERS = (
 )
 _YOUTUBE_LOW_SIGNAL_TITLE_PATTERNS = (
     "official video", "mv", "뮤직비디오", "직캠", "cover", "reaction", "trailer", "예고편",
-    "drama", "드라마", "ost", "fan cam", "lyrics",
+    "drama", "드라마", "ost", "fan cam", "lyrics", "anime", "multi sub", "신번", "新番",
+    "神仙", "娇妻", "逆袭", "打猎", "白富美", "고블린",
 )
 
 
@@ -98,15 +99,32 @@ def infer_source_kind(source_label: str, raw_data=None, source_name: str | None 
     return "general_reference"
 
 
-def infer_segment(raw_data=None, source_name: str | None = None) -> str:
+def normalize_raw_data(raw_data) -> dict:
     rd = raw_data
     if isinstance(rd, str):
         try:
             rd = json.loads(rd)
         except Exception:
             rd = {}
-    if not isinstance(rd, dict):
-        rd = {}
+    return rd if isinstance(rd, dict) else {}
+
+
+def extract_source_url(raw_data=None) -> str:
+    rd = normalize_raw_data(raw_data)
+    for key in ("source_url", "url", "link", "canonical_url", "webpage_url", "doi", "pdf_url"):
+        value = str(rd.get(key) or "").strip()
+        if value.startswith(("http://", "https://")):
+            return value
+        if key == "doi" and value:
+            return f"https://doi.org/{value.removeprefix('doi:').strip()}"
+        match = re.search(r"https?://[^\s)>\]\"']+", value)
+        if match:
+            return match.group(0)
+    return ""
+
+
+def infer_segment(raw_data=None, source_name: str | None = None) -> str:
+    rd = normalize_raw_data(raw_data)
     cluster = str(rd.get("topic_cluster") or "").strip().lower()
     src = str(source_name or "").strip().lower()
     if cluster in {"worker_ai", "job_seeker_ai"}:
@@ -122,14 +140,7 @@ def is_low_quality_evidence(cite: str, source_label: str, raw_data=None, source_
     수집 자체를 막지 않는다. 다만 상담 근거로 쓸 때 명백히 무관한 엔터테인먼트/홍보성
     유튜브 조각이 섞이면 자연스러움이 크게 무너져서 evidence layer에서 제외한다.
     """
-    rd = raw_data
-    if isinstance(rd, str):
-        try:
-            rd = json.loads(rd)
-        except Exception:
-            rd = {}
-    if not isinstance(rd, dict):
-        rd = {}
+    rd = normalize_raw_data(raw_data)
     title = str(rd.get("title") or rd.get("video_title") or "").strip().lower()
     cite_norm = str(cite or "").strip().lower()
     source_norm = str(source_label or "").strip().lower()
@@ -137,6 +148,8 @@ def is_low_quality_evidence(cite: str, source_label: str, raw_data=None, source_
     if "youtube" in source_norm and any(pattern in title for pattern in _YOUTUBE_LOW_SIGNAL_TITLE_PATTERNS):
         return True
     if re.search(r"[一-龥]{4,}", title) and not any(token in blob for token in ("ai", "교육", "진로", "직장", "부모", "학생", "취업")):
+        return True
+    if "youtube" in source_norm and len(re.findall(r"[\u3040-\u30ff]", title)) >= 4:
         return True
     if len(cite_norm) < 18:
         return True
@@ -338,6 +351,7 @@ def _fetch_fresh_items(window_days: int, max_fresh: int) -> list[dict]:
         seen_cites.add(cite)
         seen_prefix.add(prefix)
         created = r["created_at"]
+        source_url = extract_source_url(r["raw_data"])
         candidates.append({
             "id": f"fresh-{r['id']}",
             "type": "최신 동향",
@@ -346,6 +360,8 @@ def _fetch_fresh_items(window_days: int, max_fresh: int) -> list[dict]:
             "cite": cite,
             "source": src_label,
             "source_name": r["source"],
+            "source_url": source_url,
+            "source_ref": source_url or f"refined_output:{r['id']}",
             "source_kind": infer_source_kind(src_label, r["raw_data"], r["source"]),
             "provenance": "pipeline",
             "refined_output_id": r["id"],

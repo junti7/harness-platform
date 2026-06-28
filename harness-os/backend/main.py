@@ -8896,6 +8896,7 @@ _EDU_VP_SAFETY_COACH_EVIDENCE_EXECUTOR = ThreadPoolExecutor(
     max_workers=int(os.getenv("EDU_SAFETY_COACH_EVIDENCE_MAX_WORKERS") or "2"),
     thread_name_prefix="edu-safety-coach-evidence",
 )
+_EDU_VP_SAFETY_COACH_SOURCE_URL_CACHE: dict[str, str] = {}
 
 
 def _edu_vp_safety_coach_model_timeout(model_name: str, remaining_seconds: float) -> float:
@@ -9021,31 +9022,97 @@ def _edu_vp_safety_coach_fast_answer(concept_title: str, question: str) -> str |
 
 
 def _edu_vp_safety_coach_source_label(item: dict[str, Any]) -> str:
-    source = _edu_clean_cite(str(item.get("source") or "출처 자료")).strip()
+    source = _edu_clean_cite(str(item.get("source") or item.get("title") or "출처 자료")).strip()
+    source_name = _edu_clean_cite(str(item.get("source_name") or "")).strip().replace("_", " ")
     title = _edu_clean_cite(str(item.get("title") or "")).strip()
+    generic_source_names = {"youtube search", "youtube", "naver search", "google search", "web search"}
+    if source_name.lower() in generic_source_names or source_name.lower().startswith("youtube "):
+        source_name = ""
+    if not title and source_name and source_name.lower() not in source.lower():
+        title = source.strip("'\"")
+    if source_name:
+        label = source_name
+        if title and title.lower() not in source_name.lower():
+            label = f"{label} '{title[:48]}'"
+        return label[:120]
     if title and title.lower() not in source.lower():
-        return f"{source} '{title[:48]}'"
-    return source[:80] or "출처 자료"
+        return f"{source} '{title[:48]}'"[:120]
+    return source[:120] or "출처 자료"
+
+
+def _edu_vp_safety_coach_extract_url(value: Any) -> str:
+    text = str(value or "").strip()
+    if text.startswith(("http://", "https://")):
+        return text
+    if text and re.match(r"^(doi:)?10\.\d{4,9}/\S+$", text, re.IGNORECASE):
+        return f"https://doi.org/{text.removeprefix('doi:')}"
+    match = re.search(r"https?://[^\s)>\]\"']+", text)
+    return match.group(0) if match else ""
+
+
+def _edu_vp_safety_coach_source_url_from_item(item: dict[str, Any]) -> str:
+    for key in ("source_url", "url", "source_ref", "link", "canonical_url", "webpage_url", "doi", "pdf_url"):
+        url = _edu_vp_safety_coach_extract_url(item.get(key))
+        if url:
+            return url
+    raw_data = item.get("raw_data")
+    if isinstance(raw_data, str):
+        try:
+            raw_data = json.loads(raw_data)
+        except json.JSONDecodeError:
+            raw_data = None
+    if isinstance(raw_data, dict):
+        for key in ("source_url", "url", "source_ref", "link", "canonical_url", "webpage_url", "doi", "pdf_url"):
+            url = _edu_vp_safety_coach_extract_url(raw_data.get(key))
+            if url:
+                return url
+    return ""
+
+
+def _edu_vp_safety_coach_refined_output_id(item: dict[str, Any]) -> str:
+    direct = str(item.get("refined_output_id") or "").strip()
+    if direct.isdigit():
+        return direct
+    match = re.match(r"fresh-(\d+)(?:-\d+)?$", str(item.get("id") or ""))
+    return match.group(1) if match else ""
 
 
 def _edu_vp_safety_coach_source_url(item: dict[str, Any]) -> str:
-    for key in ("source_url", "url", "source_ref", "link"):
-        value = str(item.get(key) or "").strip()
-        if value.startswith(("http://", "https://")):
-            return value
-        match = re.search(r"https?://[^\s)>\]\"']+", value)
-        if match:
-            return match.group(0)
-    raw_data = item.get("raw_data")
-    if isinstance(raw_data, dict):
-        for key in ("source_url", "url", "source_ref", "link"):
-            value = str(raw_data.get(key) or "").strip()
-            if value.startswith(("http://", "https://")):
-                return value
-            match = re.search(r"https?://[^\s)>\]\"']+", value)
-            if match:
-                return match.group(0)
-    return ""
+    direct = _edu_vp_safety_coach_source_url_from_item(item)
+    if direct:
+        return direct
+    refined_output_id = _edu_vp_safety_coach_refined_output_id(item)
+    if not refined_output_id:
+        return ""
+    cache_key = f"refined:{refined_output_id}"
+    if cache_key in _EDU_VP_SAFETY_COACH_SOURCE_URL_CACHE:
+        return _EDU_VP_SAFETY_COACH_SOURCE_URL_CACHE[cache_key]
+    try:
+        rows = execute_query(
+            """
+            SELECT rs.raw_data
+            FROM refined_outputs ro
+            JOIN filtered_signals fs ON fs.id = ro.filtered_signal_id
+            JOIN raw_signals rs ON rs.id = fs.raw_signal_id
+            WHERE ro.id = %s
+            LIMIT 1
+            """,
+            (int(refined_output_id),),
+            fetch=True,
+        ) or []
+        raw_data = (rows[0] or {}).get("raw_data") if rows else None
+        url = _edu_vp_safety_coach_source_url_from_item({"raw_data": raw_data})
+        _EDU_VP_SAFETY_COACH_SOURCE_URL_CACHE[cache_key] = url
+        return url
+    except Exception as exc:  # noqa: BLE001
+        _edu_runtime_event(
+            "vp_training_safety_coach_source_url_resolve_failed",
+            refined_output_id=refined_output_id,
+            error_type=type(exc).__name__,
+            error=str(exc)[:200],
+        )
+        _EDU_VP_SAFETY_COACH_SOURCE_URL_CACHE[cache_key] = ""
+        return ""
 
 
 def _edu_vp_safety_coach_source_markdown(item: dict[str, Any]) -> str:
@@ -10216,11 +10283,13 @@ def _edu_vp_safety_coach_evidence(
     validation_query = " ".join(part for part in (query, validation_text) if part).strip()
     for item in items:
         valid, reasons = _edu_vp_validate_safety_coach_evidence(query=validation_query, item=item)
+        resolved_source_url = _edu_vp_safety_coach_source_url(item)
         if not valid:
             rejected.append({
                 "id": str(item.get("id") or "")[:80],
                 "source": str(item.get("source") or "")[:160],
                 "reasons": reasons,
+                "source_url_present": bool(resolved_source_url),
             })
             continue
         cite = _edu_clean_cite(str(item.get("cite") or item.get("body") or ""))
@@ -10228,9 +10297,11 @@ def _edu_vp_safety_coach_evidence(
         selected.append({
             "id": str(item.get("id") or ""),
             "source": source[:160],
-            "source_ref": str(item.get("source_ref") or "")[:500],
-            "source_url": str(item.get("source_url") or item.get("url") or item.get("link") or "")[:500],
+            "source_name": str(item.get("source_name") or "")[:120],
+            "source_ref": str(item.get("source_ref") or resolved_source_url or "")[:500],
+            "source_url": resolved_source_url[:500],
             "source_kind": str(item.get("source_kind") or "")[:80],
+            "refined_output_id": _edu_vp_safety_coach_refined_output_id(item),
             "title": _edu_clean_cite(str(item.get("title") or ""))[:160],
             "cite": cite[:260],
             "score": float(item.get("_score") or 0.0),
@@ -10413,11 +10484,11 @@ def _edu_vp_safety_coach_simplify_for_first_grader(answer: str) -> str:
 
 def _edu_vp_safety_coach_format_answer(answer: str) -> str:
     text = str(answer or "").strip()
+    text = text.replace("**", "")
     text = re.sub(r"\s+(출처:\s*)", r"\n\n\1", text)
     text = re.sub(r"\s+(간단히 말하면,)", r"\n\n**\1**", text)
     text = text.replace("막아야 할 선은", "**막아야 할 선**은")
     text = text.replace("해도 되는 선은", "**해도 되는 선**은")
-    text = text.replace("전부 막을 필요는 없습니다.", "**전부 막을 필요는 없습니다.**")
     text = text.replace("출처:", "**출처:**")
     return text.strip()
 
@@ -12044,7 +12115,8 @@ _EDU_RESEARCH_POLICY_SOURCE_MARKERS = (
 _EDU_MEDIA_CASE_SOURCE_MARKERS = ("youtube", "기사", "news", "podcast", "방송", "kbs", "mbc", "sbs", "조선", "중앙", "한겨레")
 _EDU_LOW_SIGNAL_TITLE_PATTERNS = (
     "official video", "mv", "뮤직비디오", "직캠", "cover", "reaction", "trailer", "예고편",
-    "drama", "드라마", "ost", "fan cam", "lyrics",
+    "drama", "드라마", "ost", "fan cam", "lyrics", "anime", "multi sub", "신번", "新番",
+    "神仙", "娇妻", "逆袭", "打猎", "白富美", "고블린",
 )
 
 
@@ -12120,6 +12192,8 @@ def _edu_is_low_quality_item(item: dict[str, Any]) -> bool:
     if "youtube" in source and any(pattern in source for pattern in _EDU_LOW_SIGNAL_TITLE_PATTERNS):
         return True
     if re.search(r"[一-龥]{4,}", source) and not any(token in (source + " " + cite) for token in ("ai", "교육", "진로", "직장", "부모", "학생", "취업")):
+        return True
+    if "youtube" in source and len(re.findall(r"[\u3040-\u30ff]", source)) >= 4:
         return True
     return False
 

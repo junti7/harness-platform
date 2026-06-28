@@ -912,6 +912,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         )
 
         with (
+            patch.dict("os.environ", {"EDU_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS": "30"}),
+            patch.object(self.mod, "_edu_vp_safety_coach_evidence_with_timeout", return_value=("", [], {"skip_reason": "test"})),
             patch.object(self.mod, "_edu_vp_safety_coach_fast_answer", return_value=None),
             patch.object(self.mod, "_edu_safety_coach_model_ladder", return_value=["gemini-test", "claude-test"]),
             patch.object(self.mod, "_edu_generate_text", side_effect=[
@@ -949,6 +951,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         )
 
         with (
+            patch.dict("os.environ", {"EDU_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS": "30"}),
+            patch.object(self.mod, "_edu_vp_safety_coach_evidence_with_timeout", return_value=("", [], {"skip_reason": "test"})),
             patch.object(self.mod, "_edu_vp_safety_coach_fast_answer", return_value=None),
             patch.object(self.mod, "_edu_safety_coach_model_ladder", return_value=["gemini-test", "claude-test"]),
             patch.object(self.mod, "_edu_generate_text", side_effect=[
@@ -983,6 +987,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         )
 
         with (
+            patch.dict("os.environ", {"EDU_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS": "30"}),
+            patch.object(self.mod, "_edu_vp_safety_coach_evidence_with_timeout", return_value=("", [], {"skip_reason": "test"})),
             patch.object(self.mod, "_edu_vp_safety_coach_fast_answer", return_value=None),
             patch.object(self.mod, "_edu_safety_coach_model_ladder", return_value=["gemini-2.5-flash", "claude-haiku-4-5"]),
             patch.object(self.mod, "_edu_generate_text", side_effect=[
@@ -1189,6 +1195,76 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertFalse(valid)
         self.assertIn("missing_source_url", reasons)
+
+    def test_safety_coach_evidence_validation_backfills_source_url_from_refined_output_id(self):
+        self.mod._EDU_VP_SAFETY_COACH_SOURCE_URL_CACHE.clear()
+
+        def fake_execute_query(query, params=None, fetch=False):
+            self.assertIn("FROM refined_outputs", query)
+            self.assertEqual(params, (8105,))
+            self.assertTrue(fetch)
+            return [{"raw_data": {"url": "https://example.org/raw-homework-source"}}]
+
+        with patch.object(self.mod, "execute_query", side_effect=fake_execute_query):
+            valid, reasons = self.mod._edu_vp_validate_safety_coach_evidence(
+                query="아이 숙제 AI 대신 쓰는 것 어디까지 막아야 하나요",
+                item={
+                    "id": "fresh-8105-1",
+                    "source": "Naver_카페글",
+                    "source_name": "Naver_카페글",
+                    "title": "AI와 친한 아이가 살아남습니다",
+                    "cite": "아이 숙제에서 AI가 대신 답을 만들어 주기보다 아이가 먼저 생각하고 질문을 만드는 데 쓰도록 지도하라는 내용입니다.",
+                    "body": "아이 숙제 AI 대신 답 생각 질문",
+                    "_score": 0.91,
+                },
+            )
+
+        self.assertTrue(valid, reasons)
+        self.assertNotIn("missing_source_url", reasons)
+        self.assertEqual(
+            self.mod._EDU_VP_SAFETY_COACH_SOURCE_URL_CACHE["refined:8105"],
+            "https://example.org/raw-homework-source",
+        )
+
+    def test_safety_coach_selected_evidence_uses_backfilled_source_url(self):
+        self.mod._EDU_VP_SAFETY_COACH_SOURCE_URL_CACHE.clear()
+        item = {
+            "id": "fresh-8105-1",
+            "source": "'AI와 친한 아이가 살아남습니다'",
+            "source_name": "Naver_카페글",
+            "title": "AI와 친한 아이가 살아남습니다",
+            "cite": "아이 숙제에서 AI가 대신 답을 만들어 주기보다 아이가 먼저 생각하고 질문을 만드는 데 쓰도록 지도하라는 내용입니다.",
+            "body": "아이 숙제 AI 대신 답 생각 질문",
+            "_score": 0.91,
+        }
+
+        with (
+            patch.object(self.mod, "_retrieve_evidence_bundle", return_value={"items": [item]}),
+            patch.object(self.mod, "execute_query", return_value=[{"raw_data": {"url": "https://example.org/raw-homework-source"}}]),
+        ):
+            evidence_text, selected, meta = self.mod._edu_vp_safety_coach_evidence(
+                "AI가 아이 숙제를 대신 해주는 건 어디까지 막아야 해?",
+                validation_text="아이 숙제 AI 대신 답 생각 질문",
+                limit=1,
+            )
+
+        self.assertEqual(meta["selected_count"], 1)
+        self.assertEqual(selected[0]["source_url"], "https://example.org/raw-homework-source")
+        self.assertEqual(selected[0]["refined_output_id"], "8105")
+        self.assertIn("Naver 카페글", evidence_text)
+        self.assertIn("https://example.org/raw-homework-source", evidence_text)
+
+    def test_safety_coach_source_label_ignores_generic_collector_name(self):
+        label = self.mod._edu_vp_safety_coach_source_label(
+            {
+                "source": "YouTube · 별의별 교육연구소 — 'AI 없으면 불안한 아이들, 교육은 어디로 가는가?'",
+                "source_name": "youtube search",
+                "title": "",
+            }
+        )
+
+        self.assertIn("별의별 교육연구소", label)
+        self.assertNotIn("youtube search", label.lower())
 
     def test_safety_coach_normalizes_question_for_duplicate_detection(self):
         normalized = self.mod._edu_vp_normalize_safety_question("  다음 글에\n이어질   조사는 어떻게 추측하나요?  ")
@@ -1537,6 +1613,20 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertEqual(blended, long_answer)
         self.assertFalse(used)
+
+    def test_safety_coach_prepare_answer_strips_broad_markdown_and_keeps_summary_marker(self):
+        answer = self.mod._edu_vp_safety_coach_prepare_answer(
+            "**전부 막을 필요는 없습니다. 다만 아이가 먼저 생각할 일을 AI가 대신하는 것은 막는 게 좋습니다. "
+            "막아야 할 선은 답안 전체를 AI가 만드는 경우입니다. 해도 되는 선은 아이가 먼저 자기 답을 써본 뒤 쉬운 설명을 묻는 정도입니다. "
+            "간단히 말하면, AI가 숙제를 대신 해주면 멈추고 아이 생각을 더 좋게 만드는 질문 도구로 쓰면 괜찮습니다. "
+            "출처: [Naver 카페글](https://example.org/raw-homework-source)**"
+        )
+
+        self.assertFalse(answer.startswith("**전부 막을 필요는 없습니다."))
+        self.assertIn("**막아야 할 선**은", answer)
+        self.assertIn("**해도 되는 선**은", answer)
+        self.assertIn("\n\n**간단히 말하면,**", answer)
+        self.assertIn("\n\n**출처:** [Naver 카페글](https://example.org/raw-homework-source)", answer)
 
     def test_safety_coach_fast_template_drops_rag_when_quality_review_fails(self):
         req = self.mod.EduVpTrainingSafetyCoachRequest(

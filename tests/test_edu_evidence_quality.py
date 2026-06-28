@@ -1,9 +1,23 @@
 import unittest
 
-from scripts.refresh_edu_evidence_bank import infer_segment, infer_source_kind, is_low_quality_evidence
+from scripts.refresh_edu_evidence_bank import extract_source_url, infer_segment, infer_source_kind, is_low_quality_evidence
 
 
 class EduEvidenceQualityTests(unittest.TestCase):
+    def test_extract_source_url_accepts_common_raw_data_url_fields(self):
+        self.assertEqual(
+            extract_source_url({"url": "https://cafe.naver.com/dochithink/2314987"}),
+            "https://cafe.naver.com/dochithink/2314987",
+        )
+        self.assertEqual(
+            extract_source_url({"canonical_url": "original https://blog.naver.com/dkp132/224065279124"}),
+            "https://blog.naver.com/dkp132/224065279124",
+        )
+        self.assertEqual(
+            extract_source_url({"doi": "10.1016/j.stueduc.2022.101231"}),
+            "https://doi.org/10.1016/j.stueduc.2022.101231",
+        )
+
     def test_infer_source_kind_marks_community_voice(self):
         kind = infer_source_kind(
             "네이버 맘카페 — '중학생 아이가 챗GPT로 숙제를 해요'",
@@ -30,6 +44,26 @@ class EduEvidenceQualityTests(unittest.TestCase):
                 "감정선이 깊어지는 명장면이었습니다.",
                 "YouTube · Drama Fan Channel — 'Official Video OST Trailer'",
                 {"title": "Official Video OST Trailer"},
+                "YouTube_topic",
+            )
+        )
+
+    def test_low_quality_blocks_unrelated_multisub_anime_youtube_title(self):
+        self.assertTrue(
+            is_low_quality_evidence(
+                "AI를 피하지 말고 친구처럼 활용하게 하세요.",
+                "YouTube · Amazing Anime Man — '【新番】开局家徒四壁 | MULTI SUB'",
+                {"title": "【新番】开局家徒四壁却白捡个神仙娇妻？ | MULTI SUB"},
+                "YouTube_topic",
+            )
+        )
+
+    def test_low_quality_blocks_non_korean_youtube_personal_title(self):
+        self.assertTrue(
+            is_low_quality_evidence(
+                "AI 사용 규칙을 함께 정하고 지키라는 내용입니다.",
+                "YouTube · TAKA — '悩んだらChatGPTに聞く人はAI依存症の人です'",
+                {"title": "悩んだらChatGPTに聞く人はAI依存症の人です"},
                 "YouTube_topic",
             )
         )
