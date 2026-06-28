@@ -393,10 +393,10 @@
       "collection_mode": "rss_search",
       "expected_signal_type": "community_signal",
       "reliability_score": 0.4,
-      "enabled": false,
+      "enabled": true,
       "preferred_worker": "mbp",
-      "activation_policy": "discovery",
-      "notes": "포럼/스레드 발견용 공개 RSS"
+      "activation_policy": "always_on",
+      "notes": "포럼/스레드 발견용 공개 RSS — 100 entries 확인(2026-06-28)"
     }
   ]
 }
