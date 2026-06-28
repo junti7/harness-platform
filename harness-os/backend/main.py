@@ -8882,7 +8882,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-28-source-format-v19"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-28-source-format-v20"
 _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
 _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_PATH = PROJECT_ROOT / "configs" / "education" / "edu_coach_policy_registry.json"
 _EDU_VP_SAFETY_COACH_POLICY_CANDIDATE_PATH = PROJECT_ROOT / "docs" / "reviews" / "edu_coach_simulations" / "policy_candidates.jsonl"
@@ -10486,10 +10486,7 @@ def _edu_vp_safety_coach_format_answer(answer: str) -> str:
     text = str(answer or "").strip()
     text = text.replace("**", "")
     text = re.sub(r"\s+(출처:\s*)", r"\n\n\1", text)
-    text = re.sub(r"\s+(간단히 말하면,)", r"\n\n**\1**", text)
-    text = text.replace("막아야 할 선은", "**막아야 할 선**은")
-    text = text.replace("해도 되는 선은", "**해도 되는 선**은")
-    text = text.replace("출처:", "**출처:**")
+    text = re.sub(r"\s+(간단히 말하면,)", r"\n\n\1", text)
     return text.strip()
 
 
@@ -10502,21 +10499,13 @@ _EDU_VP_SAFETY_COACH_ALLOWED_BOLD_LABELS = (
 
 
 def _edu_vp_safety_coach_sanitize_markdown_for_ui(answer: str) -> str:
-    """Keep supported markdown, but remove markers that would render as raw text."""
+    """Return UI-safe answer text. Bold is rendered by the frontend, not markdown."""
     text = str(answer or "").strip()
     if not text:
         return ""
     lines: list[str] = []
     for line in text.splitlines():
-        if line.count("**") % 2 != 0:
-            line = line.replace("**", "")
-        # Bold is allowed only for small scanning labels. Long sentence-level
-        # bolding reads random and leaks badly if the renderer fails.
-        for bold_text in re.findall(r"\*\*([^*]+)\*\*", line):
-            label = bold_text.strip()
-            if label not in _EDU_VP_SAFETY_COACH_ALLOWED_BOLD_LABELS:
-                line = line.replace(f"**{bold_text}**", bold_text)
-        lines.append(line)
+        lines.append(line.replace("**", ""))
     return "\n".join(lines).strip()
 
 

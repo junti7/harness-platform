@@ -51,7 +51,7 @@ export type TrainingScreenProps = {
 
 const STAGE_ORDER: StageKey[] = ['day0', 'day1']
 const STAGE_LABEL: Record<StageKey, string> = { day0: 'Day 0', day1: 'Day 1' }
-const SAFETY_COACH_ANSWER_VERSION = '2026-06-28-source-format-v19'
+const SAFETY_COACH_ANSWER_VERSION = '2026-06-28-source-format-v20'
 const TRAINING_DEVICE_ID_KEY = 'vp_training_device_id'
 const TRAINING_LOCAL_DRAFT_PREFIX = 'vp_training_stage_draft'
 type SafetyConceptFeedback = Record<string, string>
@@ -526,11 +526,29 @@ function coachModelBadge(coach: { model?: string; fallbackUsed?: boolean }): str
   return coach.model
 }
 
+const SAFETY_COACH_ALLOWED_BOLD_LABELS = new Set(['막아야 할 선', '해도 되는 선', '간단히 말하면,', '출처:'])
+
+function sanitizeCoachAnswerForDisplay(value: string): string {
+  return String(value || '')
+    .split('\n')
+    .map((line) => {
+      let next = line
+      next = next.replace(/\*\*/g, '')
+      return next
+    })
+    .join('\n')
+    .trim()
+}
+
 function renderInlineCoachMarkdown(text: string, keyPrefix: string) {
-  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g).filter(Boolean)
+  const safeText = sanitizeCoachAnswerForDisplay(text)
+  const labelPattern = Array.from(SAFETY_COACH_ALLOWED_BOLD_LABELS)
+    .map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')
+  const parts = safeText.split(new RegExp(`(\`[^\`]+\`|\\[[^\\]]+\\]\\(https?:\\/\\/[^)\\s]+\\)|${labelPattern})`, 'g')).filter(Boolean)
   return parts.map((part, partIndex) => {
-    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
-      return <strong key={`${keyPrefix}-${partIndex}`} className="font-bold text-ink">{part.slice(2, -2)}</strong>
+    if (SAFETY_COACH_ALLOWED_BOLD_LABELS.has(part.trim())) {
+      return <strong key={`${keyPrefix}-${partIndex}`} className="font-bold text-ink">{part}</strong>
     }
     if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
       return <code key={`${keyPrefix}-${partIndex}`} className="rounded bg-card px-1 py-0.5 font-mono text-[0.95em] text-ink">{part.slice(1, -1)}</code>
@@ -606,7 +624,7 @@ function renderCoachTable(lines: string[], start: number): { node: React.ReactNo
 }
 
 function renderCoachAnswer(text: string) {
-  const lines = text.split('\n')
+  const lines = sanitizeCoachAnswerForDisplay(text).split('\n')
   const nodes: React.ReactNode[] = []
   let index = 0
   while (index < lines.length) {

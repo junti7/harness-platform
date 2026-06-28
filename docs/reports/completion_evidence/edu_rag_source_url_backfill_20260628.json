@@ -78,7 +78,7 @@
       "name": "headless chrome markdown rendering check",
       "target": "browser DOM rendering fixture",
       "command": "Google Chrome --headless --dump-dom file:///tmp/edu_safety_render_check.html",
-      "result": "raw_marker_visible=false; strong_count=3 for allowed labels only"
+      "result": "raw_marker_visible=false; strong_count=3 for allowed labels only; API answer contains no raw ** markers"
     },
     {
       "name": "post-markdown full regression",

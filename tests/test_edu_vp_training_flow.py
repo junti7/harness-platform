@@ -1084,7 +1084,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertTrue(usage["_safety_coach_rag_infused"])
         self.assertTrue(usage["_safety_coach_rag_patch_applied"])
         self.assertIn("[privacy guide '아이 사진 업로드 전 확인'](https://example.org/privacy-photo)에는", answer)
-        self.assertIn("**출처:** [privacy guide '아이 사진 업로드 전 확인'](https://example.org/privacy-photo)", answer)
+        self.assertIn("출처: [privacy guide '아이 사진 업로드 전 확인'](https://example.org/privacy-photo)", answer)
         self.assertIn("얼굴, 학교 이름, 위치 정보", answer)
         self.assertNotIn("여러 위험", answer)
 
@@ -1468,7 +1468,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertFalse(fallback_used)
         self.assertIn("명사는", answer)
         self.assertIn("[YouTube family learning digest](https://example.org/family-learning)에는", answer)
-        self.assertIn("**출처:** [YouTube family learning digest](https://example.org/family-learning)", answer)
+        self.assertIn("출처: [YouTube family learning digest](https://example.org/family-learning)", answer)
         self.assertIn("질문 비교 도구", answer)
         self.assertTrue(usage["_safety_coach_rag_infused"])
         self.assertEqual(usage["_safety_coach_evidence_meta"]["selected_count"], 1)
@@ -1597,7 +1597,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(mocked_generate.call_count, 1)
         self.assertEqual(model, "model-a+rag_patch")
         self.assertIn("[YouTube family learning digest](https://example.org/attention-learning)에는", answer)
-        self.assertIn("**출처:** [YouTube family learning digest](https://example.org/attention-learning)", answer)
+        self.assertIn("출처: [YouTube family learning digest](https://example.org/attention-learning)", answer)
         self.assertIn("질문 비교 도구", answer)
         self.assertFalse(fallback_used)
         self.assertTrue(usage["_safety_coach_rag_infused"])
@@ -1614,7 +1614,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(blended, long_answer)
         self.assertFalse(used)
 
-    def test_safety_coach_prepare_answer_strips_broad_markdown_and_keeps_summary_marker(self):
+    def test_safety_coach_prepare_answer_strips_markdown_and_keeps_summary_break(self):
         answer = self.mod._edu_vp_safety_coach_prepare_answer(
             "**전부 막을 필요는 없습니다. 다만 아이가 먼저 생각할 일을 AI가 대신하는 것은 막는 게 좋습니다. "
             "막아야 할 선은 답안 전체를 AI가 만드는 경우입니다. 해도 되는 선은 아이가 먼저 자기 답을 써본 뒤 쉬운 설명을 묻는 정도입니다. "
@@ -1622,11 +1622,11 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             "출처: [Naver 카페글](https://example.org/raw-homework-source)**"
         )
 
-        self.assertFalse(answer.startswith("**전부 막을 필요는 없습니다."))
-        self.assertIn("**막아야 할 선**은", answer)
-        self.assertIn("**해도 되는 선**은", answer)
-        self.assertIn("\n\n**간단히 말하면,**", answer)
-        self.assertIn("\n\n**출처:** [Naver 카페글](https://example.org/raw-homework-source)", answer)
+        self.assertNotIn("**", answer)
+        self.assertIn("막아야 할 선은", answer)
+        self.assertIn("해도 되는 선은", answer)
+        self.assertIn("\n\n간단히 말하면,", answer)
+        self.assertIn("\n\n출처: [Naver 카페글](https://example.org/raw-homework-source)", answer)
 
     def test_safety_coach_api_answer_removes_malformed_markdown_leaks(self):
         answer = self.mod._edu_vp_safety_coach_api_answer(
@@ -1636,19 +1636,20 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         )
 
         self.assertNotIn("**전부 막을 필요는 없습니다.", answer)
-        self.assertIn("**간단히 말하면,**", answer)
-        self.assertIn("**출처:** [자료](https://example.org/source)", answer)
+        self.assertNotIn("**", answer)
+        self.assertIn("간단히 말하면,", answer)
+        self.assertIn("출처: [자료](https://example.org/source)", answer)
         self.assertFalse(self.mod._edu_vp_safety_coach_markdown_leak_present(answer))
 
-    def test_safety_coach_api_answer_keeps_only_decision_boundary_bold_labels(self):
+    def test_safety_coach_api_answer_strips_markdown_bold_and_keeps_labels_plain(self):
         answer = self.mod._edu_vp_safety_coach_api_answer(
             "전부 막을 필요는 없습니다. **중요해 보이는 긴 문장 전체를 굵게 만들면 오히려 읽기 어렵습니다.** "
             "**막아야 할 선**은 AI가 답을 대신 쓰는 경우입니다. **해도 되는 선**은 아이가 먼저 생각한 뒤 묻는 경우입니다."
         )
 
-        self.assertNotIn("**중요해 보이는", answer)
-        self.assertIn("**막아야 할 선**은", answer)
-        self.assertIn("**해도 되는 선**은", answer)
+        self.assertNotIn("**", answer)
+        self.assertIn("막아야 할 선은", answer)
+        self.assertIn("해도 되는 선은", answer)
         self.assertFalse(self.mod._edu_vp_safety_coach_markdown_leak_present(answer))
 
     def test_safety_coach_api_answer_removes_odd_bold_marker(self):
