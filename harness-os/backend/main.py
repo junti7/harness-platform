@@ -8882,7 +8882,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-28-source-format-v20"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-28-source-format-v21"
 _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
 _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_PATH = PROJECT_ROOT / "configs" / "education" / "edu_coach_policy_registry.json"
 _EDU_VP_SAFETY_COACH_POLICY_CANDIDATE_PATH = PROJECT_ROOT / "docs" / "reviews" / "edu_coach_simulations" / "policy_candidates.jsonl"
@@ -10497,6 +10497,7 @@ def _edu_vp_safety_coach_simplify_for_first_grader(answer: str) -> str:
 def _edu_vp_safety_coach_format_answer(answer: str) -> str:
     text = str(answer or "").strip()
     text = text.replace("**", "")
+    text = re.sub(r"\[([^\]]+)\]\(https?://[^)\s]+\)(?=에는)", r"\1", text)
     text = re.sub(r"\s+(출처:\s*)", r"\n\n\1", text)
     text = re.sub(r"\s+(간단히 말하면,)", r"\n\n\1", text)
     text = re.sub(r"\s+(결론은\s*)", r"\n\n\1", text)

@@ -51,7 +51,7 @@ export type TrainingScreenProps = {
 
 const STAGE_ORDER: StageKey[] = ['day0', 'day1']
 const STAGE_LABEL: Record<StageKey, string> = { day0: 'Day 0', day1: 'Day 1' }
-const SAFETY_COACH_ANSWER_VERSION = '2026-06-28-source-format-v20'
+const SAFETY_COACH_ANSWER_VERSION = '2026-06-28-source-format-v21'
 const TRAINING_DEVICE_ID_KEY = 'vp_training_device_id'
 const TRAINING_LOCAL_DRAFT_PREFIX = 'vp_training_stage_draft'
 type SafetyConceptFeedback = Record<string, string>
@@ -529,8 +529,8 @@ function coachModelBadge(coach: { model?: string; fallbackUsed?: boolean }): str
 const SAFETY_COACH_ALLOWED_BOLD_LABELS = new Set(['막아야 할 선', '해도 되는 선', '간단히 말하면,', '결론은', '출처:'])
 
 const SAFETY_COACH_ACTION_EMPHASIS_PATTERNS = [
-  /"[^"]+"\s*,\s*"[^"]+"\s*같은\s+질문을\s+[^.!?。]*아이(?:가|에게)?\s*직접\s*생각하게\s*하(?:는|게|세요|도록)[^.!?。]*[.!?。]?/g,
-  /[^.!?。]*같은\s+질문을\s+[^.!?。]*아이(?:가|에게)?\s*직접\s*생각하게\s*하(?:는|게|세요|도록)[^.!?。]*[.!?。]?/g,
+  /"[^"]+"\s*,\s*"[^"]+"\s*같은\s+질문을\s+[^.!?。]*아이(?:가|에게)?\s*직접\s*생각하게\s*하(?:는|게|세요|도록)(?:\s*게)?(?=\s+중요한|\s*것이\s+중요한|\s*점|\s*입니다|[.!?。])/g,
+  /[^.!?。]*같은\s+질문을\s+[^.!?。]*아이(?:가|에게)?\s*직접\s*생각하게\s*하(?:는|게|세요|도록)(?:\s*게)?(?=\s+중요한|\s*것이\s+중요한|\s*점|\s*입니다|[.!?。])/g,
   /아이(?:가|에게)?\s*직접\s*생각하게\s*하(?:는|게|세요|도록)[^.!?。]*[.!?。]?/g,
   /AI(?:가|를)?\s*대신\s*(?:하|해주|만들|쓰)(?:게|지)\s*[^.!?。]*[.!?。]?/g,
   /아이(?:가)?\s*먼저\s*[^.!?。]*(?:써|풀|생각|고민|시도)[^.!?。]*[.!?。]?/g,

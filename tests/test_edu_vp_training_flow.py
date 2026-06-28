@@ -1690,6 +1690,19 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("\n\n결론은", answer)
         self.assertIn("\n\n출처: [Naver 카페글](https://example.org/source)", answer)
 
+    def test_safety_coach_prepare_answer_moves_source_link_out_of_body_reference(self):
+        answer = self.mod._edu_vp_safety_coach_prepare_answer(
+            "아이 숙제에는 경계가 필요합니다. "
+            "[Naver 카페글 'AI와 친한 아이가 살아남습니다'](https://example.org/naver)에는 AI가 대신 해주는 것이 아니라 생각을 돕게 하라는 말도 나와 있어요. "
+            "간단히 말하면, AI가 숙제를 대신 해주면 멈춥니다. "
+            "출처: [Naver 카페글 'AI와 친한 아이가 살아남습니다'](https://example.org/naver)"
+        )
+
+        body, source = answer.split("\n\n출처:", 1)
+        self.assertIn("Naver 카페글 'AI와 친한 아이가 살아남습니다'에는", body)
+        self.assertNotIn("](https://example.org/naver)에는", body)
+        self.assertIn("[Naver 카페글 'AI와 친한 아이가 살아남습니다'](https://example.org/naver)", source)
+
     def test_safety_coach_api_answer_removes_odd_bold_marker(self):
         answer = self.mod._edu_vp_safety_coach_api_answer(
             "전부 막을 필요는 없습니다. **막아야 할 선은 답을 대신 쓰는 경우입니다."

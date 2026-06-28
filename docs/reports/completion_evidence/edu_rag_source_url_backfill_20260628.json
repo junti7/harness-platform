@@ -108,7 +108,7 @@
       "name": "macmini v20 no-markdown API answer check",
       "target": "macmini backend and production RAG data",
       "command": "direct EduVpTrainingSafetyCoachRequest for homework question after v20 deploy",
-      "result": "answer_version=2026-06-28-source-format-v20; rag=True; selected_count=3; source_link=True; raw_marker=False; markdown_leak=False"
+      "result": "superseded by v21 because v20 cached answers could remain visible in the UI"
     },
     {
       "name": "macmini edu-app bundle rebuild",
@@ -127,6 +127,18 @@
       "target": "frontend renderer regex behavior for actual answer text",
       "command": "node fixture mirroring renderInlineCoachMarkdown against Mac Mini answer shape",
       "result": "strong labels/actions are limited to action sentences plus structure labels; importantPointStrong=false"
+    },
+    {
+      "name": "v21 cache bust and source-link sanitizer regression",
+      "target": "backend formatter, frontend answer version, and tests",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py tests/test_edu_customer_facing_retrieval.py tests/test_edu_evidence_quality.py tests/test_agent_completion_guard.py tests/test_llm_governance_bootstrap.py -q; npm run build --prefix harness-os/edu-app",
+      "result": "121 passed, 5 warnings, 12 subtests passed; frontend build ok with dist/assets/index-DxygOSe2.js; answer version bumped to 2026-06-28-source-format-v21 so v20 cached answers are ignored; body source markdown links are stripped before '에는'"
+    },
+    {
+      "name": "v21 action emphasis fixture",
+      "target": "frontend renderer regex behavior",
+      "command": "node fixture mirroring TrainingScreen action emphasis regex",
+      "result": "quoted action sentence is bold only through '아이가 직접 생각하게 하는 게'; '중요한 점입니다' remains plain; conclusion and source labels remain bold"
     }
   ],
   "deploy": {
