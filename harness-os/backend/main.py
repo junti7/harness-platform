@@ -7610,15 +7610,24 @@ def _edu_vp_safety_confirmation_from_event(state: dict[str, Any], event_name: st
 
 def _edu_vp_unlock_day0_practice(state: dict[str, Any]) -> dict[str, Any]:
     day0 = dict(state.get("day0") or {})
-    practice = _edu_vp_day0_practice_payload(state.get("intake") or {})
-    custom_practice = day0.get("post_safety_practice") or {}
-    if isinstance(custom_practice, dict):
-        practice = {**practice, **custom_practice}
-    for key in ("title", "schedule_blocks", "estimated_minutes", "required_action", "proof_artifact_hint", "sample_materials", "tutorial_steps", "checklist", "blocked_step_options", "pass_fail_rubric"):
-        if key in practice:
-            day0[key] = practice[key]
+    completed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     day0["safety_confirmed"] = True
+    day0["completed"] = True
+    day0["completed_at"] = str(day0.get("completed_at") or completed_at)
+    day0["saved_at"] = str(day0.get("saved_at") or completed_at)
+    if not str(day0.get("proof_artifact") or "").strip():
+        day0["proof_artifact"] = "Day 0 안전 설명 확인 완료"
     state["day0"] = day0
+    ui_state = state.get("ui_state") or {}
+    if isinstance(ui_state, dict):
+        safety_confirmed = ui_state.get("safety_confirmed") or {}
+        if not isinstance(safety_confirmed, dict):
+            safety_confirmed = {}
+        ui_state["safety_confirmed"] = {**safety_confirmed, "day0": True}
+        ui_state["selected_stage"] = "day1"
+        ui_state["active_training_stage"] = "day1"
+        ui_state["show_continue_from"] = "day1"
+        state["ui_state"] = ui_state
     return state
 
 
@@ -14779,6 +14788,17 @@ def edu_vp_training_session_sync(
         state = _edu_vp_unlock_day0_practice(state)
     state = _edu_vp_refresh_state(state)
     _edu_vp_store_state(case_id, state)
+    if safety_confirmation:
+        _edu_execute(
+            """
+            UPDATE edu_cases
+            SET status = 'vp_training_day1',
+                updated_at = NOW()
+            WHERE id = %s
+            """,
+            (case_id,),
+            fetch=False,
+        )
     _edu_vp_append_event(
         case_id=case_id,
         email=req.email or str(payload["customer"].get("email") or ""),

@@ -2024,14 +2024,22 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertIn("missing_transformer_paper_authors", issues)
 
-    def test_safety_confirmation_unlocks_day0_practice(self):
-        state = {"intake": {"preferred_llm": "claude"}, "day0": self.mod._edu_vp_build_day0({"preferred_llm": "claude"})}
+    def test_safety_confirmation_completes_day0_and_selects_day1(self):
+        state = {
+            "intake": {"preferred_llm": "claude"},
+            "day0": self.mod._edu_vp_build_day0({"preferred_llm": "claude"}),
+            "day1": self.mod._edu_vp_build_day1({"preferred_llm": "claude"}),
+            "ui_state": {"selected_stage": "day0", "safety_confirmed": {}},
+        }
         unlocked = self.mod._edu_vp_unlock_day0_practice(state)
+        refreshed = self.mod._edu_vp_refresh_state(unlocked)
 
         self.assertTrue(unlocked["day0"]["safety_confirmed"])
-        self.assertIn("Claude", unlocked["day0"]["required_action"])
-        self.assertEqual(unlocked["day0"]["checklist"][0]["id"], "open_tool")
-        self.assertEqual(unlocked["day0"]["sample_materials"][0]["kit_id"], "day0-first-login-starter")
+        self.assertTrue(unlocked["day0"]["completed"])
+        self.assertEqual(unlocked["ui_state"]["selected_stage"], "day1")
+        self.assertEqual(refreshed["flow_outline"][0]["pct"], 100)
+        self.assertEqual(refreshed["progress"]["pct"], 50)
+        self.assertEqual(refreshed["ui_state"]["selected_stage"], "day1")
 
     def test_refresh_migrates_legacy_unconfirmed_day0_to_safety_gate(self):
         legacy_state = {
@@ -2103,8 +2111,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
                 "highlights": [{"title": "업무 답장 예시"}],
             },
         )
-        self.assertIn("Claude", confirmed_personalized["required_action"])
-        self.assertEqual(confirmed_personalized["checklist"][0]["id"], "open_tool")
+        self.assertTrue(confirmed_personalized["completed"])
+        self.assertEqual(confirmed_personalized["checklist"], [])
 
     def test_persona_library_is_locked_until_core_track_completion(self):
         locked = self.mod._edu_vp_persona_library(50)

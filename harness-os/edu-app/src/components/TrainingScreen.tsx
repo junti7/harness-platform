@@ -2519,6 +2519,10 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       .then((next) => {
         setState(next)
         setSafetyReady(Boolean(next.ui_state?.safety_confirmed?.[stage] || next[stage]?.completed))
+        if (stage === 'day0' && next.day0?.completed) {
+          hydrateStageInputs(next, 'day1')
+          setNotice('Day 0 완료! Day 1 실습으로 이동했어요.')
+        }
       })
       .catch((e) => {
         console.error('safety confirmation sync failed', e)

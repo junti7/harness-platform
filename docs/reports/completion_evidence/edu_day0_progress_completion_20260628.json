@@ -1,0 +1,65 @@
+{
+  "task": "edu Day 0 checked concepts should count as completion and unlock Day 1",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-28T21:11:40+09:00",
+      "summary": "Completion reporting requires requirement-to-evidence mapping, real runtime or user-facing verification, completion guard evidence, and exact residual risk reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-28T21:11:40+09:00",
+      "summary": "Code, deployment, UI, and customer-facing changes require real verification and completion evidence guard before reporting complete."
+    }
+  ],
+  "requirements_checklist": [
+    {
+      "requirement": "Day 0 concept checks must not leave the main case card and progress bar at 0%.",
+      "status": "pass",
+      "evidence": "harness-os/backend/main.py now marks Day 0 completed when safety_orientation_confirmed has all required concept IDs; _edu_vp_refresh_state then reports Day 0 flow pct 100 and overall progress pct 50 when Day 1 is open."
+    },
+    {
+      "requirement": "After Day 0 learning/checks, the user should move to Day 1 practice.",
+      "status": "pass",
+      "evidence": "Backend sets ui_state selected_stage/active_training_stage/show_continue_from to day1 and updates edu_cases status to vp_training_day1; TrainingScreen hydrates Day 1 after confirmation."
+    },
+    {
+      "requirement": "Regression tests should lock the new semantics.",
+      "status": "pass",
+      "evidence": "tests/test_edu_vp_training_flow.py asserts safety confirmation completes Day 0, selects Day 1, flow pct is 100, and overall progress is 50."
+    }
+  ],
+  "verification": [
+    {
+      "name": "edu VP training targeted regression tests",
+      "target": "pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "108 passed, 3 warnings, 59 subtests passed."
+    },
+    {
+      "name": "edu VP training and personalization regression tests",
+      "target": "pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py tests/test_edu_curriculum_personalization.py -q",
+      "result": "111 passed, 3 warnings, 59 subtests passed."
+    },
+    {
+      "name": "edu app production bundle build",
+      "target": "dist build",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "tsc and vite build succeeded; dist assets generated."
+    },
+    {
+      "name": "edu app lint",
+      "target": "eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "eslint completed successfully with exit code 0."
+    },
+    {
+      "name": "diff whitespace check",
+      "target": "pre-push code hygiene",
+      "command": "git diff --check -- harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx tests/test_edu_vp_training_flow.py",
+      "result": "No whitespace errors."
+    }
+  ]
+}
