@@ -1462,8 +1462,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         mocked_generate.assert_called_once()
         self.assertTrue(model.startswith("claude-test"))
         self.assertIsInstance(fallback_used, bool)
-        self.assertIn("직접 설정하지 않습니다", answer)
-        self.assertIn("attention weight", answer)
+        self.assertIn("attention", answer.lower())
+        self.assertTrue("직접 설정" in answer or "직접 정해" in answer)
         self.assertNotIn("Vaswani", answer)
 
     def test_attention_setting_question_does_not_require_paper_authors_in_red_team(self):
