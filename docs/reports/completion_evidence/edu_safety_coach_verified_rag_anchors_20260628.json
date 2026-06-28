@@ -60,7 +60,7 @@
       "name": "all available edu safety-coach question evaluation",
       "target": "local backend deterministic final-answer path",
       "command": ".venv/bin/python scripts/evaluate_edu_safety_coach_available_questions.py --sample-limit 80",
-      "result": "54,936 unique questions evaluated; rag_expected=12,968; rag_pass=12,968; source_quote_verified=24,062; source_urls_checked=9; no rag_fail/source_quote_missing/source_quote_verify_fail/markdown_bold_marker_leak/generic_template counts; residual quality issues remain in raw corpus snippets."
+      "result": "54,936 unique questions evaluated; rag_expected=12,968; rag_pass=12,968; source_quote_verified=24,062; source_urls_checked=9; no rag_fail/source_quote_missing/source_quote_verify_fail/markdown_bold_marker_leak/generic_template counts; residual quality issues remain in raw corpus snippets. Script output-path handling was updated to support Mac Mini /tmp report paths without crashing after report write."
     },
     {
       "name": "10-question local RAG source quote verification",

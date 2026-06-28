@@ -186,6 +186,13 @@ def _load_questions(patterns: tuple[str, ...]) -> tuple[list[dict[str, Any]], di
     }
 
 
+def _display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
 def _sample_append(samples: dict[str, list[dict[str, Any]]], key: str, row: dict[str, Any], *, limit: int) -> None:
     if len(samples[key]) >= limit:
         return
@@ -356,7 +363,7 @@ def main() -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     summary = {
-        "output": str(output.relative_to(ROOT)),
+        "output": _display_path(output),
         "backend_answer_version": report.get("backend_answer_version"),
         "unique_questions": report["inventory"]["unique_questions"],
         "counts": report["counts"],
