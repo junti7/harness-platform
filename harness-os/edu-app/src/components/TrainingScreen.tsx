@@ -163,6 +163,13 @@ function pickStage(st: TrainingState): StageKey {
   return 'day0'
 }
 
+function stageProgressPct(st: TrainingState | null, stageKey: StageKey): number {
+  const flowItem = st?.flow_outline?.find((item) => item.key === stageKey)
+  if (typeof flowItem?.pct === 'number') return Math.min(100, Math.max(0, Math.round(flowItem.pct)))
+  if (st?.[stageKey]?.completed) return 100
+  return Math.min(100, Math.max(0, Math.round(st?.progress?.pct ?? 0)))
+}
+
 function llmLabel(value?: string): string {
   const v = (value ?? '').toLowerCase()
   if (v.includes('gpt') || v.includes('chatgpt')) return 'ChatGPT'
@@ -1764,7 +1771,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const restoringPositionRef = useRef(false)
   const positionSyncTimerRef = useRef<number | null>(null)
 
-  const stageDraftForSync = useCallback((extras: Record<string, unknown> = {}): Record<string, unknown> => {
+  const stageDraftForSync = useCallback((extras: Record<string, unknown> = {}, stageKey: StageKey = stage): Record<string, unknown> => {
     const draft = {
       safety_concept_feedback: conceptFeedbackRef.current,
       safety_coach_answers: coachAnswersRef.current,
@@ -1781,7 +1788,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         : lastPositionRef.current,
       ...extras,
     }
-    saveLocalStageDraft(caseId, stage, draft)
+    saveLocalStageDraft(caseId, stageKey, draft)
     return draft
   }, [caseId, stage])
 
@@ -1817,12 +1824,13 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         anchor_id: anchorId,
       },
       stageDrafts: {
-        [stageKey]: stageDraftForSync(),
+        [stageKey]: stageDraftForSync({}, stageKey),
       },
     })
       .then((next) => {
-        setState(next)
-        seqRef.current = Math.max(seqRef.current, Number(next.ui_state?.last_client_seq ?? 0))
+        const serverSeq = Number(next.ui_state?.last_client_seq ?? 0)
+        if (serverSeq >= seqRef.current) setState(next)
+        seqRef.current = Math.max(seqRef.current, serverSeq)
       })
       .catch((e) => console.error('claim training device failed', e))
   }, [caseId, email, stageDraftForSync])
@@ -2002,7 +2010,24 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       clientSeq: seqRef.current,
       eventName: 'select_stage',
       eventPayload: { selected_stage: next },
-    }).catch((e) => console.error('syncSession failed', e))
+      stageDrafts: {
+        [next]: stageDraftForSync({}, next),
+      },
+    })
+      .then((nextState) => {
+        const serverSeq = Number(nextState.ui_state?.last_client_seq ?? 0)
+        if (serverSeq >= seqRef.current) {
+          setState({
+            ...nextState,
+            ui_state: {
+              ...nextState.ui_state,
+              selected_stage: next,
+            },
+          })
+        }
+        seqRef.current = Math.max(seqRef.current, serverSeq)
+      })
+      .catch((e) => console.error('syncSession failed', e))
   }
 
   function toggleCheck(id: string) {
@@ -2627,7 +2652,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const doneCount = items.filter((it) => checked[it.id]).length
   const allChecked = items.length === 0 || doneCount === items.length
   const day1Locked = !state?.day0?.completed
-  const overallPct = Math.min(100, Math.max(0, Math.round(state?.progress?.pct ?? 0)))
+  const currentStagePct = stageProgressPct(state, stage)
   const learnerName = String(state?.customer?.name || '오늘의 학습자')
   const personalizedCurriculum =
     stage === 'day0' && state?.personalized_curriculum?.available ? state.personalized_curriculum : null
@@ -2644,13 +2669,13 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       ) : null}
 
       <div className={questionArchiveOpen ? 'hidden print:hidden' : ''}>
-      {/* 전체 진행률 */}
+      {/* 현재 단계 진행률 */}
       <div className="mb-4 flex items-center gap-2.5">
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-          <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${overallPct}%` }} />
+          <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${currentStagePct}%` }} />
         </div>
         <span className="w-9 shrink-0 text-right text-xs font-semibold tabular-nums text-text-muted">
-          {overallPct}%
+          {currentStagePct}%
         </span>
       </div>
 

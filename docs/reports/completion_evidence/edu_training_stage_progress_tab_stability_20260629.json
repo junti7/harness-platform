@@ -1,0 +1,47 @@
+{
+  "task": "Fix edu training selected-stage progress bar and Day 0 tab stability",
+  "status": "residual_risk",
+  "date": "2026-06-29",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-29T05:22:00+09:00",
+      "summary": "Completion requires mapping the user-visible issue to evidence and verifying the actual runtime entrypoint before reporting done."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-29T05:22:00+09:00",
+      "summary": "Code and UI changes require completion evidence guard plus at least one real user-facing or runtime verification."
+    }
+  ],
+  "scope": [
+    "harness-os/edu-app/src/components/TrainingScreen.tsx"
+  ],
+  "changes": [
+    "Training header progress now uses the selected stage pct from flow_outline, so Day 0 shows 100% after completion while Day 1 can still show 0%.",
+    "Stage switch sync now sends the target stage draft instead of reusing the previous selected stage draft.",
+    "Stale claim-training-device responses no longer overwrite newer local stage selection state.",
+    "Select-stage sync response is merged back with the clicked stage so the UI does not bounce through the wrong selected stage."
+  ],
+  "verification": [
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: vite built dist/assets/index-CnJst5z_.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    }
+  ],
+  "known_unrelated_dirty_files": [
+    "docs/education/edu_parents_first_parent_landing.html"
+  ],
+  "deploy": {
+    "method": "pending scripts/deploy_to_macmini.sh after origin/main push",
+    "result": "pending"
+  }
+}
