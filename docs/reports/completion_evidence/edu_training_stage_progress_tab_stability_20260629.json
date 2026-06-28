@@ -1,6 +1,6 @@
 {
   "task": "Fix edu training selected-stage progress bar and Day 0 tab stability",
-  "status": "residual_risk",
+  "status": "complete",
   "date": "2026-06-29",
   "governance_bootstrap": [
     {
@@ -35,13 +35,43 @@
       "target": "local eslint",
       "command": "npm run lint --prefix harness-os/edu-app",
       "result": "passed"
+    },
+    {
+      "name": "macmini edu app production build",
+      "target": "macmini dist",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && PATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH\" npm run build --prefix harness-os/edu-app && uid=$(id -u) && launchctl kickstart -k gui/$uid/com.harness.edu-app'",
+      "result": "passed: vite built dist/assets/index-BxfJuLZM.js and edu-app launchd was restarted"
+    },
+    {
+      "name": "production app bundle served",
+      "target": "production url",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:5174/",
+      "result": "passed: served assets/index-BxfJuLZM.js and assets/index-DQ_nQAdK.css"
+    },
+    {
+      "name": "production backend health",
+      "target": "macmini api health",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:8000/api/health",
+      "result": "passed: {\"ok\":true,\"generated_at\":\"2026-06-29T05:20:23\"}"
+    },
+    {
+      "name": "production case 72 selected-stage progress",
+      "target": "macmini database runtime",
+      "command": "ssh macmini python import of harness-os/backend/main.py with _edu_vp_load_state(72) and _edu_vp_refresh_state",
+      "result": "passed: selected_stage=day0, overall_progress={completed_stages:1,total_stages:2,pct:50}, flow_outline day0 pct=100 and day1 pct=0"
+    },
+    {
+      "name": "production launchd services",
+      "target": "macmini launchd",
+      "command": "ssh macmini 'launchctl list | grep -E \"com.harness.edu-app|com.harness.harness-os-backend\"'",
+      "result": "passed: com.harness.edu-app and com.harness.harness-os-backend are loaded"
     }
   ],
   "known_unrelated_dirty_files": [
     "docs/education/edu_parents_first_parent_landing.html"
   ],
   "deploy": {
-    "method": "pending scripts/deploy_to_macmini.sh after origin/main push",
-    "result": "pending"
+    "method": "scripts/deploy_to_macmini.sh harness-os/edu-app/src/components/TrainingScreen.tsx docs/reports/completion_evidence/edu_training_stage_progress_tab_stability_20260629.json",
+    "result": "passed: selected paths match origin/main on Mac Mini; production edu-app bundle rebuilt and launchd restarted"
   }
 }
