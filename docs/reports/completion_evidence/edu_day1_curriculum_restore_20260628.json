@@ -1,0 +1,54 @@
+{
+  "task": "Restore VP training Day 1 content and fix Day 0/Day 1 progress navigation consistency",
+  "status": "residual_risk",
+  "date": "2026-06-28",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-28T21:52:00+09:00",
+      "summary": "Completion requires requirement-to-evidence mapping plus real runtime verification before reporting done."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-28T21:52:00+09:00",
+      "summary": "Code and UI changes require completion evidence guard and at least one user-facing or runtime entrypoint check."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Stopped request-time personalized curriculum from overwriting Day 1 with shallow dynamic path items.",
+    "Kept dynamic curriculum path as metadata while preserving the prepared Day 1 practice pack content.",
+    "Made Day 0 completion advancement explicit so session refresh and list refresh do not force the selected tab back to Day 1.",
+    "Changed case-list card progress to use the current selected/incomplete stage progress instead of mixing the last completed label with overall progress."
+  ],
+  "verification": [
+    {
+      "name": "targeted edu VP training regression tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "passed",
+      "summary": "112 passed, 3 warnings, 59 subtests passed"
+    },
+    {
+      "name": "production backend health before deploy",
+      "target": "macmini api health",
+      "command": "curl -fsS --max-time 5 http://100.97.175.44:8000/api/health",
+      "result": "passed: {\"ok\":true,\"generated_at\":\"2026-06-28T21:52:54\"}"
+    }
+  ],
+  "regression_coverage": [
+    "test_session_refresh_preserves_day0_revisit_after_completion",
+    "test_personalized_curriculum_keeps_day1_practice_pack",
+    "test_case_card_uses_current_stage_progress"
+  ],
+  "known_unrelated_dirty_files": [
+    "docs/education/edu_parents_first_parent_landing.html"
+  ],
+  "deploy": {
+    "method": "pending scripts/deploy_to_macmini.sh after origin/main push",
+    "result": "pending"
+  }
+}

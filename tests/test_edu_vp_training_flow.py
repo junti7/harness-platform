@@ -2031,7 +2031,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             "day1": self.mod._edu_vp_build_day1({"preferred_llm": "claude"}),
             "ui_state": {"selected_stage": "day0", "safety_confirmed": {}},
         }
-        unlocked = self.mod._edu_vp_unlock_day0_practice(state)
+        unlocked = self.mod._edu_vp_unlock_day0_practice(state, advance_to_day1=True)
         refreshed = self.mod._edu_vp_refresh_state(unlocked)
 
         self.assertTrue(unlocked["day0"]["safety_confirmed"])
@@ -2040,6 +2040,20 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(refreshed["flow_outline"][0]["pct"], 100)
         self.assertEqual(refreshed["progress"]["pct"], 50)
         self.assertEqual(refreshed["ui_state"]["selected_stage"], "day1")
+
+    def test_session_refresh_preserves_day0_revisit_after_completion(self):
+        state = {
+            "intake": {"preferred_llm": "claude"},
+            "day0": self.mod._edu_vp_build_day0({"preferred_llm": "claude"}),
+            "day1": self.mod._edu_vp_build_day1({"preferred_llm": "claude"}),
+            "ui_state": {"selected_stage": "day0", "safety_confirmed": {"day0": True}},
+        }
+
+        unlocked = self.mod._edu_vp_unlock_day0_practice(state, advance_to_day1=False)
+        refreshed = self.mod._edu_vp_refresh_state(unlocked)
+
+        self.assertTrue(refreshed["day0"]["completed"])
+        self.assertEqual(refreshed["ui_state"]["selected_stage"], "day0")
 
     def test_refresh_counts_checked_day0_concepts_as_completion(self):
         day0 = self.mod._edu_vp_build_day0({"preferred_llm": "claude"})
@@ -2064,7 +2078,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertTrue(refreshed["day0"]["completed"])
         self.assertEqual(refreshed["flow_outline"][0]["pct"], 100)
         self.assertEqual(refreshed["progress"]["pct"], 50)
-        self.assertEqual(refreshed["ui_state"]["selected_stage"], "day1")
+        self.assertEqual(refreshed["ui_state"]["selected_stage"], "day0")
 
     def test_refresh_migrates_legacy_unconfirmed_day0_to_safety_gate(self):
         legacy_state = {
@@ -2278,6 +2292,67 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         )
 
         self.assertEqual(path[0]["topic"], "업무 활용")
+
+    def test_personalized_curriculum_keeps_day1_practice_pack(self):
+        state = {
+            "intake": {"preferred_llm": "claude", "motivation": "child_study"},
+            "day0": self.mod._edu_vp_build_day0({"preferred_llm": "claude"}),
+            "day1": self.mod._edu_vp_build_day1({"preferred_llm": "claude", "motivation": "child_study"}),
+        }
+        state = self.mod._edu_vp_refresh_state(state)
+        dynamic_path = [
+            {"title": "Day 0 · safety"},
+            {
+                "title": "Day 1 · 도구 선택/소개",
+                "topic": "도구 선택/소개",
+                "concern": "프롬프트 공부",
+                "mission": "Claude로 프롬프트 공부를 처음 실행한다.",
+                "checklist": [{"id": "tool", "title": "도구 선택/소개"}],
+                "llm": "Claude",
+                "role": "학부모",
+                "highlight": "수집 자료",
+            },
+        ]
+
+        with (
+            patch("core.edu_curriculum.load_evidence_rows", return_value=[{"id": 1}]),
+            patch(
+                "core.edu_curriculum.personalize",
+                return_value={
+                    "segment": "parent",
+                    "order": [{"topic": "도구 선택/소개", "weight": 0.9}],
+                    "top_concerns": [{"concern": "프롬프트 공부"}],
+                    "highlights": [{"title": "수집 자료"}],
+                    "attrs": {"llm": "claude"},
+                },
+            ),
+            patch.object(
+                self.mod,
+                "_edu_vp_build_dynamic_curriculum_path",
+                return_value=(dynamic_path, {"active_length": 99}),
+            ),
+        ):
+            attached = self.mod._edu_vp_attach_personalized_curriculum(state, {"customer": {"segment": "parent"}})
+
+        self.assertIn("가정통신문", attached["day1"]["title"])
+        self.assertNotIn("도구 선택/소개", attached["day1"]["title"])
+        self.assertEqual(attached["day1"]["sample_materials"][0]["kit_id"], "day1-school-notice-kit")
+        self.assertEqual(attached["progress"]["pct"], 0)
+
+    def test_case_card_uses_current_stage_progress(self):
+        label, pct = self.mod._edu_vp_case_card_progress(
+            {
+                "ui_state": {"selected_stage": "day1"},
+                "progress": {"pct": 50},
+                "flow_outline": [
+                    {"key": "day0", "label": "Day 0", "completed": True, "pct": 100},
+                    {"key": "day1", "label": "Day 1", "completed": False, "pct": 0},
+                ],
+            }
+        )
+
+        self.assertEqual(label, "Day 1")
+        self.assertEqual(pct, 0)
 
     def test_material_zip_contains_expected_files(self):
         filename, payload = self.mod._edu_vp_material_zip_bytes("day1-school-notice-kit")

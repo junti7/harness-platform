@@ -7635,7 +7635,7 @@ def _edu_vp_day0_concepts_complete(state: dict[str, Any]) -> bool:
     return bool(required and required.issubset(_edu_vp_day0_draft_concept_ids(state)))
 
 
-def _edu_vp_unlock_day0_practice(state: dict[str, Any]) -> dict[str, Any]:
+def _edu_vp_unlock_day0_practice(state: dict[str, Any], *, advance_to_day1: bool = False) -> dict[str, Any]:
     day0 = dict(state.get("day0") or {})
     completed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     day0["safety_confirmed"] = True
@@ -7651,9 +7651,10 @@ def _edu_vp_unlock_day0_practice(state: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(safety_confirmed, dict):
             safety_confirmed = {}
         ui_state["safety_confirmed"] = {**safety_confirmed, "day0": True}
-        ui_state["selected_stage"] = "day1"
-        ui_state["active_training_stage"] = "day1"
-        ui_state["show_continue_from"] = "day1"
+        if advance_to_day1:
+            ui_state["selected_stage"] = "day1"
+            ui_state["active_training_stage"] = "day1"
+            ui_state["show_continue_from"] = "day1"
         state["ui_state"] = ui_state
     return state
 
@@ -7789,7 +7790,7 @@ def _edu_vp_refresh_state(state: dict[str, Any]) -> dict[str, Any]:
     state = _edu_vp_normalize_state_keys(state)
     state = _edu_vp_migrate_unconfirmed_day0_safety(state)
     if not bool((state.get("day0") or {}).get("completed")) and _edu_vp_day0_concepts_complete(state):
-        state = _edu_vp_unlock_day0_practice(state)
+        state = _edu_vp_unlock_day0_practice(state, advance_to_day1=False)
     state = _edu_vp_migrate_unstarted_day1_motivation(state)
     state["day0"] = state.get("day0") or {}
     state["day1"] = state.get("day1") or {}
@@ -7801,8 +7802,7 @@ def _edu_vp_refresh_state(state: dict[str, Any]) -> dict[str, Any]:
         flow_outline.append({"key": "day0", "label": "Day 0", "title": state["day0"]["title"], "completed": p0["completed"], "pct": p0["pct"]})
     if p0["completed"] and state["day1"].get("title"):
         flow_outline.append({"key": "day1", "label": "Day 1", "title": state["day1"]["title"], "completed": p1["completed"], "pct": p1["pct"]})
-    adaptive_total = int((state.get("adaptive_curriculum_meta") or {}).get("active_length") or 0)
-    total_stages = adaptive_total if adaptive_total > 0 else (2 if p0["completed"] else 1)
+    total_stages = 2 if p0["completed"] else 1
     completed_stages = int(p0["completed"]) + (int(p1["completed"]) if p0["completed"] else 0)
     state["flow_outline"] = flow_outline
     state["progress"] = {
@@ -7969,8 +7969,7 @@ def _edu_vp_attach_personalized_curriculum(state: dict[str, Any], payload: dict[
         state["dynamic_curriculum_path"] = path
         state["adaptive_curriculum_meta"] = planner_meta
         state["day0"] = _edu_vp_apply_curriculum_to_day0(state.get("day0") or {}, intake, res)
-        state["day1"] = _edu_vp_apply_curriculum_path_stage(state.get("day1") or {}, state["dynamic_curriculum_path"], index=1)
-        state["progress"] = _edu_vp_adaptive_progress(state)
+        state["day1"] = state.get("day1") or _edu_vp_build_day1(intake)
     except Exception as exc:  # noqa: BLE001
         logging.getLogger("uvicorn.error").warning("edu vp session curriculum unavailable: %s", exc)
         _edu_runtime_event(
@@ -7993,6 +7992,22 @@ def _edu_vp_adaptive_progress(state: dict[str, Any]) -> dict[str, Any]:
         "total_stages": active_length,
         "pct": round(completed / active_length * 100) if active_length else 0,
     }
+
+
+def _edu_vp_case_card_progress(summary: dict[str, Any]) -> tuple[str, int]:
+    flow_outline = [item for item in (summary.get("flow_outline") or []) if isinstance(item, dict)]
+    ui_state = summary.get("ui_state") or {}
+    selected_stage = str(ui_state.get("selected_stage") or "") if isinstance(ui_state, dict) else ""
+    selected = next((item for item in flow_outline if str(item.get("key") or "") == selected_stage), None)
+    current = selected or next((item for item in flow_outline if not bool(item.get("completed"))), None)
+    if current is None and flow_outline:
+        current = flow_outline[-1]
+    if current:
+        label = str(current.get("label") or current.get("key") or "VP 훈련")
+        pct = int(current.get("pct") or 0)
+        return label, pct
+    progress = summary.get("progress") or {}
+    return "VP 훈련", int(progress.get("pct") or 0) if isinstance(progress, dict) else 0
 
 
 def _edu_vp_build_dynamic_curriculum_path(
@@ -14693,7 +14708,7 @@ def edu_vp_training_session(
     state["customer"] = payload["customer"]
     state["case"] = payload["case"]
     if bool(((state.get("ui_state") or {}).get("safety_confirmed") or {}).get("day0")):
-        state = _edu_vp_unlock_day0_practice(state)
+        state = _edu_vp_unlock_day0_practice(state, advance_to_day1=False)
     state = _edu_vp_refresh_state(state)
     _edu_vp_store_state(resolved_case_id, state)
     response_state = _edu_vp_attach_personalized_curriculum(state, payload)
@@ -14814,7 +14829,7 @@ def edu_vp_training_session_sync(
         },
     )
     if safety_confirmation:
-        state = _edu_vp_unlock_day0_practice(state)
+        state = _edu_vp_unlock_day0_practice(state, advance_to_day1=True)
     state = _edu_vp_refresh_state(state)
     _edu_vp_store_state(case_id, state)
     if safety_confirmation:
@@ -15408,21 +15423,15 @@ def edu_vp_training_cases(
         summary = _edu_vp_normalize_state_keys(summary_raw) if isinstance(summary_raw, dict) else {}
         if has_training_state:
             summary = _edu_vp_refresh_state(summary)
-        progress = summary.get("progress") or {"pct": 0}
         flow_outline = summary.get("flow_outline") or []
-        latest_stage_title = ""
-        for item in flow_outline:
-            if bool((item or {}).get("completed")):
-                latest_stage_title = str((item or {}).get("label") or "")
-        if not latest_stage_title and flow_outline:
-            latest_stage_title = str((flow_outline[0] or {}).get("label") or "")
-        case_label = f"{latest_stage_title or 'VP 훈련'} · 진행률 {int(progress.get('pct') or 0)}%"
+        stage_label, progress_pct = _edu_vp_case_card_progress(summary)
+        case_label = f"{stage_label} · 진행률 {progress_pct}%"
         items.append(
             {
                 "case_id": int(row.get("case_id")),
                 "status": row.get("status"),
                 "updated_at": row.get("updated_at"),
-                "progress_pct": int(progress.get("pct") or 0),
+                "progress_pct": progress_pct,
                 "case_label": case_label,
                 "flow_outline": flow_outline,
                 "has_training_state": has_training_state,
