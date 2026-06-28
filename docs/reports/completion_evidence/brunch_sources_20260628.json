@@ -1,0 +1,47 @@
+{
+  "task": "brunch_sources_20260628",
+  "date": "2026-06-28",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-28T20:45:00+09:00",
+      "summary": "Must/Never 확인. 외부 수집 소스 추가는 legal_risk:low Google News RSS 경로로만."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-28T20:45:00+09:00",
+      "summary": "Completion requires real verification before reporting done."
+    }
+  ],
+  "problem": "Brunch Story 글을 edu_consulting 파이프라인에 수집할 경로가 없었음.",
+  "changes": [
+    {
+      "path": "configs/sources/edu_consulting.json",
+      "summary": "Brunch_AI교육_학부모, Brunch_자녀교육_AI, Brunch_AI리터러시 3개 소스 추가. type:rss_search, legal_risk:low. total_sources 90→93."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Brunch_AI교육_학부모 entries",
+      "command": ".venv/bin/python -c \"import feedparser; print(len(feedparser.parse('https://news.google.com/rss/search?q=site:brunch.co.kr+AI+교육+학부모&hl=ko&gl=KR&ceid=KR:ko').entries))\"",
+      "result": "100 entries"
+    },
+    {
+      "name": "Brunch_자녀교육_AI entries",
+      "command": ".venv/bin/python -c \"import feedparser; print(len(feedparser.parse('https://news.google.com/rss/search?q=site:brunch.co.kr+자녀+교육+AI&hl=ko&gl=KR&ceid=KR:ko').entries))\"",
+      "result": "100 entries"
+    },
+    {
+      "name": "Brunch_AI리터러시 entries",
+      "command": ".venv/bin/python -c \"import feedparser; print(len(feedparser.parse('https://news.google.com/rss/search?q=site:brunch.co.kr+AI+리터러시+OR+디지털교육&hl=ko&gl=KR&ceid=KR:ko').entries))\"",
+      "result": "100 entries"
+    },
+    {
+      "name": "Mac Mini 배포 후 source-stats 확인",
+      "target": "macmini production",
+      "command": "bash scripts/deploy_to_macmini.sh configs/sources/edu_consulting.json",
+      "result": "exit 0, diff=0 — 배포 검증 통과"
+    }
+  ]
+}
