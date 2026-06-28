@@ -428,9 +428,9 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             concept_body="초등학생 수학 점수가 떨어져서 AI 학습을 시작해야 할지 걱정됩니다.",
         )
 
-        self.assertIn("초등학생", answer)
-        self.assertIn("수학", answer)
-        self.assertIn("학습", answer)
+        self.assertIn("AI 교육이나 학습", answer)
+        self.assertIn("아이", answer)
+        self.assertIn("내가 먼저 생각한 흔적", answer)
         self.assertNotIn("question_not_addressed", issues)
 
     def test_safety_coach_does_not_treat_practical_ai_education_question_as_principle(self):
@@ -455,11 +455,53 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         )
 
         self.assertIn("숙제", homework)
-        self.assertIn("대신 쓰게 하느냐", homework)
+        self.assertIn("막아야 할 선", homework)
+        self.assertIn("허용할 선", homework)
+        self.assertIn("핵심 과정을 AI가 대신", homework)
         self.assertNotIn("질문을 숫자로 바꾸고", homework)
         self.assertIn("사진", privacy)
         self.assertIn("개인정보", privacy)
         self.assertNotIn("질문을 숫자로 바꾸고", privacy)
+
+    def test_safety_coach_fallback_uses_natural_openings_across_intents(self):
+        cases = [
+            ("empathy", "항상 내 편인 말은 안전 신호가 아니다", "AI가 아이 마음을 너무 잘 달래주면 의존할까 봐 걱정돼요."),
+            ("dependency", "AI 의존 경계", "아이들이 AI에 너무 빠져들면 어떻게 끊어야 하나요?"),
+            ("homework", "수집 corpus 기반 사용자 질문", "AI가 아이 숙제를 대신 해주는 건 어디까지 막아야 해?"),
+            ("learning", "AI 교육 시작", "초등학생 AI 학습은 어떻게 시작하면 좋을까요?"),
+            ("career", "AI와 진로", "AI 때문에 아이 진로와 일자리가 대체될까 봐 걱정돼요."),
+            ("privacy", "개인정보와 사진은 조심하기", "AI 앱에 아이 얼굴 사진을 올려도 괜찮을까요?"),
+            ("media", "AI와 미디어 사용", "유튜브와 AI 영상을 공부에 써도 괜찮을까요?"),
+            ("principle", "Transformer", "왜 AI 답변은 사람처럼 자연스럽게 나와?"),
+            ("generic", "수집 corpus 기반 사용자 질문", "새 AI 앱을 아이에게 써보게 해도 될지 모르겠어요."),
+        ]
+        mechanical_fragments = (
+            "·",
+            "쪽이 걱정",
+            "쪽 걱정",
+            "쪽 학습",
+            "쪽 진로",
+            "쪽 고민",
+            "쪽은 그럴 수",
+            "질문의 핵심부터",
+            "오늘 기준",
+        )
+
+        for name, title, question in cases:
+            with self.subTest(name=name):
+                answer = self.mod._edu_vp_safety_coach_fallback(title, question)
+
+                for fragment in mechanical_fragments:
+                    self.assertNotIn(fragment, answer)
+
+        homework_answer = self.mod._edu_vp_safety_coach_fallback(
+            "수집 corpus 기반 사용자 질문",
+            "AI가 아이 숙제를 대신 해주는 건 어디까지 막아야 해?",
+        )
+        self.assertIn("전부 막을 필요는 없습니다", homework_answer)
+        self.assertIn("막아야 할 선", homework_answer)
+        self.assertIn("허용할 선", homework_answer)
+        self.assertNotIn("아이·숙제·대신", homework_answer)
 
     def test_safety_coach_policy_resolver_matches_cost_barrier(self):
         context = self.mod._edu_vp_safety_coach_resolved_policy_context(
@@ -1306,7 +1348,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(model, "fast-template+rag")
         self.assertFalse(fallback_used)
         self.assertIn("명사는", answer)
-        self.assertIn("관련 자료도", answer)
+        self.assertIn("관련 자료를 같이 보면", answer)
         self.assertIn("질문 비교 도구", answer)
         self.assertTrue(usage["_safety_coach_rag_infused"])
         self.assertEqual(usage["_safety_coach_evidence_meta"]["selected_count"], 1)
@@ -1334,6 +1376,26 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertEqual(sentence, "")
 
+    def test_safety_coach_rag_sentence_smooths_colloquial_excerpt_endings(self):
+        sentence = self.mod._edu_vp_safety_coach_rag_sentence(
+            "AI가 아이 숙제를 대신 해주는 건 어디까지 막아야 해?",
+            [
+                {
+                    "source": "learning risk digest",
+                    "cite": (
+                        "AI가 아이한테 '그 논문 쓰지 마, 그 책 읽지 마, 내가 대신 해줄게'라고 "
+                        "말하는 셈인데, 이건 인간 역량을 통째로 무너뜨리는 길이라고요."
+                    ),
+                    "score": 4.0,
+                }
+            ],
+        )
+
+        self.assertIn("관련 자료를 같이 보면", sentence)
+        self.assertIn("우려도 참고", sentence)
+        self.assertNotIn("라고요라는", sentence)
+        self.assertNotIn("다고요라는", sentence)
+
     def test_safety_coach_red_team_requires_selected_rag_to_be_used(self):
         issues = self.mod._edu_vp_safety_coach_red_team(
             question="다음 글에 이어질 최적의 명사는 어떻게 추측해?",
@@ -1356,8 +1418,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         issues = self.mod._edu_vp_safety_coach_red_team(
             question="다음 글에 이어질 최적의 명사는 어떻게 추측해?",
             answer=(
-                "명사는 앞뒤 말이 만들고 있는 장면을 보고 고릅니다. 관련 자료도 명사 추측을 정답기가 아니라 "
-                "질문 비교 도구로 다룰 때 사고력이 남는다는 점을 보여줍니다. 중요한 내용은 사람이 다시 확인해야 합니다."
+                "명사는 앞뒤 말이 만들고 있는 장면을 보고 고릅니다. 관련 자료를 같이 보면, 명사 추측을 정답기가 아니라 "
+                "질문 비교 도구로 다룰 때 사고력이 남는다는 점도 참고할 수 있습니다. 중요한 내용은 사람이 다시 확인해야 합니다."
             ),
             concept_body="LLM은 다음에 올 법한 말을 이어 붙입니다.",
             evidence_items=[
@@ -1405,7 +1467,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertEqual(mocked_generate.call_count, 1)
         self.assertEqual(model, "model-a+rag_patch")
-        self.assertIn("관련 자료도", answer)
+        self.assertIn("관련 자료를 같이 보면", answer)
         self.assertIn("질문 비교 도구", answer)
         self.assertFalse(fallback_used)
         self.assertTrue(usage["_safety_coach_rag_infused"])
