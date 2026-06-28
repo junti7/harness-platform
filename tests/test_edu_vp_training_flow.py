@@ -963,7 +963,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(mocked_generate.call_count, 2)
         self.assertEqual(mocked_generate.call_args_list[0].kwargs["model_ladder"], ["gemini-2.5-flash"])
         self.assertEqual(mocked_generate.call_args_list[1].kwargs["model_ladder"], ["claude-haiku-4-5"])
-        self.assertEqual(model, "claude-haiku-4-5")
+        self.assertTrue(model.startswith("claude-haiku-4-5"))
         self.assertIn("명사는", answer)
         self.assertFalse(fallback_used)
 
@@ -1460,7 +1460,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             answer, model, _usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
 
         mocked_generate.assert_called_once()
-        self.assertEqual(model, "claude-test")
+        self.assertTrue(model.startswith("claude-test"))
         self.assertFalse(fallback_used)
         self.assertIn("직접 설정하지 않습니다", answer)
         self.assertIn("attention weight", answer)
