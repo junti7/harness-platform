@@ -9298,18 +9298,35 @@ def _edu_vp_safety_coach_anchor_match_ids(query: str) -> list[str]:
         marker in q for marker in ("틀린", "오류", "환각", "정확")
     ):
         add(["edweek-ai-math-wrong", "edweek-ai-literacy-not-magic"])
-    groups: list[tuple[tuple[str, ...], list[str]]] = [
-        (("문해력", "리터러시", "literacy"), ["edweek-ai-literacy-not-magic", "edutopia-ai-use-framework"]),
-        (("스크린", "영상", "유튜브", "youtube", "screen", "화면"), ["screen-advisory"]),
-        (("진로", "커리어", "직업", "대체", "도태", "career"), ["ai-self-efficacy", "ai-anxiety-behavior"]),
-        (("수학", "불안", "의존", "기대", "매달", "신호"), ["anx-dependent", "ai-anxiety-behavior"]),
-        (("숙제", "과제", "답안", "발표문", "대신"), ["edutopia-ai-boundaries", "edutopia-ai-use-framework"]),
-        (("챗봇", "이미", "많이", "못 쓰게", "금지", "쓰게", "어떻게 쓰", "기준", "부모"), ["anchor-teens-already-using", "edutopia-ai-use-framework"]),
-        (("공부", "망친", "망치", "학습"), ["edutopia-ai-use-framework", "ai-anxiety-behavior"]),
-    ]
-    for markers, ids in groups:
-        if any(marker in q for marker in markers):
-            add(ids)
+    if any(marker in q for marker in ("문해력", "리터러시", "literacy")):
+        add(["edweek-ai-literacy-not-magic", "edutopia-ai-use-framework"])
+    if any(marker in q for marker in ("스크린", "영상", "유튜브", "youtube", "screen", "화면")) and any(
+        marker in q for marker in ("아이", "학생", "공부", "학습", "교육", "부모", "학부모", "걱정")
+    ):
+        add(["screen-advisory"])
+    if any(marker in q for marker in ("진로", "커리어", "직업", "대체", "도태", "career")) and any(
+        marker in q for marker in ("ai", "인공지능", "챗봇", "아이", "학생", "불안", "준비")
+    ):
+        add(["ai-self-efficacy", "ai-anxiety-behavior"])
+    if any(marker in q for marker in ("불안", "의존", "기대", "매달", "신호")) and any(
+        marker in q for marker in ("수학", "답", "ai", "챗봇", "학습앱")
+    ):
+        add(["anx-dependent", "ai-anxiety-behavior"])
+    if any(marker in q for marker in ("숙제", "과제", "답안", "발표문", "대신")) and any(
+        marker in q for marker in ("ai", "챗봇", "gpt", "생성형")
+    ) and any(marker in q for marker in ("아이", "학생", "학교", "부모", "학부모", "답", "글", "풀이", "제출", "homework", "?", "？")):
+        add(["edutopia-ai-boundaries", "edutopia-ai-use-framework"])
+    if any(marker in q for marker in ("챗봇", "gpt", "생성형 ai", "인공지능", "ai")) and any(
+        marker in q for marker in ("이미", "많이 쓰", "못 쓰게", "금지", "어떻게 쓰", "사용 기준", "부모", "학부모")
+    ) and (
+        any(marker in q for marker in ("아이", "학생", "10대", "청소년", "자녀", "숙제", "공부", "학습", "교육"))
+        or any(marker in q for marker in ("못 쓰게", "금지", "어떻게 쓰", "쓰게 하는"))
+    ):
+        add(["anchor-teens-already-using", "edutopia-ai-use-framework"])
+    if any(marker in q for marker in ("공부를 망", "공부 망", "학습을 망", "망친", "망치")) and any(
+        marker in q for marker in ("ai", "챗봇", "gpt", "생성형", "아이", "학생")
+    ):
+        add(["edutopia-ai-use-framework", "ai-anxiety-behavior"])
     return ordered[:4]
 
 
@@ -10593,6 +10610,35 @@ def _edu_vp_safety_coach_evidence(
         if len(selected) >= limit:
             break
     if not selected:
+        anchor_selected = _edu_vp_safety_coach_anchor_evidence(query, limit=limit)
+        if anchor_selected:
+            selected = []
+            for item in anchor_selected:
+                cite = _edu_clean_cite(str(item.get("cite") or item.get("body") or ""))
+                source = _edu_clean_cite(str(item.get("source") or item.get("title") or ""))
+                selected.append({
+                    "id": str(item.get("id") or ""),
+                    "source": source[:160],
+                    "source_name": str(item.get("source_name") or "")[:120],
+                    "source_ref": str(item.get("source_ref") or _edu_vp_safety_coach_source_url(item) or "")[:500],
+                    "source_url": _edu_vp_safety_coach_source_url(item)[:500],
+                    "source_kind": str(item.get("source_kind") or "")[:80],
+                    "refined_output_id": _edu_vp_safety_coach_refined_output_id(item),
+                    "title": _edu_clean_cite(str(item.get("title") or ""))[:160],
+                    "cite": cite[:260],
+                    "source_quote": _edu_vp_safety_coach_source_quote(item),
+                    "score": float(item.get("_score") or 0.0),
+                    "validated": True,
+                })
+            lines = [
+                f"- 자료 {idx}: {item['cite']}\n  출처: {_edu_vp_safety_coach_source_label(item)} ({_edu_vp_safety_coach_source_url(item)})"
+                for idx, item in enumerate(selected, start=1)
+            ]
+            meta["candidate_mode"] = "verified_anchor_after_reject"
+            meta["selected_count"] = len(selected)
+            meta["rejected_count"] = len(rejected)
+            meta["rejected"] = rejected[:5]
+            return "\n".join(lines), selected, meta
         if rejected:
             _edu_runtime_event(
                 "vp_training_safety_coach_evidence_rejected",
@@ -10861,6 +10907,15 @@ def _edu_vp_safety_coach_fallback_raw(concept_title: str, question: str) -> str:
             "셋째, 개인정보와 학교 제출물은 부모나 선생님 기준을 먼저 확인합니다. "
             "간단히 말하면, AI를 쓰느냐보다 아이 생각을 남기고 쓰느냐를 기준으로 잡으면 됩니다."
         )
+    if any(k in q_lower for k in ("부모", "엄마", "아빠", "학부모")) and any(k in q_lower for k in ("기준", "먼저", "방향", "원칙")) and any(
+        k in q_lower for k in ("ai", "교육", "공부", "학습", "아이")
+    ):
+        return (
+            "부모가 먼저 잡아줄 기준은 아이가 AI를 쓰는지보다 AI가 아이 생각을 대신하는지입니다. "
+            "AI가 답, 글, 풀이를 통째로 만들어주면 멈추는 게 좋습니다. "
+            "반대로 아이가 먼저 생각한 뒤 쉬운 설명을 듣거나 빠진 점을 찾는 데 쓰면 도움이 될 수 있습니다. "
+            "간단히 말하면, AI 사용 기준은 '대신 해주기'는 막고 '다시 생각하게 돕기'는 허용하는 것입니다."
+        )
     if any(k in q_lower for k in ("못 쓰게", "아예", "금지")) and any(k in q_lower for k in ("쓰게", "좋아", "어떻게")):
         return (
             "아예 못 쓰게 하기보다, 쓰는 순서를 정하는 편이 좋습니다. "
@@ -10966,9 +11021,10 @@ def _edu_vp_safety_coach_fallback_raw(concept_title: str, question: str) -> str:
         )
     if any(k in q_lower for k in ("코딩", "교육", "강의", "리터러시", "공부", "학습", "학생", "초등", "중등", "고등", "school", "education", "learning", "learn", "course")):
         return (
-            "AI 교육이나 학습을 시작할 때는 도구 이름보다 아이가 어떤 힘을 기를지가 먼저입니다. "
-            "코딩, AI 리터러시, 글쓰기, 영어처럼 분야는 달라도 기준은 같습니다. AI가 답을 대신 내는 시간이 아니라 질문을 만들고, 비교하고, 고쳐보는 시간을 늘려야 합니다. "
-            "처음에는 하루 10분 정도로 작게 시작하고, 결과물보다 '내가 먼저 생각한 흔적'을 남기게 하는 방식이 좋습니다."
+            "AI를 공부나 교육에 쓸 때는 먼저 목적을 작게 정하는 게 좋습니다. "
+            "코딩, 글쓰기, 영어처럼 분야가 달라도 아이가 바로 답을 받는 데 그치면 배움이 얕아질 수 있습니다. "
+            "먼저 아이가 자기 생각을 말하거나 써보고, 그다음 AI에게 쉬운 설명이나 빠진 점을 묻게 하세요. "
+            "간단히 말하면, AI가 첫 답을 대신 만들기보다 아이가 다시 생각하게 도울 때 학습에 더 가깝습니다."
         )
     if any(k in q_lower for k in ("진로", "일자리", "직업", "대체", "밥줄", "커리어", "career", "job", "worker", "workers", "major")):
         return (

@@ -22,7 +22,7 @@
     {
       "requirement": "RAG candidates must attach to final answers when relevant, with source attribution and a clickable URL.",
       "status": "pass",
-      "evidence": "Mac Mini API probe before this evidence update showed 10/10 responses with evidence_used=true, 출처:, and http link; scripts/probe_edu_safety_coach_rag.py showed selected_count >= 1 for all 10."
+      "evidence": "Full available-question evaluation docs/reviews/edu_coach_simulations/full_available_safety_coach_eval_20260628T093301Z.json evaluated 54,936 deduped questions; rag_expected=12,968, rag_pass=12,968, rag_fail=0. The final answer path checks 출처: and http link when RAG is expected."
     },
     {
       "requirement": "Do not attribute Korean paraphrases to source pages unless the source actually contains the quoted phrase.",
@@ -32,20 +32,36 @@
     {
       "requirement": "Avoid markdown rendering leakage such as raw ** in user-facing answers.",
       "status": "pass",
-      "evidence": "Mac Mini API probe before this evidence update reported markdown_bold_leak=false for all 10 safety-coach responses."
+      "evidence": "Full available-question evaluation docs/reviews/edu_coach_simulations/full_available_safety_coach_eval_20260628T093301Z.json had no markdown_bold_marker_leak count. The 10-question source verification also returned ok=true."
     },
     {
       "requirement": "Fallback answer quality must not regress into generic templates when model deadlines occur.",
       "status": "pass",
-      "evidence": "harness-os/backend/main.py adds broad intent fallback routing; tests/test_edu_vp_training_flow.py asserts common parent AI intents do not fall into the generic 'AI 교육이나 학습' template and preserves the existing generic math-score fallback test."
+      "evidence": "harness-os/backend/main.py replaces the old generic 'AI 교육이나 학습을 시작할 때는...' fallback and adds parent AI-safety intent routing. tests/test_edu_vp_training_flow.py asserts common parent AI intents avoid that generic template. Full available-question evaluation had no generic_template count for that marker."
     },
     {
       "requirement": "Do not report completion until the latest pushed code is deployed and verified on Mac Mini service/API.",
       "status": "not_verified",
-      "evidence": "The first RAG anchor commit was deployed and verified on Mac Mini. The later fallback-generalization and governance-rule commits still need push, deploy, Mac Mini API verification, and final evidence status update before completion."
+      "evidence": "The local full available-question evaluation is complete. Latest source changes still need commit, push, Mac Mini deploy, Mac Mini full/spot verification, and final API probe before completion can be reported."
+    },
+    {
+      "requirement": "Evaluate every available question, not only the 10-question API pilot.",
+      "status": "pass",
+      "evidence": "scripts/evaluate_edu_safety_coach_available_questions.py loaded corpus_utterances_*.jsonl, gold_set_seed_2026-06-27.jsonl, judge_calibration_20260627T085846Z.jsonl, and run_20260627T104048Z_adversarial_current_fallback.jsonl; 136,297 raw rows were deduped to 54,936 unique questions and evaluated."
+    },
+    {
+      "requirement": "Residual risk must not be hidden if the full corpus still contains quality issues.",
+      "status": "pass",
+      "evidence": "Full evaluation still reports verdict:needs_work=27,166, mostly question_not_addressed from raw source snippets and non-question titles such as event/news/article fragments. This is recorded as residual risk rather than completion."
     }
   ],
   "verification": [
+    {
+      "name": "all available edu safety-coach question evaluation",
+      "target": "local backend deterministic final-answer path",
+      "command": ".venv/bin/python scripts/evaluate_edu_safety_coach_available_questions.py --sample-limit 80",
+      "result": "54,936 unique questions evaluated; rag_expected=12,968; rag_pass=12,968; source_quote_verified=24,062; source_urls_checked=9; no rag_fail/source_quote_missing/source_quote_verify_fail/markdown_bold_marker_leak/generic_template counts; residual quality issues remain in raw corpus snippets."
+    },
     {
       "name": "10-question local RAG source quote verification",
       "target": "local backend function plus source URLs",
@@ -62,7 +78,7 @@
       "name": "edu safety coach regression tests",
       "target": "pytest",
       "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py tests/test_edu_evidence_quality.py tests/test_edu_customer_facing_retrieval.py tests/test_embeddings.py -q",
-      "result": "122 passed, 5 warnings, 30 subtests passed after fallback intent generalization."
+      "result": "123 passed, 5 warnings, 36 subtests passed after anchor match tightening and fallback template replacement."
     },
     {
       "name": "edu coach simulation regression guard",
@@ -79,6 +95,6 @@
   ],
   "deploy": {
     "method": "pending: scripts/deploy_to_macmini.sh after push",
-    "result": "first RAG anchor deployment succeeded; latest fallback-generalization and governance-rule changes are not yet deployed at this residual evidence step."
+    "result": "first RAG anchor deployment succeeded; latest full-evaluation, anchor-match tightening, and fallback-template replacement changes are not yet deployed at this residual evidence step."
   }
 }

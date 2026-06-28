@@ -428,9 +428,9 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             concept_body="초등학생 수학 점수가 떨어져서 AI 학습을 시작해야 할지 걱정됩니다.",
         )
 
-        self.assertIn("AI 교육이나 학습", answer)
+        self.assertIn("AI를 공부나 교육에 쓸 때", answer)
         self.assertIn("아이", answer)
-        self.assertIn("내가 먼저 생각한 흔적", answer)
+        self.assertIn("먼저 아이가 자기 생각", answer)
         self.assertNotIn("question_not_addressed", issues)
 
     def test_safety_coach_does_not_treat_practical_ai_education_question_as_principle(self):
@@ -1606,6 +1606,18 @@ class EduVpTrainingFlowTests(unittest.TestCase):
                 self.assertTrue(selected[0]["source_quote"])
                 self.assertIn("출처:", evidence_text)
 
+    def test_safety_coach_anchor_matching_avoids_weak_keyword_collisions(self):
+        weak_keyword_collisions = [
+            "아이폰 사진이 너무 많아서 AI 정리 앱을 써도 될까요?",
+            "AI로 만든 아기 이모티콘을 카톡에서 쓰는 방법이 궁금해요.",
+            "이 노트북은 가벼움과 성능이라는 두 가지 숙제를 AI로 풀어낸 제품입니다.",
+            "부산 사진여행을 AI만 믿고 갔다가 망했어요.",
+        ]
+
+        for question in weak_keyword_collisions:
+            with self.subTest(question=question):
+                self.assertEqual(self.mod._edu_vp_safety_coach_anchor_match_ids(question), [])
+
     def test_safety_coach_fallback_answers_common_ai_parent_intents_directly(self):
         cases = [
             ("AI가 아이 공부를 망친다는 말이 진짜야?", "무조건 망친다고 보기는 어렵습니다"),
@@ -1616,6 +1628,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             ("아이 스크린 시간이 늘어나는 게 걱정돼. AI 영상이나 유튜브 학습은 어떻게 봐야 해?", "보고 난 뒤"),
             ("AI 때문에 아이 진로가 불안한데 지금 뭘 준비해야 해?", "진로가 불안한 건 자연스럽지만"),
             ("수학을 불안해하는 아이가 AI 답에 더 의존할 수 있어?", "더 기대기 쉽습니다"),
+            ("AI 시대에 부모가 아이 교육에서 가장 먼저 잡아줘야 할 기준은 뭐야?", "AI가 아이 생각을 대신하는지"),
+            ("학부모가 AI 공부 방향을 정할 때 첫 원칙은 뭐야?", "대신 해주기"),
         ]
 
         for question, expected in cases:
