@@ -7608,6 +7608,33 @@ def _edu_vp_safety_confirmation_from_event(state: dict[str, Any], event_name: st
     return None
 
 
+def _edu_vp_day0_required_concept_ids(state: dict[str, Any]) -> set[str]:
+    return {
+        str(item.get("id"))
+        for item in (state.get("day0") or {}).get("foundation_concepts", [])
+        if isinstance(item, dict) and str(item.get("id") or "").startswith("safety_concept_")
+    }
+
+
+def _edu_vp_day0_draft_concept_ids(state: dict[str, Any]) -> set[str]:
+    ui_state = state.get("ui_state") or {}
+    if not isinstance(ui_state, dict):
+        return set()
+    draft = ((ui_state.get("stage_drafts") or {}).get("day0") or {}) if isinstance(ui_state.get("stage_drafts"), dict) else {}
+    if not isinstance(draft, dict):
+        return set()
+    confirmed = {str(item) for item in (draft.get("safety_concept_confirmed_ids") or []) if str(item).strip()}
+    checked = draft.get("stage_checked") or {}
+    if isinstance(checked, dict):
+        confirmed.update(str(key) for key, value in checked.items() if value and str(key).startswith("safety_concept_"))
+    return confirmed
+
+
+def _edu_vp_day0_concepts_complete(state: dict[str, Any]) -> bool:
+    required = _edu_vp_day0_required_concept_ids(state)
+    return bool(required and required.issubset(_edu_vp_day0_draft_concept_ids(state)))
+
+
 def _edu_vp_unlock_day0_practice(state: dict[str, Any]) -> dict[str, Any]:
     day0 = dict(state.get("day0") or {})
     completed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -7761,6 +7788,8 @@ def _edu_vp_migrate_unstarted_day1_motivation(state: dict[str, Any]) -> dict[str
 def _edu_vp_refresh_state(state: dict[str, Any]) -> dict[str, Any]:
     state = _edu_vp_normalize_state_keys(state)
     state = _edu_vp_migrate_unconfirmed_day0_safety(state)
+    if not bool((state.get("day0") or {}).get("completed")) and _edu_vp_day0_concepts_complete(state):
+        state = _edu_vp_unlock_day0_practice(state)
     state = _edu_vp_migrate_unstarted_day1_motivation(state)
     state["day0"] = state.get("day0") or {}
     state["day1"] = state.get("day1") or {}
@@ -15377,6 +15406,8 @@ def edu_vp_training_cases(
         summary_raw = row.get("summary_json") or {}
         has_training_state = isinstance(summary_raw, dict) and bool(summary_raw)
         summary = _edu_vp_normalize_state_keys(summary_raw) if isinstance(summary_raw, dict) else {}
+        if has_training_state:
+            summary = _edu_vp_refresh_state(summary)
         progress = summary.get("progress") or {"pct": 0}
         flow_outline = summary.get("flow_outline") or []
         latest_stage_title = ""

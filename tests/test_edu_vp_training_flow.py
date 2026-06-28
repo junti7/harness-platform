@@ -2041,6 +2041,31 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(refreshed["progress"]["pct"], 50)
         self.assertEqual(refreshed["ui_state"]["selected_stage"], "day1")
 
+    def test_refresh_counts_checked_day0_concepts_as_completion(self):
+        day0 = self.mod._edu_vp_build_day0({"preferred_llm": "claude"})
+        concept_ids = [item["id"] for item in day0["foundation_concepts"]]
+        state = {
+            "intake": {"preferred_llm": "claude"},
+            "day0": day0,
+            "day1": self.mod._edu_vp_build_day1({"preferred_llm": "claude"}),
+            "ui_state": {
+                "selected_stage": "day0",
+                "safety_confirmed": {},
+                "stage_drafts": {
+                    "day0": {
+                        "stage_checked": {concept_id: True for concept_id in concept_ids},
+                    }
+                },
+            },
+        }
+
+        refreshed = self.mod._edu_vp_refresh_state(state)
+
+        self.assertTrue(refreshed["day0"]["completed"])
+        self.assertEqual(refreshed["flow_outline"][0]["pct"], 100)
+        self.assertEqual(refreshed["progress"]["pct"], 50)
+        self.assertEqual(refreshed["ui_state"]["selected_stage"], "day1")
+
     def test_refresh_migrates_legacy_unconfirmed_day0_to_safety_gate(self):
         legacy_state = {
             "intake": {"preferred_llm": "claude", "current_device": "iphone", "desktop_os": "mac"},

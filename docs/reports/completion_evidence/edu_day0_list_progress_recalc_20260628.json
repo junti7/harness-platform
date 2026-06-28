@@ -1,0 +1,65 @@
+{
+  "task": "edu case list should recalculate Day 0 progress from checked safety concept drafts",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-28T21:11:40+09:00",
+      "summary": "Completion reporting requires requirement-to-evidence mapping, real runtime or user-facing verification, completion guard evidence, and exact residual risk reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-28T21:11:40+09:00",
+      "summary": "Code, deployment, UI, and customer-facing changes require real verification and completion evidence guard before reporting complete."
+    }
+  ],
+  "requirements_checklist": [
+    {
+      "requirement": "Main training card must stop showing Day 0 progress 0% after the Day 0 safety concept cards were checked.",
+      "status": "pass",
+      "evidence": "harness-os/backend/main.py now detects checked safety_concept_* IDs in ui_state.stage_drafts.day0.stage_checked and treats all required checked concepts as Day 0 completion during _edu_vp_refresh_state."
+    },
+    {
+      "requirement": "The cases/list endpoint must not show stale progress from an old snapshot.",
+      "status": "pass",
+      "evidence": "edu_vp_training_cases now calls _edu_vp_refresh_state(summary) before reading progress and flow_outline, so existing snapshots are recalculated for the list card."
+    },
+    {
+      "requirement": "Regression coverage must include the old saved-draft shape.",
+      "status": "pass",
+      "evidence": "tests/test_edu_vp_training_flow.py adds test_refresh_counts_checked_day0_concepts_as_completion, asserting Day 0 completed, flow pct 100, overall pct 50, and Day 1 selection from stage_checked concept IDs."
+    }
+  ],
+  "verification": [
+    {
+      "name": "edu VP training targeted regression tests",
+      "target": "pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "109 passed, 3 warnings, 59 subtests passed."
+    },
+    {
+      "name": "edu VP training and personalization regression tests",
+      "target": "pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py tests/test_edu_curriculum_personalization.py -q",
+      "result": "112 passed, 3 warnings, 59 subtests passed."
+    },
+    {
+      "name": "edu app production bundle build",
+      "target": "dist build",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "tsc and vite build succeeded; dist assets generated."
+    },
+    {
+      "name": "edu app lint",
+      "target": "eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "eslint completed successfully with exit code 0."
+    },
+    {
+      "name": "diff whitespace check",
+      "target": "pre-push code hygiene",
+      "command": "git diff --check -- harness-os/backend/main.py tests/test_edu_vp_training_flow.py",
+      "result": "No whitespace errors."
+    }
+  ]
+}
