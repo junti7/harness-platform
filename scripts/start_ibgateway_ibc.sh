@@ -80,6 +80,37 @@ wait_for_gw() {  # $1=대기 초
 }
 slack() { [ -n "${SLACK_WEBHOOK_URL:-}" ] && curl -s -X POST "$SLACK_WEBHOOK_URL" -H 'Content-Type: application/json' -d "$1" > /dev/null 2>&1; }
 
+# 로그아웃 상태의 기존 창 강제 종료.
+# 포트 4002가 닫혀 있는데 IB Gateway / IBC 프로세스가 살아있으면 = 로그인 창이 떠 있는 상태.
+# 그 상태에서 새 IBC 세션을 추가로 띄우면 세션 충돌·2FA 창 중복이 발생하므로 먼저 정리한다.
+kill_stale_gateway() {
+    local killed=0
+    for pattern in "IbcGateway" "ibcstart.sh" "displaybannerandlaunch.sh" "gatewaystartmacos.sh"; do
+        if pgrep -f "$pattern" > /dev/null 2>&1; then
+            log "기존 프로세스 감지($pattern) — 강제 종료(로그아웃 창 정리)"
+            pkill -TERM -f "$pattern" 2>/dev/null || true
+            killed=1
+        fi
+    done
+    # IB Gateway java 프로세스: jts4launch 또는 twslaunch jar 로 식별
+    if pgrep -f "jts4launch\|twslaunch" > /dev/null 2>&1; then
+        log "기존 IB Gateway java 프로세스 감지 — 강제 종료"
+        pkill -TERM -f "jts4launch\|twslaunch" 2>/dev/null || true
+        killed=1
+    fi
+    if [ "$killed" -eq 1 ]; then
+        sleep 4   # 프로세스 정리 완료 대기
+        # SIGTERM 후에도 살아있으면 SIGKILL
+        for pattern in "IbcGateway" "ibcstart.sh" "jts4launch" "twslaunch"; do
+            if pgrep -f "$pattern" > /dev/null 2>&1; then
+                pkill -KILL -f "$pattern" 2>/dev/null || true
+            fi
+        done
+        sleep 2
+        log "기존 IB Gateway 창 정리 완료 — 새 세션 시작"
+    fi
+}
+
 # 이미 실행 중이면 종료
 if gw_up; then
     log "IB Gateway 이미 실행 중 (port 4002) — 스킵"
@@ -91,6 +122,9 @@ fi
 if [ -f "$ENV_FILE" ]; then
     set -a; source "$ENV_FILE"; set +a
 fi
+
+# 포트가 닫혀 있지만 게이트웨이/IBC 프로세스가 남아 있으면(로그아웃 창) 먼저 정리
+kill_stale_gateway
 
 IBC_LAUNCHER="$(resolve_ibc_launcher)"
 GW_APP="$(resolve_gateway_app)"
