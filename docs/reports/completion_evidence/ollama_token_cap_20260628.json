@@ -1,0 +1,32 @@
+{
+  "task": "ollama_token_cap_20260628",
+  "date": "2026-06-28",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-28T21:25:00+09:00",
+      "summary": "Python Environment Rule: .venv 사용. 코드 변경 후 Mac Mini 배포 필수."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-28T21:25:00+09:00",
+      "summary": "Completion requires real entrypoint verification on Mac Mini."
+    }
+  ],
+  "problem": "TIER3_MAX_OUTPUT_TOKENS=8192(Gemini thinking 예산용)가 Ollama fallback에 그대로 전달돼 gemma2:27b가 8천 토큰 생성 시도 → 300s timeout 초과. Tier 3 JSON 출력은 실제 1024 토큰 이내로 충분.",
+  "changes": [
+    {
+      "path": "core/gemini_sdk.py",
+      "summary": "OLLAMA_FALLBACK_MAX_OUTPUT_TOKENS(기본 1024) 추가. Ollama fallback은 이 값과 caller max_output_tokens 중 작은 값으로 num_predict 결정."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Mac Mini 배포",
+      "target": "macmini production",
+      "command": "bash scripts/deploy_to_macmini.sh core/gemini_sdk.py",
+      "result": "pending"
+    }
+  ]
+}

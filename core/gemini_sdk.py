@@ -90,6 +90,12 @@ def _generate_text_via_ollama(
         messages.append({"role": "system", "content": system_instruction})
     messages.append({"role": "user", "content": user_prompt})
 
+    # Ollama local models don't need Gemini's large thinking budget.
+    # Cap output tokens to avoid extremely slow generation on large models.
+    ollama_max_tokens = int(os.getenv("OLLAMA_FALLBACK_MAX_OUTPUT_TOKENS", "1024"))
+    if max_output_tokens:
+        ollama_max_tokens = min(int(max_output_tokens), ollama_max_tokens)
+
     last_exc: Exception | None = None
     for host in _ollama_hosts():
         if not _probe_ollama(host):
@@ -103,10 +109,9 @@ def _generate_text_via_ollama(
                     "temperature": float(os.getenv("OLLAMA_FALLBACK_TEMPERATURE", "0.1")),
                     "top_p": float(os.getenv("OLLAMA_FALLBACK_TOP_P", "0.9")),
                     "num_ctx": int(os.getenv("OLLAMA_FALLBACK_NUM_CTX", "8192")),
+                    "num_predict": ollama_max_tokens,
                 },
             }
-            if max_output_tokens:
-                payload["options"]["num_predict"] = int(max_output_tokens)
             if response_mime_type == "application/json":
                 payload["format"] = "json"
             ollama_timeout = float(os.getenv("OLLAMA_FALLBACK_TIMEOUT", "300"))
