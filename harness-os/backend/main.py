@@ -11198,7 +11198,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
     evidence_timeout = float(
         os.getenv(
             "EDU_SAFETY_COACH_FAST_RAG_TIMEOUT_SECONDS" if fast_answer else "EDU_SAFETY_COACH_RAG_TIMEOUT_SECONDS",
-            "1.5" if fast_answer else "2.5",
+            "1.5" if fast_answer else "5.0",
         )
     )
     evidence_text, evidence_items, evidence_meta = _edu_vp_safety_coach_evidence_with_timeout(

@@ -43,6 +43,12 @@
       "target": "pre-deploy regression guard",
       "command": ".venv/bin/python scripts/check_edu_coach_simulation_regression.py",
       "result": "guard passed with baseline max_needs_work adversarial=95 corpus=14264; freshness, latency, structured_packet, and auto_reinforcement all ok"
+    },
+    {
+      "name": "macmini timeout pilot before default change",
+      "target": "macmini backend code path and production RAG data",
+      "command": "EDU_SAFETY_COACH_RAG_TIMEOUT_SECONDS=5 direct EduVpTrainingSafetyCoachRequest for homework question",
+      "result": "selected_count=3 elapsed_ms=2347 timeout_ms=5000; rag=True; answer_has_source_link=True with Jonathan Haidt WEF source URL"
     }
   ],
   "deploy": {
