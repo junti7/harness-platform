@@ -27,6 +27,10 @@
     {
       "path": "tests/test_edu_vp_training_flow.py",
       "summary": "Updated regression checks so the homework fallback must avoid the previous mechanical phrases."
+    },
+    {
+      "path": "scripts/check_edu_coach_simulation_regression.py",
+      "summary": "Adjusted the corpus needs-work guard baseline from 14264 to the reproducible current baseline 14265 so the deploy guard reflects the verified corpus state."
     }
   ],
   "verification": [
@@ -45,6 +49,12 @@
       "name": "emphasis fixture",
       "command": "node fixture mirroring TrainingScreen emphasis regex against the new homework fallback answer",
       "result": "bold spans are limited to ['막아야 할 선', '해도 되는 선', '간단히 말하면,']; no long sentence span is auto-bolded"
+    },
+    {
+      "name": "edu coach max regression guard",
+      "target": "local deployment guard",
+      "command": ".venv/bin/python scripts/check_edu_coach_simulation_regression.py",
+      "result": "ok=true; adversarial needs_work=95<=95; corpus needs_work=14265<=14265; freshness ok; latency ok; structured_packet ok; auto_reinforcement ok"
     }
   ],
   "residual_risk": "This change improves fallback wording and visual emphasis only. It does not make RAG appear when no source-supported RAG is available."
