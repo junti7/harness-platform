@@ -1319,35 +1319,42 @@ def collect_reddit(subreddits: list[tuple[str, str]], logger: HarnessLogger,
     client_id = os.getenv("REDDIT_CLIENT_ID", "")
     client_secret = os.getenv("REDDIT_CLIENT_SECRET", "")
     user_agent = os.getenv("REDDIT_USER_AGENT", "").strip() or "Harness-EduResearch/1.0 by junti7"
-    if not client_id or not client_secret:
-        logger.info("Reddit API credentials missing; skipping reddit collector.")
-        return {**stats, "skipped": True}
-
     headers = {"User-Agent": user_agent}
-    try:
-        token_resp = httpx.post(
-            "https://www.reddit.com/api/v1/access_token",
-            data={"grant_type": "client_credentials"},
-            auth=(client_id, client_secret),
-            headers=headers,
-            timeout=20,
-        )
-        if token_resp.status_code != 200:
-            logger.warning(f"  Reddit token HTTP {token_resp.status_code}: {token_resp.text[:200]}")
-            stats["error"] += 1
-            return stats
-        token = token_resp.json().get("access_token", "")
-    except Exception as e:
-        logger.warning(f"  Reddit token 실패: {e}")
-        stats["error"] += 1
-        return stats
-
-    auth_headers = {**headers, "Authorization": f"Bearer {token}"}
-    for subreddit, query in subreddits:
-        logger.info(f"Reddit: r/{subreddit} {query}")
+    use_public_api = not client_id or not client_secret
+    if use_public_api:
+        logger.info("Reddit 크레덴셜 없음 → 공개 JSON API fallback 사용")
+        auth_headers = headers
+    else:
         try:
+            token_resp = httpx.post(
+                "https://www.reddit.com/api/v1/access_token",
+                data={"grant_type": "client_credentials"},
+                auth=(client_id, client_secret),
+                headers=headers,
+                timeout=20,
+            )
+            if token_resp.status_code != 200:
+                logger.warning(f"  Reddit token HTTP {token_resp.status_code} → 공개 JSON API fallback")
+                use_public_api = True
+                auth_headers = headers
+            else:
+                token = token_resp.json().get("access_token", "")
+                auth_headers = {**headers, "Authorization": f"Bearer {token}"}
+        except Exception as e:
+            logger.warning(f"  Reddit token 실패: {e} → 공개 JSON API fallback")
+            use_public_api = True
+            auth_headers = headers
+
+    for subreddit, query in subreddits:
+        logger.info(f"Reddit: r/{subreddit} {query} ({'public' if use_public_api else 'oauth'})")
+        try:
+            base_url = (
+                f"https://www.reddit.com/r/{subreddit}/search.json"
+                if use_public_api
+                else f"https://oauth.reddit.com/r/{subreddit}/search.json"
+            )
             resp = httpx.get(
-                f"https://oauth.reddit.com/r/{subreddit}/search.json",
+                base_url,
                 params={"q": query, "restrict_sr": 1, "sort": "relevance", "limit": 10},
                 headers=auth_headers,
                 timeout=20,
