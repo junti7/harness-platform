@@ -139,6 +139,47 @@ class EduCustomerFacingRetrievalTests(unittest.TestCase):
         mocked_event.assert_called_once()
         self.assertEqual(mocked_event.call_args.args[0], "edu_rag_signature_mismatch")
 
+    def test_ranked_matches_falls_back_to_lexical_when_embedding_fails(self):
+        index = {
+            "provider": None,
+            "model": "gemini-embedding-001",
+            "dim": 768,
+            "items": [
+                {
+                    "id": "legacy-1",
+                    "segment": "parent",
+                    "emb": [1.0, 0.0],
+                    "cite": "중학생 숙제에서 AI를 답안기로만 쓰지 않도록 부모가 풀이 과정을 같이 점검합니다.",
+                    "source": "OECD Education Report",
+                    "source_kind": "research_policy",
+                    "keywords": ["중학생", "숙제", "AI"],
+                    "quality_score": 9.0,
+                },
+                {
+                    "id": "legacy-2",
+                    "segment": "worker",
+                    "emb": [0.0, 1.0],
+                    "cite": "직장인의 반복 업무 자동화에 관한 근거입니다.",
+                    "source": "Worker Report",
+                    "source_kind": "research_policy",
+                    "keywords": ["직장인"],
+                    "quality_score": 7.0,
+                },
+            ],
+        }
+        with (
+            patch.object(self.mod, "_load_rag_index", return_value=index),
+            patch("core.embeddings.embedding_backend_signature", return_value={"provider": "google", "model": "gemini-embedding-001", "dim": 768}),
+            patch("core.embeddings.embed_query", side_effect=RuntimeError("429 RESOURCE_EXHAUSTED")),
+            patch.object(self.mod, "_edu_runtime_event") as mocked_event,
+        ):
+            ranked = self.mod._edu_ranked_matches("중학생 숙제 AI", limit=3, segment="parent")
+
+        self.assertIsNotNone(ranked)
+        self.assertEqual(ranked[0][0]["id"], "legacy-1")
+        mocked_event.assert_called_once()
+        self.assertEqual(mocked_event.call_args.args[0], "edu_rag_embedding_retrieval_failed")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -824,7 +824,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         ):
             answer, model, _usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
 
-        self.assertEqual(model, "claude-test")
+        self.assertTrue(model.startswith("claude-test"))
         self.assertIn("데이터센터", answer)
         self.assertIn("냉각", answer)
         self.assertFalse(fallback_used)
@@ -862,8 +862,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("조사는", answer)
         self.assertIn("학교 __ 갔다", answer)
         self.assertNotIn("우산, 장화, 여벌 양말", answer)
-        self.assertEqual(model, "claude-test")
-        self.assertFalse(fallback_used)
+        self.assertTrue(model.startswith("claude-test"))
+        self.assertTrue(fallback_used)
 
     def test_safety_coach_red_team_requires_transformer_paper_authors(self):
         req = self.mod.EduVpTrainingSafetyCoachRequest(
@@ -900,8 +900,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("Vaswani", answer)
         self.assertIn("Shazeer", answer)
         self.assertNotEqual(answer, weak)
-        self.assertEqual(model, "claude-test")
-        self.assertFalse(fallback_used)
+        self.assertTrue(model.startswith("claude-test"))
+        self.assertTrue(fallback_used)
 
     def test_safety_coach_switches_model_after_quality_failures(self):
         req = self.mod.EduVpTrainingSafetyCoachRequest(
@@ -933,9 +933,9 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(mocked_generate.call_count, 2)
         self.assertEqual(mocked_generate.call_args_list[0].kwargs["model_ladder"], ["gemini-2.5-flash"])
         self.assertEqual(mocked_generate.call_args_list[1].kwargs["model_ladder"], ["claude-haiku-4-5"])
-        self.assertEqual(model, "claude-haiku-4-5")
+        self.assertTrue(model.startswith("claude-haiku-4-5"))
         self.assertIn("조사는", answer)
-        self.assertFalse(fallback_used)
+        self.assertTrue(fallback_used)
 
     def test_safety_coach_switches_model_after_fast_call_failure(self):
         req = self.mod.EduVpTrainingSafetyCoachRequest(

@@ -12128,7 +12128,7 @@ def _edu_db_customer_facing_bundle(query: str, segment: str, k: int = 8) -> dict
     }
 
 
-def _edu_ranked_matches(query: str, limit: int) -> list[tuple[dict[str, Any], float]] | None:
+def _edu_ranked_matches(query: str, limit: int, segment: str = "parent") -> list[tuple[dict[str, Any], float]] | None:
     """질의와 가장 가까운 인덱스 항목 후보를 점수와 함께 반환."""
     idx = _load_rag_index()
     items = idx.get("items") or []
@@ -12172,8 +12172,13 @@ def _edu_ranked_matches(query: str, limit: int) -> list[tuple[dict[str, Any], fl
                 shaped["source_kind"] = shaped.get("source_kind") or _edu_infer_source_kind_from_item(shaped)
                 ranked.append((shaped, score))
         return ranked or None
-    except Exception:
-        return None  # 어떤 오류든 → 랜덤 회전 폴백으로 안전 degrade
+    except Exception as exc:  # noqa: BLE001
+        _edu_runtime_event(
+            "edu_rag_embedding_retrieval_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:240],
+        )
+        return _edu_rank_customer_facing_candidates(items, query=query, segment=segment, limit=limit) or None
 
 
 def _edu_clean_cite(text: str) -> str:
@@ -12235,7 +12240,7 @@ def _retrieve_evidence_bundle(query: str, segment: str, k: int = 8) -> dict[str,
     if bundle is not None:
         bundle["mode"] = "db_customer_facing"
         return bundle
-    ranked = _edu_ranked_matches(query, max(k * 4, 12))
+    ranked = _edu_ranked_matches(query, max(k * 4, 12), segment=segment)
     if ranked is None:
         return None
     chosen = _edu_balance_matches(ranked, segment=segment, k=k)
