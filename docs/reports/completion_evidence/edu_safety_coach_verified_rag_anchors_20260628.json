@@ -1,0 +1,52 @@
+{
+  "task": "edu safety coach verified RAG anchors",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-28T18:09:34+09:00",
+      "summary": "Completion report requires real user-facing or runtime verification and completion guard evidence for code, deploy, UI, and customer-facing answer changes."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-28T18:09:34+09:00",
+      "summary": "Code changes must use origin main, Mac Mini deploy script, real runtime verification, and completion evidence guard before completion."
+    }
+  ],
+  "verification": [
+    {
+      "name": "10-question local RAG source quote verification",
+      "target": "local backend function plus source URLs",
+      "command": ".venv/bin/python scripts/verify_edu_safety_coach_rag_sources.py",
+      "result": "ok=true; all 10 pilot questions selected at least one RAG item; every selected source_url contained the configured source_quote after HTML entity normalization."
+    },
+    {
+      "name": "10-question local RAG candidate probe",
+      "target": "local backend function",
+      "command": ".venv/bin/python scripts/probe_edu_safety_coach_rag.py",
+      "result": "all 10 pilot questions returned selected_count >= 1 with source_url and source_quote."
+    },
+    {
+      "name": "edu safety coach regression tests",
+      "target": "pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py tests/test_edu_evidence_quality.py tests/test_edu_customer_facing_retrieval.py tests/test_embeddings.py -q",
+      "result": "121 passed, 5 warnings, 22 subtests passed."
+    },
+    {
+      "name": "edu coach simulation regression guard",
+      "target": "simulation regression script",
+      "command": ".venv/bin/python scripts/check_edu_coach_simulation_regression.py",
+      "result": "ok=true; latency, structured packet, auto reinforcement, freshness, corpus/adversarial thresholds passed."
+    },
+    {
+      "name": "edu app production bundle build",
+      "target": "dist build",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "vite build succeeded and produced dist assets."
+    }
+  ],
+  "deploy": {
+    "method": "pending: scripts/deploy_to_macmini.sh after push",
+    "result": "not yet deployed at this residual evidence step; final completion requires Mac Mini deploy and runtime verification."
+  }
+}
