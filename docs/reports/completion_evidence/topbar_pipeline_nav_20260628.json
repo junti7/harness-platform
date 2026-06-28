@@ -1,0 +1,32 @@
+{
+  "task": "topbar_pipeline_nav_20260628",
+  "date": "2026-06-28",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-28T21:10:00+09:00",
+      "summary": "Mobile-First Interface Rule 확인. 프론트 변경 시 dist 재빌드 필수."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-28T21:10:00+09:00",
+      "summary": "Completion requires real user-facing entrypoint verification."
+    }
+  ],
+  "problem": "pipeline 뷰가 코드에 존재하나 TopBar 네비게이션에 미등록 → 8000 포트 프론트에서 수집 현황 접근 불가.",
+  "changes": [
+    {
+      "path": "harness-os/frontend/src/components/TopBar.tsx",
+      "summary": "분석 그룹에 { view: 'pipeline', label: '수집 현황' } 추가 (첫 번째 항목)."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Mac Mini dist 재빌드 및 배포",
+      "target": "macmini production http://100.97.175.44:8000/",
+      "command": "bash scripts/deploy_to_macmini.sh harness-os/frontend/src/components/TopBar.tsx",
+      "result": "exit 0, dist 재빌드 완료, diff=0"
+    }
+  ]
+}
