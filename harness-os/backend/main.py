@@ -8882,7 +8882,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-28-source-format-v22"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-28-source-format-v23"
 _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
 _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_PATH = PROJECT_ROOT / "configs" / "education" / "edu_coach_policy_registry.json"
 _EDU_VP_SAFETY_COACH_POLICY_CANDIDATE_PATH = PROJECT_ROOT / "docs" / "reviews" / "edu_coach_simulations" / "policy_candidates.jsonl"
@@ -10758,10 +10758,10 @@ def _edu_vp_safety_coach_fallback_raw(concept_title: str, question: str) -> str:
         )
     if any(k in q_lower for k in ("숙제", "과제", "homework", "수행평가", "보고서", "critical thinking", "caught")):
         return (
-            "전부 막을 필요는 없습니다. 다만 아이가 먼저 생각할 일을 AI가 대신하는 것은 막는 게 좋습니다. "
-            "막아야 할 선은 숙제나 과제의 답안, 글 전체, 풀이 과정, 발표문을 AI가 대신 만들어주는 경우입니다. "
-            "해도 되는 선은 아이가 먼저 자기 답을 써본 뒤 빠진 점, 다른 생각, 쉬운 설명을 물어보는 정도입니다. "
-            "간단히 말하면, AI가 숙제를 대신 해주면 멈추고 아이 생각을 더 좋게 만드는 질문 도구로 쓰면 괜찮습니다."
+            "전부 막을 필요는 없습니다. 기준은 하나입니다. "
+            "막아야 할 선은 AI가 숙제 답, 글 전체, 풀이 과정, 발표문을 대신 만들어주는 경우입니다. "
+            "해도 되는 선은 아이가 먼저 자기 답을 써본 뒤 '이 부분을 쉽게 설명해줘', '빠진 점이 있어?'처럼 도움을 받는 정도입니다. "
+            "간단히 말하면, AI가 답을 대신 쓰면 멈추고, 아이가 직접 생각하도록 돕는 질문 도구로 쓰면 괜찮습니다."
         )
     if any(k in q_lower for k in ("코딩", "교육", "강의", "리터러시", "공부", "학습", "학생", "초등", "중등", "고등", "school", "education", "learning", "learn", "course")):
         return (

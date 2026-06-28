@@ -457,8 +457,10 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("숙제", homework)
         self.assertIn("막아야 할 선", homework)
         self.assertIn("해도 되는 선", homework)
-        self.assertIn("먼저 생각할 일을 AI가 대신", homework)
-        self.assertIn("다른 생각", homework)
+        self.assertIn("기준은 하나", homework)
+        self.assertIn("아이가 직접 생각하도록 돕는 질문 도구", homework)
+        self.assertNotIn("먼저 생각할 일을 AI가 대신", homework)
+        self.assertNotIn("아이 생각을 더 좋게", homework)
         self.assertNotIn("질문을 숫자로 바꾸고", homework)
         self.assertIn("사진", privacy)
         self.assertIn("개인 정보", privacy)
@@ -503,6 +505,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("막아야 할 선", homework_answer)
         self.assertIn("해도 되는 선", homework_answer)
         self.assertNotIn("아이·숙제·대신", homework_answer)
+        self.assertNotIn("아이 생각을 더 좋게", homework_answer)
 
     def test_safety_coach_final_answer_uses_first_grade_words(self):
         forbidden_terms = ("반례", "허용", "결과물", "핵심 과정", "비판적 사고", "초안", "검증", "인간 역량", "말이라는 걱정")
@@ -513,8 +516,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         for term in forbidden_terms:
             self.assertNotIn(term, answer)
-        self.assertIn("다른 생각", answer)
-        self.assertIn("숙제를 대신", answer)
+        self.assertIn("빠진 점", answer)
+        self.assertIn("답을 대신 쓰면", answer)
         self.assertIn("해도 되는 선", answer)
 
     def test_safety_coach_policy_resolver_matches_cost_barrier(self):

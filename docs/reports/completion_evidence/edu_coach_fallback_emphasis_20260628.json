@@ -1,0 +1,51 @@
+{
+  "task": "edu_coach_fallback_emphasis",
+  "date": "2026-06-28",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-28T17:40:00+09:00",
+      "summary": "Checked Chief of Staff completion rule: customer-facing code changes require real verification and completion evidence with governance bootstrap."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-28T17:40:00+09:00",
+      "summary": "Checked completion rule: verify actual user-facing or runtime entrypoint before reporting complete; deployment must use scripts/deploy_to_macmini.sh."
+    }
+  ],
+  "problem": "Fallback safety-coach answer for the homework question was truthful but visually and linguistically poor: broad frontend auto-emphasis bolded long sentence spans, and the fallback wording sounded mechanical.",
+  "changes": [
+    {
+      "path": "harness-os/backend/main.py",
+      "summary": "Bumped safety-coach answer version to v23 and rewrote the homework fallback answer to use a shorter criterion-centered structure."
+    },
+    {
+      "path": "harness-os/edu-app/src/components/TrainingScreen.tsx",
+      "summary": "Bumped frontend safety-coach answer version to v23 and removed overly broad action emphasis regexes that bolded ordinary full sentences."
+    },
+    {
+      "path": "tests/test_edu_vp_training_flow.py",
+      "summary": "Updated regression checks so the homework fallback must avoid the previous mechanical phrases."
+    }
+  ],
+  "verification": [
+    {
+      "name": "backend edu flow and retrieval tests",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py tests/test_edu_evidence_quality.py tests/test_edu_customer_facing_retrieval.py -q",
+      "result": "117 passed, 5 warnings, 12 subtests passed"
+    },
+    {
+      "name": "frontend production build",
+      "target": "production dist bundle",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "vite build succeeded; dist/assets/index-CVtVZH3f.js"
+    },
+    {
+      "name": "emphasis fixture",
+      "command": "node fixture mirroring TrainingScreen emphasis regex against the new homework fallback answer",
+      "result": "bold spans are limited to ['막아야 할 선', '해도 되는 선', '간단히 말하면,']; no long sentence span is auto-bolded"
+    }
+  ],
+  "residual_risk": "This change improves fallback wording and visual emphasis only. It does not make RAG appear when no source-supported RAG is available."
+}
