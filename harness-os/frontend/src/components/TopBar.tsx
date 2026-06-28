@@ -41,7 +41,6 @@ const NAV_GROUPS: NavGroup[] = [
     id: 'analysis',
     label: '분석',
     items: [
-      { view: 'pipeline', label: '수집 현황' },
       { view: 'openclaw', label: 'OpenClaw 모니터' },
       { view: 'edu-db-inspector', label: 'Edu DB Inspector' },
       { view: 'costs', label: '비용 분석기' },
