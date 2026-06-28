@@ -927,7 +927,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("학교 __ 갔다", answer)
         self.assertNotIn("우산, 장화, 여벌 양말", answer)
         self.assertTrue(model.startswith("claude-test"))
-        self.assertTrue(fallback_used)
+        self.assertFalse(fallback_used)
 
     def test_safety_coach_red_team_requires_transformer_paper_authors(self):
         req = self.mod.EduVpTrainingSafetyCoachRequest(
@@ -965,7 +965,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("Shazeer", answer)
         self.assertNotEqual(answer, weak)
         self.assertTrue(model.startswith("claude-test"))
-        self.assertTrue(fallback_used)
+        self.assertFalse(fallback_used)
 
     def test_safety_coach_switches_model_after_quality_failures(self):
         req = self.mod.EduVpTrainingSafetyCoachRequest(
@@ -999,7 +999,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(mocked_generate.call_args_list[1].kwargs["model_ladder"], ["claude-haiku-4-5"])
         self.assertTrue(model.startswith("claude-haiku-4-5"))
         self.assertIn("조사는", answer)
-        self.assertTrue(fallback_used)
+        self.assertFalse(fallback_used)
 
     def test_safety_coach_switches_model_after_fast_call_failure(self):
         req = self.mod.EduVpTrainingSafetyCoachRequest(
@@ -1044,6 +1044,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             {
                 "id": "generic-ai-risk",
                 "source": "general source",
+                "source_url": "https://example.org/general-ai-risk",
                 "cite": "AI 사용에는 여러 위험이 있으니 보호자가 아이와 함께 확인해야 합니다.",
                 "score": 5.0,
                 "validated": True,
@@ -1051,6 +1052,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             {
                 "id": "privacy-photo",
                 "source": "privacy guide",
+                "source_url": "https://example.org/privacy-photo",
+                "title": "아이 사진 업로드 전 확인",
                 "cite": (
                     "앱에 아이 사진을 올리기 전에는 얼굴, 학교 이름, 위치 정보 같은 개인정보가 "
                     "저장되거나 재사용될 수 있는지 먼저 확인해야 합니다."
@@ -1074,7 +1077,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertTrue(fallback_used)
         self.assertTrue(usage["_safety_coach_rag_infused"])
         self.assertTrue(usage["_safety_coach_rag_patch_applied"])
-        self.assertIn("자료에는", answer)
+        self.assertIn("[privacy guide '아이 사진 업로드 전 확인'](https://example.org/privacy-photo)에는", answer)
+        self.assertIn("**출처:** [privacy guide '아이 사진 업로드 전 확인'](https://example.org/privacy-photo)", answer)
         self.assertIn("얼굴, 학교 이름, 위치 정보", answer)
         self.assertNotIn("여러 위험", answer)
 
@@ -1161,6 +1165,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
                 item={
                     "id": "x2",
                     "source": "OECD Education Report",
+                    "source_url": "https://example.org/oecd-homework",
                     "cite": "중학생 숙제에서 AI를 답안기로만 쓰지 않도록 부모가 질문 설계와 풀이 과정을 같이 점검하라는 내용입니다.",
                     "body": "중학생 숙제 AI 지도 질문 설계 풀이 과정",
                     "_score": 0.91,
@@ -1169,6 +1174,21 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertTrue(valid, reasons)
         self.assertNotIn("low_retrieval_score", reasons)
+
+    def test_safety_coach_evidence_validation_requires_source_url(self):
+        valid, reasons = self.mod._edu_vp_validate_safety_coach_evidence(
+            query="중학생 숙제 AI 사용을 어떻게 지도하나요",
+            item={
+                "id": "x3",
+                "source": "OECD Education Report",
+                "cite": "중학생 숙제에서 AI를 답안기로만 쓰지 않도록 부모가 질문 설계와 풀이 과정을 같이 점검하라는 내용입니다.",
+                "body": "중학생 숙제 AI 지도 질문 설계 풀이 과정",
+                "_score": 0.91,
+            },
+        )
+
+        self.assertFalse(valid)
+        self.assertIn("missing_source_url", reasons)
 
     def test_safety_coach_normalizes_question_for_duplicate_detection(self):
         normalized = self.mod._edu_vp_normalize_safety_question("  다음 글에\n이어질   조사는 어떻게 추측하나요?  ")
@@ -1348,6 +1368,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         evidence_items = [
             {
                 "source": "YouTube family learning digest",
+                "source_url": "https://example.org/family-learning",
                 "cite": "최근 수집 자료는 명사 추측을 정답기가 아니라 질문 비교 도구로 다룰 때 사고력이 남는다고 설명한다.",
             }
         ]
@@ -1370,7 +1391,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(model, "fast-template+rag")
         self.assertFalse(fallback_used)
         self.assertIn("명사는", answer)
-        self.assertIn("자료에는", answer)
+        self.assertIn("[YouTube family learning digest](https://example.org/family-learning)에는", answer)
+        self.assertIn("**출처:** [YouTube family learning digest](https://example.org/family-learning)", answer)
         self.assertIn("질문 비교 도구", answer)
         self.assertTrue(usage["_safety_coach_rag_infused"])
         self.assertEqual(usage["_safety_coach_evidence_meta"]["selected_count"], 1)
@@ -1391,6 +1413,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             [
                 {
                     "source": "privacy digest",
+                    "source_url": "https://example.org/privacy",
                     "cite": "아이 사진과 얼굴 정보는 저장과 재사용 가능성 때문에 업로드 전 보호자 확인이 필요하다고 설명한다.",
                 }
             ],
@@ -1404,6 +1427,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             [
                 {
                     "source": "learning risk digest",
+                    "source_url": "https://example.org/learning-risk",
+                    "title": "AI와 숙제 경계",
                     "cite": (
                         "AI가 아이한테 '그 논문 쓰지 마, 그 책 읽지 마, 내가 대신 해줄게'라고 "
                         "말하는 셈인데, 이건 인간 역량을 통째로 무너뜨리는 길이라고요."
@@ -1413,7 +1438,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             ],
         )
 
-        self.assertIn("자료에는", sentence)
+        self.assertIn("[learning risk digest 'AI와 숙제 경계'](https://example.org/learning-risk)에는", sentence)
+        self.assertIn("출처: [learning risk digest 'AI와 숙제 경계'](https://example.org/learning-risk)", sentence)
         self.assertIn("걱정도 나와 있어요", sentence)
         self.assertNotIn("라고요라는", sentence)
         self.assertNotIn("다고요라는", sentence)
@@ -1429,6 +1455,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             evidence_items=[
                 {
                     "source": "YouTube family learning digest",
+                    "source_url": "https://example.org/family-learning",
                     "cite": "명사 추측을 정답기가 아니라 질문 비교 도구로 다룰 때 사고력이 남는다고 설명한다.",
                 }
             ],
@@ -1440,13 +1467,16 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         issues = self.mod._edu_vp_safety_coach_red_team(
             question="다음 글에 이어질 최적의 명사는 어떻게 추측해?",
             answer=(
-                "명사는 앞뒤 말이 만들고 있는 장면을 보고 고릅니다. 자료에는 명사 추측을 정답기가 아니라 "
-                "질문 비교 도구로 다룰 때 사고력이 남는다는 말도 나와 있어요. 중요한 내용은 사람이 다시 확인해야 합니다."
+                "명사는 앞뒤 말이 만들고 있는 장면을 보고 고릅니다. "
+                "[YouTube family learning digest](https://example.org/family-learning)에는 명사 추측을 정답기가 아니라 "
+                "질문 비교 도구로 다룰 때 사고력이 남는다는 말도 나와 있어요.\n\n"
+                "출처: [YouTube family learning digest](https://example.org/family-learning)"
             ),
             concept_body="LLM은 다음에 올 법한 말을 이어 붙입니다.",
             evidence_items=[
                 {
                     "source": "YouTube family learning digest",
+                    "source_url": "https://example.org/family-learning",
                     "cite": "명사 추측을 정답기가 아니라 질문 비교 도구로 다룰 때 사고력이 남는다고 설명한다.",
                 }
             ],
@@ -1470,6 +1500,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         evidence_items = [
             {
                 "source": "YouTube family learning digest",
+                "source_url": "https://example.org/attention-learning",
                 "cite": "attention 설정을 정답 암기가 아니라 질문 비교 도구로 다룰 때 이해가 오래 남는다고 설명한다.",
             }
         ]
@@ -1489,7 +1520,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertEqual(mocked_generate.call_count, 1)
         self.assertEqual(model, "model-a+rag_patch")
-        self.assertIn("자료에는", answer)
+        self.assertIn("[YouTube family learning digest](https://example.org/attention-learning)에는", answer)
+        self.assertIn("**출처:** [YouTube family learning digest](https://example.org/attention-learning)", answer)
         self.assertIn("질문 비교 도구", answer)
         self.assertFalse(fallback_used)
         self.assertTrue(usage["_safety_coach_rag_infused"])
@@ -1500,7 +1532,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         blended, used = self.mod._edu_vp_safety_coach_blend_rag_sentence(
             long_answer,
             "명사 추측",
-            [{"source": "x", "cite": "명사 추측 자료는 문맥과 장면을 함께 보아야 한다고 설명한다."}],
+            [{"source": "x", "source_url": "https://example.org/x", "cite": "명사 추측 자료는 문맥과 장면을 함께 보아야 한다고 설명한다."}],
         )
 
         self.assertEqual(blended, long_answer)
@@ -1518,6 +1550,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         evidence_items = [
             {
                 "source": "YouTube family learning digest",
+                "source_url": "https://example.org/family-learning",
                 "cite": "최근 수집 자료는 명사 추측을 정답기가 아니라 질문 비교 도구로 다룰 때 사고력이 남는다고 설명한다.",
             }
         ]

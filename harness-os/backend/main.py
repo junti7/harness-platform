@@ -8882,7 +8882,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-28-first-grade-v18"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-28-source-format-v19"
 _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
 _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_PATH = PROJECT_ROOT / "configs" / "education" / "edu_coach_policy_registry.json"
 _EDU_VP_SAFETY_COACH_POLICY_CANDIDATE_PATH = PROJECT_ROOT / "docs" / "reviews" / "edu_coach_simulations" / "policy_candidates.jsonl"
@@ -9020,13 +9020,50 @@ def _edu_vp_safety_coach_fast_answer(concept_title: str, question: str) -> str |
     return None
 
 
+def _edu_vp_safety_coach_source_label(item: dict[str, Any]) -> str:
+    source = _edu_clean_cite(str(item.get("source") or "출처 자료")).strip()
+    title = _edu_clean_cite(str(item.get("title") or "")).strip()
+    if title and title.lower() not in source.lower():
+        return f"{source} '{title[:48]}'"
+    return source[:80] or "출처 자료"
+
+
+def _edu_vp_safety_coach_source_url(item: dict[str, Any]) -> str:
+    for key in ("source_url", "url", "source_ref", "link"):
+        value = str(item.get(key) or "").strip()
+        if value.startswith(("http://", "https://")):
+            return value
+        match = re.search(r"https?://[^\s)>\]\"']+", value)
+        if match:
+            return match.group(0)
+    raw_data = item.get("raw_data")
+    if isinstance(raw_data, dict):
+        for key in ("source_url", "url", "source_ref", "link"):
+            value = str(raw_data.get(key) or "").strip()
+            if value.startswith(("http://", "https://")):
+                return value
+            match = re.search(r"https?://[^\s)>\]\"']+", value)
+            if match:
+                return match.group(0)
+    return ""
+
+
+def _edu_vp_safety_coach_source_markdown(item: dict[str, Any]) -> str:
+    label = _edu_vp_safety_coach_source_label(item).replace("[", "(").replace("]", ")")
+    url = _edu_vp_safety_coach_source_url(item)
+    if url:
+        safe_url = url.replace(")", "%29").replace(" ", "%20")
+        return f"[{label}]({safe_url})"
+    return label
+
+
 def _edu_vp_safety_coach_rag_sentence(question: str, evidence_items: list[dict[str, Any]] | None) -> str:
     if not evidence_items:
         return ""
     question_terms = _edu_vp_safety_coach_keywords(question, max_terms=5)
     if not question_terms:
         return ""
-    candidates: list[tuple[int, float, str]] = []
+    candidates: list[tuple[int, float, str, dict[str, Any]]] = []
     for item in evidence_items[:4]:
         cite = _edu_clean_cite(str(item.get("cite") or item.get("body") or ""))
         if len(cite) < 30:
@@ -9035,11 +9072,13 @@ def _edu_vp_safety_coach_rag_sentence(question: str, evidence_items: list[dict[s
         hits = sum(1 for term in question_terms if term.lower() in cite_lower)
         if hits <= 0:
             continue
-        candidates.append((hits, float(item.get("score") or item.get("_score") or 0.0), cite))
+        candidates.append((hits, float(item.get("score") or item.get("_score") or 0.0), cite, item))
     if not candidates:
         return ""
     candidates.sort(key=lambda row: (row[0], row[1], len(row[2])), reverse=True)
     selected = candidates[0][2]
+    selected_item = candidates[0][3]
+    source_ref = _edu_vp_safety_coach_source_markdown(selected_item)
     sentence_parts = [
         part.strip()
         for part in re.split(r"(?<=[.!?。])\s+|[。!?]\s*", selected.strip())
@@ -9061,14 +9100,14 @@ def _edu_vp_safety_coach_rag_sentence(question: str, evidence_items: list[dict[s
     if excerpt.endswith("라고요"):
         stem = excerpt[:-3].strip(" ,;:-.!?。")
         if len(stem) >= 24:
-            return f"자료에는 {stem}라는 걱정도 나와 있어요."
+            return f"{source_ref}에는 {stem}라는 걱정도 나와 있어요.\n\n출처: {source_ref}"
     if excerpt.endswith("다고요"):
         stem = excerpt[:-3].strip(" ,;:-.!?。")
         if len(stem) >= 24:
-            return f"자료에는 {stem}다는 걱정도 나와 있어요."
+            return f"{source_ref}에는 {stem}다는 걱정도 나와 있어요.\n\n출처: {source_ref}"
     if excerpt.endswith("다"):
-        return f"자료에는 {excerpt}는 말도 나와 있어요."
-    return f"자료에는 {excerpt}라는 말도 나와 있어요."
+        return f"{source_ref}에는 {excerpt}는 말도 나와 있어요.\n\n출처: {source_ref}"
+    return f"{source_ref}에는 {excerpt}라는 말도 나와 있어요.\n\n출처: {source_ref}"
 
 
 def _edu_vp_safety_coach_blend_rag_sentence(answer: str, question: str, evidence_items: list[dict[str, Any]] | None) -> tuple[str, bool]:
@@ -9081,7 +9120,7 @@ def _edu_vp_safety_coach_blend_rag_sentence(answer: str, question: str, evidence
         return f"{base} {rag_sentence}"[:2200].strip(), True
     insert_at = len(sentences)
     for index, sentence in enumerate(sentences):
-        if sentence.startswith(("오늘은", "오늘 기준", "오늘 기억")):
+        if sentence.startswith(("간단히 말하면", "오늘은", "오늘 기준", "오늘 기억")):
             insert_at = index
             break
     sentences.insert(insert_at, rag_sentence)
@@ -9095,16 +9134,14 @@ def _edu_vp_safety_coach_answer_uses_evidence(answer: str, evidence_items: list[
     if not evidence_items:
         return False
     answer_text = str(answer or "").lower()
-    if any(term in answer_text for term in ("관련 자료", "내부 자료", "자료에서는", "근거 자료", "출처:")):
+    if "출처:" in answer_text:
         return True
     for item in evidence_items[:3]:
-        cite = _edu_clean_cite(str(item.get("cite") or item.get("body") or ""))
-        terms = _edu_vp_safety_coach_keywords(cite, max_terms=8)
-        meaningful = [term for term in terms if len(term) >= 2]
-        if len(meaningful) < 2:
-            continue
-        hits = sum(1 for term in meaningful if term.lower() in answer_text)
-        if hits >= 2:
+        source = _edu_vp_safety_coach_source_label(item).lower()
+        url = _edu_vp_safety_coach_source_url(item).lower()
+        if source and len(source) >= 4 and source[:30] in answer_text:
+            return True
+        if url and url in answer_text:
             return True
     return False
 
@@ -9996,6 +10033,8 @@ def _edu_vp_validate_safety_coach_evidence(
         reasons.append("cite_too_short")
     if not source:
         reasons.append("missing_source")
+    if not _edu_vp_safety_coach_source_url(item):
+        reasons.append("missing_source_url")
     if _edu_is_low_quality_item(item):
         reasons.append("low_quality_item")
     query_terms = _edu_vp_safety_coach_keywords(query)
@@ -10189,6 +10228,10 @@ def _edu_vp_safety_coach_evidence(
         selected.append({
             "id": str(item.get("id") or ""),
             "source": source[:160],
+            "source_ref": str(item.get("source_ref") or "")[:500],
+            "source_url": str(item.get("source_url") or item.get("url") or item.get("link") or "")[:500],
+            "source_kind": str(item.get("source_kind") or "")[:80],
+            "title": _edu_clean_cite(str(item.get("title") or ""))[:160],
             "cite": cite[:260],
             "score": float(item.get("_score") or 0.0),
             "validated": True,
@@ -10207,7 +10250,7 @@ def _edu_vp_safety_coach_evidence(
         meta["rejected"] = rejected[:5]
         return "", [], meta
     lines = [
-        f"- 자료 {idx}: {item['cite']}\n  출처: {item['source']}"
+        f"- 자료 {idx}: {item['cite']}\n  출처: {_edu_vp_safety_coach_source_label(item)} ({_edu_vp_safety_coach_source_url(item)})"
         for idx, item in enumerate(selected, start=1)
     ]
     meta["selected_count"] = len(selected)
@@ -10368,8 +10411,20 @@ def _edu_vp_safety_coach_simplify_for_first_grader(answer: str) -> str:
     return text
 
 
+def _edu_vp_safety_coach_format_answer(answer: str) -> str:
+    text = str(answer or "").strip()
+    text = re.sub(r"\s+(출처:\s*)", r"\n\n\1", text)
+    text = re.sub(r"\s+(간단히 말하면,)", r"\n\n**\1**", text)
+    text = text.replace("막아야 할 선은", "**막아야 할 선**은")
+    text = text.replace("해도 되는 선은", "**해도 되는 선**은")
+    text = text.replace("전부 막을 필요는 없습니다.", "**전부 막을 필요는 없습니다.**")
+    text = text.replace("출처:", "**출처:**")
+    return text.strip()
+
+
 def _edu_vp_safety_coach_prepare_answer(answer: str) -> str:
-    return _edu_vp_safety_coach_simplify_for_first_grader(answer)[:2200].strip()
+    simplified = _edu_vp_safety_coach_simplify_for_first_grader(answer)
+    return _edu_vp_safety_coach_format_answer(simplified)[:2200].strip()
 
 
 def _edu_vp_safety_coach_fallback_raw(concept_title: str, question: str) -> str:
@@ -10594,7 +10649,7 @@ def _edu_vp_safety_coach_red_team(
     )
     if any(marker in answer_text for marker in leaked_markers):
         issues.append("prompt_marker_leaked")
-    mentions_evidence = any(term in answer_text for term in ("관련 자료", "내부 자료", "자료에서는", "출처:", "출처는", "출처가", "근거 자료", "인용한"))
+    mentions_evidence = any(term in answer_text for term in ("관련 자료", "내부 자료", "자료에서는", "자료에는", "출처:", "출처는", "출처가", "근거 자료", "인용한"))
     if mentions_evidence and not evidence_items:
         issues.append("unsupported_evidence_reference")
     for policy in (reinforcement_policies or [])[:5]:
@@ -11232,7 +11287,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         "- 반드시 [현재 단락 설명]에 없는 새 생활 예시 1개를 포함한다.\n"
         "- [관련 내부 자료]가 '(질문과 딱 맞는 내부 자료가 없음)'이면 자료를 절대 언급하지 않는다.\n"
         "- [관련 내부 자료]가 있으면 정의를 반복하지 말고 사용자 질문에 붙는 새 관점, 실전 예시, 최근 흐름 중 하나를 한 문장으로 자연스럽게 녹인다.\n"
-        "- [관련 내부 자료]가 있으면 '자료에는 ...라는 말도 나와 있어요'처럼 아주 짧고 쉬운 말로 반영한다. 출처 이름은 확실할 때만 말한다.\n"
+        "- [관련 내부 자료]가 있으면 '출처 이름에는 ...라는 말도 나와 있어요'처럼 아주 짧고 쉬운 말로 반영한다. 출처 이름과 URL이 있으면 마지막에 출처 링크를 붙인다.\n"
         "- AI를 사람, 친구, 전문가, 보호자처럼 표현하지 않는다.\n"
         "- 다만 사용자가 AI 대화에서 위로를 느낄 수 있다는 사실은 부정하지 않는다.\n"
         "- 자해, 건강, 법률, 돈, 아이 안전 등 고위험 신호가 있으면 AI 답변 대신 실제 사람/전문가/긴급 도움을 연결하라고 말한다.\n"
@@ -11346,7 +11401,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
             red_team_issues = [str(item) for item in quality_review.get("issues") or [] if str(item).strip()]
             llm_judge_review = quality_review.get("llm_judge") if isinstance(quality_review.get("llm_judge"), dict) else {}
             model_issues = red_team_issues
-            if red_team_issues == ["missing_rag_integration"]:
+            if any(issue in red_team_issues for issue in ("missing_rag_integration", "evidence_source_not_grounded")):
                 patched_answer, patched = _edu_vp_safety_coach_blend_rag_sentence(answer, question, evidence_items)
                 if patched:
                     patched_review = _edu_vp_safety_coach_quality_review(
@@ -12145,6 +12200,8 @@ def _edu_db_customer_facing_bundle(query: str, segment: str, k: int = 8) -> dict
             SELECT
                 id,
                 source,
+                source_ref,
+                source_url,
                 source_kind,
                 segment,
                 item_type AS type,

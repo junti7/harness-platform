@@ -51,7 +51,7 @@ export type TrainingScreenProps = {
 
 const STAGE_ORDER: StageKey[] = ['day0', 'day1']
 const STAGE_LABEL: Record<StageKey, string> = { day0: 'Day 0', day1: 'Day 1' }
-const SAFETY_COACH_ANSWER_VERSION = '2026-06-28-first-grade-v18'
+const SAFETY_COACH_ANSWER_VERSION = '2026-06-28-source-format-v19'
 const TRAINING_DEVICE_ID_KEY = 'vp_training_device_id'
 const TRAINING_LOCAL_DRAFT_PREFIX = 'vp_training_stage_draft'
 type SafetyConceptFeedback = Record<string, string>
@@ -527,13 +527,27 @@ function coachModelBadge(coach: { model?: string; fallbackUsed?: boolean }): str
 }
 
 function renderInlineCoachMarkdown(text: string, keyPrefix: string) {
-  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).filter(Boolean)
+  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g).filter(Boolean)
   return parts.map((part, partIndex) => {
     if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
       return <strong key={`${keyPrefix}-${partIndex}`} className="font-bold text-ink">{part.slice(2, -2)}</strong>
     }
     if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
       return <code key={`${keyPrefix}-${partIndex}`} className="rounded bg-card px-1 py-0.5 font-mono text-[0.95em] text-ink">{part.slice(1, -1)}</code>
+    }
+    const link = part.match(/^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/)
+    if (link) {
+      return (
+        <a
+          key={`${keyPrefix}-${partIndex}`}
+          href={link[2]}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-semibold text-primary underline underline-offset-2"
+        >
+          {link[1]}
+        </a>
+      )
     }
     return <span key={`${keyPrefix}-${partIndex}`}>{part}</span>
   })

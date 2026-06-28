@@ -35,6 +35,8 @@ class EduCustomerFacingRetrievalTests(unittest.TestCase):
                 {
                     "id": 101,
                     "source": "OECD Education Report",
+                    "source_ref": "https://example.org/oecd-parent-ai",
+                    "source_url": "https://example.org/oecd-parent-ai",
                     "source_kind": "research_policy",
                     "segment": "parent",
                     "type": "report",
@@ -81,6 +83,7 @@ class EduCustomerFacingRetrievalTests(unittest.TestCase):
                     "type": "report",
                     "cite": "기존 인덱스에서도 근거를 회수합니다.",
                     "source": "legacy source",
+                    "source_url": "https://example.org/legacy-source",
                     "source_kind": "research_policy",
                 },
                 0.91,
