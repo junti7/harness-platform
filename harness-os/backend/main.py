@@ -10493,9 +10493,55 @@ def _edu_vp_safety_coach_format_answer(answer: str) -> str:
     return text.strip()
 
 
+_EDU_VP_SAFETY_COACH_ALLOWED_BOLD_LABELS = (
+    "막아야 할 선",
+    "해도 되는 선",
+    "간단히 말하면,",
+    "출처:",
+)
+
+
+def _edu_vp_safety_coach_sanitize_markdown_for_ui(answer: str) -> str:
+    """Keep supported markdown, but remove markers that would render as raw text."""
+    text = str(answer or "").strip()
+    if not text:
+        return ""
+    lines: list[str] = []
+    for line in text.splitlines():
+        if line.count("**") % 2 != 0:
+            line = line.replace("**", "")
+        # Bold is allowed only for small scanning labels. Long sentence-level
+        # bolding reads random and leaks badly if the renderer fails.
+        for bold_text in re.findall(r"\*\*([^*]+)\*\*", line):
+            label = bold_text.strip()
+            if label not in _EDU_VP_SAFETY_COACH_ALLOWED_BOLD_LABELS:
+                line = line.replace(f"**{bold_text}**", bold_text)
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
 def _edu_vp_safety_coach_prepare_answer(answer: str) -> str:
     simplified = _edu_vp_safety_coach_simplify_for_first_grader(answer)
-    return _edu_vp_safety_coach_format_answer(simplified)[:2200].strip()
+    formatted = _edu_vp_safety_coach_format_answer(simplified)[:2200].strip()
+    return _edu_vp_safety_coach_sanitize_markdown_for_ui(formatted)
+
+
+def _edu_vp_safety_coach_api_answer(answer: str) -> str:
+    return _edu_vp_safety_coach_sanitize_markdown_for_ui(answer)[:2600].strip()
+
+
+def _edu_vp_safety_coach_markdown_leak_present(answer: str) -> bool:
+    text = str(answer or "")
+    if text.count("**") % 2 != 0:
+        return True
+    return any(line.count("**") % 2 != 0 for line in text.splitlines())
+
+
+def _edu_vp_safety_coach_render_plain_text(answer: str) -> str:
+    text = re.sub(r"\[([^\]]+)\]\(https?://[^)\s]+\)", r"\1", str(answer or ""))
+    text = text.replace("**", "").replace("`", "")
+    return text
+
 
 
 def _edu_vp_safety_coach_fallback_raw(concept_title: str, question: str) -> str:
@@ -14332,6 +14378,7 @@ def edu_vp_training_safety_coach(
             answer_version=answer_version,
         )
     if cached:
+        cached_answer = _edu_vp_safety_coach_api_answer(str(cached["answer"]))
         cached_evidence_meta = cached.get("evidence_meta") if isinstance(cached, dict) else None
         cached_evidence_used = bool(cached.get("evidence_used")) or bool(
             isinstance(cached_evidence_meta, dict) and int(cached_evidence_meta.get("selected_count") or 0) > 0
@@ -14343,7 +14390,7 @@ def edu_vp_training_safety_coach(
             "concept_title": (req.concept_title or "")[:240],
             "question": question[:1200],
             "normalized_question": normalized_question[:1200],
-            "answer": str(cached["answer"])[:2600],
+            "answer": cached_answer[:2600],
             "model": str(cached.get("model") or ""),
             "fallback_used": bool(cached.get("fallback_used")),
             "answer_version": answer_version,
@@ -14362,7 +14409,7 @@ def edu_vp_training_safety_coach(
         )
         return {
             "ok": True,
-            "answer": str(cached["answer"]),
+            "answer": cached_answer,
             "model": str(cached.get("model") or ""),
             "fallback_used": bool(cached.get("fallback_used")),
             "answer_version": answer_version,
@@ -14372,6 +14419,7 @@ def edu_vp_training_safety_coach(
         }
     _edu_public_gate(request)
     answer, model_name, usage, fallback_used = _edu_vp_generate_safety_coach_answer(req)
+    answer = _edu_vp_safety_coach_api_answer(answer)
     evidence_meta = usage.get("_safety_coach_evidence_meta") if isinstance(usage, dict) else None
     rag_infused = usage.get("_safety_coach_rag_infused") if isinstance(usage, dict) else None
     red_team_issues = usage.get("_safety_coach_red_team_issues") if isinstance(usage, dict) else None

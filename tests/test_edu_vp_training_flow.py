@@ -1628,6 +1628,37 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("\n\n**간단히 말하면,**", answer)
         self.assertIn("\n\n**출처:** [Naver 카페글](https://example.org/raw-homework-source)", answer)
 
+    def test_safety_coach_api_answer_removes_malformed_markdown_leaks(self):
+        answer = self.mod._edu_vp_safety_coach_api_answer(
+            "**전부 막을 필요는 없습니다. 이 문장은 모델이 실수로 너무 길게 굵게 만들었고 화면에 별표가 보이면 안 됩니다. "
+            + ("아이 생각을 먼저 둡니다. " * 12)
+            + "\n\n**간단히 말하면,** 아이가 먼저 생각하게 하세요.\n\n**출처:** [자료](https://example.org/source)"
+        )
+
+        self.assertNotIn("**전부 막을 필요는 없습니다.", answer)
+        self.assertIn("**간단히 말하면,**", answer)
+        self.assertIn("**출처:** [자료](https://example.org/source)", answer)
+        self.assertFalse(self.mod._edu_vp_safety_coach_markdown_leak_present(answer))
+
+    def test_safety_coach_api_answer_keeps_only_decision_boundary_bold_labels(self):
+        answer = self.mod._edu_vp_safety_coach_api_answer(
+            "전부 막을 필요는 없습니다. **중요해 보이는 긴 문장 전체를 굵게 만들면 오히려 읽기 어렵습니다.** "
+            "**막아야 할 선**은 AI가 답을 대신 쓰는 경우입니다. **해도 되는 선**은 아이가 먼저 생각한 뒤 묻는 경우입니다."
+        )
+
+        self.assertNotIn("**중요해 보이는", answer)
+        self.assertIn("**막아야 할 선**은", answer)
+        self.assertIn("**해도 되는 선**은", answer)
+        self.assertFalse(self.mod._edu_vp_safety_coach_markdown_leak_present(answer))
+
+    def test_safety_coach_api_answer_removes_odd_bold_marker(self):
+        answer = self.mod._edu_vp_safety_coach_api_answer(
+            "전부 막을 필요는 없습니다. **막아야 할 선은 답을 대신 쓰는 경우입니다."
+        )
+
+        self.assertNotIn("**", answer)
+        self.assertFalse(self.mod._edu_vp_safety_coach_markdown_leak_present(answer))
+
     def test_safety_coach_fast_template_drops_rag_when_quality_review_fails(self):
         req = self.mod.EduVpTrainingSafetyCoachRequest(
             case_id=123,

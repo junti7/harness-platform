@@ -67,6 +67,24 @@
       "target": "macmini service url",
       "command": "curl --max-time 5 http://127.0.0.1:8000/",
       "result": "HTTP 200 returned production frontend HTML"
+    },
+    {
+      "name": "markdown leak sanitizer and bold policy regression",
+      "target": "backend answer finalizer",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py::EduVpTrainingFlowTests::test_safety_coach_api_answer_removes_malformed_markdown_leaks tests/test_edu_vp_training_flow.py::EduVpTrainingFlowTests::test_safety_coach_api_answer_keeps_only_decision_boundary_bold_labels tests/test_edu_vp_training_flow.py::EduVpTrainingFlowTests::test_safety_coach_prepare_answer_strips_broad_markdown_and_keeps_summary_marker -q",
+      "result": "3 passed; malformed broad/odd markdown removed while decision-boundary labels remain bold"
+    },
+    {
+      "name": "headless chrome markdown rendering check",
+      "target": "browser DOM rendering fixture",
+      "command": "Google Chrome --headless --dump-dom file:///tmp/edu_safety_render_check.html",
+      "result": "raw_marker_visible=false; strong_count=3 for allowed labels only"
+    },
+    {
+      "name": "post-markdown full regression",
+      "target": "tests, deployment guard, production bundle",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py tests/test_edu_customer_facing_retrieval.py tests/test_edu_evidence_quality.py tests/test_agent_completion_guard.py tests/test_llm_governance_bootstrap.py -q; .venv/bin/python scripts/check_edu_coach_simulation_regression.py; npm run build --prefix harness-os/edu-app",
+      "result": "118 passed; deployment regression guard ok; edu-app production build ok"
     }
   ],
   "deploy": {
