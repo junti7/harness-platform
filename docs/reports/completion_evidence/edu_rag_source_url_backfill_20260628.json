@@ -169,6 +169,12 @@
       "target": "edu evidence index builder",
       "command": "EMBEDDING_PROVIDER_MODE=ollama .venv/bin/python scripts/build_edu_evidence_index.py --rebuild --max-refined 0; scripts/audit_edu_evidence_source_consistency.py",
       "result": "builder supports --max-refined 0 for emergency truthful anchor-only index rebuild; local anchor-only build generated 19 Ollama-embedded items and source consistency audit remained rejected=0"
+    },
+    {
+      "name": "macmini v22 source consistency deployment",
+      "target": "macmini RAG artifacts, launchd backend env, frontend bundle, and HTTP safety-coach API",
+      "command": "scripts/deploy_to_macmini.sh ...; EMBEDDING_PROVIDER_MODE=ollama build_edu_evidence_index.py --rebuild --max-refined 0; audit_edu_evidence_source_consistency.py; npm run build --prefix harness-os/edu-app; POST /api/edu/vp-training/safety-coach",
+      "result": "launchd backend environment has EMBEDDING_PROVIDER_MODE=ollama; Mac Mini evidence_index count=19 provider=ollama model=nomic-embed-text missing_url=0; evidence_bank count=19 missing_url=0; audit rejected=0; frontend bundle index-BTaKTTFE.js; HTTP answer_version=v22; evidence_used=false; has_fake_phrase=false; has_dochithink=false; has_source=false; markdown_leak=false"
     }
   ],
   "deploy": {
