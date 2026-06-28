@@ -18,7 +18,7 @@ LOG="$PROJ/docs/reports/ibgateway_ibc.log"
 IBC_RAW_LOG="$PROJ/runtime/ibgateway_ibc_raw.log"
 ENV_FILE="$PROJ/.env"
 STATUS_HELPER="$PROJ/scripts/ibkr_gateway_runtime_status.py"
-IBC_WAIT_SEC=90        # IBC 무인 로그인 대기
+IBC_WAIT_SEC=150       # IBC 무인 로그인 대기 (IP Restriction 등록 후 자동 로그인 충분히 대기)
 FALLBACK_WAIT_SEC=60   # open 폴백 후 대기(수동 로그인 여지)
 POLL_INTERVAL_SEC=5
 
