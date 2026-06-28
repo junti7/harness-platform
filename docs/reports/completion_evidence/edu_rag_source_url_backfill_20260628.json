@@ -175,6 +175,12 @@
       "target": "macmini RAG artifacts, launchd backend env, frontend bundle, and HTTP safety-coach API",
       "command": "scripts/deploy_to_macmini.sh ...; EMBEDDING_PROVIDER_MODE=ollama build_edu_evidence_index.py --rebuild --max-refined 0; audit_edu_evidence_source_consistency.py; npm run build --prefix harness-os/edu-app; POST /api/edu/vp-training/safety-coach",
       "result": "launchd backend environment has EMBEDDING_PROVIDER_MODE=ollama; Mac Mini evidence_index count=19 provider=ollama model=nomic-embed-text missing_url=0; evidence_bank count=19 missing_url=0; audit rejected=0; frontend bundle index-BTaKTTFE.js; HTTP answer_version=v22; evidence_used=false; has_fake_phrase=false; has_dochithink=false; has_source=false; markdown_leak=false"
+    },
+    {
+      "name": "macmini full-index source consistency cleanup",
+      "target": "macmini production RAG artifacts and DLQ",
+      "command": "ssh macmini 'scripts/audit_edu_evidence_source_consistency.py --fix; scripts/audit_edu_evidence_source_consistency.py; POST /api/edu/vp-training/safety-coach'",
+      "result": "Mac Mini evidence_index had grown to 103443 items after full rebuild; audit rejected 3676 cite_not_supported_by_source items and moved them to DLQ. Follow-up audit: evidence_index total=99767 kept=99767 rejected=0; evidence_bank total=19 kept=19 rejected=0; DLQ lines=26295. Live v22 homework API check: evidence_used=false, has_fake_phrase=false, has_dochithink=false, has_source=false, markdown_leak=false"
     }
   ],
   "deploy": {
