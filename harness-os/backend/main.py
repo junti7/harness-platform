@@ -10277,6 +10277,147 @@ def _edu_vp_safety_coach_quality_review(
     return {"issues": issues, "llm_judge": llm_judge}
 
 
+def _edu_vp_safety_coach_input_category(question: str, *, source_channel: str = "", segment: str = "") -> dict[str, Any]:
+    text = re.sub(r"\s+", " ", str(question or "").strip())
+    lower = text.lower()
+    source_lower = str(source_channel or "").strip().lower()
+    reasons: list[str] = []
+    if not text:
+        return {"category": "too_ambiguous", "eligible_for_answer_quality": False, "reasons": ["empty"]}
+    if len(text) < 5:
+        return {"category": "too_ambiguous", "eligible_for_answer_quality": False, "reasons": ["too_short"]}
+
+    has_korean = bool(re.search(r"[가-힣]", text))
+    domain_text = re.sub(
+        r"ai\s*답변\s*(?:금지|사절|안\s*받(?:습니다|아요|음)?)|ai답변금지|ai답번금지",
+        "",
+        lower,
+    )
+    has_question_punctuation = "?" in text or "？" in text
+    has_question_marker = any(
+        marker in text
+        for marker in (
+            "?",
+            "？",
+            "어떻게",
+            "무엇",
+            "뭐",
+            "왜",
+            "어디",
+            "언제",
+            "괜찮",
+            "좋을",
+            "해야",
+            "할까",
+            "할까요",
+            "해요",
+            "인가요",
+            "일까요",
+            "진짜",
+            "걱정",
+            "불안",
+            "궁금",
+        )
+    )
+    if re.search(r"https?://|open\.kakao|카카오톡|개인 톡|문의\s*[:：]|\b010[-\s]?\d{3,4}", lower):
+        reasons.append("contact_or_url_noise")
+    if any(marker in lower for marker in ("모집", "신청", "접수", "선착순", "마감", "행사", "번개", "할인", "무료 플랜", "리퍼브샵")):
+        reasons.append("ad_or_event_marker")
+    if any(marker in lower for marker in ("read more", "by ", "abstract", "doi", "paper:", "opinion paper", "press release")):
+        reasons.append("article_or_paper_marker")
+    scholarly_or_news_sources = {"eric", "openalex", "semanticscholar", "mit_tech", "techcrunch", "the74", "edsurge", "khan_blog", "mollick"}
+    if source_lower in scholarly_or_news_sources:
+        reasons.append("source_channel_title_like")
+    if not has_korean and source_lower and source_lower != "unknown":
+        reasons.append("english_title_or_snippet")
+    if len(text) >= 180 and text.count("...") >= 1 and not has_question_marker:
+        reasons.append("truncated_snippet")
+    if len(text) >= 260 and not has_question_marker:
+        reasons.append("long_non_question")
+    if not has_question_marker and not has_korean:
+        reasons.append("english_title_or_snippet")
+    domain_markers = (
+        "ai", "인공지능", "챗gpt", "chatgpt", "gpt", "생성형", "디지털교과서", "디지털 교과서",
+        "아이", "자녀", "학생", "학부모", "부모", "엄마", "아빠", "초등", "중등", "고등", "중딩",
+        "공부", "학습", "교육", "숙제", "과제", "시험", "성적", "점수", "수학", "영어", "논술", "문해력", "리터러시",
+        "학습앱", "학습지", "써밋수학", "밀크t", "초등영어앱",
+        "인강", "과외", "온라인학습", "비대면 수업", "코딩",
+        "스마트폰", "핸드폰", "휴대폰", "스크린", "영상", "유튜브", "게임", "진로", "직업",
+    )
+    has_domain_marker = any(marker in domain_text for marker in domain_markers)
+    core_scope_markers = (
+        "ai", "인공지능", "챗gpt", "chatgpt", "gpt", "생성형", "디지털교과서", "디지털 교과서",
+        "공부", "학습", "교육", "숙제", "과제", "시험", "성적", "점수", "수학", "영어", "논술",
+        "문해력", "리터러시", "학습앱", "학습지", "써밋수학", "밀크t", "초등영어앱",
+        "인강", "과외", "온라인학습", "비대면 수업", "코딩", "스마트폰", "핸드폰", "휴대폰",
+        "스크린", "영상", "유튜브", "게임", "진로", "직업",
+    )
+    has_core_scope_marker = any(marker in domain_text for marker in core_scope_markers)
+    off_domain_markers = (
+        "벌레", "강아지", "고양이", "기니피그", "테아닌", "스킨부스터", "리프팅", "갤럭시",
+        "아이폰 사진", "아이클라우드", "화장실 문", "어머니 하나님",
+    )
+    if any(marker in lower for marker in off_domain_markers) and not any(
+        marker in domain_text for marker in ("ai", "인공지능", "챗gpt", "chatgpt", "gpt", "공부", "학습", "교육", "숙제", "학생")
+    ):
+        return {"category": "out_of_scope", "eligible_for_answer_quality": False, "reasons": ["off_domain_marker"]}
+    if source_lower == "evidencebank" and "?" not in text and "？" not in text:
+        return {"category": "source_snippet", "eligible_for_answer_quality": False, "reasons": ["evidencebank_statement"]}
+    wrapper_prefix = "이런 상황이면 어떻게 해야 해요?"
+    if text.startswith(wrapper_prefix):
+        tail = text[len(wrapper_prefix):].strip()
+        tail_has_user_concern = any(marker in tail for marker in ("걱정", "불안", "궁금", "모르", "어떻게", "해야", "좋을", "괜찮", "막막", "추천"))
+        tail_has_question_punctuation = "?" in tail or "？" in tail
+        if source_lower == "evidencebank" or (len(tail) >= 25 and (not tail_has_user_concern or not tail_has_question_punctuation)):
+            reasons.append("wrapper_source_snippet")
+    if source_lower in {"naver_블로그", "naver_카페글", "naver_지식in"} and len(text) >= 140 and not has_question_punctuation:
+        reasons.append("long_naver_snippet_without_question_punctuation")
+    if source_lower in {"naver_블로그", "naver_카페글", "naver_지식in"} and len(text) >= 80 and ("..." in text or "…" in text):
+        reasons.append("truncated_naver_snippet")
+    if source_lower in {"naver_블로그", "naver_카페글", "naver_지식in"} and text[:1] in {"[", "\"", "“", "‘"} and len(text) >= 20:
+        reasons.append("naver_title_like_without_question_punctuation")
+    if source_lower in {"naver_블로그", "naver_카페글"} and len(text) >= 35 and any(
+        marker in text for marker in ("소식", "특강", "공식", "정리", "업로드", "만들기", "놀아보기", "들으셨나요")
+    ) and not any(marker in text for marker in ("우리 아이가", "아이가 ", "아들", "딸", "어떻게 해야", "괜찮을까요")):
+        reasons.append("naver_title_like_without_question_punctuation")
+    if source_lower in {"naver_블로그", "naver_카페글"} and len(text) >= 18 and any(
+        marker in text for marker in ("소식", "들으셨나요", "이정도로 된다고", "무료'로만", "충격 실험")
+    ):
+        reasons.append("naver_title_like_without_question_punctuation")
+
+    if "contact_or_url_noise" in reasons or "ad_or_event_marker" in reasons:
+        return {"category": "ad_event_noise", "eligible_for_answer_quality": False, "reasons": reasons}
+    if "article_or_paper_marker" in reasons or "source_channel_title_like" in reasons or "english_title_or_snippet" in reasons:
+        return {"category": "article_title", "eligible_for_answer_quality": False, "reasons": reasons}
+    if (
+        "truncated_snippet" in reasons
+        or "long_non_question" in reasons
+        or "wrapper_source_snippet" in reasons
+        or "long_naver_snippet_without_question_punctuation" in reasons
+        or "truncated_naver_snippet" in reasons
+        or "naver_title_like_without_question_punctuation" in reasons
+    ):
+        return {"category": "source_snippet", "eligible_for_answer_quality": False, "reasons": reasons}
+    if not has_question_marker:
+        if any(marker in lower for marker in ("라고요", "라는 거", "다는 거", "나와 있어요", "입니다", "합니다", "했다", "해요.", "더래요", "거예요")):
+            return {"category": "source_snippet", "eligible_for_answer_quality": False, "reasons": ["statement_not_question"]}
+        return {"category": "too_ambiguous", "eligible_for_answer_quality": False, "reasons": ["missing_question_marker"]}
+    if not has_domain_marker:
+        return {"category": "out_of_scope", "eligible_for_answer_quality": False, "reasons": ["no_edu_ai_child_domain_marker"]}
+    if not has_core_scope_marker:
+        return {"category": "out_of_scope", "eligible_for_answer_quality": False, "reasons": ["no_ai_learning_screen_or_career_marker"]}
+    if any(marker in domain_text for marker in ("ai", "인공지능", "챗gpt", "chatgpt", "gpt", "생성형")) and not any(
+        marker in domain_text
+        for marker in (
+            "아이", "자녀", "학생", "학부모", "부모", "엄마", "아빠", "초등", "중등", "고등", "중딩",
+            "공부", "학습", "교육", "숙제", "과제", "시험", "성적", "수학", "영어", "코딩",
+            "스마트폰", "스크린", "영상", "유튜브", "진로", "직업",
+        )
+    ):
+        return {"category": "out_of_scope", "eligible_for_answer_quality": False, "reasons": ["ai_but_not_child_or_learning_context"]}
+    return {"category": "real_user_question", "eligible_for_answer_quality": True, "reasons": reasons}
+
+
 def _edu_vp_safety_coach_quality_issues(
     *,
     question: str,
@@ -10346,9 +10487,21 @@ def _edu_vp_safety_coach_answer_addresses_detected_intent(question: str, answer:
         (_edu_vp_safety_coach_has_cost_barrier(q), ("비용 부담", "저비용", "공공", "무료 법률상담", "상담 창구", "지역 센터")),
         (_edu_vp_safety_coach_has_isolation_context(q), ("그렇게 느낄 수", "혼자", "AI라도", "작은 창구", "들어줄")),
         (any(k in q for k in ("숙제", "과제", "수행평가", "homework")), ("대신 쓰", "생각을 돕", "자기 답", "다른 생각", "풀이 과정")),
+        (any(k in q for k in ("챗gpt", "chatgpt", "챗 gpt", "gpt")) and any(k in q for k in ("초등", "초5", "초등학생", "고학년", "부모", "준비", "가이드", "깔아")), ("chatgpt", "사용 약속", "개인 정보", "부모")),
+        (any(k in q for k in ("풀이", "예시문제", "복잡", "공부해야")) and any(k in q for k in ("챗gpt", "chatgpt", "챗 gpt", "gpt", "ai")), ("풀이", "한 단계", "쉬운 말", "비교")),
         (any(k in q for k in ("개인정보", "사생활", "사진", "얼굴", "보안", "privacy")), ("개인정보", "얼굴", "저장", "재사용", "식별")),
-        (any(k in q for k in ("유튜브", "영상", "스크린", "게임", "youtube", "screen")), ("화면 시간", "스크린", "보고 나서", "소비", "설명")),
+        (any(k in q for k in ("유튜브", "영상", "스크린", "게임", "youtube", "screen", "스마트폰", "핸드폰", "휴대폰")), ("화면 시간", "스크린", "스마트폰", "핸드폰", "보고 나서", "소비", "설명")),
         (any(k in q for k in ("진로", "커리어", "직장", "대체", "도태", "career", "job")), ("진로", "반복 작업", "판단", "설명", "조율", "검토")),
+        (any(k in q for k in ("ai활용", "ai 활용", "ai 사용", "어떻게 사용", "actually working")), ("목적", "먼저", "확인", "작게", "도구")),
+        (any(k in q for k in ("디지털교과서", "디지털 교과서", "ai 교과서")), ("교과서", "수업", "확인", "아이", "종이")),
+        (any(k in q for k in ("학습앱", "학습지", "밀크t", "써밋수학", "플랫폼", "초등영어앱")), ("학습앱", "학습지", "아이 수준", "확인", "먼저")),
+        (any(k in q for k in ("인강", "과외", "비대면 수업", "온라인학습", "온라인 학습", "윈터스쿨", "썸머스쿨")), ("인강", "비대면 수업", "설명", "강의", "오답")),
+        (any(k in q for k in ("코딩교육", "코딩 교육", "초등코딩")), ("코딩", "블록", "순서", "고쳐보는")),
+        (any(k in q for k in ("시험 망친", "성적", "점수", "혼내", "시험장에서 막힐", "아는 문제")), ("시험", "틀린", "혼내", "점수", "다음 행동")),
+        (any(k in q for k in ("ai 맞춤", "맞춤 식단", "영양", "간식", "식단")), ("식단", "성분표", "건강", "확인", "후보")),
+        (any(k in q for k in ("인스타툰", "아이와의 일상", "성장사진", "사진툰")), ("사생활", "얼굴", "사진", "알아볼 수 있는")),
+        (any(k in q for k in ("의존", "중독")) and any(k in q for k in ("ai", "인공지능", "기술")), ("의존", "중독", "먼저 생각", "순서")),
+        (any(k in q for k in ("미디어 리터러시", "ai 리터러시", "문해력", "구성")), ("문해력", "리터러시", "확인", "비교", "구성")),
         (_edu_vp_question_asks_direct_principle(q), ("계산", "가능성", "후보", "다음", "패턴", "비교", "토큰")),
         (_edu_vp_safety_coach_needs_empathy(q), ("그럴 수", "그렇게 느낄", "기분은 진짜", "막막", "자연스러운")),
     ]
@@ -10861,6 +11014,14 @@ def _edu_vp_safety_coach_prepare_answer(answer: str) -> str:
     return _edu_vp_safety_coach_sanitize_markdown_for_ui(formatted)
 
 
+def _edu_vp_safety_coach_clarification_answer(category: str) -> str:
+    if category == "out_of_scope":
+        return "이 질문은 지금 AI·학습·아이 사용 기준 코치 범위에서 조금 벗어나 있어요. 아이 공부, AI 사용, 스마트폰, 진로처럼 무엇이 걱정되는지 한 문장으로 다시 물어봐 주세요."
+    if category in {"source_snippet", "article_title", "ad_event_noise"}:
+        return "이건 질문이라기보다 자료 조각에 가까워요. 제가 억지로 답을 붙이면 엉뚱한 답이 될 수 있습니다. 무엇이 궁금한지 한 문장으로 물어봐 주세요."
+    return "질문이 조금 짧거나 맥락이 부족해요. 아이에게 어떤 일이 생겼고 무엇이 걱정되는지 한 문장으로 다시 물어봐 주세요."
+
+
 def _edu_vp_safety_coach_api_answer(answer: str) -> str:
     return _edu_vp_safety_coach_sanitize_markdown_for_ui(answer)[:2600].strip()
 
@@ -10889,6 +11050,15 @@ def _edu_vp_safety_coach_fallback_raw(concept_title: str, question: str) -> str:
             "큰 AI는 GPU 같은 계산 장치가 단어 후보를 계속 비교하고, 뜨거워진 장비를 식히는 냉각에도 전기가 들어갑니다. "
             "휴대폰 화면에서는 짧은 질문처럼 보여도, 뒤에서는 큰 컴퓨터실이 함께 움직이는 셈입니다. "
             "정리하면 AI 질문 비용은 '내 기기 전기'보다 '서버 계산과 냉각 비용'에 가깝습니다."
+        )
+    if any(marker in q_lower for marker in ("창작", "그림", "글쓰기", "소설", "음악", "인간을 초월", "제2의 두뇌", "두번째 두뇌")) and any(
+        marker in q_lower for marker in ("ai", "챗gpt", "gpt", "인공지능")
+    ):
+        return (
+            "AI가 창작을 잘할 수는 있지만, 사람을 완전히 대신한다고 보기는 어렵습니다. "
+            "AI는 많은 예시를 보고 그럴듯한 글, 그림, 아이디어를 빠르게 만들 수 있습니다. "
+            "하지만 무엇이 좋은지 고르고, 왜 만들었는지 설명하고, 사람 마음에 맞게 고치는 일은 여전히 사람이 해야 합니다. "
+            "간단히 말하면, AI는 창작을 빠르게 돕는 도구이고 사람은 방향과 의미를 정하는 역할을 맡는 게 좋습니다."
         )
     if _edu_vp_safety_coach_has_cost_barrier(q):
         return (
@@ -10921,6 +11091,13 @@ def _edu_vp_safety_coach_fallback_raw(concept_title: str, question: str) -> str:
             "셋째, 개인정보와 학교 제출물은 부모나 선생님 기준을 먼저 확인합니다. "
             "간단히 말하면, AI를 쓰느냐보다 아이 생각을 남기고 쓰느냐를 기준으로 잡으면 됩니다."
         )
+    if any(k in q_lower for k in ("챗gpt", "chatgpt", "챗 gpt", "gpt")) and any(k in q_lower for k in ("초등", "초5", "초등학생", "고학년", "부모", "준비", "가이드", "깔아")):
+        return (
+            "초등학생이 ChatGPT를 쓰기 전에는 앱을 깔아주는 것보다 사용 약속을 먼저 정하는 게 좋습니다. "
+            "첫째, 숙제 답을 그대로 받지 않습니다. 둘째, 아이가 먼저 생각한 뒤 쉬운 설명이나 빠진 점만 묻습니다. "
+            "셋째, 이름, 학교, 사진 같은 개인 정보는 넣지 않습니다. "
+            "간단히 말하면, 부모가 준비할 것은 기술 설명보다 '대신 하지 않기, 개인 정보 넣지 않기, 함께 확인하기'라는 세 가지 약속입니다."
+        )
     if any(k in q_lower for k in ("부모", "엄마", "아빠", "학부모")) and any(k in q_lower for k in ("기준", "먼저", "방향", "원칙")) and any(
         k in q_lower for k in ("ai", "교육", "공부", "학습", "아이")
     ):
@@ -10930,12 +11107,41 @@ def _edu_vp_safety_coach_fallback_raw(concept_title: str, question: str) -> str:
             "반대로 아이가 먼저 생각한 뒤 쉬운 설명을 듣거나 빠진 점을 찾는 데 쓰면 도움이 될 수 있습니다. "
             "간단히 말하면, AI 사용 기준은 '대신 해주기'는 막고 '다시 생각하게 돕기'는 허용하는 것입니다."
         )
+    if any(k in q_lower for k in ("디지털교과서", "디지털 교과서", "ai 교과서")):
+        if any(k in q_lower for k in ("걱정", "의존", "불안", "기계에만")):
+            return (
+                "그럴 수 있습니다. AI 교과서나 디지털 교과서는 아이가 기계에만 기대게 만들까 봐 불안할 수 있습니다. "
+                "그래서 핵심은 사용 자체가 아니라, 수업 뒤에 아이가 자기 말로 설명하고 직접 풀어보는 시간이 남는지 보는 것입니다. "
+                "화면 설명만 듣고 끝나면 걱정이고, 문제를 풀고 이유를 말하고 틀린 부분을 다시 확인하면 도구가 될 수 있습니다. "
+                "간단히 말하면, AI 교과서는 아이가 직접 설명하는 시간이 남을 때만 도움이 됩니다."
+            )
+        return (
+            "AI 교과서나 디지털 교과서는 무조건 나쁘다고 보기보다, 수업 뒤에 아이가 무엇을 직접 해보는지 봐야 합니다. "
+            "화면에서 설명을 듣기만 하면 학습이 얕아질 수 있고, 문제를 풀고 이유를 말하고 틀린 부분을 다시 확인하면 도움이 될 수 있습니다. "
+            "집에서는 사용 시간보다 아이가 오늘 배운 내용을 한 문장으로 말할 수 있는지 확인해보세요. "
+            "간단히 말하면, AI 교과서는 화면으로 끝나면 걱정이고 아이가 직접 설명하면 도구가 될 수 있습니다."
+        )
     if any(k in q_lower for k in ("못 쓰게", "아예", "금지")) and any(k in q_lower for k in ("쓰게", "좋아", "어떻게")):
         return (
             "아예 못 쓰게 하기보다, 쓰는 순서를 정하는 편이 좋습니다. "
             "먼저 아이가 자기 생각이나 풀이를 짧게 쓰고, 그다음 AI에게 쉬운 설명, 빠진 점, 다른 방법을 물어보게 합니다. "
             "AI가 답을 먼저 주는 순서가 되면 아이 생각이 비어 있을 수 있으니 멈추는 게 좋습니다. "
             "간단히 말하면, AI는 첫 답을 만드는 기계가 아니라 두 번째로 점검하는 도구로 쓰게 하면 됩니다."
+        )
+    if any(k in q_lower for k in ("숙제", "과제", "homework", "수행평가", "보고서", "critical thinking", "caught")):
+        if any(k in q_lower for k in ("걱정", "속상", "실망", "의존")):
+            return (
+                "그럴 수 있습니다. 아이가 숙제 앱이나 AI에 기대는 모습을 보면 속상하고 걱정될 수 있습니다. "
+                "기준은 하나입니다. 다만 바로 혼내기보다, 먼저 아이가 어디까지 직접 했는지 확인하는 게 좋습니다. "
+                "막아야 할 선은 AI가 숙제 답, 글 전체, 풀이 과정, 발표문을 대신 만들어주는 경우입니다. "
+                "해도 되는 선은 아이가 먼저 자기 답을 써본 뒤 쉬운 설명이나 빠진 점을 물어보는 정도입니다. "
+                "간단히 말하면, 앱이 숙제를 대신하면 멈추고 아이가 직접 생각하도록 돕는 질문 도구일 때만 쓰게 하면 됩니다."
+            )
+        return (
+            "전부 막을 필요는 없습니다. 기준은 하나입니다. "
+            "막아야 할 선은 AI가 숙제 답, 글 전체, 풀이 과정, 발표문을 대신 만들어주는 경우입니다. "
+            "해도 되는 선은 아이가 먼저 자기 답을 써본 뒤 '이 부분을 쉽게 설명해줘', '빠진 점이 있어?'처럼 도움을 받는 정도입니다. "
+            "간단히 말하면, AI가 답을 대신 쓰면 멈추고, 아이가 직접 생각하도록 돕는 질문 도구로 쓰면 괜찮습니다."
         )
     if any(k in q_lower for k in ("학습앱", "틀린 답", "틀릴", "오류", "확인")) and any(k in q_lower for k in ("답", "확인", "검증", "수학")):
         return (
@@ -10944,14 +11150,79 @@ def _edu_vp_safety_coach_fallback_raw(concept_title: str, question: str) -> str:
             "확인 순서는 '왜 그렇게 풀었는지 말하기', '교과서나 선생님 풀이와 비교하기', '이상한 부분을 다시 묻기'가 좋습니다. "
             "간단히 말하면, AI 답은 정답지가 아니라 확인이 필요한 힌트로 봐야 합니다."
         )
+    if any(k in q_lower for k in ("챗gpt", "chatgpt", "챗 gpt", "gpt", "ai")) and any(k in q_lower for k in ("풀이", "예시문제", "복잡", "공부해야")):
+        return (
+            "AI 풀이가 학원보다 복잡해서 아이가 힘들어하면, 그 풀이를 그대로 따라가게 하지 않는 게 좋습니다. "
+            "먼저 아이가 아는 방법으로 한 줄이라도 풀어보고, AI에게는 '더 쉬운 말로 한 단계만 설명해줘'처럼 작게 물어보세요. "
+            "그래도 복잡하면 선생님 풀이와 다른 지점만 비교하면 됩니다. "
+            "간단히 말하면, AI 풀이는 정답 길이보다 아이가 이해한 한 단계가 남는지를 기준으로 봐야 합니다."
+        )
     if any(k in q_lower for k in ("문해력", "리터러시", "literacy")):
+        if any(k in q_lower for k in ("구성", "커리큘럼", "수업", "초중고")):
+            return (
+                "AI 리터러시 교육은 어려운 기술 이름부터 외우게 하기보다, 아이가 AI 답을 확인하는 연습부터 시작하는 게 좋습니다. "
+                "구성은 세 단계면 충분합니다. 먼저 AI가 해도 되는 일과 하면 안 되는 일을 나누고, 다음으로 AI 답을 책이나 선생님 설명과 비교하고, 마지막으로 자기 말로 다시 설명하게 합니다. "
+                "간단히 말하면, AI 리터러시는 AI를 잘 쓰는 법보다 AI 답을 다시 확인하고 비교하는 법부터 가르치면 됩니다."
+            )
         return (
             "AI 문해력은 AI를 잘 믿는 힘이 아니라, AI를 언제 쓰고 언제 의심해야 하는지 아는 힘입니다. "
             "아이에게는 'AI가 알려준 답도 다시 확인해야 한다'는 것부터 알려주면 됩니다. "
             "예를 들어 AI 답을 받은 뒤 왜 그런지 자기 말로 설명하고, 중요한 내용은 책이나 선생님 자료와 비교하게 하는 식입니다. "
             "간단히 말하면, AI 문해력은 AI를 무서워하지도, 무조건 믿지도 않는 연습입니다."
         )
-    if any(k in q_lower for k in ("스크린", "영상", "유튜브", "youtube", "screen", "화면")):
+    if any(k in q_lower for k in ("ai활용", "ai 활용", "ai 사용", "어떻게 사용", "actually working")):
+        return (
+            "AI는 많이 쓰는 것보다 어디에 쓰는지 정하는 게 먼저입니다. "
+            "처음에는 긴 답을 맡기기보다 요약, 쉬운 설명, 빠진 점 찾기처럼 작은 일에 쓰게 하는 편이 좋습니다. "
+            "중요한 답은 그대로 믿지 말고 아이가 자기 말로 다시 설명하거나 부모가 한 번 확인해야 합니다. "
+            "간단히 말하면, AI 활용은 대신 해주는 기계가 아니라 생각을 확인하는 도구로 시작하면 됩니다."
+        )
+    if any(k in q_lower for k in ("ai 맞춤", "맞춤 식단", "영양", "간식", "식단")):
+        return (
+            "AI 맞춤 식단이나 간식 추천은 참고용으로만 보는 게 좋습니다. "
+            "아이 성장, 알레르기, 복용 중인 약, 병원 진단처럼 몸에 직접 영향을 주는 정보는 AI가 정확히 알기 어렵기 때문입니다. "
+            "AI에는 민감한 건강 정보나 얼굴 사진을 넣지 말고, 추천을 받더라도 성분표와 병원·영양 상담 기준으로 다시 확인하세요. "
+            "간단히 말하면, AI 식단 추천은 아이 몸에 바로 적용할 결정이 아니라 확인이 필요한 후보로 봐야 합니다."
+        )
+    if any(k in q_lower for k in ("인스타툰", "아이와의 일상", "사진툰")) and any(k in q_lower for k in ("ai", "인공지능")):
+        return (
+            "AI로 아이 일상을 그림이나 툰으로 만드는 건 재미있을 수 있지만, 아이 사진과 사생활은 먼저 지켜야 합니다. "
+            "얼굴, 이름, 학교, 집 주변처럼 아이를 알아볼 수 있는 정보는 넣지 않는 게 좋습니다. "
+            "공개할 때도 아이가 나중에 싫어할 수 있는 장면인지 한 번 더 생각해야 합니다. "
+            "간단히 말하면, AI 창작은 해도 되지만 아이를 알아볼 수 있는 정보와 사생활은 빼고 쓰는 게 안전합니다."
+        )
+    if any(k in q_lower for k in ("학습앱", "학습지", "밀크t", "써밋수학", "플랫폼", "초등영어앱")):
+        return (
+            "학습앱이나 학습지는 유명한 이름보다 아이 수준에 맞는지 먼저 봐야 합니다. "
+            "좋은 앱은 답만 빨리 주기보다 아이가 왜 틀렸는지, 다음에 무엇을 연습할지 보여줍니다. "
+            "처음에는 무료 체험이나 짧은 기간으로 써보고, 아이가 설명할 수 있는지와 너무 오래 붙잡고 있지는 않은지를 같이 확인하세요. "
+            "간단히 말하면, 학습앱은 점수보다 아이가 이해하고 설명하는 시간이 남는지를 기준으로 고르면 됩니다."
+        )
+    if any(k in q_lower for k in ("인강", "과외", "비대면 수업", "온라인학습", "온라인 학습", "윈터스쿨", "썸머스쿨")):
+        return (
+            "인강이나 비대면 수업은 아이가 혼자 앉아 있는 시간이 아니라, 배운 뒤에 설명할 수 있는지가 더 중요합니다. "
+            "처음부터 긴 강의를 많이 듣게 하기보다 짧게 들어보고, 끝나면 오늘 배운 것 하나와 모르는 것 하나를 말하게 해보세요. "
+            "수학이나 영어처럼 누적이 필요한 과목은 강의보다 오답 확인과 반복 시간이 남는지도 같이 봐야 합니다. "
+            "간단히 말하면, 인강은 많이 듣는 것보다 듣고 나서 아이가 다시 설명하고 풀 수 있을 때 도움이 됩니다."
+        )
+    if any(k in q_lower for k in ("코딩교육", "코딩 교육", "초등코딩", "코딩 어디서", "코딩을 어디서")):
+        return (
+            "초등 코딩은 어려운 문법부터 시작하기보다, 아이가 직접 움직이고 바꿔보는 작은 활동부터 시작하는 게 좋습니다. "
+            "처음에는 블록 코딩이나 간단한 게임 만들기처럼 결과가 바로 보이는 방식이 좋고, 아이가 왜 이렇게 움직였는지 말하게 해보세요. "
+            "중요한 건 코드를 외우는 것이 아니라 순서를 생각하고, 틀렸을 때 고쳐보는 연습입니다. "
+            "간단히 말하면, 코딩은 빨리 배우는 과목보다 생각한 순서를 직접 고쳐보는 놀이로 시작하면 됩니다."
+        )
+    if (
+        any(k in q_lower for k in ("시험 망친", "혼내", "시험장에서 막힐", "아는 문제"))
+        or (any(k in q_lower for k in ("성적", "점수")) and not any(k in q_lower for k in ("ai", "인공지능", "챗gpt", "gpt")))
+    ) and any(k in q_lower for k in ("아이", "중딩", "학생", "수학", "시험")):
+        return (
+            "시험을 망쳤을 때 바로 혼내면 아이는 무엇을 고쳐야 하는지보다 혼날까 봐 숨기는 법을 먼저 배울 수 있습니다. "
+            "먼저 속상한 마음을 짧게 인정하고, 그다음 틀린 문제를 '몰라서 틀린 것', '급해서 틀린 것', '아는데 막힌 것'으로 나눠보세요. "
+            "그중 하나만 골라 다음 시험 전까지 다시 연습하면 됩니다. "
+            "간단히 말하면, 혼내기보다 틀린 이유를 작게 나눠서 다음 행동 하나로 바꾸는 게 좋습니다."
+        )
+    if any(k in q_lower for k in ("스크린", "영상", "유튜브", "youtube", "screen", "화면", "스마트폰", "핸드폰", "휴대폰")):
         return (
             "AI 영상이나 유튜브 학습은 보는 시간보다 보고 난 뒤 무엇을 하느냐가 중요합니다. "
             "계속 보기만 하면 공부보다 화면 습관이 먼저 커질 수 있습니다. "
@@ -10965,12 +11236,12 @@ def _edu_vp_safety_coach_fallback_raw(concept_title: str, question: str) -> str:
             "관심 분야 하나를 고른 뒤 AI가 도와줄 일과 아이가 직접 판단할 일을 나누어 적어보게 하세요. "
             "간단히 말하면, 진로 준비는 AI를 피하는 게 아니라 AI 결과를 다루고 확인하는 연습부터 시작하면 됩니다."
         )
-    if any(k in q_lower for k in ("불안", "의존", "기대", "매달", "신호")) and any(k in q_lower for k in ("아이", "답", "ai", "수학")):
+    if any(k in q_lower for k in ("불안", "의존", "중독", "기대", "매달", "신호")) and any(k in q_lower for k in ("아이", "답", "ai", "수학", "인공지능", "기술")):
         return (
-            "그럴 수 있습니다. 특히 수학이 불안한 아이는 답을 빨리 보고 싶어서 AI에 더 기대기 쉽습니다. "
-            "봐야 할 신호는 아이가 먼저 풀어보지 않고 바로 AI를 켜는지, AI 답을 자기 말로 설명하지 못하는지, 틀릴까 봐 더 자주 답만 확인하는지입니다. "
+            "그럴 수 있습니다. AI에 너무 기대거나 기술에 빠지는 문제는 아이가 먼저 생각하기보다 답과 자극을 바로 받는 습관으로 굳을 때 생깁니다. "
+            "봐야 할 신호는 아이가 먼저 해보지 않고 바로 AI를 켜는지, AI 답을 자기 말로 설명하지 못하는지, 멈추자고 하면 크게 힘들어하는지입니다. "
             "이럴 때는 AI를 금지하기보다 먼저 3분 직접 풀기, 그다음 힌트만 묻기처럼 순서를 정하는 게 좋습니다. "
-            "간단히 말하면, 답을 대신 받는 습관이 보이면 줄이고, 생각을 설명하게 도우면 괜찮습니다."
+            "간단히 말하면, AI에 너무 기대는 것이 걱정될수록 바로 끊기보다 먼저 생각하고 나중에 확인하는 순서를 만들어야 합니다."
         )
     if _edu_vp_safety_coach_needs_empathy(q):
         if _edu_vp_safety_coach_has_sycophancy_context(q):
@@ -11025,13 +11296,6 @@ def _edu_vp_safety_coach_fallback_raw(concept_title: str, question: str) -> str:
             "Machine learning은 AI 안에 있는 넓은 분야이고, Transformer는 그 안에서 언어 같은 데이터를 처리할 때 쓰이는 딥러닝 구조 중 하나입니다. "
             "예를 들어 운동이 큰 분야라면 축구 전술은 그 안의 한 방식인 것처럼 보면 됩니다. "
             "정리하면 machine learning은 큰 분야이고, Transformer는 그 안에 포함되는 특정 구조입니다."
-        )
-    if any(k in q_lower for k in ("숙제", "과제", "homework", "수행평가", "보고서", "critical thinking", "caught")):
-        return (
-            "전부 막을 필요는 없습니다. 기준은 하나입니다. "
-            "막아야 할 선은 AI가 숙제 답, 글 전체, 풀이 과정, 발표문을 대신 만들어주는 경우입니다. "
-            "해도 되는 선은 아이가 먼저 자기 답을 써본 뒤 '이 부분을 쉽게 설명해줘', '빠진 점이 있어?'처럼 도움을 받는 정도입니다. "
-            "간단히 말하면, AI가 답을 대신 쓰면 멈추고, 아이가 직접 생각하도록 돕는 질문 도구로 쓰면 괜찮습니다."
         )
     if any(k in q_lower for k in ("코딩", "교육", "강의", "리터러시", "공부", "학습", "학생", "초등", "중등", "고등", "school", "education", "learning", "learn", "course")):
         return (
@@ -14764,6 +15028,41 @@ def edu_vp_training_safety_coach(
     stage = req.stage if req.stage in {"day0", "day1"} else "day0"
     concept_id = (req.concept_id or "")[:120]
     answer_version = _edu_vp_safety_coach_answer_version(req.answer_version)
+    input_category = _edu_vp_safety_coach_input_category(question)
+    if not bool(input_category.get("eligible_for_answer_quality")):
+        clarification_answer = _edu_vp_safety_coach_prepare_answer(
+            _edu_vp_safety_coach_clarification_answer(str(input_category.get("category") or "too_ambiguous"))
+        )
+        log_payload = {
+            "stage": stage,
+            "concept_id": concept_id,
+            "concept_title": (req.concept_title or "")[:240],
+            "question": question[:1200],
+            "answer": clarification_answer[:2600],
+            "model": "input-clarifier",
+            "fallback_used": True,
+            "answer_version": answer_version,
+            "duplicate_reused": False,
+            "evidence_used": False,
+            "input_category": input_category,
+        }
+        _edu_vp_append_event(
+            case_id=case_id,
+            email=owner_email,
+            event_type="safety_coach",
+            event_name="safety_question_clarification",
+            payload=log_payload,
+        )
+        return {
+            "ok": True,
+            "answer": clarification_answer,
+            "model": "input-clarifier",
+            "fallback_used": True,
+            "answer_version": answer_version,
+            "duplicate_reused": False,
+            "evidence_used": False,
+            "input_category": input_category,
+        }
     normalized_question = _edu_vp_normalize_safety_question(question)
     cached = _edu_vp_cached_safety_coach_answer(
         case_id=case_id,

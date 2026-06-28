@@ -1618,6 +1618,83 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             with self.subTest(question=question):
                 self.assertEqual(self.mod._edu_vp_safety_coach_anchor_match_ids(question), [])
 
+    def test_safety_coach_input_category_splits_real_questions_from_raw_corpus_noise(self):
+        cases = [
+            (
+                "AI가 아이 공부를 망친다는 말이 진짜야?",
+                "",
+                "real_user_question",
+                True,
+            ),
+            (
+                "Special Education Pre-Service Teachers' Conscientiousness and Their Attitudes towards Artificial Intelligence: The Mediating Role of AI Literacy and AI Anxiety",
+                "ERIC",
+                "article_title",
+                False,
+            ),
+            (
+                "이런 상황이면 어떻게 해야 해요? 여수, ‘아쿠아리움과 함께하는 한밤의 산책’ 모집 나흘 만에 조기 마감",
+                "AI타임스",
+                "ad_event_noise",
+                False,
+            ),
+            (
+                "1930년대 덴마크에서 한 건축가가 봤더니, 아이들이 잘 만든 새 놀이터보다 공사장 폐허에서 노는 걸 더 좋아하더래요.",
+                "EvidenceBank",
+                "source_snippet",
+                False,
+            ),
+            (
+                "벌레 박사님들 혹시 이 벌레는 어떤 아이인가요?",
+                "Naver_지식iN",
+                "out_of_scope",
+                False,
+            ),
+            (
+                "ai답변금지 왜 다들 화장실 문을 안닫는거죠?",
+                "Naver_지식iN",
+                "out_of_scope",
+                False,
+            ),
+            (
+                "아이폰 아이클라우드가 이상해요. 사진이 다 로드할 수 없는 사진이라고 떠요. ai답변 안 받습니다.",
+                "Naver_지식iN",
+                "out_of_scope",
+                False,
+            ),
+            (
+                "이런 상황이면 어떻게 해야 해요? 세계 지도자들이 모여서 '아이와 AI'를 따로 걱정한다는 건, 이게 우리 집만의 고민이 아니라는 뜻이죠",
+                "EvidenceBank",
+                "source_snippet",
+                False,
+            ),
+            (
+                "이런 상황이면 어떻게 해야 해요? 서평 '해달리와 함께 떠나는 신나는 AI 여행' AI의 기술발전이 놀라우면서도 앞으로 우리 아이들이 어른이 되었을 때 어떻게 자신의 꿈을 펼칠지",
+                "Naver_카페글",
+                "source_snippet",
+                False,
+            ),
+            (
+                "Chatting about ChatGPT: how may AI and GPT impact academia and libraries?",
+                "OpenAlex",
+                "article_title",
+                False,
+            ),
+            (
+                "“초등학생도 벌써 AI를 쓴다고요?” 완전히 달라진 2026... 흥미로운 점은 아이들이 AI를 숙제 대신 쓰기보다는 궁금한 것 검색 정보 확인 대화 퀴즈 같은 정보...",
+                "Naver_블로그",
+                "source_snippet",
+                False,
+            ),
+        ]
+
+        for question, source_channel, expected_category, expected_eligible in cases:
+            with self.subTest(question=question):
+                result = self.mod._edu_vp_safety_coach_input_category(question, source_channel=source_channel)
+
+                self.assertEqual(result["category"], expected_category)
+                self.assertEqual(result["eligible_for_answer_quality"], expected_eligible)
+
     def test_safety_coach_prepare_answer_adds_summary_before_source_when_missing(self):
         answer = self.mod._edu_vp_safety_coach_prepare_answer(
             "AI는 아이의 생각을 대신하게 할 수도 있고, 생각을 더 잘 보이게 돕는 도구가 될 수 있습니다. "
@@ -1639,9 +1716,21 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             ("아이에게 AI 문해력을 가르친다는 게 무슨 뜻이야?", "언제 쓰고 언제 의심"),
             ("아이 스크린 시간이 늘어나는 게 걱정돼. AI 영상이나 유튜브 학습은 어떻게 봐야 해?", "보고 난 뒤"),
             ("AI 때문에 아이 진로가 불안한데 지금 뭘 준비해야 해?", "진로가 불안한 건 자연스럽지만"),
-            ("수학을 불안해하는 아이가 AI 답에 더 의존할 수 있어?", "더 기대기 쉽습니다"),
+            ("수학을 불안해하는 아이가 AI 답에 더 의존할 수 있어?", "먼저 생각하고 나중에 확인"),
             ("AI 시대에 부모가 아이 교육에서 가장 먼저 잡아줘야 할 기준은 뭐야?", "AI가 아이 생각을 대신하는지"),
             ("학부모가 AI 공부 방향을 정할 때 첫 원칙은 뭐야?", "대신 해주기"),
+            ("요즘 AI 활용이 많은데 어떻게 사용하면 좋을까요?", "생각을 확인하는 도구"),
+            ("AI들은 창작으로 인간을 초월할 수 있을까요?", "방향과 의미"),
+            ("AI 디지털교과서가 걱정되는데 집에서는 뭘 확인해야 해?", "AI 교과서"),
+            ("초등 밀크T 같은 학습앱이 아이에게 괜찮나요?", "아이 수준"),
+            ("AI교육 써밋수학 중1아이 자기주도학습으로 괜찮나요?", "아이 수준"),
+            ("초등수학도 인강 들어도 괜찮을까요?", "다시 설명하고 풀 수 있을 때"),
+            ("초등코딩교육 어디서 시작하면 좋을까요?", "고쳐보는 놀이"),
+            ("시험 망친 중딩 어떻게 혼내세요?", "틀린 이유를 작게 나눠서"),
+            ("AI 맞춤 어린이 성장 식단 추천은 왜 좋을까요?", "확인이 필요한 후보"),
+            ("AI로 우리 아이와의 일상을 인스타툰으로 만들어도 될까요?", "사생활은 빼고"),
+            ("초중고 미디어 리터러시·AI 리터러시 교육은 어떻게 구성해야 할까?", "세 단계"),
+            ("스마트폰만 붙잡고 있는 초등학생 어떻게 해야 하나요?", "보고 난 뒤"),
         ]
 
         for question, expected in cases:

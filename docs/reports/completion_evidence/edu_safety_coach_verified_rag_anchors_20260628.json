@@ -1,5 +1,5 @@
 {
-  "task": "edu safety coach verified RAG anchors",
+  "task": "edu safety coach question eligibility, RAG hard gate, and question_not_addressed reduction",
   "status": "residual_risk",
   "governance_bootstrap": [
     {
@@ -15,98 +15,102 @@
   ],
   "requirements_checklist": [
     {
-      "requirement": "Do not create one-off fixes for only the exact homework or 10 pilot questions; apply generally to comparable parent AI-safety questions.",
+      "requirement": "Do not patch only the exact homework question or the 10 pilot questions; apply a general mechanism to all available inputs.",
       "status": "pass",
-      "evidence": "harness-os/backend/main.py adds verified anchor fallback by intent groups and tests/test_edu_vp_training_flow.py covers common AI parent intent families plus a non-pilot generic math-score case."
+      "evidence": "harness-os/backend/main.py adds _edu_vp_safety_coach_input_category and runtime clarification for source snippets, article titles, ad/event noise, out-of-scope inputs, and ambiguous inputs. scripts/evaluate_edu_safety_coach_available_questions.py and scripts/edu_coach_simulation_runner.py use the same eligibility split."
     },
     {
-      "requirement": "RAG candidates must attach to final answers when relevant, with source attribution and a clickable URL.",
+      "requirement": "RAG candidates must attach to final answers when relevant, with source attribution and URL, and unsupported source quotes must not be fabricated.",
       "status": "pass",
-      "evidence": "Full available-question evaluation docs/reviews/edu_coach_simulations/full_available_safety_coach_eval_20260628T094100Z.json evaluated 54,936 deduped questions; rag_expected=12,968, rag_pass=12,968, rag_fail=0. The final answer path checks 출처: and http link when RAG is expected."
+      "evidence": "docs/reviews/edu_coach_simulations/full_available_safety_coach_eval_20260628T_question_eligible.json evaluated 54,936 unique inputs; rag_expected=12,968, rag_pass=12,968, source_quote_verified=24,062, source_urls_checked=9, with no rag_fail/source_quote_missing/source_quote_verify_fail counts."
     },
     {
-      "requirement": "Do not attribute Korean paraphrases to source pages unless the source actually contains the quoted phrase.",
-      "status": "pass",
-      "evidence": "data/edu_research/evidence_anchors.json now stores source_quote; _edu_vp_safety_coach_rag_sentence uses source_quote and states it is actually present; scripts/verify_edu_safety_coach_rag_sources.py verifies source_quote in fetched source pages."
+      "requirement": "Reduce question_not_addressed by separating non-user corpus artifacts from real answerable questions.",
+      "status": "residual_risk",
+      "evidence": "Latest all-available evaluation: answer_quality_skipped_non_user_question=47,383; input_category counts include source_snippet=25,697, article_title=213, ad_event_noise=1,227, too_ambiguous=13,482, out_of_scope=6,764. Real answer-quality eligible inputs are 7,553; eligible clear=5,313; eligible needs_work=2,240; question_not_addressed=2,045."
     },
     {
       "requirement": "Avoid markdown rendering leakage such as raw ** in user-facing answers.",
       "status": "pass",
-      "evidence": "Full available-question evaluation docs/reviews/edu_coach_simulations/full_available_safety_coach_eval_20260628T094100Z.json had no markdown_bold_marker_leak count. The 10-question source verification also returned ok=true."
+      "evidence": "Latest all-available evaluation has no markdown_bold_marker_leak count."
     },
     {
-      "requirement": "Fallback answer quality must not regress into generic templates when model deadlines occur.",
+      "requirement": "Fallback answer quality must answer common parent AI/learning intents directly rather than falling into an old generic template.",
       "status": "pass",
-      "evidence": "harness-os/backend/main.py replaces the old generic 'AI 교육이나 학습을 시작할 때는...' fallback and adds parent AI-safety intent routing. tests/test_edu_vp_training_flow.py asserts common parent AI intents avoid that generic template. Full available-question evaluation had no generic_template count for that marker."
+      "evidence": "tests/test_edu_vp_training_flow.py covers homework, privacy, AI usage rules, digital textbook, learning app, AI literacy, screen time, career, coding, tutoring/online class, AI diet, AI creative/privacy, and ChatGPT-for-elementary setup. The full evaluation has no generic_template count for the old marker."
     },
     {
-      "requirement": "Do not report completion until the latest pushed code is deployed and verified on Mac Mini service/API.",
+      "requirement": "All available questions must be evaluated, not only the 10-question API pilot.",
       "status": "pass",
-      "evidence": "Commits through aa4c3dc were pushed to origin/main and deployed with scripts/deploy_to_macmini.sh. Mac Mini deploy verified origin diff=0 for backend/test/report/evidence files, backend reload on port 8000, Mac Mini full evaluation, and final 10-question API probe."
+      "evidence": "scripts/evaluate_edu_safety_coach_available_questions.py evaluated 54,936 deduped unique inputs from corpus_utterances_*.jsonl, gold_set_seed_2026-06-27.jsonl, judge_calibration_20260627T085846Z.jsonl, and run_20260627T104048Z_adversarial_current_fallback.jsonl."
     },
     {
-      "requirement": "Evaluate every available question, not only the 10-question API pilot.",
+      "requirement": "Do not hide residual quality risk.",
       "status": "pass",
-      "evidence": "scripts/evaluate_edu_safety_coach_available_questions.py loaded corpus_utterances_*.jsonl, gold_set_seed_2026-06-27.jsonl, judge_calibration_20260627T085846Z.jsonl, and run_20260627T104048Z_adversarial_current_fallback.jsonl; 136,297 raw rows were deduped to 54,936 unique questions and evaluated."
-    },
-    {
-      "requirement": "Residual risk must not be hidden if the full corpus still contains quality issues.",
-      "status": "pass",
-      "evidence": "Full evaluation still reports verdict:needs_work=26,819, mostly question_not_addressed from raw source snippets and non-question titles such as event/news/article fragments. This is recorded as residual risk rather than completion."
+      "evidence": "status is residual_risk because 2,240 eligible real-user-question inputs still report needs_work, including 2,045 question_not_addressed. This is a reduction, not a perfect completion claim."
     }
   ],
   "verification": [
     {
-      "name": "all available edu safety-coach question evaluation",
-      "target": "local backend deterministic final-answer path",
-      "command": ".venv/bin/python scripts/evaluate_edu_safety_coach_available_questions.py --sample-limit 80",
-      "result": "54,936 unique questions evaluated; rag_expected=12,968; rag_pass=12,968; source_quote_verified=24,062; source_urls_checked=9; no rag_fail/source_quote_missing/source_quote_verify_fail/markdown_bold_marker_leak/generic_template counts; residual quality issues remain in raw corpus snippets. Script output-path handling was updated to support Mac Mini /tmp report paths without crashing after report write."
+      "name": "all available edu safety-coach question evaluation with eligibility split",
+      "target": "local backend deterministic final-answer path plus source URL checks",
+      "command": ".venv/bin/python scripts/evaluate_edu_safety_coach_available_questions.py --sample-limit 150 --output docs/reviews/edu_coach_simulations/full_available_safety_coach_eval_20260628T_question_eligible.json",
+      "result": "54,936 unique inputs evaluated; answer_quality_skipped_non_user_question=47,383; answer_quality_eligible=7,553; answer_quality_eligible_verdict:clear=5,313; answer_quality_eligible_verdict:needs_work=2,240; question_not_addressed=2,045; rag_expected=12,968; rag_pass=12,968; source_quote_verified=24,062; source_urls_checked=9; no hard RAG/source/markdown failures."
     },
     {
-      "name": "all available edu safety-coach question evaluation on Mac Mini",
-      "target": "Mac Mini backend deterministic final-answer path",
-      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/evaluate_edu_safety_coach_available_questions.py --sample-limit 80 --output scratch/full_available_safety_coach_eval_macmini_20260628T1838.json'",
-      "result": "57,068 unique Mac Mini-local questions evaluated; rag_expected=13,215; rag_pass=13,215; source_quote_verified=24,508; source_urls_checked=9; no hard RAG/source/markdown/generic-template failures. Mac Mini had more local jsonl inputs than the repo-tracked local set."
+      "name": "edu safety coach targeted regression tests",
+      "target": "pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "108 passed, 3 warnings, 59 subtests passed."
     },
     {
-      "name": "10-question Mac Mini service API probe",
-      "target": "http://127.0.0.1:8000/api/edu/vp-training/safety-coach",
-      "command": "ssh macmini python API probe using X-Edu-Training-Auth and X-Harness-Secret, with unique concept_id per question",
-      "result": "10/10 HTTP 200 and ok=true; all_evidence_used=true; all_have_source_and_link=true; all_have_verified_quote_marker=true; all_have_summary_break=true; all_source_spacing_ok=true; any_markdown_bold_leak=false; any_old_generic_template=false."
-    },
-    {
-      "name": "10-question local RAG source quote verification",
-      "target": "local backend function plus source URLs",
-      "command": ".venv/bin/python scripts/verify_edu_safety_coach_rag_sources.py",
-      "result": "ok=true; all 10 pilot questions selected at least one RAG item; every selected source_url contained the configured source_quote after HTML entity normalization."
-    },
-    {
-      "name": "10-question local RAG candidate probe",
-      "target": "local backend function",
-      "command": ".venv/bin/python scripts/probe_edu_safety_coach_rag.py",
-      "result": "all 10 pilot questions returned selected_count >= 1 with source_url and source_quote."
-    },
-    {
-      "name": "edu safety coach regression tests",
+      "name": "edu safety coach broader regression tests",
       "target": "pytest",
       "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py tests/test_edu_evidence_quality.py tests/test_edu_customer_facing_retrieval.py tests/test_embeddings.py -q",
-      "result": "124 passed, 5 warnings, 36 subtests passed after anchor match tightening, fallback template replacement, and summary-before-source formatting guard."
+      "result": "125 passed, 5 warnings, 59 subtests passed."
     },
     {
       "name": "edu coach simulation regression guard",
       "target": "simulation regression script",
       "command": ".venv/bin/python scripts/check_edu_coach_simulation_regression.py",
-      "result": "ok=true; latency, structured packet, auto reinforcement, freshness, corpus/adversarial thresholds passed."
+      "result": "ok=true after simulation runner adopted the same input eligibility split; adversarial needs_work=45<=95; corpus needs_work=1,697<=14,265; latency, structured packet, freshness, and auto reinforcement checks passed."
     },
     {
       "name": "edu app production bundle build",
       "target": "dist build",
       "command": "npm run build --prefix harness-os/edu-app",
       "result": "vite build succeeded and produced dist assets."
+    },
+    {
+      "name": "Claude red-team attempt",
+      "target": "Claude CLI",
+      "command": "git diff -- ... | claude -p 'Red-team review this diff...' --max-budget-usd 2",
+      "result": "No output after more than 120 seconds; process interrupted. Recorded in docs/reviews/edu_coach_simulations/red_team_claude_question_eligible_20260628.md."
+    },
+    {
+      "name": "Gemini red-team attempt",
+      "target": "Gemini CLI",
+      "command": "git diff -- ... | gemini -p 'Red-team review this diff...' --approval-mode plan --output-format text",
+      "result": "Gemini CLI failed with IneligibleTierError: this client is no longer supported for Gemini Code Assist for individuals. Recorded in docs/reviews/edu_coach_simulations/red_team_gemini_question_eligible_20260628.md."
     }
   ],
+  "red_team": {
+    "models": [
+      "Claude",
+      "Gemini"
+    ],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/edu_coach_simulations/red_team_claude_question_eligible_20260628.md"
+      },
+      {
+        "artifact": "../../reviews/edu_coach_simulations/red_team_gemini_question_eligible_20260628.md"
+      }
+    ],
+    "verdict": "red_team_residual_risk"
+  },
   "deploy": {
-    "method": "scripts/deploy_to_macmini.sh",
-    "result": "deployed through commit aa4c3dc; deploy guard passed, backend launchd reloaded, port 8000 served, and origin diff check returned 0 for all deployed files."
+    "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py scripts/evaluate_edu_safety_coach_available_questions.py scripts/edu_coach_simulation_runner.py tests/test_edu_vp_training_flow.py docs/reviews/edu_coach_simulations/full_available_safety_coach_eval_20260628T_question_eligible.json docs/reviews/edu_coach_simulations/red_team_claude_question_eligible_20260628.md docs/reviews/edu_coach_simulations/red_team_gemini_question_eligible_20260628.md docs/reports/completion_evidence/edu_safety_coach_verified_rag_anchors_20260628.json",
+    "result": "pending deployment after this evidence file is committed"
   }
 }

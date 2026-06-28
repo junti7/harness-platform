@@ -210,6 +210,8 @@ def evaluate(*, patterns: tuple[str, ...], sample_limit: int, verify_sources: bo
     samples: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_segment: Counter[str] = Counter()
     by_channel: Counter[str] = Counter()
+    by_input_category: Counter[str] = Counter()
+    eligible_issue_counts: Counter[str] = Counter()
 
     for index, row in enumerate(rows, start=1):
         question = str(row.get("question") or "").strip()
@@ -219,23 +221,37 @@ def evaluate(*, patterns: tuple[str, ...], sample_limit: int, verify_sources: bo
         channel = str(row.get("source_channel") or "unknown")
         question_like = _question_like(question)
         specific_intent = _specific_parent_ai_intent(question)
+        input_category = mod._edu_vp_safety_coach_input_category(question, source_channel=channel, segment=segment)
+        category = str(input_category.get("category") or "unknown")
+        eligible_for_answer_quality = bool(input_category.get("eligible_for_answer_quality"))
         anchor_ids = list(mod._edu_vp_safety_coach_anchor_match_ids(question))
         rag_expected = bool(anchor_ids)
         fallback = mod._edu_vp_safety_coach_fallback(concept_title, question)
         evidence_text, evidence_items, evidence_meta = mod._edu_vp_safety_coach_evidence(question, limit=2) if rag_expected else ("", [], {"selected_count": 0})
         answer, rag_infused = mod._edu_vp_safety_coach_blend_rag_sentence(fallback, question, evidence_items)
         answer = mod._edu_vp_safety_coach_prepare_answer(answer)
-        review = mod._edu_vp_safety_coach_quality_review(
-            question=question,
-            answer=answer,
-            concept_body=concept_body,
-            evidence_items=evidence_items,
-            llm_judge_enabled=False,
-        )
-        issues = list(review.get("issues") or [])
+        if eligible_for_answer_quality:
+            review = mod._edu_vp_safety_coach_quality_review(
+                question=question,
+                answer=answer,
+                concept_body=concept_body,
+                evidence_items=evidence_items,
+                llm_judge_enabled=False,
+            )
+            issues = list(review.get("issues") or [])
+        else:
+            review = {"issues": [], "skipped_reason": "not_real_user_question"}
+            issues = []
         verdict = "needs_work" if issues else "clear"
 
         counters["evaluated"] += 1
+        counters[f"input_category:{category}"] += 1
+        by_input_category[category] += 1
+        if eligible_for_answer_quality:
+            counters["answer_quality_eligible"] += 1
+            counters[f"answer_quality_eligible_verdict:{verdict}"] += 1
+        else:
+            counters["answer_quality_skipped_non_user_question"] += 1
         counters[f"verdict:{verdict}"] += 1
         if question_like:
             counters["question_like"] += 1
@@ -247,6 +263,21 @@ def evaluate(*, patterns: tuple[str, ...], sample_limit: int, verify_sources: bo
         by_channel[channel] += 1
         for issue in issues:
             issue_counts[issue] += 1
+            if eligible_for_answer_quality:
+                eligible_issue_counts[issue] += 1
+        if not eligible_for_answer_quality:
+            _sample_append(
+                samples,
+                f"input_category_{category}",
+                {
+                    "question": question[:500],
+                    "reasons": input_category.get("reasons") or [],
+                    "source_path": row.get("_path"),
+                    "segment": segment,
+                    "source_channel": channel,
+                },
+                limit=sample_limit,
+            )
 
         if rag_expected:
             counters["rag_expected"] += 1
@@ -319,6 +350,7 @@ def evaluate(*, patterns: tuple[str, ...], sample_limit: int, verify_sources: bo
                     "source_path": row.get("_path"),
                     "segment": segment,
                     "source_channel": channel,
+                    "input_category": category,
                 },
                 limit=sample_limit,
             )
@@ -335,7 +367,9 @@ def evaluate(*, patterns: tuple[str, ...], sample_limit: int, verify_sources: bo
         "verify_sources": verify_sources,
         "counts": dict(counters),
         "issue_counts": dict(issue_counts.most_common()),
+        "answer_quality_eligible_issue_counts": dict(eligible_issue_counts.most_common()),
         "segment_counts": dict(by_segment.most_common()),
+        "input_category_counts": dict(by_input_category.most_common()),
         "source_channel_counts_top30": dict(by_channel.most_common(30)),
         "source_urls_checked": len(source_cache),
         "source_quote_failures": source_quote_failures[:sample_limit],

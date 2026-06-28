@@ -308,6 +308,23 @@ def run_simulation(
     elif candidate_source == "corpus-current-fallback":
         raw_candidates = _corpus_candidates(load_corpus_scenarios())
         for item in raw_candidates[:limit]:
+            input_category = backend._edu_vp_safety_coach_input_category(
+                item["question"],
+                source_channel=str(item.get("source_channel") or ""),
+                segment=str(item.get("segment") or ""),
+            )
+            if not input_category.get("eligible_for_answer_quality"):
+                records.append(
+                    {
+                        **item,
+                        "answer": backend._edu_vp_safety_coach_clarification_answer(str(input_category.get("category") or "")),
+                        "verdict": "clear",
+                        "issues": [],
+                        "input_category": input_category,
+                        "skipped_reason": "not_real_user_question",
+                    }
+                )
+                continue
             answer = backend._edu_vp_safety_coach_fallback(item.get("concept_title") or "", item["question"])
             result = evaluate_answer(
                 backend=backend,
@@ -318,10 +335,27 @@ def run_simulation(
                 intent_labels=item.get("intent_labels", []),
                 llm_judge_enabled=llm_judge_enabled,
             )
-            records.append({**item, "answer": answer, **result})
+            records.append({**item, "answer": answer, "input_category": input_category, **result})
     elif candidate_source == "adversarial-current-fallback":
         raw_candidates = _corpus_candidates(load_adversarial_scenarios())
         for item in raw_candidates[:limit]:
+            input_category = backend._edu_vp_safety_coach_input_category(
+                item["question"],
+                source_channel=str(item.get("source_channel") or ""),
+                segment=str(item.get("segment") or ""),
+            )
+            if not input_category.get("eligible_for_answer_quality"):
+                records.append(
+                    {
+                        **item,
+                        "answer": backend._edu_vp_safety_coach_clarification_answer(str(input_category.get("category") or "")),
+                        "verdict": "clear",
+                        "issues": [],
+                        "input_category": input_category,
+                        "skipped_reason": "not_real_user_question",
+                    }
+                )
+                continue
             answer = backend._edu_vp_safety_coach_fallback(item.get("concept_title") or "", item["question"])
             result = evaluate_answer(
                 backend=backend,
@@ -332,7 +366,7 @@ def run_simulation(
                 intent_labels=item.get("intent_labels", []),
                 llm_judge_enabled=llm_judge_enabled,
             )
-            records.append({**item, "answer": answer, **result})
+            records.append({**item, "answer": answer, "input_category": input_category, **result})
     else:
         for case in scenarios[:limit]:
             if candidate_source == "current-fallback":
