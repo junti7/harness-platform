@@ -1,0 +1,94 @@
+{
+  "task": "edu Day 0 safety gate streamline and Day 1 transition",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-28T21:11:40+09:00",
+      "summary": "Completion reporting requires requirement-to-evidence mapping, real runtime or user-facing verification, completion guard evidence, and exact residual risk reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-28T21:11:40+09:00",
+      "summary": "Code, deployment, UI, and customer-facing changes require real verification and completion evidence guard; Red Team is not automatic unless CEO explicitly requests it."
+    }
+  ],
+  "requirements_checklist": [
+    {
+      "requirement": "Remove the redundant Day 0 cards below '오늘의 순서' so the user only checks the 'AI를 쓰기 전에 먼저 알아야 할 것' concept cards.",
+      "status": "pass",
+      "evidence": "harness-os/edu-app/src/components/TrainingScreen.tsx removes the Day 0 schedule preview and extra understand_* safety checklist render from SafetyOrientationBlock."
+    },
+    {
+      "requirement": "After concept checks and optional LLM questions, allow transition into Day 1 practice instead of forcing extra non-practice checks.",
+      "status": "pass",
+      "evidence": "SafetyOrientationBlock ready state now requires only foundation concept card checks; confirmSafetyOrientation sends confirmed_concept_ids; backend _edu_vp_safety_confirmation_from_event accepts required safety_concept_* ids."
+    },
+    {
+      "requirement": "Remove confusing '질문만 먼저 저장' button because draft persistence already keeps the question context.",
+      "status": "pass",
+      "evidence": "harness-os/edu-app/src/components/TrainingScreen.tsx removes onSaveQuestions prop, saveSafetyQuestions handler, and the visible button. updateConceptFeedback now writes the latest feedback into the local stage draft immediately."
+    },
+    {
+      "requirement": "Answer whether Day 1 has a concrete curriculum/UX when users move there.",
+      "status": "pass",
+      "evidence": "Existing Day 1 implementation remains in _edu_vp_build_day1 and Day1DetailPreview with schedule_blocks, sample_materials, tutorial_steps, scenario_bank, checklist, prompt template, and proof artifact UX."
+    },
+    {
+      "requirement": "Do not claim cross-LLM red_team_clear when review resources fail.",
+      "status": "residual_risk",
+      "evidence": "docs/reviews/edu_training/red_team_claude_day0_day1_gate_20260628.md records Claude CLI no-output timeout; docs/reviews/edu_training/red_team_copilot_day0_day1_gate_20260628.md records Copilot quota failure."
+    }
+  ],
+  "verification": [
+    {
+      "name": "edu VP training targeted regression tests",
+      "target": "pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "108 passed, 3 warnings, 59 subtests passed."
+    },
+    {
+      "name": "edu VP training and personalization regression tests",
+      "target": "pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py tests/test_edu_curriculum_personalization.py -q",
+      "result": "111 passed, 3 warnings, 59 subtests passed."
+    },
+    {
+      "name": "edu app production bundle build",
+      "target": "dist build",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "tsc and vite build succeeded; dist assets generated."
+    },
+    {
+      "name": "edu app lint",
+      "target": "eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "eslint completed successfully with exit code 0."
+    },
+    {
+      "name": "diff whitespace check",
+      "target": "pre-push code hygiene",
+      "command": "git diff --check -- harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx tests/test_edu_vp_training_flow.py",
+      "result": "No whitespace errors."
+    },
+    {
+      "name": "Claude second opinion attempt",
+      "target": "Claude CLI",
+      "command": "claude -p review of scoped diff",
+      "result": "No output after more than 90 seconds; process interrupted and recorded as residual risk."
+    },
+    {
+      "name": "Copilot second opinion attempt",
+      "target": "GitHub Copilot CLI",
+      "command": "copilot --prompt review of scoped diff",
+      "result": "Failed before review with 'You have no quota'; recorded as residual risk."
+    }
+  ],
+  "red_team_attempts": {
+    "verdict": "red_team_residual_risk",
+    "artifacts": [
+      "docs/reviews/edu_training/red_team_claude_day0_day1_gate_20260628.md",
+      "docs/reviews/edu_training/red_team_copilot_day0_day1_gate_20260628.md"
+    ]
+  }
+}

@@ -109,7 +109,8 @@ def _generate_text_via_ollama(
                 payload["options"]["num_predict"] = int(max_output_tokens)
             if response_mime_type == "application/json":
                 payload["format"] = "json"
-            response = httpx.post(f"{host}/api/chat", json=payload, timeout=60)
+            ollama_timeout = float(os.getenv("OLLAMA_FALLBACK_TIMEOUT", "300"))
+            response = httpx.post(f"{host}/api/chat", json=payload, timeout=ollama_timeout)
             response.raise_for_status()
             text = (((response.json() or {}).get("message") or {}).get("content") or "").strip()
             if text:

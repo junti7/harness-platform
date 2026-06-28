@@ -1,0 +1,33 @@
+{
+  "task": "ollama_timeout_fix_20260628",
+  "date": "2026-06-28",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-28T21:15:00+09:00",
+      "summary": "Python Environment Rule: .venv 사용. 코드 변경 후 Mac Mini 배포 필수."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-28T21:15:00+09:00",
+      "summary": "Completion requires real entrypoint verification on Mac Mini."
+    }
+  ],
+  "problem": "gemma2:27b Ollama fallback이 하드코딩된 timeout=60으로 인해 RuntimeError: ollama_fallback_unavailable: timed out 에러 발생. 27B 모델은 건당 60초 이상 소요됨.",
+  "changes": [
+    {
+      "path": "core/gemini_sdk.py",
+      "line": 112,
+      "summary": "hardcoded timeout=60 → OLLAMA_FALLBACK_TIMEOUT env var (기본값 300초)로 변경."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Mac Mini 배포",
+      "target": "macmini production",
+      "command": "bash scripts/deploy_to_macmini.sh core/gemini_sdk.py",
+      "result": "pending"
+    }
+  ]
+}
