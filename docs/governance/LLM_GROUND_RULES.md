@@ -63,6 +63,11 @@
    - Mac Mini 또는 production 관련 작업은 Mac Mini 서비스 상태, 공식 Tailscale 주소, LaunchAgent/process, repo HEAD/dirty 상태를 확인한다.
    - 검증 중 실패·불확실·간헐 hang·캐시 가능성이 발견되면 완료 보고 금지. 원인 제거 또는 명시적 residual risk 보고가 먼저다.
    - 최종 보고에는 수행한 검증 수단과 핵심 결과를 간결히 포함한다. 검증하지 못한 항목은 "완료"가 아니라 "미검증/차단"으로 보고한다.
+   - **코드·배포·UI/UX·고객-facing 답변 변경은 `scripts/agent_completion_guard.py`로 완료 증거 JSON을 검증한다.**
+     mock/patch/unit-test만 있는 증거는 완료 근거가 아니다. 최소 1개는 Mac Mini 서비스, 실제 API/DB/log/process,
+     production bundle, 브라우저/모바일 렌더링 등 사용자가 경험하는 진입점이어야 한다.
+   - CEO가 Red Team을 명시 주문한 작업은 완료 증거 JSON에 Claude + Gemini artifact path와 verdict를 남기고,
+     `scripts/agent_completion_guard.py --require-red-team` 통과 전 `red_team_clear` 또는 완료 보고를 하지 않는다.
    이 조항은 자동 cross-LLM Red Team 실행 의무가 아니다. Red Team은 §2.1에 따라 CEO가 명시 주문할 때만 수행한다.
 
 ## 3. 모델별 부트스트랩 매핑 (어느 파일을 읽나)

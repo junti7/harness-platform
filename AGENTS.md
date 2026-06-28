@@ -976,6 +976,7 @@ QA Agent는 발행 직전 final gate다. VP review + Red Team + Legal review를 
 - No multi-language launch without Phase 2 trigger conditions met
 - No machine-translation-only paid publication
 - No completion report before real verification. Every LLM/agent must verify the user's requested outcome at the actual user-facing or production entrypoint whenever possible (URL/mobile UI/API/DB/log/process/Mac Mini/Tailscale/repo state as applicable). If verification fails, hangs, is blocked, or is incomplete, report the residual risk or blocker instead of saying the task is complete. This is not an automatic Red Team trigger; Red Team still requires explicit CEO request per `docs/governance/LLM_GROUND_RULES.md`.
+- No completion evidence without governance bootstrap. For code/deploy/UI/customer-facing answer changes, the completion evidence JSON must record that `CLAUDE.md` and `docs/governance/LLM_GROUND_RULES.md` were read before analysis, and it must pass `scripts/agent_completion_guard.py`.
 
 ---
 

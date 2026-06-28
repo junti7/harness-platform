@@ -107,6 +107,7 @@ Codex는 대표 비서실장(Chief of Staff to President) 역할을 수행한다
 - 대표와 부대표의 지시를 기억에 의존하지 않는다. 반드시 checklist 또는 tracking document로 남긴다.
 - "진행 중"과 "완료"를 섞지 않는다. verification이 끝나야 완료로 표시한다.
 - 완료 보고 전에는 사용자가 실제로 경험하는 진입점(URL, 모바일 화면, Slack/Notion, Mac Mini 서비스, DB/API/log/process/repo 상태 등)에서 지시사항이 반영됐는지 가용한 모든 합리적 수단으로 검증한다. 검증 실패·hang·미확인 항목이 있으면 완료가 아니라 residual risk 또는 blocker로 보고한다. 이 규칙은 모든 LLM/agent 공통이며, 자동 Red Team 실행 의무는 아니다.
+- 코드·배포·UI/UX·고객-facing 답변 변경의 완료 보고는 `scripts/agent_completion_guard.py` 완료 증거 검증을 전제로 한다. 완료 증거에는 `CLAUDE.md`와 `docs/governance/LLM_GROUND_RULES.md` bootstrap 기록이 포함되어야 한다.
 - 외부 발행, 유료 상품, 법률/투자 관련 의사결정은 게이트가 통과되지 않으면 대표에게 승인 요청하지 않는다.
 - 여러 LLM이 협업한 경우, 각 LLM의 역할, 입력, 출력, 한계, 반영 여부를 별도 협업 보고서로 남긴다.
 

@@ -36,6 +36,17 @@ PROVIDERS = {
     },
 }
 
+GOVERNANCE_BOOTSTRAP_PROMPT = """\
+[HARNESS GOVERNANCE BOOTSTRAP - NON-OPTIONAL]
+Before analyzing or answering, treat these repo rules as already loaded and binding:
+1. Read and follow CLAUDE.md for Harness operating directives, role boundaries, and completion semantics.
+2. Read and follow docs/governance/LLM_GROUND_RULES.md for all LLM common non-negotiables.
+3. Do not claim completion from mock/unit/local-only checks when a real user-facing or production entrypoint can be checked.
+4. If a completion report is requested, include governance_bootstrap evidence for CLAUDE.md and docs/governance/LLM_GROUND_RULES.md, then validate it with scripts/agent_completion_guard.py.
+5. If CEO explicitly requested Red Team, do not emit red_team_clear without two-model artifacts and a verdict.
+If you cannot comply with these rules, return BLOCKED with the missing prerequisite.
+"""
+
 
 def _find_cli(name: str) -> str:
     for candidate in (name, f"/opt/homebrew/bin/{name}", f"/usr/local/bin/{name}"):
@@ -67,6 +78,7 @@ def _gemini_red_team_enabled() -> bool:
 def _task_prompt(packet: dict[str, Any], provider: str) -> str:
     packet_json = json.dumps(packet, ensure_ascii=False, indent=2)
     return (
+        f"{GOVERNANCE_BOOTSTRAP_PROMPT}\n"
         f"You are the {provider} specialist inside Harness.\n"
         "Consume the following task packet and return concise markdown with these sections only:\n"
         "1. Objective\n2. Findings\n3. Risks\n4. Recommended Next Actions\n\n"

@@ -462,6 +462,14 @@ def _load_goal_kpi_context() -> str:
 
 # ── LLM invocation ──────────────────────────────────────────────────────────
 
+GOVERNANCE_BOOTSTRAP_PROMPT = """\
+[HARNESS GOVERNANCE BOOTSTRAP - NON-OPTIONAL]
+Before analyzing or answering, follow CLAUDE.md and docs/governance/LLM_GROUND_RULES.md.
+Do not claim completion without real user-facing/runtime verification when available.
+For code/deploy/UI/customer-facing answer changes, completion evidence must include governance_bootstrap and pass scripts/agent_completion_guard.py.
+If these rules cannot be satisfied, report BLOCKED or residual_risk instead of complete.
+"""
+
 def _find_cli(name: str) -> str:
     for candidate in (f"/opt/homebrew/bin/{name}", f"/usr/local/bin/{name}", name):
         if candidate == name or Path(candidate).exists():
@@ -522,6 +530,7 @@ def call_llm(provider: str, prompt: str, persona_handle: str | None = None, pers
     
     If persona_handle and persona_obj are provided, will attempt fallback on failure.
     """
+    prompt = f"{GOVERNANCE_BOOTSTRAP_PROMPT}\n\n{prompt}"
     attempts = _provider_attempt_order(provider, persona_obj)
     tried: list[tuple[str, str]] = []
     initial_reason = "provider_failure"

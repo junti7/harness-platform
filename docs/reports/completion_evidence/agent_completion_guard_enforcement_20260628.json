@@ -1,0 +1,42 @@
+{
+  "task": "Force Harness governance bootstrap and completion guard across LLM execution paths",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-28T14:40:00+09:00",
+      "summary": "Checked Harness operating directive, completion verification rule, Red Team trigger semantics, and deploy source of truth expectations."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-28T14:40:00+09:00",
+      "summary": "Checked common LLM non-negotiables, real-entrypoint verification duty, and completion evidence guard requirement."
+    }
+  ],
+  "verification": [
+    {
+      "name": "completion guard and governance bootstrap regression tests",
+      "target": "llm dispatch and completion guard",
+      "command": ".venv/bin/python -m pytest tests/test_agent_completion_guard.py tests/test_llm_governance_bootstrap.py -q",
+      "result": "6 passed"
+    },
+    {
+      "name": "git hook and script syntax validation",
+      "target": "pre-push git hook and llm dispatch scripts",
+      "command": "bash -n .githooks/pre-push scripts/redteam_review.sh && .venv/bin/python -m py_compile scripts/agent_completion_guard.py scripts/dispatch_llm_task_packet.py scripts/run_persona.py",
+      "result": "passed"
+    }
+  ],
+  "red_team": {
+    "models": ["Claude", "Gemini"],
+    "artifacts": [
+      {
+        "artifact": "../llm_outputs/agent_completion_guard_redteam_claude_20260628.md"
+      },
+      {
+        "artifact": "../llm_outputs/agent_completion_guard_redteam_gemini_20260628.md"
+      }
+    ],
+    "verdict": "red_team_residual_risk"
+  }
+}
