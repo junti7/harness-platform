@@ -1,0 +1,39 @@
+{
+  "task": "brunch_rss_search_filter_20260628",
+  "date": "2026-06-28",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-28T21:00:00+09:00",
+      "summary": "Must/Never 확인. 기존 로직 삭제 없이 타입 허용 범위만 확장."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-28T21:00:00+09:00",
+      "summary": "Completion requires real entrypoint verification."
+    }
+  ],
+  "problem": "collect_rss 필터가 type:rss_search 소스를 제외해 Brunch 3개 소스가 수집에서 완전히 누락됨. 실 run에서 Brunch 0건 확인.",
+  "changes": [
+    {
+      "path": "scripts/run_edu_deep_research.py",
+      "lines": "158",
+      "summary": "collect_rss 타입 필터에 rss_search 추가: ('rss', 'rss_daily') → ('rss', 'rss_daily', 'rss_search'). feedparser 수집 로직은 rss와 동일."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Brunch 0건 실 run 확인",
+      "target": "macmini DB",
+      "command": "SELECT source, COUNT(*) FROM raw_signals WHERE domain='edu_consulting' AND source LIKE 'Brunch%' GROUP BY source",
+      "result": "0건 — rss_search 타입 필터 누락이 원인 확인"
+    },
+    {
+      "name": "Mac Mini 배포 및 재 run",
+      "target": "macmini production",
+      "command": "bash scripts/deploy_to_macmini.sh scripts/run_edu_deep_research.py",
+      "result": "exit 0, diff=0"
+    }
+  ]
+}
