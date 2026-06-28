@@ -55,7 +55,29 @@
       "target": "local deployment guard",
       "command": ".venv/bin/python scripts/check_edu_coach_simulation_regression.py",
       "result": "ok=true; adversarial needs_work=95<=95; corpus needs_work=14265<=14265; freshness ok; latency ok; structured_packet ok; auto_reinforcement ok"
+    },
+    {
+      "name": "macmini edu-app bundle rebuild",
+      "target": "macmini production edu-app bundle",
+      "command": "ssh macmini 'PATH=/opt/homebrew/bin:$PATH npm run build --prefix harness-os/edu-app'",
+      "result": "vite build succeeded; dist/assets/index-CDRFLaTZ.js"
+    },
+    {
+      "name": "macmini source consistency audit",
+      "target": "macmini production RAG artifacts",
+      "command": "ssh macmini '.venv/bin/python scripts/audit_edu_evidence_source_consistency.py'",
+      "result": "evidence_index total=99767 kept=99767 rejected=0; evidence_bank total=19 kept=19 rejected=0"
+    },
+    {
+      "name": "macmini v23 homework API check",
+      "target": "macmini production safety-coach API",
+      "command": "POST /api/edu/vp-training/safety-coach with answer_version=2026-06-28-source-format-v23",
+      "result": "answer_version=v23; fallback_used=true; evidence_used=false; has_old_phrase=false; has_fake_phrase=false; has_dochithink=false; has_source=false; markdown_leak=false; has_summary_break=true"
     }
   ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx tests/test_edu_vp_training_flow.py scripts/check_edu_coach_simulation_regression.py docs/reports/completion_evidence/edu_coach_fallback_emphasis_20260628.json",
+    "result": "Mac Mini deploy verification passed for all listed paths; backend launchd reloaded and HTTP 200 confirmed; edu-app production bundle was rebuilt separately."
+  },
   "residual_risk": "This change improves fallback wording and visual emphasis only. It does not make RAG appear when no source-supported RAG is available."
 }
