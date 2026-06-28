@@ -45,8 +45,10 @@ from scripts.refresh_edu_evidence_bank import (  # noqa: E402
 INDEX_PATH = EDU_DIR / "evidence_index.json"
 
 
-def _fetch_all_refined() -> list[dict]:
+def _fetch_all_refined(max_refined: int | None = None) -> list[dict]:
     """edu_consulting 정제분 전체를 cite 코퍼스 항목으로 변환 (window·cap 없음)."""
+    if max_refined == 0:
+        return []
     rows = execute_query(
         """
         SELECT ro.id, ro.final_body, ro.created_at, rs.source, rs.raw_data
@@ -55,7 +57,9 @@ def _fetch_all_refined() -> list[dict]:
         JOIN raw_signals rs ON rs.id = fs.raw_signal_id
         WHERE COALESCE(fs.domain, 'physical_ai') = 'edu_consulting'
         ORDER BY ro.created_at DESC
+        """ + ("LIMIT %s" if max_refined and max_refined > 0 else "") + """
         """,
+        (max_refined,) if max_refined and max_refined > 0 else None,
         fetch=True,
     ) or []
     items: list[dict] = []
@@ -98,7 +102,7 @@ def _fetch_all_refined() -> list[dict]:
     return items
 
 
-def _corpus() -> list[dict]:
+def _corpus(max_refined: int | None = None) -> list[dict]:
     """앵커 + 전체 정제분을 합친 코퍼스 (id 기준 dedup, 앵커 우선)."""
     anchors = [{
         "id": a["id"], "type": a.get("type", "근거"), "segment": a.get("segment", "both"),
@@ -109,7 +113,7 @@ def _corpus() -> list[dict]:
         "source_kind": a.get("source_kind") or infer_source_kind(a.get("source", "")),
     } for a in _load_anchors() if a.get("cite")]
     by_id = {a["id"]: a for a in anchors}
-    for it in _fetch_all_refined():
+    for it in _fetch_all_refined(max_refined=max_refined):
         by_id.setdefault(it["id"], it)
     return list(by_id.values())
 
@@ -122,9 +126,9 @@ def _load_index() -> dict:
         return {"provider": sig["provider"], "model": sig["model"], "dim": sig["dim"], "items": []}
 
 
-def build(rebuild: bool = False) -> dict:
+def build(rebuild: bool = False, max_refined: int | None = None) -> dict:
     log = HarnessLogger(tier=3, correlation_id="edu-index")
-    corpus = _corpus()
+    corpus = _corpus(max_refined=max_refined)
     log.info(f"코퍼스 {len(corpus)}건 (앵커+전체 정제분)")
     sig = embedding_backend_signature(resolve_runtime=True)
 
@@ -178,6 +182,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="교육 RAG 인덱스 빌더(증분)")
     ap.add_argument("--rebuild", action="store_true", help="전체 재임베딩")
     ap.add_argument("--stats", action="store_true", help="현재 인덱스 통계만 출력")
+    ap.add_argument("--max-refined", type=int, default=None, help="정제분 최대 반영 수(0이면 앵커만)")
     args = ap.parse_args()
 
     if args.stats:
@@ -188,7 +193,7 @@ def main() -> int:
         )
         return 0
 
-    index = build(rebuild=args.rebuild)
+    index = build(rebuild=args.rebuild, max_refined=args.max_refined)
     INDEX_PATH.write_text(json.dumps(index, ensure_ascii=False), encoding="utf-8")
     print(f"인덱스 저장: {INDEX_PATH} (총 {index['count']}건)")
     return 0

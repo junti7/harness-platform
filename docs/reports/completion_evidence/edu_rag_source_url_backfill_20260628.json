@@ -163,6 +163,12 @@
       "target": "backend safety coach evidence validator and frontend cache version",
       "command": "pytest suite, local v22 homework question probe with EMBEDDING_PROVIDER_MODE=ollama",
       "result": "answer_version bumped to 2026-06-28-source-format-v22; runtime rejects cite_not_supported_by_source and intent-missing evidence; homework probe had has_fake_phrase=false, has_dochithink=false, and no source when all candidates failed strict validation"
+    },
+    {
+      "name": "safe anchor-only rebuild mode",
+      "target": "edu evidence index builder",
+      "command": "EMBEDDING_PROVIDER_MODE=ollama .venv/bin/python scripts/build_edu_evidence_index.py --rebuild --max-refined 0; scripts/audit_edu_evidence_source_consistency.py",
+      "result": "builder supports --max-refined 0 for emergency truthful anchor-only index rebuild; local anchor-only build generated 19 Ollama-embedded items and source consistency audit remained rejected=0"
     }
   ],
   "deploy": {
