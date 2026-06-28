@@ -1606,6 +1606,25 @@ class EduVpTrainingFlowTests(unittest.TestCase):
                 self.assertTrue(selected[0]["source_quote"])
                 self.assertIn("출처:", evidence_text)
 
+    def test_safety_coach_fallback_answers_common_ai_parent_intents_directly(self):
+        cases = [
+            ("AI가 아이 공부를 망친다는 말이 진짜야?", "무조건 망친다고 보기는 어렵습니다"),
+            ("아이들이 이미 AI 챗봇을 많이 쓰고 있다면 부모는 뭘 정해야 해?", "사용 기준"),
+            ("AI를 아예 못 쓰게 하는 것보다 어떻게 쓰게 하는 게 좋아?", "쓰는 순서"),
+            ("AI 학습앱이 틀린 답을 줄 수도 있다면 어떻게 확인해야 해?", "정답지가 아니라"),
+            ("아이에게 AI 문해력을 가르친다는 게 무슨 뜻이야?", "언제 쓰고 언제 의심"),
+            ("아이 스크린 시간이 늘어나는 게 걱정돼. AI 영상이나 유튜브 학습은 어떻게 봐야 해?", "보고 난 뒤"),
+            ("AI 때문에 아이 진로가 불안한데 지금 뭘 준비해야 해?", "진로가 불안한 건 자연스럽지만"),
+            ("수학을 불안해하는 아이가 AI 답에 더 의존할 수 있어?", "더 기대기 쉽습니다"),
+        ]
+
+        for question, expected in cases:
+            with self.subTest(question=question):
+                answer = self.mod._edu_vp_safety_coach_fallback("AI 안전 이해와 작동 원리 확인", question)
+
+                self.assertIn(expected, answer)
+                self.assertNotIn("AI 교육이나 학습을 시작할 때는 도구 이름보다", answer)
+
     def test_safety_coach_red_team_requires_selected_rag_to_be_used(self):
         issues = self.mod._edu_vp_safety_coach_red_team(
             question="다음 글에 이어질 최적의 명사는 어떻게 추측해?",
