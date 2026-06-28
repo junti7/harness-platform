@@ -526,7 +526,7 @@ function coachModelBadge(coach: { model?: string; fallbackUsed?: boolean }): str
   return coach.model
 }
 
-const SAFETY_COACH_ALLOWED_BOLD_LABELS = new Set(['막아야 할 선', '해도 되는 선', '간단히 말하면,', '출처:'])
+const SAFETY_COACH_ALLOWED_BOLD_LABELS = new Set(['막아야 할 선', '해도 되는 선', '간단히 말하면,', '중요한 점', '결론은', '출처:'])
 
 function sanitizeCoachAnswerForDisplay(value: string): string {
   return String(value || '')

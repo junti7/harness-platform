@@ -1652,6 +1652,19 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("해도 되는 선은", answer)
         self.assertFalse(self.mod._edu_vp_safety_coach_markdown_leak_present(answer))
 
+    def test_safety_coach_prepare_answer_breaks_before_conclusion_label(self):
+        answer = self.mod._edu_vp_safety_coach_prepare_answer(
+            "아이 숙제를 AI가 통째로 대신하는 것과 AI를 도구처럼 쓰는 것은 완전히 다릅니다. "
+            "대신 질문을 함께 하면서 아이가 직접 생각하게 하는 게 중요한 점입니다. "
+            "결론은 \"AI가 대신 하게 하지 말고, AI를 활용해서 더 깊이 생각하게 만드세요\"입니다. "
+            "출처: [Naver 카페글](https://example.org/source)"
+        )
+
+        self.assertNotIn("**", answer)
+        self.assertIn("중요한 점입니다.", answer)
+        self.assertIn("\n\n결론은", answer)
+        self.assertIn("\n\n출처: [Naver 카페글](https://example.org/source)", answer)
+
     def test_safety_coach_api_answer_removes_odd_bold_marker(self):
         answer = self.mod._edu_vp_safety_coach_api_answer(
             "전부 막을 필요는 없습니다. **막아야 할 선은 답을 대신 쓰는 경우입니다."

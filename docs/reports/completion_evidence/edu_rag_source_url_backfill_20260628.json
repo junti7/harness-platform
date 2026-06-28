@@ -87,6 +87,12 @@
       "result": "118 passed; deployment regression guard ok; edu-app production build ok"
     },
     {
+      "name": "conclusion break and semantic bold labels",
+      "target": "backend formatter and frontend label renderer",
+      "command": "pytest targeted conclusion-label tests; headless Chrome render fixture",
+      "result": "API answer has no ** markers; conclusion starts after a blank line; rendered strong labels are important point, conclusion, and source"
+    },
+    {
       "name": "macmini v20 no-markdown API answer check",
       "target": "macmini backend and production RAG data",
       "command": "direct EduVpTrainingSafetyCoachRequest for homework question after v20 deploy",

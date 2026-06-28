@@ -10487,6 +10487,7 @@ def _edu_vp_safety_coach_format_answer(answer: str) -> str:
     text = text.replace("**", "")
     text = re.sub(r"\s+(출처:\s*)", r"\n\n\1", text)
     text = re.sub(r"\s+(간단히 말하면,)", r"\n\n\1", text)
+    text = re.sub(r"\s+(결론은\s*)", r"\n\n\1", text)
     return text.strip()
 
 
@@ -10494,6 +10495,8 @@ _EDU_VP_SAFETY_COACH_ALLOWED_BOLD_LABELS = (
     "막아야 할 선",
     "해도 되는 선",
     "간단히 말하면,",
+    "중요한 점",
+    "결론은",
     "출처:",
 )
 
