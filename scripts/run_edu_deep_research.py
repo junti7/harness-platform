@@ -36,6 +36,7 @@ import httpx
 from core.database import execute_query, get_connection
 from core.domain_config import load_default_sources
 from core.logger import HarnessLogger
+from core.topic_registry import ensure_fresh_topic_registry, merged_sources_with_generated
 
 DOMAIN = "edu_consulting"
 CORRELATION_ID = "edu-consulting-20260524"
@@ -154,9 +155,9 @@ def collect_rss(sources: list[dict], logger: HarnessLogger,
                 tracker: SaturationTracker, dry_run: bool,
                 max_rss_items: int = 50) -> dict:
     rss_sources = [s for s in sources
-                   if s.get("type") in ("rss", "rss_daily")
+                   if (s.get("type") in ("rss", "rss_daily") or bool(s.get("generated")))
                    and s.get("legal_risk", "low") != "high"
-                   and s.get("active", True)]
+                   and s.get("active", True) is not False]
     stats = {"attempted": len(rss_sources), "new": 0, "duplicate": 0, "error": 0}
 
     for src in rss_sources:
@@ -1561,6 +1562,19 @@ def main():
     # 소스 레지스트리 로드
     # topic_only 모드: RSS/YouTube도 입력 주제 기반으로 동작
     sources = load_default_sources("edu_consulting")
+
+    # topic_registry 통합 — 최근 신호 기반 구글 뉴스 자동 쿼리 소스 추가
+    if not dry_run:
+        try:
+            recent_rows = execute_query(
+                "SELECT raw_data->>'title' AS title, source FROM raw_signals "
+                "WHERE domain = 'edu_consulting' ORDER BY created_at DESC LIMIT 500",
+                fetch=True,
+            ) or []
+            ensure_fresh_topic_registry("edu_consulting", [dict(r) for r in recent_rows])
+        except Exception as _treg_err:
+            logger.warning(f"topic_registry 갱신 실패 (무시): {_treg_err}")
+    sources = merged_sources_with_generated("edu_consulting", sources)
     yt_config = json.loads(
         (Path(__file__).resolve().parent.parent / "configs" / "sources" / "edu_consulting.json")
         .read_text(encoding="utf-8")
