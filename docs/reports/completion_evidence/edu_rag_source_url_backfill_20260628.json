@@ -139,10 +139,16 @@
       "target": "frontend renderer regex behavior",
       "command": "node fixture mirroring TrainingScreen action emphasis regex",
       "result": "quoted action sentence is bold only through '아이가 직접 생각하게 하는 게'; '중요한 점입니다' remains plain; conclusion and source labels remain bold"
+    },
+    {
+      "name": "macmini v21 deployed answer check",
+      "target": "macmini backend code path, production RAG data, and production bundle",
+      "command": "direct EduVpTrainingSafetyCoachRequest for homework question with answer_version=2026-06-28-source-format-v21 after deploy; PATH=/opt/homebrew/bin:$PATH npm run build --prefix harness-os/edu-app; curl http://127.0.0.1:8000/",
+      "result": "backend_version=2026-06-28-source-format-v21; frontend_version=2026-06-28-source-format-v21; generated dist/assets/index-BW1Y4Fzu.js; HTTP 200; rag=true; has_source=true; body_has_markdown_link_before_source=false; markdown_leak=false; summary_break=true"
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh data/edu_research/evidence_anchors.json harness-os/backend/main.py scripts/build_edu_evidence_index.py scripts/refresh_edu_evidence_bank.py scripts/backfill_edu_evidence_source_urls.py scripts/check_edu_coach_simulation_regression.py; then scripts/deploy_to_macmini.sh harness-os/backend/main.py docs/reports/completion_evidence/edu_rag_source_url_backfill_20260628.json; then scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_rag_source_url_backfill_20260628.json",
-    "result": "Mac Mini selective checkout passed origin diff=0 for deployed paths; backend launchd reload succeeded; production RAG data backfill completed; post-emphasis bundle rebuild and HTTP 200 check passed"
+    "result": "Mac Mini selective checkout passed origin diff=0 for deployed paths; backend launchd reload succeeded; production RAG data backfill completed; post-emphasis bundle rebuild and HTTP 200 check passed; v21 cache-bust deploy verified"
   }
 }
