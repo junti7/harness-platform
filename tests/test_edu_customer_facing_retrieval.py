@@ -25,6 +25,7 @@ class EduCustomerFacingRetrievalTests(unittest.TestCase):
 
     def test_db_bundle_reads_customer_facing_view_only(self):
         captured = {}
+        self.mod._EDU_CF_TABLE_READY = None
 
         def fake_execute_query(query, params=None, fetch=False):
             captured["query"] = query
@@ -92,6 +93,51 @@ class EduCustomerFacingRetrievalTests(unittest.TestCase):
         self.assertIn("기존 인덱스에서도 근거를 회수합니다.", text)
         self.assertEqual(meta["mode"], "indexed")
         self.assertEqual(meta["source_kinds"], ["research_policy"])
+
+    def test_db_bundle_caches_missing_customer_facing_table(self):
+        self.mod._EDU_CF_TABLE_READY = None
+
+        class UndefinedTable(Exception):
+            pass
+
+        with (
+            patch.object(self.mod, "execute_query", side_effect=UndefinedTable("relation does not exist")) as mocked_query,
+            patch.object(self.mod, "_edu_runtime_event"),
+        ):
+            first = self.mod._edu_db_customer_facing_bundle("중학생 숙제 AI", segment="parent", k=3)
+            second = self.mod._edu_db_customer_facing_bundle("중학생 숙제 AI", segment="parent", k=3)
+
+        self.assertIsNone(first)
+        self.assertIsNone(second)
+        self.assertEqual(mocked_query.call_count, 1)
+        self.assertFalse(self.mod._EDU_CF_TABLE_READY)
+        self.mod._EDU_CF_TABLE_READY = None
+
+    def test_ranked_matches_blocks_legacy_index_model_mismatch(self):
+        index = {
+            "provider": None,
+            "model": "gemini-embedding-001",
+            "dim": 768,
+            "items": [
+                {
+                    "id": "legacy-1",
+                    "emb": [1.0, 0.0],
+                    "cite": "중학생 숙제에서 AI 사용을 지도하는 근거입니다.",
+                    "source": "legacy source",
+                }
+            ],
+        }
+        with (
+            patch.object(self.mod, "_load_rag_index", return_value=index),
+            patch("core.embeddings.embedding_backend_signature", return_value={"provider": "ollama", "model": "nomic-embed-text", "dim": 768}),
+            patch("core.embeddings.embed_query", side_effect=AssertionError("mismatched index should not embed")),
+            patch.object(self.mod, "_edu_runtime_event") as mocked_event,
+        ):
+            ranked = self.mod._edu_ranked_matches("중학생 숙제 AI", limit=3)
+
+        self.assertIsNone(ranked)
+        mocked_event.assert_called_once()
+        self.assertEqual(mocked_event.call_args.args[0], "edu_rag_signature_mismatch")
 
 
 if __name__ == "__main__":

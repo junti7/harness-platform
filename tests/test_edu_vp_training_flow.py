@@ -1025,6 +1025,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         evidence_query = mocked_evidence.call_args.args[0]
         self.assertTrue(evidence_query.startswith("Transformer 이론과 Machine Learning"))
         self.assertIn("validation_text", mocked_evidence.call_args.kwargs)
+        self.assertEqual(mocked_evidence.call_args.kwargs["limit"], 3)
 
     def test_safety_coach_evidence_validation_requires_relevant_source(self):
         valid, reasons = self.mod._edu_vp_validate_safety_coach_evidence(
@@ -1041,6 +1042,22 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertFalse(valid)
         self.assertIn("cite_too_short", reasons)
         self.assertIn("low_quality_item", reasons)
+
+    def test_safety_coach_evidence_validation_accepts_cosine_score(self):
+        with patch.dict("os.environ", {"EDU_RAG_MIN_SCORE": "0.30"}):
+            valid, reasons = self.mod._edu_vp_validate_safety_coach_evidence(
+                query="중학생 숙제 AI 사용을 어떻게 지도하나요",
+                item={
+                    "id": "x2",
+                    "source": "OECD Education Report",
+                    "cite": "중학생 숙제에서 AI를 답안기로만 쓰지 않도록 부모가 질문 설계와 풀이 과정을 같이 점검하라는 내용입니다.",
+                    "body": "중학생 숙제 AI 지도 질문 설계 풀이 과정",
+                    "_score": 0.91,
+                },
+            )
+
+        self.assertTrue(valid, reasons)
+        self.assertNotIn("low_retrieval_score", reasons)
 
     def test_safety_coach_normalizes_question_for_duplicate_detection(self):
         normalized = self.mod._edu_vp_normalize_safety_question("  다음 글에\n이어질   조사는 어떻게 추측하나요?  ")

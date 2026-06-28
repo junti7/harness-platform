@@ -8882,7 +8882,7 @@ def _edu_vp_day0_safety_checklist(llm_label: str) -> list[dict[str, str]]:
     ]
 
 
-_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-27-rag-gated-v15"
+_EDU_VP_SAFETY_COACH_ANSWER_VERSION = "2026-06-28-rag-retrieval-v16"
 _EDU_VP_SAFETY_COACH_TOTAL_TIMEOUT_SECONDS = 11.0
 _EDU_VP_SAFETY_COACH_POLICY_REGISTRY_PATH = PROJECT_ROOT / "configs" / "education" / "edu_coach_policy_registry.json"
 _EDU_VP_SAFETY_COACH_POLICY_CANDIDATE_PATH = PROJECT_ROOT / "docs" / "reviews" / "edu_coach_simulations" / "policy_candidates.jsonl"
@@ -9993,7 +9993,8 @@ def _edu_vp_validate_safety_coach_evidence(
     if len(hits) < min_hits:
         reasons.append("insufficient_keyword_overlap")
     score = float(item.get("_score") or 0.0)
-    if score and score < 2.0:
+    min_score = float(os.getenv("EDU_RAG_MIN_SCORE", "0.30"))
+    if score and score < min_score:
         reasons.append("low_retrieval_score")
     unsafe_source_markers = ("lyrics", "music video", "뮤직비디오", "직캠", "fan cam", "trailer", "예고편", "ost")
     if any(marker in source.lower() for marker in unsafe_source_markers):
@@ -11009,13 +11010,13 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
     evidence_timeout = float(
         os.getenv(
             "EDU_SAFETY_COACH_FAST_RAG_TIMEOUT_SECONDS" if fast_answer else "EDU_SAFETY_COACH_RAG_TIMEOUT_SECONDS",
-            "0.6" if fast_answer else "1.5",
+            "1.5" if fast_answer else "2.5",
         )
     )
     evidence_text, evidence_items, evidence_meta = _edu_vp_safety_coach_evidence_with_timeout(
         evidence_query,
         validation_text=evidence_validation_text,
-        limit=1,
+        limit=3,
         timeout_seconds=evidence_timeout,
     )
     if fast_answer:
@@ -11913,6 +11914,7 @@ _EDU_INDEX_PATH = PROJECT_ROOT / "data" / "edu_research" / "evidence_index.json"
 _EDU_RUNTIME_EVENTS_PATH = PROJECT_ROOT / "runtime" / "edu_pilot_runtime_events.jsonl"
 _edu_index_cache: dict[str, Any] = {"mtime": None, "items": [], "provider": None, "model": None, "dim": None}
 _edu_index_lock = threading.Lock()
+_EDU_CF_TABLE_READY: bool | None = None
 _EDU_COMMUNITY_SOURCE_MARKERS = ("naver", "맘카페", "카페", "블로그", "blind", "reddit", "dcinside", "디시", "brunch", "maily")
 _EDU_RESEARCH_POLICY_SOURCE_MARKERS = (
     "eric", "semantic scholar", "oecd", "unesco", "common sense", "educationweek", "edsurge",
@@ -12069,6 +12071,9 @@ def _edu_rank_customer_facing_candidates(
 
 
 def _edu_db_customer_facing_bundle(query: str, segment: str, k: int = 8) -> dict[str, Any] | None:
+    global _EDU_CF_TABLE_READY
+    if _EDU_CF_TABLE_READY is False:
+        return None
     try:
         rows = execute_query(
             """
@@ -12097,12 +12102,17 @@ def _edu_db_customer_facing_bundle(query: str, segment: str, k: int = 8) -> dict
             (segment, segment, max(k * 12, 48)),
             fetch=True,
         ) or []
+        _EDU_CF_TABLE_READY = True
     except Exception as exc:  # noqa: BLE001
+        exc_text = str(exc)
+        exc_type = type(exc).__name__
+        if exc_type == "UndefinedTable" or "does not exist" in exc_text:
+            _EDU_CF_TABLE_READY = False
         _edu_runtime_event(
             "edu_customer_facing_db_query_failed",
             segment=segment,
-            error_type=type(exc).__name__,
-            error=str(exc)[:240],
+            error_type=exc_type,
+            error=exc_text[:240],
         )
         return None
     ranked = _edu_rank_customer_facing_candidates(rows, query=query, segment=segment, limit=max(k * 4, 12))
@@ -12127,22 +12137,26 @@ def _edu_ranked_matches(query: str, limit: int) -> list[tuple[dict[str, Any], fl
     try:
         from core.embeddings import cosine_topk, embed_query, embedding_backend_signature
         sig = embedding_backend_signature(resolve_runtime=True)
-        if (
-            idx.get("provider")
-            and (
-                idx.get("provider") != sig["provider"]
-                or idx.get("model") != sig["model"]
-                or int(idx.get("dim") or 0) != int(sig["dim"])
-            )
-        ):
+        index_provider = idx.get("provider")
+        index_model = idx.get("model")
+        index_dim = int(idx.get("dim") or 0)
+        runtime_provider = sig["provider"]
+        runtime_model = sig["model"]
+        runtime_dim = int(sig["dim"])
+        signature_mismatch = (
+            (bool(index_provider) and index_provider != runtime_provider)
+            or (bool(index_model) and index_model != runtime_model)
+            or (bool(index_dim) and index_dim != runtime_dim)
+        )
+        if signature_mismatch:
             _edu_runtime_event(
                 "edu_rag_signature_mismatch",
-                index_provider=idx.get("provider"),
-                index_model=idx.get("model"),
-                index_dim=idx.get("dim"),
-                runtime_provider=sig["provider"],
-                runtime_model=sig["model"],
-                runtime_dim=sig["dim"],
+                index_provider=index_provider,
+                index_model=index_model,
+                index_dim=index_dim,
+                runtime_provider=runtime_provider,
+                runtime_model=runtime_model,
+                runtime_dim=runtime_dim,
             )
             return None
         qv = embed_query(query)
