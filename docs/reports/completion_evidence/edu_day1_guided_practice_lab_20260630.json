@@ -50,6 +50,48 @@
       "target": "changed source paths",
       "command": "rg -n \"업무 장면 1개를 실제로 질문했다|생활 장면 1개를 실제로 질문했다|글쓰기 장면 1개를 실제로 질문했다\" harness-os/backend/main.py tests/test_edu_vp_training_flow.py harness-os/edu-app/src --glob '!**/dist/**'",
       "result": "passed for runtime paths: remaining matches are regression test fixture/assertions proving legacy text is removed during refresh"
+    },
+    {
+      "name": "selected path deploy",
+      "target": "macmini source tree",
+      "command": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_day1_guided_practice_lab_20260630.json",
+      "result": "passed: backend launchd reloaded, selected paths matched origin/main on Mac Mini"
+    },
+    {
+      "name": "macmini edu app production build",
+      "target": "macmini dist",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && PATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH\" npm run build --prefix harness-os/edu-app && uid=$(id -u) && launchctl kickstart -k gui/$uid/com.harness.edu-app'",
+      "result": "passed: vite built dist/assets/index-BqAuZi8Z.js and edu-app launchd was restarted"
+    },
+    {
+      "name": "production edu app bundle served",
+      "target": "production url",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:5174/",
+      "result": "passed: served assets/index-BqAuZi8Z.js and assets/index-BCZVTbRX.css"
+    },
+    {
+      "name": "production guided practice bundle copy",
+      "target": "production bundle",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:5174/assets/index-BqAuZi8Z.js | LC_ALL=C grep -o \"화면 안 실습실\\|복붙 프롬프트\\|원문 대조표\\|결과 붙여넣기 4칸\\|어디서 무엇을 하나요\" | sort | uniq -c",
+      "result": "passed: each guided practice UI label appears once in the production bundle"
+    },
+    {
+      "name": "production backend health",
+      "target": "macmini api health",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:8000/api/health",
+      "result": "passed: {\"ok\":true,\"generated_at\":\"2026-06-30T19:33:45\"}"
+    },
+    {
+      "name": "production legacy Day 1 guided lab migration",
+      "target": "macmini deployed backend source",
+      "command": "ssh macmini .venv/bin/python import of harness-os/backend/main.py calling _edu_vp_refresh_state with legacy Day 1 checklist payload",
+      "result": "passed: practice_lab_version=2026-06-30-guided-v1, proof preserved, first checklist title=아래 실습 안내 먼저 보기, tool card title=2. Claude 앱이 있으면 앱 열기"
+    },
+    {
+      "name": "macmini deployed source match",
+      "target": "macmini git diff",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && git diff --name-only origin/main -- harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_day1_guided_practice_lab_20260630.json'",
+      "result": "passed: no diff for selected deployed paths before evidence finalization"
     }
   ],
   "known_unrelated_dirty_files": [
@@ -57,9 +99,7 @@
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_day1_guided_practice_lab_20260630.json",
-    "result": "pending"
+    "result": "passed: selected paths deployed, backend reloaded, edu-app bundle rebuilt, production guided practice UI and legacy migration verified"
   },
-  "residual_risk": [
-    "Production deployment and runtime bundle checks are pending in this evidence snapshot."
-  ]
+  "residual_risk": []
 }
