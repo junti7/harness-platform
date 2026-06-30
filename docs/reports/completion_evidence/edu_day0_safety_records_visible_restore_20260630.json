@@ -1,0 +1,56 @@
+{
+  "task": "Restore visible Day 0 safety checks and questions after completion",
+  "status": "residual_risk",
+  "date": "2026-06-30",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-30T18:05:00+09:00",
+      "summary": "Completion requires evidence mapped to the user-visible issue and real runtime verification before final reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-30T18:05:00+09:00",
+      "summary": "Code and UI changes require completion evidence guard and at least one user-facing or runtime entrypoint check."
+    }
+  ],
+  "scope": [
+    "harness-os/edu-app/src/components/TrainingScreen.tsx"
+  ],
+  "findings": [
+    "Production DB case 72 still contained Day 0 draft data: 10 current checked concepts, 2 saved question text entries, 1 saved safety coach answer thread.",
+    "Older snapshot 1271439 also contained the same saved questions plus one legacy checked key understand_not_human.",
+    "The disappearance was caused by UI rendering: SafetyOrientationBlock was only shown while Day 0 was incomplete, so completed Day 0 hid the saved records."
+  ],
+  "changes": [
+    "SafetyOrientationBlock now supports reviewMode for completed Day 0 records.",
+    "Completed Day 0 renders the saved safety checks, question text, and coach answers again without showing the practice-gate submit button."
+  ],
+  "verification": [
+    {
+      "name": "production case 72 Day 0 data inspection",
+      "target": "macmini database runtime",
+      "command": "ssh macmini python import of harness-os/backend/main.py querying edu_case_snapshots for case 72",
+      "result": "passed: latest snapshot 1272076 contains checked_true=10, feedback entries for safety_concept_safety_limits and safety_concept_transformer_origin, answers_keys=['safety_concept_safety_limits'], threads_count=1"
+    },
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: vite built dist/assets/index-CKWyHUVi.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    }
+  ],
+  "known_unrelated_dirty_files": [
+    "docs/education/edu_parents_first_parent_landing.html"
+  ],
+  "deploy": {
+    "method": "pending scripts/deploy_to_macmini.sh after origin/main push",
+    "result": "pending"
+  }
+}

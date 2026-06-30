@@ -1419,6 +1419,7 @@ function SafetyOrientationBlock({
   onRateCoachAnswer,
   onDeleteCoachAnswer,
   onReady,
+  reviewMode = false,
 }: {
   stage: TrainingStage
   checked: Record<string, boolean>
@@ -1443,6 +1444,7 @@ function SafetyOrientationBlock({
   ) => void
   onDeleteCoachAnswer: (id: string) => void
   onReady: () => void
+  reviewMode?: boolean
 }) {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
@@ -1502,11 +1504,14 @@ function SafetyOrientationBlock({
           <ShieldCheck size={18} />
         </span>
         <div className="min-w-0">
-          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-danger">실습 전 안전 확인</div>
+          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-danger">
+            {reviewMode ? '저장된 안전 확인 기록' : '실습 전 안전 확인'}
+          </div>
           <h2 className="text-base font-bold leading-snug text-ink-strong">AI를 쓰기 전에 먼저 알아야 할 것</h2>
           <p className="mt-1 text-sm leading-relaxed text-text-muted">
-            먼저 AI, LLM(큰 언어 모델), 생성형 AI가 무엇인지 아주 쉬운 말로 확인합니다. 각 단락을 읽고
-            이해했는지 표시하거나, 헷갈리는 점을 적어 질문으로 남긴 뒤 실제 질문 실습으로 넘어갑니다.
+            {reviewMode
+              ? 'Day 0에서 체크했던 항목, 남긴 질문, AI 코치 답변을 다시 볼 수 있습니다.'
+              : '먼저 AI, LLM(큰 언어 모델), 생성형 AI가 무엇인지 아주 쉬운 말로 확인합니다. 각 단락을 읽고 이해했는지 표시하거나, 헷갈리는 점을 적어 질문으로 남긴 뒤 실제 질문 실습으로 넘어갑니다.'}
           </p>
         </div>
       </div>
@@ -1716,18 +1721,22 @@ function SafetyOrientationBlock({
         </div>
       ) : null}
 
-      <button
-        type="button"
-        onClick={onReady}
-        disabled={!ready || saving}
-        className="mt-3 flex h-11 w-full items-center justify-center rounded-[10px] bg-primary text-sm font-semibold text-primary-foreground transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {saving ? '확인 저장 중…' : '이해했습니다. 실습으로 이동'}
-      </button>
-      {!ready ? (
-        <p className="mt-2 text-center text-xs leading-relaxed text-text-faint">
-          설명 단락을 모두 체크하면 실제 AI 실습이 열립니다. 이해되지 않으면 질문을 남겨주세요.
-        </p>
+      {!reviewMode ? (
+        <>
+          <button
+            type="button"
+            onClick={onReady}
+            disabled={!ready || saving}
+            className="mt-3 flex h-11 w-full items-center justify-center rounded-[10px] bg-primary text-sm font-semibold text-primary-foreground transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? '확인 저장 중…' : '이해했습니다. 실습으로 이동'}
+          </button>
+          {!ready ? (
+            <p className="mt-2 text-center text-xs leading-relaxed text-text-faint">
+              설명 단락을 모두 체크하면 실제 AI 실습이 열립니다. 이해되지 않으면 질문을 남겨주세요.
+            </p>
+          ) : null}
+        </>
       ) : null}
     </section>
   )
@@ -2664,6 +2673,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const dynamicPath = stage === 'day0' ? state?.dynamic_curriculum_path ?? [] : []
   const plannedOutline = stage === 'day0' ? state?.planned_curriculum_outline ?? [] : []
   const safetyGateActive = stage === 'day0' && !safetyReady && !current?.completed
+  const showSafetyRecords = stage === 'day0' && !safetyGateActive && Boolean(current?.foundation_concepts?.length)
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 py-7 sm:max-w-[760px] sm:px-6 lg:max-w-[960px] xl:max-w-[1120px] xl:px-8">
@@ -2752,6 +2762,30 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
             onRateCoachAnswer={rateCoachAnswer}
             onDeleteCoachAnswer={deleteCoachAnswer}
             onReady={confirmSafetyOrientation}
+          />
+        ) : null}
+
+        {showSafetyRecords && current ? (
+          <SafetyOrientationBlock
+            stage={current}
+            checked={checked}
+            conceptFeedback={conceptFeedback}
+            coachAnswers={coachAnswers}
+            coachThreads={coachThreads}
+            coachFeedback={coachAnswerFeedback}
+            coachLoading={coachLoading}
+            coachErrors={coachErrors}
+            saving={safetySyncing}
+            error={error}
+            notice={notice}
+            routedConceptId={routedConceptId}
+            onToggle={toggleCheck}
+            onConceptFeedback={updateConceptFeedback}
+            onAskCoach={requestCoachAnswer}
+            onRateCoachAnswer={rateCoachAnswer}
+            onDeleteCoachAnswer={deleteCoachAnswer}
+            onReady={confirmSafetyOrientation}
+            reviewMode
           />
         ) : null}
 
