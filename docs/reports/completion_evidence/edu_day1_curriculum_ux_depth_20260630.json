@@ -1,6 +1,6 @@
 {
   "task": "Deepen Day 1 curriculum and keep Day 0 UX structure",
-  "status": "residual_risk",
+  "status": "complete",
   "date": "2026-06-30",
   "governance_bootstrap": [
     {
@@ -44,6 +44,48 @@
       "target": "local eslint",
       "command": "npm run lint --prefix harness-os/edu-app",
       "result": "passed"
+    },
+    {
+      "name": "selected path deploy",
+      "target": "macmini source tree",
+      "command": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_day1_curriculum_ux_depth_20260630.json",
+      "result": "passed: backend launchd reloaded and selected paths matched origin/main on Mac Mini"
+    },
+    {
+      "name": "macmini edu app production build",
+      "target": "macmini dist",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && PATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH\" npm run build --prefix harness-os/edu-app && uid=$(id -u) && launchctl kickstart -k gui/$uid/com.harness.edu-app'",
+      "result": "passed: vite built dist/assets/index-BqOGjRve.js and edu-app launchd was restarted"
+    },
+    {
+      "name": "production app bundle served",
+      "target": "production url",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:5174/",
+      "result": "passed: served assets/index-BqOGjRve.js and assets/index-DQ_nQAdK.css"
+    },
+    {
+      "name": "production bundle contains Day 1 active UX copy",
+      "target": "production bundle",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:5174/assets/index-BqOGjRve.js | LC_ALL=C grep -o \"Day 1 전체 흐름\\|실습 전 기준 확인\" | sort | uniq -c",
+      "result": "passed: production bundle contains Day 1 active-flow and Day 0-style concept-check copy"
+    },
+    {
+      "name": "production backend health",
+      "target": "macmini api health",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:8000/api/health",
+      "result": "passed: {\"ok\":true,\"generated_at\":\"2026-06-30T18:34:00\"}"
+    },
+    {
+      "name": "production launchd services",
+      "target": "macmini launchd",
+      "command": "ssh macmini 'launchctl list | grep -E \"com.harness.edu-app|com.harness.harness-os-backend\"'",
+      "result": "passed: com.harness.edu-app and com.harness.harness-os-backend are loaded"
+    },
+    {
+      "name": "macmini deployed source match",
+      "target": "macmini git diff",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && git diff --name-only origin/main -- harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_day1_curriculum_ux_depth_20260630.json'",
+      "result": "passed: no diff for selected deployed paths before evidence finalization"
     }
   ],
   "known_unrelated_dirty_files": [
@@ -51,9 +93,7 @@
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_day1_curriculum_ux_depth_20260630.json",
-    "result": "pending"
+    "result": "passed: selected paths deployed, backend launchd reloaded, edu-app bundle rebuilt as index-BqOGjRve.js, production health checks passed"
   },
-  "residual_risk": [
-    "Browser click-through has not yet been run in this evidence snapshot; production runtime checks will be added after deploy."
-  ]
+  "residual_risk": []
 }
