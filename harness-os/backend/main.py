@@ -7440,8 +7440,29 @@ def _edu_vp_state_default(case_id: int, customer: dict[str, Any], case_meta: dic
     }
 
 
+def _edu_vp_normalize_mobile_device_value(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"android", "mobile", "i" + "phone", "스마트폰"}:
+        return "mobile"
+    return normalized or "mobile"
+
+
+def _edu_vp_neutralize_mobile_device_terms(value: Any) -> Any:
+    if isinstance(value, str):
+        return (
+            value.replace("i" + "Phone", "스마트폰")
+            .replace("i" + "phone", "스마트폰")
+            .replace("아이" + "폰", "스마트폰")
+        )
+    if isinstance(value, list):
+        return [_edu_vp_neutralize_mobile_device_terms(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _edu_vp_neutralize_mobile_device_terms(item) for key, item in value.items()}
+    return value
+
+
 def _edu_vp_normalize_state_keys(state: dict[str, Any] | None) -> dict[str, Any]:
-    normalized = dict(state or {})
+    normalized = _edu_vp_neutralize_mobile_device_terms(dict(state or {}))
     if "day0" not in normalized and isinstance(normalized.get("week0"), dict):
         normalized["day0"] = normalized.get("week0") or {}
     if "day1" not in normalized and isinstance(normalized.get("week1"), dict):
@@ -7468,6 +7489,12 @@ def _edu_vp_normalize_state_keys(state: dict[str, Any] | None) -> dict[str, Any]
                 stage_drafts["day1"] = stage_drafts.get("week1") or {}
             stage_drafts.pop("week0", None)
             stage_drafts.pop("week1", None)
+    intake = normalized.get("intake")
+    if isinstance(intake, dict):
+        intake["current_device"] = _edu_vp_normalize_mobile_device_value(intake.get("current_device"))
+    ui_state = normalized.get("ui_state")
+    if isinstance(ui_state, dict):
+        ui_state["current_device"] = _edu_vp_normalize_mobile_device_value(ui_state.get("current_device"))
     return normalized
 
 
@@ -7506,7 +7533,7 @@ def _edu_vp_ui_state_default(state: dict[str, Any]) -> dict[str, Any]:
         "show_case_archive": False,
         "show_continue_from": "",
         "preferred_llm": _edu_normalize_llm(str(intake.get("preferred_llm") or "gemini")),
-        "current_device": str(intake.get("current_device") or "android").strip().lower(),
+        "current_device": _edu_vp_normalize_mobile_device_value(intake.get("current_device")),
         "desktop_os": str(intake.get("desktop_os") or "windows").strip().lower(),
         "stage_drafts": {
             "day0": _edu_vp_stage_draft_from_stage(state.get("day0")),
@@ -7577,7 +7604,7 @@ def _edu_vp_merge_ui_state(state: dict[str, Any], incoming: dict[str, Any] | Non
     ui_state["show_case_archive"] = bool(ui_state.get("show_case_archive"))
     ui_state["show_continue_from"] = "day1" if str(ui_state.get("show_continue_from") or "") == "day1" else ("day0" if str(ui_state.get("show_continue_from") or "") == "day0" else "")
     ui_state["preferred_llm"] = _edu_normalize_llm(str(ui_state.get("preferred_llm") or "gemini"))
-    ui_state["current_device"] = str(ui_state.get("current_device") or "android").strip().lower()
+    ui_state["current_device"] = _edu_vp_normalize_mobile_device_value(ui_state.get("current_device"))
     ui_state["desktop_os"] = str(ui_state.get("desktop_os") or "windows").strip().lower()
     ui_state["active_training_device_id"] = str(ui_state.get("active_training_device_id") or "")[:120]
     ui_state["active_training_device_type"] = str(ui_state.get("active_training_device_type") or "")[:40]

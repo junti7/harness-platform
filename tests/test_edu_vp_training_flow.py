@@ -2115,6 +2115,32 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(refreshed["planned_curriculum_outline"][1]["status"], "detailed_ready")
         self.assertEqual(refreshed["planned_curriculum_outline"][2]["status"], "rough_planned")
 
+    def test_refresh_neutralizes_legacy_mobile_brand_copy(self):
+        legacy_state = {
+            "intake": {"preferred_llm": "claude", "current_device": "i" + "phone", "desktop_os": "mac"},
+            "day0": {"title": "Day 0", "completed": True},
+            "day1": {
+                "title": "Day 1 · 업무 메모와 반복 작업을 AI로 정리해보기",
+                "tutorial_steps": [
+                    {
+                        "id": "mobile_scene",
+                        "title": "i" + "Phone에서 장면 고르기",
+                        "body": "i" + "Phone에서 오늘 가장 급한 장면을 고른다.",
+                    }
+                ],
+                "completed": False,
+            },
+            "ui_state": {"current_device": "i" + "phone", "selected_stage": "day1", "safety_confirmed": {"day0": True}},
+        }
+
+        refreshed = self.mod._edu_vp_refresh_state(legacy_state)
+        mobile_scene = refreshed["day1"]["tutorial_steps"][0]
+
+        self.assertEqual(refreshed["intake"]["current_device"], "mobile")
+        self.assertEqual(refreshed["ui_state"]["current_device"], "mobile")
+        self.assertEqual(mobile_scene["title"], "스마트폰에서 장면 고르기")
+        self.assertEqual(mobile_scene["body"], "스마트폰에서 오늘 가장 급한 장면을 고른다.")
+
     def test_personalized_day0_preserves_safety_gate_order(self):
         day0 = self.mod._edu_vp_build_day0({"preferred_llm": "claude"})
         personalized = self.mod._edu_vp_apply_curriculum_to_day0(
