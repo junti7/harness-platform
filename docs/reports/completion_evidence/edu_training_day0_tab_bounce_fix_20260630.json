@@ -1,0 +1,45 @@
+{
+  "task": "Fix edu training Day 0 tab bouncing back to Day 1",
+  "status": "residual_risk",
+  "date": "2026-06-30",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-30T00:00:00+09:00",
+      "summary": "Completion requires evidence mapped to the user-visible issue and runtime verification before final reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-30T00:00:00+09:00",
+      "summary": "Code and UI changes require completion evidence guard and a real user-facing or runtime entrypoint check."
+    }
+  ],
+  "scope": [
+    "harness-os/edu-app/src/components/TrainingScreen.tsx"
+  ],
+  "changes": [
+    "Stopped the initial session bootstrap effect from rerunning for the same email/caseId when local stage changes.",
+    "Prevents a Day 0 tab click from being overwritten by a repeated fetchSession/pickStage/hydrate cycle that can restore Day 1."
+  ],
+  "verification": [
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: vite built dist/assets/index-KXy2Ignv.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    }
+  ],
+  "known_unrelated_dirty_files": [
+    "docs/education/edu_parents_first_parent_landing.html"
+  ],
+  "deploy": {
+    "method": "pending scripts/deploy_to_macmini.sh after origin/main push",
+    "result": "pending"
+  }
+}

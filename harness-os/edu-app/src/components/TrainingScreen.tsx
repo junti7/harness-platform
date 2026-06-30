@@ -1770,6 +1770,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const restoreAnchorRef = useRef<string>('')
   const restoringPositionRef = useRef(false)
   const positionSyncTimerRef = useRef<number | null>(null)
+  const initialSessionKeyRef = useRef('')
 
   const stageDraftForSync = useCallback((extras: Record<string, unknown> = {}, stageKey: StageKey = stage): Record<string, unknown> => {
     const draft = {
@@ -1885,6 +1886,9 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
 
   // 마운트 시 세션 1회 로드. setState 는 async 콜백 안에서만 호출.
   useEffect(() => {
+    const sessionKey = `${email}:${caseId}`
+    if (initialSessionKeyRef.current === sessionKey) return
+    initialSessionKeyRef.current = sessionKey
     let alive = true
     void (async () => {
       try {
@@ -1904,6 +1908,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         setLoading(false)
         claimTrainingDevice(nextStage, currentStagePosition(nextState.ui_state?.stage_drafts?.[nextStage]?.last_position).anchorId || '')
       } catch (e) {
+        initialSessionKeyRef.current = ''
         if (!alive) return
         setError(errMsg(e))
         setLoading(false)
