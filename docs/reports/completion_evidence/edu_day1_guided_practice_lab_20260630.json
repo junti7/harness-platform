@@ -1,0 +1,65 @@
+{
+  "task": "Replace text-heavy Day 1 checklist with guided in-app practice lab",
+  "status": "complete",
+  "date": "2026-06-30",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-30T19:35:00+09:00",
+      "summary": "Completion requires evidence mapped to the user-visible issue and runtime verification before final reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-30T19:35:00+09:00",
+      "summary": "Code and UI changes require completion evidence guard and at least one user-facing or runtime entrypoint check."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "harness-os/edu-app/src/components/TrainingScreen.tsx",
+    "harness-os/edu-app/src/lib/vpTraining.ts",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Added Day 1 practice_lab data with smartphone/app-opening guide cards, install-or-browser fallback instructions, a practice location table, a copyable prompt, a source verification table, and four result slots.",
+    "Replaced the vague Day 1 checklist with app-guided steps: view the practice lab, choose source material in-app, remove sensitive information, fill the copy-paste prompt, open/install the AI tool, fill the verification table, rewrite, and save four outputs.",
+    "Added a frontend Day1PracticeLab block with visual cards, tables, copy button, prompt panel, source-check rows, and result-slot checklist.",
+    "Added refresh migration so incomplete legacy Day 1 sessions receive the guided practice lab without losing existing proof/notes/feedback."
+  ],
+  "verification": [
+    {
+      "name": "edu VP training flow tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "passed: 114 passed, 59 subtests passed"
+    },
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: vite built dist/assets/index-DOEZRjBk.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    },
+    {
+      "name": "legacy vague checklist source search",
+      "target": "changed source paths",
+      "command": "rg -n \"업무 장면 1개를 실제로 질문했다|생활 장면 1개를 실제로 질문했다|글쓰기 장면 1개를 실제로 질문했다\" harness-os/backend/main.py tests/test_edu_vp_training_flow.py harness-os/edu-app/src --glob '!**/dist/**'",
+      "result": "passed for runtime paths: remaining matches are regression test fixture/assertions proving legacy text is removed during refresh"
+    }
+  ],
+  "known_unrelated_dirty_files": [
+    "docs/education/edu_parents_first_parent_landing.html"
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_day1_guided_practice_lab_20260630.json",
+    "result": "pending"
+  },
+  "residual_risk": [
+    "Production deployment and runtime bundle checks are pending in this evidence snapshot."
+  ]
+}

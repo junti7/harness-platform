@@ -2139,7 +2139,28 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(refreshed["intake"]["current_device"], "mobile")
         self.assertEqual(refreshed["ui_state"]["current_device"], "mobile")
         self.assertEqual(mobile_scene["title"], "스마트폰에서 장면 고르기")
-        self.assertEqual(mobile_scene["body"], "스마트폰에서 오늘 가장 급한 장면을 고른다.")
+        self.assertNotIn("i" + "Phone", mobile_scene["body"])
+
+    def test_refresh_adds_guided_practice_lab_to_legacy_day1(self):
+        legacy_state = {
+            "intake": {"preferred_llm": "claude", "current_device": "mobile", "desktop_os": "mac", "motivation": "work"},
+            "day0": {"title": "Day 0", "completed": True},
+            "day1": {
+                "title": "Day 1 · 업무 메모와 반복 작업을 AI로 정리해보기",
+                "completed": False,
+                "proof_artifact": "기존 작성 내용",
+                "checklist": [{"id": "legacy", "title": "업무 장면 1개를 실제로 질문했다"}],
+            },
+            "ui_state": {"selected_stage": "day1", "safety_confirmed": {"day0": True}},
+        }
+
+        refreshed = self.mod._edu_vp_refresh_state(legacy_state)
+        checklist_titles = [item["title"] for item in refreshed["day1"]["checklist"]]
+
+        self.assertEqual(refreshed["day1"]["practice_lab_version"], "2026-06-30-guided-v1")
+        self.assertEqual(refreshed["day1"]["proof_artifact"], "기존 작성 내용")
+        self.assertIn("아래 실습 안내 먼저 보기", checklist_titles)
+        self.assertNotIn("업무 장면 1개를 실제로 질문했다", checklist_titles)
 
     def test_personalized_day0_preserves_safety_gate_order(self):
         day0 = self.mod._edu_vp_build_day0({"preferred_llm": "claude"})
@@ -2247,9 +2268,19 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("최종 결과 저장", schedule_titles)
         self.assertGreaterEqual(len(card["checklist"]), 8)
         checklist_titles = [item["title"] for item in card["checklist"]]
-        self.assertIn("민감정보 제거", checklist_titles)
-        self.assertIn("원문 대조", checklist_titles)
-        self.assertIn("4가지 결과 저장", checklist_titles)
+        self.assertIn("민감정보를 지운 입력문 만들기", checklist_titles)
+        self.assertIn("원문 대조표 채우기", checklist_titles)
+        self.assertIn("결과 4칸을 결과 붙여넣기에 저장", checklist_titles)
+        self.assertIn("실행 또는 설치 경로 확인", card["checklist"][4]["title"])
+        self.assertEqual(card["practice_lab_version"], "2026-06-30-guided-v1")
+        self.assertIn("[AI에 넣어도 되는 자료]", card["practice_lab"]["prompt_template"])
+        self.assertGreaterEqual(len(card["practice_lab"]["tool_cards"]), 3)
+        self.assertGreaterEqual(len(card["practice_lab"]["practice_table"]), 4)
+        self.assertGreaterEqual(len(card["practice_lab"]["verification_rows"]), 4)
+        self.assertIn("outside_app", card["practice_lab"]["practice_table"][0])
+        self.assertNotIn("업무 장면 1개를 실제로 질문했다", checklist_titles)
+        self.assertIn("open_practice_lab", card["blocked_step_options"])
+        self.assertIn("choose_source_in_app", card["blocked_step_options"])
         self.assertIn("remove_sensitive_info", card["blocked_step_options"])
         self.assertIn("verify_source", card["blocked_step_options"])
         self.assertIn("save_four_outputs", card["blocked_step_options"])

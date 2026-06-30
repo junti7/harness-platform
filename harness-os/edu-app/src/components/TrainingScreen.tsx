@@ -5,14 +5,19 @@ import {
   Check,
   ChevronDown,
   Clock,
+  Copy,
+  Download,
   ExternalLink,
   Loader2,
   Lock,
+  MessageSquareText,
   Newspaper,
   PlayCircle,
   ScrollText,
   ShieldCheck,
   Sparkles,
+  Smartphone,
+  Table2,
   Target,
   ThumbsDown,
   ThumbsUp,
@@ -1480,6 +1485,137 @@ function Day1ConceptBlock({
   )
 }
 
+function Day1PracticeLab({ stage }: { stage: TrainingStage }) {
+  const [copied, setCopied] = useState(false)
+  const lab = stage.practice_lab
+  if (!lab) return null
+  const toolCards = lab.tool_cards ?? []
+  const rows = lab.practice_table ?? []
+  const checks = lab.verification_rows ?? []
+  const slots = lab.result_slots ?? []
+  const prompt = lab.prompt_template || stage.practice_prompt_template || ''
+
+  async function copyPrompt() {
+    if (!prompt.trim()) return
+    try {
+      await navigator.clipboard.writeText(prompt)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1800)
+    } catch {
+      setCopied(false)
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-primary/25 bg-card p-4 shadow-[0_0_0_1px_rgba(37,99,235,0.05)]">
+      <div className="mb-4 flex items-start gap-2.5">
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-primary text-primary-foreground">
+          <PlayCircle size={18} />
+        </span>
+        <div className="min-w-0">
+          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-primary">화면 안 실습실</div>
+          <h2 className="text-base font-bold leading-snug text-ink-strong">{lab.headline || '앱 안에서 먼저 준비하고 실습합니다'}</h2>
+          {lab.context_hint ? <p className="mt-1 text-xs leading-relaxed text-text-muted">{lab.context_hint}</p> : null}
+        </div>
+      </div>
+
+      {toolCards.length ? (
+        <div className="mb-4 grid gap-2 sm:grid-cols-3">
+          {toolCards.map((item, index) => {
+            const Icon = item.visual === 'phone' ? Smartphone : item.visual === 'app' ? Download : MessageSquareText
+            return (
+              <div key={`${item.title}-${index}`} className="rounded-[14px] border border-border bg-secondary/70 p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-card text-primary">
+                    <Icon size={17} />
+                  </span>
+                  <div className="text-sm font-bold leading-snug text-ink">{item.title}</div>
+                </div>
+                {item.body ? <p className="text-xs leading-relaxed text-text-muted">{item.body}</p> : null}
+                {item.action ? (
+                  <div className="mt-2 rounded-[10px] border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] font-semibold leading-relaxed text-primary">
+                    {item.action}
+                  </div>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
+
+      {rows.length ? (
+        <div className="mb-4 overflow-hidden rounded-[14px] border border-border">
+          <div className="flex items-center gap-2 border-b border-border bg-secondary px-3 py-2 text-xs font-bold text-ink">
+            <Table2 size={15} className="text-primary" /> 어디서 무엇을 하나요?
+          </div>
+          <div className="grid grid-cols-[0.72fr_1fr_1fr] bg-card text-[11px] leading-relaxed">
+            <div className="border-b border-border bg-secondary px-3 py-2 font-semibold text-text-muted">단계</div>
+            <div className="border-b border-l border-border bg-secondary px-3 py-2 font-semibold text-text-muted">이 앱 안에서</div>
+            <div className="border-b border-l border-border bg-secondary px-3 py-2 font-semibold text-text-muted">AI 앱에서</div>
+            {rows.map((row) => (
+              <div key={row.step} className="contents">
+                <div className="border-b border-border px-3 py-2 font-semibold text-ink">{row.step}</div>
+                <div className="border-b border-l border-border px-3 py-2 text-text-muted">{row.in_app}</div>
+                <div className="border-b border-l border-border px-3 py-2 text-text-muted">{row.outside_app}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {prompt ? (
+        <div className="mb-4 rounded-[14px] border border-border bg-secondary/70 p-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs font-bold text-ink">
+              <Copy size={15} className="text-primary" /> 복붙 프롬프트
+            </div>
+            <button
+              type="button"
+              onClick={copyPrompt}
+              className="rounded-[9px] bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition hover:brightness-105"
+            >
+              {copied ? '복사됨' : '복사'}
+            </button>
+          </div>
+          <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-[12px] bg-card p-3 text-xs leading-relaxed text-ink">{prompt}</pre>
+        </div>
+      ) : null}
+
+      <div className="grid gap-3 lg:grid-cols-[1.1fr_0.9fr]">
+        {checks.length ? (
+          <div className="rounded-[14px] border border-border bg-card">
+            <div className="border-b border-border px-3 py-2 text-xs font-bold text-ink">원문 대조표</div>
+            <div className="grid gap-2 p-3">
+              {checks.map((item) => (
+                <div key={item.item} className="grid gap-1 rounded-[12px] bg-secondary px-3 py-2">
+                  <div className="text-xs font-bold text-primary">{item.item}</div>
+                  <div className="text-[11px] leading-relaxed text-text-muted">원문: {item.source}</div>
+                  <div className="text-[11px] leading-relaxed text-text-muted">확인: {item.ai_check}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {slots.length ? (
+          <div className="rounded-[14px] border border-border bg-card">
+            <div className="border-b border-border px-3 py-2 text-xs font-bold text-ink">결과 붙여넣기 4칸</div>
+            <ol className="grid gap-2 p-3">
+              {slots.map((slot, index) => (
+                <li key={slot} className="flex items-center gap-2 rounded-[12px] bg-secondary px-3 py-2 text-xs font-semibold text-ink">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">
+                    {index + 1}
+                  </span>
+                  {slot}
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
 function SafetyOrientationBlock({
   stage,
   checked,
@@ -2889,6 +3025,10 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
             onToggle={toggleCheck}
             onConceptFeedback={updateConceptFeedback}
           />
+        ) : null}
+
+        {stage === 'day1' && current ? (
+          <Day1PracticeLab stage={current} />
         ) : null}
 
         {stage === 'day1' && current ? (

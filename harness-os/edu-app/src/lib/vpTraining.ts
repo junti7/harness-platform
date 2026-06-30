@@ -170,6 +170,18 @@ export type TrainingStage = {
   schedule_blocks?: Array<{ title: string; minutes?: number; goal?: string }>
   sample_materials?: Array<{ kit_id?: string; title: string; description?: string; files?: string[] }>
   tutorial_steps?: Array<{ id?: string; title: string; body?: string; instruction?: string }>
+  practice_lab?: {
+    version?: string
+    headline?: string
+    tool_cards?: Array<{ title: string; body?: string; action?: string; visual?: string }>
+    practice_table?: Array<{ step: string; in_app?: string; outside_app?: string }>
+    prompt_template?: string
+    verification_rows?: Array<{ item: string; source?: string; ai_check?: string }>
+    result_slots?: string[]
+    context_hint?: string
+  }
+  practice_lab_version?: string
+  practice_prompt_template?: string
   required_action?: string
   proof_artifact_hint?: string
   pass_fail_rubric?: string[]

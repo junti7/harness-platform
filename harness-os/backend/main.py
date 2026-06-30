@@ -7813,12 +7813,42 @@ def _edu_vp_migrate_unstarted_day1_motivation(state: dict[str, Any]) -> dict[str
     return state
 
 
+def _edu_vp_migrate_day1_guided_practice_lab(state: dict[str, Any]) -> dict[str, Any]:
+    intake = state.get("intake") or {}
+    day1 = state.get("day1") or {}
+    if not isinstance(intake, dict) or not isinstance(day1, dict):
+        return state
+    if bool(day1.get("completed")):
+        return state
+    if str(day1.get("practice_lab_version") or "") == "2026-06-30-guided-v1":
+        return state
+    preserved = {
+        key: day1.get(key)
+        for key in (
+            "completed",
+            "completed_at",
+            "saved_at",
+            "proof_artifact",
+            "notes",
+            "blocked_at_step",
+            "vp_feedback",
+        )
+        if key in day1
+    }
+    rebuilt = _edu_vp_build_day1(intake)
+    rebuilt.update({key: value for key, value in preserved.items() if value is not None})
+    rebuilt["guided_practice_migrated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    state["day1"] = rebuilt
+    return state
+
+
 def _edu_vp_refresh_state(state: dict[str, Any]) -> dict[str, Any]:
     state = _edu_vp_normalize_state_keys(state)
     state = _edu_vp_migrate_unconfirmed_day0_safety(state)
     if not bool((state.get("day0") or {}).get("completed")) and _edu_vp_day0_concepts_complete(state):
         state = _edu_vp_unlock_day0_practice(state, advance_to_day1=False)
     state = _edu_vp_migrate_unstarted_day1_motivation(state)
+    state = _edu_vp_migrate_day1_guided_practice_lab(state)
     state["day0"] = state.get("day0") or {}
     state["day1"] = state.get("day1") or {}
     state["planned_curriculum_outline"] = _edu_vp_planned_curriculum_outline(state)
@@ -8894,6 +8924,101 @@ def _edu_vp_day0_materials(llm_label: str) -> list[dict[str, Any]]:
             ],
         )
     ]
+
+
+def _edu_vp_day1_practice_lab(
+    *,
+    llm_label: str,
+    motivation: str,
+    action_options: str,
+    prompt_context: str,
+    goal: str,
+    friction: str,
+) -> dict[str, Any]:
+    if llm_label == "Claude":
+        install_title = "Claude 앱이 있으면 앱 열기"
+        install_body = "스마트폰 홈 화면에서 Claude를 찾습니다. 없으면 브라우저에서 claude.ai를 열어도 됩니다."
+        install_action = "앱 없음: Safari/Chrome → 주소창 → claude.ai → 로그인"
+    elif llm_label == "ChatGPT":
+        install_title = "ChatGPT 앱 또는 웹 열기"
+        install_body = "스마트폰 홈 화면에서 ChatGPT를 찾습니다. 없으면 앱스토어/플레이스토어에서 ChatGPT를 설치하거나 chatgpt.com을 엽니다."
+        install_action = "앱 없음: 스토어 검색 → ChatGPT → 설치 → 로그인"
+    elif llm_label == "Gemini":
+        install_title = "Gemini 앱 또는 Google 앱 열기"
+        install_body = "Gemini 앱이 있으면 열고, 없으면 Google 앱 또는 gemini.google.com에서 시작합니다."
+        install_action = "앱 없음: 스토어 검색 → Gemini 또는 Google → 설치 → 로그인"
+    else:
+        install_title = "허용된 AI 도구 열기"
+        install_body = "스마트폰에서 지금 사용할 수 있는 AI 앱이나 브라우저 진입점을 먼저 엽니다."
+        install_action = "앱 없음: 브라우저에서 허용된 AI 도구 주소를 입력"
+
+    if motivation == "work":
+        sample_source = "예: 팀장님이 보낸 긴 업무 메시지, 회의 메모, 오늘 할 일 목록"
+        final_output = "업무 답장 초안 또는 회의 메모 요약"
+    elif motivation == "writing":
+        sample_source = "예: 내가 쓴 짧은 메모, 안내문 재료, 글감 bullet"
+        final_output = "짧은 글 초안 또는 안내문 초안"
+    elif motivation == "daily":
+        sample_source = "예: 병원 예약 메모, 가족 일정, 준비물 메모"
+        final_output = "가족 공유용 일정표 또는 준비물 체크리스트"
+    else:
+        sample_source = "예: 가정통신문, 학원 일정표, 숙제 안내, 학부모 단톡방 메시지"
+        final_output = "학부모가 바로 볼 수 있는 체크리스트 또는 답장 초안"
+
+    prompt = (
+        f"아래 자료를 바탕으로 {final_output} 1개를 만들어줘.\n\n"
+        f"[내 상황]\n{friction}\n\n"
+        "[AI에 넣어도 되는 자료]\n"
+        "- 여기에 이름, 학교, 전화번호, 주소, 계좌, 건강정보를 지운 자료를 붙여넣기\n\n"
+        "[원하는 결과]\n"
+        f"- {action_options} 중 오늘 바로 쓸 수 있는 형태 1개\n"
+        "- 날짜, 시간, 장소, 비용, 준비물, 제출물은 빠뜨리지 말기\n"
+        "- 원문에 없는 내용은 지어내지 말고 '원문에 없음'이라고 쓰기\n"
+        "- 마지막에 사람이 다시 확인할 질문 2개를 적기"
+    )
+
+    return {
+        "version": "2026-06-30-guided-v1",
+        "headline": "앱 안에서 먼저 준비하고, 필요한 순간에만 AI 앱으로 이동합니다",
+        "tool_cards": [
+            {
+                "title": "1. 스마트폰 준비",
+                "body": "화면을 왔다 갔다 하기 전에 오늘 쓸 자료를 이 앱 안에서 먼저 정리합니다.",
+                "visual": "phone",
+            },
+            {
+                "title": f"2. {install_title}",
+                "body": install_body,
+                "action": install_action,
+                "visual": "app",
+            },
+            {
+                "title": "3. 결과는 다시 이 화면에 저장",
+                "body": "AI 앱에서 받은 답을 그대로 끝내지 말고, 이 화면의 결과 붙여넣기에 4가지 증거를 저장합니다.",
+                "visual": "save",
+            },
+        ],
+        "practice_table": [
+            {"step": "자료 고르기", "in_app": sample_source, "outside_app": "아직 AI 앱을 열지 않습니다."},
+            {"step": "민감정보 제거", "in_app": "이름, 학교, 전화번호, 주소, 계좌, 건강정보를 지운 버전을 만듭니다.", "outside_app": "아직 AI 앱을 열지 않습니다."},
+            {"step": "프롬프트 복사", "in_app": "아래 복붙 프롬프트를 읽고 내 자료만 채웁니다.", "outside_app": f"{llm_label} 입력창에 붙여넣습니다."},
+            {"step": "답변 검증", "in_app": "원문 대조표에서 날짜·시간·장소·비용·준비물을 확인합니다.", "outside_app": "AI 답을 그대로 믿지 않습니다."},
+        ],
+        "prompt_template": prompt,
+        "verification_rows": [
+            {"item": "날짜/시간", "source": "원문에 적힌 날짜와 시간", "ai_check": "AI 답이 같으면 통과, 다르면 수정"},
+            {"item": "장소/대상", "source": "학교, 학원, 회의, 가족 등 실제 대상", "ai_check": "AI가 대상을 바꾸지 않았는지 확인"},
+            {"item": "비용/준비물", "source": "돈, 준비물, 제출물", "ai_check": "누락되면 최종본에 직접 추가"},
+            {"item": "사람 확인", "source": "아이, 가족, 담당자에게 물어볼 점", "ai_check": "확인 질문 2개를 남기면 통과"},
+        ],
+        "result_slots": [
+            "개인정보 제거 입력문",
+            "AI 첫 답변",
+            "원문 대조 체크 결과",
+            "내가 고친 최종본",
+        ],
+        "context_hint": f"오늘의 실제 자료 범위: {prompt_context}. 목표: {goal}",
+    }
 
 
 def _edu_vp_day0_practice_payload(intake: dict[str, Any]) -> dict[str, Any]:
@@ -12522,6 +12647,14 @@ def _edu_vp_build_day1(intake: dict[str, Any]) -> dict[str, Any]:
     mode = (bundle or {}).get("mode") or "fallback"
     customer_facing_safe = mode == "db_customer_facing"
     schedule_blocks = _edu_vp_schedule_blocks("day1")
+    practice_lab = _edu_vp_day1_practice_lab(
+        llm_label=llm_label,
+        motivation=motivation,
+        action_options=action_options,
+        prompt_context=prompt_context,
+        goal=goal,
+        friction=friction,
+    )
     return {
         "title": title,
         "learning_why": learning_why,
@@ -12542,39 +12675,47 @@ def _edu_vp_build_day1(intake: dict[str, Any]) -> dict[str, Any]:
         ],
         "sample_materials": _edu_vp_day1_materials(llm_label, motivation),
         "tutorial_steps": _edu_vp_tutorial_steps("day1", intake),
+        "practice_lab": practice_lab,
+        "practice_lab_version": practice_lab["version"],
         "recommended_learning": _edu_vp_recommended_learning("day1"),
         "home_life_recommended_learning": _edu_vp_home_recommended_learning(),
         "home_priority_missions": _edu_vp_home_priority_missions(),
         "scenario_bank": _edu_vp_home_scenarios(),
         "checklist": [
             {
-                "id": "pick_real_material",
-                "title": "생활 자료 1개 고르기",
-                "instruction": "가정통신문, 학원 일정, 숙제 안내, 단톡방 메시지, 설명회 메모 중 실제로 정리할 자료 1개를 고른다.",
+                "id": "open_practice_lab",
+                "title": "아래 실습 안내 먼저 보기",
+                "instruction": "앱을 전환하기 전에 이 화면의 스마트폰 가이드, 표, 복붙 프롬프트를 먼저 확인한다.",
+                "success_signal": "오늘 무엇을 어디서 해야 하는지 보인다.",
+            },
+            {
+                "id": "choose_source_in_app",
+                "title": "실습 자료를 이 화면 기준으로 정하기",
+                "instruction": "가정통신문, 학원 일정, 업무 메시지, 회의 메모 중 하나를 고르고 아래 표의 '자료 고르기' 칸과 비교한다.",
                 "success_signal": "오늘 쓸 원문 또는 메모가 정해졌다.",
             },
             {
                 "id": "remove_sensitive_info",
-                "title": "민감정보 제거",
-                "instruction": "아이 이름, 학교명, 반, 전화번호, 주소, 계좌, 건강정보, 다른 사람 실명을 지운다.",
+                "title": "민감정보를 지운 입력문 만들기",
+                "instruction": "아이 이름, 학교명, 반, 전화번호, 주소, 계좌, 건강정보, 다른 사람 실명을 지운 버전을 만든다.",
                 "success_signal": "AI에 넣어도 되는 입력문 1개가 남았다.",
             },
             {
                 "id": "write_prompt_shape",
-                "title": "질문 구조 만들기",
-                "instruction": "상황, 원하는 결과 모양, 확인 기준, 금지 조건을 넣어 질문문을 만든다.",
-                "success_signal": "정리해줘보다 구체적인 질문문이 남았다.",
+                "title": "복붙 프롬프트 채우기",
+                "instruction": "아래 복붙 프롬프트에서 [AI에 넣어도 되는 자료] 부분만 내 자료로 바꾼다.",
+                "success_signal": "그대로 복사할 질문문이 준비됐다.",
             },
             {
                 "id": "get_first_draft",
-                "title": f"{llm_label} 첫 답변 받기",
-                "instruction": "오늘은 여러 도구를 비교하지 않고 같은 AI 도구에서 첫 초안 1개를 받는다.",
+                "title": f"{llm_label} 실행 또는 설치 경로 확인",
+                "instruction": "아래 스마트폰 가이드에서 앱이 있는 경우와 없는 경우를 확인한 뒤, 프롬프트를 붙여넣어 첫 답변을 받는다.",
                 "success_signal": "AI 첫 답변이 남았다.",
             },
             {
                 "id": "verify_source",
-                "title": "원문 대조",
-                "instruction": "날짜, 시간, 장소, 비용, 준비물, 제출물, 대상 학년·반을 원문과 다시 맞춘다.",
+                "title": "원문 대조표 채우기",
+                "instruction": "아래 표를 보고 날짜, 시간, 장소, 비용, 준비물, 제출물, 대상 학년·반을 원문과 다시 맞춘다.",
                 "success_signal": "맞는 항목과 다시 확인할 항목이 표시됐다.",
             },
             {
@@ -12591,13 +12732,14 @@ def _edu_vp_build_day1(intake: dict[str, Any]) -> dict[str, Any]:
             },
             {
                 "id": "save_four_outputs",
-                "title": "4가지 결과 저장",
-                "instruction": "개인정보 제거 입력문, AI 첫 답변, 원문 대조 체크, 내가 고친 최종본을 붙여 넣는다.",
+                "title": "결과 4칸을 결과 붙여넣기에 저장",
+                "instruction": "아래 결과 저장칸 예시처럼 개인정보 제거 입력문, AI 첫 답변, 원문 대조 체크, 내가 고친 최종본을 붙여 넣는다.",
                 "success_signal": "Day 1 완료 증거 4가지가 저장됐다.",
             },
         ],
         "blocked_step_options": [
-            "pick_real_material",
+            "open_practice_lab",
+            "choose_source_in_app",
             "remove_sensitive_info",
             "write_prompt_shape",
             "get_first_draft",
