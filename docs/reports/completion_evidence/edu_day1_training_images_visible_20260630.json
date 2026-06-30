@@ -1,6 +1,6 @@
 {
   "task": "Make Day 1 training images and selected AI app installation guidance visible",
-  "status": "residual_risk",
+  "status": "complete",
   "date": "2026-06-30",
   "governance_bootstrap": [
     {
@@ -42,8 +42,8 @@
     },
     {
       "requirement": "Mac Mini production deployment and runtime verification.",
-      "status": "not_verified",
-      "evidence": "Local tests and build passed; deployment will be recorded after commit and selected-path deploy."
+      "status": "pass",
+      "evidence": "Selected-path Mac Mini deploy passed, edu-app production bundle rebuilt, SVG files returned HTTP 200, and deployed backend payload returned visual_assets plus selected Claude install steps."
     }
   ],
   "changes": [
@@ -82,16 +82,50 @@
       "target": "local dist bundle",
       "command": "rg -n \"prepare-material.svg|remove-private-info.svg|install-ai-app.svg|verify-answer.svg|visual_assets|install_guide\" harness-os/edu-app/dist harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts",
       "result": "passed: image paths and visual/install rendering code are present"
+    },
+    {
+      "name": "selected path deploy",
+      "target": "macmini source tree",
+      "command": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts harness-os/edu-app/public/training/day1/prepare-material.svg harness-os/edu-app/public/training/day1/remove-private-info.svg harness-os/edu-app/public/training/day1/install-ai-app.svg harness-os/edu-app/public/training/day1/verify-answer.svg tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_day1_training_images_visible_20260630.json",
+      "result": "passed: backend launchd reloaded, selected paths matched origin/main on Mac Mini"
+    },
+    {
+      "name": "macmini edu app production build",
+      "target": "macmini dist",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && PATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH\" npm run build --prefix harness-os/edu-app && uid=$(id -u) && launchctl kickstart -k gui/$uid/com.harness.edu-app'",
+      "result": "passed: vite built dist/assets/index-DMOqjtLb.js and edu-app launchd was restarted"
+    },
+    {
+      "name": "production image assets served",
+      "target": "production url",
+      "command": "curl -fsSI --max-time 8 http://100.97.175.44:5174/training/day1/{prepare-material.svg,remove-private-info.svg,install-ai-app.svg,verify-answer.svg}",
+      "result": "passed: all four Day 1 SVG image assets returned HTTP 200"
+    },
+    {
+      "name": "production backend Day 1 image payload",
+      "target": "macmini deployed backend source",
+      "command": "ssh macmini import of harness-os/backend/main.py calling _edu_vp_build_day1 with preferred_llm=claude",
+      "result": "passed: practice_lab_version=2026-06-30-guided-images-v2, visual_assets contains all four /training/day1/*.svg paths, install_guide title=Claude를 처음 쓰는 경우, steps include claude.ai"
+    },
+    {
+      "name": "macmini deployed source match",
+      "target": "macmini git diff",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && git diff --name-only origin/main -- harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts harness-os/edu-app/public/training/day1/prepare-material.svg harness-os/edu-app/public/training/day1/remove-private-info.svg harness-os/edu-app/public/training/day1/install-ai-app.svg harness-os/edu-app/public/training/day1/verify-answer.svg tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_day1_training_images_visible_20260630.json'",
+      "result": "passed: no diff for selected deployed paths before evidence finalization"
+    },
+    {
+      "name": "production backend health",
+      "target": "macmini api health",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:8000/api/health",
+      "result": "passed: {\"ok\":true,\"generated_at\":\"2026-06-30T19:48:31\"}"
     }
   ],
   "known_unrelated_dirty_files": [
     "docs/education/edu_parents_first_parent_landing.html"
   ],
   "deploy": {
-    "method": "pending: scripts/deploy_to_macmini.sh after commit and push",
-    "result": "pending"
+    "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts harness-os/edu-app/public/training/day1/prepare-material.svg harness-os/edu-app/public/training/day1/remove-private-info.svg harness-os/edu-app/public/training/day1/install-ai-app.svg harness-os/edu-app/public/training/day1/verify-answer.svg tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_day1_training_images_visible_20260630.json",
+    "result": "passed: selected paths deployed, backend reloaded, edu-app bundle rebuilt, production SVG assets served HTTP 200, and deployed backend payload verified image plus install guide fields"
   },
-  "residual_risk": [
-    "Mac Mini production bundle and HTTP image serving still need to be verified after commit, push, and selected-path deploy."
-  ]
+  "residual_risk": []
 }
