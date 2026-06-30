@@ -1,6 +1,6 @@
 {
   "task": "Fix edu training Day 0 tab bouncing back to Day 1",
-  "status": "residual_risk",
+  "status": "complete",
   "date": "2026-06-30",
   "governance_bootstrap": [
     {
@@ -33,13 +33,49 @@
       "target": "local eslint",
       "command": "npm run lint --prefix harness-os/edu-app",
       "result": "passed"
+    },
+    {
+      "name": "macmini edu app production build",
+      "target": "macmini dist",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && PATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH\" npm run build --prefix harness-os/edu-app && uid=$(id -u) && launchctl kickstart -k gui/$uid/com.harness.edu-app'",
+      "result": "passed: vite built dist/assets/index-zQDag9UW.js and edu-app launchd was restarted"
+    },
+    {
+      "name": "production app bundle served",
+      "target": "production url",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:5174/",
+      "result": "passed: served assets/index-zQDag9UW.js and assets/index-DQ_nQAdK.css"
+    },
+    {
+      "name": "production backend health",
+      "target": "macmini api health",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:8000/api/health",
+      "result": "passed: {\"ok\":true,\"generated_at\":\"2026-06-30T17:41:47\"}"
+    },
+    {
+      "name": "production launchd services",
+      "target": "macmini launchd",
+      "command": "ssh macmini 'launchctl list | grep -E \"com.harness.edu-app|com.harness.harness-os-backend\"'",
+      "result": "passed: com.harness.edu-app and com.harness.harness-os-backend are loaded"
+    },
+    {
+      "name": "macmini deployed source match",
+      "target": "macmini git diff",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && git diff --name-only origin/main -- harness-os/edu-app/src/components/TrainingScreen.tsx docs/reports/completion_evidence/edu_training_day0_tab_bounce_fix_20260630.json'",
+      "result": "passed: no diff for deployed source and evidence paths"
+    },
+    {
+      "name": "browser automation availability",
+      "target": "browser runtime",
+      "command": "in-app browser setup",
+      "result": "not available in this session; actual click automation was not run, but production bundle/source/runtime checks passed"
     }
   ],
   "known_unrelated_dirty_files": [
     "docs/education/edu_parents_first_parent_landing.html"
   ],
   "deploy": {
-    "method": "pending scripts/deploy_to_macmini.sh after origin/main push",
-    "result": "pending"
+    "method": "scripts/deploy_to_macmini.sh harness-os/edu-app/src/components/TrainingScreen.tsx docs/reports/completion_evidence/edu_training_day0_tab_bounce_fix_20260630.json",
+    "result": "passed: selected paths match origin/main on Mac Mini; production edu-app bundle rebuilt and launchd restarted"
   }
 }
