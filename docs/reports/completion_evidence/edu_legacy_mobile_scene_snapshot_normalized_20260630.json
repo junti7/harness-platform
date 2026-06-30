@@ -47,6 +47,30 @@
       "target": "changed source paths",
       "command": "rg -n \"iPhone에서 장면 고르기|\\biPhone\\b|\\biphone\\b|아이폰\" harness-os/backend/main.py tests/test_edu_vp_training_flow.py harness-os/edu-app/src harness-os/frontend/src core/edu_curriculum.py --glob '!**/dist/**'",
       "result": "passed: no matches"
+    },
+    {
+      "name": "selected path deploy",
+      "target": "macmini source tree",
+      "command": "scripts/deploy_to_macmini.sh harness-os/backend/main.py tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_legacy_mobile_scene_snapshot_normalized_20260630.json",
+      "result": "passed: backend launchd reloaded, selected paths matched origin/main on Mac Mini"
+    },
+    {
+      "name": "production backend health",
+      "target": "macmini api health",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:8000/api/health",
+      "result": "passed: {\"ok\":true,\"generated_at\":\"2026-06-30T19:15:29\"}"
+    },
+    {
+      "name": "production legacy snapshot normalization",
+      "target": "macmini deployed backend source",
+      "command": "ssh macmini .venv/bin/python import of harness-os/backend/main.py calling _edu_vp_refresh_state with legacy mobile_scene payload",
+      "result": "passed: intake current_device=mobile, ui_state current_device=mobile, title=스마트폰에서 장면 고르기, body=스마트폰에서 오늘 가장 급한 장면을 고른다."
+    },
+    {
+      "name": "macmini changed source literal search",
+      "target": "macmini source tree",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && grep -RInE \"iPhone에서 장면 고르기|\\biPhone\\b|\\biphone\\b|아이폰\" harness-os/backend/main.py tests/test_edu_vp_training_flow.py --exclude-dir=node_modules || true'",
+      "result": "passed: no matches"
     }
   ],
   "known_unrelated_dirty_files": [
@@ -54,9 +78,7 @@
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_legacy_mobile_scene_snapshot_normalized_20260630.json",
-    "result": "pending"
+    "result": "passed: selected paths deployed, backend reloaded, production legacy snapshot normalization verified"
   },
-  "residual_risk": [
-    "Production deployment and legacy snapshot runtime verification are pending in this evidence snapshot."
-  ]
+  "residual_risk": []
 }
