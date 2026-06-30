@@ -1276,8 +1276,8 @@ function PlannedCurriculumPreview({ items }: { items: PlannedCurriculumItem[] })
   )
 }
 
-function Day1DetailPreview({ stage }: { stage?: TrainingStage }) {
-  const [open, setOpen] = useState(false)
+function Day1DetailPreview({ stage, active = false }: { stage?: TrainingStage; active?: boolean }) {
+  const [open, setOpen] = useState(active)
   if (!stage?.title) return null
   const concepts = stage.foundation_concepts ?? []
   const schedule = stage.schedule_blocks ?? []
@@ -1294,9 +1294,11 @@ function Day1DetailPreview({ stage }: { stage?: TrainingStage }) {
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-text-faint">
-            <ScrollText size={13} />다음 훈련 상세
+            <ScrollText size={13} />{active ? '오늘의 과정' : '다음 훈련 상세'}
           </div>
-          <h2 className="text-base font-bold leading-snug text-ink-strong">{stage.title}</h2>
+          <h2 className="text-base font-bold leading-snug text-ink-strong">
+            {active ? 'Day 1 전체 흐름' : stage.title}
+          </h2>
           {stage.learning_outcome ? (
             <p className="mt-1 text-xs leading-relaxed text-text-muted">{stage.learning_outcome}</p>
           ) : null}
@@ -1327,7 +1329,7 @@ function Day1DetailPreview({ stage }: { stage?: TrainingStage }) {
 
       {open ? (
         <div className="mt-3 grid gap-3">
-          {concepts.length ? (
+          {!active && concepts.length ? (
             <div className="rounded-[12px] border border-border bg-secondary/70 p-3">
               <div className="mb-2 text-xs font-semibold text-ink">기초 설명</div>
               <ol className="grid gap-1.5">
@@ -1396,6 +1398,83 @@ function Day1DetailPreview({ stage }: { stage?: TrainingStage }) {
           </div>
         </div>
       ) : null}
+    </section>
+  )
+}
+
+function Day1ConceptBlock({
+  stage,
+  checked,
+  conceptFeedback,
+  onToggle,
+  onConceptFeedback,
+}: {
+  stage: TrainingStage
+  checked: Record<string, boolean>
+  conceptFeedback: SafetyConceptFeedback
+  onToggle: (id: string) => void
+  onConceptFeedback: (id: string, value: string) => void
+}) {
+  const concepts = stage.foundation_concepts ?? []
+  const conceptItems = concepts.map((concept, index) => ({ ...concept, checkId: conceptId(concept, index) }))
+  if (!conceptItems.length) return null
+
+  return (
+    <section className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+      <div className="mb-3 flex items-start gap-2.5">
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-card text-primary">
+          <Target size={18} />
+        </span>
+        <div className="min-w-0">
+          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-primary">
+            실습 전 기준 확인
+          </div>
+          <h2 className="text-base font-bold leading-snug text-ink-strong">AI를 쓰기 전에 오늘의 기준부터 확인하기</h2>
+          <p className="mt-1 text-sm leading-relaxed text-text-muted">
+            Day 0처럼 먼저 기준을 읽고, 이해한 항목을 체크하고, 헷갈리는 점을 적어둔 뒤 실제 자료 실습으로 넘어갑니다.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-2">
+        {conceptItems.map((concept) => {
+          const on = Boolean(checked[concept.checkId])
+          const feedback = conceptFeedback[concept.checkId] ?? ''
+          return (
+            <div key={concept.checkId} id={`concept-card-${concept.checkId}`} data-training-anchor="true" className="rounded-[12px] border border-border bg-card p-3">
+              <div className="text-sm font-semibold leading-snug text-ink">{concept.title}</div>
+              <p className="mt-1 text-xs leading-relaxed text-text-muted">{concept.body}</p>
+              <button
+                type="button"
+                onClick={() => onToggle(concept.checkId)}
+                className="mt-3 flex w-full items-start gap-2 rounded-[10px] border border-border bg-secondary px-3 py-2.5 text-left transition active:scale-[0.99]"
+              >
+                <span
+                  className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition ${
+                    on ? 'border-primary bg-primary text-primary-foreground' : 'border-border-strong bg-card'
+                  }`}
+                >
+                  {on ? <Check size={14} strokeWidth={3} /> : null}
+                </span>
+                <span className="text-xs font-medium leading-relaxed text-ink">
+                  {concept.comprehension_check ?? '이 단락을 읽고 이해했어요.'}
+                </span>
+              </button>
+              <label className="mt-3 block text-xs font-semibold text-text-muted" htmlFor={`${concept.checkId}-feedback`}>
+                잘 이해되지 않는 점이나 질문
+              </label>
+              <textarea
+                id={`${concept.checkId}-feedback`}
+                value={feedback}
+                onChange={(e) => onConceptFeedback(concept.checkId, e.target.value)}
+                rows={2}
+                placeholder={concept.question_prompt ?? '실습 전에 더 묻고 싶은 점을 적어주세요.'}
+                className="mt-1 w-full resize-y rounded-[10px] border border-border bg-secondary px-3 py-2 text-xs leading-relaxed text-ink outline-none transition placeholder:text-text-faint focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+              />
+            </div>
+          )
+        })}
+      </div>
     </section>
   )
 }
@@ -2793,12 +2872,26 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           <PersonalizedDay0Block curriculum={personalizedCurriculum} learnerName={learnerName} />
         ) : null}
 
-        {plannedOutline.length ? (
+        {stage === 'day0' && plannedOutline.length ? (
           <PlannedCurriculumPreview items={plannedOutline} />
         ) : null}
 
-        {state?.day1 ? (
+        {stage === 'day0' && state?.day1 ? (
           <Day1DetailPreview stage={state.day1} />
+        ) : null}
+
+        {stage === 'day1' && current ? (
+          <Day1ConceptBlock
+            stage={current}
+            checked={checked}
+            conceptFeedback={conceptFeedback}
+            onToggle={toggleCheck}
+            onConceptFeedback={updateConceptFeedback}
+          />
+        ) : null}
+
+        {stage === 'day1' && current ? (
+          <Day1DetailPreview stage={current} active />
         ) : null}
 
         {!safetyGateActive && dynamicPath.length ? (

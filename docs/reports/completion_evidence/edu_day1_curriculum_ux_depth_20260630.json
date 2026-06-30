@@ -1,0 +1,59 @@
+{
+  "task": "Deepen Day 1 curriculum and keep Day 0 UX structure",
+  "status": "residual_risk",
+  "date": "2026-06-30",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-30T18:20:00+09:00",
+      "summary": "Completion requires evidence mapped to the user-visible issue and runtime verification before final reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-30T18:20:00+09:00",
+      "summary": "Code and UI changes require completion evidence guard and at least one user-facing or runtime entrypoint check."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "harness-os/edu-app/src/components/TrainingScreen.tsx",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Day 1 now has five foundation concept cards covering safe AI use boundaries, sensitive-information removal, prompt shape, source verification, and parent-voice rewriting.",
+    "Day 1 schedule now totals 85 minutes across nine concrete practice blocks instead of a shallow three-step activity.",
+    "Day 1 completion now requires four saved outputs: sanitized input, first AI answer, source comparison check, and user-edited final result.",
+    "Day 1 active UX now follows the Day 0 structure: concept cards, comprehension checks, question textareas, course flow, mission, checklist, and result paste area.",
+    "The Day 1 preview card is shown only from Day 0; active Day 1 no longer looks like a future-training preview."
+  ],
+  "verification": [
+    {
+      "name": "edu VP training flow tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "passed: 112 passed, 59 subtests passed"
+    },
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: vite built dist/assets/index-Bj2-NHlv.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    }
+  ],
+  "known_unrelated_dirty_files": [
+    "docs/education/edu_parents_first_parent_landing.html"
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_day1_curriculum_ux_depth_20260630.json",
+    "result": "pending"
+  },
+  "residual_risk": [
+    "Browser click-through has not yet been run in this evidence snapshot; production runtime checks will be added after deploy."
+  ]
+}
