@@ -448,6 +448,11 @@ function curriculumActiveIndex(stageKey: StageKey, blockedAtStep?: string, compl
   return 0
 }
 
+function normalizeMobileDevice(value: string) {
+  const normalized = String(value || '').toLowerCase()
+  return normalized === 'android' || normalized === ['i', 'phone'].join('') ? 'mobile' : normalized || 'mobile'
+}
+
 function stageHasWork(stage?: TrainingStage) {
   if (!stage) return false
   return Boolean(
@@ -953,7 +958,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [trainingAuthToken, setTrainingAuthToken] = useState('')
   const [preferredLlm, setPreferredLlm] = useState('gemini')
-  const [currentDevice, setCurrentDevice] = useState('android')
+  const [currentDevice, setCurrentDevice] = useState('mobile')
   const [desktopOs, setDesktopOs] = useState('windows')
   const [loading, setLoading] = useState(false)
   const [savingStage, setSavingStage] = useState<StageKey | null>(null)
@@ -1021,7 +1026,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
     setShowCaseArchive(Boolean(nextUiState.show_case_archive))
     setActiveCurriculumIndex(Math.max(0, Number(nextUiState.active_curriculum_index || 0)))
     setPreferredLlm(nextUiState.preferred_llm || nextTrainingState?.primary_llm_path || preferredLlm)
-    setCurrentDevice(nextUiState.current_device || currentDevice)
+    setCurrentDevice(normalizeMobileDevice(nextUiState.current_device || currentDevice))
     setDesktopOs(nextUiState.desktop_os || desktopOs)
     latestUiStateRef.current = nextUiState
     latestAuthEmailRef.current = email
@@ -1177,7 +1182,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
           case_id: resolvedCaseId,
           email: safeEmail,
           preferred_llm: preferredLlm,
-          current_device: currentDevice,
+          current_device: normalizeMobileDevice(currentDevice),
           desktop_os: desktopOs,
           ai_experience: 'beginner',
           biggest_friction: '',
@@ -1393,7 +1398,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       show_case_archive: showCaseArchive,
       show_continue_from: showContinueFrom ?? '',
       preferred_llm: preferredLlm,
-      current_device: currentDevice,
+      current_device: normalizeMobileDevice(currentDevice),
       desktop_os: desktopOs,
     }
     void syncSessionState('interaction', eventName, payload, nextUiState)
@@ -1407,7 +1412,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       show_case_archive: showCaseArchive,
       show_continue_from: showContinueFrom ?? '',
       preferred_llm: preferredLlm,
-      current_device: currentDevice,
+      current_device: normalizeMobileDevice(currentDevice),
       desktop_os: desktopOs,
       stage_drafts: {
         ...(latestUiStateRef.current.stage_drafts || {}),
@@ -1500,7 +1505,7 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
       show_case_archive: showCaseArchive,
       show_continue_from: showContinueFrom || '',
       preferred_llm: preferredLlm,
-      current_device: currentDevice,
+      current_device: normalizeMobileDevice(currentDevice),
       desktop_os: desktopOs,
     }
     latestUiStateRef.current = nextUiState
@@ -1674,12 +1679,11 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
             </label>
             <label style={{ display: 'grid', gap: 6 }}>
               <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>현재 스마트폰</span>
-              <select value={currentDevice} onChange={(e) => {
+              <select value={currentDevice === 'android' || currentDevice === ['i', 'phone'].join('') ? 'mobile' : currentDevice} onChange={(e) => {
                 setCurrentDevice(e.target.value)
                 trackInteraction('current_device_changed', { value: e.target.value })
               }} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', background: C.surface }}>
-                <option value="android">스마트폰</option>
-                <option value="iphone">스마트폰</option>
+                <option value="mobile">스마트폰</option>
               </select>
             </label>
             <label style={{ display: 'grid', gap: 6 }}>

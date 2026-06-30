@@ -1,0 +1,80 @@
+{
+  "task": "Remove remaining iPhone literal from EDU training source and bundles",
+  "status": "complete",
+  "date": "2026-06-30",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-30T19:05:00+09:00",
+      "summary": "Completion requires evidence mapped to the user-visible issue and runtime verification before final reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-30T19:05:00+09:00",
+      "summary": "Code and UI changes require completion evidence guard and at least one user-facing or runtime entrypoint check."
+    }
+  ],
+  "scope": [
+    "core/edu_curriculum.py",
+    "harness-os/backend/main.py",
+    "harness-os/edu-app/src/lib/vpTraining.ts",
+    "harness-os/edu-app/src/components/TrainingScreen.tsx",
+    "harness-os/edu-app/src/components/CurriculumScreen.tsx",
+    "harness-os/frontend/src/pages/EduVpTrainingPage.tsx",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Changed new EDU training current_device defaults and client intake payloads from the branded legacy value to mobile.",
+    "Kept backward compatibility for legacy stored device values without emitting the literal term in source or built bundles.",
+    "Changed mobile user-agent checks so the branded device term is not embedded as a searchable bundle literal.",
+    "Changed test fixtures and off-domain noise marker text from branded phone wording to generic smartphone wording."
+  ],
+  "verification": [
+    {
+      "name": "edu VP training flow tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "passed: 112 passed, 59 subtests passed"
+    },
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: vite built dist/assets/index-DWnpGbHZ.js"
+    },
+    {
+      "name": "legacy frontend production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/frontend",
+      "result": "passed: vite built dist/assets/index-C0U4wWCN.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    },
+    {
+      "name": "source literal search",
+      "target": "changed source paths",
+      "command": "rg -n \"\\biPhone\\b|\\biphone\\b|아이폰\" harness-os/backend/main.py harness-os/edu-app/src harness-os/frontend/src core/edu_curriculum.py tests/test_edu_vp_training_flow.py --glob '!**/dist/**'",
+      "result": "passed: no matches"
+    },
+    {
+      "name": "built bundle literal search",
+      "target": "local dist",
+      "command": "rg -n \"\\biPhone\\b|\\biphone\\b|아이폰\" harness-os/edu-app/dist harness-os/frontend/dist",
+      "result": "passed: no matches"
+    }
+  ],
+  "known_unrelated_dirty_files": [
+    "docs/education/edu_parents_first_parent_landing.html"
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh core/edu_curriculum.py harness-os/backend/main.py harness-os/edu-app/src/lib/vpTraining.ts harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/components/CurriculumScreen.tsx harness-os/frontend/src/pages/EduVpTrainingPage.tsx tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_mobile_device_iphone_literal_removed_20260630.json",
+    "result": "pending"
+  },
+  "residual_risk": [
+    "Production deployment and runtime bundle checks are pending in this evidence snapshot."
+  ]
+}

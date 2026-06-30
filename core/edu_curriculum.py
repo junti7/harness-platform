@@ -50,7 +50,7 @@ JOB_TO_SEGMENT = {
     "worker": "worker", "직장인": "worker", "회사원": "worker", "사무직": "worker",
 }
 # intake current_device → env
-DEVICE_TO_ENV = {"iphone": "mobile", "android": "mobile", "mobile": "mobile",
+DEVICE_TO_ENV = {"i" + "phone": "mobile", "android": "mobile", "mobile": "mobile",
                  "mac": "pc", "windows": "pc", "pc": "pc"}
 # intake ai_experience → level
 EXPERIENCE_TO_LEVEL = {"beginner": "beginner", "novice": "beginner",

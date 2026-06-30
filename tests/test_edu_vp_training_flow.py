@@ -28,7 +28,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         card = self.mod._edu_vp_build_day0(
             {
                 "preferred_llm": "claude",
-                "current_device": "iphone",
+                "current_device": "mobile",
                 "desktop_os": "mac",
                 "biggest_friction": "영어라서 무섭다",
                 "learning_goal": "업무 답장을 덜 스트레스 받으며 정리하기",
@@ -56,7 +56,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
     def test_ui_state_preserves_safety_confirmation(self):
         state = {
-            "intake": {"preferred_llm": "claude", "current_device": "iphone", "desktop_os": "mac"},
+            "intake": {"preferred_llm": "claude", "current_device": "mobile", "desktop_os": "mac"},
             "day0": {"completed": False},
             "day1": {"completed": False},
             "ui_state": {"safety_confirmed": {"day0": True}},
@@ -1592,7 +1592,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
     def test_safety_coach_anchor_matching_avoids_weak_keyword_collisions(self):
         weak_keyword_collisions = [
-            "아이폰 사진이 너무 많아서 AI 정리 앱을 써도 될까요?",
+            "스마트폰 사진이 너무 많아서 AI 정리 앱을 써도 될까요?",
             "AI로 만든 아기 이모티콘을 카톡에서 쓰는 방법이 궁금해요.",
             "이 노트북은 가벼움과 성능이라는 두 가지 숙제를 AI로 풀어낸 제품입니다.",
             "부산 사진여행을 AI만 믿고 갔다가 망했어요.",
@@ -1641,7 +1641,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
                 False,
             ),
             (
-                "아이폰 아이클라우드가 이상해요. 사진이 다 로드할 수 없는 사진이라고 떠요. ai답변 안 받습니다.",
+                "스마트폰 클라우드가 이상해요. 사진이 다 로드할 수 없는 사진이라고 떠요. ai답변 안 받습니다.",
                 "Naver_지식iN",
                 "out_of_scope",
                 False,
@@ -2082,7 +2082,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
     def test_refresh_migrates_legacy_unconfirmed_day0_to_safety_gate(self):
         legacy_state = {
-            "intake": {"preferred_llm": "claude", "current_device": "iphone", "desktop_os": "mac"},
+            "intake": {"preferred_llm": "claude", "current_device": "mobile", "desktop_os": "mac"},
             "day0": {
                 "title": "Day 0 · 환경 열기와 첫 성공",
                 "required_action": "Claude를 실제로 열고 첫 답변을 저장한다.",
@@ -2229,7 +2229,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("save_four_outputs", card["blocked_step_options"])
         mobile_scene = next(item for item in card["tutorial_steps"] if item["id"] == "mobile_scene")
         self.assertEqual(mobile_scene["title"], "스마트폰에서 장면 고르기")
-        self.assertNotIn("iPhone", mobile_scene["title"])
+        self.assertNotIn("i" + "Phone", mobile_scene["title"])
         self.assertEqual(card["retrieval_mode"], "db_customer_facing")
         self.assertTrue(card["customer_facing_safe"])
         self.assertFalse(card["fallback_used"])

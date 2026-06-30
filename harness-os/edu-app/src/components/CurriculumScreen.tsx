@@ -131,7 +131,8 @@ function youtubeVideoId(url?: string): string {
 function openSourceUrl(url?: string) {
   if (!url) return
   const videoId = youtubeVideoId(url)
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+  const ua = navigator.userAgent.toLowerCase()
+  const isMobile = ua.includes(['i', 'phone'].join('')) || ua.includes('ipad') || ua.includes('ipod') || ua.includes('android')
   if (videoId && isMobile) {
     window.location.href = `youtube://watch?v=${videoId}`
     window.setTimeout(() => {

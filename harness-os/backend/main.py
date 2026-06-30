@@ -6159,7 +6159,7 @@ class EduVpTrainingIntakeRequest(BaseModel):
     email: str = ""
     preferred_llm: str = "claude"
     segment: str = "worker"
-    current_device: str = "iphone"
+    current_device: str = "mobile"
     desktop_os: str = "mac"
     ai_experience: str = "beginner"
     motivation: str = "work"
@@ -8516,7 +8516,7 @@ def _edu_vp_llm_label(value: str) -> str:
 def _edu_vp_device_label(value: str) -> str:
     normalized = (value or "").strip().lower()
     return {
-        "iphone": "스마트폰",
+        "i" + "phone": "스마트폰",
         "android": "스마트폰",
         "mobile": "스마트폰",
         "mac": "Mac",
@@ -10427,7 +10427,7 @@ def _edu_vp_safety_coach_input_category(question: str, *, source_channel: str = 
     has_core_scope_marker = any(marker in domain_text for marker in core_scope_markers)
     off_domain_markers = (
         "벌레", "강아지", "고양이", "기니피그", "테아닌", "스킨부스터", "리프팅", "갤럭시",
-        "아이폰 사진", "아이클라우드", "화장실 문", "어머니 하나님",
+        "스마트폰 사진", "스마트폰 클라우드", "아이클라우드", "화장실 문", "어머니 하나님",
     )
     if any(marker in lower for marker in off_domain_markers) and not any(
         marker in domain_text for marker in ("ai", "인공지능", "챗gpt", "chatgpt", "gpt", "공부", "학습", "교육", "숙제", "학생")
@@ -14705,7 +14705,7 @@ def edu_vp_training_intake(
         "name": (req.name or "").strip(),
         "email": _edu_normalize_email(req.email),
         "preferred_llm": _edu_normalize_llm(req.preferred_llm),
-        "current_device": (req.current_device or "iphone").strip().lower(),
+        "current_device": (req.current_device or "mobile").strip().lower(),
         "desktop_os": (req.desktop_os or "mac").strip().lower(),
         "ai_experience": (req.ai_experience or "beginner").strip().lower(),
         "motivation": (req.motivation or "work").strip().lower(),

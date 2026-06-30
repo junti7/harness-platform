@@ -87,7 +87,7 @@ function intakeSegment(attrs: CurriculumAttrs): 'parent' | 'worker' {
 }
 
 function intakeDevice(attrs: CurriculumAttrs): string {
-  return attrs.env === 'pc' ? 'mac' : 'iphone'
+  return attrs.env === 'pc' ? 'mac' : 'mobile'
 }
 
 function intakeGoal(attrs: CurriculumAttrs): string {
