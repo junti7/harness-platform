@@ -8516,8 +8516,9 @@ def _edu_vp_llm_label(value: str) -> str:
 def _edu_vp_device_label(value: str) -> str:
     normalized = (value or "").strip().lower()
     return {
-        "iphone": "iPhone",
-        "android": "Android",
+        "iphone": "스마트폰",
+        "android": "스마트폰",
+        "mobile": "스마트폰",
         "mac": "Mac",
         "windows": "Windows PC",
     }.get(normalized, value or "기기")

@@ -1673,13 +1673,13 @@ export function EduVpTrainingPage({ apiBase, authHeaders, currentRole }: Props) 
               </select>
             </label>
             <label style={{ display: 'grid', gap: 6 }}>
-              <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>현재 모바일 기기</span>
+              <span style={{ fontSize: '.84rem', color: C.muted, fontWeight: 700 }}>현재 스마트폰</span>
               <select value={currentDevice} onChange={(e) => {
                 setCurrentDevice(e.target.value)
                 trackInteraction('current_device_changed', { value: e.target.value })
               }} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, fontSize: '.95rem', background: C.surface }}>
-                <option value="android">Android</option>
-                <option value="iphone">iPhone</option>
+                <option value="android">스마트폰</option>
+                <option value="iphone">스마트폰</option>
               </select>
             </label>
             <label style={{ display: 'grid', gap: 6 }}>

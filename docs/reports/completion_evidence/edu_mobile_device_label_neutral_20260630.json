@@ -1,0 +1,75 @@
+{
+  "task": "Replace branded iPhone mobile-scene labels with neutral smartphone copy",
+  "status": "complete",
+  "date": "2026-06-30",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-30T18:50:00+09:00",
+      "summary": "Completion requires evidence mapped to the user-visible issue and runtime verification before final reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-30T18:50:00+09:00",
+      "summary": "Code and UI changes require completion evidence guard and at least one user-facing or runtime entrypoint check."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "harness-os/frontend/src/pages/EduVpTrainingPage.tsx",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Changed EDU VP device display labels so iphone, android, and mobile all render as 스마트폰 in training copy.",
+    "Updated the legacy EDU VP training page mobile-device selector label from 현재 모바일 기기 to 현재 스마트폰 and removed Android/iPhone visible brand labels.",
+    "Added a regression assertion that Day 1 mobile_scene renders 스마트폰에서 장면 고르기 and does not render iPhone."
+  ],
+  "verification": [
+    {
+      "name": "edu VP training flow tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "passed: 112 passed, 59 subtests passed"
+    },
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: vite built dist/assets/index-Bj2-NHlv.js"
+    },
+    {
+      "name": "legacy frontend production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/frontend",
+      "result": "passed: vite built dist/assets/index-DSAaLeLv.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    },
+    {
+      "name": "legacy frontend lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/frontend",
+      "result": "residual: failed on pre-existing unrelated lint errors outside this copy change, including AlpacaPaperMonitor, EduPatternMonitor, TradingOpsCenter, EduDbInspectorPage, PipelinePage, SettingsPage, and TradingDiaryPage"
+    },
+    {
+      "name": "user-facing label search",
+      "target": "source tree",
+      "command": "rg -n \"iPhone|아이폰\" harness-os/backend/main.py harness-os/edu-app/src harness-os/frontend/src tests/test_edu_vp_training_flow.py --glob '!**/dist/**'",
+      "result": "passed for changed UI path: remaining matches are test fixtures, noise filters, and user-agent detection, not the mobile-scene display label"
+    }
+  ],
+  "known_unrelated_dirty_files": [
+    "docs/education/edu_parents_first_parent_landing.html"
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/frontend/src/pages/EduVpTrainingPage.tsx tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_mobile_device_label_neutral_20260630.json",
+    "result": "pending"
+  },
+  "residual_risk": [
+    "Production deployment and runtime bundle checks are pending in this evidence snapshot."
+  ]
+}
