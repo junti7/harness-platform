@@ -7820,7 +7820,7 @@ def _edu_vp_migrate_day1_guided_practice_lab(state: dict[str, Any]) -> dict[str,
         return state
     if bool(day1.get("completed")):
         return state
-    if str(day1.get("practice_lab_version") or "") == "2026-06-30-guided-v1":
+    if str(day1.get("practice_lab_version") or "") == "2026-06-30-guided-images-v2":
         return state
     preserved = {
         key: day1.get(key)
@@ -8939,18 +8939,42 @@ def _edu_vp_day1_practice_lab(
         install_title = "Claude 앱이 있으면 앱 열기"
         install_body = "스마트폰 홈 화면에서 Claude를 찾습니다. 없으면 브라우저에서 claude.ai를 열어도 됩니다."
         install_action = "앱 없음: Safari/Chrome → 주소창 → claude.ai → 로그인"
+        install_steps = [
+            "스마트폰 홈 화면에서 Claude 앱이 있는지 먼저 찾기",
+            "없으면 Safari 또는 Chrome을 열고 주소창에 claude.ai 입력",
+            "로그인 또는 회원가입을 마친 뒤, 새 대화 입력창이 보이는지 확인",
+            "앱으로 쓰고 싶으면 스토어에서 Claude 검색 후 설치",
+        ]
     elif llm_label == "ChatGPT":
         install_title = "ChatGPT 앱 또는 웹 열기"
         install_body = "스마트폰 홈 화면에서 ChatGPT를 찾습니다. 없으면 앱스토어/플레이스토어에서 ChatGPT를 설치하거나 chatgpt.com을 엽니다."
         install_action = "앱 없음: 스토어 검색 → ChatGPT → 설치 → 로그인"
+        install_steps = [
+            "스마트폰 홈 화면에서 ChatGPT 앱이 있는지 먼저 찾기",
+            "없으면 App Store 또는 Play Store에서 ChatGPT 검색 후 설치",
+            "설치가 어렵다면 Safari/Chrome에서 chatgpt.com 열기",
+            "로그인 또는 회원가입을 마친 뒤, 메시지 입력창이 보이는지 확인",
+        ]
     elif llm_label == "Gemini":
         install_title = "Gemini 앱 또는 Google 앱 열기"
         install_body = "Gemini 앱이 있으면 열고, 없으면 Google 앱 또는 gemini.google.com에서 시작합니다."
         install_action = "앱 없음: 스토어 검색 → Gemini 또는 Google → 설치 → 로그인"
+        install_steps = [
+            "스마트폰 홈 화면에서 Gemini 또는 Google 앱이 있는지 찾기",
+            "없으면 App Store 또는 Play Store에서 Gemini 또는 Google 검색 후 설치",
+            "설치가 어렵다면 Safari/Chrome에서 gemini.google.com 열기",
+            "Google 계정으로 로그인한 뒤, 질문 입력창이 보이는지 확인",
+        ]
     else:
         install_title = "허용된 AI 도구 열기"
         install_body = "스마트폰에서 지금 사용할 수 있는 AI 앱이나 브라우저 진입점을 먼저 엽니다."
         install_action = "앱 없음: 브라우저에서 허용된 AI 도구 주소를 입력"
+        install_steps = [
+            "스마트폰 홈 화면에서 사용하기로 한 AI 앱이 있는지 찾기",
+            "없으면 스토어에서 앱 이름을 검색하거나 브라우저에서 공식 웹 주소 열기",
+            "로그인 또는 회원가입을 마친 뒤, 질문 입력창이 보이는지 확인",
+            "공식 앱인지 확신이 없으면 결제나 개인정보 입력은 멈추기",
+        ]
 
     if motivation == "work":
         sample_source = "예: 팀장님이 보낸 긴 업무 메시지, 회의 메모, 오늘 할 일 목록"
@@ -8977,25 +9001,63 @@ def _edu_vp_day1_practice_lab(
         "- 마지막에 사람이 다시 확인할 질문 2개를 적기"
     )
 
+    visual_assets = [
+        {
+            "src": "/training/day1/prepare-material.svg",
+            "alt": "AI 앱을 열기 전에 스마트폰과 메모에서 오늘 쓸 자료를 먼저 고르는 그림",
+            "caption": "자료 먼저 고르기",
+        },
+        {
+            "src": "/training/day1/remove-private-info.svg",
+            "alt": "문서의 이름, 연락처, 주소 같은 민감정보를 가리고 안전한 사본을 만드는 그림",
+            "caption": "민감정보 제거",
+        },
+        {
+            "src": "/training/day1/install-ai-app.svg",
+            "alt": "스마트폰에서 AI 앱을 설치하거나 브라우저로 여는 순서를 보여주는 그림",
+            "caption": f"{llm_label} 열기",
+        },
+        {
+            "src": "/training/day1/verify-answer.svg",
+            "alt": "AI 답변을 원문과 나란히 비교하고 체크하는 그림",
+            "caption": "답변 검증",
+        },
+    ]
+
     return {
-        "version": "2026-06-30-guided-v1",
+        "version": "2026-06-30-guided-images-v2",
         "headline": "앱 안에서 먼저 준비하고, 필요한 순간에만 AI 앱으로 이동합니다",
+        "visual_assets": visual_assets,
+        "install_guide": {
+            "title": f"{llm_label}를 처음 쓰는 경우",
+            "intro": "앱이 없어도 멈추지 않도록 설치 경로와 웹 대체 경로를 같이 확인합니다.",
+            "steps": install_steps,
+            "fallback": install_action,
+            "image_src": "/training/day1/install-ai-app.svg",
+            "image_alt": f"스마트폰에서 {llm_label}를 설치하거나 웹으로 여는 안내 그림",
+        },
         "tool_cards": [
             {
                 "title": "1. 스마트폰 준비",
                 "body": "화면을 왔다 갔다 하기 전에 오늘 쓸 자료를 이 앱 안에서 먼저 정리합니다.",
                 "visual": "phone",
+                "image_src": "/training/day1/prepare-material.svg",
+                "image_alt": "스마트폰에서 오늘 쓸 자료를 먼저 고르는 안내 그림",
             },
             {
                 "title": f"2. {install_title}",
                 "body": install_body,
                 "action": install_action,
                 "visual": "app",
+                "image_src": "/training/day1/install-ai-app.svg",
+                "image_alt": f"스마트폰에서 {llm_label} 앱 또는 웹을 여는 안내 그림",
             },
             {
                 "title": "3. 결과는 다시 이 화면에 저장",
                 "body": "AI 앱에서 받은 답을 그대로 끝내지 말고, 이 화면의 결과 붙여넣기에 4가지 증거를 저장합니다.",
                 "visual": "save",
+                "image_src": "/training/day1/verify-answer.svg",
+                "image_alt": "AI 답변을 원문과 비교한 뒤 저장하는 안내 그림",
             },
         ],
         "practice_table": [

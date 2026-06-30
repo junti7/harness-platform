@@ -1490,6 +1490,8 @@ function Day1PracticeLab({ stage }: { stage: TrainingStage }) {
   const lab = stage.practice_lab
   if (!lab) return null
   const toolCards = lab.tool_cards ?? []
+  const visualAssets = lab.visual_assets ?? []
+  const installGuide = lab.install_guide
   const rows = lab.practice_table ?? []
   const checks = lab.verification_rows ?? []
   const slots = lab.result_slots ?? []
@@ -1519,12 +1521,36 @@ function Day1PracticeLab({ stage }: { stage: TrainingStage }) {
         </div>
       </div>
 
+      {visualAssets.length ? (
+        <div className="mb-4 grid gap-2 sm:grid-cols-4">
+          {visualAssets.map((asset) => (
+            <figure key={asset.src} className="overflow-hidden rounded-[14px] border border-border bg-secondary/70">
+              <img
+                src={asset.src}
+                alt={asset.alt || asset.caption || ''}
+                loading="lazy"
+                className="aspect-[16/9] w-full bg-card object-cover"
+              />
+              {asset.caption ? <figcaption className="px-3 py-2 text-xs font-semibold text-ink">{asset.caption}</figcaption> : null}
+            </figure>
+          ))}
+        </div>
+      ) : null}
+
       {toolCards.length ? (
         <div className="mb-4 grid gap-2 sm:grid-cols-3">
           {toolCards.map((item, index) => {
             const Icon = item.visual === 'phone' ? Smartphone : item.visual === 'app' ? Download : MessageSquareText
             return (
               <div key={`${item.title}-${index}`} className="rounded-[14px] border border-border bg-secondary/70 p-3">
+                {item.image_src ? (
+                  <img
+                    src={item.image_src}
+                    alt={item.image_alt || item.title}
+                    loading="lazy"
+                    className="mb-3 aspect-[16/9] w-full rounded-[12px] border border-border bg-card object-cover"
+                  />
+                ) : null}
                 <div className="mb-2 flex items-center gap-2">
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-card text-primary">
                     <Icon size={17} />
@@ -1540,6 +1566,43 @@ function Day1PracticeLab({ stage }: { stage: TrainingStage }) {
               </div>
             )
           })}
+        </div>
+      ) : null}
+
+      {installGuide ? (
+        <div className="mb-4 grid gap-3 rounded-[14px] border border-primary/20 bg-primary/5 p-3 md:grid-cols-[0.9fr_1.1fr]">
+          {installGuide.image_src ? (
+            <img
+              src={installGuide.image_src}
+              alt={installGuide.image_alt || installGuide.title || 'AI 앱 설치 안내'}
+              loading="lazy"
+              className="aspect-[16/9] w-full rounded-[12px] border border-primary/15 bg-card object-cover"
+            />
+          ) : null}
+          <div className="min-w-0">
+            <div className="mb-1 flex items-center gap-2 text-xs font-bold text-primary">
+              <Download size={15} /> 설치가 처음이라면
+            </div>
+            {installGuide.title ? <h3 className="text-sm font-bold leading-snug text-ink">{installGuide.title}</h3> : null}
+            {installGuide.intro ? <p className="mt-1 text-xs leading-relaxed text-text-muted">{installGuide.intro}</p> : null}
+            {installGuide.steps?.length ? (
+              <ol className="mt-3 space-y-2">
+                {installGuide.steps.map((step, index) => (
+                  <li key={`${step}-${index}`} className="flex gap-2 text-xs leading-relaxed text-ink">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                      {index + 1}
+                    </span>
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : null}
+            {installGuide.fallback ? (
+              <div className="mt-3 rounded-[10px] border border-primary/20 bg-card px-3 py-2 text-[11px] font-semibold leading-relaxed text-primary">
+                {installGuide.fallback}
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : null}
 

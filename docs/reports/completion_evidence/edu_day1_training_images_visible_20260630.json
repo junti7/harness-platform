@@ -1,0 +1,97 @@
+{
+  "task": "Make Day 1 training images and selected AI app installation guidance visible",
+  "status": "residual_risk",
+  "date": "2026-06-30",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-06-30T19:46:38+09:00",
+      "summary": "Harness product changes must be mobile-first and verified against the actual user-facing experience before completion."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-06-30T19:46:38+09:00",
+      "summary": "Code, deployment, UI, and customer-facing changes require real verification and completion evidence guard before reporting complete."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "harness-os/edu-app/src/components/TrainingScreen.tsx",
+    "harness-os/edu-app/src/lib/vpTraining.ts",
+    "harness-os/edu-app/public/training/day1/prepare-material.svg",
+    "harness-os/edu-app/public/training/day1/remove-private-info.svg",
+    "harness-os/edu-app/public/training/day1/install-ai-app.svg",
+    "harness-os/edu-app/public/training/day1/verify-answer.svg",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "requirements": [
+    {
+      "requirement": "Day 1 training card must show actual educational images, not only text.",
+      "status": "pass",
+      "evidence": "Added four visible SVG assets under harness-os/edu-app/public/training/day1 and rendered visual_assets plus tool card images in Day1PracticeLab."
+    },
+    {
+      "requirement": "Users who do not know how to install or open Gemini, Claude, or ChatGPT need step-by-step guidance.",
+      "status": "pass",
+      "evidence": "Added selected-LLM install_guide data with app search, web fallback, login, and input-box confirmation steps."
+    },
+    {
+      "requirement": "Existing Day 1 sessions should receive the new visual guidance.",
+      "status": "pass",
+      "evidence": "Bumped practice_lab_version to 2026-06-30-guided-images-v2 and updated refresh migration tests."
+    },
+    {
+      "requirement": "Mac Mini production deployment and runtime verification.",
+      "status": "not_verified",
+      "evidence": "Local tests and build passed; deployment will be recorded after commit and selected-path deploy."
+    }
+  ],
+  "changes": [
+    "Added four Day 1 educational SVG assets: prepare material, remove private information, install/open AI app, and verify answer.",
+    "Added practice_lab.visual_assets and practice_lab.install_guide to the Day 1 curriculum payload.",
+    "Rendered a four-image learning strip, per-step card images, and a selected-tool installation guide in Day1PracticeLab.",
+    "Extended TypeScript contracts and regression tests for the image and installation-guide payload."
+  ],
+  "verification": [
+    {
+      "name": "edu VP training flow tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "passed: 114 passed, 59 subtests passed"
+    },
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: vite built dist/assets/index-BmwM98hj.js and copied public training/day1 SVG assets into dist"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    },
+    {
+      "name": "local built image assets",
+      "target": "local dist",
+      "command": "find harness-os/edu-app/dist -path '*training/day1/*' -type f -print",
+      "result": "passed: prepare-material.svg, remove-private-info.svg, install-ai-app.svg, verify-answer.svg exist in dist/training/day1"
+    },
+    {
+      "name": "local bundle image references",
+      "target": "local dist bundle",
+      "command": "rg -n \"prepare-material.svg|remove-private-info.svg|install-ai-app.svg|verify-answer.svg|visual_assets|install_guide\" harness-os/edu-app/dist harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts",
+      "result": "passed: image paths and visual/install rendering code are present"
+    }
+  ],
+  "known_unrelated_dirty_files": [
+    "docs/education/edu_parents_first_parent_landing.html"
+  ],
+  "deploy": {
+    "method": "pending: scripts/deploy_to_macmini.sh after commit and push",
+    "result": "pending"
+  },
+  "residual_risk": [
+    "Mac Mini production bundle and HTTP image serving still need to be verified after commit, push, and selected-path deploy."
+  ]
+}

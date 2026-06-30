@@ -2157,10 +2157,12 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         refreshed = self.mod._edu_vp_refresh_state(legacy_state)
         checklist_titles = [item["title"] for item in refreshed["day1"]["checklist"]]
 
-        self.assertEqual(refreshed["day1"]["practice_lab_version"], "2026-06-30-guided-v1")
+        self.assertEqual(refreshed["day1"]["practice_lab_version"], "2026-06-30-guided-images-v2")
         self.assertEqual(refreshed["day1"]["proof_artifact"], "기존 작성 내용")
         self.assertIn("아래 실습 안내 먼저 보기", checklist_titles)
         self.assertNotIn("업무 장면 1개를 실제로 질문했다", checklist_titles)
+        self.assertGreaterEqual(len(refreshed["day1"]["practice_lab"]["visual_assets"]), 4)
+        self.assertIn("설치", refreshed["day1"]["practice_lab"]["install_guide"]["intro"])
 
     def test_personalized_day0_preserves_safety_gate_order(self):
         day0 = self.mod._edu_vp_build_day0({"preferred_llm": "claude"})
@@ -2272,9 +2274,16 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("원문 대조표 채우기", checklist_titles)
         self.assertIn("결과 4칸을 결과 붙여넣기에 저장", checklist_titles)
         self.assertIn("실행 또는 설치 경로 확인", card["checklist"][4]["title"])
-        self.assertEqual(card["practice_lab_version"], "2026-06-30-guided-v1")
+        self.assertEqual(card["practice_lab_version"], "2026-06-30-guided-images-v2")
         self.assertIn("[AI에 넣어도 되는 자료]", card["practice_lab"]["prompt_template"])
         self.assertGreaterEqual(len(card["practice_lab"]["tool_cards"]), 3)
+        self.assertGreaterEqual(len(card["practice_lab"]["visual_assets"]), 4)
+        self.assertEqual(card["practice_lab"]["visual_assets"][0]["src"], "/training/day1/prepare-material.svg")
+        self.assertEqual(card["practice_lab"]["visual_assets"][2]["src"], "/training/day1/install-ai-app.svg")
+        self.assertIn("Claude를 처음 쓰는 경우", card["practice_lab"]["install_guide"]["title"])
+        self.assertGreaterEqual(len(card["practice_lab"]["install_guide"]["steps"]), 4)
+        self.assertIn("claude.ai", " ".join(card["practice_lab"]["install_guide"]["steps"]))
+        self.assertEqual(card["practice_lab"]["tool_cards"][0]["image_src"], "/training/day1/prepare-material.svg")
         self.assertGreaterEqual(len(card["practice_lab"]["practice_table"]), 4)
         self.assertGreaterEqual(len(card["practice_lab"]["verification_rows"]), 4)
         self.assertIn("outside_app", card["practice_lab"]["practice_table"][0])

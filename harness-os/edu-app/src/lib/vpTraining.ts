@@ -173,7 +173,16 @@ export type TrainingStage = {
   practice_lab?: {
     version?: string
     headline?: string
-    tool_cards?: Array<{ title: string; body?: string; action?: string; visual?: string }>
+    visual_assets?: Array<{ src: string; alt?: string; caption?: string }>
+    install_guide?: {
+      title?: string
+      intro?: string
+      steps?: string[]
+      fallback?: string
+      image_src?: string
+      image_alt?: string
+    }
+    tool_cards?: Array<{ title: string; body?: string; action?: string; visual?: string; image_src?: string; image_alt?: string }>
     practice_table?: Array<{ step: string; in_app?: string; outside_app?: string }>
     prompt_template?: string
     verification_rows?: Array<{ item: string; source?: string; ai_check?: string }>
