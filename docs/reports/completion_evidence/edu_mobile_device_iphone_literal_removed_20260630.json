@@ -65,6 +65,48 @@
       "target": "local dist",
       "command": "rg -n \"\\biPhone\\b|\\biphone\\b|아이폰\" harness-os/edu-app/dist harness-os/frontend/dist",
       "result": "passed: no matches"
+    },
+    {
+      "name": "selected path deploy",
+      "target": "macmini source tree",
+      "command": "scripts/deploy_to_macmini.sh core/edu_curriculum.py harness-os/backend/main.py harness-os/edu-app/src/lib/vpTraining.ts harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/components/CurriculumScreen.tsx harness-os/frontend/src/pages/EduVpTrainingPage.tsx tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_mobile_device_iphone_literal_removed_20260630.json",
+      "result": "passed: backend launchd reloaded, frontend dist rebuilt as index-C0U4wWCN.js, selected paths matched origin/main on Mac Mini"
+    },
+    {
+      "name": "macmini edu app production build",
+      "target": "macmini dist",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && PATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH\" npm run build --prefix harness-os/edu-app && uid=$(id -u) && launchctl kickstart -k gui/$uid/com.harness.edu-app'",
+      "result": "passed: vite built dist/assets/index-DycB9Cey.js and edu-app launchd was restarted"
+    },
+    {
+      "name": "production backend health",
+      "target": "macmini api health",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:8000/api/health",
+      "result": "passed: {\"ok\":true,\"generated_at\":\"2026-06-30T19:04:01\"}"
+    },
+    {
+      "name": "production edu app bundle served",
+      "target": "production url",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:5174/",
+      "result": "passed: served assets/index-DycB9Cey.js and assets/index-DQ_nQAdK.css"
+    },
+    {
+      "name": "production legacy frontend bundle served",
+      "target": "production url",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:5173/",
+      "result": "passed: served assets/index-C0U4wWCN.js and assets/index-Bdhn8W4p.css"
+    },
+    {
+      "name": "production bundle literal search",
+      "target": "production bundles",
+      "command": "curl -fsS http://100.97.175.44:5174/assets/index-DycB9Cey.js | rg -n \"\\biPhone\\b|\\biphone\\b|아이폰\"; curl -fsS http://100.97.175.44:5173/assets/index-C0U4wWCN.js | rg -n \"\\biPhone\\b|\\biphone\\b|아이폰\"",
+      "result": "passed: no matches in both production bundles"
+    },
+    {
+      "name": "macmini source and dist literal search",
+      "target": "macmini source and built dist",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && grep -RInE \"\\biPhone\\b|\\biphone\\b|아이폰\" harness-os/edu-app/dist harness-os/frontend/dist harness-os/backend/main.py harness-os/edu-app/src harness-os/frontend/src core/edu_curriculum.py tests/test_edu_vp_training_flow.py --exclude-dir=dist.prev --exclude-dir=node_modules || true'",
+      "result": "passed: no matches"
     }
   ],
   "known_unrelated_dirty_files": [
@@ -72,9 +114,7 @@
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh core/edu_curriculum.py harness-os/backend/main.py harness-os/edu-app/src/lib/vpTraining.ts harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/components/CurriculumScreen.tsx harness-os/frontend/src/pages/EduVpTrainingPage.tsx tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_mobile_device_iphone_literal_removed_20260630.json",
-    "result": "pending"
+    "result": "passed: selected paths deployed, backend reloaded, frontend and edu-app bundles rebuilt, production literal searches passed"
   },
-  "residual_risk": [
-    "Production deployment and runtime bundle checks are pending in this evidence snapshot."
-  ]
+  "residual_risk": []
 }
