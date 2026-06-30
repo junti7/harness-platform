@@ -60,6 +60,42 @@
       "target": "source tree",
       "command": "rg -n \"iPhone|아이폰\" harness-os/backend/main.py harness-os/edu-app/src harness-os/frontend/src tests/test_edu_vp_training_flow.py --glob '!**/dist/**'",
       "result": "passed for changed UI path: remaining matches are test fixtures, noise filters, and user-agent detection, not the mobile-scene display label"
+    },
+    {
+      "name": "selected path deploy",
+      "target": "macmini source tree",
+      "command": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/frontend/src/pages/EduVpTrainingPage.tsx tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_mobile_device_label_neutral_20260630.json",
+      "result": "passed: frontend dist rebuilt as index-DSAaLeLv.js, backend launchd reloaded, selected paths matched origin/main on Mac Mini"
+    },
+    {
+      "name": "production backend health",
+      "target": "macmini api health",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:8000/api/health",
+      "result": "passed: {\"ok\":true,\"generated_at\":\"2026-06-30T18:50:44\"}"
+    },
+    {
+      "name": "production legacy frontend bundle served",
+      "target": "production url",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:5173/",
+      "result": "passed: served assets/index-DSAaLeLv.js and assets/index-Bdhn8W4p.css"
+    },
+    {
+      "name": "production legacy frontend bundle contains neutral copy",
+      "target": "production bundle",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:5173/assets/index-DSAaLeLv.js | LC_ALL=C grep -o \"현재 스마트폰\\|스마트폰\" | sort | uniq -c",
+      "result": "passed: bundle contains 현재 스마트폰 once and 스마트폰 three times"
+    },
+    {
+      "name": "production Day 1 tutorial label",
+      "target": "macmini deployed backend source",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && .venv/bin/python import of harness-os/backend/main.py calling _edu_vp_build_day1 with current_device=iphone'",
+      "result": "passed: mobile_scene title is 스마트폰에서 장면 고르기"
+    },
+    {
+      "name": "macmini deployed source match",
+      "target": "macmini git diff",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && git diff --name-only origin/main -- harness-os/backend/main.py harness-os/frontend/src/pages/EduVpTrainingPage.tsx tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_mobile_device_label_neutral_20260630.json'",
+      "result": "passed: no diff for selected deployed paths before evidence finalization"
     }
   ],
   "known_unrelated_dirty_files": [
@@ -67,9 +103,9 @@
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/frontend/src/pages/EduVpTrainingPage.tsx tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_mobile_device_label_neutral_20260630.json",
-    "result": "pending"
+    "result": "passed: selected paths deployed, frontend dist rebuilt, backend launchd reloaded, production health and bundle checks passed"
   },
   "residual_risk": [
-    "Production deployment and runtime bundle checks are pending in this evidence snapshot."
+    "harness-os/frontend lint still fails on pre-existing unrelated errors, but production build and changed-copy runtime checks passed."
   ]
 }
