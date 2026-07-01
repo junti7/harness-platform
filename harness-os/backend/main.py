@@ -7958,13 +7958,14 @@ def _edu_vp_apply_preferred_llm_change(state: dict[str, Any], preferred_llm: str
     return state
 
 
-def _edu_vp_refresh_state(state: dict[str, Any]) -> dict[str, Any]:
+def _edu_vp_refresh_state(state: dict[str, Any], *, refresh_day1: bool = True) -> dict[str, Any]:
     state = _edu_vp_normalize_state_keys(state)
     state = _edu_vp_migrate_unconfirmed_day0_safety(state)
     if not bool((state.get("day0") or {}).get("completed")) and _edu_vp_day0_concepts_complete(state):
         state = _edu_vp_unlock_day0_practice(state, advance_to_day1=False)
-    state = _edu_vp_migrate_unstarted_day1_motivation(state)
-    state = _edu_vp_migrate_day1_guided_practice_lab(state)
+    if refresh_day1:
+        state = _edu_vp_migrate_unstarted_day1_motivation(state)
+        state = _edu_vp_migrate_day1_guided_practice_lab(state)
     state["day0"] = state.get("day0") or {}
     state["day1"] = state.get("day1") or {}
     state["planned_curriculum_outline"] = _edu_vp_planned_curriculum_outline(state)
@@ -15429,7 +15430,7 @@ def edu_vp_training_session(
     state["case"] = payload["case"]
     if bool(((state.get("ui_state") or {}).get("safety_confirmed") or {}).get("day0")):
         state = _edu_vp_unlock_day0_practice(state, advance_to_day1=False)
-    state = _edu_vp_refresh_state(state)
+    state = _edu_vp_refresh_state(state, refresh_day1=False)
     return {
         "ok": True,
         "exists": True,
