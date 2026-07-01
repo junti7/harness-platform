@@ -55,13 +55,21 @@
       "result": "passed: edu app HTTP entrypoint responded"
     },
     {
+      "name": "Mac Mini authenticated training case list timing",
+      "target": "macmini backend api",
+      "command": "curl --max-time 8 with X-Harness-Secret and X-Edu-Training-Auth against /api/edu/vp-training/cases",
+      "result": "passed: HTTP=200, TIME_TOTAL=0.031309, CASES=2"
+    },
+    {
       "name": "whitespace check",
       "target": "local git diff",
       "command": "git diff --check",
       "result": "passed"
     }
   ],
-  "residual_risk": [
-    "Post-deploy authenticated /cases timing will be measured after deployment because the committed source must reach Mac Mini first."
-  ]
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_training_cases_fast_list_20260701.json",
+    "result": "deployed backend source, tests, and evidence to Mac Mini; backend launchd restarted; target file diffs were 0"
+  },
+  "residual_risk": []
 }
