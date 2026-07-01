@@ -1677,21 +1677,109 @@ function labelForLlm(value: string): string {
   return value || 'AI'
 }
 
+function selectableToolLabel(value: string): string {
+  const label = labelForLlm(value)
+  return TOOL_VALUE_BY_LABEL[label] ? label : ''
+}
+
+const TOOL_INSTALL_GUIDE_BY_LABEL: Record<string, { body: string; action: string; steps: string[] }> = {
+  ChatGPT: {
+    body: 'ChatGPT를 쓰기로 했다면 앱 또는 chatgpt.com 중 편한 경로로 질문 입력창을 엽니다. 다른 도구를 쓰고 싶으면 먼저 아래 선택지 중 하나를 고릅니다.',
+    action: '앱 없음: 스토어 검색 → ChatGPT → 설치 → 로그인',
+    steps: [
+      '스마트폰 홈 화면에서 ChatGPT 앱이 있는지 먼저 찾기',
+      '없으면 App Store 또는 Play Store에서 ChatGPT 검색 후 설치',
+      '설치가 어렵다면 Safari/Chrome에서 chatgpt.com 열기',
+      '로그인 또는 회원가입을 마친 뒤, 메시지 입력창이 보이는지 확인',
+    ],
+  },
+  Claude: {
+    body: 'Claude를 쓰기로 했다면 앱 또는 claude.ai 중 편한 경로로 질문 입력창을 엽니다. 다른 도구를 쓰고 싶으면 먼저 아래 선택지 중 하나를 고릅니다.',
+    action: '앱 없음: Safari/Chrome → 주소창 → claude.ai → 로그인',
+    steps: [
+      '스마트폰 홈 화면에서 Claude 앱이 있는지 먼저 찾기',
+      '없으면 Safari 또는 Chrome을 열고 주소창에 claude.ai 입력',
+      '로그인 또는 회원가입을 마친 뒤, 새 대화 입력창이 보이는지 확인',
+      '앱으로 쓰고 싶으면 스토어에서 Claude 검색 후 설치',
+    ],
+  },
+  Gemini: {
+    body: 'Gemini를 쓰기로 했다면 Gemini 앱, Google 앱, 또는 gemini.google.com 중 가능한 경로를 엽니다. 다른 도구를 쓰고 싶으면 먼저 아래 선택지 중 하나를 고릅니다.',
+    action: '앱 없음: 스토어 검색 → Gemini 또는 Google → 설치 → 로그인',
+    steps: [
+      '스마트폰 홈 화면에서 Gemini 또는 Google 앱이 있는지 찾기',
+      '없으면 App Store 또는 Play Store에서 Gemini 또는 Google 검색 후 설치',
+      '설치가 어렵다면 Safari/Chrome에서 gemini.google.com 열기',
+      'Google 계정으로 로그인한 뒤, 질문 입력창이 보이는지 확인',
+    ],
+  },
+  Genspark: {
+    body: 'Genspark를 쓰기로 했다면 앱 또는 genspark.ai 중 편한 경로로 질문 입력창을 엽니다. 다른 도구를 쓰고 싶으면 먼저 아래 선택지 중 하나를 고릅니다.',
+    action: '앱 없음: 스토어 검색 → Genspark → 설치 또는 브라우저에서 genspark.ai 열기',
+    steps: [
+      '스마트폰 홈 화면에서 Genspark 앱이 있는지 먼저 찾기',
+      '없으면 App Store 또는 Play Store에서 Genspark 검색 후 설치',
+      '설치가 어렵다면 Safari/Chrome에서 genspark.ai 열기',
+      '로그인 또는 회원가입을 마친 뒤, 질문 입력창이 보이는지 확인',
+    ],
+  },
+  Grok: {
+    body: 'Grok을 쓰기로 했다면 Grok 앱, X 앱, 또는 grok.com 중 가능한 경로를 엽니다. 다른 도구를 쓰고 싶으면 먼저 아래 선택지 중 하나를 고릅니다.',
+    action: '앱 없음: 스토어 검색 → Grok 또는 X → 설치 또는 브라우저에서 grok.com 열기',
+    steps: [
+      '스마트폰 홈 화면에서 Grok 또는 X 앱이 있는지 먼저 찾기',
+      '없으면 App Store 또는 Play Store에서 Grok 또는 X 검색 후 설치',
+      '설치가 어렵다면 Safari/Chrome에서 grok.com 열기',
+      '로그인한 뒤, Grok 질문 입력창이 보이는지 확인',
+    ],
+  },
+}
+
+function installGuideForSelectedTool<T extends NonNullable<NonNullable<TrainingStage['practice_lab']>['install_guide']>>(
+  installGuide: T,
+  selectedTool: string,
+): T {
+  if (!selectedTool) return installGuide
+  const toolGuide = TOOL_INSTALL_GUIDE_BY_LABEL[selectedTool]
+  if (!toolGuide) return installGuide
+  return {
+    ...installGuide,
+    selected_tool: selectedTool,
+    steps: [
+      `현재 설정은 ${selectedTool}입니다. 실제로 쓸 도구가 맞는지 확인하고, 바꾸고 싶으면 ChatGPT, Claude, Gemini, Genspark, Grok 중 하나로 다시 고르기`,
+      ...toolGuide.steps,
+    ],
+    fallback: toolGuide.action,
+  }
+}
+
 function Day1PracticeLab({
   stage,
   onSelectTool,
   selectingTool,
+  selectedToolOverride,
 }: {
   stage: TrainingStage
   onSelectTool?: (tool: string) => void
   selectingTool?: string
+  selectedToolOverride?: string
 }) {
   const [copied, setCopied] = useState(false)
   const lab = stage.practice_lab
   if (!lab) return null
-  const toolCards = lab.tool_cards ?? []
   const visualAssets = lab.visual_assets ?? []
-  const installGuide = lab.install_guide
+  const selectedTool = selectedToolOverride || lab.install_guide?.selected_tool || ''
+  const installGuide = lab.install_guide ? installGuideForSelectedTool(lab.install_guide, selectedTool) : undefined
+  const toolCards = (lab.tool_cards ?? []).map((item, index) => {
+    const toolGuide = selectedTool ? TOOL_INSTALL_GUIDE_BY_LABEL[selectedTool] : undefined
+    if (index !== 1 || !toolGuide) return item
+    return {
+      ...item,
+      title: '2. 사용할 AI 도구 선택 후 열기',
+      body: toolGuide.body,
+      action: toolGuide.action,
+    }
+  })
   const rows = lab.practice_table ?? []
   const checks = lab.verification_rows ?? []
   const slots = lab.result_slots ?? []
@@ -2264,6 +2352,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const [safetyReady, setSafetyReady] = useState(false)
   const [safetySyncing, setSafetySyncing] = useState(false)
   const [toolSelecting, setToolSelecting] = useState('')
+  const [localPreferredLlm, setLocalPreferredLlm] = useState('')
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [questionArchiveOpen, setQuestionArchiveOpen] = useState(false)
@@ -2559,6 +2648,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     if (!state || stage !== 'day1' || toolSelecting) return
     const normalized = preferredLlm.trim().toLowerCase()
     if (!normalized) return
+    setLocalPreferredLlm(normalized)
     setToolSelecting(labelForLlm(normalized))
     setError(null)
     setNotice(null)
@@ -3488,7 +3578,20 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         ) : null}
 
         {stage !== 'day0' && current ? (
-          <Day1PracticeLab stage={current} onSelectTool={selectDay1Tool} selectingTool={toolSelecting} />
+          <Day1PracticeLab
+            stage={current}
+            onSelectTool={selectDay1Tool}
+            selectingTool={toolSelecting}
+            selectedToolOverride={
+              stage === 'day1'
+                ? selectableToolLabel(
+                    localPreferredLlm ||
+                      String(state?.ui_state?.preferred_llm || '') ||
+                      String(state?.intake?.preferred_llm || ''),
+                  )
+                : ''
+            }
+          />
         ) : null}
 
         {stage !== 'day0' && current ? (

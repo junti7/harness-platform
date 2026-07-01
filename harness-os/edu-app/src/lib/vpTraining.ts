@@ -267,6 +267,7 @@ export type PlannedCurriculumItem = {
 export type TrainingUiState = {
   selected_stage?: StageKey
   active_curriculum_index?: number
+  preferred_llm?: string
   safety_confirmed?: Record<string, boolean>
   stage_drafts?: Record<string, Record<string, unknown>>
   active_training_device_id?: string

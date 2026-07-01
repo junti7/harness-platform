@@ -1,0 +1,56 @@
+{
+  "task": "Make Day 1 AI tool switch update immediately in the UI",
+  "status": "residual_risk",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T15:08:00+09:00",
+      "summary": "Completion requires evidence-backed reporting, real entrypoint verification, and completion evidence guard for code, UI, deploy, and customer-facing changes."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T15:08:00+09:00",
+      "summary": "Production changes require source-of-truth deploy flow, actual user-facing or runtime verification, and completion evidence guard before reporting complete."
+    }
+  ],
+  "scope": [
+    "harness-os/edu-app/src/components/TrainingScreen.tsx",
+    "harness-os/edu-app/src/lib/vpTraining.ts"
+  ],
+  "changes": [
+    "Added a localPreferredLlm UI state so Day 1 tool chips update immediately when clicked instead of waiting for a server round trip.",
+    "Day1PracticeLab now derives selected chip styling, installation steps, fallback action, and the install tool card from the local selected tool override.",
+    "The server remains the persistence layer, but stale autosave or claim-device responses can no longer visually revert the user's just-clicked tool selection.",
+    "Typed ui_state.preferred_llm in the edu app client state."
+  ],
+  "verification": [
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build in harness-os/edu-app",
+      "result": "passed: tsc and vite built dist/assets/index-x2XpQH2u.js"
+    },
+    {
+      "name": "targeted Day 1 LLM tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -k 'preferred_llm_change or day1_install_guide'",
+      "result": "passed: 5 passed, 120 deselected, 3 warnings"
+    },
+    {
+      "name": "full edu VP training flow tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py",
+      "result": "passed: 125 passed, 3 warnings"
+    },
+    {
+      "name": "Mac Mini pre-deploy edu app bundle check",
+      "target": "Mac Mini production URL",
+      "command": "curl -fsS --max-time 8 http://100.97.175.44:5174/ | grep -o 'assets/index-[^\" ]*\\.js' | head -1",
+      "result": "observed previous bundle assets/index-Ne9TE5VD.js before this optimistic UI deploy"
+    }
+  ],
+  "residual_risk": [
+    "Commit and Mac Mini deployment are still pending in this evidence revision; update after production deploy and bundle verification."
+  ]
+}
