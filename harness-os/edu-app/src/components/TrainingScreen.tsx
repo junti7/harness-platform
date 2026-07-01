@@ -1810,8 +1810,15 @@ function Day1PracticeLab({
   const [copied, setCopied] = useState(false)
   const lab = stage.practice_lab
   if (!lab) return null
-  const visualAssets = lab.visual_assets ?? []
   const selectedTool = selectedToolOverride || lab.install_guide?.selected_tool || ''
+  const visualAssets = (lab.visual_assets ?? []).map((asset) => {
+    if (!selectedTool || !asset.caption || !asset.caption.endsWith(' 열기')) return asset
+    return {
+      ...asset,
+      caption: `${selectedTool} 열기`,
+      alt: asset.alt && asset.alt.endsWith(' 열기') ? `${selectedTool} 열기` : asset.alt,
+    }
+  })
   const installGuide = lab.install_guide ? installGuideForSelectedTool(lab.install_guide, selectedTool) : undefined
   const toolSwitching = Boolean(selectingTool)
   const toolCards = (lab.tool_cards ?? []).map((item, index) => {

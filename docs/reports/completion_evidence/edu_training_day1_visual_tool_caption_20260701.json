@@ -1,0 +1,66 @@
+{
+  "task": "Update Day 1 visual open-tool caption when the selected LLM changes",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T21:39:43+09:00",
+      "summary": "UI changes require real verification, completion evidence, and exact residual risk reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T21:39:43+09:00",
+      "summary": "Customer-facing changes require runtime or user-facing verification and completion evidence guard validation."
+    }
+  ],
+  "scope": [
+    "harness-os/edu-app/src/components/TrainingScreen.tsx"
+  ],
+  "changes": [
+    "Mapped Day 1 visual asset captions ending in '열기' to the currently selected LLM label.",
+    "Mapped matching visual alt text at the same time so the visual and accessibility label stay consistent.",
+    "Left non-tool visual captions unchanged."
+  ],
+  "verification": [
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: tsc and vite built dist/assets/index-CtFoSI3Y.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    },
+    {
+      "name": "caption transform sample",
+      "target": "Node sample",
+      "command": "selectedTool=Claude with asset caption ChatGPT 열기",
+      "result": "passed: rendered caption and alt as Claude 열기"
+    },
+    {
+      "name": "bundle logic check",
+      "target": "local source and dist bundle",
+      "command": "rg -o 'endsWith|selectedTool|ChatGPT 열기|Claude 열기' harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/dist/assets/index-CtFoSI3Y.js",
+      "result": "passed: source and production bundle contain selectedTool caption override logic"
+    },
+    {
+      "name": "Mac Mini runtime entrypoint check",
+      "target": "macmini edu app url",
+      "command": "curl -fsS --max-time 5 http://100.97.175.44:5174/ | head -5",
+      "result": "passed: edu app HTTP entrypoint returned HTML"
+    },
+    {
+      "name": "whitespace check",
+      "target": "local git diff",
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "residual_risk": [
+    "No authenticated browser screenshot capture was available in this session; verification used build, lint, sample transform, bundle check, and live Mac Mini HTTP entrypoint."
+  ]
+}
