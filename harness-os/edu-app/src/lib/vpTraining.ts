@@ -181,6 +181,8 @@ export type TrainingStage = {
       fallback?: string
       image_src?: string
       image_alt?: string
+      tool_options?: string[]
+      selected_tool?: string
     }
     tool_cards?: Array<{ title: string; body?: string; action?: string; visual?: string; image_src?: string; image_alt?: string }>
     practice_table?: Array<{ step: string; in_app?: string; outside_app?: string }>

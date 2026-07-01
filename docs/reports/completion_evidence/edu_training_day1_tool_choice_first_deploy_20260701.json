@@ -1,0 +1,59 @@
+{
+  "task": "Force Day 1 install UX to ask AI tool choice first and refresh stale Mac mini sessions",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T14:05:00+09:00",
+      "summary": "Completion requires evidence-backed reporting, entrypoint verification, and completion evidence guard for code, UI, deploy, and customer-facing answer changes."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T14:05:00+09:00",
+      "summary": "Mac Mini production changes require source-of-truth deploy flow, real user entrypoint verification, and completion evidence guard before reporting complete."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "harness-os/edu-app/src/components/TrainingScreen.tsx",
+    "harness-os/edu-app/src/lib/vpTraining.ts",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Day 1 install guide now always starts with choosing or confirming an AI tool, even when the saved preferred tool is Claude.",
+    "Day 1 install guide always exposes ChatGPT, Claude, Gemini, Genspark, and Grok options to the frontend.",
+    "TrainingScreen now renders the AI tool options as visible chips and highlights the currently selected tool.",
+    "Legacy Day 1 migration now refreshes completed and uncompleted saved sessions when old Claude-only install copy or old practice_lab_version is present, while preserving completion state, saved result, notes, checked steps, questions, answers, and feedback.",
+    "Added regression coverage for completed stale Day 1 sessions so old copy is not kept after refresh."
+  ],
+  "verification": [
+    {
+      "name": "targeted Day 1 tool choice tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -k 'day1_install_guide or beginner_friendly_source_language or refresh_adds_guided_practice_lab or refresh_replaces_legacy_day1_rag_copy or refresh_replaces_completed_legacy_day1_install_copy'",
+      "result": "passed: 5 passed, 116 deselected"
+    },
+    {
+      "name": "full edu VP training flow tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py",
+      "result": "passed: 121 passed, 3 warnings"
+    },
+    {
+      "name": "backend syntax check",
+      "target": "local py_compile",
+      "command": ".venv/bin/python -m py_compile harness-os/backend/main.py",
+      "result": "passed"
+    },
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build",
+      "result": "passed: tsc and vite built dist/assets/index-D5_gMms7.js"
+    }
+  ],
+  "residual_risk": [
+    "A browser holding an older JS asset may need a hard refresh, but the deployed HTML should point to the new hashed bundle after Mac mini rebuild."
+  ]
+}

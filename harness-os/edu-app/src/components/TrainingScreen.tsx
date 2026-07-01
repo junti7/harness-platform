@@ -1759,6 +1759,25 @@ function Day1PracticeLab({ stage }: { stage: TrainingStage }) {
             </div>
             {installGuide.title ? <h3 className="text-sm font-bold leading-snug text-ink">{installGuide.title}</h3> : null}
             {installGuide.intro ? <p className="mt-1 text-xs leading-relaxed text-text-muted">{installGuide.intro}</p> : null}
+            {installGuide.tool_options?.length ? (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {installGuide.tool_options.map((tool) => {
+                  const selected = installGuide.selected_tool === tool
+                  return (
+                    <span
+                      key={tool}
+                      className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                        selected
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-primary/20 bg-card text-primary'
+                      }`}
+                    >
+                      {tool}
+                    </span>
+                  )
+                })}
+              </div>
+            ) : null}
             {installGuide.steps?.length ? (
               <ol className="mt-3 space-y-2">
                 {installGuide.steps.map((step, index) => (
