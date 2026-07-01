@@ -34,11 +34,35 @@
       "target": "local dist",
       "command": "npm run build --prefix harness-os/edu-app",
       "result": "passed: tsc and vite built dist/assets/index-AcOMv2gU.js"
+    },
+    {
+      "name": "Mac Mini scoped deploy",
+      "target": "Mac Mini source and backend service",
+      "command": "scripts/deploy_to_macmini.sh harness-os/backend/main.py tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_training_day1_generic_ai_input_term_20260701.json",
+      "result": "passed: selected paths diff origin/main = 0 and backend relaunched on port 8000"
+    },
+    {
+      "name": "Mac Mini edu-app production build and restart",
+      "target": "Mac Mini production dist and launchd",
+      "command": "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/sbin /opt/homebrew/bin/npm run build --prefix harness-os/edu-app && launchctl kickstart -k gui/$uid/com.harness.edu-app",
+      "result": "passed: vite built and production HTML serves assets/index-BXPQCJB5.js"
+    },
+    {
+      "name": "Mac Mini full edu VP training flow tests",
+      "target": "Mac Mini pytest",
+      "command": "DATABASE_URL=postgresql://localhost/harness_prod .venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "passed: 126 passed, 2 warnings, 64 subtests passed"
+    },
+    {
+      "name": "Mac Mini generated wording check",
+      "target": "Mac Mini backend helper",
+      "command": "Build Day 1 with preferred_llm=claude and inspect practice_lab.practice_table prompt-copy outside_app",
+      "result": "passed: outside_app is '선택한 AI 도구의 입력창에 붙여넣습니다.'"
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_training_day1_generic_ai_input_term_20260701.json plus Mac Mini npm run build --prefix harness-os/edu-app and launchctl kickstart -k gui/$uid/com.harness.edu-app",
-    "result": "pending"
+    "result": "deployed and verified: backend relaunched on port 8000, production edu-app bundle assets/index-BXPQCJB5.js is served, Mac Mini full edu VP training tests passed, and generated Day 1 wording uses generic selected AI tool wording"
   },
   "residual_risk": []
 }
