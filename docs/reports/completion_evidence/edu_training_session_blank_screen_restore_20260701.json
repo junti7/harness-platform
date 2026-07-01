@@ -25,7 +25,8 @@
     "Kept direct _edu_vp_build_day1 default evidence behavior intact for tests and explicit backend calls.",
     "Added GET timeout override support and gave fetchSession a 45 second timeout.",
     "Added a visible session-load failure card with a retry button so the UI no longer renders only header plus empty Day 0 fallback when state is null.",
-    "Removed schema migration checks from read-only /session and /cases endpoints; write/login/intake paths still perform schema ensure."
+    "Removed schema migration checks from read-only /session and /cases endpoints; write/login/intake paths still perform schema ensure.",
+    "Added a light training-session payload query so /session does not load full edu_case_turns message history just to render the training screen."
   ],
   "verification": [
     {

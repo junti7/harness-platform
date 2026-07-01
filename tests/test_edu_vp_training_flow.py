@@ -2798,7 +2798,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         with (
             patch.object(self.mod, "_edu_vp_assert_access"),
             patch.object(self.mod, "_ensure_edu_case_schema"),
-            patch.object(self.mod, "_edu_vp_latest_case_payload", return_value=payload),
+            patch.object(self.mod, "_edu_vp_training_case_payload_light", return_value=payload),
             patch.object(self.mod, "_edu_vp_load_state", return_value=state),
             patch.object(self.mod, "_edu_vp_store_state") as mocked_store,
             patch.object(self.mod, "_edu_vp_append_event") as mocked_append,

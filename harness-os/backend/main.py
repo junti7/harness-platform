@@ -13300,6 +13300,64 @@ def _edu_vp_latest_case_payload(email: str, case_id: int | None = None) -> dict[
     return _edu_load_case_payload(int(rows[0]["id"]))
 
 
+def _edu_vp_training_case_payload_light(email: str, case_id: int | None = None) -> dict[str, Any] | None:
+    safe_email = _edu_normalize_email(email)
+    if not safe_email:
+        raise HTTPException(400, "email is required")
+    where_case = "AND c.id = %s" if case_id is not None else ""
+    params: tuple[Any, ...] = (safe_email, int(case_id)) if case_id is not None else (safe_email,)
+    rows = _edu_execute(
+        f"""
+        SELECT c.id, c.customer_id, c.current_phase, c.current_tone_level, c.updated_at, c.last_turn_at,
+               cu.segment, cu.name, cu.email, cu.preferred_salutation, cu.locale, cu.preferred_llm
+        FROM edu_cases c
+        JOIN edu_customers cu ON cu.id = c.customer_id
+        LEFT JOIN LATERAL (
+            SELECT summary_json
+            FROM edu_case_snapshots s
+            WHERE s.case_id = c.id
+              AND COALESCE(s.summary_json->>'program', '') = 'vp_training'
+            ORDER BY s.id DESC
+            LIMIT 1
+        ) s ON TRUE
+        WHERE LOWER(COALESCE(cu.email, '')) = %s
+          AND c.status <> 'deleted'
+          {where_case}
+        ORDER BY
+            CASE WHEN s.summary_json IS NOT NULL THEN 0 ELSE 1 END,
+            c.updated_at DESC,
+            c.id DESC
+        LIMIT 1
+        """,
+        params,
+        fetch=True,
+    )
+    if not rows:
+        return None
+    row = rows[0]
+    return {
+        "customer": {
+            "id": int(row["customer_id"]),
+            "segment": row.get("segment") or "",
+            "name": row.get("name") or "",
+            "email": row.get("email") or "",
+            "preferred_salutation": row.get("preferred_salutation") or "neutral",
+            "locale": row.get("locale") or "ko-KR",
+            "preferred_llm": row.get("preferred_llm") or "auto",
+        },
+        "case": {
+            "id": int(row["id"]),
+            "phase": row.get("current_phase") or "opening",
+            "tone_level": int(row.get("current_tone_level") or 0),
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+            "last_turn_at": row["last_turn_at"].isoformat() if row.get("last_turn_at") else None,
+        },
+        "messages": [],
+        "quick_replies": [],
+        "show_offer": False,
+    }
+
+
 def _edu_consume_magic_link(token: str) -> dict[str, Any]:
     _ensure_edu_case_schema()
     if not token:
@@ -15359,7 +15417,7 @@ def edu_vp_training_session(
     _: None = Depends(_require_secret),
 ) -> dict[str, Any]:
     _edu_vp_assert_access(request, email)
-    payload = _edu_vp_latest_case_payload(email, case_id=case_id)
+    payload = _edu_vp_training_case_payload_light(email, case_id=case_id)
     if not payload:
         return {"ok": True, "exists": False}
     resolved_case_id = int(payload["case"]["id"])
