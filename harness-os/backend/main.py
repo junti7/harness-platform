@@ -9239,7 +9239,7 @@ def _edu_vp_day1_practice_lab(
         "practice_table": [
             {"step": "자료 고르기", "in_app": sample_source, "outside_app": "아직 AI 앱을 열지 않습니다."},
             {"step": "민감정보 제거", "in_app": "이름, 학교, 전화번호, 주소, 계좌, 건강정보를 지운 버전을 만듭니다.", "outside_app": "아직 AI 앱을 열지 않습니다."},
-            {"step": "프롬프트 복사", "in_app": "아래 복붙 프롬프트를 읽고 내 자료만 채웁니다.", "outside_app": f"{llm_label} 입력창에 붙여넣습니다."},
+            {"step": "프롬프트 복사", "in_app": "아래 복붙 프롬프트를 읽고 내 자료만 채웁니다.", "outside_app": "선택한 AI 도구의 입력창에 붙여넣습니다."},
             {"step": "답변 검증", "in_app": "원문 대조표에서 날짜·시간·장소·비용·준비물을 확인합니다.", "outside_app": "AI 답을 그대로 믿지 않습니다."},
         ],
         "prompt_template": prompt,
