@@ -1,0 +1,46 @@
+{
+  "task": "Apply Day 0 answer deletion UX to Day 1 and future training stages",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Completion requires real verification before reporting done, and code or UI changes require completion evidence."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Code, deploy, UI, and customer-facing answer changes require real entrypoint verification and completion evidence guard."
+    }
+  ],
+  "scope": [
+    "harness-os/edu-app/src/components/TrainingScreen.tsx"
+  ],
+  "changes": [
+    "Added the Day 0 delete, delete-confirm, and cancel controls to the shared post-Day-0 StageConceptBlock.",
+    "Connected post-Day-0 answer deletion to the existing deleteCoachAnswer handler so deletion updates local draft state and server sync consistently.",
+    "Changed the post-Day-0 duplicate-answer hint to match Day 0: deleting allows the same question to be answered again."
+  ],
+  "verification": [
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build",
+      "result": "passed: tsc and vite built dist/assets/index-BZMyQ0lX.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint",
+      "result": "passed"
+    },
+    {
+      "name": "completion evidence guard",
+      "target": "pre-push git hook",
+      "command": "scripts/agent_completion_guard.py docs/reports/completion_evidence/edu_training_stage_answer_delete_ux_20260701.json",
+      "result": "passed: completion_guard CLEAR"
+    }
+  ],
+  "residual_risk": []
+}

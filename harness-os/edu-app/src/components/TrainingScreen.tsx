@@ -1438,6 +1438,7 @@ function StageConceptBlock({
   onToggle,
   onConceptFeedback,
   onAskCoach,
+  onDeleteCoachAnswer,
 }: {
   stage: TrainingStage
   checked: Record<string, boolean>
@@ -1448,7 +1449,9 @@ function StageConceptBlock({
   onToggle: (id: string) => void
   onConceptFeedback: (id: string, value: string) => void
   onAskCoach: (concept: NonNullable<TrainingStage['foundation_concepts']>[number], id: string) => void
+  onDeleteCoachAnswer: (id: string) => void
 }) {
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const concepts = stage.foundation_concepts ?? []
   const conceptItems = concepts.map((concept, index) => ({ ...concept, checkId: conceptId(concept, index) }))
   if (!conceptItems.length) return null
@@ -1481,6 +1484,7 @@ function StageConceptBlock({
             Boolean(coach?.answer) &&
             coach?.version === SAFETY_COACH_ANSWER_VERSION &&
             (coach.question ?? '').trim() === feedback.trim()
+          const confirmingDelete = confirmDeleteId === concept.checkId
           return (
             <div key={concept.checkId} id={`concept-card-${concept.checkId}`} data-training-anchor="true" className="rounded-[12px] border border-border bg-card p-3">
               <div className="text-sm font-semibold leading-snug text-ink">{concept.title}</div>
@@ -1530,9 +1534,42 @@ function StageConceptBlock({
                 </button>
               ) : null}
               {hasCurrentAnswer ? (
-                <p className="mt-1 text-[11px] leading-relaxed text-text-faint">
-                  같은 질문은 다시 생성하지 않아요. 질문을 바꾸면 새 답변을 받을 수 있습니다.
-                </p>
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <p className="text-[11px] leading-relaxed text-text-faint">
+                    같은 질문은 다시 생성하지 않아요. 삭제하면 다시 답변을 받을 수 있습니다.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirmingDelete) {
+                        setConfirmDeleteId(null)
+                        onDeleteCoachAnswer(concept.checkId)
+                        return
+                      }
+                      setConfirmDeleteId(concept.checkId)
+                      window.setTimeout(() => {
+                        setConfirmDeleteId((value) => (value === concept.checkId ? null : value))
+                      }, 6000)
+                    }}
+                    className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-[8px] border px-2 text-[11px] font-semibold transition ${
+                      confirmingDelete
+                        ? 'border-danger bg-danger-soft text-danger hover:brightness-95'
+                        : 'border-border bg-secondary text-text-muted hover:bg-card hover:text-danger'
+                    }`}
+                  >
+                    <Trash2 size={12} />
+                    {confirmingDelete ? '삭제 확인' : '삭제'}
+                  </button>
+                  {confirmingDelete ? (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteId(null)}
+                      className="inline-flex h-7 shrink-0 items-center rounded-[8px] border border-border bg-card px-2 text-[11px] font-semibold text-text-muted"
+                    >
+                      취소
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
               {coachError ? (
                 <div className="mt-2 rounded-[10px] bg-danger-soft px-3 py-2 text-xs leading-relaxed text-danger">
@@ -3165,6 +3202,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
             onToggle={toggleCheck}
             onConceptFeedback={updateConceptFeedback}
             onAskCoach={requestCoachAnswer}
+            onDeleteCoachAnswer={deleteCoachAnswer}
           />
         ) : null}
 
