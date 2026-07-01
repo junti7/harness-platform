@@ -1,0 +1,59 @@
+{
+  "task": "Bypass slow safety coach paths for current concept example questions",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Completion requires real verification before reporting done, and code or UI changes require completion evidence."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Code, deploy, UI, and customer-facing answer changes require real entrypoint verification and completion evidence guard."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Added an endpoint-level fast return for current-concept prompt example questions before cache lookup, public LLM gate, RAG retrieval, or LLM generation.",
+    "Kept safety coach event logging for the fast return so the answer remains visible in history and question collection flows.",
+    "Allowed current-concept fast answers to remain active even when reinforcement policies exist, preventing policy-driven fallback into slow LLM generation for this deterministic case."
+  ],
+  "verification": [
+    {
+      "name": "targeted current-context timeout bypass tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py::EduVpTrainingFlowTests::test_safety_coach_current_concept_example_bypasses_slow_answer_paths tests/test_edu_vp_training_flow.py::EduVpTrainingFlowTests::test_safety_coach_current_concept_fast_answer_ignores_reinforcement_delay tests/test_edu_vp_training_flow.py::EduVpTrainingFlowTests::test_safety_coach_uses_current_concept_context_for_prompt_example_request -q",
+      "result": "passed: 3 passed"
+    },
+    {
+      "name": "edu VP training flow tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "passed: 118 passed, 3 warnings, 59 subtests passed"
+    },
+    {
+      "name": "backend syntax check",
+      "target": "local py_compile",
+      "command": ".venv/bin/python -m py_compile harness-os/backend/main.py",
+      "result": "passed"
+    },
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build",
+      "result": "passed: tsc and vite built dist/assets/index-DFdGfc9l.js"
+    },
+    {
+      "name": "completion evidence guard",
+      "target": "pre-push git hook",
+      "command": "scripts/agent_completion_guard.py docs/reports/completion_evidence/edu_training_current_context_timeout_bypass_20260701.json",
+      "result": "passed: completion_guard CLEAR"
+    }
+  ],
+  "residual_risk": []
+}

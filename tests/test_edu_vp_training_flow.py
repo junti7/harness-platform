@@ -450,6 +450,68 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIsNotNone(fast_answer)
         self.assertIn("체크리스트", fast_answer)
 
+    def test_safety_coach_current_concept_example_bypasses_slow_answer_paths(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=72,
+            email="vp@example.com",
+            stage="day1",
+            concept_id="day1_good_question_shape",
+            concept_title="좋은 질문은 결과 모양을 먼저 정한다",
+            concept_body=(
+                "막연히 '정리해줘'라고 하지 않습니다. 요약, 체크리스트, 일정표, 답장 초안 중 원하는 결과 모양을 정하고, "
+                "날짜·시간·장소·비용·준비물·제출물을 빠뜨리지 말라고 조건을 붙입니다."
+            ),
+            question="예를 들면 어떤 식의 질문이 좋은 질문인지 예를 들어줘.",
+        )
+        request = self.mod.Request({"type": "http", "headers": [], "client": ("127.0.0.1", 12345)})
+
+        with (
+            patch.object(self.mod, "_ensure_edu_case_schema"),
+            patch.object(self.mod, "_edu_load_case_payload", return_value={"customer": {"email": "vp@example.com"}}),
+            patch.object(self.mod, "_edu_vp_assert_access"),
+            patch.object(self.mod, "_edu_vp_append_event") as mocked_append,
+            patch.object(self.mod, "_edu_vp_cached_safety_coach_answer", side_effect=AssertionError("cache should be bypassed")),
+            patch.object(self.mod, "_edu_vp_recent_safety_coach_answer", side_effect=AssertionError("recent cache should be bypassed")),
+            patch.object(self.mod, "_edu_public_gate", side_effect=AssertionError("public gate should be bypassed")),
+            patch.object(self.mod, "_edu_vp_generate_safety_coach_answer", side_effect=AssertionError("LLM path should be bypassed")),
+        ):
+            response = self.mod.edu_vp_training_safety_coach(request, req, None)
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["model"], "fast-template+current-concept")
+        self.assertFalse(response["fallback_used"])
+        self.assertFalse(response["evidence_used"])
+        self.assertIn("체크리스트", response["answer"])
+        self.assertIn("날짜", response["answer"])
+        self.assertIn("준비물", response["answer"])
+        mocked_append.assert_called_once()
+
+    def test_safety_coach_current_concept_fast_answer_ignores_reinforcement_delay(self):
+        req = self.mod.EduVpTrainingSafetyCoachRequest(
+            case_id=123,
+            stage="day1",
+            concept_id="day1_good_question_shape",
+            concept_title="좋은 질문은 결과 모양을 먼저 정한다",
+            concept_body=(
+                "막연히 '정리해줘'라고 하지 않습니다. 요약, 체크리스트, 일정표, 답장 초안 중 원하는 결과 모양을 정하고, "
+                "날짜·시간·장소·비용·준비물·제출물을 빠뜨리지 말라고 조건을 붙입니다."
+            ),
+            question="예를 들면 어떤 식의 질문이 좋은 질문인지 예를 들어줘.",
+        )
+
+        with (
+            patch.object(self.mod, "_edu_vp_safety_coach_reinforcement_policies", return_value=[{"policy_id": "slow-policy"}]),
+            patch.object(self.mod, "_edu_vp_safety_coach_evidence_with_timeout", return_value=("", [], {"skip_reason": "test"})),
+            patch.object(self.mod, "_edu_generate_text") as mocked_generate,
+        ):
+            answer, model, usage, fallback_used = self.mod._edu_vp_generate_safety_coach_answer(req)
+
+        mocked_generate.assert_not_called()
+        self.assertEqual(model, "fast-template")
+        self.assertFalse(fallback_used)
+        self.assertIn("체크리스트", answer)
+        self.assertEqual(usage["_safety_coach_reinforcement_policies"], [])
+
     def test_safety_coach_generic_fallback_anchors_on_question_focus(self):
         question = "이런 상황이면 어떻게 해야 해요? 초등학생 수학 점수가 떨어져서 AI 학습을 시작해야 할지 걱정돼요"
         answer = self.mod._edu_vp_safety_coach_fallback("수집 corpus 기반 사용자 질문", question)

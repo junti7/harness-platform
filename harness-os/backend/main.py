@@ -12271,7 +12271,12 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         concept_title=concept_title,
         answer_version=answer_version,
     )
-    fast_answer = None if reinforcement_policies else _edu_vp_safety_coach_fast_answer(concept_title, question, concept_body)
+    concept_context_fast_answer = _edu_vp_safety_coach_fast_answer(concept_title, question, concept_body)
+    fast_answer = concept_context_fast_answer if _edu_vp_safety_coach_asks_current_prompt_example(
+        question,
+        concept_title,
+        concept_body,
+    ) else None if reinforcement_policies else concept_context_fast_answer
     evidence_query = f"{question} {concept_title}"
     evidence_validation_text = concept_body
     evidence_timeout = float(
@@ -15490,6 +15495,54 @@ def edu_vp_training_safety_coach(
         concept_title=req.concept_title,
         concept_body=req.concept_body,
     )
+    if _edu_vp_safety_coach_asks_current_prompt_example(question, req.concept_title, req.concept_body):
+        answer = _edu_vp_safety_coach_api_answer(
+            _edu_vp_safety_coach_fallback(req.concept_title or "이 단락", question, req.concept_body)
+        )
+        log_payload = {
+            "stage": stage,
+            "concept_id": concept_id,
+            "concept_title": (req.concept_title or "")[:240],
+            "concept_body": (req.concept_body or "")[:1800],
+            "question": question[:1200],
+            "normalized_question": _edu_vp_normalize_safety_question(question)[:1200],
+            "answer": answer[:2600],
+            "model": "fast-template+current-concept",
+            "usage": {
+                "_safety_coach_evidence_meta": {"skip_reason": "current_concept_fast_template"},
+                "_safety_coach_red_team_issues": [],
+                "_safety_coach_rag_infused": False,
+                "_safety_coach_rag_patch_applied": False,
+                "_safety_coach_reinforcement_policies": [],
+            },
+            "fallback_used": False,
+            "answer_version": answer_version,
+            "duplicate_reused": False,
+            "evidence_meta": {"skip_reason": "current_concept_fast_template"},
+            "evidence_used": False,
+            "red_team_issues": [],
+            "llm_judge": {},
+            "auto_reinforcement_applied": [],
+            "policy_context": {},
+            "input_category": input_category,
+        }
+        _edu_vp_append_event(
+            case_id=case_id,
+            email=owner_email,
+            event_type="safety_coach",
+            event_name="safety_question_answered",
+            payload=log_payload,
+        )
+        return {
+            "ok": True,
+            "answer": answer,
+            "model": "fast-template+current-concept",
+            "fallback_used": False,
+            "answer_version": answer_version,
+            "duplicate_reused": False,
+            "evidence_used": False,
+            "input_category": input_category,
+        }
     if not bool(input_category.get("eligible_for_answer_quality")):
         clarification_answer = _edu_vp_safety_coach_prepare_answer(
             _edu_vp_safety_coach_clarification_answer(str(input_category.get("category") or "too_ambiguous"))
