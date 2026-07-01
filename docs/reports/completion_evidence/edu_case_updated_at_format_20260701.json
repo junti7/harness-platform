@@ -1,0 +1,61 @@
+{
+  "task": "Format VP training case updated time cleanly on the case list",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T20:42:04+09:00",
+      "summary": "UI changes require real verification and completion evidence before completion reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T20:42:04+09:00",
+      "summary": "Customer-facing UI changes require completion evidence guard validation before final reporting."
+    }
+  ],
+  "scope": [
+    "harness-os/edu-app/src/components/CaseSelectScreen.tsx"
+  ],
+  "changes": [
+    "Added a case-card date formatter that renders ISO timestamps as YYYY.MM.DD HH:mm.",
+    "Removed seconds, microseconds, and timezone text from the visible case updated time.",
+    "Added truncation and spacing around the updated-time row so it stays tidy on narrow mobile cards.",
+    "Added a safe fallback label of 최근 수정 when the timestamp cannot be parsed."
+  ],
+  "verification": [
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: tsc and vite built dist/assets/index-DK7zgYVO.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    },
+    {
+      "name": "date formatting sample",
+      "target": "Node Intl formatter",
+      "command": "node -e 'format 2026-07-01T20:14:56.424385+09:00 with ko-KR parts'",
+      "result": "passed: rendered 2026.07.01 20:14"
+    },
+    {
+      "name": "bundle formatter check",
+      "target": "local source and dist bundle",
+      "command": "rg -o 'formatToParts|최근 수정|수정' harness-os/edu-app/src/components/CaseSelectScreen.tsx harness-os/edu-app/dist/assets/index-DK7zgYVO.js",
+      "result": "passed: source and production bundle contain the formatter path"
+    },
+    {
+      "name": "whitespace check",
+      "target": "local git diff",
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "residual_risk": [
+    "No authenticated screenshot capture was available in this session; verification used build, lint, formatter sample, and production bundle checks."
+  ]
+}

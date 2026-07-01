@@ -42,6 +42,21 @@ function clampPct(n: number): number {
   return Math.min(100, Math.max(0, Math.round(n)))
 }
 
+function formatCaseUpdatedAt(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '최근 수정'
+  const parts = new Intl.DateTimeFormat('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date)
+  const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? ''
+  return `${pick('year')}.${pick('month')}.${pick('day')} ${pick('hour')}:${pick('minute')}`
+}
+
 const LONG_PRESS_MS = 500
 
 export default function CaseSelectScreen({
@@ -270,8 +285,8 @@ export default function CaseSelectScreen({
                       </span>
                     </div>
 
-                    <div className="mt-2.5 flex items-center justify-between">
-                      <span className="text-xs text-text-faint">수정 {c.updated_at}</span>
+                    <div className="mt-2.5 flex items-center justify-between gap-3">
+                      <span className="truncate text-xs text-text-faint">수정 {formatCaseUpdatedAt(c.updated_at)}</span>
                       <ChevronRight
                         size={16}
                         className="text-text-faint transition group-hover:translate-x-0.5"
