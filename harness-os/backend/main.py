@@ -9317,16 +9317,60 @@ def _edu_vp_question_compares_transformer_ml(question: str) -> bool:
     return "transformer" in q and any(marker in q for marker in ("machine learning", "머신러닝", "기계학습"))
 
 
-def _edu_vp_safety_coach_fast_answer(concept_title: str, question: str) -> str | None:
+def _edu_vp_safety_coach_asks_current_prompt_example(
+    question: str,
+    concept_title: str = "",
+    concept_body: str = "",
+) -> bool:
+    q = re.sub(r"\s+", " ", str(question or "").strip()).lower()
+    context = re.sub(r"\s+", " ", f"{concept_title or ''} {concept_body or ''}".strip()).lower()
+    if not q or not context:
+        return False
+    asks_for_example = any(
+        marker in q
+        for marker in (
+            "예를",
+            "예시",
+            "어떤 식",
+            "어떤식",
+            "어떻게 질문",
+            "좋은 질문",
+            "질문이 좋은",
+            "질문인지",
+        )
+    )
+    prompt_context = any(
+        marker in context
+        for marker in (
+            "결과 모양",
+            "정리해줘",
+            "요약",
+            "체크리스트",
+            "일정표",
+            "답장 초안",
+            "날짜",
+            "시간",
+            "장소",
+            "비용",
+            "준비물",
+            "제출물",
+        )
+    )
+    return asks_for_example and prompt_context
+
+
+def _edu_vp_safety_coach_fast_answer(concept_title: str, question: str, concept_body: str = "") -> str | None:
     q = str(question or "").strip()
+    if _edu_vp_safety_coach_asks_current_prompt_example(q, concept_title, concept_body):
+        return _edu_vp_safety_coach_fallback(concept_title, q, concept_body)
     if _edu_vp_question_asks_rag_definition(q):
-        return _edu_vp_safety_coach_fallback(concept_title, q)
+        return _edu_vp_safety_coach_fallback(concept_title, q, concept_body)
     if "조사" in q and ("추측" in q or "이어질" in q or "다음" in q):
-        return _edu_vp_safety_coach_fallback(concept_title, q)
+        return _edu_vp_safety_coach_fallback(concept_title, q, concept_body)
     if "명사" in q and ("추측" in q or "이어질" in q or "다음" in q or "최적" in q):
-        return _edu_vp_safety_coach_fallback(concept_title, q)
+        return _edu_vp_safety_coach_fallback(concept_title, q, concept_body)
     if _edu_vp_question_asks_transformer_paper_authors(q):
-        return _edu_vp_safety_coach_fallback(concept_title, q)
+        return _edu_vp_safety_coach_fallback(concept_title, q, concept_body)
     return None
 
 
@@ -10572,7 +10616,14 @@ def _edu_vp_safety_coach_quality_review(
     return {"issues": issues, "llm_judge": llm_judge}
 
 
-def _edu_vp_safety_coach_input_category(question: str, *, source_channel: str = "", segment: str = "") -> dict[str, Any]:
+def _edu_vp_safety_coach_input_category(
+    question: str,
+    *,
+    source_channel: str = "",
+    segment: str = "",
+    concept_title: str = "",
+    concept_body: str = "",
+) -> dict[str, Any]:
     text = re.sub(r"\s+", " ", str(question or "").strip())
     lower = text.lower()
     source_lower = str(source_channel or "").strip().lower()
@@ -10581,6 +10632,12 @@ def _edu_vp_safety_coach_input_category(question: str, *, source_channel: str = 
         return {"category": "too_ambiguous", "eligible_for_answer_quality": False, "reasons": ["empty"]}
     if len(text) < 5:
         return {"category": "too_ambiguous", "eligible_for_answer_quality": False, "reasons": ["too_short"]}
+    if _edu_vp_safety_coach_asks_current_prompt_example(text, concept_title, concept_body):
+        return {
+            "category": "real_user_question",
+            "eligible_for_answer_quality": True,
+            "reasons": ["current_concept_example_request"],
+        }
 
     has_korean = bool(re.search(r"[가-힣]", text))
     domain_text = re.sub(
@@ -11337,10 +11394,17 @@ def _edu_vp_safety_coach_render_plain_text(answer: str) -> str:
 
 
 
-def _edu_vp_safety_coach_fallback_raw(concept_title: str, question: str) -> str:
+def _edu_vp_safety_coach_fallback_raw(concept_title: str, question: str, concept_body: str = "") -> str:
     title = concept_title or "이 단락"
     q = question.strip()
     q_lower = q.lower()
+    if _edu_vp_safety_coach_asks_current_prompt_example(q, title, concept_body):
+        return (
+            "좋은 질문은 '무엇을 해줘'만 말하는 질문이 아니라, 원하는 결과 모양과 빠뜨리면 안 되는 항목을 같이 말하는 질문입니다. "
+            "예를 들어 학교 공지를 붙여 넣고 '아래 공지를 날짜, 시간, 장소, 비용, 준비물, 제출물로 나눠 체크리스트로 정리해줘. 오늘 당장 해야 할 일은 맨 위에 따로 적어줘'라고 물으면 좋습니다. "
+            "답장 초안이 필요하면 '정중한 톤으로 3문장 답장 초안을 만들어줘. 확인이 필요한 날짜와 비용은 표시해줘'처럼 말할 수 있습니다. "
+            "간단히 말하면, 자료와 함께 원하는 형태, 날짜·시간·장소·비용·준비물·제출물 같은 필수 항목을 같이 넣는 질문이 좋은 질문입니다."
+        )
     if _edu_vp_question_asks_ai_energy_use(q):
         return (
             "AI 답변에 전기가 많이 든다고 하는 이유는 답을 만들 때 멀리 있는 데이터센터의 서버가 많은 계산을 하기 때문입니다. "
@@ -11708,8 +11772,8 @@ def _edu_vp_safety_coach_fallback_raw(concept_title: str, question: str) -> str:
     return "질문을 조금 더 구체적으로 적어주시면, 그 부분에 맞춰 쉬운 예로 다시 설명할 수 있습니다."
 
 
-def _edu_vp_safety_coach_fallback(concept_title: str, question: str) -> str:
-    return _edu_vp_safety_coach_prepare_answer(_edu_vp_safety_coach_fallback_raw(concept_title, question))
+def _edu_vp_safety_coach_fallback(concept_title: str, question: str, concept_body: str = "") -> str:
+    return _edu_vp_safety_coach_prepare_answer(_edu_vp_safety_coach_fallback_raw(concept_title, question, concept_body))
 
 
 def _edu_vp_safety_coach_red_team(
@@ -12207,7 +12271,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         concept_title=concept_title,
         answer_version=answer_version,
     )
-    fast_answer = None if reinforcement_policies else _edu_vp_safety_coach_fast_answer(concept_title, question)
+    fast_answer = None if reinforcement_policies else _edu_vp_safety_coach_fast_answer(concept_title, question, concept_body)
     evidence_query = f"{question} {concept_title}"
     evidence_validation_text = concept_body
     evidence_timeout = float(
@@ -12415,7 +12479,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                     total_budget_seconds=total_budget,
                     evidence_meta=evidence_meta,
                 )
-                fallback_answer = _edu_vp_safety_coach_fallback(concept_title, question)
+                fallback_answer = _edu_vp_safety_coach_fallback(concept_title, question, concept_body)
                 answer, rag_infused = _edu_vp_safety_coach_blend_rag_sentence(fallback_answer, question, evidence_items)
                 used_model = f"{used_model or model_name}+deadline_fallback"
                 if rag_infused:
@@ -12545,7 +12609,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
                 concept_title=concept_title[:120],
                 question=question[:240],
             )
-        answer = _edu_vp_safety_coach_fallback(concept_title, question)
+        answer = _edu_vp_safety_coach_fallback(concept_title, question, concept_body)
         used_model = f"{used_model or model_ladder[-1]}+quality_fallback"
         _edu_log_llm_cost(usage, used_model)
         if isinstance(usage, dict):
@@ -12570,7 +12634,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
             error=str(exc)[:240],
             concept_title=concept_title[:120],
         )
-        return _edu_vp_safety_coach_fallback(concept_title, question), "fallback", {}, True
+        return _edu_vp_safety_coach_fallback(concept_title, question, concept_body), "fallback", {}, True
 
 
 def _edu_vp_day1_materials(llm_label: str, motivation: str = "child_study") -> list[dict[str, Any]]:
@@ -15421,7 +15485,11 @@ def edu_vp_training_safety_coach(
     stage = req.stage if re.fullmatch(r"day\d+", str(req.stage or "")) else "day0"
     concept_id = (req.concept_id or "")[:120]
     answer_version = _edu_vp_safety_coach_answer_version(req.answer_version)
-    input_category = _edu_vp_safety_coach_input_category(question)
+    input_category = _edu_vp_safety_coach_input_category(
+        question,
+        concept_title=req.concept_title,
+        concept_body=req.concept_body,
+    )
     if not bool(input_category.get("eligible_for_answer_quality")):
         clarification_answer = _edu_vp_safety_coach_prepare_answer(
             _edu_vp_safety_coach_clarification_answer(str(input_category.get("category") or "too_ambiguous"))

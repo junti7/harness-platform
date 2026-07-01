@@ -424,6 +424,32 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIsNotNone(fast_answer)
         self.assertIn("관련 자료를 찾아보고", fast_answer)
 
+    def test_safety_coach_uses_current_concept_context_for_prompt_example_request(self):
+        concept_title = "좋은 질문은 결과 모양을 먼저 정한다"
+        concept_body = (
+            "막연히 '정리해줘'라고 하지 않습니다. 요약, 체크리스트, 일정표, 답장 초안 중 원하는 결과 모양을 정하고, "
+            "날짜·시간·장소·비용·준비물·제출물을 빠뜨리지 말라고 조건을 붙입니다."
+        )
+        question = "예를 들면 어떤 식의 질문이 좋은 질문인지 예를 들어줘."
+
+        category = self.mod._edu_vp_safety_coach_input_category(
+            question,
+            concept_title=concept_title,
+            concept_body=concept_body,
+        )
+        answer = self.mod._edu_vp_safety_coach_fallback(concept_title, question, concept_body)
+        fast_answer = self.mod._edu_vp_safety_coach_fast_answer(concept_title, question, concept_body)
+
+        self.assertEqual(category["category"], "real_user_question")
+        self.assertTrue(category["eligible_for_answer_quality"])
+        self.assertIn("체크리스트", answer)
+        self.assertIn("날짜", answer)
+        self.assertIn("준비물", answer)
+        self.assertIn("답장", answer)
+        self.assertNotIn("맥락이 부족", answer)
+        self.assertIsNotNone(fast_answer)
+        self.assertIn("체크리스트", fast_answer)
+
     def test_safety_coach_generic_fallback_anchors_on_question_focus(self):
         question = "이런 상황이면 어떻게 해야 해요? 초등학생 수학 점수가 떨어져서 AI 학습을 시작해야 할지 걱정돼요"
         answer = self.mod._edu_vp_safety_coach_fallback("수집 corpus 기반 사용자 질문", question)

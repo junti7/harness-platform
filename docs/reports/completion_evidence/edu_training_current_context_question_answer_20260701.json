@@ -1,0 +1,47 @@
+{
+  "task": "Answer short EDU training questions using the current concept title and body context",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Completion requires real verification before reporting done, and code or UI changes require completion evidence."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Code, deploy, UI, and customer-facing answer changes require real entrypoint verification and completion evidence guard."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Added current-concept prompt example detection so a short question like '예를 들면 어떤 식의 질문이 좋은 질문인지 예를 들어줘' is treated as a real training question when the visible card explains prompt shape.",
+    "Passed concept_title and concept_body into the safety coach input eligibility gate, fast-answer path, and fallback path.",
+    "Added a concrete context-aware fallback answer that gives checklist and reply example prompts instead of asking the user to restate context."
+  ],
+  "verification": [
+    {
+      "name": "edu VP training flow tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "passed: 116 passed, 3 warnings, 59 subtests passed"
+    },
+    {
+      "name": "backend syntax check",
+      "target": "local py_compile",
+      "command": ".venv/bin/python -m py_compile harness-os/backend/main.py",
+      "result": "passed"
+    },
+    {
+      "name": "completion evidence guard",
+      "target": "pre-push git hook",
+      "command": "scripts/agent_completion_guard.py docs/reports/completion_evidence/edu_training_current_context_question_answer_20260701.json",
+      "result": "passed: completion_guard CLEAR"
+    }
+  ],
+  "residual_risk": []
+}
