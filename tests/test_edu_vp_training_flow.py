@@ -2737,6 +2737,76 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(attached["day1"]["sample_materials"][0]["kit_id"], "day1-school-notice-kit")
         self.assertEqual(attached["progress"]["pct"], 0)
 
+    def test_session_sync_save_path_skips_personalized_curriculum_attach(self):
+        request = self.mod.Request({"type": "http", "headers": [], "client": ("127.0.0.1", 12345)})
+        payload = {
+            "customer": {"email": "vp@example.com", "segment": "parent"},
+            "case": {"id": 91},
+        }
+        state = self.mod._edu_vp_refresh_state({
+            "customer": payload["customer"],
+            "case": payload["case"],
+            "intake": {"preferred_llm": "claude", "motivation": "work"},
+            "day0": {"title": "Day 0", "completed": True},
+            "day1": self.mod._edu_vp_build_day1({"preferred_llm": "claude", "motivation": "work"}),
+            "ui_state": {"selected_stage": "day1", "last_client_seq": 0},
+        })
+        req = self.mod.EduVpTrainingSessionSyncRequest(
+            case_id=91,
+            email="vp@example.com",
+            selected_stage="day1",
+            client_seq=1,
+            event_name="state_sync",
+        )
+
+        with (
+            patch.object(self.mod, "_edu_load_case_payload", return_value=payload),
+            patch.object(self.mod, "_edu_vp_assert_access"),
+            patch.object(self.mod, "_edu_vp_load_state", return_value=state),
+            patch.object(self.mod, "_edu_vp_store_state"),
+            patch.object(self.mod, "_edu_vp_append_event"),
+            patch.object(self.mod, "_edu_vp_attach_personalized_curriculum") as mocked_attach,
+        ):
+            result = self.mod.edu_vp_training_session_sync(request, req, None)
+
+        mocked_attach.assert_not_called()
+        self.assertEqual(result["training_state"]["ui_state"]["selected_stage"], "day1")
+
+    def test_artifact_save_path_skips_personalized_curriculum_attach(self):
+        request = self.mod.Request({"type": "http", "headers": [], "client": ("127.0.0.1", 12345)})
+        payload = {
+            "customer": {"email": "vp@example.com", "segment": "parent"},
+            "case": {"id": 92},
+        }
+        state = self.mod._edu_vp_refresh_state({
+            "customer": payload["customer"],
+            "case": payload["case"],
+            "intake": {"preferred_llm": "claude", "motivation": "work"},
+            "day0": {"title": "Day 0", "completed": True},
+            "day1": self.mod._edu_vp_build_day1({"preferred_llm": "claude", "motivation": "work"}),
+            "ui_state": {"selected_stage": "day1", "safety_confirmed": {"day0": True}},
+        })
+        req = self.mod.EduVpTrainingArtifactRequest(
+            case_id=92,
+            stage="day1",
+            proof_artifact="저장한 결과",
+            completed=True,
+        )
+
+        with (
+            patch.object(self.mod, "_edu_load_case_payload", return_value=payload),
+            patch.object(self.mod, "_edu_vp_assert_access"),
+            patch.object(self.mod, "_edu_vp_load_state", return_value=state),
+            patch.object(self.mod, "_edu_vp_store_state"),
+            patch.object(self.mod, "_edu_vp_append_event"),
+            patch.object(self.mod, "_edu_execute", return_value=[]),
+            patch.object(self.mod, "_edu_vp_attach_personalized_curriculum") as mocked_attach,
+        ):
+            result = self.mod.edu_vp_training_artifact(request, req, None)
+
+        mocked_attach.assert_not_called()
+        self.assertEqual(result["training_state"]["day1"]["proof_artifact"], "저장한 결과")
+
     def test_case_card_uses_current_stage_progress(self):
         label, pct = self.mod._edu_vp_case_card_progress(
             {

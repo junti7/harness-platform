@@ -56,7 +56,6 @@ export type TrainingScreenProps = {
 
 const BASE_STAGE_ORDER: StageKey[] = ['day0', 'day1']
 const SAFETY_COACH_ANSWER_VERSION = '2026-06-28-source-format-v24'
-const DAY0_TO_DAY1_SYNC_TIMEOUT_MS = 45_000
 const TRAINING_DEVICE_ID_KEY = 'vp_training_device_id'
 const TRAINING_LOCAL_DRAFT_PREFIX = 'vp_training_stage_draft'
 type SafetyConceptFeedback = Record<string, string>
@@ -3386,7 +3385,6 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
             : lastPositionRef.current,
         },
       },
-      timeoutMs: stage === 'day0' ? DAY0_TO_DAY1_SYNC_TIMEOUT_MS : undefined,
     })
       .then((next) => {
         setState(next)

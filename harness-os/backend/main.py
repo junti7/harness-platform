@@ -71,6 +71,7 @@ from core.gemini_sdk import generate_text, gemini_model_name
 TARGET_FREE_SUBSCRIBERS = 50
 TARGET_PAID_SUBSCRIBERS = 1
 CACHE_TTL_SECONDS = int(os.getenv("HARNESS_OS_CACHE_SECONDS", "60"))
+EDU_CURRICULUM_ROWS_CACHE_SECONDS = int(os.getenv("HARNESS_EDU_CURRICULUM_ROWS_CACHE_SECONDS", "600"))
 GMAIL_RUNTIME_ENABLED = os.getenv("HARNESS_GMAIL_RUNTIME_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
 GMAIL_RUNTIME_HOST = os.getenv("HARNESS_GMAIL_RUNTIME_HOST", "").strip()
 GMAIL_RUNTIME_USER = os.getenv("HARNESS_GMAIL_RUNTIME_USER", "").strip()
@@ -78,6 +79,8 @@ GMAIL_RUNTIME_ACCOUNT = os.getenv("HARNESS_GMAIL_ACCOUNT", "").strip()
 GMAIL_RUNTIME_GOG_BIN = os.getenv("HARNESS_GMAIL_GOG_BIN", "/opt/homebrew/bin/gog").strip()
 GMAIL_RUNTIME_SSH_BIN = os.getenv("HARNESS_GMAIL_SSH_BIN", "ssh").strip()
 GMAIL_RUNTIME_TIMEOUT_S = int(os.getenv("HARNESS_GMAIL_TIMEOUT_S", "20"))
+_EDU_CURRICULUM_ROWS_CACHE: dict[str, Any] = {"loaded_at": 0.0, "rows": None}
+_EDU_CURRICULUM_ROWS_CACHE_LOCK = threading.Lock()
 GMAIL_RUNTIME_KEYRING_BACKEND = os.getenv("HARNESS_GMAIL_KEYRING_BACKEND", "").strip()
 GMAIL_RUNTIME_KEYRING_PASSWORD = os.getenv("HARNESS_GMAIL_KEYRING_PASSWORD", "").strip()
 
@@ -8088,6 +8091,21 @@ def _edu_vp_curriculum_motivation(segment: str, intake: dict[str, Any]) -> str:
     return "child_study" if segment == "parent" else "work"
 
 
+def _edu_vp_load_curriculum_rows_cached() -> list[dict[str, Any]]:
+    from core.edu_curriculum import load_evidence_rows
+
+    now = time.monotonic()
+    with _EDU_CURRICULUM_ROWS_CACHE_LOCK:
+        cached_rows = _EDU_CURRICULUM_ROWS_CACHE.get("rows")
+        loaded_at = float(_EDU_CURRICULUM_ROWS_CACHE.get("loaded_at") or 0.0)
+        if cached_rows is not None and now - loaded_at < EDU_CURRICULUM_ROWS_CACHE_SECONDS:
+            return cached_rows
+        rows = load_evidence_rows()
+        _EDU_CURRICULUM_ROWS_CACHE["rows"] = rows
+        _EDU_CURRICULUM_ROWS_CACHE["loaded_at"] = now
+        return rows
+
+
 def _edu_vp_attach_personalized_curriculum(state: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     """Attach request-time curriculum personalization without persisting it into snapshots."""
     state = dict(state or {})
@@ -8099,11 +8117,10 @@ def _edu_vp_attach_personalized_curriculum(state: dict[str, Any], payload: dict[
         from core.edu_curriculum import (
             DEVICE_TO_ENV,
             EXPERIENCE_TO_LEVEL,
-            load_evidence_rows,
             personalize,
         )
 
-        rows = load_evidence_rows()
+        rows = _edu_vp_load_curriculum_rows_cached()
         if not rows:
             return state
         current_device = str(
@@ -15461,8 +15478,7 @@ def edu_vp_training_session_sync(
             },
             actor_role="system",
         )
-    response_state = _edu_vp_attach_personalized_curriculum(state, payload)
-    return {"ok": True, "case_id": case_id, "ui_state": state.get("ui_state") or {}, "training_state": response_state}
+    return {"ok": True, "case_id": case_id, "ui_state": state.get("ui_state") or {}, "training_state": state}
 
 
 @app.post("/api/edu/vp-training/account/register")
@@ -16005,11 +16021,10 @@ def edu_vp_training_artifact(
         ("vp_training_day1" if stage == "day1" and req.completed else f"{stage}_in_progress", case_id),
         fetch=False,
     )
-    response_state = _edu_vp_attach_personalized_curriculum(state, payload)
     return {
         "ok": True,
         "case_id": case_id,
-        "training_state": response_state,
+        "training_state": state,
     }
 
 
