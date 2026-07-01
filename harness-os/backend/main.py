@@ -7872,7 +7872,7 @@ def _edu_vp_migrate_day1_guided_practice_lab(state: dict[str, Any]) -> dict[str,
             "Claude 앱 또는 웹을 여는 안내",
         )
     )
-    latest_version = "2026-07-01-tool-choice-first-v4"
+    latest_version = "2026-07-01-beginner-follow-along-v5"
     needs_version_refresh = str(day1.get("practice_lab_version") or "") != latest_version
     if not needs_version_refresh and not needs_copy_refresh:
         return state
@@ -9170,15 +9170,27 @@ def _edu_vp_day1_practice_lab(
     if motivation == "work":
         sample_source = "예: 팀장님이 보낸 긴 업무 메시지, 회의 메모, 오늘 할 일 목록"
         final_output = "업무 답장 초안 또는 회의 메모 요약"
+        source_example = "예: 팀장님이 보낸 긴 업무 메시지 - '금요일 3시까지 지난주 매출 숫자와 미팅 메모를 정리해서 공유해주세요. 빠진 숫자는 표시해주세요.'"
+        safe_source_example = "예: 이름, 회사명, 고객명, 전화번호를 지우고 '금요일 3시', '지난주 매출 숫자', '미팅 메모'만 남깁니다."
+        result_example = "예: 오늘 할 일 3개, 빠진 정보 2개, 보낼 답장 초안 1개를 받습니다."
     elif motivation == "writing":
         sample_source = "예: 내가 쓴 짧은 메모, 안내문 재료, 글감 bullet"
         final_output = "짧은 글 초안 또는 안내문 초안"
+        source_example = "예: '다음 주 모임 안내. 장소는 아직 미정. 준비물은 텀블러. 너무 딱딱하지 않게 쓰고 싶음.'"
+        safe_source_example = "예: 실명, 연락처, 정확한 주소를 지우고 날짜, 목적, 준비물, 원하는 말투만 남깁니다."
+        result_example = "예: 부드러운 안내문 초안 1개와 확인할 빈칸 2개를 받습니다."
     elif motivation == "daily":
         sample_source = "예: 병원 예약 메모, 가족 일정, 준비물 메모"
         final_output = "가족 공유용 일정표 또는 준비물 체크리스트"
+        source_example = "예: '수요일 4시 병원, 목요일 체육복, 금요일 가족 저녁. 병원비 확인 필요.'"
+        safe_source_example = "예: 아이 이름, 병원명, 전화번호를 지우고 날짜, 시간, 준비물, 비용 확인만 남깁니다."
+        result_example = "예: 날짜순 가족 공유 일정표와 빠진 확인 질문 2개를 받습니다."
     else:
         sample_source = "예: 가정통신문, 학원 일정표, 숙제 안내, 학부모 단톡방 메시지"
         final_output = "학부모가 바로 볼 수 있는 체크리스트 또는 답장 초안"
+        source_example = "예: '수요일 체험학습. 8시 40분까지 등교. 도시락, 물, 운동화 준비. 참가비 12,000원.'"
+        safe_source_example = "예: 아이 이름, 학교명, 반, 담임 이름, 전화번호를 지우고 날짜, 시간, 준비물, 비용만 남깁니다."
+        result_example = "예: 아침에 볼 체크리스트와 학교에 다시 확인할 질문 2개를 받습니다."
 
     prompt = (
         f"아래 자료를 바탕으로 {final_output} 1개를 만들어줘.\n\n"
@@ -9216,8 +9228,8 @@ def _edu_vp_day1_practice_lab(
     ]
 
     return {
-        "version": "2026-07-01-tool-choice-first-v4",
-        "headline": "앱 안에서 먼저 준비하고, 필요한 순간에만 AI 앱으로 이동합니다",
+        "version": "2026-07-01-beginner-follow-along-v5",
+        "headline": "예시를 보고 하나씩 따라한 뒤, 마지막에만 AI 앱에 붙여넣습니다",
         "visual_assets": visual_assets,
         "install_guide": {
             "title": "어떤 AI를 사용할지 먼저 고르기",
@@ -9253,11 +9265,41 @@ def _edu_vp_day1_practice_lab(
                 "image_alt": "AI 답변을 원문과 비교한 뒤 저장하는 안내 그림",
             },
         ],
+        "beginner_steps": [
+            {
+                "title": "1. 오늘 쓸 자료 1개만 고르기",
+                "why": "처음에는 큰 문제를 해결하려 하지 말고, 방금 받은 짧은 공지나 메모 하나만 씁니다.",
+                "do": "문자, 카톡, 메모, 공지에서 오늘 바로 정리하고 싶은 문장 3~8줄을 고릅니다.",
+                "example": source_example,
+                "ai_action": "아직 AI 앱을 열지 않습니다.",
+            },
+            {
+                "title": "2. AI에 넣어도 되는 사본 만들기",
+                "why": "AI는 편하지만, 이름과 연락처 같은 개인정보를 그대로 넣으면 안 됩니다.",
+                "do": "원문을 복사한 뒤 이름, 학교, 회사, 전화번호, 주소, 계좌, 건강정보를 지웁니다.",
+                "example": safe_source_example,
+                "ai_action": "아직 AI 앱을 열지 않습니다.",
+            },
+            {
+                "title": "3. 아래 프롬프트에 내 자료만 끼워 넣기",
+                "why": "처음부터 질문을 직접 만들 필요 없습니다. 빈칸 하나만 바꾸면 됩니다.",
+                "do": "아래 복붙 프롬프트에서 [AI에 넣어도 되는 자료] 부분을 방금 만든 사본으로 바꿉니다.",
+                "example": f"요청 목표: {final_output} 1개. 원문에 없는 내용은 만들지 말라고 같이 적습니다.",
+                "ai_action": "이 단계에서만 선택한 AI 도구 입력창에 붙여넣습니다.",
+            },
+            {
+                "title": "4. 받은 답을 원문과 맞춰 보기",
+                "why": "AI 답은 초안입니다. 날짜, 시간, 장소, 비용, 준비물은 사람이 다시 확인해야 합니다.",
+                "do": "아래 원문 대조표를 보며 맞는 것과 틀린 것을 표시하고, 최종본을 직접 고칩니다.",
+                "example": result_example,
+                "ai_action": "AI 답을 그대로 보내지 않습니다.",
+            },
+        ],
         "practice_table": [
-            {"step": "자료 고르기", "in_app": sample_source, "outside_app": "아직 AI 앱을 열지 않습니다."},
-            {"step": "민감정보 제거", "in_app": "이름, 학교, 전화번호, 주소, 계좌, 건강정보를 지운 버전을 만듭니다.", "outside_app": "아직 AI 앱을 열지 않습니다."},
-            {"step": "프롬프트 복사", "in_app": "아래 복붙 프롬프트를 읽고 내 자료만 채웁니다.", "outside_app": "선택한 AI 도구의 입력창에 붙여넣습니다."},
-            {"step": "답변 검증", "in_app": "원문 대조표에서 날짜·시간·장소·비용·준비물을 확인합니다.", "outside_app": "AI 답을 그대로 믿지 않습니다."},
+            {"step": "자료 고르기", "in_app": f"{sample_source} 중 하나만 고릅니다.", "outside_app": "아직 AI 앱을 열지 않습니다."},
+            {"step": "민감정보 제거", "in_app": "복사본에서 이름, 학교, 전화번호, 주소, 계좌, 건강정보를 지웁니다.", "outside_app": "아직 AI 앱을 열지 않습니다."},
+            {"step": "프롬프트 채우기", "in_app": "아래 프롬프트의 자료 칸만 바꿉니다.", "outside_app": "선택한 AI 도구의 입력창에 붙여넣습니다."},
+            {"step": "답변 확인", "in_app": "원문 대조표에서 날짜·시간·장소·비용·준비물을 확인합니다.", "outside_app": "AI 답을 그대로 믿지 않습니다."},
         ],
         "prompt_template": prompt,
         "verification_rows": [

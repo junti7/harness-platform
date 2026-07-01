@@ -1831,10 +1831,11 @@ function Day1PracticeLab({
       action: toolGuide.action,
     }
   })
+  const beginnerSteps = lab.beginner_steps ?? []
   const rows = (lab.practice_table ?? []).map((row) => ({
     ...row,
     outside_app:
-      row.step === '프롬프트 복사'
+      row.step === '프롬프트 복사' || row.step === '프롬프트 채우기'
         ? '선택한 AI 도구의 입력창에 붙여넣습니다.'
         : genericAiInputInstruction(row.outside_app),
   }))
@@ -1986,10 +1987,37 @@ function Day1PracticeLab({
         </div>
       ) : null}
 
+      {beginnerSteps.length ? (
+        <div className="mb-4 rounded-[14px] border border-border bg-secondary/60">
+          <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs font-bold text-ink">
+            <Table2 size={15} className="text-primary" /> 하나씩 따라하기
+          </div>
+          <div className="grid gap-2 p-3 md:grid-cols-2">
+            {beginnerSteps.map((step) => (
+              <div key={step.title} className="rounded-[12px] border border-border bg-card p-3">
+                <div className="text-sm font-bold leading-snug text-ink-strong">{step.title}</div>
+                {step.why ? <p className="mt-1 text-xs leading-relaxed text-text-muted">{step.why}</p> : null}
+                {step.do ? (
+                  <div className="mt-2 rounded-[10px] bg-secondary px-3 py-2 text-xs font-semibold leading-relaxed text-ink">
+                    {step.do}
+                  </div>
+                ) : null}
+                {step.example ? (
+                  <div className="mt-2 rounded-[10px] border border-primary/15 bg-primary/5 px-3 py-2 text-[11px] leading-relaxed text-primary">
+                    {step.example}
+                  </div>
+                ) : null}
+                {step.ai_action ? <div className="mt-2 text-[11px] font-semibold leading-relaxed text-text-muted">{step.ai_action}</div> : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {rows.length ? (
         <div className="mb-4 overflow-hidden rounded-[14px] border border-border">
           <div className="flex items-center gap-2 border-b border-border bg-secondary px-3 py-2 text-xs font-bold text-ink">
-            <Table2 size={15} className="text-primary" /> 어디서 무엇을 하나요?
+            <Table2 size={15} className="text-primary" /> 한눈에 보는 순서
           </div>
           <div className="grid grid-cols-[0.72fr_1fr_1fr] bg-card text-[11px] leading-relaxed">
             <div className="border-b border-border bg-secondary px-3 py-2 font-semibold text-text-muted">단계</div>

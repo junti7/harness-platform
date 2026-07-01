@@ -2279,7 +2279,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         refreshed = self.mod._edu_vp_refresh_state(legacy_state)
         checklist_titles = [item["title"] for item in refreshed["day1"]["checklist"]]
 
-        self.assertEqual(refreshed["day1"]["practice_lab_version"], "2026-07-01-tool-choice-first-v4")
+        self.assertEqual(refreshed["day1"]["practice_lab_version"], "2026-07-01-beginner-follow-along-v5")
         self.assertEqual(refreshed["day1"]["proof_artifact"], "기존 작성 내용")
         self.assertIn("아래 실습 안내 먼저 보기", checklist_titles)
         self.assertNotIn("업무 장면 1개를 실제로 질문했다", checklist_titles)
@@ -2313,7 +2313,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             if isinstance(item, dict)
         )
 
-        self.assertEqual(refreshed["day1"]["practice_lab_version"], "2026-07-01-tool-choice-first-v4")
+        self.assertEqual(refreshed["day1"]["practice_lab_version"], "2026-07-01-beginner-follow-along-v5")
         self.assertEqual(refreshed["day1"]["proof_artifact"], "기존 작성 내용")
         self.assertIn("beginner_copy_migrated_at", refreshed["day1"])
         self.assertNotIn("RAG", visible_text)
@@ -2445,7 +2445,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("원문 대조표 채우기", checklist_titles)
         self.assertIn("결과 4칸을 결과 붙여넣기에 저장", checklist_titles)
         self.assertIn("실행 또는 설치 경로 확인", card["checklist"][4]["title"])
-        self.assertEqual(card["practice_lab_version"], "2026-07-01-tool-choice-first-v4")
+        self.assertEqual(card["practice_lab_version"], "2026-07-01-beginner-follow-along-v5")
         self.assertIn("[AI에 넣어도 되는 자료]", card["practice_lab"]["prompt_template"])
         self.assertGreaterEqual(len(card["practice_lab"]["tool_cards"]), 3)
         self.assertGreaterEqual(len(card["practice_lab"]["visual_assets"]), 4)
@@ -2458,10 +2458,18 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("claude.ai", " ".join(card["practice_lab"]["install_guide"]["steps"]))
         self.assertNotIn("Claude를 처음 쓰는 경우", card["practice_lab"]["install_guide"]["title"])
         self.assertEqual(card["practice_lab"]["tool_cards"][0]["image_src"], "/training/day1/prepare-material.svg")
+        self.assertGreaterEqual(len(card["practice_lab"]["beginner_steps"]), 4)
+        beginner_text = " ".join(
+            f"{item.get('title', '')} {item.get('do', '')} {item.get('example', '')} {item.get('ai_action', '')}"
+            for item in card["practice_lab"]["beginner_steps"]
+        )
+        self.assertIn("오늘 쓸 자료 1개만 고르기", beginner_text)
+        self.assertIn("팀장님이 보낸 긴 업무 메시지", beginner_text)
+        self.assertIn("아직 AI 앱을 열지 않습니다", beginner_text)
         self.assertGreaterEqual(len(card["practice_lab"]["practice_table"]), 4)
         self.assertGreaterEqual(len(card["practice_lab"]["verification_rows"]), 4)
         self.assertIn("outside_app", card["practice_lab"]["practice_table"][0])
-        prompt_copy_row = next(item for item in card["practice_lab"]["practice_table"] if item["step"] == "프롬프트 복사")
+        prompt_copy_row = next(item for item in card["practice_lab"]["practice_table"] if item["step"] == "프롬프트 채우기")
         self.assertEqual(prompt_copy_row["outside_app"], "선택한 AI 도구의 입력창에 붙여넣습니다.")
         self.assertNotIn("Claude 입력창", prompt_copy_row["outside_app"])
         self.assertNotIn("업무 장면 1개를 실제로 질문했다", checklist_titles)
@@ -2556,7 +2564,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(refreshed["day1"]["completed_at"], "2026-06-30T10:00:00+00:00")
         self.assertEqual(refreshed["day1"]["proof_artifact"], "사용자가 저장한 결과")
         self.assertEqual(refreshed["day1"]["stage_checked"], ["open_practice_lab"])
-        self.assertEqual(refreshed["day1"]["practice_lab_version"], "2026-07-01-tool-choice-first-v4")
+        self.assertEqual(refreshed["day1"]["practice_lab_version"], "2026-07-01-beginner-follow-along-v5")
         self.assertEqual(guide["title"], "어떤 AI를 사용할지 먼저 고르기")
         self.assertEqual(guide["tool_options"], ["ChatGPT", "Claude", "Gemini", "Genspark", "Grok", "Perplexity"])
         self.assertNotIn("Claude를 처음 쓰는 경우", visible_text)

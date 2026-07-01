@@ -201,6 +201,7 @@ export type TrainingStage = {
       selected_tool?: string
     }
     tool_cards?: Array<{ title: string; body?: string; action?: string; visual?: string; image_src?: string; image_alt?: string }>
+    beginner_steps?: Array<{ title: string; why?: string; do?: string; example?: string; ai_action?: string }>
     practice_table?: Array<{ step: string; in_app?: string; outside_app?: string }>
     prompt_template?: string
     verification_rows?: Array<{ item: string; source?: string; ai_check?: string }>

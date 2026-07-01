@@ -1,0 +1,71 @@
+{
+  "task": "Make Day 1 practice lab beginner follow-along instead of superficial table instructions",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T22:46:09+09:00",
+      "summary": "UI changes must be mobile-first, verified against real entrypoints, and reported with exact residual risk."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T22:46:09+09:00",
+      "summary": "Completion requires real user-facing/runtime verification evidence and completion evidence guard validation."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "harness-os/edu-app/src/components/TrainingScreen.tsx",
+    "harness-os/edu-app/src/lib/vpTraining.ts",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Replaced the Day 1 practice lab version with 2026-07-01-beginner-follow-along-v5 so existing sessions refresh to the new guide.",
+    "Added motivation-specific beginner_steps with concrete source examples, privacy-removal examples, prompt-fill guidance, and answer verification guidance.",
+    "Rendered beginner_steps as the primary '하나씩 따라하기' card grid before the compact order table.",
+    "Renamed the compact table header from '어디서 무엇을 하나요?' to '한눈에 보는 순서' and changed '프롬프트 복사' to '프롬프트 채우기' while preserving old-row compatibility.",
+    "Extended backend tests to assert the beginner guide examples and new practice lab version."
+  ],
+  "verification": [
+    {
+      "name": "edu vp training flow tests",
+      "target": "local backend unit tests",
+      "command": ".venv/bin/python tests/test_edu_vp_training_flow.py",
+      "result": "passed: 129 tests OK"
+    },
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: tsc and vite built dist/assets/index-Cn-3_Sjm.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    },
+    {
+      "name": "backend syntax check",
+      "target": "local python compile",
+      "command": ".venv/bin/python -m py_compile harness-os/backend/main.py",
+      "result": "passed"
+    },
+    {
+      "name": "Mac Mini edu app runtime entrypoint",
+      "target": "macmini edu app url",
+      "command": "curl -fsS --max-time 5 http://100.97.175.44:5174/ | head -5",
+      "result": "passed: edu app HTTP entrypoint returned HTML"
+    },
+    {
+      "name": "whitespace check",
+      "target": "local git diff",
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "residual_risk": [
+    "Authenticated browser screenshot was not captured in this turn; verification used source diff, tests, build, lint, and live Mac Mini HTTP entrypoint. Production bundle check will run after deploy."
+  ]
+}
