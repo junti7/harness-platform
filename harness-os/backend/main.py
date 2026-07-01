@@ -6231,8 +6231,19 @@ class EduVpTrainingSessionSyncRequest(BaseModel):
     event_payload: dict[str, Any] = Field(default_factory=dict)
 
 
-def _edu_vp_is_preferred_llm_change_event(event_name: str, preferred_llm: str) -> bool:
-    return event_name == "preferred_llm_changed" and bool(str(preferred_llm or "").strip())
+def _edu_vp_sync_requested_llm(req: EduVpTrainingSessionSyncRequest) -> str:
+    direct = str(req.preferred_llm or "").strip()
+    if direct:
+        return _edu_normalize_llm(direct)
+    event_payload = req.event_payload if isinstance(req.event_payload, dict) else {}
+    payload_llm = str(event_payload.get("preferred_llm") or "").strip()
+    if req.event_name == "preferred_llm_changed" and payload_llm:
+        return _edu_normalize_llm(payload_llm)
+    return ""
+
+
+def _edu_vp_is_preferred_llm_change_event(event_name: str, requested_llm: str) -> bool:
+    return event_name == "preferred_llm_changed" and bool(str(requested_llm or "").strip())
 
 
 class EduVpTrainingSafetyCoachRequest(BaseModel):
@@ -15317,7 +15328,8 @@ def edu_vp_training_session_sync(
     current_ui_state = state.get("ui_state") or {}
     current_seq = int(current_ui_state.get("last_client_seq") or 0) if isinstance(current_ui_state, dict) else 0
     incoming_seq = max(0, int(req.client_seq or 0))
-    force_preferred_llm_change = _edu_vp_is_preferred_llm_change_event(req.event_name, req.preferred_llm)
+    requested_llm = _edu_vp_sync_requested_llm(req)
+    force_preferred_llm_change = _edu_vp_is_preferred_llm_change_event(req.event_name, requested_llm)
     if incoming_seq < current_seq and not force_preferred_llm_change:
         return {
             "ok": True,
@@ -15357,7 +15369,6 @@ def edu_vp_training_session_sync(
             "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         },
     }
-    requested_llm = _edu_normalize_llm(req.preferred_llm) if str(req.preferred_llm or "").strip() else ""
     if requested_llm:
         ui_updates["preferred_llm"] = requested_llm
     if str(req.current_device or "").strip():

@@ -2594,6 +2594,20 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertFalse(self.mod._edu_vp_is_preferred_llm_change_event("state_sync", "gemini"))
         self.assertFalse(self.mod._edu_vp_is_preferred_llm_change_event("preferred_llm_changed", ""))
 
+    def test_preferred_llm_change_reads_event_payload_fallback(self):
+        req = self.mod.EduVpTrainingSessionSyncRequest(
+            case_id=72,
+            email="junti7@gmail.com",
+            selected_stage="day1",
+            preferred_llm="",
+            client_seq=1,
+            event_name="preferred_llm_changed",
+            event_payload={"preferred_llm": "chatgpt"},
+        )
+
+        self.assertEqual(self.mod._edu_vp_sync_requested_llm(req), "gpt")
+        self.assertTrue(self.mod._edu_vp_is_preferred_llm_change_event(req.event_name, self.mod._edu_vp_sync_requested_llm(req)))
+
     def test_work_motivation_keeps_day1_and_outline_work_focused(self):
         state = {
             "intake": {

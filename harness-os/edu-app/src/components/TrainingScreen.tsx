@@ -2309,18 +2309,25 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const syncStageDraft = useCallback((eventName: string, eventPayload: Record<string, unknown> = {}) => {
     if (!state) return
     seqRef.current += 1
+    const requestSeq = seqRef.current
     void syncSession({
       caseId,
       email,
       selectedStage: stage,
-      clientSeq: seqRef.current,
+      clientSeq: requestSeq,
       eventName,
       eventPayload: { stage, ...eventPayload },
       stageDrafts: {
         [stage]: stageDraftForSync(),
       },
     })
-      .then((next) => setState(next))
+      .then((next) => {
+        const serverSeq = Number(next.ui_state?.last_client_seq ?? 0)
+        if (serverSeq >= seqRef.current || requestSeq >= seqRef.current) {
+          setState(next)
+        }
+        seqRef.current = Math.max(seqRef.current, serverSeq, requestSeq)
+      })
       .catch((e) => console.error(`${eventName} sync failed`, e))
   }, [caseId, email, stage, stageDraftForSync, state])
 

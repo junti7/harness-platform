@@ -1,0 +1,69 @@
+{
+  "task": "Keep Day 1 AI tool selection from being reverted by stale sync responses",
+  "status": "residual_risk",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T14:59:00+09:00",
+      "summary": "Completion requires evidence-backed reporting, checklist mapping, real entrypoint verification, and completion evidence guard for code, UI, deploy, and customer-facing changes."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T14:59:00+09:00",
+      "summary": "Production changes require source-of-truth deploy flow, real user-facing or runtime verification, and completion evidence guard before reporting complete."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "harness-os/edu-app/src/components/TrainingScreen.tsx",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Session sync now extracts a Day 1 AI tool change from either top-level preferred_llm or event_payload.preferred_llm, so cached or older frontend payload shapes still switch tools.",
+    "The stale-sequence bypass now uses the extracted requested LLM, not only the top-level request field.",
+    "TrainingScreen syncStageDraft now ignores older autosave responses when a newer request sequence is already in flight, preventing late autosaves from visually reverting the selected AI tool.",
+    "Regression coverage was added for event_payload preferred_llm fallback."
+  ],
+  "verification": [
+    {
+      "name": "Mac Mini case 72 production event diagnosis",
+      "target": "Mac Mini production database",
+      "command": "Query edu_vp_training_event_log and edu_case_snapshots for case_id=72 preferred_llm_changed events and latest selected_tool",
+      "result": "observed real preferred_llm_changed events for ChatGPT, Gemini, and Claude; snapshots showed tool state changes persisted server-side, narrowing the remaining bug to stale UI response overwrite or payload-shape mismatch"
+    },
+    {
+      "name": "Mac Mini manual API switch check before patch",
+      "target": "Mac Mini production API",
+      "command": "POST /api/edu/vp-training/session/sync for case_id=72 with preferred_llm=gemini and event_name=preferred_llm_changed",
+      "result": "passed diagnostic: production API stored intake/ui preferred_llm=gemini and Day 1 install_guide.selected_tool=Gemini"
+    },
+    {
+      "name": "targeted preferred LLM switch tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -k 'preferred_llm_change'",
+      "result": "passed: 4 passed, 121 deselected, 3 warnings"
+    },
+    {
+      "name": "backend syntax check",
+      "target": "local py_compile",
+      "command": ".venv/bin/python -m py_compile harness-os/backend/main.py",
+      "result": "passed"
+    },
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build in harness-os/edu-app",
+      "result": "passed: tsc and vite built dist/assets/index-C5ni7sKi.js"
+    },
+    {
+      "name": "full edu VP training flow tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py",
+      "result": "passed: 125 passed, 3 warnings"
+    }
+  ],
+  "residual_risk": [
+    "Commit and Mac Mini deployment are still pending in this evidence revision; update this file after deploy verification before final completion report."
+  ]
+}
