@@ -15359,7 +15359,6 @@ def edu_vp_training_session(
     _: None = Depends(_require_secret),
 ) -> dict[str, Any]:
     _edu_vp_assert_access(request, email)
-    _ensure_edu_case_schema()
     payload = _edu_vp_latest_case_payload(email, case_id=case_id)
     if not payload:
         return {"ok": True, "exists": False}
@@ -16131,7 +16130,6 @@ def edu_vp_training_cases(
 ) -> dict[str, Any]:
     safe_email = _edu_normalize_email(email)
     _edu_vp_assert_access(request, safe_email)
-    _ensure_edu_case_schema()
     if not safe_email:
         return {"ok": True, "cases": []}
     rows = _edu_execute(

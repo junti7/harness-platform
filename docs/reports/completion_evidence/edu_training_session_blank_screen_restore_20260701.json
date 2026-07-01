@@ -24,7 +24,8 @@
     "Made API Day 1 rebuild and migration paths use include_evidence=false so session load and tool-switch repair do not block on evidence retrieval.",
     "Kept direct _edu_vp_build_day1 default evidence behavior intact for tests and explicit backend calls.",
     "Added GET timeout override support and gave fetchSession a 45 second timeout.",
-    "Added a visible session-load failure card with a retry button so the UI no longer renders only header plus empty Day 0 fallback when state is null."
+    "Added a visible session-load failure card with a retry button so the UI no longer renders only header plus empty Day 0 fallback when state is null.",
+    "Removed schema migration checks from read-only /session and /cases endpoints; write/login/intake paths still perform schema ensure."
   ],
   "verification": [
     {
