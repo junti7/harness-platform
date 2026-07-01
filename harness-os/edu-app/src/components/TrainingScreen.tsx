@@ -2888,6 +2888,15 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     return true
   }
 
+  function selectedPreferredLlm() {
+    return (
+      localPreferredLlm ||
+      String(state?.ui_state?.preferred_llm || '') ||
+      String(state?.intake?.preferred_llm || '') ||
+      String(state?.customer?.preferred_llm || '')
+    )
+  }
+
   function rateCoachAnswer(
     concept: NonNullable<TrainingStage['foundation_concepts']>[number],
     id: string,
@@ -3186,7 +3195,8 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       conceptBody: concept.body,
       question,
       answerVersion: SAFETY_COACH_ANSWER_VERSION,
-      })
+      preferredLlm: selectedPreferredLlm(),
+    })
       .then((res) => {
         const guide = plannedCurriculumGuide(planned)
         const finalAnswer = guide && !res.answer.includes(guide) ? `${res.answer}\n\n${guide}` : res.answer

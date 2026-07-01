@@ -108,6 +108,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             concept_title="먼저 말부터 정리하기: AI와 LLM",
             concept_body="LLM은 다음에 올 법한 말을 이어 붙입니다.",
             question="그럼 왜 틀린 준비물을 말할 수도 있나요?",
+            preferred_llm="perplexity",
         )
 
         with (
@@ -119,11 +120,23 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         prompt = mocked_generate.call_args.args[0]
         self.assertIn("왜 틀린 준비물을", prompt)
         self.assertIn("현재 단락 설명", prompt)
+        self.assertIn("현재 선택된 AI 도구", prompt)
+        self.assertIn("Perplexity", prompt)
         self.assertIn("틀린 준비물", answer)
         self.assertEqual(model, "gemini-test")
         self.assertEqual(usage["prompt_token_count"], 10)
         self.assertIsInstance(fallback_used, bool)
         mocked_cost.assert_called_once()
+
+    def test_safety_coach_selected_llm_question_uses_session_value(self):
+        answer = self.mod._edu_vp_safety_coach_selected_llm_answer(
+            "그럼 내가 사용 중인 LLM은 뭐야?",
+            "perplexity",
+        )
+
+        self.assertIn("Perplexity", answer)
+        self.assertIn("선택된 AI 도구", answer)
+        self.assertIn("실제 스마트폰이나 컴퓨터에 앱이 설치", answer)
 
     def test_safety_coach_downvote_review_records_improvement_when_llm_finds_issue(self):
         raw = '{"verdict":"needs_improvement","issues":["question_not_answered"],"improvement_note":"질문에 먼저 직접 답한다.","confidence":0.82}'

@@ -408,6 +408,7 @@ export async function askSafetyCoach(input: {
   conceptBody: string
   question: string
   answerVersion: string
+  preferredLlm?: string
 }): Promise<SafetyCoachResponse> {
   return vpPost<SafetyCoachResponse>(VP_TRAINING.safetyCoach, {
     case_id: input.caseId,
@@ -418,6 +419,7 @@ export async function askSafetyCoach(input: {
     concept_body: input.conceptBody,
     question: input.question,
     answer_version: input.answerVersion,
+    preferred_llm: input.preferredLlm ?? '',
   }, 30_000)
 }
 

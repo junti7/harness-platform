@@ -6255,6 +6255,7 @@ class EduVpTrainingSafetyCoachRequest(BaseModel):
     concept_body: str = ""
     question: str = ""
     answer_version: str = ""
+    preferred_llm: str = ""
 
 
 class EduVpTrainingSafetyCoachFeedbackRequest(BaseModel):
@@ -8683,6 +8684,27 @@ def _edu_vp_llm_label(value: str) -> str:
         "local": "로컬 모델",
         "auto": "기본 AI 도구",
     }.get(normalized, "기본 AI 도구")
+
+
+def _edu_vp_safety_coach_selected_llm_answer(question: str, preferred_llm: str) -> str:
+    normalized_question = _edu_vp_normalize_safety_question(question)
+    compact_question = re.sub(r"\s+", "", normalized_question.lower())
+    asks_selected_tool = (
+        "llm" in compact_question
+        and any(term in compact_question for term in ("뭐야", "무엇", "뭔가", "뭔데", "which", "what"))
+        and any(term in compact_question for term in ("내가", "사용중", "사용하고", "선택", "고른", "현재"))
+    ) or (
+        "ai" in compact_question
+        and any(term in compact_question for term in ("내가선택", "내가고른", "사용중", "사용할", "현재사용"))
+        and any(term in compact_question for term in ("뭐야", "무엇", "뭔가", "뭔데", "which", "what"))
+    )
+    if not asks_selected_tool:
+        return ""
+    normalized_llm = _edu_normalize_llm(preferred_llm)
+    if normalized_llm == "auto":
+        return "아직 특정 AI 도구가 선택되지 않았어요. Day 1의 AI 도구 선택에서 ChatGPT, Claude, Gemini, Genspark, Grok, Perplexity 중 하나를 고르면 그 선택을 기준으로 설치와 실습 안내가 바뀝니다."
+    label = _edu_vp_llm_label(normalized_llm)
+    return f"현재 이 훈련에서 선택된 AI 도구는 {label}입니다. 다만 이것은 훈련 화면에서 고른 값이고, 실제 스마트폰이나 컴퓨터에 앱이 설치되어 있는지는 제가 직접 확인할 수 없습니다. 설치되어 있지 않으면 화면의 설치 안내나 웹 대체 경로를 따라 열면 됩니다."
 
 
 def _edu_vp_device_label(value: str) -> str:
@@ -12418,6 +12440,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
     question = _edu_neutralize(req.question, cap=700)
     concept_title = _edu_neutralize(req.concept_title, cap=160)
     concept_body = _edu_neutralize(req.concept_body, cap=1400)
+    selected_llm_label = _edu_vp_llm_label(req.preferred_llm)
     answer_version = _edu_vp_safety_coach_answer_version(req.answer_version)
     policy_context = _edu_vp_safety_coach_resolved_policy_context(question)
     reinforcement_policies = _edu_vp_safety_coach_reinforcement_policies(
@@ -12609,6 +12632,7 @@ def _edu_vp_generate_safety_coach_answer(req: EduVpTrainingSafetyCoachRequest) -
         "적용된 답변 품질 정책이 있으면 반드시 반영한다. 정책의 must_include는 답변 구조로 반영하고, must_not_include는 표현을 바꿔서라도 피한다.\n\n"
         f"[현재 단락 제목]\n{concept_title}\n\n"
         f"[현재 단락 설명]\n{concept_body}\n\n"
+        f"[현재 선택된 AI 도구]\n{selected_llm_label}\n\n"
         f"[관련 내부 자료]\n{evidence_block}\n\n"
         f"[사용자 질문 또는 피드백]\n{question}\n\n"
         "답변 본문만 출력하라."
@@ -15651,6 +15675,40 @@ def edu_vp_training_safety_coach(
     stage = req.stage if re.fullmatch(r"day\d+", str(req.stage or "")) else "day0"
     concept_id = (req.concept_id or "")[:120]
     answer_version = _edu_vp_safety_coach_answer_version(req.answer_version)
+    selected_llm_answer = _edu_vp_safety_coach_selected_llm_answer(question, req.preferred_llm)
+    if selected_llm_answer:
+        answer = _edu_vp_safety_coach_api_answer(selected_llm_answer)
+        log_payload = {
+            "stage": stage,
+            "concept_id": concept_id,
+            "concept_title": (req.concept_title or "")[:240],
+            "question": question[:1200],
+            "answer": answer[:2600],
+            "model": "session-state+selected-llm",
+            "fallback_used": False,
+            "answer_version": answer_version,
+            "duplicate_reused": False,
+            "evidence_used": False,
+            "preferred_llm": _edu_normalize_llm(req.preferred_llm),
+            "input_category": {"category": "selected_llm_state", "eligible_for_answer_quality": True},
+        }
+        _edu_vp_append_event(
+            case_id=case_id,
+            email=owner_email,
+            event_type="safety_coach",
+            event_name="safety_question_answered",
+            payload=log_payload,
+        )
+        return {
+            "ok": True,
+            "answer": answer,
+            "model": "session-state+selected-llm",
+            "fallback_used": False,
+            "answer_version": answer_version,
+            "duplicate_reused": False,
+            "evidence_used": False,
+            "input_category": log_payload["input_category"],
+        }
     input_category = _edu_vp_safety_coach_input_category(
         question,
         concept_title=req.concept_title,

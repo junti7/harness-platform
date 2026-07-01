@@ -1,0 +1,57 @@
+{
+  "task": "Make Day 1 coach answer selected LLM questions from session state",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T15:44:00+09:00",
+      "summary": "Completion requires evidence-backed reporting, real entrypoint verification, scoped commits, and deploy verification for production-facing changes."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T15:44:00+09:00",
+      "summary": "Production changes require actual runtime verification, source-of-truth deploy flow, and completion evidence guard before reporting complete."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "harness-os/edu-app/src/components/TrainingScreen.tsx",
+    "harness-os/edu-app/src/lib/vpTraining.ts",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Added preferred_llm to the safety coach request contract and frontend askSafetyCoach payload.",
+    "Passed the current selected AI tool from local optimistic state, ui_state, intake, or customer fallback when asking the coach.",
+    "Added a deterministic backend answer path for questions asking which LLM or AI tool is currently selected.",
+    "Added the selected AI tool label to the normal safety coach prompt context for related follow-up questions.",
+    "Added regression tests for Perplexity selected-tool context and deterministic selected-LLM answers."
+  ],
+  "verification": [
+    {
+      "name": "full edu VP training flow tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "passed: 126 passed, 3 warnings, 64 subtests passed"
+    },
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: tsc and vite built dist/assets/index-AcOMv2gU.js"
+    },
+    {
+      "name": "whitespace check",
+      "target": "local git diff",
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_training_selected_llm_coach_answer_20260701.json plus Mac Mini npm run build --prefix harness-os/edu-app and launchctl kickstart -k gui/$uid/com.harness.edu-app",
+    "result": "pending"
+  },
+  "residual_risk": [
+    "The app can answer which AI tool was selected inside the training flow; it still cannot verify whether that app is actually installed on the user's device."
+  ]
+}
