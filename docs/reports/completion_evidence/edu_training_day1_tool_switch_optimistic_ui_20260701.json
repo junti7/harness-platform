@@ -1,6 +1,6 @@
 {
   "task": "Make Day 1 AI tool switch update immediately in the UI",
-  "status": "residual_risk",
+  "status": "complete",
   "date": "2026-07-01",
   "governance_bootstrap": [
     {
@@ -48,9 +48,41 @@
       "target": "Mac Mini production URL",
       "command": "curl -fsS --max-time 8 http://100.97.175.44:5174/ | grep -o 'assets/index-[^\" ]*\\.js' | head -1",
       "result": "observed previous bundle assets/index-Ne9TE5VD.js before this optimistic UI deploy"
+    },
+    {
+      "name": "Mac Mini scoped deploy",
+      "target": "Mac Mini source",
+      "command": "scripts/deploy_to_macmini.sh harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts docs/reports/completion_evidence/edu_training_day1_tool_switch_optimistic_ui_20260701.json",
+      "result": "passed: selected paths diff origin/main = 0"
+    },
+    {
+      "name": "Mac Mini edu-app production build and restart",
+      "target": "Mac Mini production dist and launchd",
+      "command": "npm run build --prefix harness-os/edu-app && launchctl kickstart -k gui/$uid/com.harness.edu-app",
+      "result": "passed: vite built and production HTML serves assets/index-D4Lv3Hha.js"
+    },
+    {
+      "name": "Mac Mini production bundle content check",
+      "target": "Mac Mini production JS bundle",
+      "command": "curl -fsS http://100.97.175.44:5174/assets/index-D4Lv3Hha.js | grep for chatgpt.com, gemini.google.com, Genspark, and grok.com",
+      "result": "passed: production bundle contains the multi-tool optimistic guide copy for ChatGPT, Gemini, Genspark, and Grok"
+    },
+    {
+      "name": "Mac Mini targeted Day 1 LLM tests",
+      "target": "Mac Mini pytest",
+      "command": "DATABASE_URL=postgresql://localhost/harness_prod .venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -k 'preferred_llm_change or day1_install_guide'",
+      "result": "passed: 5 passed, 120 deselected, 2 warnings"
+    },
+    {
+      "name": "Mac Mini scoped diff check",
+      "target": "Mac Mini source",
+      "command": "git diff origin/main -- harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts docs/reports/completion_evidence/edu_training_day1_tool_switch_optimistic_ui_20260701.json",
+      "result": "passed: all three scoped paths had diff line count 0"
     }
   ],
-  "residual_risk": [
-    "Commit and Mac Mini deployment are still pending in this evidence revision; update after production deploy and bundle verification."
-  ]
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts docs/reports/completion_evidence/edu_training_day1_tool_switch_optimistic_ui_20260701.json plus Mac Mini npm run build --prefix harness-os/edu-app and launchctl kickstart -k gui/$uid/com.harness.edu-app",
+    "result": "deployed and verified: production edu-app bundle changed from assets/index-Ne9TE5VD.js to assets/index-D4Lv3Hha.js, scoped source diff is 0, and targeted Mac Mini tests passed"
+  },
+  "residual_risk": []
 }
