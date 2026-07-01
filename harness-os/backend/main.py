@@ -15428,9 +15428,8 @@ def edu_vp_training_session(
     state = _edu_vp_normalize_state_keys(state)
     state["customer"] = payload["customer"]
     state["case"] = payload["case"]
-    if bool(((state.get("ui_state") or {}).get("safety_confirmed") or {}).get("day0")):
-        state = _edu_vp_unlock_day0_practice(state, advance_to_day1=False)
-    state = _edu_vp_refresh_state(state, refresh_day1=False)
+    state["day0"] = state.get("day0") or {}
+    state["day1"] = state.get("day1") or {}
     return {
         "ok": True,
         "exists": True,

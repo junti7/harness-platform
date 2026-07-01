@@ -27,7 +27,8 @@
     "Added a visible session-load failure card with a retry button so the UI no longer renders only header plus empty Day 0 fallback when state is null.",
     "Removed schema migration checks from read-only /session and /cases endpoints; write/login/intake paths still perform schema ensure.",
     "Added a light training-session payload query so /session does not load full edu_case_turns message history just to render the training screen.",
-    "Allowed _edu_vp_refresh_state to skip Day 1 migration scans and used that fast path for /session reads."
+    "Allowed _edu_vp_refresh_state to skip Day 1 migration scans.",
+    "Removed _edu_vp_refresh_state from /session reads entirely; session now returns the latest stored snapshot plus lightweight customer/case metadata."
   ],
   "verification": [
     {
