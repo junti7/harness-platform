@@ -47,9 +47,33 @@
       "target": "local py_compile",
       "command": ".venv/bin/python -m py_compile harness-os/backend/main.py",
       "result": "passed"
+    },
+    {
+      "name": "Mac Mini scoped deploy",
+      "target": "Mac Mini source and backend service",
+      "command": "scripts/deploy_to_macmini.sh harness-os/backend/main.py tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_training_day1_tool_choice_stale_repair_20260701.json",
+      "result": "passed: backend relaunched on port 8000 and deployed paths diff origin/main = 0"
+    },
+    {
+      "name": "Mac Mini targeted regression tests",
+      "target": "Mac Mini pytest",
+      "command": "DATABASE_URL=postgresql://localhost/harness_prod .venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -k \"preferred_llm_change or day1_install_guide\"",
+      "result": "passed: 3 passed, 120 deselected, 2 warnings"
+    },
+    {
+      "name": "Mac Mini stale state repair check",
+      "target": "Mac Mini backend helper",
+      "command": "Construct state with intake/ui_state=gemini but Day 1 guide selected_tool=Claude, then call _edu_vp_apply_preferred_llm_change(state, 'gemini')",
+      "result": "passed: selected_tool=Gemini and gemini.google.com present"
+    },
+    {
+      "name": "Mac Mini backend entrypoint check",
+      "target": "Mac Mini backend",
+      "command": "curl --max-time 5 http://127.0.0.1:8000/",
+      "result": "passed: backend_http=200"
     }
   ],
   "residual_risk": [
-    "Mac Mini deploy and production verification are recorded after deployment in this evidence file."
+    "No frontend source changed in this repair; existing edu-app bundle still sends preferred_llm_changed, and the backend now repairs the stale Day 1 state."
   ]
 }
