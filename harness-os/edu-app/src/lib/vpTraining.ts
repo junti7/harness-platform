@@ -339,6 +339,7 @@ export async function syncSession(input: {
   clientSeq: number
   eventName?: string
   eventPayload?: Record<string, unknown>
+  timeoutMs?: number
 }): Promise<TrainingState> {
   const r = await vpPost<{ training_state: TrainingState }>(VP_TRAINING.sessionSync, {
     case_id: input.caseId,
@@ -351,7 +352,7 @@ export async function syncSession(input: {
     event_type: 'ui_sync',
     event_name: input.eventName ?? 'state_sync',
     event_payload: input.eventPayload ?? {},
-  })
+  }, input.timeoutMs)
   return r.training_state
 }
 

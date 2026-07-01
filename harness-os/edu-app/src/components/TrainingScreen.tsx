@@ -56,6 +56,7 @@ export type TrainingScreenProps = {
 
 const BASE_STAGE_ORDER: StageKey[] = ['day0', 'day1']
 const SAFETY_COACH_ANSWER_VERSION = '2026-06-28-source-format-v24'
+const DAY0_TO_DAY1_SYNC_TIMEOUT_MS = 45_000
 const TRAINING_DEVICE_ID_KEY = 'vp_training_device_id'
 const TRAINING_LOCAL_DRAFT_PREFIX = 'vp_training_stage_draft'
 type SafetyConceptFeedback = Record<string, string>
@@ -3385,6 +3386,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
             : lastPositionRef.current,
         },
       },
+      timeoutMs: stage === 'day0' ? DAY0_TO_DAY1_SYNC_TIMEOUT_MS : undefined,
     })
       .then((next) => {
         setState(next)
@@ -3394,8 +3396,26 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           setNotice('Day 0 완료! Day 1 실습으로 이동했어요.')
         }
       })
-      .catch((e) => {
+      .catch(async (e) => {
         console.error('safety confirmation sync failed', e)
+        if (stage === 'day0' && e instanceof ApiError && e.status === 408) {
+          try {
+            await new Promise((resolve) => window.setTimeout(resolve, 1200))
+            const refreshed = await fetchSession(email, caseId)
+            if (
+              refreshed.exists &&
+              (refreshed.state.day0?.completed || refreshed.state.ui_state?.safety_confirmed?.day0)
+            ) {
+              setState(refreshed.state)
+              setSafetyReady(true)
+              hydrateStageInputs(refreshed.state, 'day1')
+              setNotice('Day 0 완료! Day 1 실습으로 이동했어요.')
+              return
+            }
+          } catch (refreshError) {
+            console.error('safety confirmation timeout refresh failed', refreshError)
+          }
+        }
         setError(errMsg(e))
         setSafetyReady(false)
       })
@@ -3507,7 +3527,20 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const showSafetyRecords = stage === 'day0' && !safetyGateActive && Boolean(current?.foundation_concepts?.length)
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 py-7 sm:max-w-[760px] sm:px-6 lg:max-w-[960px] xl:max-w-[1120px] xl:px-8">
+    <div className="relative mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 py-7 sm:max-w-[760px] sm:px-6 lg:max-w-[960px] xl:max-w-[1120px] xl:px-8">
+      {safetySyncing ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-card/85 px-5 text-center backdrop-blur-sm">
+          <div className="flex w-full max-w-[320px] flex-col items-center gap-3 rounded-2xl border border-primary/20 bg-card px-6 py-5 shadow-lg">
+            <span className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-primary text-primary-foreground">
+              <Loader2 size={24} className="animate-spin" />
+            </span>
+            <div className="text-base font-bold text-ink-strong">Day 1 실습을 여는 중입니다</div>
+            <p className="text-sm leading-relaxed text-text-muted">
+              안전 확인을 저장하고 선택한 AI 도구 기준 실습 화면을 준비하고 있습니다.
+            </p>
+          </div>
+        </div>
+      ) : null}
       {header}
 
       {questionArchiveOpen ? (

@@ -1,0 +1,56 @@
+{
+  "task": "Stabilize Day 0 to Day 1 practice transition timeout feedback",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T20:27:19+09:00",
+      "summary": "Code, deploy, UI, and customer-facing changes require real verification evidence before completion reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T20:27:19+09:00",
+      "summary": "Completion reporting requires available user-entrypoint verification and scripts/agent_completion_guard.py evidence validation."
+    }
+  ],
+  "scope": [
+    "harness-os/edu-app/src/components/TrainingScreen.tsx",
+    "harness-os/edu-app/src/lib/vpTraining.ts"
+  ],
+  "changes": [
+    "Added an optional timeout override to the VP training session sync client.",
+    "Raised only the Day 0 safety confirmation to Day 1 transition sync timeout from the shared 16 second default to 45 seconds.",
+    "Added a full-screen loading overlay while Day 1 practice is being opened so the learner can see that work is in progress.",
+    "Added timeout recovery that re-fetches the session after a 408 and moves to Day 1 if the backend completed the safety confirmation despite the frontend timeout."
+  ],
+  "verification": [
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: tsc and vite built dist/assets/index-BdFYpvEy.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    },
+    {
+      "name": "whitespace check",
+      "target": "local git diff",
+      "command": "git diff --check",
+      "result": "passed"
+    },
+    {
+      "name": "Day 0 transition overlay and timeout bundle check",
+      "target": "local source and dist bundle",
+      "command": "rg -o 'Day 1 실습을 여는 중입니다|안전 확인을 저장하고|45_000|45e3|45000' harness-os/edu-app/src harness-os/edu-app/dist/assets/index-BdFYpvEy.js",
+      "result": "passed: source and production bundle contain the Day 1 loading overlay text and 45 second timeout path"
+    }
+  ],
+  "residual_risk": [
+    "This session did not have an authenticated learner session for a live Day 0 confirmation click before deploy; production bundle verification is run after deploy."
+  ]
+}
