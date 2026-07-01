@@ -1659,7 +1659,33 @@ function StageConceptBlock({
   )
 }
 
-function Day1PracticeLab({ stage }: { stage: TrainingStage }) {
+const TOOL_VALUE_BY_LABEL: Record<string, string> = {
+  ChatGPT: 'chatgpt',
+  Claude: 'claude',
+  Gemini: 'gemini',
+  Genspark: 'genspark',
+  Grok: 'grok',
+}
+
+function labelForLlm(value: string): string {
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'chatgpt' || normalized === 'gpt' || normalized === 'openai') return 'ChatGPT'
+  if (normalized === 'claude' || normalized === 'anthropic') return 'Claude'
+  if (normalized === 'gemini' || normalized === 'google') return 'Gemini'
+  if (normalized === 'genspark') return 'Genspark'
+  if (normalized === 'grok' || normalized === 'xai') return 'Grok'
+  return value || 'AI'
+}
+
+function Day1PracticeLab({
+  stage,
+  onSelectTool,
+  selectingTool,
+}: {
+  stage: TrainingStage
+  onSelectTool?: (tool: string) => void
+  selectingTool?: string
+}) {
   const [copied, setCopied] = useState(false)
   const lab = stage.practice_lab
   if (!lab) return null
@@ -1763,17 +1789,21 @@ function Day1PracticeLab({ stage }: { stage: TrainingStage }) {
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {installGuide.tool_options.map((tool) => {
                   const selected = installGuide.selected_tool === tool
+                  const pending = selectingTool === tool
                   return (
-                    <span
+                    <button
                       key={tool}
+                      type="button"
+                      onClick={() => onSelectTool?.(TOOL_VALUE_BY_LABEL[tool] || tool.toLowerCase())}
+                      disabled={pending}
                       className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
                         selected
                           ? 'border-primary bg-primary text-primary-foreground'
-                          : 'border-primary/20 bg-card text-primary'
-                      }`}
+                          : 'border-primary/20 bg-card text-primary hover:border-primary/50 hover:bg-primary/10'
+                      } disabled:cursor-wait disabled:opacity-70`}
                     >
-                      {tool}
-                    </span>
+                      {pending ? '변경 중...' : tool}
+                    </button>
                   )
                 })}
               </div>
@@ -2233,6 +2263,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const [whyOpen, setWhyOpen] = useState(false)
   const [safetyReady, setSafetyReady] = useState(false)
   const [safetySyncing, setSafetySyncing] = useState(false)
+  const [toolSelecting, setToolSelecting] = useState('')
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [questionArchiveOpen, setQuestionArchiveOpen] = useState(false)
@@ -2515,6 +2546,39 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         seqRef.current = Math.max(seqRef.current, serverSeq)
       })
       .catch((e) => console.error('syncSession failed', e))
+  }
+
+  async function selectDay1Tool(preferredLlm: string) {
+    if (!state || stage !== 'day1' || toolSelecting) return
+    const normalized = preferredLlm.trim().toLowerCase()
+    if (!normalized) return
+    setToolSelecting(labelForLlm(normalized))
+    setError(null)
+    setNotice(null)
+    try {
+      seqRef.current += 1
+      const next = await syncSession({
+        caseId,
+        email,
+        selectedStage: 'day1',
+        preferredLlm: normalized,
+        clientSeq: seqRef.current,
+        eventName: 'preferred_llm_changed',
+        eventPayload: { preferred_llm: normalized },
+        stageDrafts: {
+          day1: stageDraftForSync({}, 'day1'),
+        },
+      })
+      const serverSeq = Number(next.ui_state?.last_client_seq ?? 0)
+      seqRef.current = Math.max(seqRef.current, serverSeq)
+      setState(next)
+      hydrateStageInputs(next, 'day1')
+      setNotice(`${labelForLlm(normalized)} 기준 안내로 바꿨어요.`)
+    } catch (e) {
+      setError(errMsg(e))
+    } finally {
+      setToolSelecting('')
+    }
   }
 
   function toggleCheck(id: string) {
@@ -3417,7 +3481,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         ) : null}
 
         {stage !== 'day0' && current ? (
-          <Day1PracticeLab stage={current} />
+          <Day1PracticeLab stage={current} onSelectTool={selectDay1Tool} selectingTool={toolSelecting} />
         ) : null}
 
         {stage !== 'day0' && current ? (

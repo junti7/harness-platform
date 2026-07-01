@@ -2545,6 +2545,33 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertNotIn("Claude를 처음 쓰는 경우", visible_text)
         self.assertNotIn("Claude 앱이 있으면 앱 열기", visible_text)
 
+    def test_preferred_llm_change_rebuilds_day1_tool_guide_and_preserves_work(self):
+        state = {
+            "intake": {"preferred_llm": "claude", "motivation": "child_study"},
+            "ui_state": {"preferred_llm": "claude", "selected_stage": "day1"},
+            "day0": {"completed": True},
+            "day1": {
+                **self.mod._edu_vp_build_day1({"preferred_llm": "claude", "motivation": "child_study"}),
+                "completed": True,
+                "completed_at": "2026-07-01T01:00:00+00:00",
+                "proof_artifact": "저장한 결과",
+                "stage_checked": ["open_practice_lab"],
+            },
+        }
+
+        changed = self.mod._edu_vp_apply_preferred_llm_change(state, "gemini")
+        guide = changed["day1"]["practice_lab"]["install_guide"]
+        text = " ".join(guide["steps"] + [guide["fallback"]])
+
+        self.assertEqual(changed["intake"]["preferred_llm"], "gemini")
+        self.assertEqual(changed["ui_state"]["preferred_llm"], "gemini")
+        self.assertEqual(guide["selected_tool"], "Gemini")
+        self.assertIn("gemini.google.com", text)
+        self.assertTrue(changed["day1"]["completed"])
+        self.assertEqual(changed["day1"]["completed_at"], "2026-07-01T01:00:00+00:00")
+        self.assertEqual(changed["day1"]["proof_artifact"], "저장한 결과")
+        self.assertEqual(changed["day1"]["stage_checked"], ["open_practice_lab"])
+
     def test_work_motivation_keeps_day1_and_outline_work_focused(self):
         state = {
             "intake": {

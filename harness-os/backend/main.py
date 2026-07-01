@@ -7883,6 +7883,51 @@ def _edu_vp_migrate_day1_guided_practice_lab(state: dict[str, Any]) -> dict[str,
     return state
 
 
+def _edu_vp_apply_preferred_llm_change(state: dict[str, Any], preferred_llm: str) -> dict[str, Any]:
+    normalized = _edu_normalize_llm(preferred_llm)
+    if not normalized:
+        return state
+    intake = state.get("intake") or {}
+    if not isinstance(intake, dict):
+        intake = {}
+    if str(intake.get("preferred_llm") or "") == normalized:
+        return state
+    day1 = state.get("day1") or {}
+    preserved = {
+        key: day1.get(key)
+        for key in (
+            "completed",
+            "completed_at",
+            "saved_at",
+            "proof_artifact",
+            "notes",
+            "blocked_at_step",
+            "stage_checked",
+            "vp_feedback",
+            "safety_concept_feedback",
+            "safety_coach_answers",
+            "safety_coach_threads",
+            "safety_coach_answer_feedback",
+            "deferred_safety_questions",
+            "deleted_safety_answer_keys",
+        )
+        if isinstance(day1, dict) and key in day1
+    }
+    next_intake = {**intake, "preferred_llm": normalized}
+    state["intake"] = next_intake
+    state["primary_llm_path"] = normalized
+    ui_state = state.get("ui_state") or {}
+    if isinstance(ui_state, dict):
+        ui_state["preferred_llm"] = normalized
+        state["ui_state"] = ui_state
+    if isinstance(day1, dict):
+        rebuilt = _edu_vp_build_day1(next_intake)
+        rebuilt.update({key: value for key, value in preserved.items() if value is not None})
+        rebuilt["preferred_llm_changed_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        state["day1"] = rebuilt
+    return state
+
+
 def _edu_vp_refresh_state(state: dict[str, Any]) -> dict[str, Any]:
     state = _edu_vp_normalize_state_keys(state)
     state = _edu_vp_migrate_unconfirmed_day0_safety(state)
@@ -15279,29 +15324,33 @@ def edu_vp_training_session_sync(
             "active_training_anchor_id": str(event_payload.get("anchor_id") or "")[:180],
             "device_claimed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
-    state["ui_state"] = _edu_vp_merge_ui_state(
-        state,
-        {
-            "selected_stage": req.selected_stage,
-            "active_curriculum_index": req.active_curriculum_index,
-            "show_case_archive": bool(req.show_case_archive),
-            "show_continue_from": req.show_continue_from,
-            "preferred_llm": req.preferred_llm,
-            "current_device": req.current_device,
-            "desktop_os": req.desktop_os,
-            "stage_drafts": req.stage_drafts,
-            "safety_confirmed": safety_confirmation,
-            **device_claim,
-            "last_client_seq": incoming_seq,
-            "last_event": {
-                "event_type": req.event_type,
-                "event_name": req.event_name,
-                "event_payload": req.event_payload,
-                "client_seq": incoming_seq,
-                "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            },
+    ui_updates: dict[str, Any] = {
+        "selected_stage": req.selected_stage,
+        "active_curriculum_index": req.active_curriculum_index,
+        "show_case_archive": bool(req.show_case_archive),
+        "show_continue_from": req.show_continue_from,
+        "stage_drafts": req.stage_drafts,
+        "safety_confirmed": safety_confirmation,
+        **device_claim,
+        "last_client_seq": incoming_seq,
+        "last_event": {
+            "event_type": req.event_type,
+            "event_name": req.event_name,
+            "event_payload": req.event_payload,
+            "client_seq": incoming_seq,
+            "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         },
-    )
+    }
+    requested_llm = _edu_normalize_llm(req.preferred_llm) if str(req.preferred_llm or "").strip() else ""
+    if requested_llm:
+        ui_updates["preferred_llm"] = requested_llm
+    if str(req.current_device or "").strip():
+        ui_updates["current_device"] = req.current_device
+    if str(req.desktop_os or "").strip():
+        ui_updates["desktop_os"] = req.desktop_os
+    state["ui_state"] = _edu_vp_merge_ui_state(state, ui_updates)
+    if requested_llm:
+        state = _edu_vp_apply_preferred_llm_change(state, requested_llm)
     if safety_confirmation:
         state = _edu_vp_unlock_day0_practice(state, advance_to_day1=True)
     state = _edu_vp_refresh_state(state)

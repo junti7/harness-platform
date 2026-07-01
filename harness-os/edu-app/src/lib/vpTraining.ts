@@ -317,6 +317,7 @@ export async function syncSession(input: {
   email: string
   selectedStage: StageKey
   activeCurriculumIndex?: number
+  preferredLlm?: string
   stageDrafts?: Record<string, Record<string, unknown>>
   clientSeq: number
   eventName?: string
@@ -327,6 +328,7 @@ export async function syncSession(input: {
     email: input.email,
     selected_stage: input.selectedStage,
     active_curriculum_index: input.activeCurriculumIndex ?? 0,
+    preferred_llm: input.preferredLlm ?? '',
     stage_drafts: input.stageDrafts ?? {},
     client_seq: input.clientSeq,
     event_type: 'ui_sync',
