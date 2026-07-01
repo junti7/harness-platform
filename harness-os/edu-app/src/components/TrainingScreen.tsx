@@ -2702,6 +2702,39 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     if (!state || !item.answer) return
     const answerVersion = item.version || SAFETY_COACH_ANSWER_VERSION
     const key = safetyAnswerKey(id, answerVersion, item.question)
+    const currentRating = coachAnswerFeedbackRef.current[key]?.rating
+    if (currentRating === rating) {
+      const nextFeedback = { ...coachAnswerFeedbackRef.current }
+      delete nextFeedback[key]
+      coachAnswerFeedbackRef.current = nextFeedback
+      setCoachAnswerFeedback(nextFeedback)
+      setNotice('피드백 선택을 취소했어요.')
+      seqRef.current += 1
+      void syncSession({
+        caseId,
+        email,
+        selectedStage: stage,
+        clientSeq: seqRef.current,
+        eventName: 'safety_coach_answer_feedback_cleared',
+        eventPayload: {
+          stage,
+          concept_id: id,
+          concept_title: concept.title,
+          question: item.question ?? '',
+          answer_version: answerVersion,
+          cleared_rating: rating,
+        },
+        stageDrafts: {
+          [stage]: stageDraftForSync({ safety_coach_answer_feedback: nextFeedback }),
+        },
+      })
+        .then((next) => setState(next))
+        .catch((e) => {
+          console.error('safety coach feedback clear sync failed', e)
+          setCoachErrors((prev) => ({ ...prev, [id]: errMsg(e) }))
+        })
+      return
+    }
     const savedAt = new Date().toISOString()
     const nextFeedback: SafetyCoachAnswerFeedback = {
       ...coachAnswerFeedbackRef.current,
