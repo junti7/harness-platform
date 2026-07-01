@@ -9260,7 +9260,7 @@ def _edu_vp_question_asks_direct_principle(question: str) -> bool:
         return True
     ai_system_markers = (
         "ai", "llm", "gpt", "챗gpt", "chatgpt", "claude", "gemini", "생성형",
-        "모델", "transformer", "트랜스포머", "attention", "어텐션",
+        "모델", "transformer", "트랜스포머", "attention", "어텐션", "rag", "검색 증강", "근거 검색",
     )
     ai_mechanism_targets = (
         "답변", "답", "문장", "말", "단어", "토큰", "다음", "후보", "확률", "가능성",
@@ -9298,6 +9298,13 @@ def _edu_vp_question_asks_direct_principle(question: str) -> bool:
     return True
 
 
+def _edu_vp_question_asks_rag_definition(question: str) -> bool:
+    q = str(question or "").strip().lower()
+    if not any(marker in q for marker in ("rag", "검색 증강", "근거 검색", "retrieval augmented")):
+        return False
+    return any(marker in q for marker in ("뭐야", "무엇", "무슨 뜻", "설명", "정의", "알려", "?", "？", "what is", "define"))
+
+
 def _edu_vp_question_asks_error_mechanism(question: str) -> bool:
     q = str(question or "").strip().lower()
     return _edu_vp_question_asks_direct_principle(q) and any(
@@ -9312,6 +9319,8 @@ def _edu_vp_question_compares_transformer_ml(question: str) -> bool:
 
 def _edu_vp_safety_coach_fast_answer(concept_title: str, question: str) -> str | None:
     q = str(question or "").strip()
+    if _edu_vp_question_asks_rag_definition(q):
+        return _edu_vp_safety_coach_fallback(concept_title, q)
     if "조사" in q and ("추측" in q or "이어질" in q or "다음" in q):
         return _edu_vp_safety_coach_fallback(concept_title, q)
     if "명사" in q and ("추측" in q or "이어질" in q or "다음" in q or "최적" in q):
@@ -10624,6 +10633,7 @@ def _edu_vp_safety_coach_input_category(question: str, *, source_channel: str = 
         reasons.append("english_title_or_snippet")
     domain_markers = (
         "ai", "인공지능", "챗gpt", "chatgpt", "gpt", "생성형", "디지털교과서", "디지털 교과서",
+        "llm", "rag", "검색 증강", "근거 검색", "출처 확인", "환각", "프롬프트", "prompt",
         "아이", "자녀", "학생", "학부모", "부모", "엄마", "아빠", "초등", "중등", "고등", "중딩",
         "공부", "학습", "교육", "숙제", "과제", "시험", "성적", "점수", "수학", "영어", "논술", "문해력", "리터러시",
         "학습앱", "학습지", "써밋수학", "밀크t", "초등영어앱",
@@ -10633,6 +10643,7 @@ def _edu_vp_safety_coach_input_category(question: str, *, source_channel: str = 
     has_domain_marker = any(marker in domain_text for marker in domain_markers)
     core_scope_markers = (
         "ai", "인공지능", "챗gpt", "chatgpt", "gpt", "생성형", "디지털교과서", "디지털 교과서",
+        "llm", "rag", "검색 증강", "근거 검색", "출처 확인", "환각", "프롬프트", "prompt",
         "공부", "학습", "교육", "숙제", "과제", "시험", "성적", "점수", "수학", "영어", "논술",
         "문해력", "리터러시", "학습앱", "학습지", "써밋수학", "밀크t", "초등영어앱",
         "인강", "과외", "온라인학습", "비대면 수업", "코딩", "스마트폰", "핸드폰", "휴대폰",
@@ -11582,6 +11593,13 @@ def _edu_vp_safety_coach_fallback_raw(concept_title: str, question: str) -> str:
             "Machine learning은 AI 안에 있는 넓은 분야이고, Transformer는 그 안에서 언어 같은 데이터를 처리할 때 쓰이는 딥러닝 구조 중 하나입니다. "
             "예를 들어 운동이 큰 분야라면 축구 전술은 그 안의 한 방식인 것처럼 보면 됩니다. "
             "정리하면 machine learning은 큰 분야이고, Transformer는 그 안에 포함되는 특정 구조입니다."
+        )
+    if _edu_vp_question_asks_rag_definition(q):
+        return (
+            "RAG는 AI가 혼자 기억만 믿고 답하지 않게, 먼저 관련 자료를 찾아보고 그 근거를 참고해 답하게 하는 방식입니다. "
+            "쉽게 말하면 시험 볼 때 기억으로만 쓰는 게 아니라, 교과서의 해당 쪽을 펴서 확인한 뒤 답하는 것과 비슷합니다. "
+            "그래도 AI가 자료를 잘못 고르거나 엉뚱하게 해석할 수 있으니, 중요한 답은 출처가 실제로 맞는지 사람이 한 번 더 봐야 합니다. "
+            "오늘 기준으로는 RAG를 'AI 답에 근거 자료를 붙여 확인 가능하게 만드는 방법' 정도로 이해하면 충분합니다."
         )
     if any(k in q_lower for k in ("코딩", "교육", "강의", "리터러시", "공부", "학습", "학생", "초등", "중등", "고등", "school", "education", "learning", "learn", "course")):
         return (
@@ -15400,7 +15418,7 @@ def edu_vp_training_safety_coach(
     question = (req.question or "").strip()
     if len(question) < 2:
         raise HTTPException(400, "question is required")
-    stage = req.stage if req.stage in {"day0", "day1"} else "day0"
+    stage = req.stage if re.fullmatch(r"day\d+", str(req.stage or "")) else "day0"
     concept_id = (req.concept_id or "")[:120]
     answer_version = _edu_vp_safety_coach_answer_version(req.answer_version)
     input_category = _edu_vp_safety_coach_input_category(question)

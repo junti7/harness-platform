@@ -403,6 +403,27 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertIn("Transformer는 그 안", answer)
         self.assertEqual(issues, [])
 
+    def test_safety_coach_answers_rag_definition_in_day1_terms(self):
+        question = "그런데 RAG가 뭐야?"
+        category = self.mod._edu_vp_safety_coach_input_category(question)
+        answer = self.mod._edu_vp_safety_coach_fallback(
+            "Day 1 · 도구 선택/소개",
+            question,
+        )
+        fast_answer = self.mod._edu_vp_safety_coach_fast_answer(
+            "Day 1 · 도구 선택/소개",
+            question,
+        )
+
+        self.assertEqual(category["category"], "real_user_question")
+        self.assertTrue(category["eligible_for_answer_quality"])
+        self.assertIn("관련 자료를 찾아보고", answer)
+        self.assertIn("믿을 만한", answer)
+        self.assertIn("출처", answer)
+        self.assertNotIn("범위에서 조금 벗어나", answer)
+        self.assertIsNotNone(fast_answer)
+        self.assertIn("관련 자료를 찾아보고", fast_answer)
+
     def test_safety_coach_generic_fallback_anchors_on_question_focus(self):
         question = "이런 상황이면 어떻게 해야 해요? 초등학생 수학 점수가 떨어져서 AI 학습을 시작해야 할지 걱정돼요"
         answer = self.mod._edu_vp_safety_coach_fallback("수집 corpus 기반 사용자 질문", question)

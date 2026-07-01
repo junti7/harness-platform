@@ -1,0 +1,48 @@
+{
+  "task": "Answer Day 1 RAG definition questions instead of rejecting them as out of scope",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Completion requires real verification before reporting done, and code or UI changes require completion evidence."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Code, deploy, UI, and customer-facing answer changes require real entrypoint verification and completion evidence guard."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Classified RAG, source-checking, hallucination, and prompt terms as EDU AI training scope instead of out_of_scope.",
+    "Added a direct RAG definition answer to the safety coach fallback and fast-template path.",
+    "Allowed safety coach event stage values matching dayN so Day 2 and later questions are not forced into day0.",
+    "Added regression coverage for the exact question '그런데 RAG가 뭐야?'."
+  ],
+  "verification": [
+    {
+      "name": "edu VP training regression tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "passed: 115 passed, 59 subtests passed"
+    },
+    {
+      "name": "backend syntax check",
+      "target": "local py_compile",
+      "command": ".venv/bin/python -m py_compile harness-os/backend/main.py",
+      "result": "passed"
+    },
+    {
+      "name": "completion evidence guard",
+      "target": "pre-push git hook",
+      "command": "scripts/agent_completion_guard.py docs/reports/completion_evidence/edu_training_rag_question_answer_first_20260701.json",
+      "result": "passed: completion_guard CLEAR"
+    }
+  ],
+  "residual_risk": []
+}
