@@ -1,0 +1,68 @@
+{
+  "task": "Prevent Day 0 safety confirmation timeout from blocking Day 1 practice entry",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T21:00:22+09:00",
+      "summary": "UI and code changes require real verification, completion evidence, and exact residual risk reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T21:00:22+09:00",
+      "summary": "Completion for customer-facing changes requires real runtime or user-facing verification and completion guard validation."
+    }
+  ],
+  "scope": [
+    "harness-os/edu-app/src/components/TrainingScreen.tsx",
+    "harness-os/edu-app/src/lib/vpTraining.ts"
+  ],
+  "changes": [
+    "Changed Day 0 safety confirmation to open Day 1 immediately with an optimistic local state update.",
+    "Kept the server sync request in the background so persistence can still complete without blocking the learner's screen transition.",
+    "Changed timeout handling so a 408 after Day 1 opens does not show the red failure state or reset the safety gate.",
+    "Added frontend state types for backend fields used by the optimistic transition."
+  ],
+  "verification": [
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: tsc and vite built dist/assets/index-DwmWW17K.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    },
+    {
+      "name": "VP training backend regression",
+      "target": "tests/test_edu_vp_training_flow.py",
+      "command": ".venv/bin/python tests/test_edu_vp_training_flow.py",
+      "result": "passed: 129 tests"
+    },
+    {
+      "name": "optimistic transition bundle check",
+      "target": "local source and dist bundle",
+      "command": "rg -o 'Day 1 화면은 열렸어요|Day 0 완료! Day 1 실습으로 이동했어요|last_client_seq|show_continue_from' harness-os/edu-app/src harness-os/edu-app/dist/assets/index-DwmWW17K.js",
+      "result": "passed: source and production bundle contain the optimistic Day 1 transition and timeout notice paths"
+    },
+    {
+      "name": "Mac Mini runtime entrypoint check",
+      "target": "macmini edu app and backend URLs",
+      "command": "curl -fsS --max-time 5 http://100.97.175.44:5174/ | head -5 && curl -fsS --max-time 5 http://100.97.175.44:8000/ | head -5",
+      "result": "passed: both runtime HTTP entrypoints returned HTML"
+    },
+    {
+      "name": "whitespace check",
+      "target": "local git diff",
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "residual_risk": [
+    "No authenticated browser click replay was available in this session; verification used build, lint, regression tests, bundle checks, and live Mac Mini HTTP entrypoints."
+  ]
+}

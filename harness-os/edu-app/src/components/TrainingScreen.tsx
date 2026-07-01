@@ -3349,14 +3349,66 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     const confirmedConceptIds = (current?.foundation_concepts ?? [])
       .map((concept, index) => conceptId(concept, index))
       .filter((id) => checked[id])
+    const requestSeq = seqRef.current + 1
+    seqRef.current = requestSeq
     setSafetySyncing(true)
     setError(null)
-    seqRef.current += 1
+    if (stage === 'day0') {
+      const now = new Date().toISOString()
+      const optimisticState: TrainingState = {
+        ...state,
+        day0: {
+          ...(state.day0 ?? {}),
+          safety_confirmed: true,
+          completed: true,
+          completed_at: String(state.day0?.completed_at || now),
+          saved_at: String(state.day0?.saved_at || now),
+          proof_artifact: String(state.day0?.proof_artifact || 'Day 0 안전 설명 확인 완료'),
+        },
+        ui_state: {
+          ...(state.ui_state ?? {}),
+          selected_stage: 'day1',
+          active_training_stage: 'day1',
+          show_continue_from: 'day1',
+          safety_confirmed: {
+            ...(state.ui_state?.safety_confirmed ?? {}),
+            day0: true,
+          },
+          last_client_seq: requestSeq,
+        },
+        flow_outline: [
+          {
+            key: 'day0',
+            label: 'Day 0',
+            title: String(state.day0?.title || 'Day 0'),
+            completed: true,
+            pct: 100,
+          },
+          {
+            key: 'day1',
+            label: 'Day 1',
+            title: String(state.day1?.title || 'Day 1'),
+            completed: Boolean(state.day1?.completed),
+            pct: stageProgressPct(state, 'day1'),
+          },
+        ],
+        progress: {
+          completed_stages: 1 + Number(Boolean(state.day1?.completed)),
+          total_stages: 2,
+          pct: state.day1?.completed ? 100 : 50,
+        },
+      }
+      setState(optimisticState)
+      setSafetyReady(true)
+      hydrateStageInputs(optimisticState, 'day1')
+      setNotice('Day 0 완료! Day 1 실습으로 이동했어요.')
+      setSafetySyncing(false)
+    }
     void syncSession({
       caseId,
       email,
       selectedStage: stage,
-      clientSeq: seqRef.current,
+      clientSeq: requestSeq,
       eventName: 'safety_orientation_confirmed',
       eventPayload: {
         stage,
@@ -3389,6 +3441,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       .then((next) => {
         setState(next)
         setSafetyReady(Boolean(next.ui_state?.safety_confirmed?.[stage] || next[stage]?.completed))
+        seqRef.current = Math.max(seqRef.current, Number(next.ui_state?.last_client_seq ?? 0), requestSeq)
         if (stage === 'day0' && next.day0?.completed) {
           hydrateStageInputs(next, 'day1')
           setNotice('Day 0 완료! Day 1 실습으로 이동했어요.')
@@ -3413,9 +3466,13 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           } catch (refreshError) {
             console.error('safety confirmation timeout refresh failed', refreshError)
           }
+          setError(null)
+          setSafetyReady(true)
+          setNotice('Day 1 화면은 열렸어요. 저장 확인이 늦어지고 있어요.')
+          return
         }
         setError(errMsg(e))
-        setSafetyReady(false)
+        if (stage !== 'day0') setSafetyReady(false)
       })
       .finally(() => setSafetySyncing(false))
   }

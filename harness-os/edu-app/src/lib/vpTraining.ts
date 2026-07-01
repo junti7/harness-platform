@@ -220,6 +220,9 @@ export type TrainingStage = {
   proof_artifact?: string
   notes?: string
   completed?: boolean
+  completed_at?: string
+  saved_at?: string
+  safety_confirmed?: boolean
 }
 
 export type FlowOutlineItem = {
@@ -291,6 +294,7 @@ export type TrainingUiState = {
   active_training_case_id?: number
   active_training_stage?: StageKey
   active_training_anchor_id?: string
+  show_continue_from?: StageKey | string
   device_claimed_at?: string
   last_client_seq?: number
 }
