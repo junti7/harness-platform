@@ -1887,38 +1887,6 @@ function Day1PracticeLab({
         </div>
       ) : null}
 
-      {toolCards.length ? (
-        <div className="mb-4 grid gap-2 sm:grid-cols-3">
-          {toolCards.map((item, index) => {
-            const Icon = item.visual === 'phone' ? Smartphone : item.visual === 'app' ? Download : MessageSquareText
-            return (
-              <div key={`${item.title}-${index}`} className="rounded-[14px] border border-border bg-secondary/70 p-3">
-                {item.image_src ? (
-                  <img
-                    src={item.image_src}
-                    alt={item.image_alt || item.title}
-                    loading="lazy"
-                    className="mb-3 aspect-[16/9] w-full rounded-[12px] border border-border bg-card object-cover"
-                  />
-                ) : null}
-                <div className="mb-2 flex items-center gap-2">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-card text-primary">
-                    <Icon size={17} />
-                  </span>
-                  <div className="text-sm font-bold leading-snug text-ink">{item.title}</div>
-                </div>
-                {item.body ? <p className="text-xs leading-relaxed text-text-muted">{renderLinkedToolDomains(item.body)}</p> : null}
-                {item.action ? (
-                  <div className="mt-2 rounded-[10px] border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] font-semibold leading-relaxed text-primary">
-                    {renderLinkedToolDomains(item.action)}
-                  </div>
-                ) : null}
-              </div>
-            )
-          })}
-        </div>
-      ) : null}
-
       {installGuide ? (
         <div className="mb-4 grid gap-3 rounded-[14px] border border-primary/20 bg-primary/5 p-3 md:grid-cols-[0.9fr_1.1fr]">
           {installGuide.image_src ? (
@@ -1976,6 +1944,38 @@ function Day1PracticeLab({
               </div>
             ) : null}
           </div>
+        </div>
+      ) : null}
+
+      {toolCards.length ? (
+        <div className="mb-4 grid gap-2 sm:grid-cols-3">
+          {toolCards.map((item, index) => {
+            const Icon = item.visual === 'phone' ? Smartphone : item.visual === 'app' ? Download : MessageSquareText
+            return (
+              <div key={`${item.title}-${index}`} className="rounded-[14px] border border-border bg-secondary/70 p-3">
+                {item.image_src ? (
+                  <img
+                    src={item.image_src}
+                    alt={item.image_alt || item.title}
+                    loading="lazy"
+                    className="mb-3 aspect-[16/9] w-full rounded-[12px] border border-border bg-card object-cover"
+                  />
+                ) : null}
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-card text-primary">
+                    <Icon size={17} />
+                  </span>
+                  <div className="text-sm font-bold leading-snug text-ink">{item.title}</div>
+                </div>
+                {item.body ? <p className="text-xs leading-relaxed text-text-muted">{renderLinkedToolDomains(item.body)}</p> : null}
+                {item.action ? (
+                  <div className="mt-2 rounded-[10px] border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] font-semibold leading-relaxed text-primary">
+                    {renderLinkedToolDomains(item.action)}
+                  </div>
+                ) : null}
+              </div>
+            )
+          })}
         </div>
       ) : null}
 

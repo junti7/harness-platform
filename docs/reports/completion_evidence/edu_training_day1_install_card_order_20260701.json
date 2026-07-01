@@ -1,0 +1,65 @@
+{
+  "task": "Move the Day 1 first-time install guide before the in-screen practice cards",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T21:35:34+09:00",
+      "summary": "UI changes require real verification, completion evidence, and exact residual risk reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T21:35:34+09:00",
+      "summary": "Customer-facing UI changes require runtime or user-facing verification and completion evidence guard validation."
+    }
+  ],
+  "scope": [
+    "harness-os/edu-app/src/components/TrainingScreen.tsx"
+  ],
+  "changes": [
+    "Moved the installGuide block above the toolCards block inside Day1PracticeLab.",
+    "Kept the rest of the Day 1 practice lab content and behavior unchanged."
+  ],
+  "verification": [
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: tsc and vite built dist/assets/index-uIFrJ4WB.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    },
+    {
+      "name": "Day 1 source order check",
+      "target": "TrainingScreen.tsx",
+      "command": "node source-order check for 설치가 처음이라면 before toolCards",
+      "result": "passed: installBeforeTool=true"
+    },
+    {
+      "name": "bundle text check",
+      "target": "local source and dist bundle",
+      "command": "rg -o '설치가 처음이라면|2. 사용할 AI 도구 선택 후 열기|어디서 무엇을 하나요' harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/dist/assets/index-uIFrJ4WB.js",
+      "result": "passed: source and production bundle contain the expected Day 1 section labels"
+    },
+    {
+      "name": "Mac Mini runtime entrypoint check",
+      "target": "macmini edu app url",
+      "command": "curl -fsS --max-time 5 http://100.97.175.44:5174/ | head -5",
+      "result": "passed: edu app HTTP entrypoint returned HTML"
+    },
+    {
+      "name": "whitespace check",
+      "target": "local git diff",
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "residual_risk": [
+    "No authenticated browser screenshot capture was available in this session; verification used build, lint, source order check, bundle check, and live Mac Mini HTTP entrypoint."
+  ]
+}
