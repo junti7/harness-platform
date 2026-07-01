@@ -41,11 +41,35 @@
       "target": "local git diff",
       "command": "git diff --check",
       "result": "passed"
+    },
+    {
+      "name": "Mac Mini scoped deploy",
+      "target": "Mac Mini source",
+      "command": "scripts/deploy_to_macmini.sh harness-os/edu-app/src/components/TrainingScreen.tsx docs/reports/completion_evidence/edu_training_tool_switch_overlay_generic_prompt_20260701.json",
+      "result": "passed: selected paths diff origin/main = 0"
+    },
+    {
+      "name": "Mac Mini edu-app production build and restart",
+      "target": "Mac Mini production dist and launchd",
+      "command": "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/sbin /opt/homebrew/bin/npm run build --prefix harness-os/edu-app && launchctl kickstart -k gui/$uid/com.harness.edu-app",
+      "result": "passed: vite built and production HTML serves assets/index-CP4FVuNa.js and assets/index-CkzoPSYf.css"
+    },
+    {
+      "name": "Mac Mini production bundle content check",
+      "target": "Mac Mini production JS bundle",
+      "command": "curl -fsS http://100.97.175.44:5174/assets/index-CP4FVuNa.js | rg '선택한 AI 도구의 입력창|기준 안내로 변경 중|설치 안내와 실습 문구'",
+      "result": "passed: production bundle contains generic prompt-copy wording and loading overlay text"
+    },
+    {
+      "name": "Mac Mini full edu VP training flow tests",
+      "target": "Mac Mini pytest",
+      "command": "DATABASE_URL=postgresql://localhost/harness_prod .venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "passed: 126 passed, 2 warnings, 64 subtests passed"
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh harness-os/edu-app/src/components/TrainingScreen.tsx docs/reports/completion_evidence/edu_training_tool_switch_overlay_generic_prompt_20260701.json plus Mac Mini npm run build --prefix harness-os/edu-app and launchctl kickstart -k gui/$uid/com.harness.edu-app",
-    "result": "pending"
+    "result": "deployed and verified: production edu-app bundle assets/index-CP4FVuNa.js is served, includes generic prompt-copy wording and tool-switch loading overlay text, and Mac Mini full edu VP training tests passed"
   },
   "residual_risk": []
 }
