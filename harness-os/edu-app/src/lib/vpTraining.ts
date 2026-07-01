@@ -51,6 +51,7 @@ export async function listCases(email: string): Promise<TrainingCase[]> {
 }
 
 const CURRICULUM_ATTRS_STORAGE_KEY = 'vp_curriculum_attrs'
+const START_NEW_CASE_TIMEOUT_MS = 45_000
 
 const DEFAULT_CURRICULUM_ATTRS: CurriculumAttrs = {
   llm: 'chatgpt',
@@ -147,7 +148,7 @@ export async function startNewCase(email: string, name: string): Promise<number 
   const r = await vpPost<{ ok: boolean; case_id?: number }>(VP_TRAINING.intake, {
     ...curriculumAttrsToIntake(email, name, attrs),
     force_new: true,
-  })
+  }, START_NEW_CASE_TIMEOUT_MS)
   return typeof r.case_id === 'number' ? r.case_id : null
 }
 

@@ -28,6 +28,9 @@ function errMessage(e: unknown): string {
     if (e.status === 401 || e.status === 403) return '인증에 실패했습니다. 다시 확인해주세요.'
     return e.message || '요청 처리 중 문제가 발생했습니다.'
   }
+  if (e instanceof Error && e.message === 'missing new training case id') {
+    return '새 훈련 번호를 받지 못했어요. 잠시 후 다시 눌러주세요.'
+  }
   return '네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
 }
 
@@ -40,6 +43,7 @@ function App() {
   const [authError, setAuthError] = useState<string | null>(null)
   const [casesError, setCasesError] = useState<string | null>(null)
   const [authLoading, setAuthLoading] = useState(false)
+  const [creatingCase, setCreatingCase] = useState(false)
   // 세션 복원 시 곧바로 케이스를 fetch 하므로 초기값을 그에 맞춘다.
   const [casesLoading, setCasesLoading] = useState<boolean>(() => session !== null)
 
@@ -109,29 +113,34 @@ function App() {
   )
 
   const handleNew = useCallback(async () => {
-    if (!session) return
-    setCasesLoading(true)
+    if (!session || creatingCase) return
+    setCreatingCase(true)
+    setCasesError(null)
     try {
       const newCaseId = await startNewCase(session.email, session.name)
-      await refreshCases(session.email)
-      if (newCaseId != null) {
-        setSelectedCaseId(newCaseId)
-        setView('training')
-      }
+      if (newCaseId == null) throw new Error('missing new training case id')
+      setSelectedCaseId(newCaseId)
+      setView('training')
+      setCasesLoading(true)
+      void refreshCases(session.email)
     } catch (e) {
       console.error('startNewCase failed', e)
-      setCasesLoading(false)
+      setCasesError(errMessage(e))
+      await refreshCases(session.email)
+    } finally {
+      setCreatingCase(false)
     }
-  }, [session, refreshCases])
+  }, [session, creatingCase, refreshCases])
 
   const handleSelect = useCallback((caseId: number) => {
+    if (creatingCase) return
     setSelectedCaseId(caseId)
     setView('training')
-  }, [])
+  }, [creatingCase])
 
   const handleDelete = useCallback(
     async (caseId: number) => {
-      if (!session) return
+      if (!session || creatingCase) return
       const previousCases = cases
       setCases((prev) => prev.filter((c) => c.case_id !== caseId))
       try {
@@ -143,17 +152,18 @@ function App() {
         await refreshCases(session.email)
       }
     },
-    [session, cases, refreshCases],
+    [session, creatingCase, cases, refreshCases],
   )
 
   const handleLogout = useCallback(() => {
+    if (creatingCase) return
     clearSession()
     setSession(null)
     setCases([])
     setCasesError(null)
     setSelectedCaseId(null)
     setView('auth')
-  }, [])
+  }, [creatingCase])
 
   if (view === 'auth' || !session) {
     return (
@@ -189,6 +199,7 @@ function App() {
       userName={session.name}
       cases={cases}
       loading={casesLoading}
+      creating={creatingCase}
       error={casesError}
       onSelect={handleSelect}
       onNew={handleNew}

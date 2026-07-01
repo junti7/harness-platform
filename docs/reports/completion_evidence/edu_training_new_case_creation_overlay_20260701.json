@@ -1,0 +1,58 @@
+{
+  "task": "Make new training creation visible and more reliable",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T20:18:10+09:00",
+      "summary": "Completion requires evidence-backed reporting, real verification, and completion evidence for UI changes."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T20:18:10+09:00",
+      "summary": "UI and customer-facing changes require concrete verification evidence and completion guard validation."
+    }
+  ],
+  "scope": [
+    "harness-os/edu-app/src/App.tsx",
+    "harness-os/edu-app/src/components/CaseSelectScreen.tsx",
+    "harness-os/edu-app/src/lib/vpTraining.ts"
+  ],
+  "changes": [
+    "Added a dedicated creatingCase state so new training creation is separate from ordinary case-list loading.",
+    "Added a full-screen loading overlay while a new training case is being generated.",
+    "Prevented duplicate case creation, selection, deletion, and logout actions while creation is in progress.",
+    "Surfaced missing case_id and API errors instead of silently staying on the case list.",
+    "Raised the new training intake request timeout from 16 seconds to 45 seconds to avoid aborting longer Day 0/Day 1 generation."
+  ],
+  "verification": [
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: tsc and vite built dist/assets/index-DGsrYEmb.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    },
+    {
+      "name": "whitespace check",
+      "target": "local git diff",
+      "command": "git diff --check",
+      "result": "passed"
+    },
+    {
+      "name": "new-case overlay bundle check",
+      "target": "local dist bundle",
+      "command": "rg '새 훈련을 만들고 있어요|새 훈련 준비 중|45_000|선택한 AI 도구와 학습 목적' harness-os/edu-app/src harness-os/edu-app/dist/assets/index-DGsrYEmb.js",
+      "result": "passed: source and production bundle contain the new creation overlay text and extended timeout path"
+    }
+  ],
+  "residual_risk": [
+    "This session did not have an authenticated user session for an end-to-end click against production before deploy; production bundle verification is run after deploy."
+  ]
+}

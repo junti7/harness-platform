@@ -11,6 +11,7 @@ export type CaseSelectScreenProps = {
   userName: string
   cases: TrainingCase[]
   loading?: boolean
+  creating?: boolean
   error?: string | null
   onSelect: (caseId: number) => void
   onNew: () => void
@@ -47,6 +48,7 @@ export default function CaseSelectScreen({
   userName,
   cases,
   loading,
+  creating,
   error,
   onSelect,
   onNew,
@@ -128,8 +130,23 @@ export default function CaseSelectScreen({
     }
   }
 
+  const busyCreating = Boolean(creating)
+
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 py-7 sm:max-w-[760px] sm:px-6 lg:max-w-[960px] xl:max-w-[1120px] xl:px-8">
+    <div className="relative mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 py-7 sm:max-w-[760px] sm:px-6 lg:max-w-[960px] xl:max-w-[1120px] xl:px-8">
+      {busyCreating ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-card/85 px-5 text-center backdrop-blur-sm">
+          <div className="flex w-full max-w-[320px] flex-col items-center gap-3 rounded-2xl border border-primary/20 bg-card px-6 py-5 shadow-lg">
+            <span className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-primary text-primary-foreground">
+              <Loader2 size={24} className="animate-spin" />
+            </span>
+            <div className="text-base font-bold text-ink-strong">새 훈련을 만들고 있어요</div>
+            <p className="text-sm leading-relaxed text-text-muted">
+              선택한 AI 도구와 학습 목적에 맞춰 Day 0, Day 1 화면을 준비하는 중입니다.
+            </p>
+          </div>
+        </div>
+      ) : null}
       <header className="mb-6 flex items-center justify-between">
         <div className="flex flex-col">
           <span className="text-xs font-semibold uppercase tracking-[0.12em] text-text-faint">
@@ -152,10 +169,11 @@ export default function CaseSelectScreen({
       <button
         type="button"
         onClick={onNew}
-        disabled={loading}
+        disabled={loading || busyCreating}
         className="mb-5 flex h-13 items-center justify-center gap-2 rounded-[12px] bg-primary py-3.5 text-[15px] font-semibold text-primary-foreground shadow-sm transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <Plus size={18} strokeWidth={2.4} />새 훈련 시작
+        {busyCreating ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} strokeWidth={2.4} />}
+        {busyCreating ? '새 훈련 준비 중…' : '새 훈련 시작'}
       </button>
 
       <button
@@ -180,7 +198,7 @@ export default function CaseSelectScreen({
         </div>
       ) : null}
 
-      {loading ? (
+      {loading && !busyCreating ? (
         <ul className="flex flex-col gap-3" aria-hidden>
           {[0, 1, 2].map((i) => (
             <li
