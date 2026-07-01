@@ -1,0 +1,55 @@
+{
+  "task": "Repair stale Day 1 after AI tool switch",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T14:35:00+09:00",
+      "summary": "Completion requires evidence-backed reporting, entrypoint verification, and completion evidence guard for code, UI, deploy, and customer-facing answer changes."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T14:35:00+09:00",
+      "summary": "Mac Mini production changes require source-of-truth deploy flow, real user entrypoint verification, and completion evidence guard before reporting complete."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Fixed preferred_llm change repair when intake/ui_state already has the selected LLM but the Day 1 practice card still contains the old selected_tool.",
+    "The backend now compares Day 1 install_guide.selected_tool with the requested LLM label before deciding no rebuild is needed.",
+    "Added regression coverage for the partial-sync stale state: intake/ui_state=gemini but Day 1 still shows Claude."
+  ],
+  "verification": [
+    {
+      "name": "targeted preferred LLM switch tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -k 'preferred_llm_change or day1_install_guide'",
+      "result": "passed: 3 passed, 120 deselected, 3 warnings"
+    },
+    {
+      "name": "full edu VP training flow tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py",
+      "result": "passed: 123 passed, 3 warnings"
+    },
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build",
+      "result": "passed: tsc and vite built dist/assets/index-DImRapPE.js"
+    },
+    {
+      "name": "backend syntax check",
+      "target": "local py_compile",
+      "command": ".venv/bin/python -m py_compile harness-os/backend/main.py",
+      "result": "passed"
+    }
+  ],
+  "residual_risk": [
+    "Mac Mini deploy and production verification are recorded after deployment in this evidence file."
+  ]
+}

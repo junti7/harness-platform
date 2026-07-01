@@ -7890,9 +7890,18 @@ def _edu_vp_apply_preferred_llm_change(state: dict[str, Any], preferred_llm: str
     intake = state.get("intake") or {}
     if not isinstance(intake, dict):
         intake = {}
-    if str(intake.get("preferred_llm") or "") == normalized:
-        return state
     day1 = state.get("day1") or {}
+    expected_tool = _edu_vp_llm_label(normalized)
+    current_tool = ""
+    if isinstance(day1, dict):
+        current_tool = str(((day1.get("practice_lab") or {}).get("install_guide") or {}).get("selected_tool") or "")
+    already_current = (
+        str(intake.get("preferred_llm") or "") == normalized
+        and current_tool == expected_tool
+        and str((state.get("ui_state") or {}).get("preferred_llm") or "") == normalized
+    )
+    if already_current:
+        return state
     preserved = {
         key: day1.get(key)
         for key in (

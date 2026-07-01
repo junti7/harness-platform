@@ -2572,6 +2572,23 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(changed["day1"]["proof_artifact"], "저장한 결과")
         self.assertEqual(changed["day1"]["stage_checked"], ["open_practice_lab"])
 
+    def test_preferred_llm_change_repairs_stale_day1_after_partial_sync(self):
+        state = {
+            "intake": {"preferred_llm": "gemini", "motivation": "child_study"},
+            "ui_state": {"preferred_llm": "gemini", "selected_stage": "day1"},
+            "day0": {"completed": True},
+            "day1": self.mod._edu_vp_build_day1({"preferred_llm": "claude", "motivation": "child_study"}),
+        }
+
+        changed = self.mod._edu_vp_apply_preferred_llm_change(state, "gemini")
+        guide = changed["day1"]["practice_lab"]["install_guide"]
+        text = " ".join(guide["steps"] + [guide["fallback"]])
+
+        self.assertEqual(changed["intake"]["preferred_llm"], "gemini")
+        self.assertEqual(changed["ui_state"]["preferred_llm"], "gemini")
+        self.assertEqual(guide["selected_tool"], "Gemini")
+        self.assertIn("gemini.google.com", text)
+
     def test_work_motivation_keeps_day1_and_outline_work_focused(self):
         state = {
             "intake": {
