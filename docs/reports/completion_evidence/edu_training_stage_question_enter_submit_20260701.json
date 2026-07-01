@@ -1,0 +1,49 @@
+{
+  "task": "Submit training stage clarification questions with Enter across Day 1 and future stages",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Completion requires real verification before reporting done, and code or UI changes require completion evidence."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Code, deploy, UI, and customer-facing changes require real entrypoint verification and completion evidence guard."
+    }
+  ],
+  "scope": [
+    "harness-os/edu-app/src/components/TrainingScreen.tsx",
+    "harness-os/edu-app/src/lib/vpTraining.ts"
+  ],
+  "changes": [
+    "Added Enter-to-submit and Shift+Enter newline behavior to the non-Day-0 concept question textarea.",
+    "Connected the stage concept question field to the existing LLM coach request path, including loading, duplicate-answer, error, and answer display states.",
+    "Generalized the concept block, detail preview, stage labels, stage ordering, and stage unlock logic so Day 2, Day 3, and later stages receive the same behavior when present in training state."
+  ],
+  "verification": [
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build",
+      "result": "passed: tsc and vite built dist/assets/index-C-Gia8ct.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint",
+      "result": "passed"
+    },
+    {
+      "name": "completion evidence guard",
+      "target": "pre-push git hook",
+      "command": "scripts/agent_completion_guard.py docs/reports/completion_evidence/edu_training_stage_question_enter_submit_20260701.json",
+      "result": "passed: completion_guard CLEAR"
+    }
+  ],
+  "residual_risk": [
+    "No browser automation test exists in edu-app yet; behavior was verified by TypeScript build and code path inspection against the shared requestCoachAnswer handler."
+  ]
+}

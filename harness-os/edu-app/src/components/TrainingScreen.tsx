@@ -54,8 +54,7 @@ export type TrainingScreenProps = {
   onBack: () => void
 }
 
-const STAGE_ORDER: StageKey[] = ['day0', 'day1']
-const STAGE_LABEL: Record<StageKey, string> = { day0: 'Day 0', day1: 'Day 1' }
+const BASE_STAGE_ORDER: StageKey[] = ['day0', 'day1']
 const SAFETY_COACH_ANSWER_VERSION = '2026-06-28-source-format-v24'
 const TRAINING_DEVICE_ID_KEY = 'vp_training_device_id'
 const TRAINING_LOCAL_DRAFT_PREFIX = 'vp_training_stage_draft'
@@ -161,10 +160,31 @@ function stageChecklist(stage: TrainingStage | undefined): ChecklistItem[] {
   return (stage?.pass_fail_rubric ?? []).map((t, i) => ({ id: `rubric-${i}`, title: t }))
 }
 
-/** ui_state.selected_stage 우선, 단 day1 은 day0 완료 시에만 허용. */
+function stageNumber(key: StageKey): number {
+  const matched = key.match(/^day(\d+)$/)
+  return matched ? Number(matched[1]) : 0
+}
+
+function stageLabel(key: StageKey): string {
+  return `Day ${stageNumber(key)}`
+}
+
+function stageOrderFromState(st: TrainingState | null): StageKey[] {
+  const fromFlow = (st?.flow_outline ?? []).map((item) => item.key)
+  const fromState = Object.keys(st ?? {}).filter((key): key is StageKey => /^day\d+$/.test(key))
+  return Array.from(new Set([...BASE_STAGE_ORDER, ...fromFlow, ...fromState])).sort((a, b) => stageNumber(a) - stageNumber(b))
+}
+
+function stageIsUnlocked(st: TrainingState | null, key: StageKey): boolean {
+  const n = stageNumber(key)
+  if (n <= 0) return true
+  return Boolean(st?.[`day${n - 1}` as StageKey]?.completed)
+}
+
+/** ui_state.selected_stage 우선, 단 이전 Day 완료 시에만 허용. */
 function pickStage(st: TrainingState): StageKey {
   const want = st.ui_state?.selected_stage
-  if (want === 'day1' && st.day0?.completed) return 'day1'
+  if (want && stageIsUnlocked(st, want)) return want
   return 'day0'
 }
 
@@ -729,12 +749,12 @@ function safetyCoachThreadGroups(
   activeDeletedKeys: SafetyDeletedAnswerKeys,
 ): SafetyCoachThreadGroup[] {
   const drafts = state?.ui_state?.stage_drafts ?? {}
-  return STAGE_ORDER.map((key) => {
+  return stageOrderFromState(state).map((key) => {
     const draftDeleted = currentDeletedSafetyAnswerKeys(drafts[key]?.deleted_safety_answer_keys)
     const deleted = key === activeStage ? Array.from(new Set([...draftDeleted, ...activeDeletedKeys])) : draftDeleted
     const draftThreads = currentSafetyCoachThreads(drafts[key]?.safety_coach_threads, deleted)
     const items = key === activeStage ? mergeSafetyCoachThreads(draftThreads, activeThreads) : draftThreads
-    return { stage: key, label: STAGE_LABEL[key], items }
+    return { stage: key, label: stageLabel(key), items }
   })
 }
 
@@ -749,7 +769,7 @@ function deferredSafetyQuestionItems(
   activeDeletedKeys: SafetyDeletedAnswerKeys,
 ): DeferredSafetyQuestions {
   const drafts = state?.ui_state?.stage_drafts ?? {}
-  const all = STAGE_ORDER.map((key) => {
+  const all = stageOrderFromState(state).map((key) => {
     const draftDeleted = currentDeletedSafetyAnswerKeys(drafts[key]?.deleted_safety_answer_keys)
     const deleted = key === activeStage ? Array.from(new Set([...draftDeleted, ...activeDeletedKeys])) : draftDeleted
     const draftItems = currentDeferredSafetyQuestions(drafts[key]?.deferred_safety_questions, deleted)
@@ -1282,7 +1302,7 @@ function PlannedCurriculumPreview({ items }: { items: PlannedCurriculumItem[] })
   )
 }
 
-function Day1DetailPreview({ stage, active = false }: { stage?: TrainingStage; active?: boolean }) {
+function StageDetailPreview({ stage, active = false }: { stage?: TrainingStage; active?: boolean }) {
   const [open, setOpen] = useState(active)
   if (!stage?.title) return null
   const concepts = stage.foundation_concepts ?? []
@@ -1303,7 +1323,7 @@ function Day1DetailPreview({ stage, active = false }: { stage?: TrainingStage; a
             <ScrollText size={13} />{active ? '오늘의 과정' : '다음 훈련 상세'}
           </div>
           <h2 className="text-base font-bold leading-snug text-ink-strong">
-            {active ? 'Day 1 전체 흐름' : stage.title}
+            {active ? '전체 흐름' : stage.title}
           </h2>
           {stage.learning_outcome ? (
             <p className="mt-1 text-xs leading-relaxed text-text-muted">{stage.learning_outcome}</p>
@@ -1408,18 +1428,26 @@ function Day1DetailPreview({ stage, active = false }: { stage?: TrainingStage; a
   )
 }
 
-function Day1ConceptBlock({
+function StageConceptBlock({
   stage,
   checked,
   conceptFeedback,
+  coachAnswers,
+  coachLoading,
+  coachErrors,
   onToggle,
   onConceptFeedback,
+  onAskCoach,
 }: {
   stage: TrainingStage
   checked: Record<string, boolean>
   conceptFeedback: SafetyConceptFeedback
+  coachAnswers: SafetyCoachAnswers
+  coachLoading: Record<string, boolean>
+  coachErrors: Record<string, string>
   onToggle: (id: string) => void
   onConceptFeedback: (id: string, value: string) => void
+  onAskCoach: (concept: NonNullable<TrainingStage['foundation_concepts']>[number], id: string) => void
 }) {
   const concepts = stage.foundation_concepts ?? []
   const conceptItems = concepts.map((concept, index) => ({ ...concept, checkId: conceptId(concept, index) }))
@@ -1446,6 +1474,13 @@ function Day1ConceptBlock({
         {conceptItems.map((concept) => {
           const on = Boolean(checked[concept.checkId])
           const feedback = conceptFeedback[concept.checkId] ?? ''
+          const coach = coachAnswers[concept.checkId]
+          const loading = Boolean(coachLoading[concept.checkId])
+          const coachError = coachErrors[concept.checkId]
+          const hasCurrentAnswer =
+            Boolean(coach?.answer) &&
+            coach?.version === SAFETY_COACH_ANSWER_VERSION &&
+            (coach.question ?? '').trim() === feedback.trim()
           return (
             <div key={concept.checkId} id={`concept-card-${concept.checkId}`} data-training-anchor="true" className="rounded-[12px] border border-border bg-card p-3">
               <div className="text-sm font-semibold leading-snug text-ink">{concept.title}</div>
@@ -1473,10 +1508,49 @@ function Day1ConceptBlock({
                 id={`${concept.checkId}-feedback`}
                 value={feedback}
                 onChange={(e) => onConceptFeedback(concept.checkId, e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
+                  e.preventDefault()
+                  if (!feedback.trim() || loading || hasCurrentAnswer) return
+                  onAskCoach(concept, concept.checkId)
+                }}
                 rows={2}
                 placeholder={concept.question_prompt ?? '실습 전에 더 묻고 싶은 점을 적어주세요.'}
                 className="mt-1 w-full resize-y rounded-[10px] border border-border bg-secondary px-3 py-2 text-xs leading-relaxed text-ink outline-none transition placeholder:text-text-faint focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
               />
+              {feedback.trim() ? (
+                <button
+                  type="button"
+                  onClick={() => onAskCoach(concept, concept.checkId)}
+                  disabled={loading || hasCurrentAnswer}
+                  className="mt-2 inline-flex h-9 items-center gap-1.5 rounded-[9px] bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {loading ? <Loader2 size={13} className="animate-spin" /> : null}
+                  {loading ? '답변 생성 중' : hasCurrentAnswer ? '이미 답변 완료' : '질문에 답변 받기'}
+                </button>
+              ) : null}
+              {hasCurrentAnswer ? (
+                <p className="mt-1 text-[11px] leading-relaxed text-text-faint">
+                  같은 질문은 다시 생성하지 않아요. 질문을 바꾸면 새 답변을 받을 수 있습니다.
+                </p>
+              ) : null}
+              {coachError ? (
+                <div className="mt-2 rounded-[10px] bg-danger-soft px-3 py-2 text-xs leading-relaxed text-danger">
+                  {coachError}
+                </div>
+              ) : null}
+              {coach?.answer ? (
+                <div className="mt-2 rounded-[10px] border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-text-muted">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="font-semibold text-primary">AI 코치 답변</span>
+                    <span className="flex shrink-0 items-center gap-1.5 text-[10px] font-medium text-text-faint">
+                      <span className="text-text-faint/70">{evidenceBadge(coach.evidenceUsed)}</span>
+                      {coachModelBadge(coach) ? <span>{coachModelBadge(coach)}</span> : null}
+                    </span>
+                  </div>
+                  {renderCoachAnswer(coach.answer)}
+                </div>
+              ) : null}
             </div>
           )
         })}
@@ -2292,7 +2366,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
 
   function selectStage(next: StageKey) {
     if (!state || next === stage) return
-    if (next === 'day1' && !state.day0?.completed) return // 잠금
+    if (!stageIsUnlocked(state, next)) return
     hydrateStageInputs(state, next)
     claimTrainingDevice(next, currentStagePosition(state.ui_state?.stage_drafts?.[next]?.last_position).anchorId || '')
     seqRef.current += 1
@@ -2941,10 +3015,10 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   }
 
   const current = state?.[stage]
+  const stageOrder = stageOrderFromState(state)
   const items = stageChecklist(current)
   const doneCount = items.filter((it) => checked[it.id]).length
   const allChecked = items.length === 0 || doneCount === items.length
-  const day1Locked = !state?.day0?.completed
   const currentStagePct = stageProgressPct(state, stage)
   const learnerName = String(state?.customer?.name || '오늘의 학습자')
   const personalizedCurriculum =
@@ -2974,9 +3048,9 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       </div>
 
       {/* 단계 탭 */}
-      <div className="mb-5 grid grid-cols-2 gap-1 rounded-[12px] bg-secondary p-1">
-        {STAGE_ORDER.map((k) => {
-          const locked = k === 'day1' && day1Locked
+      <div className="mb-5 grid grid-cols-2 gap-1 rounded-[12px] bg-secondary p-1 sm:grid-cols-4">
+        {stageOrder.map((k) => {
+          const locked = !stageIsUnlocked(state, k)
           const done = Boolean(state?.[k]?.completed)
           const active = stage === k
           return (
@@ -2995,7 +3069,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
               }`}
             >
               {locked ? <Lock size={13} /> : done ? <Check size={14} className="text-success" /> : null}
-              {STAGE_LABEL[k]}
+              {stageLabel(k)}
             </button>
           )
         })}
@@ -3006,7 +3080,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         <div className="flex flex-col gap-2">
           <div className="flex items-start justify-between gap-3">
             <h2 className="text-base font-bold leading-snug text-ink-strong">
-              {String(current?.title ?? STAGE_LABEL[stage])}
+              {String(current?.title ?? stageLabel(stage))}
             </h2>
             {current?.completed ? (
               <span className="shrink-0 rounded-full bg-success-soft px-2.5 py-0.5 text-[11px] font-semibold text-success">
@@ -3077,25 +3151,29 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         ) : null}
 
         {stage === 'day0' && state?.day1 ? (
-          <Day1DetailPreview stage={state.day1} />
+          <StageDetailPreview stage={state.day1} />
         ) : null}
 
-        {stage === 'day1' && current ? (
-          <Day1ConceptBlock
+        {stage !== 'day0' && current ? (
+          <StageConceptBlock
             stage={current}
             checked={checked}
             conceptFeedback={conceptFeedback}
+            coachAnswers={coachAnswers}
+            coachLoading={coachLoading}
+            coachErrors={coachErrors}
             onToggle={toggleCheck}
             onConceptFeedback={updateConceptFeedback}
+            onAskCoach={requestCoachAnswer}
           />
         ) : null}
 
-        {stage === 'day1' && current ? (
+        {stage !== 'day0' && current ? (
           <Day1PracticeLab stage={current} />
         ) : null}
 
-        {stage === 'day1' && current ? (
-          <Day1DetailPreview stage={current} active />
+        {stage !== 'day0' && current ? (
+          <StageDetailPreview stage={current} active />
         ) : null}
 
         {!safetyGateActive && dynamicPath.length ? (

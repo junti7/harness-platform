@@ -145,7 +145,7 @@ export async function deleteCase(email: string, caseId: number): Promise<void> {
  * 형태의 단일 출처는 백엔드 _edu_vp_build_day0/day1 + _edu_vp_refresh_state.
  * 콘솔(EduVpTrainingPage.tsx)이 동일 training_state 를 소비한다. */
 
-export type StageKey = 'day0' | 'day1'
+export type StageKey = `day${number}`
 
 export type ChecklistItem = {
   id: string
@@ -276,7 +276,7 @@ export type TrainingUiState = {
   last_client_seq?: number
 }
 
-export type TrainingState = {
+export type TrainingState = Partial<Record<StageKey, TrainingStage>> & {
   case?: { id?: number; case_label?: string } & Record<string, unknown>
   customer?: { name?: string; segment?: string; preferred_llm?: string } & Record<string, unknown>
   intake?: Record<string, string>
