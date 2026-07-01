@@ -52,6 +52,7 @@ export async function listCases(email: string): Promise<TrainingCase[]> {
 
 const CURRICULUM_ATTRS_STORAGE_KEY = 'vp_curriculum_attrs'
 const START_NEW_CASE_TIMEOUT_MS = 45_000
+const FETCH_SESSION_TIMEOUT_MS = 45_000
 
 const DEFAULT_CURRICULUM_ATTRS: CurriculumAttrs = {
   llm: 'chatgpt',
@@ -328,7 +329,7 @@ type SessionResponse = {
 
 /** 케이스의 훈련 세션을 불러온다. 데이터가 없으면 exists:false. */
 export async function fetchSession(email: string, caseId: number): Promise<SessionResult> {
-  const r = await vpGet<SessionResponse>(VP_TRAINING.session, { email, case_id: caseId })
+  const r = await vpGet<SessionResponse>(VP_TRAINING.session, { email, case_id: caseId }, FETCH_SESSION_TIMEOUT_MS)
   if (!r.exists || !r.training_state) return { exists: false, caseId: r.case_id ?? caseId }
   return { exists: true, caseId: r.case_id ?? caseId, state: r.training_state }
 }

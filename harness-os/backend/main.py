@@ -7832,7 +7832,7 @@ def _edu_vp_migrate_unstarted_day1_motivation(state: dict[str, Any]) -> dict[str
     }.get(motivation, "")
     current_title = str(day1.get("title") or "")
     if expected_title and current_title and current_title != expected_title:
-        rebuilt = _edu_vp_build_day1(intake)
+        rebuilt = _edu_vp_build_day1(intake, include_evidence=False)
         rebuilt["motivation_migrated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
         state["day1"] = rebuilt
     return state
@@ -7896,7 +7896,7 @@ def _edu_vp_migrate_day1_guided_practice_lab(state: dict[str, Any]) -> dict[str,
         )
         if key in day1
     }
-    rebuilt = _edu_vp_build_day1(intake)
+    rebuilt = _edu_vp_build_day1(intake, include_evidence=False)
     rebuilt.update({key: value for key, value in preserved.items() if value is not None})
     migrated_at_key = "beginner_copy_migrated_at" if needs_copy_refresh else "guided_practice_migrated_at"
     rebuilt[migrated_at_key] = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -7951,7 +7951,7 @@ def _edu_vp_apply_preferred_llm_change(state: dict[str, Any], preferred_llm: str
         ui_state["preferred_llm"] = normalized
         state["ui_state"] = ui_state
     if isinstance(day1, dict):
-        rebuilt = _edu_vp_build_day1(next_intake)
+        rebuilt = _edu_vp_build_day1(next_intake, include_evidence=False)
         rebuilt.update({key: value for key, value in preserved.items() if value is not None})
         rebuilt["preferred_llm_changed_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
         state["day1"] = rebuilt
@@ -8156,7 +8156,7 @@ def _edu_vp_attach_personalized_curriculum(state: dict[str, Any], payload: dict[
         state["dynamic_curriculum_path"] = path
         state["adaptive_curriculum_meta"] = planner_meta
         state["day0"] = _edu_vp_apply_curriculum_to_day0(state.get("day0") or {}, intake, res)
-        state["day1"] = state.get("day1") or _edu_vp_build_day1(intake)
+        state["day1"] = state.get("day1") or _edu_vp_build_day1(intake, include_evidence=False)
     except Exception as exc:  # noqa: BLE001
         logging.getLogger("uvicorn.error").warning("edu vp session curriculum unavailable: %s", exc)
         _edu_runtime_event(
@@ -12991,7 +12991,7 @@ def _edu_vp_build_day0(intake: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _edu_vp_build_day1(intake: dict[str, Any]) -> dict[str, Any]:
+def _edu_vp_build_day1(intake: dict[str, Any], *, include_evidence: bool = True) -> dict[str, Any]:
     llm_label = _edu_vp_llm_label(str(intake.get("preferred_llm") or "gemini"))
     friction = str(intake.get("biggest_friction") or "AI가 어렵고 막막함").strip()
     goal = str(intake.get("learning_goal") or "생활과 업무에서 바로 쓸 수 있는 첫 성공 만들기").strip()
@@ -13030,15 +13030,18 @@ def _edu_vp_build_day1(intake: dict[str, Any]) -> dict[str, Any]:
         rubric_scene = "생활 장면 1개"
     query = f"{friction} {goal} {query_terms}"
     retrieval_segment = "worker" if motivation == "work" else "parent"
-    try:
-        bundle = _retrieve_evidence_bundle(query, retrieval_segment, k=4)
-    except Exception as exc:  # noqa: BLE001
-        _edu_runtime_event(
-            "vp_training_day1_bundle_failed",
-            error_type=type(exc).__name__,
-            error=str(exc)[:240],
-        )
-        bundle = None
+    if include_evidence:
+        try:
+            bundle = _retrieve_evidence_bundle(query, retrieval_segment, k=4)
+        except Exception as exc:  # noqa: BLE001
+            _edu_runtime_event(
+                "vp_training_day1_bundle_failed",
+                error_type=type(exc).__name__,
+                error=str(exc)[:240],
+            )
+            bundle = None
+    else:
+        bundle = {"mode": "fast_no_evidence", "items": []}
     evidence_cards: list[dict[str, Any]] = []
     if bundle:
         for item in (bundle.get("items") or [])[:3]:
@@ -15298,7 +15301,7 @@ def edu_vp_training_intake(
     current_state["primary_llm_path"] = intake["preferred_llm"]
     try:
         current_state["day0"] = _edu_vp_build_day0(intake)
-        current_state["day1"] = _edu_vp_build_day1(intake)
+        current_state["day1"] = _edu_vp_build_day1(intake, include_evidence=False)
     except Exception as exc:  # noqa: BLE001
         _edu_runtime_event(
             "vp_training_state_build_failed",
@@ -15311,7 +15314,7 @@ def edu_vp_training_intake(
             **intake,
             "biggest_friction": "",
             "learning_goal": "",
-        })
+        }, include_evidence=False)
         fallback_day1["evidence_cards"] = []
         fallback_day1["recommended_learning"] = _edu_vp_recommended_learning("day1")
         fallback_day1["home_life_recommended_learning"] = _edu_vp_home_recommended_learning()

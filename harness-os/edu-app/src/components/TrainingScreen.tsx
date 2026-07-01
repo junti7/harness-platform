@@ -2434,6 +2434,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const [exists, setExists] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [reloadNonce, setReloadNonce] = useState(0)
   const [stage, setStage] = useState<StageKey>('day0')
   const [proof, setProof] = useState('')
   const [checked, setChecked] = useState<Record<string, boolean>>({})
@@ -2627,7 +2628,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
         positionSyncTimerRef.current = null
       }
     }
-  }, [email, caseId, claimTrainingDevice, hydrateStageInputs])
+  }, [email, caseId, claimTrainingDevice, hydrateStageInputs, reloadNonce])
 
   useEffect(() => {
     if (loading || !state) return
@@ -3611,6 +3612,36 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
           <p className="text-xs leading-relaxed text-text-faint">
             목록에서 ‘새 훈련 시작’으로 케이스를 다시 만들어보세요.
           </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!state) {
+    return (
+      <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 py-7 sm:max-w-[760px] sm:px-6 lg:max-w-[960px] xl:max-w-[1120px] xl:px-8">
+        {header}
+        <div className="mt-6 flex flex-col items-center gap-3 rounded-2xl border border-danger/20 bg-danger-soft px-6 py-12 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-card text-danger">
+            <AlertCircle size={24} />
+          </span>
+          <p className="text-sm font-bold text-danger">세션을 불러오지 못했어요</p>
+          <p className="max-w-[360px] text-xs leading-relaxed text-text-muted">
+            {error || '훈련 데이터 연결이 끊겼습니다. 다시 불러오면 이어서 볼 수 있어요.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setError(null)
+              setExists(true)
+              setLoading(true)
+              initialSessionKeyRef.current = ''
+              setReloadNonce((value) => value + 1)
+            }}
+            className="mt-2 rounded-[10px] bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:brightness-105"
+          >
+            다시 불러오기
+          </button>
         </div>
       </div>
     )

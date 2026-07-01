@@ -91,13 +91,14 @@ async function parse<T>(res: Response): Promise<T> {
 export async function vpGet<T = unknown>(
   path: string,
   query: Record<string, string | number | undefined> = {},
+  timeoutMs = REQUEST_TIMEOUT_MS,
 ): Promise<T> {
   const qs = new URLSearchParams()
   for (const [k, v] of Object.entries(query)) {
     if (v !== undefined) qs.set(k, String(v))
   }
   const url = `${API_BASE}${path}${qs.toString() ? `?${qs}` : ''}`
-  const res = await fetchWithTimeout(url, { headers: authHeaders() })
+  const res = await fetchWithTimeout(url, { headers: authHeaders() }, timeoutMs)
   return parse<T>(res)
 }
 

@@ -1,0 +1,70 @@
+{
+  "task": "Fix blank training session screen after session load failure or slow Day 1 rebuild",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T23:04:58+09:00",
+      "summary": "UI and runtime fixes require real verification, completion evidence, scoped commit, push, and deploy."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T23:04:58+09:00",
+      "summary": "Completion requires real user-facing/runtime verification and completion evidence guard validation."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "harness-os/edu-app/src/components/TrainingScreen.tsx",
+    "harness-os/edu-app/src/lib/api.ts",
+    "harness-os/edu-app/src/lib/vpTraining.ts"
+  ],
+  "changes": [
+    "Made API Day 1 rebuild and migration paths use include_evidence=false so session load and tool-switch repair do not block on evidence retrieval.",
+    "Kept direct _edu_vp_build_day1 default evidence behavior intact for tests and explicit backend calls.",
+    "Added GET timeout override support and gave fetchSession a 45 second timeout.",
+    "Added a visible session-load failure card with a retry button so the UI no longer renders only header plus empty Day 0 fallback when state is null."
+  ],
+  "verification": [
+    {
+      "name": "edu vp training flow tests",
+      "target": "local backend unit tests",
+      "command": ".venv/bin/python tests/test_edu_vp_training_flow.py",
+      "result": "passed: 130 tests OK"
+    },
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: tsc and vite built dist/assets/index-BrMfhGUf.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    },
+    {
+      "name": "backend syntax check",
+      "target": "local python compile",
+      "command": ".venv/bin/python -m py_compile harness-os/backend/main.py",
+      "result": "passed"
+    },
+    {
+      "name": "Mac Mini edu app runtime entrypoint",
+      "target": "macmini edu app url",
+      "command": "curl -fsS --max-time 5 http://100.97.175.44:5174/ | head -5",
+      "result": "passed before deploy: edu app HTTP entrypoint responded"
+    },
+    {
+      "name": "whitespace check",
+      "target": "local git diff",
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "residual_risk": [
+    "Post-deploy authenticated session timing and production bundle check will run after Mac Mini deploy."
+  ]
+}
