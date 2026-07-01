@@ -2413,7 +2413,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const [whyOpen, setWhyOpen] = useState(false)
   const [safetyReady, setSafetyReady] = useState(false)
   const [safetySyncing, setSafetySyncing] = useState(false)
-  const [toolSelecting, setToolSelecting] = useState('')
+  const toolSelecting = ''
   const [localPreferredLlm, setLocalPreferredLlm] = useState('')
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -2706,38 +2706,52 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       .catch((e) => console.error('syncSession failed', e))
   }
 
-  async function selectDay1Tool(preferredLlm: string) {
+  function selectDay1Tool(preferredLlm: string) {
     if (!state || stage !== 'day1' || toolSelecting) return
     const normalized = preferredLlm.trim().toLowerCase()
     if (!normalized) return
+    const label = labelForLlm(normalized)
+    const requestSeq = seqRef.current + 1
+    seqRef.current = requestSeq
     setLocalPreferredLlm(normalized)
-    setToolSelecting(labelForLlm(normalized))
     setError(null)
-    setNotice(null)
-    try {
-      seqRef.current += 1
-      const next = await syncSession({
-        caseId,
-        email,
-        selectedStage: 'day1',
-        preferredLlm: normalized,
-        clientSeq: seqRef.current,
-        eventName: 'preferred_llm_changed',
-        eventPayload: { preferred_llm: normalized },
-        stageDrafts: {
-          day1: stageDraftForSync({}, 'day1'),
-        },
+    setNotice(`${label} 기준 안내로 바꿨어요.`)
+    setState({
+      ...state,
+      intake: {
+        ...(state.intake ?? {}),
+        preferred_llm: normalized,
+      },
+      ui_state: {
+        ...(state.ui_state ?? {}),
+        preferred_llm: normalized,
+        last_client_seq: requestSeq,
+      },
+    })
+    void syncSession({
+      caseId,
+      email,
+      selectedStage: 'day1',
+      preferredLlm: normalized,
+      clientSeq: requestSeq,
+      eventName: 'preferred_llm_changed',
+      eventPayload: { preferred_llm: normalized },
+      stageDrafts: {
+        day1: stageDraftForSync({}, 'day1'),
+      },
+    })
+      .then((next) => {
+        const serverSeq = Number(next.ui_state?.last_client_seq ?? 0)
+        seqRef.current = Math.max(seqRef.current, serverSeq, requestSeq)
+        setState(next)
+        hydrateStageInputs(next, 'day1')
+        setNotice(`${label} 기준 안내로 바꿨어요.`)
       })
-      const serverSeq = Number(next.ui_state?.last_client_seq ?? 0)
-      seqRef.current = Math.max(seqRef.current, serverSeq)
-      setState(next)
-      hydrateStageInputs(next, 'day1')
-      setNotice(`${labelForLlm(normalized)} 기준 안내로 바꿨어요.`)
-    } catch (e) {
-      setError(errMsg(e))
-    } finally {
-      setToolSelecting('')
-    }
+      .catch((e) => {
+        console.error('preferred LLM sync failed', e)
+        setError(null)
+        setNotice(`${label} 안내는 적용했어요. 저장 확인이 늦어지고 있어요.`)
+      })
   }
 
   function toggleCheck(id: string) {

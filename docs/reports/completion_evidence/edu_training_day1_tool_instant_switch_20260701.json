@@ -1,0 +1,61 @@
+{
+  "task": "Make Day 1 AI tool switching instant instead of blocking on server sync",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T21:20:09+09:00",
+      "summary": "UI changes require real verification, completion evidence, and clear residual risk reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T21:20:09+09:00",
+      "summary": "Customer-facing code changes require runtime or user-facing verification plus completion evidence guard validation."
+    }
+  ],
+  "scope": [
+    "harness-os/edu-app/src/components/TrainingScreen.tsx"
+  ],
+  "changes": [
+    "Changed Day 1 AI tool selection to update the visible guide immediately using local preferred-LLM state.",
+    "Removed the blocking await behavior from preferred_llm_changed sync.",
+    "Kept server sync in the background so the choice can still persist.",
+    "Changed sync failure handling so a delayed save does not show a blocking overlay or red error."
+  ],
+  "verification": [
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: tsc and vite built dist/assets/index-C5Z7wKc9.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    },
+    {
+      "name": "instant tool switch bundle check",
+      "target": "local source and dist bundle",
+      "command": "rg -o '기준 안내로 바꿨어요|안내는 적용했어요|preferred LLM sync failed|setToolSelecting|Claude 기준 안내로 변경 중' harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/dist/assets/index-C5Z7wKc9.js",
+      "result": "passed: bundle contains immediate/sync-delay notice paths and no setToolSelecting or blocking Claude overlay string"
+    },
+    {
+      "name": "Mac Mini runtime entrypoint check",
+      "target": "macmini edu app url",
+      "command": "curl -fsS --max-time 5 http://100.97.175.44:5174/ | head -5",
+      "result": "passed: edu app HTTP entrypoint returned HTML"
+    },
+    {
+      "name": "whitespace check",
+      "target": "local git diff",
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "residual_risk": [
+    "No authenticated browser click replay was available in this session; verification used build, lint, bundle checks, and live Mac Mini HTTP entrypoint."
+  ]
+}
