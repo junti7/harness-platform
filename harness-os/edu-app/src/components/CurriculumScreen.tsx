@@ -25,6 +25,7 @@ const LLMS: Opt<string>[] = [
   { value: 'claude', label: 'Claude' },
   { value: 'genspark', label: 'Genspark' },
   { value: 'grok', label: 'Grok' },
+  { value: 'perplexity', label: 'Perplexity' },
   { value: '', label: '아직 정하지 않음' },
 ]
 const LEVELS: Opt<NonNullable<CurriculumAttrs['level']>>[] = [

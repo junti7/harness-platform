@@ -2440,7 +2440,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(card["practice_lab"]["visual_assets"][2]["src"], "/training/day1/install-ai-app.svg")
         self.assertEqual(card["practice_lab"]["install_guide"]["title"], "어떤 AI를 사용할지 먼저 고르기")
         self.assertEqual(card["practice_lab"]["install_guide"]["selected_tool"], "Claude")
-        self.assertEqual(card["practice_lab"]["install_guide"]["tool_options"], ["ChatGPT", "Claude", "Gemini", "Genspark", "Grok"])
+        self.assertEqual(card["practice_lab"]["install_guide"]["tool_options"], ["ChatGPT", "Claude", "Gemini", "Genspark", "Grok", "Perplexity"])
         self.assertGreaterEqual(len(card["practice_lab"]["install_guide"]["steps"]), 4)
         self.assertIn("claude.ai", " ".join(card["practice_lab"]["install_guide"]["steps"]))
         self.assertNotIn("Claude를 처음 쓰는 경우", card["practice_lab"]["install_guide"]["title"])
@@ -2477,6 +2477,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             ("gemini", "Gemini", "gemini.google.com"),
             ("genspark", "Genspark", "genspark.ai"),
             ("grok", "Grok", "grok.com"),
+            ("perplexity", "Perplexity", "perplexity.ai"),
         ]
 
         for preferred_llm, expected_tool, expected_url in cases:
@@ -2488,7 +2489,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
                 self.assertEqual(guide["title"], "어떤 AI를 사용할지 먼저 고르기")
                 self.assertEqual(guide["selected_tool"], expected_tool)
                 self.assertIn(expected_url, guide_text)
-                self.assertEqual(guide["tool_options"], ["ChatGPT", "Claude", "Gemini", "Genspark", "Grok"])
+                self.assertEqual(guide["tool_options"], ["ChatGPT", "Claude", "Gemini", "Genspark", "Grok", "Perplexity"])
 
         auto_card = self.mod._edu_vp_build_day1({"preferred_llm": "auto", "motivation": "child_study"})
         auto_guide = auto_card["practice_lab"]["install_guide"]
@@ -2496,8 +2497,8 @@ class EduVpTrainingFlowTests(unittest.TestCase):
 
         self.assertEqual(auto_guide["title"], "어떤 AI를 사용할지 먼저 고르기")
         self.assertEqual(auto_guide["selected_tool"], "")
-        self.assertEqual(auto_guide["tool_options"], ["ChatGPT", "Claude", "Gemini", "Genspark", "Grok"])
-        self.assertIn("ChatGPT, Claude, Gemini, Genspark, Grok 중 하나", auto_text)
+        self.assertEqual(auto_guide["tool_options"], ["ChatGPT", "Claude", "Gemini", "Genspark", "Grok", "Perplexity"])
+        self.assertIn("ChatGPT, Claude, Gemini, Genspark, Grok, Perplexity 중 하나", auto_text)
 
     def test_refresh_replaces_completed_legacy_day1_install_copy(self):
         legacy_state = {
@@ -2541,7 +2542,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(refreshed["day1"]["stage_checked"], ["open_practice_lab"])
         self.assertEqual(refreshed["day1"]["practice_lab_version"], "2026-07-01-tool-choice-first-v4")
         self.assertEqual(guide["title"], "어떤 AI를 사용할지 먼저 고르기")
-        self.assertEqual(guide["tool_options"], ["ChatGPT", "Claude", "Gemini", "Genspark", "Grok"])
+        self.assertEqual(guide["tool_options"], ["ChatGPT", "Claude", "Gemini", "Genspark", "Grok", "Perplexity"])
         self.assertNotIn("Claude를 처음 쓰는 경우", visible_text)
         self.assertNotIn("Claude 앱이 있으면 앱 열기", visible_text)
 

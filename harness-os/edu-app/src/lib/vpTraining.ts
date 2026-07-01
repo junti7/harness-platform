@@ -78,6 +78,9 @@ function intakeLlm(attrs: CurriculumAttrs): string {
   if (v.includes('gemini') || v.includes('제미나이')) return 'gemini'
   if (v.includes('claude') || v.includes('클로드')) return 'claude'
   if (v.includes('gpt') || v.includes('chatgpt') || v.includes('챗')) return 'gpt'
+  if (v.includes('genspark') || v.includes('젠스파크')) return 'genspark'
+  if (v.includes('grok') || v.includes('그록')) return 'grok'
+  if (v.includes('perplexity') || v.includes('퍼플렉시티')) return 'perplexity'
   return 'auto'
 }
 
@@ -102,7 +105,19 @@ function intakeGoal(attrs: CurriculumAttrs): string {
 function intakeFriction(attrs: CurriculumAttrs): string {
   const custom = String(attrs.biggest_friction || '').trim()
   if (custom) return custom
-  const llm = intakeLlm(attrs) === 'gemini' ? 'Gemini' : intakeLlm(attrs) === 'claude' ? 'Claude' : 'ChatGPT'
+  const llmValue = intakeLlm(attrs)
+  const llm =
+    llmValue === 'gemini'
+      ? 'Gemini'
+      : llmValue === 'claude'
+        ? 'Claude'
+        : llmValue === 'genspark'
+          ? 'Genspark'
+          : llmValue === 'grok'
+            ? 'Grok'
+            : llmValue === 'perplexity'
+              ? 'Perplexity'
+              : 'ChatGPT'
   if (attrs.motivation === 'child_study') return `${llm}로 아이 숙제와 학습을 어디까지 도와도 되는지 막막함`
   if (attrs.motivation === 'writing') return `${llm}로 글 초안을 어떻게 시작해야 할지 막막함`
   if (attrs.motivation === 'daily') return `${llm}로 생활 메모와 일정을 어떻게 정리할지 막막함`

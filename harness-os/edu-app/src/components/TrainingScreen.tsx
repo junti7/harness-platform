@@ -210,6 +210,7 @@ function llmLabel(value?: string): string {
   if (v.includes('gemini')) return 'Gemini'
   if (v.includes('genspark')) return 'Genspark'
   if (v.includes('grok')) return 'Grok'
+  if (v.includes('perplexity')) return 'Perplexity'
   return 'AI 도구'
 }
 
@@ -1665,6 +1666,7 @@ const TOOL_VALUE_BY_LABEL: Record<string, string> = {
   Gemini: 'gemini',
   Genspark: 'genspark',
   Grok: 'grok',
+  Perplexity: 'perplexity',
 }
 
 function labelForLlm(value: string): string {
@@ -1674,6 +1676,7 @@ function labelForLlm(value: string): string {
   if (normalized === 'gemini' || normalized === 'google') return 'Gemini'
   if (normalized === 'genspark') return 'Genspark'
   if (normalized === 'grok' || normalized === 'xai') return 'Grok'
+  if (normalized === 'perplexity' || normalized === 'perplexity ai') return 'Perplexity'
   return value || 'AI'
 }
 
@@ -1733,6 +1736,16 @@ const TOOL_INSTALL_GUIDE_BY_LABEL: Record<string, { body: string; action: string
       '로그인한 뒤, Grok 질문 입력창이 보이는지 확인',
     ],
   },
+  Perplexity: {
+    body: 'Perplexity를 쓰기로 했다면 앱 또는 perplexity.ai 중 편한 경로로 질문 입력창을 엽니다. 다른 도구를 쓰고 싶으면 먼저 아래 선택지 중 하나를 고릅니다.',
+    action: '앱 없음: 스토어 검색 → Perplexity → 설치 또는 브라우저에서 perplexity.ai 열기',
+    steps: [
+      '스마트폰 홈 화면에서 Perplexity 앱이 있는지 먼저 찾기',
+      '없으면 App Store 또는 Play Store에서 Perplexity 검색 후 설치',
+      '설치가 어렵다면 Safari/Chrome에서 perplexity.ai 열기',
+      '로그인 또는 바로 질문 입력창이 보이는지 확인',
+    ],
+  },
 }
 
 function installGuideForSelectedTool<T extends NonNullable<NonNullable<TrainingStage['practice_lab']>['install_guide']>>(
@@ -1746,7 +1759,7 @@ function installGuideForSelectedTool<T extends NonNullable<NonNullable<TrainingS
     ...installGuide,
     selected_tool: selectedTool,
     steps: [
-      `현재 설정은 ${selectedTool}입니다. 실제로 쓸 도구가 맞는지 확인하고, 바꾸고 싶으면 ChatGPT, Claude, Gemini, Genspark, Grok 중 하나로 다시 고르기`,
+      `현재 설정은 ${selectedTool}입니다. 실제로 쓸 도구가 맞는지 확인하고, 바꾸고 싶으면 ChatGPT, Claude, Gemini, Genspark, Grok, Perplexity 중 하나로 다시 고르기`,
       ...toolGuide.steps,
     ],
     fallback: toolGuide.action,

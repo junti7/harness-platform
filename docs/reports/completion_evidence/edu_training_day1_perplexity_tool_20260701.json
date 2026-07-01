@@ -1,0 +1,66 @@
+{
+  "task": "Add Perplexity to Day 1 AI tool selection",
+  "status": "residual_risk",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T15:19:00+09:00",
+      "summary": "Completion requires evidence-backed reporting, real entrypoint verification, and completion evidence guard for code, UI, deploy, and customer-facing changes."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T15:19:00+09:00",
+      "summary": "Production changes require source-of-truth deploy flow, actual user-facing or runtime verification, and completion evidence guard before reporting complete."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "harness-os/edu-app/src/components/TrainingScreen.tsx",
+    "harness-os/edu-app/src/components/CurriculumScreen.tsx",
+    "harness-os/edu-app/src/lib/vpTraining.ts",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Added Perplexity to backend LLM normalization and display label mapping.",
+    "Added Perplexity to Day 1 install guide tool_options, selected-tool copy, install steps, fallback action, and web path perplexity.ai.",
+    "Added Perplexity to TrainingScreen immediate-selection UI mapping and install guide override copy.",
+    "Added Perplexity to the personalized curriculum LLM selector and intake conversion.",
+    "Expanded Day 1 regression tests to require Perplexity in tool options and verify the Perplexity guide URL."
+  ],
+  "verification": [
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build in harness-os/edu-app",
+      "result": "passed: tsc and vite built dist/assets/index-CstfOOjq.js"
+    },
+    {
+      "name": "targeted Day 1 LLM tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -k 'day1_install_guide or preferred_llm_change'",
+      "result": "passed: 5 passed, 120 deselected, 3 warnings"
+    },
+    {
+      "name": "backend syntax check",
+      "target": "local py_compile",
+      "command": ".venv/bin/python -m py_compile harness-os/backend/main.py",
+      "result": "passed"
+    },
+    {
+      "name": "full edu VP training flow tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py",
+      "result": "passed: 125 passed, 3 warnings"
+    },
+    {
+      "name": "local backend Perplexity guide check",
+      "target": "local backend helper",
+      "command": "Build Day 1 with preferred_llm=perplexity and inspect practice_lab.install_guide",
+      "result": "passed: selected_tool=Perplexity, tool_options includes Perplexity, steps and fallback include perplexity.ai"
+    }
+  ],
+  "residual_risk": [
+    "Commit and Mac Mini deployment are still pending in this evidence revision; update after production deploy and bundle verification."
+  ]
+}

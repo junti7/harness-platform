@@ -6374,7 +6374,9 @@ def _edu_normalize_llm(value: str) -> str:
         return "genspark"
     if v in {"그록", "xai grok", "x.ai grok"}:
         return "grok"
-    return v if v in {"auto", "claude", "gemini", "gpt", "genspark", "grok", "local"} else "auto"
+    if v in {"퍼플렉시티", "perplexity ai"}:
+        return "perplexity"
+    return v if v in {"auto", "claude", "gemini", "gpt", "genspark", "grok", "perplexity", "local"} else "auto"
 
 
 def _edu_prompt_salutation(value: str, segment: str, locale: str) -> str:
@@ -8677,6 +8679,7 @@ def _edu_vp_llm_label(value: str) -> str:
         "gpt": "ChatGPT",
         "genspark": "Genspark",
         "grok": "Grok",
+        "perplexity": "Perplexity",
         "local": "로컬 모델",
         "auto": "기본 AI 도구",
     }.get(normalized, "기본 AI 도구")
@@ -9047,13 +9050,13 @@ def _edu_vp_day1_practice_lab(
     goal: str,
     friction: str,
 ) -> dict[str, Any]:
-    tool_options = ["ChatGPT", "Claude", "Gemini", "Genspark", "Grok"]
+    tool_options = ["ChatGPT", "Claude", "Gemini", "Genspark", "Grok", "Perplexity"]
     selected_tool = "" if llm_label in {"기본 AI 도구", "로컬 모델"} else llm_label
     selection_step = (
         f"현재 설정은 {selected_tool}입니다. 실제로 쓸 도구가 맞는지 확인하고, 바꾸고 싶으면 "
-        "ChatGPT, Claude, Gemini, Genspark, Grok 중 하나로 다시 고르기"
+        "ChatGPT, Claude, Gemini, Genspark, Grok, Perplexity 중 하나로 다시 고르기"
         if selected_tool
-        else "오늘 사용할 AI를 ChatGPT, Claude, Gemini, Genspark, Grok 중 하나로 고르기"
+        else "오늘 사용할 AI를 ChatGPT, Claude, Gemini, Genspark, Grok, Perplexity 중 하나로 고르기"
     )
     if llm_label == "Claude":
         selected_install_body = "Claude를 쓰기로 했다면 앱 또는 claude.ai 중 편한 경로로 질문 입력창을 엽니다."
@@ -9100,9 +9103,18 @@ def _edu_vp_day1_practice_lab(
             "설치가 어렵다면 Safari/Chrome에서 grok.com 열기",
             "로그인한 뒤, Grok 질문 입력창이 보이는지 확인",
         ]
+    elif llm_label == "Perplexity":
+        selected_install_body = "Perplexity를 쓰기로 했다면 앱 또는 perplexity.ai 중 편한 경로로 질문 입력창을 엽니다."
+        install_action = "앱 없음: 스토어 검색 → Perplexity → 설치 또는 브라우저에서 perplexity.ai 열기"
+        tool_specific_steps = [
+            "스마트폰 홈 화면에서 Perplexity 앱이 있는지 먼저 찾기",
+            "없으면 App Store 또는 Play Store에서 Perplexity 검색 후 설치",
+            "설치가 어렵다면 Safari/Chrome에서 perplexity.ai 열기",
+            "로그인 또는 바로 질문 입력창이 보이는지 확인",
+        ]
     else:
         selected_install_body = "아직 도구가 정해지지 않았다면 먼저 사용할 AI를 고르고, 그 도구의 공식 앱이나 공식 웹사이트를 엽니다."
-        install_action = "먼저 선택: ChatGPT / Claude / Gemini / Genspark / Grok 중 1개 선택"
+        install_action = "먼저 선택: ChatGPT / Claude / Gemini / Genspark / Grok / Perplexity 중 1개 선택"
         tool_specific_steps = [
             "선택한 이름으로 App Store 또는 Play Store에서 검색하기",
             "앱 설치가 어렵다면 Safari/Chrome에서 공식 웹사이트를 열기",
