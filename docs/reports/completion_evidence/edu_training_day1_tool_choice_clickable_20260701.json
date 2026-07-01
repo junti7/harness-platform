@@ -45,9 +45,39 @@
       "target": "local py_compile",
       "command": ".venv/bin/python -m py_compile harness-os/backend/main.py",
       "result": "passed"
+    },
+    {
+      "name": "Mac Mini scoped deploy",
+      "target": "Mac Mini source and backend service",
+      "command": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_training_day1_tool_choice_clickable_20260701.json",
+      "result": "passed: backend relaunched on port 8000 and deployed paths diff origin/main = 0"
+    },
+    {
+      "name": "Mac Mini edu-app production build",
+      "target": "Mac Mini dist and launchd service",
+      "command": "ssh macmini 'cd harness-os/edu-app && npm run build && launchctl kickstart -k gui/$(id -u)/com.harness.edu-app'",
+      "result": "passed: dist/index.html points to dist/assets/index-CPvihuyS.js and service listens on port 5174"
+    },
+    {
+      "name": "Mac Mini frontend bundle clickability check",
+      "target": "Mac Mini production bundle",
+      "command": "grep production dist bundle for preferred_llm_changed, 변경 중, ChatGPT, Gemini, Genspark, Grok",
+      "result": "passed: all markers present"
+    },
+    {
+      "name": "Mac Mini targeted regression tests",
+      "target": "Mac Mini pytest",
+      "command": "DATABASE_URL=postgresql://localhost/harness_prod .venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -k \"preferred_llm_change or day1_install_guide\"",
+      "result": "passed: 2 passed, 120 deselected, 2 warnings"
+    },
+    {
+      "name": "Mac Mini entrypoint check",
+      "target": "Mac Mini backend and edu-app",
+      "command": "curl backend on 127.0.0.1:8000 and edu-app on http://100.97.175.44:5174/",
+      "result": "passed: backend_http=200, edu-app HTML references index-CPvihuyS.js"
     }
   ],
   "residual_risk": [
-    "Mac Mini deploy and production bundle verification are recorded after deploy in this same evidence file."
+    "A browser tab with an older cached JS bundle may need a hard refresh to fetch index-CPvihuyS.js."
   ]
 }
