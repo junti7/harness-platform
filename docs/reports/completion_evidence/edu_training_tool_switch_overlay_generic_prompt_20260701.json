@@ -1,0 +1,51 @@
+{
+  "task": "Prevent stale branded prompt-copy wording and add LLM switch loading overlay",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T16:02:00+09:00",
+      "summary": "Completion requires evidence-backed reporting, scoped commits, and deploy verification for production-facing changes."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T16:02:00+09:00",
+      "summary": "Production changes require actual runtime verification, source-of-truth deploy flow, and completion evidence guard before reporting complete."
+    }
+  ],
+  "scope": [
+    "harness-os/edu-app/src/components/TrainingScreen.tsx"
+  ],
+  "changes": [
+    "Added frontend render-time normalization so stale practice_table values like 'Perplexity 입력창에 붙여넣습니다.' render as '선택한 AI 도구의 입력창에 붙여넣습니다.'.",
+    "Forced the prompt-copy practice row to use generic selected-AI wording regardless of old server state.",
+    "Added an aria-busy loading overlay with spinner and explanatory text over the Day 1 practice lab while LLM tool switching is in progress.",
+    "Disabled all LLM option buttons during the switch request to prevent overlapping changes."
+  ],
+  "verification": [
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: tsc and vite built dist/assets/index-TeJ-_wIU.js"
+    },
+    {
+      "name": "full edu VP training flow tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "passed: 126 passed, 3 warnings, 64 subtests passed"
+    },
+    {
+      "name": "whitespace check",
+      "target": "local git diff",
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh harness-os/edu-app/src/components/TrainingScreen.tsx docs/reports/completion_evidence/edu_training_tool_switch_overlay_generic_prompt_20260701.json plus Mac Mini npm run build --prefix harness-os/edu-app and launchctl kickstart -k gui/$uid/com.harness.edu-app",
+    "result": "pending"
+  },
+  "residual_risk": []
+}

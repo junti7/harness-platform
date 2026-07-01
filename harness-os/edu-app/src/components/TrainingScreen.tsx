@@ -1766,6 +1766,14 @@ function installGuideForSelectedTool<T extends NonNullable<NonNullable<TrainingS
   }
 }
 
+function genericAiInputInstruction(value?: string) {
+  const text = String(value || '')
+  return text.replace(
+    /(ChatGPT|Claude|Gemini|Genspark|Grok|Perplexity) 입력창에 붙여넣습니다\./g,
+    '선택한 AI 도구의 입력창에 붙여넣습니다.',
+  )
+}
+
 function Day1PracticeLab({
   stage,
   onSelectTool,
@@ -1783,6 +1791,7 @@ function Day1PracticeLab({
   const visualAssets = lab.visual_assets ?? []
   const selectedTool = selectedToolOverride || lab.install_guide?.selected_tool || ''
   const installGuide = lab.install_guide ? installGuideForSelectedTool(lab.install_guide, selectedTool) : undefined
+  const toolSwitching = Boolean(selectingTool)
   const toolCards = (lab.tool_cards ?? []).map((item, index) => {
     const toolGuide = selectedTool ? TOOL_INSTALL_GUIDE_BY_LABEL[selectedTool] : undefined
     if (index !== 1 || !toolGuide) return item
@@ -1793,7 +1802,13 @@ function Day1PracticeLab({
       action: toolGuide.action,
     }
   })
-  const rows = lab.practice_table ?? []
+  const rows = (lab.practice_table ?? []).map((row) => ({
+    ...row,
+    outside_app:
+      row.step === '프롬프트 복사'
+        ? '선택한 AI 도구의 입력창에 붙여넣습니다.'
+        : genericAiInputInstruction(row.outside_app),
+  }))
   const checks = lab.verification_rows ?? []
   const slots = lab.result_slots ?? []
   const prompt = lab.prompt_template || stage.practice_prompt_template || ''
@@ -1810,7 +1825,19 @@ function Day1PracticeLab({
   }
 
   return (
-    <section className="rounded-2xl border border-primary/25 bg-card p-4 shadow-[0_0_0_1px_rgba(37,99,235,0.05)]">
+    <section
+      className="relative rounded-2xl border border-primary/25 bg-card p-4 shadow-[0_0_0_1px_rgba(37,99,235,0.05)]"
+      aria-busy={toolSwitching}
+    >
+      {toolSwitching ? (
+        <div className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-card/85 px-4 text-center backdrop-blur-sm">
+          <div className="flex max-w-[280px] flex-col items-center gap-3 rounded-[14px] border border-primary/20 bg-card px-5 py-4 shadow-lg">
+            <Loader2 size={24} className="animate-spin text-primary" />
+            <div className="text-sm font-bold text-ink-strong">{selectingTool} 기준 안내로 변경 중</div>
+            <div className="text-xs leading-relaxed text-text-muted">설치 안내와 실습 문구를 새 도구 기준으로 다시 맞추고 있습니다.</div>
+          </div>
+        </div>
+      ) : null}
       <div className="mb-4 flex items-start gap-2.5">
         <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-primary text-primary-foreground">
           <PlayCircle size={18} />
@@ -1896,7 +1923,7 @@ function Day1PracticeLab({
                       key={tool}
                       type="button"
                       onClick={() => onSelectTool?.(TOOL_VALUE_BY_LABEL[tool] || tool.toLowerCase())}
-                      disabled={pending}
+                      disabled={toolSwitching}
                       className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
                         selected
                           ? 'border-primary bg-primary text-primary-foreground'
