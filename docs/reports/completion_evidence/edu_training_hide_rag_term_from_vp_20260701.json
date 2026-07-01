@@ -1,0 +1,65 @@
+{
+  "task": "Hide internal RAG terminology from VP-facing training copy",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Completion requires real verification before reporting done, and code or UI changes require completion evidence."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Code, deploy, UI, and customer-facing answer changes require real entrypoint verification and completion evidence guard."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "harness-os/edu-app/src/components/TrainingScreen.tsx",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Replaced Day 1 visible 'RAG 근거' copy with beginner-friendly '여러 교육 자료' and 'AI 활용 교육' wording.",
+    "Changed the planned Day 3 focus from 'RAG 자료 활용 기준' to '수집된 자료 활용 기준'.",
+    "Replaced the Day 0 bridge answer text 'RAG나 출처 확인' with '수집된 자료 활용' and '원문이나 수집된 자료'.",
+    "Standardized visible source-related labels to '수집된 자료' instead of '자료 확인', '참고 자료', or '수집 자료'.",
+    "Added regression coverage that Day 1 visible concepts and planned outline do not expose 'RAG'."
+  ],
+  "verification": [
+    {
+      "name": "edu VP training flow tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "passed: 118 passed, 3 warnings, 59 subtests passed"
+    },
+    {
+      "name": "backend syntax check",
+      "target": "local py_compile",
+      "command": ".venv/bin/python -m py_compile harness-os/backend/main.py",
+      "result": "passed"
+    },
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build",
+      "result": "passed: tsc and vite built dist/assets/index-D_M7g05H.js"
+    },
+    {
+      "name": "customer-facing internal terminology search",
+      "target": "local rg",
+      "command": "rg -n \"자료 확인|참고 자료|수집 자료|검증 자료|RAG 근거|RAG 자료|RAG나|RAG 자료 활용\" harness-os/edu-app/src/components/TrainingScreen.tsx tests/test_edu_vp_training_flow.py",
+      "result": "passed: no matches in VP-facing screen and regression tests"
+    },
+    {
+      "name": "completion evidence guard",
+      "target": "pre-push git hook",
+      "command": "scripts/agent_completion_guard.py docs/reports/completion_evidence/edu_training_hide_rag_term_from_vp_20260701.json",
+      "result": "passed: completion_guard CLEAR"
+    }
+  ],
+  "residual_risk": [
+    "Internal code, prompt, env, and tests still use RAG as an implementation term.",
+    "If a user explicitly asks what RAG means, the safety coach still answers that question directly."
+  ]
+}

@@ -403,7 +403,7 @@ function day0BridgeAnswerForUnassignedQuestion(question: string, planned?: Plann
     return `좋은 질문입니다. Transformer는 머신러닝 안에서 쓰이는 모델 구조 중 하나이고, LLM은 그 구조를 큰 글 데이터로 학습해 말을 만드는 AI라고 보면 됩니다. 오늘은 “LLM이 사람처럼 이해해서 말하는 것이 아니라, 학습한 말의 흐름을 바탕으로 다음 말을 만든다” 정도만 먼저 잡으면 됩니다. ${laterGuide}`
   }
   if (normalized.includes('rag') || normalized.includes('자료') || normalized.includes('근거') || normalized.includes('검증') || normalized.includes('출처')) {
-    return `좋은 질문입니다. RAG나 출처 확인은 AI 답을 그대로 믿지 않고, 믿을 만한 자료를 같이 찾아 확인하는 방법입니다. 오늘은 “AI 답은 초안이고, 중요한 내용은 원문이나 근거 자료로 다시 확인한다” 정도만 기억하면 됩니다. ${laterGuide}`
+    return `좋은 질문입니다. 수집된 자료를 활용한다는 것은 AI 답을 그대로 믿지 않고, 원문이나 믿을 만한 자료와 다시 맞춰 보는 일입니다. 오늘은 “AI 답은 초안이고, 중요한 내용은 원문이나 수집된 자료로 다시 확인한다” 정도만 기억하면 됩니다. ${laterGuide}`
   }
   if (normalized.includes('프롬프트') || normalized.includes('질문') || normalized.includes('후속')) {
     return `좋은 질문입니다. AI에게 질문을 잘하려면 상황, 원하는 결과, 지켜야 할 조건을 같이 적어주는 것이 좋습니다. 예를 들어 “짧게”, “초등학생도 이해하게”, “틀릴 수 있는 부분도 알려줘”처럼 기준을 붙이면 답이 더 쓸 만해집니다. ${laterGuide}`
@@ -554,9 +554,9 @@ function currentStagePosition(raw: unknown): StagePosition {
 }
 
 function evidenceBadge(value?: boolean): string {
-  if (value === true) return '검증 자료 반영'
+  if (value === true) return '수집된 자료 반영'
   if (value === false) return '일반 원칙 답변'
-  return '자료 확인 전'
+  return '수집된 자료 반영 전'
 }
 
 function coachModelBadge(coach: { model?: string; fallbackUsed?: boolean }): string {
@@ -1211,7 +1211,7 @@ function DynamicPathPreview({
             <div className="border-b border-border p-4">
               <div className="text-xs font-semibold uppercase tracking-wide text-accent-cyan">개인화 전체 과정</div>
               <h3 className="mt-1 text-base font-bold text-ink-strong">
-                {activeLength.toLocaleString()}개 개인화 항목이 수집 자료와 목표에 따라 생성됨
+                {activeLength.toLocaleString()}개 개인화 항목이 수집된 자료와 목표에 따라 생성됨
               </h3>
             </div>
             <ol className="max-h-[68dvh] overflow-y-auto p-3">
@@ -1320,8 +1320,8 @@ function StageDetailPreview({ stage, active = false }: { stage?: TrainingStage; 
   const evidence = stage.evidence_cards ?? []
   const evidenceLabel =
     stage.customer_facing_safe && evidence.length
-      ? `검증 자료 ${evidence.length}개`
-      : '맞는 수집 자료 없음'
+      ? `수집된 자료 ${evidence.length}개`
+      : '맞는 수집된 자료 없음'
 
   return (
     <section className="rounded-2xl border border-border bg-card p-4">
@@ -1356,7 +1356,7 @@ function StageDetailPreview({ stage, active = false }: { stage?: TrainingStage; 
           <div className="mt-0.5 text-sm font-semibold text-ink">{materials.length || 0}개</div>
         </div>
         <div className="rounded-[12px] bg-secondary px-3 py-2.5">
-          <div className="text-[11px] font-semibold text-text-faint">수집 자료</div>
+          <div className="text-[11px] font-semibold text-text-faint">수집된 자료</div>
           <div className="mt-0.5 text-sm font-semibold text-ink">{evidenceLabel}</div>
         </div>
       </div>
@@ -1413,7 +1413,7 @@ function StageDetailPreview({ stage, active = false }: { stage?: TrainingStage; 
             </div>
           ) : null}
           <div className="rounded-[12px] border border-border bg-secondary/70 p-3">
-            <div className="mb-2 text-xs font-semibold text-ink">수집 자료 반영</div>
+            <div className="mb-2 text-xs font-semibold text-ink">수집된 자료 반영</div>
             {evidence.length && stage.customer_facing_safe ? (
               <div className="grid gap-2">
                 {evidence.map((item, index) => (
@@ -1426,7 +1426,7 @@ function StageDetailPreview({ stage, active = false }: { stage?: TrainingStage; 
               </div>
             ) : (
               <p className="text-xs leading-relaxed text-text-muted">
-                현재 질문과 딱 맞는 검증 자료가 없어서 사용자 답변에는 자료를 억지로 붙이지 않습니다.
+                현재 질문과 딱 맞는 수집된 자료가 없어서 사용자 답변에는 자료를 억지로 붙이지 않습니다.
               </p>
             )}
           </div>

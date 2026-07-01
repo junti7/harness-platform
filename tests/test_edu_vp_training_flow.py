@@ -1578,7 +1578,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             {
                 "source": "YouTube family learning digest",
                 "source_url": "https://example.org/family-learning",
-                "cite": "최근 수집 자료는 명사 추측을 정답기가 아니라 질문 비교 도구로 다룰 때 사고력이 남는다고 설명한다.",
+                "cite": "최근 수집된 자료는 명사 추측을 정답기가 아니라 질문 비교 도구로 다룰 때 사고력이 남는다고 설명한다.",
             }
         ]
 
@@ -1587,7 +1587,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
                 self.mod,
                 "_edu_vp_safety_coach_evidence",
                 return_value=(
-                    "- 자료 1: 최근 수집 자료는 명사 추측을 정답기가 아니라 질문 비교 도구로 다룰 때 사고력이 남는다고 설명한다.\n  출처: YouTube family learning digest",
+                    "- 자료 1: 최근 수집된 자료는 명사 추측을 정답기가 아니라 질문 비교 도구로 다룰 때 사고력이 남는다고 설명한다.\n  출처: YouTube family learning digest",
                     evidence_items,
                     {"selected_count": 1, "rejected_count": 0, "rejected": [], "query": "다음 글에 이어질 최적의 명사는 어떻게 추측해?"},
                 ),
@@ -2034,7 +2034,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
             {
                 "source": "YouTube family learning digest",
                 "source_url": "https://example.org/family-learning",
-                "cite": "최근 수집 자료는 명사 추측을 정답기가 아니라 질문 비교 도구로 다룰 때 사고력이 남는다고 설명한다.",
+                "cite": "최근 수집된 자료는 명사 추측을 정답기가 아니라 질문 비교 도구로 다룰 때 사고력이 남는다고 설명한다.",
             }
         ]
 
@@ -2342,7 +2342,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(modules[0]["lesson_count"], 12)
         self.assertEqual(len(modules[0]["sample_missions"]), 3)
 
-    def test_day1_contains_rag_lineage_and_evidence_cards(self):
+    def test_day1_uses_beginner_friendly_source_language(self):
         fake_bundle = {
             "mode": "db_customer_facing",
             "items": [
@@ -2371,6 +2371,21 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(card["estimated_minutes"], 85)
         self.assertGreaterEqual(len(card["foundation_concepts"]), 5)
         self.assertEqual(card["foundation_concepts"][0]["id"], "day1_help_not_replace")
+        visible_text = " ".join(
+            str(concept.get("body") or "")
+            for concept in card["foundation_concepts"]
+            if isinstance(concept, dict)
+        )
+        outline_text = " ".join(
+            str(item.get("focus") or "")
+            for item in self.mod._edu_vp_planned_curriculum_outline({"day1": card})
+            if isinstance(item, dict)
+        )
+        self.assertNotIn("RAG", visible_text)
+        self.assertNotIn("RAG", outline_text)
+        self.assertIn("여러 교육 자료", visible_text)
+        self.assertIn("원문과 다시 맞추는", visible_text)
+        self.assertIn("수집된 자료 활용 기준", outline_text)
         self.assertIn("민감정보", card["foundation_concepts"][1]["title"])
         self.assertEqual(len(card["schedule_blocks"]), 9)
         schedule_titles = [item["title"] for item in card["schedule_blocks"]]
@@ -2502,7 +2517,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
                 "checklist": [{"id": "tool", "title": "도구 선택/소개"}],
                 "llm": "Claude",
                 "role": "학부모",
-                "highlight": "수집 자료",
+                "highlight": "수집된 자료",
             },
         ]
 
@@ -2514,7 +2529,7 @@ class EduVpTrainingFlowTests(unittest.TestCase):
                     "segment": "parent",
                     "order": [{"topic": "도구 선택/소개", "weight": 0.9}],
                     "top_concerns": [{"concern": "프롬프트 공부"}],
-                    "highlights": [{"title": "수집 자료"}],
+                    "highlights": [{"title": "수집된 자료"}],
                     "attrs": {"llm": "claude"},
                 },
             ),

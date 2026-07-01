@@ -7909,8 +7909,8 @@ def _edu_vp_planned_curriculum_outline(state: dict[str, Any]) -> list[dict[str, 
         {
             "key": "day3",
             "day": 3,
-            "title": "Day 3 · 답변 검증과 자료 확인",
-            "focus": "환각, 출처, 원문 확인, RAG 자료 활용 기준",
+            "title": "Day 3 · 답변 검증과 수집된 자료 활용",
+            "focus": "환각, 출처, 원문 확인, 수집된 자료 활용 기준",
             "outcome": "AI 답변을 그대로 믿지 않고 원문과 근거로 다시 확인한다.",
             "status": "rough_planned",
         },
@@ -8845,7 +8845,7 @@ def _edu_vp_foundation_concepts(stage_key: str, llm_label: str) -> list[dict[str
         {
             "id": "day1_help_not_replace",
             "title": "기준 잡기: 돕는 사용과 대신하는 사용",
-            "body": "AI를 아이 공부나 생활 정리에 쓸 때 첫 기준은 '생각을 돕는가, 생각을 대신하는가'입니다. RAG 근거의 Edutopia 프레임처럼 질문을 다듬고 빠진 점을 찾는 것은 도움에 가깝고, 답·글·판단을 통째로 맡기는 것은 대신하게 만드는 사용입니다.",
+            "body": "AI를 아이 공부나 생활 정리에 쓸 때 첫 기준은 '생각을 돕는가, 생각을 대신하는가'입니다. 여러 교육 자료에서도 질문을 다듬고 빠진 점을 찾는 것은 도움에 가깝고, 답·글·판단을 통째로 맡기는 것은 대신하게 만드는 사용으로 봅니다.",
             "comprehension_check": "AI 사용을 돕는 사용과 대신하는 사용으로 나눠 볼 수 있어요.",
             "question_prompt": "내 상황에서 돕는 사용과 대신하는 사용의 경계가 헷갈리면 적어주세요.",
         },
@@ -8866,7 +8866,7 @@ def _edu_vp_foundation_concepts(stage_key: str, llm_label: str) -> list[dict[str
         {
             "id": "day1_verify_against_source",
             "title": "AI 답은 원문과 대조해야 한다",
-            "body": "RAG 근거의 AI literacy 원칙처럼 AI 답은 그럴듯해도 틀릴 수 있습니다. 날짜, 시간, 장소, 비용, 준비물, 제출일, 대상 학년·반은 반드시 원문과 다시 맞춰 봅니다. 모르는 내용은 AI가 만들지 못하게 '원문에 없으면 없다고 말해'라고 시킵니다.",
+            "body": "AI 활용 교육에서 가장 많이 강조하는 원칙은 AI 답을 그대로 믿지 말고 원문과 다시 맞추는 것입니다. 날짜, 시간, 장소, 비용, 준비물, 제출일, 대상 학년·반은 반드시 원문과 다시 맞춰 봅니다. 모르는 내용은 AI가 만들지 못하게 '원문에 없으면 없다고 말해'라고 시킵니다.",
             "comprehension_check": "AI 초안을 원문과 다시 대조해야 실제로 쓸 수 있다는 점을 이해했어요.",
             "question_prompt": "AI 답에서 어떤 부분을 다시 확인해야 할지 헷갈리면 적어주세요.",
         },
@@ -9757,7 +9757,7 @@ def _edu_vp_safety_coach_rag_sentence(question: str, evidence_items: list[dict[s
         sentence_candidates.append((hits, len(part), part))
     sentence_candidates.sort(key=lambda row: (row[0], row[1]), reverse=True)
     excerpt = re.sub(r"\s+", " ", sentence_candidates[0][2])[:150].strip(" ,;:-.!?。")
-    for prefix in ("최근 수집 자료는 ", "수집 자료는 ", "관련 자료는 ", "자료는 "):
+    for prefix in ("최근 수집된 자료는 ", "수집된 자료는 ", "최근 수집 자료는 ", "수집 자료는 ", "관련 자료는 ", "자료는 "):
         if excerpt.startswith(prefix):
             excerpt = excerpt[len(prefix):]
             break
