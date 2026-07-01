@@ -15306,22 +15306,13 @@ def edu_vp_training_session(
     if bool(((state.get("ui_state") or {}).get("safety_confirmed") or {}).get("day0")):
         state = _edu_vp_unlock_day0_practice(state, advance_to_day1=False)
     state = _edu_vp_refresh_state(state)
-    _edu_vp_store_state(resolved_case_id, state)
-    response_state = _edu_vp_attach_personalized_curriculum(state, payload)
-    _edu_vp_append_event(
-        case_id=resolved_case_id,
-        email=_edu_normalize_email(email),
-        event_type="session",
-        event_name="resume",
-        payload={"case_id": resolved_case_id, "selected_stage": ((state.get("ui_state") or {}).get("selected_stage") or "day0")},
-    )
     return {
         "ok": True,
         "exists": True,
         "case_id": resolved_case_id,
         "customer": payload["customer"],
         "case": payload["case"],
-        "training_state": response_state,
+        "training_state": state,
     }
 
 

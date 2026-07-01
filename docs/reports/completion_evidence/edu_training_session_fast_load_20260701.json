@@ -1,0 +1,68 @@
+{
+  "task": "Shorten VP training session load time after selecting a training case",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T20:53:23+09:00",
+      "summary": "Code and UI-affecting changes require real verification and completion evidence before completion reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T20:53:23+09:00",
+      "summary": "Completion reporting for code and customer-facing flows requires completion evidence guard validation."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Made /api/edu/vp-training/session a read-only load path by removing snapshot writes during case entry.",
+    "Removed resume event-log writes from the blocking session load response.",
+    "Removed personalized curriculum attachment from the blocking session load response.",
+    "Added regression coverage proving the session load path does not call _edu_vp_store_state, _edu_vp_append_event, or _edu_vp_attach_personalized_curriculum."
+  ],
+  "verification": [
+    {
+      "name": "backend syntax check",
+      "target": "harness-os/backend/main.py",
+      "command": ".venv/bin/python -m py_compile harness-os/backend/main.py",
+      "result": "passed"
+    },
+    {
+      "name": "session load targeted regression",
+      "target": "tests/test_edu_vp_training_flow.py",
+      "command": ".venv/bin/python -m unittest discover -s tests -p 'test_edu_vp_training_flow.py' -k 'session_load_path_is_read_only' -k 'save_path_skips_personalized_curriculum_attach'",
+      "result": "passed: 3 tests"
+    },
+    {
+      "name": "VP training flow full regression",
+      "target": "tests/test_edu_vp_training_flow.py",
+      "command": ".venv/bin/python tests/test_edu_vp_training_flow.py",
+      "result": "passed: 129 tests"
+    },
+    {
+      "name": "edu app build and lint",
+      "target": "harness-os/edu-app",
+      "command": "npm run build --prefix harness-os/edu-app && npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    },
+    {
+      "name": "Mac Mini backend runtime entrypoint",
+      "target": "macmini backend service url",
+      "command": "curl -fsS --max-time 5 http://100.97.175.44:8000/ | head -5",
+      "result": "passed: backend HTTP service returned the Harness HTML shell"
+    },
+    {
+      "name": "whitespace check",
+      "target": "local git diff",
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "residual_risk": [
+    "No authenticated browser timing capture was available in this session; regression coverage verifies the blocking session load path no longer performs the removed writes or curriculum attach."
+  ]
+}

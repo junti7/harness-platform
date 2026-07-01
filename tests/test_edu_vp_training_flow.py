@@ -2772,6 +2772,38 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         mocked_attach.assert_not_called()
         self.assertEqual(result["training_state"]["ui_state"]["selected_stage"], "day1")
 
+    def test_session_load_path_is_read_only_and_skips_personalized_curriculum_attach(self):
+        request = self.mod.Request({"type": "http", "headers": [], "client": ("127.0.0.1", 12345)})
+        payload = {
+            "customer": {"email": "vp@example.com", "segment": "parent"},
+            "case": {"id": 93},
+        }
+        state = self.mod._edu_vp_refresh_state({
+            "customer": payload["customer"],
+            "case": payload["case"],
+            "intake": {"preferred_llm": "claude", "motivation": "work"},
+            "day0": {"title": "Day 0", "completed": True},
+            "day1": self.mod._edu_vp_build_day1({"preferred_llm": "claude", "motivation": "work"}),
+            "ui_state": {"selected_stage": "day1", "last_client_seq": 2},
+        })
+
+        with (
+            patch.object(self.mod, "_edu_vp_assert_access"),
+            patch.object(self.mod, "_ensure_edu_case_schema"),
+            patch.object(self.mod, "_edu_vp_latest_case_payload", return_value=payload),
+            patch.object(self.mod, "_edu_vp_load_state", return_value=state),
+            patch.object(self.mod, "_edu_vp_store_state") as mocked_store,
+            patch.object(self.mod, "_edu_vp_append_event") as mocked_append,
+            patch.object(self.mod, "_edu_vp_attach_personalized_curriculum") as mocked_attach,
+        ):
+            result = self.mod.edu_vp_training_session(request, "vp@example.com", 93, None)
+
+        mocked_store.assert_not_called()
+        mocked_append.assert_not_called()
+        mocked_attach.assert_not_called()
+        self.assertTrue(result["exists"])
+        self.assertEqual(result["training_state"]["ui_state"]["selected_stage"], "day1")
+
     def test_artifact_save_path_skips_personalized_curriculum_attach(self):
         request = self.mod.Request({"type": "http", "headers": [], "client": ("127.0.0.1", 12345)})
         payload = {
