@@ -1,6 +1,6 @@
 {
   "task": "Add Perplexity to Day 1 AI tool selection",
-  "status": "residual_risk",
+  "status": "complete",
   "date": "2026-07-01",
   "governance_bootstrap": [
     {
@@ -58,9 +58,41 @@
       "target": "local backend helper",
       "command": "Build Day 1 with preferred_llm=perplexity and inspect practice_lab.install_guide",
       "result": "passed: selected_tool=Perplexity, tool_options includes Perplexity, steps and fallback include perplexity.ai"
+    },
+    {
+      "name": "Mac Mini scoped deploy",
+      "target": "Mac Mini source and backend service",
+      "command": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/components/CurriculumScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_training_day1_perplexity_tool_20260701.json",
+      "result": "passed: selected paths diff origin/main = 0 and backend relaunched on port 8000"
+    },
+    {
+      "name": "Mac Mini edu-app production build and restart",
+      "target": "Mac Mini production dist and launchd",
+      "command": "npm run build --prefix harness-os/edu-app && launchctl kickstart -k gui/$uid/com.harness.edu-app",
+      "result": "passed: vite built and production HTML serves assets/index-BgjnQdXo.js"
+    },
+    {
+      "name": "Mac Mini targeted Day 1 LLM tests",
+      "target": "Mac Mini pytest",
+      "command": "DATABASE_URL=postgresql://localhost/harness_prod .venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -k 'day1_install_guide or preferred_llm_change'",
+      "result": "passed: 5 passed, 120 deselected, 2 warnings"
+    },
+    {
+      "name": "Mac Mini production bundle content check",
+      "target": "Mac Mini production JS bundle",
+      "command": "curl -fsS http://100.97.175.44:5174/assets/index-BgjnQdXo.js | grep for Perplexity and perplexity.ai",
+      "result": "passed: bundle contains Perplexity and perplexity.ai strings"
+    },
+    {
+      "name": "Mac Mini backend Perplexity guide check",
+      "target": "Mac Mini backend helper",
+      "command": "Build Day 1 with preferred_llm=perplexity and inspect practice_lab.install_guide",
+      "result": "passed: selected_tool=Perplexity, tool_options includes Perplexity, fallback includes perplexity.ai"
     }
   ],
-  "residual_risk": [
-    "Commit and Mac Mini deployment are still pending in this evidence revision; update after production deploy and bundle verification."
-  ]
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/components/CurriculumScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_training_day1_perplexity_tool_20260701.json plus Mac Mini npm run build --prefix harness-os/edu-app and launchctl kickstart -k gui/$uid/com.harness.edu-app",
+    "result": "deployed and verified: backend service relaunched, production edu-app bundle assets/index-BgjnQdXo.js includes Perplexity/perplexity.ai, targeted Mac Mini tests passed, and backend Day 1 guide renders Perplexity"
+  },
+  "residual_risk": []
 }
