@@ -1748,6 +1748,28 @@ const TOOL_INSTALL_GUIDE_BY_LABEL: Record<string, { body: string; action: string
   },
 }
 
+const TOOL_WEB_DOMAIN_PATTERN = /\b(chatgpt\.com|claude\.ai|gemini\.google\.com|genspark\.ai|grok\.com|perplexity\.ai)\b/g
+const TOOL_WEB_DOMAIN_EXACT_PATTERN = /^(chatgpt\.com|claude\.ai|gemini\.google\.com|genspark\.ai|grok\.com|perplexity\.ai)$/
+
+function renderLinkedToolDomains(text: string) {
+  const parts = text.split(TOOL_WEB_DOMAIN_PATTERN)
+  return parts.map((part, index) => {
+    if (!TOOL_WEB_DOMAIN_EXACT_PATTERN.test(part)) return part
+    return (
+      <a
+        key={`${part}-${index}`}
+        href={`https://${part}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-0.5 underline decoration-current/40 underline-offset-2"
+      >
+        {part}
+        <ExternalLink size={10} aria-hidden="true" />
+      </a>
+    )
+  })
+}
+
 function installGuideForSelectedTool<T extends NonNullable<NonNullable<TrainingStage['practice_lab']>['install_guide']>>(
   installGuide: T,
   selectedTool: string,
@@ -1885,10 +1907,10 @@ function Day1PracticeLab({
                   </span>
                   <div className="text-sm font-bold leading-snug text-ink">{item.title}</div>
                 </div>
-                {item.body ? <p className="text-xs leading-relaxed text-text-muted">{item.body}</p> : null}
+                {item.body ? <p className="text-xs leading-relaxed text-text-muted">{renderLinkedToolDomains(item.body)}</p> : null}
                 {item.action ? (
                   <div className="mt-2 rounded-[10px] border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] font-semibold leading-relaxed text-primary">
-                    {item.action}
+                    {renderLinkedToolDomains(item.action)}
                   </div>
                 ) : null}
               </div>
@@ -1912,7 +1934,7 @@ function Day1PracticeLab({
               <Download size={15} /> 설치가 처음이라면
             </div>
             {installGuide.title ? <h3 className="text-sm font-bold leading-snug text-ink">{installGuide.title}</h3> : null}
-            {installGuide.intro ? <p className="mt-1 text-xs leading-relaxed text-text-muted">{installGuide.intro}</p> : null}
+            {installGuide.intro ? <p className="mt-1 text-xs leading-relaxed text-text-muted">{renderLinkedToolDomains(installGuide.intro)}</p> : null}
             {installGuide.tool_options?.length ? (
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {installGuide.tool_options.map((tool) => {
@@ -1943,14 +1965,14 @@ function Day1PracticeLab({
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
                       {index + 1}
                     </span>
-                    <span>{step}</span>
+                    <span>{renderLinkedToolDomains(step)}</span>
                   </li>
                 ))}
               </ol>
             ) : null}
             {installGuide.fallback ? (
               <div className="mt-3 rounded-[10px] border border-primary/20 bg-card px-3 py-2 text-[11px] font-semibold leading-relaxed text-primary">
-                {installGuide.fallback}
+                {renderLinkedToolDomains(installGuide.fallback)}
               </div>
             ) : null}
           </div>

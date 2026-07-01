@@ -1,0 +1,60 @@
+{
+  "task": "Link AI tool web fallback domains in Day 1 install guidance",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T20:06:05+09:00",
+      "summary": "Completion requires evidence-backed reporting, scoped commits, and user-facing verification before reporting done."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T20:06:05+09:00",
+      "summary": "UI changes require actual verification evidence, source-of-truth deploy flow, and completion evidence guard."
+    }
+  ],
+  "scope": [
+    "harness-os/edu-app/src/components/TrainingScreen.tsx"
+  ],
+  "changes": [
+    "Added a shared Day 1 install-guide renderer that turns supported AI tool domains into external links.",
+    "Applied the renderer to tool card body/action text, install guide intro text, install guide steps, and fallback text.",
+    "Covered chatgpt.com, claude.ai, gemini.google.com, genspark.ai, grok.com, and perplexity.ai so the behavior is consistent across all selectable LLM tools."
+  ],
+  "verification": [
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: tsc and vite built dist/assets/index-BciqD3MA.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    },
+    {
+      "name": "domain href source check",
+      "target": "local source",
+      "command": "rg -n --fixed-strings 'https://${part}' harness-os/edu-app/src/components/TrainingScreen.tsx",
+      "result": "passed: renderLinkedToolDomains builds external href values from matched tool domains"
+    },
+    {
+      "name": "production bundle domain-link renderer check",
+      "target": "local dist bundle",
+      "command": "rg -n --fixed-strings 'https://' harness-os/edu-app/dist/assets/index-BciqD3MA.js",
+      "result": "passed: built bundle contains the external-link URL construction path"
+    },
+    {
+      "name": "whitespace check",
+      "target": "local git diff",
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "residual_risk": [
+    "In-app browser was unavailable in this Codex session, and Playwright is not installed in harness-os/edu-app, so verification used build/lint/source/dist checks rather than a live DOM click."
+  ]
+}
