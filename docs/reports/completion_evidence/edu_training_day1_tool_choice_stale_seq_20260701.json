@@ -48,9 +48,33 @@
       "target": "local dist",
       "command": "npm run build",
       "result": "passed: tsc and vite built dist/assets/index-DImRapPE.js"
+    },
+    {
+      "name": "Mac Mini scoped deploy",
+      "target": "Mac Mini source and backend service",
+      "command": "scripts/deploy_to_macmini.sh harness-os/backend/main.py tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_training_day1_tool_choice_stale_seq_20260701.json",
+      "result": "passed: backend relaunched on port 8000 and deployed paths diff origin/main = 0"
+    },
+    {
+      "name": "Mac Mini targeted regression tests",
+      "target": "Mac Mini pytest",
+      "command": "DATABASE_URL=postgresql://localhost/harness_prod .venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -k \"preferred_llm_change or day1_install_guide\"",
+      "result": "passed: 4 passed, 120 deselected, 2 warnings"
+    },
+    {
+      "name": "Mac Mini explicit LLM switch stale guard check",
+      "target": "Mac Mini backend helper",
+      "command": "Call _edu_vp_is_preferred_llm_change_event for preferred_llm_changed/gemini, state_sync/gemini, and preferred_llm_changed/empty",
+      "result": "passed: true, false, false"
+    },
+    {
+      "name": "Mac Mini backend entrypoint check",
+      "target": "Mac Mini backend",
+      "command": "curl --max-time 5 http://127.0.0.1:8000/",
+      "result": "passed: backend_http=200"
     }
   ],
   "residual_risk": [
-    "Mac Mini deploy and production verification are recorded after deployment in this evidence file."
+    "No frontend source changed in this repair; existing edu-app bundle still sends preferred_llm_changed, and backend now accepts that explicit user action even if a background sync advanced the server sequence."
   ]
 }
