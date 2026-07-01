@@ -1,0 +1,46 @@
+{
+  "task": "Apply Day 0 answer rating UX to Day 1 and future training stages",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Completion requires real verification before reporting done, and code or UI changes require completion evidence."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Code, deploy, UI, and customer-facing answer changes require real entrypoint verification and completion evidence guard."
+    }
+  ],
+  "scope": [
+    "harness-os/edu-app/src/components/TrainingScreen.tsx"
+  ],
+  "changes": [
+    "Added the Day 0 thumbs up and thumbs down answer feedback controls to the shared post-Day-0 StageConceptBlock.",
+    "Connected post-Day-0 rating actions to the existing rateCoachAnswer handler and safety_coach_feedback sync path.",
+    "Rendered selected feedback state with the same '좋아요 반영됨' and '자동강화 분석 예약됨' labels as Day 0."
+  ],
+  "verification": [
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build",
+      "result": "passed: tsc and vite built dist/assets/index-BbsyTZe4.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint",
+      "result": "passed"
+    },
+    {
+      "name": "completion evidence guard",
+      "target": "pre-push git hook",
+      "command": "scripts/agent_completion_guard.py docs/reports/completion_evidence/edu_training_stage_answer_rating_ux_20260701.json",
+      "result": "passed: completion_guard CLEAR"
+    }
+  ],
+  "residual_risk": []
+}

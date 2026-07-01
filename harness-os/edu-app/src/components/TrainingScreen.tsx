@@ -1441,28 +1441,80 @@ function StageConceptBlock({
   checked,
   conceptFeedback,
   coachAnswers,
+  coachFeedback,
   coachLoading,
   coachErrors,
   onToggle,
   onConceptFeedback,
   onAskCoach,
+  onRateCoachAnswer,
   onDeleteCoachAnswer,
 }: {
   stage: TrainingStage
   checked: Record<string, boolean>
   conceptFeedback: SafetyConceptFeedback
   coachAnswers: SafetyCoachAnswers
+  coachFeedback: SafetyCoachAnswerFeedback
   coachLoading: Record<string, boolean>
   coachErrors: Record<string, string>
   onToggle: (id: string) => void
   onConceptFeedback: (id: string, value: string) => void
   onAskCoach: (concept: NonNullable<TrainingStage['foundation_concepts']>[number], id: string) => void
+  onRateCoachAnswer: (
+    concept: NonNullable<TrainingStage['foundation_concepts']>[number],
+    id: string,
+    item: SafetyCoachAnswers[string] | SafetyCoachThreadItem,
+    rating: SafetyCoachAnswerRating,
+  ) => void
   onDeleteCoachAnswer: (id: string) => void
 }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const concepts = stage.foundation_concepts ?? []
   const conceptItems = concepts.map((concept, index) => ({ ...concept, checkId: conceptId(concept, index) }))
   if (!conceptItems.length) return null
+  const renderAnswerRating = (
+    concept: NonNullable<TrainingStage['foundation_concepts']>[number],
+    id: string,
+    item: SafetyCoachAnswers[string] | SafetyCoachThreadItem,
+  ) => {
+    const key = safetyAnswerKey(id, item.version, item.question)
+    const selected = coachFeedback[key]?.rating
+    return (
+      <div className="mt-2 flex items-center gap-1.5" aria-label="AI 코치 답변 평가">
+        <button
+          type="button"
+          onClick={() => onRateCoachAnswer(concept, id, item, 'up')}
+          className={`inline-flex h-8 w-8 items-center justify-center rounded-[8px] border transition ${
+            selected === 'up'
+              ? 'border-primary bg-primary text-primary-foreground'
+              : 'border-border bg-secondary text-text-muted hover:bg-card hover:text-primary'
+          }`}
+          title="좋아요"
+          aria-label="좋아요"
+        >
+          <ThumbsUp size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={() => onRateCoachAnswer(concept, id, item, 'down')}
+          className={`inline-flex h-8 w-8 items-center justify-center rounded-[8px] border transition ${
+            selected === 'down'
+              ? 'border-danger bg-danger-soft text-danger'
+              : 'border-border bg-secondary text-text-muted hover:bg-card hover:text-danger'
+          }`}
+          title="싫어요"
+          aria-label="싫어요"
+        >
+          <ThumbsDown size={14} />
+        </button>
+        {selected ? (
+          <span className="text-[11px] leading-relaxed text-text-faint">
+            {selected === 'up' ? '좋아요 반영됨' : '자동강화 분석 예약됨'}
+          </span>
+        ) : null}
+      </div>
+    )
+  }
 
   return (
     <section className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
@@ -1594,6 +1646,7 @@ function StageConceptBlock({
                     </span>
                   </div>
                   {renderCoachAnswer(coach.answer)}
+                  {renderAnswerRating(concept, concept.checkId, coach)}
                 </div>
               ) : null}
             </div>
@@ -3298,11 +3351,13 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
             checked={checked}
             conceptFeedback={conceptFeedback}
             coachAnswers={coachAnswers}
+            coachFeedback={coachAnswerFeedback}
             coachLoading={coachLoading}
             coachErrors={coachErrors}
             onToggle={toggleCheck}
             onConceptFeedback={updateConceptFeedback}
             onAskCoach={requestCoachAnswer}
+            onRateCoachAnswer={rateCoachAnswer}
             onDeleteCoachAnswer={deleteCoachAnswer}
           />
         ) : null}
