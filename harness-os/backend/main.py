@@ -8197,6 +8197,28 @@ def _edu_vp_case_card_progress(summary: dict[str, Any]) -> tuple[str, int]:
     return "VP 훈련", int(progress.get("pct") or 0) if isinstance(progress, dict) else 0
 
 
+def _edu_vp_case_list_summary(summary_raw: Any) -> dict[str, Any]:
+    """Return card-only training summary without migrations or curriculum rebuilds."""
+    if not isinstance(summary_raw, dict) or not summary_raw:
+        return {}
+    summary = _edu_vp_normalize_state_keys(summary_raw)
+    flow_outline = [item for item in (summary.get("flow_outline") or []) if isinstance(item, dict)]
+    if flow_outline:
+        return summary
+    day0 = summary.get("day0") or {}
+    day1 = summary.get("day1") or {}
+    flow_outline = []
+    if isinstance(day0, dict) and day0.get("title"):
+        p0 = _edu_vp_stage_progress(day0)
+        flow_outline.append({"key": "day0", "label": "Day 0", "title": day0["title"], "completed": p0["completed"], "pct": p0["pct"]})
+        if p0["completed"] and isinstance(day1, dict) and day1.get("title"):
+            p1 = _edu_vp_stage_progress(day1)
+            flow_outline.append({"key": "day1", "label": "Day 1", "title": day1["title"], "completed": p1["completed"], "pct": p1["pct"]})
+    if flow_outline:
+        summary["flow_outline"] = flow_outline
+    return summary
+
+
 def _edu_vp_build_dynamic_curriculum_path(
     intake: dict[str, Any],
     curriculum: dict[str, Any],
@@ -16140,9 +16162,7 @@ def edu_vp_training_cases(
     for row in rows:
         summary_raw = row.get("summary_json") or {}
         has_training_state = isinstance(summary_raw, dict) and bool(summary_raw)
-        summary = _edu_vp_normalize_state_keys(summary_raw) if isinstance(summary_raw, dict) else {}
-        if has_training_state:
-            summary = _edu_vp_refresh_state(summary)
+        summary = _edu_vp_case_list_summary(summary_raw)
         flow_outline = summary.get("flow_outline") or []
         stage_label, progress_pct = _edu_vp_case_card_progress(summary)
         case_label = f"{stage_label} · 진행률 {progress_pct}%"

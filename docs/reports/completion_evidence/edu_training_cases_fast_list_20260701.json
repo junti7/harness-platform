@@ -1,0 +1,67 @@
+{
+  "task": "Stop VP training case list timeout by removing heavy state refresh from list endpoint",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T22:52:51+09:00",
+      "summary": "User-facing fixes require real verification, scoped commit, push, deploy, and exact residual risk reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T22:52:51+09:00",
+      "summary": "Completion requires real runtime or user-facing verification and completion evidence guard validation."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Removed _edu_vp_refresh_state from /api/edu/vp-training/cases list rendering.",
+    "Added _edu_vp_case_list_summary to compute card-only flow/progress without Day 1 migrations, curriculum personalization, or Day 1 rebuild.",
+    "Added regression coverage proving stale Day 1 snapshots are not rebuilt during list summary generation."
+  ],
+  "verification": [
+    {
+      "name": "edu vp training flow tests",
+      "target": "local backend unit tests",
+      "command": ".venv/bin/python tests/test_edu_vp_training_flow.py",
+      "result": "passed: 130 tests OK"
+    },
+    {
+      "name": "backend syntax check",
+      "target": "local python compile",
+      "command": ".venv/bin/python -m py_compile harness-os/backend/main.py",
+      "result": "passed"
+    },
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build --prefix harness-os/edu-app",
+      "result": "passed: tsc and vite built dist/assets/index-Cn-3_Sjm.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint --prefix harness-os/edu-app",
+      "result": "passed"
+    },
+    {
+      "name": "Mac Mini edu app runtime entrypoint",
+      "target": "macmini edu app url",
+      "command": "curl -fsS --max-time 5 http://100.97.175.44:5174/ | head -5",
+      "result": "passed: edu app HTTP entrypoint responded"
+    },
+    {
+      "name": "whitespace check",
+      "target": "local git diff",
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "residual_risk": [
+    "Post-deploy authenticated /cases timing will be measured after deployment because the committed source must reach Mac Mini first."
+  ]
+}

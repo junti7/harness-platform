@@ -2862,6 +2862,26 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(label, "Day 1")
         self.assertEqual(pct, 0)
 
+    def test_case_list_summary_does_not_rebuild_day1(self):
+        stale_summary = {
+            "ui_state": {"selected_stage": "day1"},
+            "day0": {"title": "Day 0 · 안전", "completed": True},
+            "day1": {
+                "title": "Day 1 · 예전 실습",
+                "practice_lab_version": "old-version",
+                "completed": False,
+            },
+        }
+
+        with patch.object(self.mod, "_edu_vp_build_day1") as mocked_build:
+            summary = self.mod._edu_vp_case_list_summary(stale_summary)
+
+        mocked_build.assert_not_called()
+        label, pct = self.mod._edu_vp_case_card_progress(summary)
+        self.assertEqual(label, "Day 1")
+        self.assertEqual(pct, 0)
+        self.assertEqual(summary["day1"]["practice_lab_version"], "old-version")
+
     def test_material_zip_contains_expected_files(self):
         filename, payload = self.mod._edu_vp_material_zip_bytes("day1-school-notice-kit")
         self.assertEqual(filename, "day1-school-notice-kit.zip")
