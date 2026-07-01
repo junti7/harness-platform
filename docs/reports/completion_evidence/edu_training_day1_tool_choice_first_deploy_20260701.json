@@ -51,6 +51,36 @@
       "target": "local dist",
       "command": "npm run build",
       "result": "passed: tsc and vite built dist/assets/index-D5_gMms7.js"
+    },
+    {
+      "name": "Mac Mini scoped deploy",
+      "target": "Mac Mini source and backend service",
+      "command": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_training_day1_tool_choice_first_deploy_20260701.json",
+      "result": "passed: backend relaunched on port 8000 and deployed paths diff origin/main = 0"
+    },
+    {
+      "name": "Mac Mini edu-app production build",
+      "target": "Mac Mini dist and launchd service",
+      "command": "ssh macmini 'cd harness-os/edu-app && npm run build && launchctl kickstart -k gui/$(id -u)/com.harness.edu-app'",
+      "result": "passed: dist/index.html points to dist/assets/index-CaMJuFy-.js and service listens on port 5174"
+    },
+    {
+      "name": "Mac Mini frontend bundle copy check",
+      "target": "Mac Mini production bundle",
+      "command": "grep production dist bundle for new and old Day 1 install terms",
+      "result": "passed: Genspark=yes, Grok=yes, old_title=Claude를 처음 쓰는 경우 no, old_card=Claude 앱이 있으면 앱 열기 no"
+    },
+    {
+      "name": "Mac Mini backend payload check",
+      "target": "Mac Mini backend Day 1 builder and legacy refresh migration",
+      "command": "import harness-os/backend/main.py on Mac Mini and call _edu_vp_build_day1 plus _edu_vp_refresh_state with a completed legacy Day 1 state",
+      "result": "passed: practice_lab_version=2026-07-01-tool-choice-first-v4, title=어떤 AI를 사용할지 먼저 고르기, tool_options include ChatGPT/Claude/Gemini/Genspark/Grok, completed/proof/stage_checked preserved, old Claude-only copy absent"
+    },
+    {
+      "name": "Mac Mini targeted regression tests",
+      "target": "Mac Mini pytest",
+      "command": "DATABASE_URL=postgresql://localhost/harness_prod .venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -k \"day1_install_guide or refresh_replaces_completed_legacy_day1_install_copy\"",
+      "result": "passed: 2 passed, 119 deselected, 2 warnings"
     }
   ],
   "residual_risk": [
