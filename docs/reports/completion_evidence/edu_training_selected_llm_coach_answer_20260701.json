@@ -45,11 +45,35 @@
       "target": "local git diff",
       "command": "git diff --check",
       "result": "passed"
+    },
+    {
+      "name": "Mac Mini scoped deploy",
+      "target": "Mac Mini source and backend service",
+      "command": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_training_selected_llm_coach_answer_20260701.json",
+      "result": "passed: selected paths diff origin/main = 0 and backend relaunched on port 8000"
+    },
+    {
+      "name": "Mac Mini edu-app production build and restart",
+      "target": "Mac Mini production dist and launchd",
+      "command": "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/sbin /opt/homebrew/bin/npm run build --prefix harness-os/edu-app && launchctl kickstart -k gui/$uid/com.harness.edu-app",
+      "result": "passed: vite built and production HTML serves assets/index-BXPQCJB5.js"
+    },
+    {
+      "name": "Mac Mini full edu VP training flow tests",
+      "target": "Mac Mini pytest",
+      "command": "DATABASE_URL=postgresql://localhost/harness_prod .venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "passed: 126 passed, 2 warnings, 64 subtests passed"
+    },
+    {
+      "name": "Mac Mini selected LLM deterministic answer check",
+      "target": "Mac Mini backend helper",
+      "command": "Call _edu_vp_safety_coach_selected_llm_answer('그럼 내가 사용 중인 LLM은 뭐야?', 'perplexity')",
+      "result": "passed: answer says the selected AI tool is Perplexity and clarifies app installation cannot be verified"
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/lib/vpTraining.ts tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_training_selected_llm_coach_answer_20260701.json plus Mac Mini npm run build --prefix harness-os/edu-app and launchctl kickstart -k gui/$uid/com.harness.edu-app",
-    "result": "pending"
+    "result": "deployed and verified: backend relaunched on port 8000, production edu-app bundle assets/index-BXPQCJB5.js is served, Mac Mini full edu VP training tests passed, and selected-LLM question answers Perplexity from session value"
   },
   "residual_risk": [
     "The app can answer which AI tool was selected inside the training flow; it still cannot verify whether that app is actually installed on the user's device."
