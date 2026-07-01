@@ -2589,6 +2589,11 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertEqual(guide["selected_tool"], "Gemini")
         self.assertIn("gemini.google.com", text)
 
+    def test_preferred_llm_change_event_bypasses_stale_ui_sync_guard(self):
+        self.assertTrue(self.mod._edu_vp_is_preferred_llm_change_event("preferred_llm_changed", "gemini"))
+        self.assertFalse(self.mod._edu_vp_is_preferred_llm_change_event("state_sync", "gemini"))
+        self.assertFalse(self.mod._edu_vp_is_preferred_llm_change_event("preferred_llm_changed", ""))
+
     def test_work_motivation_keeps_day1_and_outline_work_focused(self):
         state = {
             "intake": {

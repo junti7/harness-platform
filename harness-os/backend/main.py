@@ -6231,6 +6231,10 @@ class EduVpTrainingSessionSyncRequest(BaseModel):
     event_payload: dict[str, Any] = Field(default_factory=dict)
 
 
+def _edu_vp_is_preferred_llm_change_event(event_name: str, preferred_llm: str) -> bool:
+    return event_name == "preferred_llm_changed" and bool(str(preferred_llm or "").strip())
+
+
 class EduVpTrainingSafetyCoachRequest(BaseModel):
     case_id: int
     email: str = ""
@@ -15313,7 +15317,8 @@ def edu_vp_training_session_sync(
     current_ui_state = state.get("ui_state") or {}
     current_seq = int(current_ui_state.get("last_client_seq") or 0) if isinstance(current_ui_state, dict) else 0
     incoming_seq = max(0, int(req.client_seq or 0))
-    if incoming_seq < current_seq:
+    force_preferred_llm_change = _edu_vp_is_preferred_llm_change_event(req.event_name, req.preferred_llm)
+    if incoming_seq < current_seq and not force_preferred_llm_change:
         return {
             "ok": True,
             "case_id": case_id,
@@ -15321,6 +15326,8 @@ def edu_vp_training_session_sync(
             "ui_state": current_ui_state if isinstance(current_ui_state, dict) else {},
             "training_state": state,
         }
+    if force_preferred_llm_change and incoming_seq <= current_seq:
+        incoming_seq = current_seq + 1
     safety_confirmation = _edu_vp_safety_confirmation_from_event(state, req.event_name, req.event_payload)
     event_payload = req.event_payload if isinstance(req.event_payload, dict) else {}
     device_claim: dict[str, Any] = {}
