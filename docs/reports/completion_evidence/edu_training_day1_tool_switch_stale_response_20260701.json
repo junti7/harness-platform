@@ -1,6 +1,6 @@
 {
   "task": "Keep Day 1 AI tool selection from being reverted by stale sync responses",
-  "status": "residual_risk",
+  "status": "complete",
   "date": "2026-07-01",
   "governance_bootstrap": [
     {
@@ -61,9 +61,41 @@
       "target": "local pytest",
       "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py",
       "result": "passed: 125 passed, 3 warnings"
+    },
+    {
+      "name": "Mac Mini scoped deploy",
+      "target": "Mac Mini source and backend service",
+      "command": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_training_day1_tool_switch_stale_response_20260701.json",
+      "result": "passed: selected paths diff origin/main = 0 and backend relaunched on port 8000"
+    },
+    {
+      "name": "Mac Mini edu-app production build and restart",
+      "target": "Mac Mini production dist and launchd",
+      "command": "npm run build --prefix harness-os/edu-app && launchctl kickstart -k gui/$uid/com.harness.edu-app",
+      "result": "passed: vite built and production HTML serves assets/index-Ne9TE5VD.js"
+    },
+    {
+      "name": "Mac Mini preferred LLM payload fallback helper",
+      "target": "Mac Mini backend helper",
+      "command": "Instantiate EduVpTrainingSessionSyncRequest with preferred_llm='' and event_payload.preferred_llm='gemini'",
+      "result": "passed: _edu_vp_sync_requested_llm returned gemini and stale-bypass helper returned true"
+    },
+    {
+      "name": "Mac Mini targeted regression tests",
+      "target": "Mac Mini pytest",
+      "command": "DATABASE_URL=postgresql://localhost/harness_prod .venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -k 'preferred_llm_change'",
+      "result": "passed: 4 passed, 121 deselected, 2 warnings"
+    },
+    {
+      "name": "Mac Mini production API payload fallback",
+      "target": "Mac Mini production API",
+      "command": "POST /api/edu/vp-training/session/sync for case_id=72 with preferred_llm='' and event_payload.preferred_llm='gemini'",
+      "result": "passed: ignored=false, intake=gemini, ui=gemini, selected_tool=Gemini, last_client_seq=418"
     }
   ],
-  "residual_risk": [
-    "Commit and Mac Mini deployment are still pending in this evidence revision; update this file after deploy verification before final completion report."
-  ]
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx tests/test_edu_vp_training_flow.py docs/reports/completion_evidence/edu_training_day1_tool_switch_stale_response_20260701.json plus Mac Mini npm run build --prefix harness-os/edu-app and launchctl kickstart -k gui/$uid/com.harness.edu-app",
+    "result": "deployed and verified: backend service on 8000, edu-app production bundle assets/index-Ne9TE5VD.js, targeted tests passed, and production API accepted event_payload-only LLM switch"
+  },
+  "residual_risk": []
 }
