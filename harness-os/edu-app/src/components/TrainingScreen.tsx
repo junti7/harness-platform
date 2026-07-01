@@ -208,6 +208,8 @@ function llmLabel(value?: string): string {
   if (v.includes('gpt') || v.includes('chatgpt')) return 'ChatGPT'
   if (v.includes('claude')) return 'Claude'
   if (v.includes('gemini')) return 'Gemini'
+  if (v.includes('genspark')) return 'Genspark'
+  if (v.includes('grok')) return 'Grok'
   return 'AI 도구'
 }
 

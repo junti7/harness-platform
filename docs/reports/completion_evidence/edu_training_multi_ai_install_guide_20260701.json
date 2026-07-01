@@ -1,0 +1,65 @@
+{
+  "task": "Generalize Day 1 AI tool install guide beyond Claude",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Completion requires real verification before reporting done, and code or UI changes require completion evidence."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Code, deploy, UI, and customer-facing answer changes require real entrypoint verification and completion evidence guard."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "harness-os/edu-app/src/components/TrainingScreen.tsx",
+    "harness-os/edu-app/src/components/CurriculumScreen.tsx",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Extended preferred LLM normalization and labels to include Genspark and Grok.",
+    "Expanded Day 1 install guide copy for ChatGPT, Claude, Gemini, Genspark, and Grok.",
+    "When the tool is auto or not chosen, Day 1 now asks the learner to choose one AI tool first and lists ChatGPT, Claude, Gemini, Genspark, and Grok.",
+    "Bumped Day 1 practice_lab_version to refresh existing uncompleted Day 1 snapshots with the new multi-tool install guide.",
+    "Updated frontend labels and curriculum selector options to include Genspark, Grok, and an explicit undecided option."
+  ],
+  "verification": [
+    {
+      "name": "targeted multi-tool install guide tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py::EduVpTrainingFlowTests::test_day1_install_guide_uses_selected_ai_tool_or_asks_first tests/test_edu_vp_training_flow.py::EduVpTrainingFlowTests::test_day1_uses_beginner_friendly_source_language tests/test_edu_vp_training_flow.py::EduVpTrainingFlowTests::test_refresh_adds_guided_practice_lab_to_legacy_day1 -q",
+      "result": "passed: 3 passed, 4 subtests passed"
+    },
+    {
+      "name": "edu VP training flow tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "passed: 120 passed, 3 warnings, 63 subtests passed"
+    },
+    {
+      "name": "backend syntax check",
+      "target": "local py_compile",
+      "command": ".venv/bin/python -m py_compile harness-os/backend/main.py",
+      "result": "passed"
+    },
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build",
+      "result": "passed: tsc and vite built dist/assets/index-DhvRQnh9.js"
+    },
+    {
+      "name": "completion evidence guard",
+      "target": "pre-push git hook",
+      "command": "scripts/agent_completion_guard.py docs/reports/completion_evidence/edu_training_multi_ai_install_guide_20260701.json",
+      "result": "passed: completion_guard CLEAR"
+    }
+  ],
+  "residual_risk": [
+    "Official app availability can vary by country and device; each guide includes a browser fallback."
+  ]
+}

@@ -6355,7 +6355,11 @@ def _edu_normalize_llm(value: str) -> str:
         return "gemini"
     if v in {"클로드"}:
         return "claude"
-    return v if v in {"auto", "claude", "gemini", "gpt", "local"} else "auto"
+    if v in {"젠스파크"}:
+        return "genspark"
+    if v in {"그록", "xai grok", "x.ai grok"}:
+        return "grok"
+    return v if v in {"auto", "claude", "gemini", "gpt", "genspark", "grok", "local"} else "auto"
 
 
 def _edu_prompt_salutation(value: str, segment: str, locale: str) -> str:
@@ -7826,7 +7830,7 @@ def _edu_vp_migrate_day1_guided_practice_lab(state: dict[str, Any]) -> dict[str,
         if isinstance(item, dict)
     )
     needs_copy_refresh = any(marker in visible_day1_text for marker in ("RAG 근거", "RAG 자료", "RAG나", "RAG 자료 활용"))
-    if str(day1.get("practice_lab_version") or "") == "2026-06-30-guided-images-v2" and not needs_copy_refresh:
+    if str(day1.get("practice_lab_version") or "") == "2026-07-01-multi-tool-install-v3" and not needs_copy_refresh:
         return state
     preserved = {
         key: day1.get(key)
@@ -8572,6 +8576,8 @@ def _edu_vp_llm_label(value: str) -> str:
         "claude": "Claude",
         "gemini": "Gemini",
         "gpt": "ChatGPT",
+        "genspark": "Genspark",
+        "grok": "Grok",
         "local": "로컬 모델",
         "auto": "기본 AI 도구",
     }.get(normalized, "기본 AI 도구")
@@ -8942,6 +8948,7 @@ def _edu_vp_day1_practice_lab(
     goal: str,
     friction: str,
 ) -> dict[str, Any]:
+    needs_tool_choice = llm_label in {"기본 AI 도구", "로컬 모델"}
     if llm_label == "Claude":
         install_title = "Claude 앱이 있으면 앱 열기"
         install_body = "스마트폰 홈 화면에서 Claude를 찾습니다. 없으면 브라우저에서 claude.ai를 열어도 됩니다."
@@ -8972,15 +8979,35 @@ def _edu_vp_day1_practice_lab(
             "설치가 어렵다면 Safari/Chrome에서 gemini.google.com 열기",
             "Google 계정으로 로그인한 뒤, 질문 입력창이 보이는지 확인",
         ]
-    else:
-        install_title = "허용된 AI 도구 열기"
-        install_body = "스마트폰에서 지금 사용할 수 있는 AI 앱이나 브라우저 진입점을 먼저 엽니다."
-        install_action = "앱 없음: 브라우저에서 허용된 AI 도구 주소를 입력"
+    elif llm_label == "Genspark":
+        install_title = "Genspark 앱 또는 웹 열기"
+        install_body = "스마트폰 홈 화면에서 Genspark를 찾습니다. 없으면 스토어에서 Genspark를 설치하거나 genspark.ai를 엽니다."
+        install_action = "앱 없음: 스토어 검색 → Genspark → 설치 또는 브라우저에서 genspark.ai 열기"
         install_steps = [
-            "스마트폰 홈 화면에서 사용하기로 한 AI 앱이 있는지 찾기",
-            "없으면 스토어에서 앱 이름을 검색하거나 브라우저에서 공식 웹 주소 열기",
+            "스마트폰 홈 화면에서 Genspark 앱이 있는지 먼저 찾기",
+            "없으면 App Store 또는 Play Store에서 Genspark 검색 후 설치",
+            "설치가 어렵다면 Safari/Chrome에서 genspark.ai 열기",
             "로그인 또는 회원가입을 마친 뒤, 질문 입력창이 보이는지 확인",
-            "공식 앱인지 확신이 없으면 결제나 개인정보 입력은 멈추기",
+        ]
+    elif llm_label == "Grok":
+        install_title = "Grok 앱 또는 웹 열기"
+        install_body = "스마트폰 홈 화면에서 Grok 또는 X 앱을 찾습니다. 없으면 스토어에서 Grok/X를 설치하거나 grok.com을 엽니다."
+        install_action = "앱 없음: 스토어 검색 → Grok 또는 X → 설치 또는 브라우저에서 grok.com 열기"
+        install_steps = [
+            "스마트폰 홈 화면에서 Grok 또는 X 앱이 있는지 먼저 찾기",
+            "없으면 App Store 또는 Play Store에서 Grok 또는 X 검색 후 설치",
+            "설치가 어렵다면 Safari/Chrome에서 grok.com 열기",
+            "로그인한 뒤, Grok 질문 입력창이 보이는지 확인",
+        ]
+    else:
+        install_title = "사용할 AI 도구 먼저 고르기"
+        install_body = "아직 도구가 정해지지 않았다면 ChatGPT, Claude, Gemini, Genspark, Grok 중 어떤 AI를 쓸지 먼저 고릅니다. 고른 뒤 해당 앱이나 공식 웹사이트를 엽니다."
+        install_action = "먼저 선택: ChatGPT / Claude / Gemini / Genspark / Grok 중 1개 선택"
+        install_steps = [
+            "오늘 사용할 AI를 ChatGPT, Claude, Gemini, Genspark, Grok 중 하나로 고르기",
+            "선택한 이름으로 App Store 또는 Play Store에서 검색하기",
+            "앱 설치가 어렵다면 Safari/Chrome에서 공식 웹사이트를 열기",
+            "공식 앱이나 공식 웹사이트인지 확신이 없으면 결제나 개인정보 입력은 멈추기",
         ]
 
     if motivation == "work":
@@ -9032,16 +9059,25 @@ def _edu_vp_day1_practice_lab(
     ]
 
     return {
-        "version": "2026-06-30-guided-images-v2",
+        "version": "2026-07-01-multi-tool-install-v3",
         "headline": "앱 안에서 먼저 준비하고, 필요한 순간에만 AI 앱으로 이동합니다",
         "visual_assets": visual_assets,
         "install_guide": {
-            "title": f"{llm_label}를 처음 쓰는 경우",
-            "intro": "앱이 없어도 멈추지 않도록 설치 경로와 웹 대체 경로를 같이 확인합니다.",
+            "title": "어떤 AI를 사용할지 먼저 고르기" if needs_tool_choice else f"{llm_label}를 처음 쓰는 경우",
+            "intro": (
+                "도구가 정해지지 않았다면 먼저 사용할 AI를 고릅니다. 고른 뒤 앱 설치 경로와 웹 대체 경로를 확인합니다."
+                if needs_tool_choice
+                else "앱이 없어도 멈추지 않도록 설치 경로와 웹 대체 경로를 같이 확인합니다."
+            ),
             "steps": install_steps,
             "fallback": install_action,
             "image_src": "/training/day1/install-ai-app.svg",
-            "image_alt": f"스마트폰에서 {llm_label}를 설치하거나 웹으로 여는 안내 그림",
+            "image_alt": (
+                "스마트폰에서 사용할 AI 도구를 고른 뒤 설치하거나 웹으로 여는 안내 그림"
+                if needs_tool_choice
+                else f"스마트폰에서 {llm_label}를 설치하거나 웹으로 여는 안내 그림"
+            ),
+            "tool_options": ["ChatGPT", "Claude", "Gemini", "Genspark", "Grok"] if needs_tool_choice else [],
         },
         "tool_cards": [
             {
@@ -9057,7 +9093,7 @@ def _edu_vp_day1_practice_lab(
                 "action": install_action,
                 "visual": "app",
                 "image_src": "/training/day1/install-ai-app.svg",
-                "image_alt": f"스마트폰에서 {llm_label} 앱 또는 웹을 여는 안내 그림",
+                "image_alt": "스마트폰에서 사용할 AI 도구를 고르는 안내 그림" if needs_tool_choice else f"스마트폰에서 {llm_label} 앱 또는 웹을 여는 안내 그림",
             },
             {
                 "title": "3. 결과는 다시 이 화면에 저장",

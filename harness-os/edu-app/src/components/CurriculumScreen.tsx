@@ -21,9 +21,11 @@ type Opt<T extends string> = { value: T; label: string }
 
 const LLMS: Opt<string>[] = [
   { value: 'chatgpt', label: 'ChatGPT' },
-  { value: '제미나이', label: '제미나이' },
-  { value: '클로드', label: '클로드' },
-  { value: '', label: '전체' },
+  { value: 'gemini', label: 'Gemini' },
+  { value: 'claude', label: 'Claude' },
+  { value: 'genspark', label: 'Genspark' },
+  { value: 'grok', label: 'Grok' },
+  { value: '', label: '아직 정하지 않음' },
 ]
 const LEVELS: Opt<NonNullable<CurriculumAttrs['level']>>[] = [
   { value: 'beginner', label: '왕초보' },
