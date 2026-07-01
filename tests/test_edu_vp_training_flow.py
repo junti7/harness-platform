@@ -2273,6 +2273,40 @@ class EduVpTrainingFlowTests(unittest.TestCase):
         self.assertGreaterEqual(len(refreshed["day1"]["practice_lab"]["visual_assets"]), 4)
         self.assertIn("설치", refreshed["day1"]["practice_lab"]["install_guide"]["intro"])
 
+    def test_refresh_replaces_legacy_day1_rag_copy(self):
+        legacy_state = {
+            "intake": {"preferred_llm": "claude", "motivation": "child_study"},
+            "day0": {"title": "Day 0", "completed": True},
+            "day1": {
+                "title": "Day 1 · 가정통신문과 학원 일정을 AI로 정리해보기",
+                "completed": False,
+                "practice_lab_version": "2026-06-30-guided-images-v2",
+                "proof_artifact": "기존 작성 내용",
+                "foundation_concepts": [
+                    {
+                        "id": "day1_help_not_replace",
+                        "title": "기준 잡기: 돕는 사용과 대신하는 사용",
+                        "body": "AI를 아이 공부나 생활 정리에 쓸 때 첫 기준은 '생각을 돕는가, 생각을 대신하는가'입니다. RAG 근거의 Edutopia 프레임처럼 질문을 다듬고 빠진 점을 찾는 것은 도움에 가깝습니다.",
+                    }
+                ],
+            },
+            "ui_state": {"selected_stage": "day1", "safety_confirmed": {"day0": True}},
+        }
+
+        refreshed = self.mod._edu_vp_refresh_state(legacy_state)
+        visible_text = " ".join(
+            str(item.get("body") or "")
+            for item in refreshed["day1"]["foundation_concepts"]
+            if isinstance(item, dict)
+        )
+
+        self.assertEqual(refreshed["day1"]["practice_lab_version"], "2026-06-30-guided-images-v2")
+        self.assertEqual(refreshed["day1"]["proof_artifact"], "기존 작성 내용")
+        self.assertIn("beginner_copy_migrated_at", refreshed["day1"])
+        self.assertNotIn("RAG", visible_text)
+        self.assertNotIn("RAG 근거", visible_text)
+        self.assertIn("여러 교육 자료", visible_text)
+
     def test_personalized_day0_preserves_safety_gate_order(self):
         day0 = self.mod._edu_vp_build_day0({"preferred_llm": "claude"})
         personalized = self.mod._edu_vp_apply_curriculum_to_day0(

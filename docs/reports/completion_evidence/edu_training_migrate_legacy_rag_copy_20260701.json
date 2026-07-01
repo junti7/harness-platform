@@ -1,0 +1,61 @@
+{
+  "task": "Migrate existing Day 1 training snapshots that still expose legacy RAG copy",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Completion requires real verification before reporting done, and code or UI changes require completion evidence."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Code, deploy, UI, and customer-facing answer changes require real entrypoint verification and completion evidence guard."
+    }
+  ],
+  "scope": [
+    "harness-os/backend/main.py",
+    "tests/test_edu_vp_training_flow.py"
+  ],
+  "changes": [
+    "Updated Day 1 refresh migration to detect legacy visible copy containing 'RAG 근거', 'RAG 자료', 'RAG나', or 'RAG 자료 활용' even when practice_lab_version is already current.",
+    "Rebuilds the uncompleted Day 1 stage with beginner-friendly current copy while preserving user-entered fields such as proof_artifact, notes, blocked_at_step, and feedback.",
+    "Added regression coverage using the exact legacy sentence reported by the user to ensure refreshed Day 1 content no longer exposes 'RAG'."
+  ],
+  "verification": [
+    {
+      "name": "targeted legacy RAG copy migration tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py::EduVpTrainingFlowTests::test_refresh_replaces_legacy_day1_rag_copy tests/test_edu_vp_training_flow.py::EduVpTrainingFlowTests::test_day1_uses_beginner_friendly_source_language -q",
+      "result": "passed: 2 passed"
+    },
+    {
+      "name": "edu VP training flow tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_vp_training_flow.py -q",
+      "result": "passed: 119 passed, 3 warnings, 59 subtests passed"
+    },
+    {
+      "name": "backend syntax check",
+      "target": "local py_compile",
+      "command": ".venv/bin/python -m py_compile harness-os/backend/main.py",
+      "result": "passed"
+    },
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build",
+      "result": "passed: tsc and vite built dist/assets/index-D_M7g05H.js"
+    },
+    {
+      "name": "completion evidence guard",
+      "target": "pre-push git hook",
+      "command": "scripts/agent_completion_guard.py docs/reports/completion_evidence/edu_training_migrate_legacy_rag_copy_20260701.json",
+      "result": "passed: completion_guard CLEAR"
+    }
+  ],
+  "residual_risk": [
+    "Internal tests and migration triggers retain the legacy phrase only as input used to detect and remove stale saved copy."
+  ]
+}

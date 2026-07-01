@@ -7820,7 +7820,13 @@ def _edu_vp_migrate_day1_guided_practice_lab(state: dict[str, Any]) -> dict[str,
         return state
     if bool(day1.get("completed")):
         return state
-    if str(day1.get("practice_lab_version") or "") == "2026-06-30-guided-images-v2":
+    visible_day1_text = " ".join(
+        str(item.get("body") or item.get("title") or "")
+        for item in day1.get("foundation_concepts") or []
+        if isinstance(item, dict)
+    )
+    needs_copy_refresh = any(marker in visible_day1_text for marker in ("RAG 근거", "RAG 자료", "RAG나", "RAG 자료 활용"))
+    if str(day1.get("practice_lab_version") or "") == "2026-06-30-guided-images-v2" and not needs_copy_refresh:
         return state
     preserved = {
         key: day1.get(key)
@@ -7837,7 +7843,8 @@ def _edu_vp_migrate_day1_guided_practice_lab(state: dict[str, Any]) -> dict[str,
     }
     rebuilt = _edu_vp_build_day1(intake)
     rebuilt.update({key: value for key, value in preserved.items() if value is not None})
-    rebuilt["guided_practice_migrated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    migrated_at_key = "beginner_copy_migrated_at" if needs_copy_refresh else "guided_practice_migrated_at"
+    rebuilt[migrated_at_key] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     state["day1"] = rebuilt
     return state
 
