@@ -398,7 +398,7 @@ export async function askSafetyCoach(input: {
     concept_body: input.conceptBody,
     question: input.question,
     answer_version: input.answerVersion,
-  })
+  }, 30_000)
 }
 
 export async function rateSafetyCoachAnswer(input: {

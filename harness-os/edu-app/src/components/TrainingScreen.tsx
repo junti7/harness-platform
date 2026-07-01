@@ -94,6 +94,14 @@ type SafetyCoachThreadGroup = {
   items: SafetyCoachThreads
 }
 type SafetyDeletedAnswerKeys = string[]
+type DeletedCoachAnswerBackup = {
+  conceptId: string
+  conceptTitle: string
+  conceptBody?: string
+  answer: SafetyCoachAnswers[string]
+  deletedKey: string
+}
+type DeletedCoachAnswerBackups = Record<string, DeletedCoachAnswerBackup>
 type FoundationConcept = NonNullable<TrainingStage['foundation_concepts']>[number]
 type RoutedQuestionTarget = {
   target: FoundationConcept & { checkId: string }
@@ -2165,6 +2173,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
   const coachAnswerFeedbackRef = useRef<SafetyCoachAnswerFeedback>({})
   const deferredSafetyQuestionsRef = useRef<DeferredSafetyQuestions>([])
   const deletedSafetyAnswerKeysRef = useRef<SafetyDeletedAnswerKeys>([])
+  const deletedCoachAnswerBackupsRef = useRef<DeletedCoachAnswerBackups>({})
   const lastPositionRef = useRef<StagePosition>({})
   const restoreAnchorRef = useRef<string>('')
   const restoringPositionRef = useRef(false)
@@ -2472,6 +2481,15 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
     if (!state || !currentAnswer?.answer) return
     const deleteKey = safetyAnswerKey(id, currentAnswer.version, currentAnswer.question)
     const deletedAt = new Date().toISOString()
+    const conceptItems = (current?.foundation_concepts ?? []).map((item, index) => ({ ...item, checkId: conceptId(item, index) }))
+    const sourceConcept = conceptItems.find((item) => item.checkId === id)
+    deletedCoachAnswerBackupsRef.current[deleteKey] = {
+      conceptId: id,
+      conceptTitle: sourceConcept?.title ?? '',
+      conceptBody: sourceConcept?.body,
+      answer: currentAnswer,
+      deletedKey: deleteKey,
+    }
     const nextDeleted = Array.from(new Set([...deletedSafetyAnswerKeysRef.current, deleteKey])).slice(-120)
     const persistedAnswers = {
       ...coachAnswersRef.current,
@@ -2538,6 +2556,88 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       console.error('delete safety answer sync failed', e)
       setCoachErrors((prev) => ({ ...prev, [id]: errMsg(e) }))
     })
+  }
+
+  function restoreDeletedCoachAnswerAfterTimeout(
+    concept: NonNullable<TrainingStage['foundation_concepts']>[number],
+    id: string,
+    question: string,
+  ): boolean {
+    if (!state) return false
+    const normalizedQuestion = question.trim()
+    const backup = Object.values(deletedCoachAnswerBackupsRef.current).find((item) => {
+      const answerQuestion = (item.answer.question ?? '').trim()
+      return item.conceptId === id && answerQuestion === normalizedQuestion && Boolean(item.answer.answer?.trim())
+    })
+    if (!backup) return false
+    const restoredAt = new Date().toISOString()
+    const answerVersion = backup.answer.version || SAFETY_COACH_ANSWER_VERSION
+    const restoredAnswer: SafetyCoachAnswers[string] = {
+      ...backup.answer,
+      question: normalizedQuestion,
+      version: answerVersion,
+    }
+    const threadItem: SafetyCoachThreadItem = {
+      id: `${id}-${restoredAt}`,
+      conceptId: id,
+      conceptTitle: backup.conceptTitle || concept.title,
+      conceptBody: backup.conceptBody || concept.body,
+      question: normalizedQuestion,
+      answer: restoredAnswer.answer,
+      model: restoredAnswer.model || 'local-timeout-restore',
+      fallbackUsed: Boolean(restoredAnswer.fallbackUsed),
+      evidenceUsed: restoredAnswer.evidenceUsed,
+      version: answerVersion,
+      createdAt: restoredAt,
+    }
+    const restoreKey = safetyAnswerKey(id, answerVersion, normalizedQuestion)
+    const nextDeleted = deletedSafetyAnswerKeysRef.current.filter((key) => key !== restoreKey && key !== backup.deletedKey)
+    const nextAnswers = { ...coachAnswersRef.current, [id]: restoredAnswer }
+    const nextThreads = appendSafetyCoachThread(coachThreadsRef.current, threadItem)
+    delete deletedCoachAnswerBackupsRef.current[backup.deletedKey]
+    coachAnswersRef.current = nextAnswers
+    coachThreadsRef.current = nextThreads
+    deletedSafetyAnswerKeysRef.current = nextDeleted
+    setCoachAnswers(nextAnswers)
+    setCoachThreads(nextThreads)
+    setDeletedSafetyAnswerKeys(nextDeleted)
+    setCoachErrors((prev) => ({ ...prev, [id]: '' }))
+    setNotice('요청이 오래 걸려서 방금 삭제한 답변을 다시 보여드렸어요. 다시 생성하려면 잠시 뒤 한 번 더 시도해주세요.')
+    seqRef.current += 1
+    void syncSession({
+      caseId,
+      email,
+      selectedStage: stage,
+      clientSeq: seqRef.current,
+      eventName: 'safety_coach_answer_timeout_restored',
+      eventPayload: {
+        stage,
+        concept_id: id,
+        concept_title: concept.title,
+        question: normalizedQuestion,
+        restored_from_deleted_key: backup.deletedKey,
+      },
+      stageDrafts: {
+        [stage]: {
+          safety_concept_feedback: conceptFeedbackRef.current,
+          safety_coach_answers: nextAnswers,
+          safety_coach_threads: nextThreads,
+          safety_coach_answer_feedback: coachAnswerFeedbackRef.current,
+          deferred_safety_questions: deferredSafetyQuestionsRef.current,
+          deleted_safety_answer_keys: nextDeleted,
+          stage_checked: checkedRef.current,
+          last_position: lastPositionRef.current.anchorId
+            ? {
+                anchor_id: lastPositionRef.current.anchorId,
+                captured_at: lastPositionRef.current.capturedAt || new Date().toISOString(),
+              }
+            : lastPositionRef.current,
+        },
+      },
+    }).then((next) => setState(next)).catch((e) => {
+      console.error('timeout restore sync failed', e)
+    })
+    return true
   }
 
   function rateCoachAnswer(
@@ -2891,6 +2991,7 @@ export default function TrainingScreen({ caseId, email, onBack }: TrainingScreen
       })
       .catch((e) => {
         console.error('safety coach failed', e)
+        if (e instanceof ApiError && e.status === 408 && restoreDeletedCoachAnswerAfterTimeout(concept, id, question)) return
         setCoachErrors((prev) => ({ ...prev, [id]: errMsg(e) }))
       })
       .finally(() => {

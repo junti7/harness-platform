@@ -1,0 +1,49 @@
+{
+  "task": "Prevent deleted same-question safety coach retries from surfacing timeout-only errors",
+  "status": "complete",
+  "date": "2026-07-01",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Completion requires real verification before reporting done, and code or UI changes require completion evidence."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-01T00:00:00+09:00",
+      "summary": "Code, deploy, UI, and customer-facing answer changes require real entrypoint verification and completion evidence guard."
+    }
+  ],
+  "scope": [
+    "harness-os/edu-app/src/components/TrainingScreen.tsx",
+    "harness-os/edu-app/src/lib/vpTraining.ts"
+  ],
+  "changes": [
+    "Raised the safety coach request timeout to 30 seconds instead of the generic 16-second VP API timeout.",
+    "Kept a local backup when a completed coach answer is deleted.",
+    "If the same deleted question is retried and the browser request still times out, restored the deleted answer locally and synced it back to the stage draft instead of leaving only a timeout error."
+  ],
+  "verification": [
+    {
+      "name": "edu app production build",
+      "target": "local dist",
+      "command": "npm run build",
+      "result": "passed: tsc and vite built dist/assets/index-fB2YxEAa.js"
+    },
+    {
+      "name": "edu app lint",
+      "target": "local eslint",
+      "command": "npm run lint",
+      "result": "passed"
+    },
+    {
+      "name": "completion evidence guard",
+      "target": "pre-push git hook",
+      "command": "scripts/agent_completion_guard.py docs/reports/completion_evidence/edu_training_safety_coach_timeout_restore_20260701.json",
+      "result": "passed: completion_guard CLEAR"
+    }
+  ],
+  "residual_risk": [
+    "There is no frontend unit test harness for TrainingScreen yet; behavior was verified through TypeScript build, ESLint, and production bundle checks after deployment."
+  ]
+}
