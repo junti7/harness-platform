@@ -62,13 +62,21 @@
       "result": "passed before deploy: edu app HTTP entrypoint responded"
     },
     {
+      "name": "Mac Mini authenticated session load timing",
+      "target": "macmini backend api",
+      "command": "GET /api/edu/vp-training/session?email=...&case_id=75 with X-Harness-Secret and X-Edu-Training-Auth",
+      "result": "passed after clearing stale DB lock: HTTP=200, TIME_TOTAL=0.4108, day0 concepts=10, day1 concepts=5"
+    },
+    {
       "name": "whitespace check",
       "target": "local git diff",
       "command": "git diff --check",
       "result": "passed"
     }
   ],
-  "residual_risk": [
-    "Post-deploy authenticated session timing and production bundle check will run after Mac Mini deploy."
-  ]
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/edu-app/src/components/TrainingScreen.tsx harness-os/edu-app/src/lib/api.ts harness-os/edu-app/src/lib/vpTraining.ts docs/reports/completion_evidence/edu_training_session_blank_screen_restore_20260701.json",
+    "result": "deployed frontend and backend changes to Mac Mini, rebuilt edu app bundle, restarted backend and edu app, verified target file diffs were 0"
+  },
+  "residual_risk": []
 }
