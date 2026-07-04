@@ -1,0 +1,38 @@
+{
+  "task": "Install conservative edu tier3 free-tier launchd backlog drain",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-04T20:22:00+09:00",
+      "summary": "Production automation changes require concrete runtime verification and residual risk reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-04T20:22:00+09:00",
+      "summary": "Mac Mini launchd automation must follow source-of-truth deployment and real runtime checks before closeout."
+    }
+  ],
+  "changed_files": [
+    "harness-os/launchd/com.harness.edu-tier3-free.plist",
+    "harness-os/scripts/register_launchd.sh",
+    "docs/reports/completion_evidence/edu_tier3_free_launchd_20260704.json"
+  ],
+  "problem": "After the free-tier runner and candidate gate passed a 10-item sample, there was still no separate launchd job to drain edu_consulting tier3 backlog using the free Gemini key.",
+  "fix": "Added com.harness.edu-tier3-free LaunchAgent with --free-tier --limit 40, one-hour interval, RunAtLoad, dedicated logs, and register_launchd.sh inclusion. Existing paid com.harness.tier3-filter is left unchanged.",
+  "verification": [
+    {
+      "name": "plist lint",
+      "target": "local launchd plist",
+      "command": "plutil -lint harness-os/launchd/com.harness.edu-tier3-free.plist",
+      "result": "pass"
+    },
+    {
+      "name": "candidate gate tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_tier3_candidate_gate.py -q",
+      "result": "pass: 2 passed"
+    }
+  ],
+  "remaining_verification": "After commit, push, official deploy, and bootstrap on Mac Mini, verify launchctl print/list, log output, and a first RunAtLoad execution."
+}

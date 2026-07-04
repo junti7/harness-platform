@@ -25,6 +25,7 @@ for name in \
   com.harness.tier2-filter \
   com.harness.tier2-filter-fast \
   com.harness.tier3-filter \
+  com.harness.edu-tier3-free \
   com.harness.daily-news-pdf \
   com.harness.pipeline-watchdog \
   com.harness.ibkr-watchdog \
