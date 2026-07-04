@@ -277,6 +277,23 @@ def _fallback_refined_output(row: dict, error: Exception) -> dict | None:
     }
 
 
+def _error_skipped_output(row: dict, error: Exception) -> dict:
+    title = (row.get("title") or "정제 실패 후보").strip()[:120] or "정제 실패 후보"
+    return {
+        "final_title": title,
+        "is_relevant": False,
+        "evidence_posture": {
+            "classification": "speculative",
+            "why": f"Tier3 model output could not be parsed or validated; recorded as skipped to avoid repeated backlog retries: {type(error).__name__}",
+        },
+        "summary": (row.get("summary") or "").strip()[:600],
+        "source": row.get("source") or "",
+        "tags": ["tier3-error-skip", "irrelevant"],
+        "error_type": type(error).__name__,
+        "error_message": str(error)[:300],
+    }
+
+
 def refine_signal(model_name: str, row: dict) -> dict:
     user_content = build_user_content(row)
     domain = row.get("domain") or "physical_ai"

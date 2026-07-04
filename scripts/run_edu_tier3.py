@@ -32,6 +32,7 @@ from adapters.content.refiner import (  # noqa: E402
     refine_signal,
     save_refined_output,
     _fallback_refined_output,
+    _error_skipped_output,
     get_today_cost,
     DEFAULT_GEMINI_MODEL,
     DAILY_COST_LIMIT,
@@ -77,7 +78,9 @@ def run(limit: int, min_score: float) -> int:
                 logger.warning(f"  {type(e).__name__} — fallback 저장")
                 refined += 1
             else:
-                logger.error(f"  실패: {type(e).__name__}: {e}")
+                skipped_output = _error_skipped_output(dict(row), e)
+                save_refined_output(row["id"], skipped_output, f"{model}:error-skip")
+                logger.warning(f"  오류 탈락 저장: {type(e).__name__}: {e}")
                 skipped += 1
             continue
 

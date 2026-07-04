@@ -37,6 +37,7 @@ from adapters.content.refiner import (  # noqa: E402
     refine_signal,
     save_refined_output,
     _fallback_refined_output,
+    _error_skipped_output,
     get_today_cost,
     DEFAULT_GEMINI_MODEL,
     DAILY_COST_LIMIT,
@@ -100,9 +101,12 @@ def _process_one(model: str, row: dict, logger: HarnessLogger) -> None:
                 _counters["refined"] += 1
             logger.warning(f"  fallback 저장 (id={row['id']}, {type(e).__name__})")
         else:
+            skipped = _error_skipped_output(dict(row), e)
+            save_refined_output(row["id"], skipped, f"{model}:error-skip")
             with _lock:
-                _counters["failed"] += 1
-            logger.error(f"  실패 (id={row['id']}): {type(e).__name__}: {e}")
+                _counters["skipped"] += 1
+                n = _counters["skipped"]
+            logger.warning(f"  [skip {n}] 오류 탈락 저장(id={row['id']}): {type(e).__name__}: {e}")
         return
 
     if not result.get("is_relevant", True):

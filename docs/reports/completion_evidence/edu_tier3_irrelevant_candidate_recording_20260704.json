@@ -20,7 +20,7 @@
     "docs/reports/completion_evidence/edu_tier3_irrelevant_candidate_recording_20260704.json"
   ],
   "problem": "The edu tier3 runners counted is_relevant=false candidates as skipped without saving a refined_outputs row, so the same low-value candidates stayed pending and were retried in later backlog runs.",
-  "fix": "For is_relevant=false outputs, refiner now normalizes a safe evidence_posture and non-empty final_title, and both edu tier3 runners save the candidate with a model suffix of :irrelevant before incrementing skipped.",
+  "fix": "For is_relevant=false outputs, refiner now normalizes a safe evidence_posture and non-empty final_title, and both edu tier3 runners save the candidate with a model suffix of :irrelevant before incrementing skipped. If the model output cannot be parsed or validated and no high-score fallback is available, the runners save an :error-skip marker to prevent endless retries.",
   "verification": [
     {
       "name": "local syntax check",
@@ -39,11 +39,17 @@
       "target": "macmini runtime and database",
       "command": "ssh macmini \"cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/run_edu_tier3_parallel.py --free-tier --limit 20\"",
       "result": "pass: runner completed 정제 0 / 스킵 20 / 실패 0 after deployment; all 20 sampled filtered_signal ids had refined_outputs rows with tier3_model gemini-2.5-flash:irrelevant"
+    },
+    {
+      "name": "macmini free-tier null-title smoke before error-skip fix",
+      "target": "macmini runtime",
+      "command": "ssh macmini \"cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/run_edu_tier3_parallel.py --free-tier --limit 5\"",
+      "result": "residual risk found: runner saved 4 irrelevant candidates but had 1 JSONDecodeError failure; follow-up patch adds :error-skip persistence for no-fallback parse/validation errors"
     }
   ],
   "deployment": {
     "method": "scripts/deploy_to_macmini.sh adapters/content/refiner.py scripts/run_edu_tier3.py scripts/run_edu_tier3_parallel.py docs/reports/completion_evidence/edu_tier3_irrelevant_candidate_recording_20260704.json",
     "result": "Mac Mini deploy script completed; origin diff verification returned 0 for all target files and backend restarted on port 8000."
   },
-  "remaining_verification": "One sampled item returned final_title null and was still saved; follow-up patch normalizes falsey final_title and makes skip logging null-safe before the next deployment."
+  "remaining_verification": "After deploying the error-skip patch, run another Mac Mini --free-tier smoke sample and confirm parse/validation errors are persisted as skipped instead of counted as failed."
 }
