@@ -78,6 +78,16 @@ Mac Mini 배포: ✅ 완료 (`deploy_to_macmini.sh` 검증 통과)
 - 현재 pending: 6,395건. 상위 pending source는 `Naver_블로그`, `Naver_카페글`, 일반 교육뉴스가 많아 source quality가 낮음.
 - 결론: 무료 키와 스킵 저장은 작동. 다만 샘플 품질이 `정제 0 / 스킵 25`라 `com.harness.edu-tier3-free.plist` 자동 launchd 전환은 아직 보류.
 
+### 2026-07-04 Codex 후속 진행 3
+
+- AI/디지털 교육 text gate 추가 후 10건 샘플: `정제 3 / 스킵 7 / 실패 0`.
+- institution PR deny gate 추가 후 10건 샘플: `정제 6 / 스킵 4 / 실패 0`로 일시 통과.
+- 보수적 LaunchAgent `com.harness.edu-tier3-free` 추가 및 설치. 설정: `--free-tier --limit 40`, `StartInterval=3600`, workers는 스크립트에서 2로 강제.
+- 첫 RunAtLoad 40건 실측: `정제 16 / 스킵 24 / 실패 0`. 안전하게 저장/진행됐지만 스킵률 60%로 품질 기준 미달.
+- LaunchAgent는 `bootout` 완료. 현재 plist는 설치돼 있으나 `launchctl list`에는 로드되어 있지 않음.
+- K-12/학부모/학생 audience gate 추가 후 10건 샘플: `정제 3 / 스킵 7 / 실패 0`. 여전히 자동화 기준 미달.
+- 결론: 무료 tier3 자동 잡은 설치되어 있지만 intentionally unloaded. 다음 작업은 stricter source allowlist 또는 stronger positive audience policy 적용 후 재샘플.
+
 **실행 명령어**:
 ```bash
 ssh macmini "cd /Users/juntaepark/projects/harness-platform && \
@@ -116,7 +126,7 @@ ssh macmini "cd /Users/juntaepark/projects/harness-platform && \
 현재 `com.harness.tier3-filter.plist`는 유료 키 + `run_tier3_backlog_worker.py` 사용.  
 샘플 품질 통과 시, 별도 잡(`com.harness.edu-tier3-free.plist`)으로 무료 키 기반 백로그 소진 잡 추가.
 
-2026-07-04 현재 판정: 샘플 품질 미통과. 자동 launchd 전환 전 source selection 또는 low-quality source 처리 정책을 먼저 조정할 것.
+2026-07-04 현재 판정: 자동 launchd 전환 보류. `com.harness.edu-tier3-free.plist`는 Mac Mini에 설치되어 있지만 로드하지 않는다. source allowlist/positive audience policy 보강 후 `--free-tier --limit 10`에서 스킵률 50% 미만이 다시 확인되면 로드할 것.
 
 **무료 티어 처리 용량 예상**:
 - Gemini 2.5 Flash 무료: 10 RPM, 1M TPD

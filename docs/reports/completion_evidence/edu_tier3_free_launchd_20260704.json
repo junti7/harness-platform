@@ -32,7 +32,19 @@
       "target": "local pytest",
       "command": ".venv/bin/python -m pytest tests/test_edu_tier3_candidate_gate.py -q",
       "result": "pass: 2 passed"
+    },
+    {
+      "name": "macmini launchd install and first run",
+      "target": "macmini launchd runtime",
+      "command": "launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.harness.edu-tier3-free.plist",
+      "result": "residual risk: LaunchAgent loaded and RunAtLoad executed, but first 40-item run completed 정제 16 / 스킵 24 / 실패 0, so the job was booted out before the next hourly run"
+    },
+    {
+      "name": "macmini launchd off check",
+      "target": "macmini launchd runtime",
+      "command": "launchctl list | grep com.harness.edu-tier3-free || true; test -f ~/Library/LaunchAgents/com.harness.edu-tier3-free.plist",
+      "result": "pass: plist remains installed, but launchctl list has no loaded com.harness.edu-tier3-free job"
     }
   ],
-  "remaining_verification": "After commit, push, official deploy, and bootstrap on Mac Mini, verify launchctl print/list, log output, and a first RunAtLoad execution."
+  "remaining_verification": "LaunchAgent is installed but intentionally left unloaded. Re-enable only after the candidate gate reaches skip rate below 50 percent on a fresh --free-tier --limit 10 sample."
 }

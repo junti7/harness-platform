@@ -63,7 +63,13 @@
       "target": "macmini database",
       "command": "query pending edu_consulting candidates with AI/digital gate, K-12/parent/student audience gate, and deny gate",
       "result": "preview showed 400 gated pending candidates with top items focused on 자녀교육, 중학생, 학부모, AI classrooms, and student career guidance"
+    },
+    {
+      "name": "macmini audience gate sample",
+      "target": "macmini runtime",
+      "command": "ssh macmini \"cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/run_edu_tier3_parallel.py --free-tier --limit 10\"",
+      "result": "residual risk: completed 정제 3 / 스킵 7 / 실패 0. The gate is safe but still too noisy for unattended launchd."
     }
   ],
-  "remaining_verification": "After commit, push, and official Mac Mini deploy, run --free-tier --limit 10 with the audience gate and confirm skip rate stays below 50 percent before re-enabling launchd."
+  "remaining_verification": "Do not re-enable launchd yet. The next change should use a stricter source allowlist or stronger positive audience policy, then rerun --free-tier --limit 10 until skip rate is below 50 percent."
 }
