@@ -1,0 +1,58 @@
+{
+  "task": "Harden edu tier3 free-tier runner cost gate",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-04T00:00:00+09:00",
+      "summary": "Completion reports require evidence mapped to real verification and residual risk when a blocker remains."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-04T00:00:00+09:00",
+      "summary": "Code and production changes require real runtime verification evidence; incomplete items must be reported as residual risk or blocked."
+    }
+  ],
+  "id": "tier3_free_tier_cost_gate_fix_20260704",
+  "created_at": "2026-07-04T00:00:00+09:00",
+  "scope": "edu_consulting tier3 free-tier backlog runner",
+  "changed_files": [
+    "scripts/run_edu_tier3_parallel.py",
+    "docs/handoffs/tier3_refine_backlog_free_tier_handoff_20260704.md",
+    "docs/reports/completion_evidence/tier3_free_tier_cost_gate_fix_20260704.json"
+  ],
+  "problem": "`--free-tier` set DAILY_COST_LIMIT_USD=9999 after adapters.content.refiner.DAILY_COST_LIMIT had already been imported into the runner, so the runner's periodic cost check could still compare against the old $2.00 limit.",
+  "fix": "When `--free-tier` is active, the runner now also updates its imported DAILY_COST_LIMIT global to 9999.0 before calling run().",
+  "verification": [
+    {
+      "name": "local script syntax check",
+      "target": "local python runtime",
+      "command": ".venv/bin/python -m py_compile scripts/run_edu_tier3_parallel.py",
+      "result": "pass"
+    },
+    {
+      "name": "local CLI help check",
+      "target": "local python runtime",
+      "command": ".venv/bin/python scripts/run_edu_tier3_parallel.py --help",
+      "result": "pass"
+    },
+    {
+      "name": "macmini deployed script syntax check",
+      "target": "macmini python runtime",
+      "command": "ssh macmini \"cd /Users/juntaepark/projects/harness-platform && .venv/bin/python -m py_compile scripts/run_edu_tier3_parallel.py\"",
+      "result": "pass"
+    },
+    {
+      "name": "macmini free-tier sample entrypoint",
+      "target": "macmini runtime",
+      "command": "ssh macmini \"cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/run_edu_tier3_parallel.py --free-tier --limit 20 2>&1 | tail -20\"",
+      "result": "blocked: GEMINI_API_KEY_FREE is still empty on Mac Mini .env"
+    }
+  ],
+  "deployment": {
+    "target": "macmini:/Users/juntaepark/projects/harness-platform/scripts/run_edu_tier3_parallel.py",
+    "method": "rsync -az",
+    "status": "deployed"
+  },
+  "remaining_blocker": "Human must create a no-billing Google AI Studio API key and set GEMINI_API_KEY_FREE in the Mac Mini .env before the 20-item quality sample can run."
+}

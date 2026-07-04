@@ -192,6 +192,7 @@ if __name__ == "__main__":
         os.environ.pop("GEMINI_API_KEY", None)
         # 무료 티어 과금 없음 → 비용 게이트를 사실상 비활성화
         os.environ["DAILY_COST_LIMIT_USD"] = "9999"
+        globals()["DAILY_COST_LIMIT"] = 9999.0
         # 무료 티어 RPM(10) 초과 방지 — workers 2 이하로 제한
         workers = min(args.workers, 2)
         print(f"[free-tier] GEMINI_API_KEY_FREE 적용, workers={workers}", flush=True)
