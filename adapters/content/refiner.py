@@ -308,7 +308,8 @@ def refine_signal(model_name: str, row: dict) -> dict:
             raise ValueError(f"필수 필드 누락: {field}")
 
     if parsed.get("is_relevant") is False:
-        parsed.setdefault("final_title", (row.get("title") or "관련 없음").strip()[:120] or "관련 없음")
+        if not parsed.get("final_title"):
+            parsed["final_title"] = (row.get("title") or "관련 없음").strip()[:120] or "관련 없음"
         parsed["evidence_posture"] = {
             "classification": "speculative",
             "why": "LLM classified this candidate as not directly relevant to the domain; no positive evidence posture applies.",

@@ -110,7 +110,8 @@ def _process_one(model: str, row: dict, logger: HarnessLogger) -> None:
         with _lock:
             _counters["skipped"] += 1
             n = _counters["skipped"]
-        logger.info(f"  [skip {n}] 관련 없음 저장(id={row['id']}): {result.get('final_title', '')[:46]}")
+        title = str(result.get("final_title") or "")[:46]
+        logger.info(f"  [skip {n}] 관련 없음 저장(id={row['id']}): {title}")
         return
 
     rid = save_refined_output(row["id"], result, model)

@@ -20,7 +20,7 @@
     "docs/reports/completion_evidence/edu_tier3_irrelevant_candidate_recording_20260704.json"
   ],
   "problem": "The edu tier3 runners counted is_relevant=false candidates as skipped without saving a refined_outputs row, so the same low-value candidates stayed pending and were retried in later backlog runs.",
-  "fix": "For is_relevant=false outputs, refiner now normalizes a safe evidence_posture and both edu tier3 runners save the candidate with a model suffix of :irrelevant before incrementing skipped.",
+  "fix": "For is_relevant=false outputs, refiner now normalizes a safe evidence_posture and non-empty final_title, and both edu tier3 runners save the candidate with a model suffix of :irrelevant before incrementing skipped.",
   "verification": [
     {
       "name": "local syntax check",
@@ -33,7 +33,17 @@
       "target": "git pre-push hook",
       "command": "git push origin main",
       "result": "blocked as expected before this evidence file existed: code/governance changes require completion evidence JSON"
+    },
+    {
+      "name": "macmini free-tier skip-recording sample",
+      "target": "macmini runtime and database",
+      "command": "ssh macmini \"cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/run_edu_tier3_parallel.py --free-tier --limit 20\"",
+      "result": "pass: runner completed 정제 0 / 스킵 20 / 실패 0 after deployment; all 20 sampled filtered_signal ids had refined_outputs rows with tier3_model gemini-2.5-flash:irrelevant"
     }
   ],
-  "remaining_verification": "After push and official Mac Mini deploy, rerun scripts/run_edu_tier3_parallel.py --free-tier --limit 20 and confirm irrelevant candidates are saved instead of retried."
+  "deployment": {
+    "method": "scripts/deploy_to_macmini.sh adapters/content/refiner.py scripts/run_edu_tier3.py scripts/run_edu_tier3_parallel.py docs/reports/completion_evidence/edu_tier3_irrelevant_candidate_recording_20260704.json",
+    "result": "Mac Mini deploy script completed; origin diff verification returned 0 for all target files and backend restarted on port 8000."
+  },
+  "remaining_verification": "One sampled item returned final_title null and was still saved; follow-up patch normalizes falsey final_title and makes skip logging null-safe before the next deployment."
 }
