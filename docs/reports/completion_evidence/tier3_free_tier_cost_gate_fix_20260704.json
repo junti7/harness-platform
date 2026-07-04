@@ -51,8 +51,12 @@
   ],
   "deployment": {
     "target": "macmini:/Users/juntaepark/projects/harness-platform/scripts/run_edu_tier3_parallel.py",
-    "method": "rsync -az",
-    "status": "deployed"
+    "method": "scripts/deploy_to_macmini.sh scripts/run_edu_tier3_parallel.py docs/handoffs/tier3_refine_backlog_free_tier_handoff_20260704.md docs/reports/completion_evidence/tier3_free_tier_cost_gate_fix_20260704.json",
+    "status": "deployed and verified"
+  },
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh scripts/run_edu_tier3_parallel.py docs/handoffs/tier3_refine_backlog_free_tier_handoff_20260704.md docs/reports/completion_evidence/tier3_free_tier_cost_gate_fix_20260704.json",
+    "result": "Mac Mini deploy script completed; origin diff verification returned 0 for all three target files and backend restarted on port 8000."
   },
   "remaining_blocker": "Human must create a no-billing Google AI Studio API key and set GEMINI_API_KEY_FREE in the Mac Mini .env before the 20-item quality sample can run."
 }

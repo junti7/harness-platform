@@ -63,7 +63,7 @@ Mac Mini 배포: ✅ 완료 (`deploy_to_macmini.sh` 검증 통과)
 - `--free-tier` 실행 전 `DAILY_COST_LIMIT_USD=9999`만 설정하면 이미 import된 `DAILY_COST_LIMIT` 상수에는 반영되지 않는 문제를 확인함.
 - `scripts/run_edu_tier3_parallel.py`에서 free-tier 진입 시 `globals()["DAILY_COST_LIMIT"] = 9999.0`도 함께 설정하도록 수정함.
 - 로컬 검증: `.venv/bin/python -m py_compile scripts/run_edu_tier3_parallel.py`, `.venv/bin/python scripts/run_edu_tier3_parallel.py --help` 통과.
-- Mac Mini 배포: `rsync -az scripts/run_edu_tier3_parallel.py macmini:/Users/juntaepark/projects/harness-platform/scripts/run_edu_tier3_parallel.py`.
+- Mac Mini 배포: `scripts/deploy_to_macmini.sh scripts/run_edu_tier3_parallel.py docs/handoffs/tier3_refine_backlog_free_tier_handoff_20260704.md docs/reports/completion_evidence/tier3_free_tier_cost_gate_fix_20260704.json` 검증 통과.
 - Mac Mini 검증: `.venv/bin/python -m py_compile scripts/run_edu_tier3_parallel.py` 통과.
 - Mac Mini 샘플 실행은 아직 `ERROR: --free-tier 사용 시 .env에 GEMINI_API_KEY_FREE 설정 필요`로 중단됨. `.env`의 `GEMINI_API_KEY_FREE=` 값이 비어 있어 Human step이 계속 필요함.
 
