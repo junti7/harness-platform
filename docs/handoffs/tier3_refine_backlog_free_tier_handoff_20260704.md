@@ -67,6 +67,17 @@ Mac Mini 배포: ✅ 완료 (`deploy_to_macmini.sh` 검증 통과)
 - Mac Mini 검증: `.venv/bin/python -m py_compile scripts/run_edu_tier3_parallel.py` 통과.
 - Mac Mini 샘플 실행은 아직 `ERROR: --free-tier 사용 시 .env에 GEMINI_API_KEY_FREE 설정 필요`로 중단됨. `.env`의 `GEMINI_API_KEY_FREE=` 값이 비어 있어 Human step이 계속 필요함.
 
+### 2026-07-04 Codex 후속 진행 2
+
+- 무료 키 등록 확인: `GEMINI_API_KEY_FREE` present=true, length=39.
+- 20건 샘플 1차: `정제 0 / 스킵 17 / 실패 3`. 실패 원인은 irrelevant 후보의 `evidence_posture.classification`이 `None/not_applicable`인 schema mismatch.
+- 수정: `is_relevant=false` 결과는 evidence posture와 title을 안전하게 정규화하고 `refined_outputs`에 `gemini-2.5-flash:irrelevant`로 저장하게 함. 기존에는 스킵만 카운트하고 저장하지 않아 같은 후보를 계속 재처리했음.
+- 20건 샘플 2차: `정제 0 / 스킵 20 / 실패 0`. DB 확인 결과 샘플 20개 모두 `refined_outputs`에 저장됨.
+- 5건 smoke 중 `JSONDecodeError` 1건이 반복 위험으로 확인되어 no-fallback parse/validation 오류도 `gemini-2.5-flash:error-skip`으로 저장하게 보완.
+- 최종 5건 smoke: `정제 0 / 스킵 5 / 실패 0`.
+- 현재 pending: 6,395건. 상위 pending source는 `Naver_블로그`, `Naver_카페글`, 일반 교육뉴스가 많아 source quality가 낮음.
+- 결론: 무료 키와 스킵 저장은 작동. 다만 샘플 품질이 `정제 0 / 스킵 25`라 `com.harness.edu-tier3-free.plist` 자동 launchd 전환은 아직 보류.
+
 **실행 명령어**:
 ```bash
 ssh macmini "cd /Users/juntaepark/projects/harness-platform && \
@@ -104,6 +115,8 @@ ssh macmini "cd /Users/juntaepark/projects/harness-platform && \
 
 현재 `com.harness.tier3-filter.plist`는 유료 키 + `run_tier3_backlog_worker.py` 사용.  
 샘플 품질 통과 시, 별도 잡(`com.harness.edu-tier3-free.plist`)으로 무료 키 기반 백로그 소진 잡 추가.
+
+2026-07-04 현재 판정: 샘플 품질 미통과. 자동 launchd 전환 전 source selection 또는 low-quality source 처리 정책을 먼저 조정할 것.
 
 **무료 티어 처리 용량 예상**:
 - Gemini 2.5 Flash 무료: 10 RPM, 1M TPD

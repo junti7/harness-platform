@@ -45,11 +45,23 @@
       "target": "macmini runtime",
       "command": "ssh macmini \"cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/run_edu_tier3_parallel.py --free-tier --limit 5\"",
       "result": "residual risk found: runner saved 4 irrelevant candidates but had 1 JSONDecodeError failure; follow-up patch adds :error-skip persistence for no-fallback parse/validation errors"
+    },
+    {
+      "name": "macmini free-tier smoke after error-skip fix",
+      "target": "macmini runtime",
+      "command": "ssh macmini \"cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/run_edu_tier3_parallel.py --free-tier --limit 5\"",
+      "result": "pass: runner completed 정제 0 / 스킵 5 / 실패 0; skipped candidates were saved and no worker exception appeared"
+    },
+    {
+      "name": "macmini pending backlog count after samples",
+      "target": "macmini database",
+      "command": "query filtered_signals left join refined_outputs for edu_consulting pending count and source distribution",
+      "result": "pending count is 6395 after samples; top pending sources are mostly Naver blog/cafe and general education news, so launchd automation is held until source quality or selection policy is tightened"
     }
   ],
   "deployment": {
     "method": "scripts/deploy_to_macmini.sh adapters/content/refiner.py scripts/run_edu_tier3.py scripts/run_edu_tier3_parallel.py docs/reports/completion_evidence/edu_tier3_irrelevant_candidate_recording_20260704.json",
     "result": "Mac Mini deploy script completed; origin diff verification returned 0 for all target files and backend restarted on port 8000."
   },
-  "remaining_verification": "After deploying the error-skip patch, run another Mac Mini --free-tier smoke sample and confirm parse/validation errors are persisted as skipped instead of counted as failed."
+  "remaining_verification": "Do not install the free-tier launchd backlog job yet. The runner now drains irrelevant/error candidates correctly, but the sampled candidate quality was 0 refined / 25 skipped across post-key samples, so source selection needs tightening before unattended backlog processing."
 }
