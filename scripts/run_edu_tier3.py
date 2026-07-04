@@ -37,7 +37,10 @@ from adapters.content.refiner import (  # noqa: E402
     DEFAULT_GEMINI_MODEL,
     DAILY_COST_LIMIT,
 )
-from scripts.run_edu_tier3_parallel import EDU_TIER3_TEXT_GATE_PATTERNS  # noqa: E402
+from scripts.run_edu_tier3_parallel import (  # noqa: E402
+    EDU_TIER3_TEXT_DENY_PATTERNS,
+    EDU_TIER3_TEXT_GATE_PATTERNS,
+)
 
 
 def run(limit: int, min_score: float, text_gate: bool = True) -> int:
@@ -47,8 +50,14 @@ def run(limit: int, min_score: float, text_gate: bool = True) -> int:
 
     gate_sql = """
           AND (fs.title || ' ' || COALESCE(fs.summary, '')) ILIKE ANY(%s)
+          AND NOT ((fs.title || ' ' || COALESCE(fs.summary, '')) ILIKE ANY(%s))
     """ if text_gate else ""
-    params: tuple = (min_score, EDU_TIER3_TEXT_GATE_PATTERNS, limit) if text_gate else (min_score, limit)
+    params: tuple = (
+        min_score,
+        EDU_TIER3_TEXT_GATE_PATTERNS,
+        EDU_TIER3_TEXT_DENY_PATTERNS,
+        limit,
+    ) if text_gate else (min_score, limit)
     rows = execute_query(f"""
         SELECT fs.id, fs.title, fs.summary, fs.content_hash, fs.source, fs.score,
                fs.extracted_facts, 'edu_consulting' AS domain

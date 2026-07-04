@@ -15,7 +15,14 @@ def test_parallel_candidate_fetch_uses_text_gate_by_default(monkeypatch):
     tier3._fetch_candidates(0.1, 0, 1, 10)
 
     assert "ILIKE ANY" in captured["query"]
-    assert captured["params"] == (0.1, 1, 0, tier3.EDU_TIER3_TEXT_GATE_PATTERNS)
+    assert "AND NOT" in captured["query"]
+    assert captured["params"] == (
+        0.1,
+        1,
+        0,
+        tier3.EDU_TIER3_TEXT_GATE_PATTERNS,
+        tier3.EDU_TIER3_TEXT_DENY_PATTERNS,
+    )
     assert captured["fetch"] is True
 
 

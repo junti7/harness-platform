@@ -69,6 +69,20 @@ EDU_TIER3_TEXT_GATE_PATTERNS = [
     "%generative AI%",
 ]
 
+EDU_TIER3_TEXT_DENY_PATTERNS = [
+    "%협약%",
+    "%맞손%",
+    "%인재 양성%",
+    "%인재양성%",
+    "%교직원%",
+    "%직장인 대상%",
+    "%공기업 취업%",
+    "%직무 자격증%",
+    "%계약학과%",
+    "%교사 채용%",
+    "%대학생%",
+]
+
 
 def _parse_shard(s: str) -> tuple[int, int]:
     try:
@@ -84,8 +98,15 @@ def _parse_shard(s: str) -> tuple[int, int]:
 def _fetch_candidates(min_score: float, shard_i: int, shard_n: int, limit: int | None, text_gate: bool = True) -> list[dict]:
     gate_sql = """
           AND (fs.title || ' ' || COALESCE(fs.summary, '')) ILIKE ANY(%s)
+          AND NOT ((fs.title || ' ' || COALESCE(fs.summary, '')) ILIKE ANY(%s))
     """ if text_gate else ""
-    params: tuple = (min_score, shard_n, shard_i, EDU_TIER3_TEXT_GATE_PATTERNS) if text_gate else (min_score, shard_n, shard_i)
+    params: tuple = (
+        min_score,
+        shard_n,
+        shard_i,
+        EDU_TIER3_TEXT_GATE_PATTERNS,
+        EDU_TIER3_TEXT_DENY_PATTERNS,
+    ) if text_gate else (min_score, shard_n, shard_i)
     rows = execute_query(
         f"""
         SELECT fs.id, fs.title, fs.summary, fs.content_hash, fs.source, fs.score,

@@ -20,7 +20,7 @@
     "docs/reports/completion_evidence/edu_tier3_text_gate_20260704.json"
   ],
   "problem": "Free-tier samples after key registration showed 0 refined and 25 skipped candidates because the backlog runner selected general education/news/blog items without an explicit AI or digital education signal.",
-  "fix": "Both edu tier3 runners now default to an AI/digital education text gate over title plus summary, with --no-text-gate available for emergency full-backlog processing.",
+  "fix": "Both edu tier3 runners now default to an AI/digital education text gate over title plus summary plus a small deny gate for institution PR/noisy education items, with --no-text-gate available for emergency full-backlog processing.",
   "verification": [
     {
       "name": "local syntax check",
@@ -39,7 +39,19 @@
       "target": "macmini database",
       "command": "query pending edu_consulting candidates with AI/digital education ILIKE gate",
       "result": "preview showed 2640 gated pending candidates; top candidates shifted from general education/blog items to AI education, AI career, and EdWeek AI policy items"
+    },
+    {
+      "name": "macmini text gate sample before deny gate",
+      "target": "macmini runtime and database",
+      "command": "ssh macmini \"cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/run_edu_tier3_parallel.py --free-tier --limit 10\"",
+      "result": "pass: SQL gate executed in production and runner completed 정제 3 / 스킵 7 / 실패 0; all 10 sampled ids were saved, but institution PR false positives remained"
+    },
+    {
+      "name": "candidate gate unit tests after deny gate",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_tier3_candidate_gate.py -q",
+      "result": "pass: 2 passed"
     }
   ],
-  "remaining_verification": "After commit, push, and official Mac Mini deploy, run --free-tier --limit 10 and confirm the SQL gate executes against production DB and improves refined/skipped mix before enabling launchd."
+  "remaining_verification": "After commit, push, and official Mac Mini deploy, run --free-tier --limit 10 again with the deny gate and confirm skip rate drops below 50 percent before enabling launchd."
 }
