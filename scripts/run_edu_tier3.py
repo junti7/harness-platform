@@ -37,14 +37,19 @@ from adapters.content.refiner import (  # noqa: E402
     DEFAULT_GEMINI_MODEL,
     DAILY_COST_LIMIT,
 )
+from scripts.run_edu_tier3_parallel import EDU_TIER3_TEXT_GATE_PATTERNS  # noqa: E402
 
 
-def run(limit: int, min_score: float) -> int:
+def run(limit: int, min_score: float, text_gate: bool = True) -> int:
     cid = str(uuid.uuid4())[:8]
     logger = HarnessLogger(tier=3, correlation_id=cid)
     logger.info(f"=== edu_consulting Tier 3 정제 시작 (run_id={cid}) ===")
 
-    rows = execute_query("""
+    gate_sql = """
+          AND (fs.title || ' ' || COALESCE(fs.summary, '')) ILIKE ANY(%s)
+    """ if text_gate else ""
+    params: tuple = (min_score, EDU_TIER3_TEXT_GATE_PATTERNS, limit) if text_gate else (min_score, limit)
+    rows = execute_query(f"""
         SELECT fs.id, fs.title, fs.summary, fs.content_hash, fs.source, fs.score,
                fs.extracted_facts, 'edu_consulting' AS domain
         FROM filtered_signals fs
@@ -52,9 +57,10 @@ def run(limit: int, min_score: float) -> int:
         WHERE ro.id IS NULL
           AND fs.domain = 'edu_consulting'
           AND fs.score >= %s
+          {gate_sql}
         ORDER BY fs.score DESC
         LIMIT %s
-    """, (min_score, limit), fetch=True) or []
+    """, params, fetch=True) or []
 
     if not rows:
         logger.info("정제 대상 edu_consulting 항목 없음")
@@ -114,5 +120,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="edu_consulting 전용 Tier 3 정제")
     ap.add_argument("--limit", type=int, default=10, help="정제 최대 건수 (기본 10)")
     ap.add_argument("--min-score", type=float, default=0.1, help="최소 점수 (기본 0.1)")
+    ap.add_argument("--no-text-gate", action="store_true",
+                    help="AI/디지털 교육 텍스트 게이트를 끄고 모든 edu 후보를 처리합니다.")
     args = ap.parse_args()
-    raise SystemExit(0 if run(args.limit, args.min_score) >= 0 else 1)
+    raise SystemExit(0 if run(args.limit, args.min_score, text_gate=not args.no_text_gate) >= 0 else 1)

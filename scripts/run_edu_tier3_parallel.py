@@ -47,6 +47,28 @@ _stop = threading.Event()
 _lock = threading.Lock()
 _counters = {"refined": 0, "skipped": 0, "failed": 0}
 
+EDU_TIER3_TEXT_GATE_PATTERNS = [
+    "%AI%",
+    "%인공지능%",
+    "%챗GPT%",
+    "%ChatGPT%",
+    "%생성형%",
+    "%디지털교과서%",
+    "%디지털 교과서%",
+    "%에듀테크%",
+    "%코딩%",
+    "%프롬프트%",
+    "%LLM%",
+    "%Gemini%",
+    "%Claude%",
+    "%Copilot%",
+    "%스마트폰%",
+    "%digital literacy%",
+    "%AI literacy%",
+    "%artificial intelligence%",
+    "%generative AI%",
+]
+
 
 def _parse_shard(s: str) -> tuple[int, int]:
     try:
@@ -59,9 +81,13 @@ def _parse_shard(s: str) -> tuple[int, int]:
         raise SystemExit(f"--shard 형식 오류: '{s}' (예: 0/2)")
 
 
-def _fetch_candidates(min_score: float, shard_i: int, shard_n: int, limit: int | None) -> list[dict]:
+def _fetch_candidates(min_score: float, shard_i: int, shard_n: int, limit: int | None, text_gate: bool = True) -> list[dict]:
+    gate_sql = """
+          AND (fs.title || ' ' || COALESCE(fs.summary, '')) ILIKE ANY(%s)
+    """ if text_gate else ""
+    params: tuple = (min_score, shard_n, shard_i, EDU_TIER3_TEXT_GATE_PATTERNS) if text_gate else (min_score, shard_n, shard_i)
     rows = execute_query(
-        """
+        f"""
         SELECT fs.id, fs.title, fs.summary, fs.content_hash, fs.source, fs.score,
                fs.extracted_facts, 'edu_consulting' AS domain
         FROM filtered_signals fs
@@ -71,6 +97,7 @@ def _fetch_candidates(min_score: float, shard_i: int, shard_n: int, limit: int |
           AND fs.domain = 'edu_consulting'
           AND fs.score >= %s
           AND (MOD(fs.id, %s) = %s)
+          {gate_sql}
         -- 정렬 정책: (1) freshness floor — 최근 7일 수집분을 먼저 정제한다. 이 러너 출력은
         --   refresh_edu_evidence_bank 가 created_at DESC 로 "fresh evidence"를 구성하므로,
         --   순수 score 우선이면 고점수 오래된 백로그가 최근 신호를 굶겨 최신 근거층이 낡아진다.
@@ -82,7 +109,7 @@ def _fetch_candidates(min_score: float, shard_i: int, shard_n: int, limit: int |
                           to_char(rs.ingested_at, 'YYYYMMDD')) DESC,
                  fs.id DESC
         """,
-        (min_score, shard_n, shard_i),
+        params,
         fetch=True,
     ) or []
     return rows[:limit] if limit else rows
@@ -125,13 +152,13 @@ def _process_one(model: str, row: dict, logger: HarnessLogger) -> None:
     logger.info(f"  [{n}] 완료(id={rid}): {result['final_title'][:46]}")
 
 
-def run(workers: int, min_score: float, shard: str, limit: int | None, cost_every: int) -> int:
+def run(workers: int, min_score: float, shard: str, limit: int | None, cost_every: int, text_gate: bool = True) -> int:
     shard_i, shard_n = _parse_shard(shard)
     cid = str(uuid.uuid4())[:8]
     logger = HarnessLogger(tier=3, correlation_id=cid)
-    logger.info(f"=== edu Tier3 병렬 정제 (run_id={cid}, workers={workers}, shard={shard}) ===")
+    logger.info(f"=== edu Tier3 병렬 정제 (run_id={cid}, workers={workers}, shard={shard}, text_gate={text_gate}) ===")
 
-    rows = _fetch_candidates(min_score, shard_i, shard_n, limit)
+    rows = _fetch_candidates(min_score, shard_i, shard_n, limit, text_gate=text_gate)
     if not rows:
         logger.info("정제 대상 없음")
         return 0
@@ -189,6 +216,8 @@ if __name__ == "__main__":
     ap.add_argument("--cost-every", type=int, default=20, help="N건마다 비용 점검 (기본 20)")
     ap.add_argument("--free-tier", action="store_true",
                     help="GEMINI_API_KEY_FREE 키 사용 (무료 티어). workers 2로 고정, 비용 게이트 우회.")
+    ap.add_argument("--no-text-gate", action="store_true",
+                    help="AI/디지털 교육 텍스트 게이트를 끄고 모든 edu 후보를 처리합니다.")
     args = ap.parse_args()
 
     if args.free_tier:
@@ -207,4 +236,4 @@ if __name__ == "__main__":
     else:
         workers = args.workers
 
-    run(workers, args.min_score, args.shard, args.limit, args.cost_every)
+    run(workers, args.min_score, args.shard, args.limit, args.cost_every, text_gate=not args.no_text_gate)

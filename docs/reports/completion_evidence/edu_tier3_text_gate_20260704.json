@@ -1,0 +1,45 @@
+{
+  "task": "Add text gate for edu tier3 free-tier candidate quality",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-04T18:56:00+09:00",
+      "summary": "Completion requires real evidence and residual risk reporting when production quality checks remain."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-04T18:56:00+09:00",
+      "summary": "Code changes require completion evidence, real runtime verification, and deployment source-of-truth discipline."
+    }
+  ],
+  "changed_files": [
+    "scripts/run_edu_tier3_parallel.py",
+    "scripts/run_edu_tier3.py",
+    "tests/test_edu_tier3_candidate_gate.py",
+    "docs/reports/completion_evidence/edu_tier3_text_gate_20260704.json"
+  ],
+  "problem": "Free-tier samples after key registration showed 0 refined and 25 skipped candidates because the backlog runner selected general education/news/blog items without an explicit AI or digital education signal.",
+  "fix": "Both edu tier3 runners now default to an AI/digital education text gate over title plus summary, with --no-text-gate available for emergency full-backlog processing.",
+  "verification": [
+    {
+      "name": "local syntax check",
+      "target": "local python runtime",
+      "command": ".venv/bin/python -m py_compile scripts/run_edu_tier3_parallel.py scripts/run_edu_tier3.py",
+      "result": "pass"
+    },
+    {
+      "name": "candidate gate unit tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_tier3_candidate_gate.py -q",
+      "result": "pass: 2 passed"
+    },
+    {
+      "name": "macmini text gate preview",
+      "target": "macmini database",
+      "command": "query pending edu_consulting candidates with AI/digital education ILIKE gate",
+      "result": "preview showed 2640 gated pending candidates; top candidates shifted from general education/blog items to AI education, AI career, and EdWeek AI policy items"
+    }
+  ],
+  "remaining_verification": "After commit, push, and official Mac Mini deploy, run --free-tier --limit 10 and confirm the SQL gate executes against production DB and improves refined/skipped mix before enabling launchd."
+}
