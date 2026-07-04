@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import threading
 import uuid
@@ -178,5 +179,23 @@ if __name__ == "__main__":
     ap.add_argument("--shard", type=str, default="0/1", help="샤드 i/n (예: 0/2). 기본 0/1=전체")
     ap.add_argument("--limit", type=int, default=None, help="이번 실행 최대 건수 (기본 전체)")
     ap.add_argument("--cost-every", type=int, default=20, help="N건마다 비용 점검 (기본 20)")
+    ap.add_argument("--free-tier", action="store_true",
+                    help="GEMINI_API_KEY_FREE 키 사용 (무료 티어). workers 2로 고정, 비용 게이트 우회.")
     args = ap.parse_args()
-    run(args.workers, args.min_score, args.shard, args.limit, args.cost_every)
+
+    if args.free_tier:
+        free_key = os.getenv("GEMINI_API_KEY_FREE", "").strip()
+        if not free_key:
+            print("ERROR: --free-tier 사용 시 .env에 GEMINI_API_KEY_FREE 설정 필요", flush=True)
+            sys.exit(1)
+        os.environ["GOOGLE_API_KEY"] = free_key
+        os.environ.pop("GEMINI_API_KEY", None)
+        # 무료 티어 과금 없음 → 비용 게이트를 사실상 비활성화
+        os.environ["DAILY_COST_LIMIT_USD"] = "9999"
+        # 무료 티어 RPM(10) 초과 방지 — workers 2 이하로 제한
+        workers = min(args.workers, 2)
+        print(f"[free-tier] GEMINI_API_KEY_FREE 적용, workers={workers}", flush=True)
+    else:
+        workers = args.workers
+
+    run(workers, args.min_score, args.shard, args.limit, args.cost_every)
