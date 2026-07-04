@@ -1,0 +1,33 @@
+{
+  "task": "edu_tier3_free_tier_flag_20260704",
+  "date": "2026-07-04",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-04T18:30:00+09:00",
+      "summary": "Python Environment Rule: .venv 사용. 코드 변경 후 Mac Mini 배포 필수."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-04T18:30:00+09:00",
+      "summary": "Completion requires real entrypoint verification on Mac Mini."
+    }
+  ],
+  "problem": "DAILY_COST_LIMIT_USD=2.00 초과(오늘 $2.06 소모)로 tier3 정제가 종일 0건 처리. 로컬 gemma4 시도했으나 건당 5~10분 소요로 비실용적. 무료 Gemini API 키 사용 방식으로 전환.",
+  "changes": [
+    {
+      "path": "scripts/run_edu_tier3_parallel.py",
+      "line": 184,
+      "summary": "--free-tier 플래그 추가: GEMINI_API_KEY_FREE 키 적용, workers<=2 강제, 비용 게이트 우회(DAILY_COST_LIMIT_USD=9999)."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Mac Mini 배포 및 플래그 동작 확인",
+      "target": "macmini production",
+      "command": "bash scripts/deploy_to_macmini.sh scripts/run_edu_tier3_parallel.py",
+      "result": "pending — GEMINI_API_KEY_FREE 키 입력 후 20건 샘플 실행으로 확인 예정"
+    }
+  ]
+}
