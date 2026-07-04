@@ -81,6 +81,34 @@ EDU_TIER3_TEXT_DENY_PATTERNS = [
     "%계약학과%",
     "%교사 채용%",
     "%대학생%",
+    "%취준생%",
+    "%취업 준비%",
+    "%취업준비%",
+    "%직업 훈련%",
+    "%스포츠%",
+    "%전력설비%",
+    "%교수법 워크숍%",
+]
+
+EDU_TIER3_AUDIENCE_PATTERNS = [
+    "%학부모%",
+    "%자녀%",
+    "%초등%",
+    "%중학%",
+    "%중학교%",
+    "%고등%",
+    "%고교%",
+    "%고등학교%",
+    "%학교%",
+    "%학생%",
+    "%교육과정%",
+    "%진로%",
+    "%교실%",
+    "%K-12%",
+    "%parents%",
+    "%students%",
+    "%schools%",
+    "%classroom%",
 ]
 
 
@@ -98,6 +126,7 @@ def _parse_shard(s: str) -> tuple[int, int]:
 def _fetch_candidates(min_score: float, shard_i: int, shard_n: int, limit: int | None, text_gate: bool = True) -> list[dict]:
     gate_sql = """
           AND (fs.title || ' ' || COALESCE(fs.summary, '')) ILIKE ANY(%s)
+          AND (fs.title || ' ' || COALESCE(fs.summary, '')) ILIKE ANY(%s)
           AND NOT ((fs.title || ' ' || COALESCE(fs.summary, '')) ILIKE ANY(%s))
     """ if text_gate else ""
     params: tuple = (
@@ -105,6 +134,7 @@ def _fetch_candidates(min_score: float, shard_i: int, shard_n: int, limit: int |
         shard_n,
         shard_i,
         EDU_TIER3_TEXT_GATE_PATTERNS,
+        EDU_TIER3_AUDIENCE_PATTERNS,
         EDU_TIER3_TEXT_DENY_PATTERNS,
     ) if text_gate else (min_score, shard_n, shard_i)
     rows = execute_query(

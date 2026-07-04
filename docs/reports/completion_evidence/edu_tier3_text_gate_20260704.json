@@ -20,7 +20,7 @@
     "docs/reports/completion_evidence/edu_tier3_text_gate_20260704.json"
   ],
   "problem": "Free-tier samples after key registration showed 0 refined and 25 skipped candidates because the backlog runner selected general education/news/blog items without an explicit AI or digital education signal.",
-  "fix": "Both edu tier3 runners now default to an AI/digital education text gate over title plus summary plus a small deny gate for institution PR/noisy education items, with --no-text-gate available for emergency full-backlog processing.",
+  "fix": "Both edu tier3 runners now default to an AI/digital education text gate plus a K-12/parent/student audience gate over title plus summary, and a small deny gate for institution PR/noisy education items. --no-text-gate remains available for emergency full-backlog processing.",
   "verification": [
     {
       "name": "local syntax check",
@@ -51,7 +51,19 @@
       "target": "local pytest",
       "command": ".venv/bin/python -m pytest tests/test_edu_tier3_candidate_gate.py -q",
       "result": "pass: 2 passed"
+    },
+    {
+      "name": "macmini free launchd first run before audience gate",
+      "target": "macmini launchd runtime",
+      "command": "launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.harness.edu-tier3-free.plist",
+      "result": "residual risk found: first RunAtLoad completed 정제 16 / 스킵 24 / 실패 0, so launchd was booted out before the next hourly run and audience gate was added"
+    },
+    {
+      "name": "macmini audience gate preview",
+      "target": "macmini database",
+      "command": "query pending edu_consulting candidates with AI/digital gate, K-12/parent/student audience gate, and deny gate",
+      "result": "preview showed 400 gated pending candidates with top items focused on 자녀교육, 중학생, 학부모, AI classrooms, and student career guidance"
     }
   ],
-  "remaining_verification": "After commit, push, and official Mac Mini deploy, run --free-tier --limit 10 again with the deny gate and confirm skip rate drops below 50 percent before enabling launchd."
+  "remaining_verification": "After commit, push, and official Mac Mini deploy, run --free-tier --limit 10 with the audience gate and confirm skip rate stays below 50 percent before re-enabling launchd."
 }
