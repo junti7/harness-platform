@@ -1,0 +1,39 @@
+{
+  "task": "Record irrelevant edu tier3 candidates so backlog can drain",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-04T18:45:00+09:00",
+      "summary": "Completion requires evidence mapped to the request; unresolved runtime checks must be reported as residual risk."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-04T18:45:00+09:00",
+      "summary": "Code changes require real verification evidence and completion evidence before push or closeout."
+    }
+  ],
+  "changed_files": [
+    "adapters/content/refiner.py",
+    "scripts/run_edu_tier3.py",
+    "scripts/run_edu_tier3_parallel.py",
+    "docs/reports/completion_evidence/edu_tier3_irrelevant_candidate_recording_20260704.json"
+  ],
+  "problem": "The edu tier3 runners counted is_relevant=false candidates as skipped without saving a refined_outputs row, so the same low-value candidates stayed pending and were retried in later backlog runs.",
+  "fix": "For is_relevant=false outputs, refiner now normalizes a safe evidence_posture and both edu tier3 runners save the candidate with a model suffix of :irrelevant before incrementing skipped.",
+  "verification": [
+    {
+      "name": "local syntax check",
+      "target": "local python runtime",
+      "command": ".venv/bin/python -m py_compile adapters/content/refiner.py scripts/run_edu_tier3_parallel.py scripts/run_edu_tier3.py",
+      "result": "pass"
+    },
+    {
+      "name": "pre-push guard before evidence",
+      "target": "git pre-push hook",
+      "command": "git push origin main",
+      "result": "blocked as expected before this evidence file existed: code/governance changes require completion evidence JSON"
+    }
+  ],
+  "remaining_verification": "After push and official Mac Mini deploy, rerun scripts/run_edu_tier3_parallel.py --free-tier --limit 20 and confirm irrelevant candidates are saved instead of retried."
+}

@@ -82,6 +82,7 @@ def run(limit: int, min_score: float) -> int:
             continue
 
         if not result.get("is_relevant", True):
+            save_refined_output(row["id"], result, f"{model}:irrelevant")
             logger.info("  → 관련 없음, 탈락")
             skipped += 1
             continue

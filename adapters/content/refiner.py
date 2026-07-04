@@ -302,10 +302,26 @@ def refine_signal(model_name: str, row: dict) -> dict:
 
     parsed = _parse_refiner_json(raw_text)
 
-    required = ["final_title", "is_relevant", "evidence_posture"]
+    required = ["is_relevant"]
     for field in required:
         if field not in parsed:
             raise ValueError(f"필수 필드 누락: {field}")
+
+    if parsed.get("is_relevant") is False:
+        parsed.setdefault("final_title", (row.get("title") or "관련 없음").strip()[:120] or "관련 없음")
+        parsed["evidence_posture"] = {
+            "classification": "speculative",
+            "why": "LLM classified this candidate as not directly relevant to the domain; no positive evidence posture applies.",
+        }
+        parsed.setdefault("tags", [])
+        if isinstance(parsed["tags"], list) and "irrelevant" not in parsed["tags"]:
+            parsed["tags"].append("irrelevant")
+        return parsed
+
+    if "final_title" not in parsed:
+        raise ValueError("필수 필드 누락: final_title")
+    if "evidence_posture" not in parsed:
+        raise ValueError("필수 필드 누락: evidence_posture")
 
     evidence = parsed.get("evidence_posture") or {}
     if not isinstance(evidence, dict):
