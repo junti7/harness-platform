@@ -20,7 +20,7 @@
     "docs/reports/completion_evidence/edu_tier3_text_gate_20260704.json"
   ],
   "problem": "Free-tier samples after key registration showed 0 refined and 25 skipped candidates because the backlog runner selected general education/news/blog items without an explicit AI or digital education signal.",
-  "fix": "Both edu tier3 runners now default to a curated source allowlist, an AI/digital education text gate, a K-12/parent/student audience gate over title plus summary, and a small deny gate for institution PR/noisy education items. --no-text-gate remains available for emergency full-backlog processing.",
+  "fix": "Both edu tier3 runners now default to a high-precision curated source allowlist, an AI/digital education text gate, a K-12/parent/student audience gate over title plus summary, and a small deny gate for institution PR/noisy education items. Low-precision sources found during launchd verification were pruned from the allowlist. --no-text-gate remains available for emergency full-backlog processing.",
   "verification": [
     {
       "name": "local syntax check",
@@ -81,7 +81,25 @@
       "target": "local pytest",
       "command": ".venv/bin/python -m pytest tests/test_edu_tier3_candidate_gate.py -q",
       "result": "pass: 2 passed"
+    },
+    {
+      "name": "macmini curated source allowlist sample",
+      "target": "macmini runtime",
+      "command": "ssh macmini \"cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/run_edu_tier3_parallel.py --free-tier --limit 10\"",
+      "result": "pass: completed 정제 10 / 스킵 0 / 실패 0"
+    },
+    {
+      "name": "macmini launchd RunAtLoad after first source allowlist",
+      "target": "macmini launchd runtime",
+      "command": "launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.harness.edu-tier3-free.plist",
+      "result": "residual risk found: completed 정제 13 / 스킵 19 / 실패 0. launchd was booted out again because skip rate was 59.4 percent."
+    },
+    {
+      "name": "macmini source quality diagnosis",
+      "target": "macmini database",
+      "command": "source/model-tag aggregate over refined_outputs from the launchd verification window",
+      "result": "GoogleNews_디지털의존 produced 4 refined and 11 skipped, The74Million produced 2 refined and 4 skipped, and Chalkbeat produced 0 refined and 2 skipped. These sources were removed from the allowlist."
     }
   ],
-  "remaining_verification": "After commit, push, and official Mac Mini deploy, run --free-tier --limit 10 with the curated source allowlist and confirm skip rate below 50 percent before re-enabling launchd."
+  "remaining_verification": "After committing, pushing, and deploying the pruned source allowlist, rerun the candidate gate tests and Mac Mini verification. If no pending candidates remain, keep launchd unloaded until the next eligible source batch is available or verify with a controlled replay query."
 }

@@ -56,11 +56,8 @@ EDU_TIER3_SOURCE_ALLOWLIST = [
     "youtube_topic_search",
     "youtube_Edutopia",
     "youtube_Common_Sense_Media",
-    "The74Million",
-    "Chalkbeat",
     "EdSurge",
     "Wired_Education",
-    "GoogleNews_디지털의존",
 ]
 
 EDU_TIER3_TEXT_GATE_PATTERNS = [
