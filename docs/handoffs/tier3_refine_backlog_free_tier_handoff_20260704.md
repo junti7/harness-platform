@@ -115,6 +115,8 @@ Mac Mini 배포: ✅ 완료 (`deploy_to_macmini.sh` 검증 통과)
   - 50/hour는 안전 확인용 초기값이라 6,218건 기준 최대 5.2일이 걸림.
   - rule-skip은 LLM 호출이 없으므로 `--triage-limit`를 200/hour로 상향. 예상 최대 청소 시간은 약 31시간.
   - Gemini 정제는 품질/무료티어 안정성을 위해 계속 10/hour 유지.
+  - 200/hour 재로드 RunAtLoad 성공: 추가 `edu-triage:rule-skip` 200건 저장, high-precision Gemini 정제 대상 없음, exit 0.
+  - pending은 `6,218 → 6,018`.
 - 최신 커밋:
   - `2eb53a6` `fix: restrict edu tier3 candidates to curated sources`
   - `3b84f03` `fix: prune noisy edu tier3 sources`

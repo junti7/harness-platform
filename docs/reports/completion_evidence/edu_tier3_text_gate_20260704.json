@@ -154,6 +154,12 @@
       "target": "local launchd config",
       "command": "inspect harness-os/launchd/com.harness.edu-tier3-free.plist",
       "result": "pass: after successful 50-row RunAtLoad verification, rule triage limit increased to 200 per hour while Gemini refinement remains capped at 10 per hour"
+    },
+    {
+      "name": "macmini 200-row rule triage run",
+      "target": "macmini launchd runtime and database",
+      "command": "reload com.harness.edu-tier3-free with --triage-limit 200, inspect logs and pending count",
+      "result": "pass: RunAtLoad saved 200 additional edu-triage:rule-skip rows, found no high-precision Gemini candidates, exited 0, and pending decreased from 6218 to 6018"
     }
   ],
   "remaining_verification": "Gemini free-tier is the selected Tier3 path. Launchd should run rule triage first with --triage-limit 200, then Gemini-refine high-precision candidates with --limit 10. Continue monitoring logs; if rule-skip deletes valuable items or Gemini skip rate exceeds 50 percent, boot out the job and tighten the rules."
