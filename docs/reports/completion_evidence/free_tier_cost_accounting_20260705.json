@@ -34,7 +34,19 @@
       "target": "macmini database and launchd logs",
       "command": "aggregate api_cost_log by day/model/source and inspect tier3-filter/edu-tier3-free logs",
       "result": "paid com.harness.tier3-filter consumed the daily budget before the cost gate, while later free-tier EDU calls were also counted in api_cost_log as paid-looking google pipeline usage"
+    },
+    {
+      "name": "macmini deploy",
+      "target": "macmini deployment",
+      "command": "scripts/deploy_to_macmini.sh adapters/content/refiner.py adapters/content/filter.py scripts/run_edu_tier3_parallel.py harness-os/backend/main.py docs/reports/completion_evidence/free_tier_cost_accounting_20260705.json",
+      "result": "pass: deployment source-of-truth check and Mac Mini target diff check passed; backend restarted on port 8000"
+    },
+    {
+      "name": "macmini free-tier cost backfill",
+      "target": "macmini database",
+      "command": "update today's Gemini rows created after 2026-07-05 09:17:00 to source=gemini-free-tier, then recompute paid cost excluding that source",
+      "result": "pass: 55 Google Gemini calls were tagged gemini-free-tier; paid-cost estimate excluding free-tier became $2.0081 while free-tier usage was 64,623 input tokens and 49,852 output tokens"
     }
   ],
-  "remaining_verification": "After deploy, backfill today's free-tier EDU rows to source=gemini-free-tier and confirm the dashboard paid-cost query excludes them."
+  "remaining_verification": "Future --free-tier EDU runs should write source=gemini-free-tier automatically. If the dashboard cost card rises unexpectedly again, compare api_cost_log source breakdown before assuming real billing."
 }
