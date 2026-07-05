@@ -62,6 +62,7 @@ def get_today_cost(logger=None) -> float:
             ), 0) as total_cost
             FROM api_cost_log
             WHERE DATE(created_at) = CURRENT_DATE
+              AND COALESCE(source, '') <> 'gemini-free-tier'
         """, fetch=True)
         if result and result[0]["total_cost"]:
             return float(result[0]["total_cost"])
@@ -82,9 +83,9 @@ def log_api_cost(model: str, input_tokens: int, output_tokens: int, provider: st
             provider = "ollama"
     try:
         execute_query("""
-            INSERT INTO api_cost_log (model, input_tokens, output_tokens, provider)
-            VALUES (%s, %s, %s, %s)
-        """, (model, input_tokens, output_tokens, provider))
+            INSERT INTO api_cost_log (model, input_tokens, output_tokens, provider, source)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (model, input_tokens, output_tokens, provider, os.getenv("API_COST_SOURCE", "pipeline")))
     except Exception as exc:
         _logger.warning(f"API 비용 로그 저장 실패 — 응답은 계속 진행: {exc}")
 

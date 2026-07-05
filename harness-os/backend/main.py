@@ -2190,6 +2190,7 @@ def _today_llm_cost() -> float:
         ), 0) as total_cost
         FROM api_cost_log
         WHERE DATE(created_at) = CURRENT_DATE
+          AND COALESCE(source, '') <> 'gemini-free-tier'
         """
     )
     return float(rows[0]["total_cost"]) if rows else 0.0
@@ -3490,6 +3491,7 @@ def _cost_history(days: int = 14) -> list[dict[str, Any]]:
             END as cost
         FROM api_cost_log
         WHERE created_at >= NOW() - (%s || ' days')::interval
+          AND COALESCE(source, '') <> 'gemini-free-tier'
         ORDER BY created_at ASC
         """,
         (days,),
@@ -4063,6 +4065,7 @@ def get_costs_summary(_: None = Depends(_require_secret)) -> dict[str, Any]:
             END as cost
         FROM api_cost_log
         WHERE created_at >= '2026-05-01'
+          AND COALESCE(source, '') <> 'gemini-free-tier'
         ORDER BY created_at ASC
         """
     )

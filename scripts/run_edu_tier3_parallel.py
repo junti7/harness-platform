@@ -420,6 +420,7 @@ if __name__ == "__main__":
             sys.exit(1)
         os.environ["GOOGLE_API_KEY"] = free_key
         os.environ.pop("GEMINI_API_KEY", None)
+        os.environ["API_COST_SOURCE"] = "gemini-free-tier"
         # 무료 티어 과금 없음 → 비용 게이트를 사실상 비활성화
         os.environ["DAILY_COST_LIMIT_USD"] = "9999"
         globals()["DAILY_COST_LIMIT"] = 9999.0

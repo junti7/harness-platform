@@ -1,0 +1,40 @@
+{
+  "task": "Separate Gemini free-tier usage from paid AI cost accounting",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-05T10:08:00+09:00",
+      "summary": "Completion requires real evidence and residual risk reporting for operations changes."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-05T10:08:00+09:00",
+      "summary": "Code changes require completion evidence, verification, and deployment source-of-truth discipline."
+    }
+  ],
+  "changed_files": [
+    "adapters/content/refiner.py",
+    "adapters/content/filter.py",
+    "scripts/run_edu_tier3_parallel.py",
+    "harness-os/backend/main.py",
+    "docs/reports/completion_evidence/free_tier_cost_accounting_20260705.json"
+  ],
+  "problem": "Gemini free-tier calls were recorded in api_cost_log with the same provider/source as paid Google calls, so the dashboard cost card and paid cost gate treated free-tier EDU refinement as paid usage.",
+  "fix": "Free-tier EDU runs now set API_COST_SOURCE=gemini-free-tier. Cost log inserts persist the source column, paid cost gates exclude gemini-free-tier, and dashboard cost queries exclude gemini-free-tier from paid cost totals.",
+  "verification": [
+    {
+      "name": "local syntax check",
+      "target": "local python runtime",
+      "command": ".venv/bin/python -m py_compile adapters/content/refiner.py adapters/content/filter.py scripts/run_edu_tier3_parallel.py harness-os/backend/main.py",
+      "result": "pass"
+    },
+    {
+      "name": "cost source diagnosis",
+      "target": "macmini database and launchd logs",
+      "command": "aggregate api_cost_log by day/model/source and inspect tier3-filter/edu-tier3-free logs",
+      "result": "paid com.harness.tier3-filter consumed the daily budget before the cost gate, while later free-tier EDU calls were also counted in api_cost_log as paid-looking google pipeline usage"
+    }
+  ],
+  "remaining_verification": "After deploy, backfill today's free-tier EDU rows to source=gemini-free-tier and confirm the dashboard paid-cost query excludes them."
+}

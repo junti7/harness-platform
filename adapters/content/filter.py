@@ -70,9 +70,9 @@ def log_api_cost(model: str, input_tokens: int, output_tokens: int, provider: st
     try:
         try:
             execute_query("""
-                INSERT INTO api_cost_log (model, input_tokens, output_tokens, provider)
-                VALUES (%s, %s, %s, %s)
-            """, (model, input_tokens, output_tokens, provider))
+                INSERT INTO api_cost_log (model, input_tokens, output_tokens, provider, source)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (model, input_tokens, output_tokens, provider, os.getenv("API_COST_SOURCE", "pipeline")))
         except Exception:
             execute_query("""
                 INSERT INTO api_cost_log (model, input_tokens, output_tokens)
