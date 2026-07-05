@@ -1,0 +1,43 @@
+{
+  "task": "Disable paid Tier3 backlog worker by default",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-05T10:05:00+09:00",
+      "summary": "Completion requires real evidence and residual risk reporting for operations changes."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-05T10:05:00+09:00",
+      "summary": "Code changes require completion evidence, verification, and deployment source-of-truth discipline."
+    }
+  ],
+  "changed_files": [
+    "scripts/run_tier3_backlog_worker.py",
+    "docs/reports/completion_evidence/paid_tier3_backlog_worker_disable_20260705.json"
+  ],
+  "problem": "The existing paid com.harness.tier3-filter LaunchAgent ran scripts/run_tier3_backlog_worker.py every 30 minutes and consumed the daily Gemini paid budget early each day before hitting the cost gate.",
+  "fix": "scripts/run_tier3_backlog_worker.py now exits by default unless PAID_TIER3_BACKLOG_ENABLED=true is explicitly set. The currently loaded Mac Mini com.harness.tier3-filter job was booted out.",
+  "verification": [
+    {
+      "name": "macmini paid tier3 launchd bootout",
+      "target": "macmini launchd runtime",
+      "command": "launchctl bootout gui/$(id -u)/com.harness.tier3-filter && launchctl list | grep com.harness.tier3-filter || true",
+      "result": "pass: launchctl list returned no com.harness.tier3-filter entry"
+    },
+    {
+      "name": "local syntax check",
+      "target": "local python runtime",
+      "command": ".venv/bin/python -m py_compile scripts/run_tier3_backlog_worker.py",
+      "result": "pass"
+    },
+    {
+      "name": "local disabled default smoke",
+      "target": "local python runtime",
+      "command": "DATABASE_URL=postgresql://localhost/harness_prod .venv/bin/python scripts/run_tier3_backlog_worker.py --max-batches 1",
+      "result": "pass: process exited 0 and logged paid Tier3 backlog worker disabled; set PAID_TIER3_BACKLOG_ENABLED=true to run"
+    }
+  ],
+  "remaining_verification": "After push, deploy to Mac Mini and run the disabled-default smoke there. Paid Tier3 can only be re-enabled intentionally with PAID_TIER3_BACKLOG_ENABLED=true."
+}

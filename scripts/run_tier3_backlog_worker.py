@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -37,6 +38,12 @@ def main() -> None:
     cid = f"tier3-{str(uuid.uuid4())[:8]}"
     logger = HarnessLogger(tier=3, correlation_id=cid)
     logger.info(f"=== Tier 3 backlog worker 시작 (max_batches={args.max_batches}) ===")
+
+    if os.getenv("PAID_TIER3_BACKLOG_ENABLED", "").strip().lower() != "true":
+        logger.warning(
+            "paid Tier3 backlog worker disabled; set PAID_TIER3_BACKLOG_ENABLED=true to run"
+        )
+        return
 
     before_start = pending_count()
     if before_start < args.min_pending:
