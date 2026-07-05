@@ -99,7 +99,19 @@
       "target": "macmini database",
       "command": "source/model-tag aggregate over refined_outputs from the launchd verification window",
       "result": "GoogleNews_디지털의존 produced 4 refined and 11 skipped, The74Million produced 2 refined and 4 skipped, and Chalkbeat produced 0 refined and 2 skipped. These sources were removed from the allowlist."
+    },
+    {
+      "name": "macmini pruned source allowlist deploy",
+      "target": "macmini deployment",
+      "command": "scripts/deploy_to_macmini.sh scripts/run_edu_tier3_parallel.py docs/reports/completion_evidence/edu_tier3_text_gate_20260704.json",
+      "result": "pass: deployment source-of-truth check and Mac Mini target diff check both passed"
+    },
+    {
+      "name": "macmini pruned source allowlist runtime check",
+      "target": "macmini runtime",
+      "command": "ssh macmini \"cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/run_edu_tier3_parallel.py --free-tier --limit 10\"",
+      "result": "pass: free-tier key path loaded and runner returned 정제 대상 없음 after the noisy backlog was exhausted"
     }
   ],
-  "remaining_verification": "After committing, pushing, and deploying the pruned source allowlist, rerun the candidate gate tests and Mac Mini verification. If no pending candidates remain, keep launchd unloaded until the next eligible source batch is available or verify with a controlled replay query."
+  "remaining_verification": "Launchd remains unloaded. Re-enable only after a new eligible high-precision source batch appears, or after adding a controlled replay verification path that confirms the pruned allowlist stays below 50 percent skip rate."
 }

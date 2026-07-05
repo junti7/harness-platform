@@ -1,7 +1,7 @@
 # Handoff: Tier3 정제 적체 + 무료 티어 전환
 **날짜**: 2026-07-04  
 **작성**: Claude Sonnet 4.6  
-**상태**: ⏳ 무료 API 키 입력 대기 중
+**상태**: ⚠️ 무료 키/저장/필터/배포 완료, 자동 launchd는 품질 재검증 전까지 intentionally unloaded
 
 ---
 
@@ -88,6 +88,21 @@ Mac Mini 배포: ✅ 완료 (`deploy_to_macmini.sh` 검증 통과)
 - K-12/학부모/학생 audience gate 추가 후 10건 샘플: `정제 3 / 스킵 7 / 실패 0`. 여전히 자동화 기준 미달.
 - 결론: 무료 tier3 자동 잡은 설치되어 있지만 intentionally unloaded. 다음 작업은 stricter source allowlist 또는 stronger positive audience policy 적용 후 재샘플.
 
+### 2026-07-05 Codex 후속 진행 4
+
+- curated source allowlist 추가 후 10건 샘플: `정제 10 / 스킵 0 / 실패 0`.
+- 이 결과를 근거로 `com.harness.edu-tier3-free.plist`를 재등록했으나 RunAtLoad는 남은 후보 32건을 처리하며 `정제 13 / 스킵 19 / 실패 0`로 종료. 스킵률 59.4%라 자동화 기준 미달.
+- 즉시 `launchctl bootout gui/$(id -u)/com.harness.edu-tier3-free`로 다시 unload 완료. 현재 plist는 설치되어 있지만 로드되어 있지 않음.
+- source별 진단:
+  - `GoogleNews_디지털의존`: 4 refined / 11 skipped
+  - `The74Million`: 2 refined / 4 skipped
+  - `Chalkbeat`: 0 refined / 2 skipped
+- 위 3개 source를 allowlist에서 제거함. 배포 후 pruned allowlist로 `--free-tier --limit 10` 실행 결과 `정제 대상 없음`.
+- 최신 커밋:
+  - `2eb53a6` `fix: restrict edu tier3 candidates to curated sources`
+  - `3b84f03` `fix: prune noisy edu tier3 sources`
+- Mac Mini 배포: `scripts/deploy_to_macmini.sh` 검증 통과. 대상 diff 0 확인.
+
 **실행 명령어**:
 ```bash
 ssh macmini "cd /Users/juntaepark/projects/harness-platform && \
@@ -99,16 +114,7 @@ ssh macmini "cd /Users/juntaepark/projects/harness-platform && \
 
 ## 잔여 작업 (다음 세션)
 
-### Step 1 — 무료 API 키 등록 ⏳ HUMAN_REQUIRED
-
-Google AI Studio(aistudio.google.com) → "Get API key" → **새 프로젝트** (결제 미연동)로 키 생성 후:
-
-```bash
-ssh macmini "sed -i '' 's|GEMINI_API_KEY_FREE=|GEMINI_API_KEY_FREE=<키>|' \
-  /Users/juntaepark/projects/harness-platform/.env"
-```
-
-### Step 2 — 20건 샘플 품질 검증
+### Step 1 — 다음 eligible batch 품질 검증
 
 ```bash
 ssh macmini "cd /Users/juntaepark/projects/harness-platform && \
@@ -121,19 +127,21 @@ ssh macmini "cd /Users/juntaepark/projects/harness-platform && \
 - `final_title`이 한국어로 자연스러운지
 - 타임아웃 없이 건당 30~60초 내 완료하는지
 
-### Step 3 — launchd 잡 교체 (샘플 통과 시)
+현재는 pruned allowlist 적용 후 남은 후보가 없어 `정제 대상 없음`이 정상이다. 새 eligible batch가 들어오면 위 명령으로 다시 품질 검증한다.
+
+### Step 2 — launchd 재개 (샘플 통과 시)
 
 현재 `com.harness.tier3-filter.plist`는 유료 키 + `run_tier3_backlog_worker.py` 사용.  
 샘플 품질 통과 시, 별도 잡(`com.harness.edu-tier3-free.plist`)으로 무료 키 기반 백로그 소진 잡 추가.
 
-2026-07-04 현재 판정: 자동 launchd 전환 보류. `com.harness.edu-tier3-free.plist`는 Mac Mini에 설치되어 있지만 로드하지 않는다. source allowlist/positive audience policy 보강 후 `--free-tier --limit 10`에서 스킵률 50% 미만이 다시 확인되면 로드할 것.
+2026-07-05 현재 판정: 자동 launchd 전환 보류. `com.harness.edu-tier3-free.plist`는 Mac Mini에 설치되어 있지만 로드하지 않는다. pruned allowlist 기준 새 eligible batch에서 `--free-tier --limit 10` 스킵률 50% 미만이 다시 확인되면 로드할 것.
 
 **무료 티어 처리 용량 예상**:
 - Gemini 2.5 Flash 무료: 10 RPM, 1M TPD
 - workers=2, 건당 ~45초 → 약 2~3 RPM → 하루 ~700~900건
 - 6,425건 ÷ 800 ≈ **8~9일이면 백로그 소진**
 
-### Step 4 — 재발 방지 (선택)
+### Step 3 — 재발 방지 (선택)
 
 현재 구조적 문제: tier3 job이 30분마다 실행되면서 자정 이후 수 시간 내에 일일 예산 전부 소모.  
 장기적으로는 `StartInterval`을 늘리거나 KST 시간대 제한을 추가해 낮 시간 비용 여유를 확보.
@@ -147,6 +155,8 @@ ssh macmini "cd /Users/juntaepark/projects/harness-platform && \
 | `scripts/run_edu_tier3_parallel.py` | `--free-tier` 플래그 추가됨 |
 | `adapters/content/refiner.py` | `DAILY_COST_LIMIT`, `get_today_cost` 로직 |
 | `harness-os/launchd/com.harness.tier3-filter.plist` | 현재 실행 중인 배치 잡 |
-| `.env` (Mac Mini) | `GEMINI_API_KEY_FREE=` 빈 값으로 추가됨 |
+| `harness-os/launchd/com.harness.edu-tier3-free.plist` | 설치 완료, 현재 intentionally unloaded |
+| `.env` (Mac Mini) | `GEMINI_API_KEY_FREE` 등록 완료 |
 | `docs/reports/completion_evidence/edu_tier3_free_tier_flag_20260704.json` | completion evidence |
 | `docs/reports/completion_evidence/tier3_free_tier_cost_gate_fix_20260704.json` | free-tier 비용 게이트 상수 보정 evidence |
+| `docs/reports/completion_evidence/edu_tier3_text_gate_20260704.json` | text/audience/source gate와 launchd hold evidence |
