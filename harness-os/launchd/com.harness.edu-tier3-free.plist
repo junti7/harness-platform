@@ -14,7 +14,7 @@
     <string>--limit</string>
     <string>10</string>
     <string>--triage-limit</string>
-    <string>50</string>
+    <string>200</string>
     <string>--cost-every</string>
     <string>10</string>
   </array>
@@ -22,7 +22,7 @@
   <key>WorkingDirectory</key>
   <string>__ROOT__</string>
 
-  <!-- Conservative free-tier backlog drain: rule-skip obvious noise first, then Gemini-refine up to 10 keep candidates. Workers are capped to 2 by the script. -->
+  <!-- Backlog drain: rule-skip obvious noise first, then Gemini-refine up to 10 keep candidates. Workers are capped to 2 by the script. -->
   <key>StartInterval</key>
   <integer>3600</integer>
 

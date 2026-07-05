@@ -105,12 +105,16 @@ Mac Mini 배포: ✅ 완료 (`deploy_to_macmini.sh` 검증 통과)
 - 현실 운영 방식으로 전환:
   - 명백한 noise는 LLM 호출 없이 `edu-triage:rule-skip`으로 `refined_outputs`에 저장해 backlog에서 제거.
   - Gemini free-tier는 pruned allowlist + topic/audience gate를 통과한 high-precision 후보만 정제.
-  - `com.harness.edu-tier3-free.plist`는 매시간 `--triage-limit 50 --limit 10`으로 운영.
+  - `com.harness.edu-tier3-free.plist`는 초기 검증 후 매시간 `--triage-limit 200 --limit 10`으로 운영.
 - 실측:
   - 수동 triage sample: `edu-triage:rule-skip` 5건 저장, high-precision Gemini 정제 대상 없음.
   - launchd RunAtLoad: `edu-triage:rule-skip` 50건 저장, high-precision Gemini 정제 대상 없음, exit 0.
   - 최근 저장 합계: `edu-triage:rule-skip 55`, `gemini-2.5-flash 2`, `gemini-2.5-flash:irrelevant 8`.
   - pending은 `6,283 → 6,273 → 6,218`.
+- 속도 조정:
+  - 50/hour는 안전 확인용 초기값이라 6,218건 기준 최대 5.2일이 걸림.
+  - rule-skip은 LLM 호출이 없으므로 `--triage-limit`를 200/hour로 상향. 예상 최대 청소 시간은 약 31시간.
+  - Gemini 정제는 품질/무료티어 안정성을 위해 계속 10/hour 유지.
 - 최신 커밋:
   - `2eb53a6` `fix: restrict edu tier3 candidates to curated sources`
   - `3b84f03` `fix: prune noisy edu tier3 sources`
@@ -147,11 +151,11 @@ ssh macmini "cd /Users/juntaepark/projects/harness-platform && \
 현재 `com.harness.tier3-filter.plist`는 유료 키 + `run_tier3_backlog_worker.py` 사용.  
 별도 잡(`com.harness.edu-tier3-free.plist`)이 Gemini free-tier 기반 백로그 소진을 담당한다.
 
-2026-07-05 현재 판정: Gemini free-tier 기반으로 운영. `com.harness.edu-tier3-free.plist`는 시간당 rule-skip 50건 + Gemini 정제 10건 제한으로 로드한다. 향후 실행에서 rule-skip 오분류가 보이거나 Gemini 스킵률이 50%를 넘으면 즉시 `bootout` 후 원인 source/pattern을 조정한다.
+2026-07-05 현재 판정: Gemini free-tier 기반으로 운영. `com.harness.edu-tier3-free.plist`는 시간당 rule-skip 200건 + Gemini 정제 10건 제한으로 로드한다. 향후 실행에서 rule-skip 오분류가 보이거나 Gemini 스킵률이 50%를 넘으면 즉시 `bootout` 후 원인 source/pattern을 조정한다.
 
 **무료 티어 처리 용량 예상**:
 - Gemini 2.5 Flash 무료: 10 RPM, 1M TPD
-- 현재 launchd: 시간당 rule-skip 최대 50건 + Gemini 정제 최대 10건, workers=2
+- 현재 launchd: 시간당 rule-skip 최대 200건 + Gemini 정제 최대 10건, workers=2
 - 처리량보다 품질/비용 안정성을 우선한다. source 품질이 더 검증되면 `--limit`를 20, 40 순으로 올린다.
 
 ### Step 3 — 재발 방지 (선택)
