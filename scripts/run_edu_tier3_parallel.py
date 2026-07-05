@@ -103,6 +103,27 @@ EDU_TIER3_TEXT_DENY_PATTERNS = [
     "%교수법 워크숍%",
 ]
 
+EDU_TIER3_TRIAGE_SKIP_SOURCES = [
+    "GoogleNews_취준생AI",
+]
+
+EDU_TIER3_TRIAGE_SKIP_PATTERNS = [
+    *EDU_TIER3_TEXT_DENY_PATTERNS,
+    "%취준생%",
+    "%채용%",
+    "%공기업%",
+    "%직장인%",
+    "%대학생%",
+    "%대학교%",
+    "%한우%",
+    "%농가%",
+    "%기상캐스터%",
+    "%연예%",
+    "%전력설비%",
+    "%스마트 디톡스%",
+    "%로봇 자동화%",
+]
+
 EDU_TIER3_AUDIENCE_PATTERNS = [
     "%학부모%",
     "%자녀%",
@@ -125,6 +146,26 @@ EDU_TIER3_AUDIENCE_PATTERNS = [
 ]
 
 
+def _combined_text_sql() -> str:
+    return "(fs.title || chr(32) || COALESCE(fs.summary, ''))"
+
+
+def _rule_skipped_output(row: dict, reason: str) -> dict:
+    title = (row.get("title") or "규칙 기반 폐기 후보").strip()[:120] or "규칙 기반 폐기 후보"
+    return {
+        "final_title": title,
+        "is_relevant": False,
+        "evidence_posture": {
+            "classification": "speculative",
+            "why": f"Rule triage classified this candidate as outside the edu Tier3 refinement scope: {reason}",
+        },
+        "summary": (row.get("summary") or "").strip()[:600],
+        "source": row.get("source") or "",
+        "tags": ["tier3-triage-skip", "irrelevant"],
+        "triage_reason": reason,
+    }
+
+
 def _parse_shard(s: str) -> tuple[int, int]:
     try:
         i, n = s.split("/")
@@ -137,12 +178,13 @@ def _parse_shard(s: str) -> tuple[int, int]:
 
 
 def _fetch_candidates(min_score: float, shard_i: int, shard_n: int, limit: int | None, text_gate: bool = True) -> list[dict]:
+    text_expr = _combined_text_sql()
     gate_sql = """
           AND fs.source = ANY(%s)
-          AND (fs.title || ' ' || COALESCE(fs.summary, '')) ILIKE ANY(%s)
-          AND (fs.title || ' ' || COALESCE(fs.summary, '')) ILIKE ANY(%s)
-          AND NOT ((fs.title || ' ' || COALESCE(fs.summary, '')) ILIKE ANY(%s))
-    """ if text_gate else ""
+          AND {text_expr} ILIKE ANY(%s)
+          AND {text_expr} ILIKE ANY(%s)
+          AND NOT ({text_expr} ILIKE ANY(%s))
+    """.format(text_expr=text_expr) if text_gate else ""
     params: tuple = (
         min_score,
         shard_n,
@@ -179,6 +221,76 @@ def _fetch_candidates(min_score: float, shard_i: int, shard_n: int, limit: int |
         fetch=True,
     ) or []
     return rows[:limit] if limit else rows
+
+
+def _fetch_rule_skip_candidates(min_score: float, shard_i: int, shard_n: int, limit: int) -> list[dict]:
+    text_expr = _combined_text_sql()
+    rows = execute_query(
+        f"""
+        SELECT fs.id, fs.title, fs.summary, fs.content_hash, fs.source, fs.score,
+               fs.extracted_facts, 'edu_consulting' AS domain,
+               CASE
+                 WHEN fs.source = ANY(%s) THEN 'source-skip'
+                 ELSE 'text-skip'
+               END AS triage_reason
+        FROM filtered_signals fs
+        LEFT JOIN refined_outputs ro ON fs.id = ro.filtered_signal_id
+        LEFT JOIN raw_signals rs ON rs.id = fs.raw_signal_id
+        WHERE ro.id IS NULL
+          AND fs.domain = 'edu_consulting'
+          AND fs.score >= %s
+          AND (MOD(fs.id, %s) = %s)
+          AND (fs.source = ANY(%s) OR {text_expr} ILIKE ANY(%s))
+          AND NOT (
+            fs.source = ANY(%s)
+            AND {text_expr} ILIKE ANY(%s)
+            AND {text_expr} ILIKE ANY(%s)
+            AND NOT ({text_expr} ILIKE ANY(%s))
+          )
+        ORDER BY (CASE WHEN rs.ingested_at >= now() - interval '7 days' THEN 0 ELSE 1 END),
+                 fs.score DESC NULLS LAST,
+                 COALESCE(NULLIF(rs.raw_data->>'postdate', ''),
+                          to_char(rs.ingested_at, 'YYYYMMDD')) DESC,
+                 fs.id DESC
+        LIMIT %s
+        """,
+        (
+            EDU_TIER3_TRIAGE_SKIP_SOURCES,
+            min_score,
+            shard_n,
+            shard_i,
+            EDU_TIER3_TRIAGE_SKIP_SOURCES,
+            EDU_TIER3_TRIAGE_SKIP_PATTERNS,
+            EDU_TIER3_SOURCE_ALLOWLIST,
+            EDU_TIER3_TEXT_GATE_PATTERNS,
+            EDU_TIER3_AUDIENCE_PATTERNS,
+            EDU_TIER3_TEXT_DENY_PATTERNS,
+            limit,
+        ),
+        fetch=True,
+    ) or []
+    return rows
+
+
+def _triage_rule_skips(min_score: float, shard_i: int, shard_n: int, limit: int, logger: HarnessLogger) -> int:
+    if limit <= 0:
+        return 0
+    rows = _fetch_rule_skip_candidates(min_score, shard_i, shard_n, limit)
+    if not rows:
+        logger.info("rule triage 폐기 대상 없음")
+        return 0
+
+    logger.info(f"rule triage 폐기 대상: {len(rows)}개")
+    saved = 0
+    for row in rows:
+        reason = str(row.get("triage_reason") or "rule-skip")
+        save_refined_output(row["id"], _rule_skipped_output(dict(row), reason), "edu-triage:rule-skip")
+        saved += 1
+        with _lock:
+            _counters["skipped"] += 1
+            n = _counters["skipped"]
+        logger.info(f"  [triage skip {n}] 저장(id={row['id']}): {str(row.get('title') or '')[:46]}")
+    return saved
 
 
 def _process_one(model: str, row: dict, logger: HarnessLogger) -> None:
@@ -218,11 +330,24 @@ def _process_one(model: str, row: dict, logger: HarnessLogger) -> None:
     logger.info(f"  [{n}] 완료(id={rid}): {result['final_title'][:46]}")
 
 
-def run(workers: int, min_score: float, shard: str, limit: int | None, cost_every: int, text_gate: bool = True) -> int:
+def run(
+    workers: int,
+    min_score: float,
+    shard: str,
+    limit: int | None,
+    cost_every: int,
+    text_gate: bool = True,
+    triage_limit: int = 0,
+) -> int:
     shard_i, shard_n = _parse_shard(shard)
     cid = str(uuid.uuid4())[:8]
     logger = HarnessLogger(tier=3, correlation_id=cid)
-    logger.info(f"=== edu Tier3 병렬 정제 (run_id={cid}, workers={workers}, shard={shard}, text_gate={text_gate}) ===")
+    logger.info(
+        f"=== edu Tier3 병렬 정제 (run_id={cid}, workers={workers}, shard={shard}, "
+        f"text_gate={text_gate}, triage_limit={triage_limit}) ==="
+    )
+
+    _triage_rule_skips(min_score, shard_i, shard_n, triage_limit, logger)
 
     rows = _fetch_candidates(min_score, shard_i, shard_n, limit, text_gate=text_gate)
     if not rows:
@@ -280,6 +405,8 @@ if __name__ == "__main__":
     ap.add_argument("--shard", type=str, default="0/1", help="샤드 i/n (예: 0/2). 기본 0/1=전체")
     ap.add_argument("--limit", type=int, default=None, help="이번 실행 최대 건수 (기본 전체)")
     ap.add_argument("--cost-every", type=int, default=20, help="N건마다 비용 점검 (기본 20)")
+    ap.add_argument("--triage-limit", type=int, default=0,
+                    help="LLM 호출 전 rule-skip으로 폐기 저장할 최대 건수 (기본 0)")
     ap.add_argument("--free-tier", action="store_true",
                     help="GEMINI_API_KEY_FREE 키 사용 (무료 티어). workers 2로 고정, 비용 게이트 우회.")
     ap.add_argument("--no-text-gate", action="store_true",
@@ -302,4 +429,12 @@ if __name__ == "__main__":
     else:
         workers = args.workers
 
-    run(workers, args.min_score, args.shard, args.limit, args.cost_every, text_gate=not args.no_text_gate)
+    run(
+        workers,
+        args.min_score,
+        args.shard,
+        args.limit,
+        args.cost_every,
+        text_gate=not args.no_text_gate,
+        triage_limit=args.triage_limit,
+    )

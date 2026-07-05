@@ -1,7 +1,7 @@
 # Handoff: Tier3 정제 적체 + 무료 티어 전환
 **날짜**: 2026-07-04  
 **작성**: Claude Sonnet 4.6  
-**상태**: ✅ Gemini free-tier 기반 정제로 전환. pruned allowlist + 시간당 10건 제한으로 launchd 운영
+**상태**: ✅ Gemini free-tier 기반 운영으로 전환. rule triage로 backlog 청소 후 high-precision 후보만 정제
 
 ---
 
@@ -101,6 +101,11 @@ Mac Mini 배포: ✅ 완료 (`deploy_to_macmini.sh` 검증 통과)
 - 운영 방향 결정: Local LLM 정제는 실용 속도 미달이므로 Tier3 본정제는 Gemini free-tier가 owner. Local LLM은 필요 시 Tier2 필터/분류 보조로만 사용.
 - `com.harness.edu-tier3-free.plist`의 batch size를 `--limit 40`에서 `--limit 10`으로 낮추고 `--cost-every 10`으로 조정. 새 eligible batch가 들어와도 한 번에 크게 번지지 않도록 보수적으로 운영.
 - Mac Mini LaunchAgent 재설치/로드 완료. `launchctl print`에서 `--free-tier --limit 10 --cost-every 10` 확인. RunAtLoad는 `GEMINI_API_KEY_FREE`를 적용했고 `정제 대상 없음`으로 exit 0.
+- 대시보드의 6,283건 backlog는 high-quality 정제 후보가 아니라 Tier2 통과 후 아직 refined_outputs 기록이 없는 전체 미처리 풀임을 확인. `--no-text-gate --limit 10` 실제 실행 결과 `정제 2 / 스킵 8 / 실패 0`, pending `6,283 → 6,273`.
+- 현실 운영 방식으로 전환:
+  - 명백한 noise는 LLM 호출 없이 `edu-triage:rule-skip`으로 `refined_outputs`에 저장해 backlog에서 제거.
+  - Gemini free-tier는 pruned allowlist + topic/audience gate를 통과한 high-precision 후보만 정제.
+  - `com.harness.edu-tier3-free.plist`는 매시간 `--triage-limit 50 --limit 10`으로 운영.
 - 최신 커밋:
   - `2eb53a6` `fix: restrict edu tier3 candidates to curated sources`
   - `3b84f03` `fix: prune noisy edu tier3 sources`
@@ -137,11 +142,11 @@ ssh macmini "cd /Users/juntaepark/projects/harness-platform && \
 현재 `com.harness.tier3-filter.plist`는 유료 키 + `run_tier3_backlog_worker.py` 사용.  
 별도 잡(`com.harness.edu-tier3-free.plist`)이 Gemini free-tier 기반 백로그 소진을 담당한다.
 
-2026-07-05 현재 판정: Gemini free-tier 기반으로 운영. `com.harness.edu-tier3-free.plist`는 시간당 10건 제한으로 로드한다. 향후 실행에서 스킵률이 50%를 넘으면 즉시 `bootout` 후 원인 source를 prune한다.
+2026-07-05 현재 판정: Gemini free-tier 기반으로 운영. `com.harness.edu-tier3-free.plist`는 시간당 rule-skip 50건 + Gemini 정제 10건 제한으로 로드한다. 향후 실행에서 rule-skip 오분류가 보이거나 Gemini 스킵률이 50%를 넘으면 즉시 `bootout` 후 원인 source/pattern을 조정한다.
 
 **무료 티어 처리 용량 예상**:
 - Gemini 2.5 Flash 무료: 10 RPM, 1M TPD
-- 현재 launchd: 시간당 최대 10건, workers=2
+- 현재 launchd: 시간당 rule-skip 최대 50건 + Gemini 정제 최대 10건, workers=2
 - 처리량보다 품질/비용 안정성을 우선한다. source 품질이 더 검증되면 `--limit`를 20, 40 순으로 올린다.
 
 ### Step 3 — 재발 방지 (선택)

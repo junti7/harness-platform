@@ -124,7 +124,19 @@
       "target": "macmini launchd runtime",
       "command": "install updated com.harness.edu-tier3-free.plist, launchctl bootstrap, then inspect launchctl print and logs",
       "result": "pass: LaunchAgent loaded with --free-tier --limit 10 --cost-every 10. RunAtLoad used GEMINI_API_KEY_FREE, returned 정제 대상 없음, and exited 0."
+    },
+    {
+      "name": "manual full-backlog sample",
+      "target": "macmini runtime",
+      "command": "ssh macmini \"cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/run_edu_tier3_parallel.py --free-tier --limit 10 --no-text-gate\"",
+      "result": "pass with quality warning: completed 정제 2 / 스킵 8 / 실패 0, pending decreased from 6283 to 6273, confirming full backlog is mostly triage/cleanup work rather than high-quality refinement work"
+    },
+    {
+      "name": "rule triage implementation tests",
+      "target": "local pytest and plist validation",
+      "command": ".venv/bin/python -m pytest tests/test_edu_tier3_candidate_gate.py -q && plutil -lint harness-os/launchd/com.harness.edu-tier3-free.plist",
+      "result": "pass: 4 pytest cases passed; LaunchAgent plist is valid. The job now rule-skips up to 50 obvious noise candidates before Gemini-refining up to 10 high-precision candidates."
     }
   ],
-  "remaining_verification": "Gemini free-tier is the selected Tier3 path. Launchd may run with the pruned high-precision allowlist and limit 10. Continue monitoring logs; if a future run exceeds 50 percent skip rate, boot out the job and prune the responsible source."
+  "remaining_verification": "Gemini free-tier is the selected Tier3 path. Launchd should run rule triage first with --triage-limit 50, then Gemini-refine high-precision candidates with --limit 10. Continue monitoring logs; if rule-skip deletes valuable items or Gemini skip rate exceeds 50 percent, boot out the job and tighten the rules."
 }
