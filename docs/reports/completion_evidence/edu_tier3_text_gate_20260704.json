@@ -17,6 +17,7 @@
     "scripts/run_edu_tier3_parallel.py",
     "scripts/run_edu_tier3.py",
     "tests/test_edu_tier3_candidate_gate.py",
+    "harness-os/launchd/com.harness.edu-tier3-free.plist",
     "docs/reports/completion_evidence/edu_tier3_text_gate_20260704.json"
   ],
   "problem": "Free-tier samples after key registration showed 0 refined and 25 skipped candidates because the backlog runner selected general education/news/blog items without an explicit AI or digital education signal.",
@@ -111,7 +112,13 @@
       "target": "macmini runtime",
       "command": "ssh macmini \"cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/run_edu_tier3_parallel.py --free-tier --limit 10\"",
       "result": "pass: free-tier key path loaded and runner returned 정제 대상 없음 after the noisy backlog was exhausted"
+    },
+    {
+      "name": "free-tier launchd safety limit",
+      "target": "local launchd config",
+      "command": "inspect harness-os/launchd/com.harness.edu-tier3-free.plist",
+      "result": "pass: launchd batch size reduced from 40 to 10 and cost check interval reduced from 20 to 10 before re-enabling Gemini free-tier automation"
     }
   ],
-  "remaining_verification": "Launchd remains unloaded. Re-enable only after a new eligible high-precision source batch appears, or after adding a controlled replay verification path that confirms the pruned allowlist stays below 50 percent skip rate."
+  "remaining_verification": "Gemini free-tier is the selected Tier3 path. Launchd may run with the pruned high-precision allowlist and limit 10. Continue monitoring logs; if a future run exceeds 50 percent skip rate, boot out the job and prune the responsible source."
 }

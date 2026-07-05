@@ -1,7 +1,7 @@
 # Handoff: Tier3 정제 적체 + 무료 티어 전환
 **날짜**: 2026-07-04  
 **작성**: Claude Sonnet 4.6  
-**상태**: ⚠️ 무료 키/저장/필터/배포 완료, 자동 launchd는 품질 재검증 전까지 intentionally unloaded
+**상태**: ✅ Gemini free-tier 기반 정제로 전환. pruned allowlist + 시간당 10건 제한으로 launchd 운영
 
 ---
 
@@ -98,6 +98,8 @@ Mac Mini 배포: ✅ 완료 (`deploy_to_macmini.sh` 검증 통과)
   - `The74Million`: 2 refined / 4 skipped
   - `Chalkbeat`: 0 refined / 2 skipped
 - 위 3개 source를 allowlist에서 제거함. 배포 후 pruned allowlist로 `--free-tier --limit 10` 실행 결과 `정제 대상 없음`.
+- 운영 방향 결정: Local LLM 정제는 실용 속도 미달이므로 Tier3 본정제는 Gemini free-tier가 owner. Local LLM은 필요 시 Tier2 필터/분류 보조로만 사용.
+- `com.harness.edu-tier3-free.plist`의 batch size를 `--limit 40`에서 `--limit 10`으로 낮추고 `--cost-every 10`으로 조정. 새 eligible batch가 들어와도 한 번에 크게 번지지 않도록 보수적으로 운영.
 - 최신 커밋:
   - `2eb53a6` `fix: restrict edu tier3 candidates to curated sources`
   - `3b84f03` `fix: prune noisy edu tier3 sources`
@@ -129,17 +131,17 @@ ssh macmini "cd /Users/juntaepark/projects/harness-platform && \
 
 현재는 pruned allowlist 적용 후 남은 후보가 없어 `정제 대상 없음`이 정상이다. 새 eligible batch가 들어오면 위 명령으로 다시 품질 검증한다.
 
-### Step 2 — launchd 재개 (샘플 통과 시)
+### Step 2 — launchd 운영/모니터링
 
 현재 `com.harness.tier3-filter.plist`는 유료 키 + `run_tier3_backlog_worker.py` 사용.  
-샘플 품질 통과 시, 별도 잡(`com.harness.edu-tier3-free.plist`)으로 무료 키 기반 백로그 소진 잡 추가.
+별도 잡(`com.harness.edu-tier3-free.plist`)이 Gemini free-tier 기반 백로그 소진을 담당한다.
 
-2026-07-05 현재 판정: 자동 launchd 전환 보류. `com.harness.edu-tier3-free.plist`는 Mac Mini에 설치되어 있지만 로드하지 않는다. pruned allowlist 기준 새 eligible batch에서 `--free-tier --limit 10` 스킵률 50% 미만이 다시 확인되면 로드할 것.
+2026-07-05 현재 판정: Gemini free-tier 기반으로 운영. `com.harness.edu-tier3-free.plist`는 시간당 10건 제한으로 로드한다. 향후 실행에서 스킵률이 50%를 넘으면 즉시 `bootout` 후 원인 source를 prune한다.
 
 **무료 티어 처리 용량 예상**:
 - Gemini 2.5 Flash 무료: 10 RPM, 1M TPD
-- workers=2, 건당 ~45초 → 약 2~3 RPM → 하루 ~700~900건
-- 6,425건 ÷ 800 ≈ **8~9일이면 백로그 소진**
+- 현재 launchd: 시간당 최대 10건, workers=2
+- 처리량보다 품질/비용 안정성을 우선한다. source 품질이 더 검증되면 `--limit`를 20, 40 순으로 올린다.
 
 ### Step 3 — 재발 방지 (선택)
 
@@ -155,7 +157,7 @@ ssh macmini "cd /Users/juntaepark/projects/harness-platform && \
 | `scripts/run_edu_tier3_parallel.py` | `--free-tier` 플래그 추가됨 |
 | `adapters/content/refiner.py` | `DAILY_COST_LIMIT`, `get_today_cost` 로직 |
 | `harness-os/launchd/com.harness.tier3-filter.plist` | 현재 실행 중인 배치 잡 |
-| `harness-os/launchd/com.harness.edu-tier3-free.plist` | 설치 완료, 현재 intentionally unloaded |
+| `harness-os/launchd/com.harness.edu-tier3-free.plist` | Gemini free-tier 자동 정제 잡, 시간당 10건 제한 |
 | `.env` (Mac Mini) | `GEMINI_API_KEY_FREE` 등록 완료 |
 | `docs/reports/completion_evidence/edu_tier3_free_tier_flag_20260704.json` | completion evidence |
 | `docs/reports/completion_evidence/tier3_free_tier_cost_gate_fix_20260704.json` | free-tier 비용 게이트 상수 보정 evidence |

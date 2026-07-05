@@ -12,9 +12,9 @@
     <string>__ROOT__/scripts/run_edu_tier3_parallel.py</string>
     <string>--free-tier</string>
     <string>--limit</string>
-    <string>40</string>
+    <string>10</string>
     <string>--cost-every</string>
-    <string>20</string>
+    <string>10</string>
   </array>
 
   <key>WorkingDirectory</key>
