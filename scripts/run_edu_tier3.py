@@ -39,6 +39,7 @@ from adapters.content.refiner import (  # noqa: E402
 )
 from scripts.run_edu_tier3_parallel import (  # noqa: E402
     EDU_TIER3_AUDIENCE_PATTERNS,
+    EDU_TIER3_SOURCE_ALLOWLIST,
     EDU_TIER3_TEXT_DENY_PATTERNS,
     EDU_TIER3_TEXT_GATE_PATTERNS,
 )
@@ -50,12 +51,14 @@ def run(limit: int, min_score: float, text_gate: bool = True) -> int:
     logger.info(f"=== edu_consulting Tier 3 정제 시작 (run_id={cid}) ===")
 
     gate_sql = """
+          AND fs.source = ANY(%s)
           AND (fs.title || ' ' || COALESCE(fs.summary, '')) ILIKE ANY(%s)
           AND (fs.title || ' ' || COALESCE(fs.summary, '')) ILIKE ANY(%s)
           AND NOT ((fs.title || ' ' || COALESCE(fs.summary, '')) ILIKE ANY(%s))
     """ if text_gate else ""
     params: tuple = (
         min_score,
+        EDU_TIER3_SOURCE_ALLOWLIST,
         EDU_TIER3_TEXT_GATE_PATTERNS,
         EDU_TIER3_AUDIENCE_PATTERNS,
         EDU_TIER3_TEXT_DENY_PATTERNS,

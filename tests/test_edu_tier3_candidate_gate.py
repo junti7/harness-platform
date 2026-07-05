@@ -20,6 +20,7 @@ def test_parallel_candidate_fetch_uses_text_gate_by_default(monkeypatch):
         0.1,
         1,
         0,
+        tier3.EDU_TIER3_SOURCE_ALLOWLIST,
         tier3.EDU_TIER3_TEXT_GATE_PATTERNS,
         tier3.EDU_TIER3_AUDIENCE_PATTERNS,
         tier3.EDU_TIER3_TEXT_DENY_PATTERNS,

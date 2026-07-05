@@ -20,7 +20,7 @@
     "docs/reports/completion_evidence/edu_tier3_text_gate_20260704.json"
   ],
   "problem": "Free-tier samples after key registration showed 0 refined and 25 skipped candidates because the backlog runner selected general education/news/blog items without an explicit AI or digital education signal.",
-  "fix": "Both edu tier3 runners now default to an AI/digital education text gate plus a K-12/parent/student audience gate over title plus summary, and a small deny gate for institution PR/noisy education items. --no-text-gate remains available for emergency full-backlog processing.",
+  "fix": "Both edu tier3 runners now default to a curated source allowlist, an AI/digital education text gate, a K-12/parent/student audience gate over title plus summary, and a small deny gate for institution PR/noisy education items. --no-text-gate remains available for emergency full-backlog processing.",
   "verification": [
     {
       "name": "local syntax check",
@@ -69,7 +69,19 @@
       "target": "macmini runtime",
       "command": "ssh macmini \"cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/run_edu_tier3_parallel.py --free-tier --limit 10\"",
       "result": "residual risk: completed 정제 3 / 스킵 7 / 실패 0. The gate is safe but still too noisy for unattended launchd."
+    },
+    {
+      "name": "macmini curated source allowlist preview",
+      "target": "macmini database",
+      "command": "query pending edu_consulting candidates with source allowlist plus text/audience/deny gates",
+      "result": "preview showed 42 pending candidates, led by EdWeek, Brunch AI education for parents, GoogleNews digital dependence, and parent/child smartphone items"
+    },
+    {
+      "name": "candidate gate unit tests after source allowlist",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_tier3_candidate_gate.py -q",
+      "result": "pass: 2 passed"
     }
   ],
-  "remaining_verification": "Do not re-enable launchd yet. The next change should use a stricter source allowlist or stronger positive audience policy, then rerun --free-tier --limit 10 until skip rate is below 50 percent."
+  "remaining_verification": "After commit, push, and official Mac Mini deploy, run --free-tier --limit 10 with the curated source allowlist and confirm skip rate below 50 percent before re-enabling launchd."
 }

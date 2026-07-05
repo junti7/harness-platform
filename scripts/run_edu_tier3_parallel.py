@@ -47,6 +47,22 @@ _stop = threading.Event()
 _lock = threading.Lock()
 _counters = {"refined": 0, "skipped": 0, "failed": 0}
 
+EDU_TIER3_SOURCE_ALLOWLIST = [
+    "EdWeek",
+    "Google_Education_Blog",
+    "Brunch_AI교육_학부모",
+    "Brunch_자녀교육_AI",
+    "Brunch_AI리터러시",
+    "youtube_topic_search",
+    "youtube_Edutopia",
+    "youtube_Common_Sense_Media",
+    "The74Million",
+    "Chalkbeat",
+    "EdSurge",
+    "Wired_Education",
+    "GoogleNews_디지털의존",
+]
+
 EDU_TIER3_TEXT_GATE_PATTERNS = [
     "%AI%",
     "%인공지능%",
@@ -125,6 +141,7 @@ def _parse_shard(s: str) -> tuple[int, int]:
 
 def _fetch_candidates(min_score: float, shard_i: int, shard_n: int, limit: int | None, text_gate: bool = True) -> list[dict]:
     gate_sql = """
+          AND fs.source = ANY(%s)
           AND (fs.title || ' ' || COALESCE(fs.summary, '')) ILIKE ANY(%s)
           AND (fs.title || ' ' || COALESCE(fs.summary, '')) ILIKE ANY(%s)
           AND NOT ((fs.title || ' ' || COALESCE(fs.summary, '')) ILIKE ANY(%s))
@@ -133,6 +150,7 @@ def _fetch_candidates(min_score: float, shard_i: int, shard_n: int, limit: int |
         min_score,
         shard_n,
         shard_i,
+        EDU_TIER3_SOURCE_ALLOWLIST,
         EDU_TIER3_TEXT_GATE_PATTERNS,
         EDU_TIER3_AUDIENCE_PATTERNS,
         EDU_TIER3_TEXT_DENY_PATTERNS,
