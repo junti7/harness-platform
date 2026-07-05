@@ -106,6 +106,11 @@ Mac Mini 배포: ✅ 완료 (`deploy_to_macmini.sh` 검증 통과)
   - 명백한 noise는 LLM 호출 없이 `edu-triage:rule-skip`으로 `refined_outputs`에 저장해 backlog에서 제거.
   - Gemini free-tier는 pruned allowlist + topic/audience gate를 통과한 high-precision 후보만 정제.
   - `com.harness.edu-tier3-free.plist`는 매시간 `--triage-limit 50 --limit 10`으로 운영.
+- 실측:
+  - 수동 triage sample: `edu-triage:rule-skip` 5건 저장, high-precision Gemini 정제 대상 없음.
+  - launchd RunAtLoad: `edu-triage:rule-skip` 50건 저장, high-precision Gemini 정제 대상 없음, exit 0.
+  - 최근 저장 합계: `edu-triage:rule-skip 55`, `gemini-2.5-flash 2`, `gemini-2.5-flash:irrelevant 8`.
+  - pending은 `6,283 → 6,273 → 6,218`.
 - 최신 커밋:
   - `2eb53a6` `fix: restrict edu tier3 candidates to curated sources`
   - `3b84f03` `fix: prune noisy edu tier3 sources`

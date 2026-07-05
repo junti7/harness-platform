@@ -136,6 +136,18 @@
       "target": "local pytest and plist validation",
       "command": ".venv/bin/python -m pytest tests/test_edu_tier3_candidate_gate.py -q && plutil -lint harness-os/launchd/com.harness.edu-tier3-free.plist",
       "result": "pass: 4 pytest cases passed; LaunchAgent plist is valid. The job now rule-skips up to 50 obvious noise candidates before Gemini-refining up to 10 high-precision candidates."
+    },
+    {
+      "name": "macmini rule triage sample",
+      "target": "macmini runtime and database",
+      "command": "ssh macmini \"cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/run_edu_tier3_parallel.py --free-tier --triage-limit 5 --limit 10\"",
+      "result": "pass: saved 5 edu-triage:rule-skip rows and returned 정제 대상 없음 for the high-precision Gemini gate"
+    },
+    {
+      "name": "macmini rule triage launchd enablement",
+      "target": "macmini launchd runtime and database",
+      "command": "install updated com.harness.edu-tier3-free.plist, launchctl bootstrap, then inspect logs and pending counts",
+      "result": "pass: LaunchAgent loaded with --free-tier --limit 10 --triage-limit 50 --cost-every 10. RunAtLoad saved 50 edu-triage:rule-skip rows, found no high-precision Gemini candidates, exited 0, and pending decreased to 6218."
     }
   ],
   "remaining_verification": "Gemini free-tier is the selected Tier3 path. Launchd should run rule triage first with --triage-limit 50, then Gemini-refine high-precision candidates with --limit 10. Continue monitoring logs; if rule-skip deletes valuable items or Gemini skip rate exceeds 50 percent, boot out the job and tighten the rules."
