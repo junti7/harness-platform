@@ -100,6 +100,7 @@ Mac Mini 배포: ✅ 완료 (`deploy_to_macmini.sh` 검증 통과)
 - 위 3개 source를 allowlist에서 제거함. 배포 후 pruned allowlist로 `--free-tier --limit 10` 실행 결과 `정제 대상 없음`.
 - 운영 방향 결정: Local LLM 정제는 실용 속도 미달이므로 Tier3 본정제는 Gemini free-tier가 owner. Local LLM은 필요 시 Tier2 필터/분류 보조로만 사용.
 - `com.harness.edu-tier3-free.plist`의 batch size를 `--limit 40`에서 `--limit 10`으로 낮추고 `--cost-every 10`으로 조정. 새 eligible batch가 들어와도 한 번에 크게 번지지 않도록 보수적으로 운영.
+- Mac Mini LaunchAgent 재설치/로드 완료. `launchctl print`에서 `--free-tier --limit 10 --cost-every 10` 확인. RunAtLoad는 `GEMINI_API_KEY_FREE`를 적용했고 `정제 대상 없음`으로 exit 0.
 - 최신 커밋:
   - `2eb53a6` `fix: restrict edu tier3 candidates to curated sources`
   - `3b84f03` `fix: prune noisy edu tier3 sources`
