@@ -43,6 +43,8 @@ docs/reports/ibkr_monitor_cache.json
 docs/reports/ibkr_tws_positions.json
 docs/reports/paper_trading_positions.json
 docs/reports/paper_trading_log.jsonl
+docs/reports/paper_trading_health_report.json
+docs/reports/paper_trading_health_report.jsonl
 docs/reports/conference_room_stream.jsonl
 docs/trading/trading_diary.jsonl
 docs/reviews/openclaw_route_audit/openclaw_route_audit_daily.md

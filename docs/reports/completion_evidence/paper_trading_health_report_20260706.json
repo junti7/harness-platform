@@ -1,0 +1,72 @@
+{
+  "task": "Add daily paper trading health report and repair IBKR 000660 protective stop",
+  "status": "complete",
+  "date": "2026-07-06",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-06T09:31:16+09:00",
+      "summary": "Trading runtime changes require real verification, no unapproved capital action, and exact commit/deploy reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-06T09:31:16+09:00",
+      "summary": "Completion requires runtime entrypoint verification, state-change evidence, and clean dirty-state handling."
+    }
+  ],
+  "scope": [
+    "scripts/run_paper_trading_health_report.py",
+    "harness-os/launchd/com.harness.paper-trading-health-report.plist",
+    ".gitignore",
+    "docs/operations/PAPER_TRADING_HEALTH_REPORT_2026-07-06.md"
+  ],
+  "changes": [
+    "Added daily paper trading health report script.",
+    "Added Mac Mini LaunchAgent template for weekday health report execution.",
+    "Added ignored runtime report outputs.",
+    "Added KRX tick-size normalization for IBKR protective stop repair.",
+    "Restored IBKR paper protective stop coverage for 000660."
+  ],
+  "verification": [
+    {
+      "name": "LaunchAgent plist lint",
+      "target": "local launchd plist",
+      "command": "plutil -lint harness-os/launchd/com.harness.paper-trading-health-report.plist",
+      "result": "passed"
+    },
+    {
+      "name": "health report syntax",
+      "target": "local Python compile",
+      "command": ".venv/bin/python -m py_compile scripts/run_paper_trading_health_report.py",
+      "result": "passed"
+    },
+    {
+      "name": "trading regression tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_ibkr_trader_b2.py tests/test_turtle_auto_trader_p0.py tests/test_turtle_auto_trader_p1.py",
+      "result": "passed: 40 tests passed with 1 dependency deprecation warning"
+    },
+    {
+      "name": "Mac Mini read-only health report before repair",
+      "target": "macmini IBKR and Alpaca paper APIs",
+      "command": "HARNESS_ROOT=/Users/juntaepark/projects/harness-platform .venv/bin/python /tmp/run_paper_trading_health_report.py --json",
+      "result": "passed as diagnostic: Alpaca stop coverage OK, IBKR 000660 reported missing protective stop and report returned ok=false"
+    },
+    {
+      "name": "Mac Mini IBKR stop repair",
+      "target": "macmini IBKR paper API",
+      "command": "HARNESS_ROOT=/Users/juntaepark/projects/harness-platform .venv/bin/python /tmp/run_paper_trading_health_report.py --repair-ibkr-stops --json",
+      "result": "passed: created SELL STP 93 000660 at KRX-valid stop price 2030000.0 and report returned ok=true"
+    },
+    {
+      "name": "Mac Mini read-only health report after repair",
+      "target": "macmini IBKR and Alpaca paper APIs",
+      "command": "HARNESS_ROOT=/Users/juntaepark/projects/harness-platform .venv/bin/python /tmp/run_paper_trading_health_report.py --json",
+      "result": "passed: Alpaca and IBKR stop coverage OK, IBKR state match OK, entry locks confirmed, report returned ok=true"
+    }
+  ],
+  "residual_risk": [
+    "The installed LaunchAgent still needs to be deployed from origin/main and loaded after this commit.",
+    "Scheduled health report is read-only; repair mode remains manual."
+  ]
+}
