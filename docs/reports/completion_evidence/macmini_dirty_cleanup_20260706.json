@@ -1,0 +1,68 @@
+{
+  "task": "Clean the full Mac Mini dirty worktree",
+  "status": "complete",
+  "date": "2026-07-06",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-06T09:31:16+09:00",
+      "summary": "Production work must follow origin/main, avoid unsafe direct edits, and report exact verification and deploy state."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-06T09:31:16+09:00",
+      "summary": "Completion requires real runtime verification, git state evidence, and explicit handling of production dirty state."
+    }
+  ],
+  "scope": [
+    "Mac Mini /Users/juntaepark/projects/harness-platform dirty worktree",
+    "docs/operations/MACMINI_DIRTY_CLEANUP_2026-07-06.md"
+  ],
+  "changes": [
+    "Backed up the full Mac Mini dirty state to scratch/dirty_cleanup_20260706_094021.",
+    "Created a git stash containing tracked and untracked dirty work.",
+    "Reset Mac Mini worktree to origin/main and cleaned untracked files.",
+    "Verified backend, frontend, IBKR paper runtime, and turtle/IBKR LaunchAgent entry locks after cleanup."
+  ],
+  "verification": [
+    {
+      "name": "Mac Mini dirty backup",
+      "target": "macmini scratch backup and git stash",
+      "command": "git status/diff capture, untracked tarball, git stash push --include-untracked",
+      "result": "passed: backup created at scratch/dirty_cleanup_20260706_094021 and stash@{0} saved as macmini full dirty cleanup backup 20260706_094021"
+    },
+    {
+      "name": "Mac Mini worktree reset",
+      "target": "macmini git worktree",
+      "command": "git fetch origin -q && git reset --hard origin/main && git clean -fd",
+      "result": "passed: HEAD=ce8511d, origin/main=ce8511d, git status --short count=0"
+    },
+    {
+      "name": "Mac Mini backend smoke",
+      "target": "macmini backend HTTP entrypoint",
+      "command": "curl -s -o /tmp/harness_backend_smoke.out -w 'backend_http=%{http_code} time=%{time_total}' --max-time 5 http://127.0.0.1:8000/",
+      "result": "passed: backend_http=200 time=0.004656"
+    },
+    {
+      "name": "Mac Mini frontend smoke",
+      "target": "macmini frontend HTTP entrypoint",
+      "command": "curl -s -o /tmp/harness_frontend_smoke.out -w 'frontend_http=%{http_code} time=%{time_total}' --max-time 5 http://127.0.0.1:5173/",
+      "result": "passed: frontend_http=200 time=0.087286"
+    },
+    {
+      "name": "Mac Mini IBKR paper runtime",
+      "target": "macmini IBKR Gateway paper API",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/ibkr_runtime_status.py'",
+      "result": "passed: Gateway connected, account DUQ416334 detected, broker-state match passed, SPY bars smoke test passed, verdict ALL CLEAR"
+    },
+    {
+      "name": "Mac Mini trading entry lock",
+      "target": "macmini launchd runtime environment",
+      "command": "launchctl print for com.harness.turtle-auto-trader and com.harness.ibkr-auto-trader",
+      "result": "passed: turtle and IBKR auto traders are not running; both have PAPER_TRADING_MAX_POSITIONS=0 and PAPER_PYRAMID_ENABLED=false; turtle also has PAPER_TRADING_AUTO_EXECUTE=false"
+    }
+  ],
+  "residual_risk": [
+    "Cleaned dirty work is recoverable from scratch/dirty_cleanup_20260706_094021 and stash@{0}; do not blindly pop the stash."
+  ]
+}
