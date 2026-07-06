@@ -63,10 +63,33 @@
       "target": "macmini IBKR and Alpaca paper APIs",
       "command": "HARNESS_ROOT=/Users/juntaepark/projects/harness-platform .venv/bin/python /tmp/run_paper_trading_health_report.py --json",
       "result": "passed: Alpaca and IBKR stop coverage OK, IBKR state match OK, entry locks confirmed, report returned ok=true"
+    },
+    {
+      "name": "Mac Mini deploy",
+      "target": "macmini selected deploy",
+      "command": "scripts/deploy_to_macmini.sh .gitignore scripts/run_paper_trading_health_report.py harness-os/launchd/com.harness.paper-trading-health-report.plist docs/operations/PAPER_TRADING_HEALTH_REPORT_2026-07-06.md docs/reports/completion_evidence/paper_trading_health_report_20260706.json",
+      "result": "passed: selected paths matched origin/main and backend reloaded successfully"
+    },
+    {
+      "name": "Mac Mini installed LaunchAgent",
+      "target": "macmini launchd",
+      "command": "sed template into ~/Library/LaunchAgents/com.harness.paper-trading-health-report.plist, plutil -lint, launchctl bootstrap, launchctl print",
+      "result": "passed: LaunchAgent loaded, not running, runs=0, schedule uses scripts/run_paper_trading_health_report.py with PAPER_TRADING_MAX_POSITIONS=0 and PAPER_PYRAMID_ENABLED=false"
+    },
+    {
+      "name": "Mac Mini deployed health report",
+      "target": "macmini deployed repo script",
+      "command": ".venv/bin/python scripts/run_paper_trading_health_report.py --json",
+      "result": "passed: report returned ok=true with Alpaca stop coverage OK and IBKR 000660 SELL STP 93 at 2030000.0 observed"
+    },
+    {
+      "name": "Mac Mini repo cleanliness",
+      "target": "macmini git worktree",
+      "command": "git reset --hard origin/main; git status --short",
+      "result": "passed: HEAD matched origin/main and status_count=0"
     }
   ],
   "residual_risk": [
-    "The installed LaunchAgent still needs to be deployed from origin/main and loaded after this commit.",
     "Scheduled health report is read-only; repair mode remains manual."
   ]
 }
