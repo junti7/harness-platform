@@ -1,6 +1,6 @@
 {
   "task": "Resume edu Tier3 backlog drain",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -32,10 +32,28 @@
       "target": "local launchd plist",
       "command": "plutil -lint harness-os/launchd/com.harness.edu-tier3-free.plist",
       "result": "pass"
+    },
+    {
+      "name": "macmini selective deploy",
+      "target": "macmini runtime checkout",
+      "command": "scripts/deploy_to_macmini.sh scripts/run_edu_tier3_parallel.py docs/reports/completion_evidence/edu_tier3_backlog_drain_resume_20260706.json tests/test_edu_tier3_candidate_gate.py",
+      "result": "pass: selected paths matched origin/main with diff 0 and backend relaunched on port 8000"
+    },
+    {
+      "name": "macmini bounded backlog drain",
+      "target": "macmini database and runner",
+      "command": "ssh macmini \"cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/run_edu_tier3_parallel.py --free-tier --triage-limit 200 --limit 10\"",
+      "result": "pass: pending edu_consulting count decreased from 6526 to 6326; recent refined_outputs contained 200 edu-triage:rule-skip rows and no Gemini keep candidates were available"
+    },
+    {
+      "name": "macmini launchd remains loaded",
+      "target": "macmini launchd runtime",
+      "command": "launchctl print gui/$(id -u)/com.harness.edu-tier3-free",
+      "result": "pass: LaunchAgent remains loaded with --free-tier --limit 10 --triage-limit 200 --cost-every 10, StartInterval 3600, last exit code 0"
     }
   ],
   "deployment": {
-    "result": "pending"
+    "result": "commit 4a25db9 pushed to origin/main and selected paths deployed to Mac Mini; runner source diff against origin/main was 0 after deploy"
   },
-  "remaining_verification": "Deploy to Mac Mini, run a bounded free-tier triage batch, confirm pending count decreases, and confirm launchd remains loaded."
+  "remaining_verification": "None for the requested incident. The hourly launchd job should continue draining up to 200 low-quality pending rows per run while keeping Gemini refinement capped at 10 high-precision candidates."
 }
