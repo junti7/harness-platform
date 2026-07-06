@@ -4298,6 +4298,39 @@ def get_paper_trading_dashboard(_: None = Depends(_require_secret)) -> dict[str,
         return {"ok": False, "error": str(e), "account": {"ok": False, "error": str(e)}}
 
 
+@app.get("/api/paper-trading/health")
+def get_paper_trading_health(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    path = PROJECT_ROOT / "docs" / "reports" / "paper_trading_health_report.json"
+    if not path.exists():
+        return {
+            "ok": False,
+            "exists": False,
+            "error": "paper_trading_health_report.json not found",
+            "path": str(path.relative_to(PROJECT_ROOT)),
+        }
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        return {
+            "ok": False,
+            "exists": True,
+            "error": str(e),
+            "path": str(path.relative_to(PROJECT_ROOT)),
+        }
+    if not isinstance(payload, dict):
+        return {
+            "ok": False,
+            "exists": True,
+            "error": "paper trading health report is not an object",
+            "path": str(path.relative_to(PROJECT_ROOT)),
+        }
+    return {
+        "exists": True,
+        "path": str(path.relative_to(PROJECT_ROOT)),
+        **payload,
+    }
+
+
 def _trading_scheduler_status() -> dict[str, Any]:
     """두 자동매매 launchd 잡 로드 여부를 실측해 자동 execute 활성 상태를 반환."""
     labels = {

@@ -6323,6 +6323,116 @@ td.pnl-neg,
   font-size: 0.8rem;
 }
 
+/* ── Paper trading health ── */
+.paper-health-card {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-left: 4px solid var(--border-strong, #cbd5e1);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.paper-health-card.health-ok {
+  border-left-color: var(--success, #059669);
+}
+.paper-health-card.health-warn {
+  border-left-color: var(--warning, #d97706);
+  background: rgba(217, 119, 6, 0.035);
+}
+.paper-health-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.paper-health-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--ink-strong, #0f172a);
+}
+.paper-health-head p {
+  margin: 0.16rem 0 0;
+  color: var(--text-muted, #475569);
+  font-size: 0.78rem;
+}
+.paper-health-badge {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 0.14rem 0.58rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.paper-health-badge.ok {
+  background: rgba(5, 150, 105, 0.1);
+  color: var(--success, #059669);
+}
+.paper-health-badge.warn {
+  background: rgba(217, 119, 6, 0.12);
+  color: var(--warning, #d97706);
+}
+.paper-health-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+.paper-health-metric {
+  min-width: 0;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 6px;
+  padding: 0.55rem 0.65rem;
+  background: var(--bg-elevated, #f8fafc);
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+.paper-health-label {
+  color: var(--text-faint, #64748b);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.paper-health-metric strong {
+  color: var(--ink-strong, #0f172a);
+  font-size: 0.9rem;
+}
+.paper-health-metric small {
+  color: var(--text-muted, #475569);
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+.paper-health-error {
+  margin: 0;
+  color: var(--danger, #dc2626);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.paper-health-alerts,
+.paper-health-stops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.paper-health-alerts span,
+.paper-health-stops span {
+  border-radius: 999px;
+  padding: 0.16rem 0.5rem;
+  font-size: 0.68rem;
+  font-family: var(--font-mono, monospace);
+  overflow-wrap: anywhere;
+}
+.paper-health-alerts span {
+  background: rgba(220, 38, 38, 0.08);
+  color: var(--danger, #dc2626);
+}
+.paper-health-stops span {
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--info, #2563eb);
+}
+
 /* ── 배너들 ── */
 .ibkr-offline-banner {
   display: flex;
@@ -6634,6 +6744,12 @@ td.pnl-neg,
     gap: 0.25rem;
   }
   .ibkr-status-meta { display: none; }
+  .paper-health-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .paper-health-head {
+    align-items: flex-start;
+  }
 }
 
 /* ── IBKR 계좌 ID 표기 ───────────────────────────────────────────────────── */

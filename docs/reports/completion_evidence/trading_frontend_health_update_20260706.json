@@ -1,0 +1,57 @@
+{
+  "task": "Expose paper trading health report in Harness OS frontend",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-06T00:00:00+09:00",
+      "summary": "Completion requires evidence mapped to real entrypoints before reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-06T00:00:00+09:00",
+      "summary": "Code, deploy, and UI changes require real runtime verification and source-of-truth deploy flow."
+    }
+  ],
+  "changes": [
+    {
+      "path": "harness-os/backend/main.py",
+      "summary": "Added read-only /api/paper-trading/health endpoint backed by docs/reports/paper_trading_health_report.json."
+    },
+    {
+      "path": "harness-os/frontend/src/components/IbkrTurtleMonitor.tsx",
+      "summary": "Added Paper Trading Health card showing Alpaca/IBKR stop coverage, entry lock state, latest check time, problems, and IBKR stop orders."
+    },
+    {
+      "path": "harness-os/frontend/src/App.css",
+      "summary": "Added compact operational styling for the health card with normal and warning states."
+    }
+  ],
+  "safety": {
+    "read_only": true,
+    "orders_created": false,
+    "capital_action": false,
+    "new_entries_enabled": false
+  },
+  "verification": [
+    {
+      "name": "frontend production bundle build",
+      "target": "dist",
+      "command": "npm --prefix harness-os/frontend run build",
+      "result": "TypeScript and Vite build completed; new bundle assets were generated."
+    },
+    {
+      "name": "backend syntax check",
+      "target": "api",
+      "command": ".venv/bin/python -m py_compile harness-os/backend/main.py scripts/run_paper_trading_health_report.py",
+      "result": "Python compile completed for backend and health report script."
+    },
+    {
+      "name": "paper trading health API local entrypoint",
+      "target": "api",
+      "command": "FastAPI TestClient GET /api/paper-trading/health with x-harness-secret",
+      "result": "HTTP 200 returned expected JSON shape on local MBP; local runtime report was absent so exists=false was returned."
+    }
+  ],
+  "deployment_verification": []
+}
