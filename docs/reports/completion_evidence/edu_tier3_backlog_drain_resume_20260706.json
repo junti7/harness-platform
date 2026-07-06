@@ -1,0 +1,41 @@
+{
+  "task": "Resume edu Tier3 backlog drain",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-06T09:20:00+09:00",
+      "summary": "Completion requires mapped evidence and real environment verification before reporting complete."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-06T09:20:00+09:00",
+      "summary": "Production changes must use origin/main, deploy_to_macmini.sh, Mac Mini runtime verification, and completion evidence guard."
+    }
+  ],
+  "changed_files": [
+    "scripts/run_edu_tier3_parallel.py",
+    "tests/test_edu_tier3_candidate_gate.py",
+    "docs/reports/completion_evidence/edu_tier3_backlog_drain_resume_20260706.json"
+  ],
+  "problem": "Mac Mini com.harness.edu-tier3-free was loaded and running hourly, but pending edu_consulting count stayed at 6526 because the high-precision Gemini gate had 0 candidates and the existing rule-skip patterns had no remaining matches.",
+  "fix": "Rule triage now records candidates outside the curated Tier3 source allowlist as irrelevant skip markers while still excluding candidates that pass the high-precision keep gate. This drains low-quality backlog without deleting raw or filtered signals, and Gemini free-tier remains reserved for curated keep candidates.",
+  "verification": [
+    {
+      "name": "local syntax and candidate gate tests",
+      "target": "local python runtime",
+      "command": ".venv/bin/python -m py_compile scripts/run_edu_tier3_parallel.py && .venv/bin/python -m pytest tests/test_edu_tier3_candidate_gate.py -q",
+      "result": "pass: 4 tests passed"
+    },
+    {
+      "name": "launchd plist validation",
+      "target": "local launchd plist",
+      "command": "plutil -lint harness-os/launchd/com.harness.edu-tier3-free.plist",
+      "result": "pass"
+    }
+  ],
+  "deployment": {
+    "result": "pending"
+  },
+  "remaining_verification": "Deploy to Mac Mini, run a bounded free-tier triage batch, confirm pending count decreases, and confirm launchd remains loaded."
+}

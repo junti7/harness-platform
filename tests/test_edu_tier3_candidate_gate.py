@@ -59,13 +59,18 @@ def test_rule_skip_fetch_excludes_high_precision_keep_gate(monkeypatch):
 
     assert "edu-triage" not in captured["query"]
     assert "AND NOT (" in captured["query"]
-    assert "fs.source = ANY(%s) OR" in captured["query"]
+    assert "fs.source = ANY(%s)" in captured["query"]
+    assert "outside-curated-source-allowlist" in captured["query"]
+    assert "OR NOT (fs.source = ANY(%s))" in captured["query"]
     assert captured["params"] == (
         tier3.EDU_TIER3_TRIAGE_SKIP_SOURCES,
+        tier3.EDU_TIER3_SOURCE_ALLOWLIST,
+        tier3.EDU_TIER3_TRIAGE_SKIP_PATTERNS,
         0.1,
         1,
         0,
         tier3.EDU_TIER3_TRIAGE_SKIP_SOURCES,
+        tier3.EDU_TIER3_SOURCE_ALLOWLIST,
         tier3.EDU_TIER3_TRIAGE_SKIP_PATTERNS,
         tier3.EDU_TIER3_SOURCE_ALLOWLIST,
         tier3.EDU_TIER3_TEXT_GATE_PATTERNS,

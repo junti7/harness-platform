@@ -166,6 +166,17 @@ def _rule_skipped_output(row: dict, reason: str) -> dict:
     }
 
 
+def _triage_reason_sql(text_expr: str) -> str:
+    return f"""
+               CASE
+                 WHEN fs.source = ANY(%s) THEN 'source-skip'
+                 WHEN NOT (fs.source = ANY(%s)) THEN 'outside-curated-source-allowlist'
+                 WHEN {text_expr} ILIKE ANY(%s) THEN 'text-skip'
+                 ELSE 'rule-skip'
+               END AS triage_reason
+    """
+
+
 def _parse_shard(s: str) -> tuple[int, int]:
     try:
         i, n = s.split("/")
@@ -229,10 +240,7 @@ def _fetch_rule_skip_candidates(min_score: float, shard_i: int, shard_n: int, li
         f"""
         SELECT fs.id, fs.title, fs.summary, fs.content_hash, fs.source, fs.score,
                fs.extracted_facts, 'edu_consulting' AS domain,
-               CASE
-                 WHEN fs.source = ANY(%s) THEN 'source-skip'
-                 ELSE 'text-skip'
-               END AS triage_reason
+               {_triage_reason_sql(text_expr)}
         FROM filtered_signals fs
         LEFT JOIN refined_outputs ro ON fs.id = ro.filtered_signal_id
         LEFT JOIN raw_signals rs ON rs.id = fs.raw_signal_id
@@ -240,7 +248,11 @@ def _fetch_rule_skip_candidates(min_score: float, shard_i: int, shard_n: int, li
           AND fs.domain = 'edu_consulting'
           AND fs.score >= %s
           AND (MOD(fs.id, %s) = %s)
-          AND (fs.source = ANY(%s) OR {text_expr} ILIKE ANY(%s))
+          AND (
+            fs.source = ANY(%s)
+            OR NOT (fs.source = ANY(%s))
+            OR {text_expr} ILIKE ANY(%s)
+          )
           AND NOT (
             fs.source = ANY(%s)
             AND {text_expr} ILIKE ANY(%s)
@@ -256,10 +268,13 @@ def _fetch_rule_skip_candidates(min_score: float, shard_i: int, shard_n: int, li
         """,
         (
             EDU_TIER3_TRIAGE_SKIP_SOURCES,
+            EDU_TIER3_SOURCE_ALLOWLIST,
+            EDU_TIER3_TRIAGE_SKIP_PATTERNS,
             min_score,
             shard_n,
             shard_i,
             EDU_TIER3_TRIAGE_SKIP_SOURCES,
+            EDU_TIER3_SOURCE_ALLOWLIST,
             EDU_TIER3_TRIAGE_SKIP_PATTERNS,
             EDU_TIER3_SOURCE_ALLOWLIST,
             EDU_TIER3_TEXT_GATE_PATTERNS,
