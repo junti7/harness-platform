@@ -34,6 +34,10 @@
     <string>true</string>
     <key>IBKR_TRADING_MODE</key>
     <string>paper</string>
+    <key>PAPER_TRADING_MAX_POSITIONS</key>
+    <string>0</string>
+    <key>PAPER_PYRAMID_ENABLED</key>
+    <string>false</string>
   </dict>
   <key>RunAtLoad</key>
   <false/>

@@ -29,7 +29,11 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>PAPER_TRADING_AUTO_EXECUTE</key>
-    <string>true</string>
+    <string>false</string>
+    <key>PAPER_TRADING_MAX_POSITIONS</key>
+    <string>0</string>
+    <key>PAPER_PYRAMID_ENABLED</key>
+    <string>false</string>
     <key>TRADING_USE_PROD_DB</key>
     <string>true</string>
     <key>PATH</key>

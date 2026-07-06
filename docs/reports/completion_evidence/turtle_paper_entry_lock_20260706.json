@@ -1,0 +1,78 @@
+{
+  "task": "Restrict Turtle paper trading entries and reconcile Alpaca paper state",
+  "status": "residual_risk",
+  "date": "2026-07-06",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-06T09:31:16+09:00",
+      "summary": "Trading capital actions require Turtle parameters and completion reports require real verification evidence before closeout."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-06T09:31:16+09:00",
+      "summary": "Completion requires real runtime verification evidence, state checks, and residual risk reporting for unverified items."
+    }
+  ],
+  "scope": [
+    "harness-os/launchd/com.harness.turtle-auto-trader.plist",
+    "harness-os/launchd/com.harness.ibkr-auto-trader.plist",
+    "docs/trading/TURTLE_PAPER_REASSESSMENT_2026-07-06.md",
+    "docs/reports/paper_trading_positions.json"
+  ],
+  "changes": [
+    "Added LaunchAgent environment guards to block new paper entries with PAPER_TRADING_MAX_POSITIONS=0.",
+    "Disabled paper pyramiding through PAPER_PYRAMID_ENABLED=false.",
+    "Reconciled Alpaca paper state to ASX, TSM, and VRT using existing live broker stop orders without submitting new orders.",
+    "Recorded the long-only versus short decision and 2-week paper remeasurement plan."
+  ],
+  "verification": [
+    {
+      "name": "Alpaca paper broker status",
+      "target": "Alpaca paper trading API",
+      "command": ".venv/bin/python scripts/openclaw_codex_bridge.py alpaca-status --format text",
+      "result": "passed: broker returned ACTIVE account, 3 long positions, and warning KPI state with portfolio underperforming SPY"
+    },
+    {
+      "name": "Alpaca open stop order coverage",
+      "target": "Alpaca paper trading API open orders",
+      "command": "read-only Python requests GET /positions and GET /orders?status=open",
+      "result": "passed: ASX, TSM, and VRT each had exactly one open sell stop order; no new orders were submitted"
+    },
+    {
+      "name": "LaunchAgent runtime guard reload",
+      "target": "launchd",
+      "command": "launchctl bootout/bootstrap then launchctl print for com.harness.turtle-auto-trader and com.harness.ibkr-auto-trader",
+      "result": "passed: both agents not running and reloaded with PAPER_TRADING_MAX_POSITIONS=0 plus PAPER_PYRAMID_ENABLED=false"
+    },
+    {
+      "name": "Alpaca dry-run entry lock check",
+      "target": "local trader runtime",
+      "command": "PAPER_TRADING_MAX_POSITIONS=0 PAPER_PYRAMID_ENABLED=false .venv/bin/python scripts/turtle_auto_trader.py",
+      "result": "passed: recognized ASX, TSM, VRT; reported 0 entries, 0 exits, 0 pyramid adds, and 12 skipped signals"
+    },
+    {
+      "name": "IBKR paper runtime check",
+      "target": "IBKR paper API port 4002",
+      "command": ".venv/bin/python scripts/ibkr_runtime_status.py",
+      "result": "residual risk: connection refused on 127.0.0.1:4002, so IBKR broker-side positions and orders were not verified"
+    },
+    {
+      "name": "LaunchAgent plist lint",
+      "target": "launchd plist files",
+      "command": "plutil -lint harness-os/launchd/com.harness.turtle-auto-trader.plist harness-os/launchd/com.harness.ibkr-auto-trader.plist ~/Library/LaunchAgents/com.harness.turtle-auto-trader.plist ~/Library/LaunchAgents/com.harness.ibkr-auto-trader.plist",
+      "result": "passed: all four plist files were valid"
+    },
+    {
+      "name": "Turtle and IBKR regression tests",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_turtle_strategy_core.py tests/test_turtle_auto_trader_p0.py tests/test_turtle_auto_trader_p1.py tests/test_turtle_auto_trader_pyramid.py tests/test_ibkr_trader_b2.py",
+      "result": "passed: 59 tests passed with 1 existing dependency deprecation warning"
+    }
+  ],
+  "residual_risk": [
+    "IBKR Gateway/TWS was not reachable on paper port 4002, so IBKR broker-side positions and open orders remain unverified.",
+    "The installed LaunchAgents still include --execute so existing position exits can run; new entries are blocked through MAX_POSITIONS=0 and pyramiding is separately disabled.",
+    "docs/reports/paper_trading_positions.json is runtime state and was reconciled locally but is not tracked in git."
+  ]
+}
