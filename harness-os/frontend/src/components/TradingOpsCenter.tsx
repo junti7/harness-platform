@@ -114,6 +114,48 @@ type IbkrMonitorData = {
 }
 
 type RunResult = { ok: boolean; stdout: string; stderr: string }
+
+type PaperHealthOpenOrder = {
+  order_id?: number | string
+  symbol?: string
+  side?: string
+  action?: string
+  type?: string
+  order_type?: string
+  stop_price?: number
+  aux_price?: number
+  qty?: number
+  total_quantity?: number
+  status?: string
+}
+
+type PaperTradingHealth = {
+  ok: boolean
+  exists?: boolean
+  checked_at?: string
+  error?: string | null
+  problems?: string[]
+  alpaca?: {
+    ok?: boolean
+    missing_stops?: string[]
+    positions?: unknown[]
+    stop_orders?: unknown[]
+  }
+  ibkr?: {
+    ok?: boolean
+    missing_stops?: string[]
+    positions?: unknown[]
+    open_orders?: PaperHealthOpenOrder[]
+  }
+  launchd_entry_lock?: Record<string, {
+    loaded?: boolean
+    max_positions_0?: boolean
+    pyramid_disabled?: boolean
+    auto_execute_disabled?: boolean
+    trading_mode_paper?: boolean
+  }>
+}
+
 type PaperResetStatus = {
   ok: boolean
   exists: boolean
@@ -420,6 +462,105 @@ function KpiRow({ label, value, pass, note }: { label: string; value: string; pa
   )
 }
 
+function boolLabel(v: boolean | undefined): string {
+  return v ? 'OK' : '확인 필요'
+}
+
+function healthStopLabel(order: PaperHealthOpenOrder): string {
+  const stop = order.stop_price ?? order.aux_price
+  const qty = order.qty ?? order.total_quantity
+  const type = order.order_type ?? order.type ?? 'STP'
+  return `${order.symbol ?? '—'} ${order.side ?? order.action ?? 'SELL'} ${type} ${qty ?? '—'} @ ${stop ?? '—'}`
+}
+
+function PaperTradingHealthCard({
+  health,
+  loading,
+  error,
+}: {
+  health: PaperTradingHealth | null
+  loading: boolean
+  error: string | null
+}) {
+  const problems = health?.problems ?? []
+  const ok = Boolean(health?.ok)
+  const alpacaMissing = health?.alpaca?.missing_stops ?? []
+  const ibkrMissing = health?.ibkr?.missing_stops ?? []
+  const locks = health?.launchd_entry_lock ?? {}
+  const ibkrStops = (health?.ibkr?.open_orders ?? []).filter(o => {
+    const side = String(o.side ?? o.action ?? '').toLowerCase()
+    const type = String(o.order_type ?? o.type ?? '').toLowerCase()
+    return side === 'sell' && type.includes('stp')
+  })
+
+  return (
+    <article className={`paper-health-card ${ok ? 'health-ok' : 'health-warn'}`}>
+      <div className="paper-health-head">
+        <div>
+          <h3>Paper Trading Health</h3>
+          <p>자동 신규 진입 차단, 상주손절, broker/state 일치 상태를 표시합니다.</p>
+        </div>
+        <span className={`paper-health-badge ${ok ? 'ok' : 'warn'}`}>
+          {loading ? '확인 중' : ok ? '정상' : '점검 필요'}
+        </span>
+      </div>
+
+      {error && <p className="paper-health-error">로드 오류: {error}</p>}
+      {!loading && health?.exists === false && (
+        <p className="paper-health-error">health report가 아직 생성되지 않았습니다.</p>
+      )}
+      {!loading && health?.error && (
+        <p className="paper-health-error">{health.error}</p>
+      )}
+
+      <div className="paper-health-grid">
+        <div className="paper-health-metric">
+          <span className="paper-health-label">Alpaca stop</span>
+          <strong>{boolLabel(health?.alpaca?.ok)}</strong>
+          <small>{health?.alpaca?.positions?.length ?? 0} positions · {health?.alpaca?.stop_orders?.length ?? 0} stops</small>
+        </div>
+        <div className="paper-health-metric">
+          <span className="paper-health-label">IBKR stop</span>
+          <strong>{boolLabel(health?.ibkr?.ok)}</strong>
+          <small>{health?.ibkr?.positions?.length ?? 0} positions · {ibkrStops.length} stops</small>
+        </div>
+        <div className="paper-health-metric">
+          <span className="paper-health-label">신규 진입</span>
+          <strong>중지</strong>
+          <small>
+            Alpaca {boolLabel(locks.alpaca?.max_positions_0 && locks.alpaca?.pyramid_disabled)}
+            {' · '}
+            IBKR {boolLabel(locks.ibkr?.max_positions_0 && locks.ibkr?.pyramid_disabled)}
+          </small>
+        </div>
+        <div className="paper-health-metric">
+          <span className="paper-health-label">최근 점검</span>
+          <strong>{health?.checked_at ? relativeTime(health.checked_at) : '—'}</strong>
+          <small>{health?.checked_at ?? 'no timestamp'}</small>
+        </div>
+      </div>
+
+      {(problems.length > 0 || alpacaMissing.length > 0 || ibkrMissing.length > 0) && (
+        <div className="paper-health-alerts">
+          {[...problems, ...alpacaMissing.map(s => `alpaca_missing_stop:${s}`), ...ibkrMissing.map(s => `ibkr_missing_stop:${s}`)].map(item => (
+            <span key={item}>{item}</span>
+          ))}
+        </div>
+      )}
+
+      {ibkrStops.length > 0 && (
+        <div className="paper-health-stops">
+          {ibkrStops.slice(0, 3).map(o => (
+            <span key={`${o.order_id ?? o.symbol}-${o.stop_price ?? o.aux_price}`}>
+              {healthStopLabel(o)}
+            </span>
+          ))}
+        </div>
+      )}
+    </article>
+  )
+}
+
 function MobileField({ label, value, tone = 'normal' }: { label: string; value: ReactNode; tone?: 'normal' | 'muted' }) {
   return (
     <div className="mobile-field">
@@ -628,6 +769,9 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
   const [alpacaRunResult, setAlpacaRunResult] = useState<RunResult | null>(null)
   const [dropAlerts, setDropAlerts] = useState<DropAlert[]>([])
   const [resetStatus, setResetStatus] = useState<PaperResetStatus | null>(null)
+  const [paperHealth, setPaperHealth] = useState<PaperTradingHealth | null>(null)
+  const [paperHealthLoading, setPaperHealthLoading] = useState(true)
+  const [paperHealthError, setPaperHealthError] = useState<string | null>(null)
   const [selectionFlow, setSelectionFlow] = useState<TradingSelectionFlow | null>(null)
   const [selectedFlowSymbol, setSelectedFlowSymbol] = useState<string | null>(null)
   const [flowBroker, setFlowBroker] = useState<'all' | 'ibkr' | 'alpaca'>('all')
@@ -704,6 +848,20 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
       const json = (await res.json()) as PaperResetStatus
       setResetStatus(json)
     } catch { /* silent */ }
+  }, [apiBase, authHeaders])
+
+  const loadPaperHealth = useCallback(async () => {
+    setPaperHealthError(null)
+    try {
+      const res = await fetch(`${apiBase}/api/paper-trading/health`, { headers: authHeaders() })
+      const json = (await res.json()) as PaperTradingHealth
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
+      setPaperHealth(json)
+    } catch (e) {
+      setPaperHealthError(e instanceof Error ? e.message : 'health 로드 실패')
+    } finally {
+      setPaperHealthLoading(false)
+    }
   }, [apiBase, authHeaders])
 
   const loadSelectionFlow = useCallback(async () => {
@@ -783,6 +941,12 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
     const iv = setInterval(() => void loadResetStatus(), 60 * 1000)
     return () => clearInterval(iv)
   }, [loadResetStatus])
+
+  useEffect(() => {
+    void loadPaperHealth()
+    const iv = setInterval(() => void loadPaperHealth(), 5 * 60 * 1000)
+    return () => clearInterval(iv)
+  }, [loadPaperHealth])
 
   useEffect(() => {
     void loadSelectionFlow()
@@ -1573,6 +1737,12 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
           )}
         </article>
       </div>
+
+      <PaperTradingHealthCard
+        health={paperHealth}
+        loading={paperHealthLoading}
+        error={paperHealthError}
+      />
 
       {/* ── ROW 1.5: IBKR 오프라인 / EXIT 배너 ── */}
       {!ibkrLoading && ibkrData && !gatewayConnected && (

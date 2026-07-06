@@ -20,7 +20,11 @@
     },
     {
       "path": "harness-os/frontend/src/components/IbkrTurtleMonitor.tsx",
-      "summary": "Added Paper Trading Health card showing Alpaca/IBKR stop coverage, entry lock state, latest check time, problems, and IBKR stop orders."
+      "summary": "Added Paper Trading Health card to the standalone IBKR monitor route."
+    },
+    {
+      "path": "harness-os/frontend/src/components/TradingOpsCenter.tsx",
+      "summary": "Added the same Paper Trading Health card to the actual Harness OS trading dashboard route."
     },
     {
       "path": "harness-os/frontend/src/App.css",
@@ -38,7 +42,7 @@
       "name": "frontend production bundle build",
       "target": "dist",
       "command": "npm --prefix harness-os/frontend run build",
-      "result": "TypeScript and Vite build completed; new bundle assets were generated."
+      "result": "TypeScript and Vite build completed; new bundle assets were generated and local dist JS contains /api/paper-trading/health."
     },
     {
       "name": "backend syntax check",
