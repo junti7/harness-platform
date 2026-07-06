@@ -1,0 +1,64 @@
+{
+  "task": "Resolve Turtle paper residual risks for IBKR Gateway and Mac Mini dirty state",
+  "status": "residual_risk",
+  "date": "2026-07-06",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-06T09:31:16+09:00",
+      "summary": "Trading runtime and completion reports require real verification and high-risk production cleanup must avoid unsafe direct resets."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-06T09:31:16+09:00",
+      "summary": "Completion requires real runtime entrypoint verification, dirty-state evidence, and explicit residual risk reporting."
+    }
+  ],
+  "scope": [
+    "Mac Mini IBKR paper runtime status",
+    "Mac Mini installed LaunchAgents for turtle and IBKR auto traders",
+    "docs/trading/TURTLE_PAPER_RISK_CLOSEOUT_2026-07-06.md"
+  ],
+  "changes": [
+    "Verified IBKR Gateway on Mac Mini instead of local MBP.",
+    "Reinstalled Mac Mini turtle and IBKR LaunchAgent plists from origin/main templates.",
+    "Reloaded both LaunchAgents and verified entry-lock environment variables at runtime.",
+    "Documented that global Mac Mini dirty worktree is outside turtle scope and should not be reset without a separate cleanup window."
+  ],
+  "verification": [
+    {
+      "name": "Mac Mini IBKR paper runtime status",
+      "target": "macmini IBKR Gateway paper API",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/ibkr_runtime_status.py'",
+      "result": "passed: connected to 127.0.0.1:4002, account DUQ416334 detected, NAV and cash read, broker-state match passed, SPY bars smoke test passed"
+    },
+    {
+      "name": "Mac Mini LaunchAgent reinstall",
+      "target": "macmini launchd",
+      "command": "sed deployed templates into ~/Library/LaunchAgents, plutil -lint, launchctl bootout/bootstrap for turtle and IBKR auto traders",
+      "result": "passed: both installed plists linted OK and both LaunchAgents reloaded"
+    },
+    {
+      "name": "Mac Mini entry lock runtime verification",
+      "target": "macmini launchd runtime environment",
+      "command": "launchctl print gui/$(id -u)/com.harness.turtle-auto-trader and com.harness.ibkr-auto-trader",
+      "result": "passed: turtle has PAPER_TRADING_MAX_POSITIONS=0, PAPER_PYRAMID_ENABLED=false, PAPER_TRADING_AUTO_EXECUTE=false; IBKR has PAPER_TRADING_MAX_POSITIONS=0 and PAPER_PYRAMID_ENABLED=false"
+    },
+    {
+      "name": "Mac Mini target file origin check",
+      "target": "macmini git worktree scoped paths",
+      "command": "git diff --quiet origin/main -- four turtle closeout paths",
+      "result": "passed: all turtle closeout target files match origin/main"
+    },
+    {
+      "name": "Mac Mini dirty audit",
+      "target": "macmini git worktree",
+      "command": "git status counts plus git diff --cached --name-status origin/main and git diff --name-status origin/main",
+      "result": "residual risk: global dirty state remains unrelated to turtle scope; broad cleanup was not performed to avoid overwriting concurrent work"
+    }
+  ],
+  "residual_risk": [
+    "Global Mac Mini worktree remains dirty outside the turtle paper closeout scope.",
+    "A separate owner-approved cleanup window is required before broad Mac Mini worktree reconciliation."
+  ]
+}
