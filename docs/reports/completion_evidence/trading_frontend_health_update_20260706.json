@@ -55,7 +55,28 @@
       "target": "api",
       "command": "FastAPI TestClient GET /api/paper-trading/health with x-harness-secret",
       "result": "HTTP 200 returned expected JSON shape on local MBP; local runtime report was absent so exists=false was returned."
+    },
+    {
+      "name": "Mac Mini frontend bundle entrypoint",
+      "target": "macmini production dist url",
+      "command": "curl http://127.0.0.1:5173/ and inspect harness-os/frontend/dist/assets/index-*.js",
+      "result": "HTTP 200 served /assets/index-DyJohWud.js; dist .build_commit is 6476a0bdb45dbf88b96fa0f86a846ac8e4dc9542; JS contains /api/paper-trading/health; CSS contains paper-health-card."
+    },
+    {
+      "name": "Mac Mini paper trading health API",
+      "target": "macmini api",
+      "command": "GET http://127.0.0.1:8000/api/paper-trading/health with x-harness-secret",
+      "result": "HTTP 200; ok=true; exists=true; problems=[]; alpaca_missing=[]; ibkr_missing=[]; ibkr_open_orders=1."
     }
   ],
-  "deployment_verification": []
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh harness-os/frontend/src/components/TradingOpsCenter.tsx docs/reports/completion_evidence/trading_frontend_health_update_20260706.json",
+    "result": "Mac Mini frontend dist rebuilt successfully and served new health-enabled bundle."
+  },
+  "deployment_verification": [
+    "frontend_http=200",
+    "frontend_asset=/assets/index-DyJohWud.js",
+    "build_commit=6476a0bdb45dbf88b96fa0f86a846ac8e4dc9542",
+    "paper_health_api_ok=true"
+  ]
 }
