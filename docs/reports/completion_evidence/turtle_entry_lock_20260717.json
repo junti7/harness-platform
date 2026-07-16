@@ -30,7 +30,13 @@
       "name": "Mac Mini stale paper entry order cancellation",
       "target": "macmini Alpaca paper API",
       "command": "Cancel the two open DBC buy orders and query open buy orders again",
-      "result": "Two cancellation requests completed and the follow-up open buy order list was empty."
+      "result": "Two cancellation requests completed and the immediate open buy order list was empty, but a later health run proved both orders had already raced to delayed fills totaling 4524 DBC shares."
+    },
+    {
+      "name": "Mac Mini unintended DBC paper position remediation",
+      "target": "macmini Alpaca paper API",
+      "command": "Submit DELETE /positions/DBC and re-query broker positions",
+      "result": "A sell-to-close market order for 4524 DBC shares was accepted while the US market was closed; the position remains open until the next executable session and health correctly remains blocked."
     },
     {
       "name": "launchd environment precedence check",
@@ -54,11 +60,13 @@
   "safety": {
     "capital_action": false,
     "new_entries_enabled": false,
-    "paper_orders_canceled": 2,
+    "paper_order_cancel_requests": 2,
+    "paper_close_orders_submitted": 1,
     "positions_liquidated": 0
   },
   "residual_risk": [
     "META remains open with a resident protective stop; CEO disposition is required before liquidation.",
+    "DBC 4524 shares remain open without a stop while sell-to-close order 24e348b2-38d1-4e2f-9f1a-86722eaf91b3 waits for the next executable market session.",
     "Claude review failed because OAuth expired and Copilot review failed because authentication was absent; no red_team_clear is claimed."
   ]
 }
