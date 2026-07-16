@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from dotenv import load_dotenv
-load_dotenv(ROOT / ".env", override=True)
+# Preserve launchd/container environment overrides used by trading guards.
+load_dotenv(ROOT / ".env")
 
 from scripts.alpaca_paper_trading import (
     get_turtle_signal, get_account_summary, TURTLE_RISK_PCT, TURTLE_STOP_MULT,

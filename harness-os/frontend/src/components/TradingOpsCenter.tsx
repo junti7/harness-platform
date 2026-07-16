@@ -2186,7 +2186,7 @@ export function TradingOpsCenter({ apiBase, authHeaders }: Props) {
               label="계좌 리스크"
               value={ibkrAccount ? `NAV $${fmt(ibkrAccount.nav, 0)}` : '—'}
               pass={ibkrAccount ? Math.abs(ibkrAccount.total_pnl_pct) < 1 : undefined}
-              note="단일 트레이드 계좌 리스크 ≤ 1% 원칙"
+              note="1N 사이징, 2N 손절 기준 단일 트레이드 계좌 리스크 ≤ 2% 원칙"
             />
             <KpiRow
               label="EXIT 신호"

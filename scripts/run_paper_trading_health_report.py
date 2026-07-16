@@ -29,7 +29,8 @@ sys.path.insert(0, str(ROOT))
 
 from dotenv import load_dotenv
 
-load_dotenv(ROOT / ".env", override=True)
+# Keep launchd lock policy authoritative over developer .env defaults.
+load_dotenv(ROOT / ".env")
 
 from ib_insync import IB, StopOrder  # noqa: E402
 
@@ -52,6 +53,11 @@ IBKR_STATE_PATH = ROOT / "docs/reports/ibkr_tws_positions.json"
 ACTIVE_ALPACA_ORDER_STATUSES = {"new", "accepted", "partially_filled", "pending_new"}
 ACTIVE_IBKR_ORDER_STATUSES = {"Submitted", "PreSubmitted", "PendingSubmit", "ApiPending"}
 BENCHMARKS = ["SPY", "QQQ", "SMH", "SOXX"]
+ENTRY_LOCK_ALLOWED_SYMBOLS = {
+    symbol.strip().upper()
+    for symbol in os.getenv("PAPER_ENTRY_LOCK_ALLOWED_SYMBOLS", "ASX,TSM,VRT").split(",")
+    if symbol.strip()
+}
 
 
 def now_iso() -> str:
@@ -102,6 +108,17 @@ def collect_alpaca() -> dict[str, Any]:
     ]
     state = load_json(ALPACA_STATE_PATH)
     active_positions = [p for p in positions if isinstance(p, dict) and "error" not in p]
+    active_entry_orders = [
+        order for order in open_orders
+        if order.get("side") == "buy"
+        and order.get("type") != "stop"
+        and str(order.get("status") or "").lower() in ACTIVE_ALPACA_ORDER_STATUSES
+    ]
+    unexpected_positions = sorted(
+        str(pos.get("symbol") or "").upper()
+        for pos in active_positions
+        if str(pos.get("symbol") or "").upper() not in ENTRY_LOCK_ALLOWED_SYMBOLS
+    )
     missing_stops: list[dict[str, Any]] = []
     coverage: list[dict[str, Any]] = []
     for pos in active_positions:
@@ -129,12 +146,15 @@ def collect_alpaca() -> dict[str, Any]:
         if not ok:
             missing_stops.append(row)
     return {
-        "ok": bool(account.get("ok")) and not missing_stops,
+        "ok": bool(account.get("ok")) and not missing_stops and not active_entry_orders and not unexpected_positions,
         "account": account,
         "positions": active_positions,
         "open_orders": open_orders,
         "stop_coverage": coverage,
         "missing_stops": missing_stops,
+        "active_entry_orders": active_entry_orders,
+        "entry_lock_allowed_symbols": sorted(ENTRY_LOCK_ALLOWED_SYMBOLS),
+        "unexpected_positions_during_entry_lock": unexpected_positions,
         "state_error": state.get("_read_error"),
         "ar018_kpi": get_ar018_kpi(account, active_positions) if account.get("ok") else {},
     }
@@ -394,6 +414,10 @@ def build_report(*, repair_ibkr_stops: bool = False) -> dict[str, Any]:
     problems: list[str] = []
     if not alpaca.get("ok"):
         problems.append("alpaca_stop_or_account_health_failed")
+    if alpaca.get("active_entry_orders"):
+        problems.append("alpaca_active_entry_orders_during_lock")
+    if alpaca.get("unexpected_positions_during_entry_lock"):
+        problems.append("alpaca_unexpected_positions_during_lock")
     if not ibkr.get("ok"):
         problems.append("ibkr_stop_or_account_health_failed")
     if not (locks.get("alpaca", {}).get("max_positions_0") and locks.get("alpaca", {}).get("pyramid_disabled")):

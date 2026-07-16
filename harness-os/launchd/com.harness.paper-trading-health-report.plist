@@ -26,6 +26,8 @@
   <string>__ROOT__/docs/reports/paper_trading_health_report_stderr.log</string>
   <key>EnvironmentVariables</key>
   <dict>
+    <key>PAPER_ENTRY_LOCK_ALLOWED_SYMBOLS</key>
+    <string>ASX,TSM,VRT</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>IBKR_TRADING_MODE</key>

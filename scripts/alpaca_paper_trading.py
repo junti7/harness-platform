@@ -15,7 +15,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 from dotenv import load_dotenv
 import requests
 
-load_dotenv(PROJECT_ROOT / ".env", override=True)
+# Deployed runtime controls and credentials must take precedence over .env.
+load_dotenv(PROJECT_ROOT / ".env")
 
 ALPACA_KEY = os.getenv("ALPACA_API_KEY", "")
 ALPACA_SECRET = os.getenv("ALPACA_SECRET_KEY", "")

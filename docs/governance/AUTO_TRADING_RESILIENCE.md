@@ -66,7 +66,7 @@
 
 - 잡 **재로드 ≠ 즉시 거래**. plist는 `RunAtLoad=false`라 로드해도 스케줄 시각에만 발화.
 - 리셋 중(`reset_pending && not flat`)이면 `run_trading_cycle`이 진입을 **차단**하므로, 재로드돼도 리셋 도중 오발주 없음.
-- 진입은 항상 Turtle 게이트(20/55일 브레이크아웃·ATR·손절·리스크≤1%) 통과 시에만.
+- 진입은 항상 Turtle 게이트(20/55일 브레이크아웃·ATR·2N 손절 기준 리스크≤2%) 통과 시에만.
 - 실자본은 별개 차단 유지(`CAPITAL_ACTIONS_ENABLED=false`, AR-018). 본 체계는 **paper** 자동매매 연속성 보장용.
 
 ---

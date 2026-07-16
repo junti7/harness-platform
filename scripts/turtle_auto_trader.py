@@ -24,7 +24,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from dotenv import load_dotenv
-load_dotenv(ROOT / ".env", override=True)
+# Runtime controls from launchd/container environment must win over .env.
+# Otherwise a stale .env can silently bypass entry locks such as MAX_POSITIONS=0.
+load_dotenv(ROOT / ".env")
 
 from scripts.alpaca_paper_trading import (
     ALPACA_KEY, ALPACA_SECRET, ALPACA_BASE_URL,
@@ -211,6 +213,7 @@ def wait_for_fill(order_id: str, timeout_s: int = FILL_TIMEOUT_S,
     deadline = time.monotonic() + timeout_s
     last: dict = {}
     terminal = {"filled", "canceled", "cancelled", "rejected", "expired", "done_for_day"}
+    timed_out = False
     while True:
         try:
             last = _alpaca_get(f"/orders/{order_id}")
@@ -219,8 +222,22 @@ def wait_for_fill(order_id: str, timeout_s: int = FILL_TIMEOUT_S,
         if str(last.get("status")) in terminal:
             break
         if time.monotonic() >= deadline:
+            timed_out = True
             break
         time.sleep(poll_s)
+    if timed_out and str(last.get("status")) not in terminal:
+        # A timed-out market order can fill later. Cancel it before the caller
+        # treats the attempt as not filled, then refresh the final broker state.
+        cancel_order(order_id)
+        cancel_deadline = time.monotonic() + max(5.0, poll_s * 3)
+        while time.monotonic() < cancel_deadline:
+            try:
+                last = _alpaca_get(f"/orders/{order_id}")
+            except Exception as e:
+                last = {"status": "cancel_unknown", "error": str(e)}
+            if str(last.get("status")) in terminal:
+                break
+            time.sleep(poll_s)
     fq = float(last.get("filled_qty") or 0)
     fp = float(last.get("filled_avg_price")) if last.get("filled_avg_price") else 0.0
     return str(last.get("status", "unknown")), fq, fp

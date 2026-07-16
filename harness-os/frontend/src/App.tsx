@@ -455,7 +455,7 @@ function App() {
                   </li>
                   <li className="open">
                     <span className="check-dot open" />
-                    <strong>[TurtleGate 트레이딩 검증]</strong> 매매 주문 전 6대 조건 (진입 신호, 20일 ATR N값, 리스크 ≤ 1%, 손절가 2ATR, 청산 시스템, Pre-Mortem) 준수 여부 점검
+                    <strong>[TurtleGate 트레이딩 검증]</strong> 매매 주문 전 6대 조건 (진입 신호, 20일 ATR N값, 2N 손절 리스크 ≤ 2%, 손절가 2ATR, 청산 시스템, Pre-Mortem) 준수 여부 점검
                   </li>
                   <li className="open">
                     <span className="check-dot open" />

@@ -28,8 +28,6 @@ def _tmp_state(tmp_path, monkeypatch):
     monkeypatch.setattr(t, "STATE_PATH", tmp_path / "positions.json")
     monkeypatch.setattr(t, "LOG_PATH", tmp_path / "log.jsonl")
     yield
-
-
 # ── 1. state 원자화 ───────────────────────────────────────────────────────────
 
 def test_state_atomic_preserves_other_writer_fields():
@@ -59,6 +57,20 @@ def test_wait_for_fill_returns_actual_fill(monkeypatch):
     monkeypatch.setattr(t.time if hasattr(t, "time") else __import__("time"), "sleep", lambda *_: None)
     status, fq, fp = t.wait_for_fill("oid", timeout_s=10, poll_s=0)
     assert status == "filled" and fq == 10.0 and fp == 123.45
+
+
+def test_wait_for_fill_cancels_timed_out_order(monkeypatch):
+    statuses = iter([
+        {"status": "accepted", "filled_qty": "0"},
+        {"status": "canceled", "filled_qty": "0"},
+    ])
+    canceled = []
+    monkeypatch.setattr(t, "_alpaca_get", lambda path: next(statuses))
+    monkeypatch.setattr(t, "cancel_order", lambda oid: canceled.append(oid))
+    monkeypatch.setattr(t.time if hasattr(t, "time") else __import__("time"), "sleep", lambda *_: None)
+    status, fq, _ = t.wait_for_fill("late-order", timeout_s=0, poll_s=0)
+    assert canceled == ["late-order"]
+    assert status == "canceled" and fq == 0
 
 
 def test_enter_not_filled_does_not_record_position(monkeypatch):

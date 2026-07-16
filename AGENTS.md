@@ -303,7 +303,7 @@ President Decision Agent는 트레이딩 관련 capital_action card를 생성할
 |-----------|------|---------|
 | 진입 신호 | System 1 (20일 돌파) 또는 System 2 (55일 돌파) 확인 | `turtle_gate_block` |
 | ATR(N) 값 | 20일 ATR 계산값 명시 | `turtle_gate_block` |
-| 포지션 리스크 | 계좌 대비 ≤ 1% | `turtle_gate_block` |
+| 포지션 리스크 | 1N 사이징, 2N 손절 기준 계좌 대비 ≤ 2% | `turtle_gate_block` |
 | 손절가 | 진입가 ± 2×ATR 사전 계산 및 명시 | `turtle_gate_block` |
 | 청산 시스템 | System 1 또는 System 2 명시 | `turtle_gate_block` |
 | Pre-Mortem | `pre_mortem_approve` 완료 | `turtle_gate_block` |
