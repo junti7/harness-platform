@@ -1,0 +1,64 @@
+{
+  "task": "Enforce Turtle paper entry lock after delayed Alpaca fills",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-17T09:00:00+09:00",
+      "summary": "Trading changes require real runtime verification, explicit risk controls, and source-of-truth deployment."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-17T09:00:00+09:00",
+      "summary": "Completion evidence must record runtime checks, deployment state, and unresolved review gaps."
+    }
+  ],
+  "changes": [
+    "Preserved launchd environment controls instead of overriding them from .env.",
+    "Canceled timed-out Alpaca orders and re-polled terminal broker status.",
+    "Made health reports fail on active entry orders or positions outside the lock baseline.",
+    "Aligned current Turtle risk language to 1N sizing and no more than 2 percent loss at the 2N stop."
+  ],
+  "verification": [
+    {
+      "name": "Mac Mini Alpaca delayed-order incident trace",
+      "target": "macmini production paper broker logs",
+      "command": "Inspect turtle_trader_stdout.log, paper_trading_log.jsonl, and paper_trading_health_report.jsonl",
+      "result": "META order was accepted with zero fill on 2026-07-10, remained open after timeout, filled later, and was adopted on 2026-07-13."
+    },
+    {
+      "name": "Mac Mini stale paper entry order cancellation",
+      "target": "macmini Alpaca paper API",
+      "command": "Cancel the two open DBC buy orders and query open buy orders again",
+      "result": "Two cancellation requests completed and the follow-up open buy order list was empty."
+    },
+    {
+      "name": "launchd environment precedence check",
+      "target": "local runtime entrypoint",
+      "command": "PAPER_TRADING_MAX_POSITIONS=0 PAPER_PYRAMID_ENABLED=false .venv/bin/python -c import turtle_auto_trader",
+      "result": "Observed max_positions=0 and pyramid=false after removing nested dotenv override behavior."
+    },
+    {
+      "name": "focused trading regression suite",
+      "target": "pytest runtime",
+      "command": ".venv/bin/python -m pytest -q tests/test_turtle_auto_trader_p0.py tests/test_turtle_auto_trader_p1.py tests/test_turtle_auto_trader_pyramid.py tests/test_turtle_strategy_core.py tests/test_ibkr_trader_b2.py tests/test_ibkr_turtle_monitor.py tests/test_ibkr_pending_orders.py tests/test_trading_universe.py tests/test_paper_trading_health_report.py",
+      "result": "82 tests passed with one third-party asyncio deprecation warning."
+    },
+    {
+      "name": "frontend production bundle build",
+      "target": "dist",
+      "command": "npm run build in harness-os/frontend",
+      "result": "TypeScript and Vite production build passed; only the existing chunk-size warning remained."
+    }
+  ],
+  "safety": {
+    "capital_action": false,
+    "new_entries_enabled": false,
+    "paper_orders_canceled": 2,
+    "positions_liquidated": 0
+  },
+  "residual_risk": [
+    "META remains open with a resident protective stop; CEO disposition is required before liquidation.",
+    "Claude review failed because OAuth expired and Copilot review failed because authentication was absent; no red_team_clear is claimed."
+  ]
+}
