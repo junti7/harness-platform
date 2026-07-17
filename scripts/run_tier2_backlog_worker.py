@@ -8,7 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
+# launchd/production environment must remain authoritative; .env only fills gaps.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
 
 from adapters.content.filter import filter_signals, probe_ollama_host, OLLAMA_REMOTE_HOST
 from core.database import execute_query

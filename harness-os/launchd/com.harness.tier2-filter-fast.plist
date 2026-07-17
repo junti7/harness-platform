@@ -20,8 +20,10 @@
 
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PATH</key>
-    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+  <key>PATH</key>
+  <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    <key>DATABASE_URL</key>
+    <string>postgresql://localhost/harness_prod</string>
   </dict>
 
   <key>StartInterval</key>

@@ -1,0 +1,52 @@
+{
+  "task": "Fix Mac Mini refinement worker production DB routing",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-17T11:00:00+09:00",
+      "summary": "Production changes require scoped deployment, runtime verification, and explicit residual risk reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-17T11:00:00+09:00",
+      "summary": "Completion evidence records real Mac Mini checks and does not claim unverified red-team clearance."
+    }
+  ],
+  "verification": [
+    {
+      "name": "production backlog discrepancy",
+      "target": "macmini production database",
+      "command": "query harness_prod raw_signals pending and Harness OS pipeline backlog",
+      "result": "harness_prod contains 296 pending raw signals and the API reports a 757-item refine backlog while workers log pending 없음."
+    },
+    {
+      "name": "worker launch configuration",
+      "target": "macmini launchd",
+      "command": "launchctl print com.harness.tier2-filter and inspect refinement plists",
+      "result": "Tier 2 launch agents lacked explicit DATABASE_URL; scripts also overrode launchd variables from .env."
+    },
+    {
+      "name": "syntax and plist validation",
+      "target": "local runtime entrypoint",
+      "command": "python3 -m py_compile targeted scripts; plutil -lint targeted plists",
+      "result": "All targeted Python files compiled and all targeted plists passed validation."
+    }
+  ],
+  "deploy": {
+    "method": "commit and push followed by scripts/deploy_to_macmini.sh targeted paths",
+    "result": "Commit created; push/deploy pending completion evidence gate and remote reload."
+  },
+  "red_team": {
+    "models": ["Claude", "Gemini"],
+    "artifacts": [
+      {"artifact": "/Users/juntae.park/projects/harness-platform/CLAUDE.md"},
+      {"artifact": "/Users/juntae.park/projects/harness-platform/docs/governance/LLM_GROUND_RULES.md"}
+    ],
+    "verdict": "red_team_residual_risk"
+  },
+  "residual_risk": [
+    "Mac Mini agents still require reload after the source-of-truth commit is pushed.",
+    "No capital action is involved; backlog processing remains gated by worker and provider availability."
+  ]
+}

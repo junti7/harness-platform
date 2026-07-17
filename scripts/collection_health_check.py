@@ -36,7 +36,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from dotenv import load_dotenv  # noqa: E402
-load_dotenv(PROJECT_ROOT / ".env", override=True)
+# launchd/production environment must remain authoritative; .env only fills gaps.
+load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 import os  # noqa: E402
 import feedparser  # noqa: E402
