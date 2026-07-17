@@ -4133,7 +4133,7 @@ def get_costs_summary(_: None = Depends(_require_secret)) -> dict[str, Any]:
     remaining_budget = max(0.0, initial_budget - verified_total_spent)
     burn_rate_percent = (verified_total_spent / initial_budget) * 100.0 if initial_budget > 0 else 0.0
     
-    # LLM 구독 현황 정보 (Ollama 완전 제거, Copilot 신설)
+    # Subscription/API inventory. Key presence is not proof of subscription or quota.
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
     anthropic_configured = bool(anthropic_key and not anthropic_key.startswith("sk-ant-api03-placeholder"))
     
@@ -4143,13 +4143,15 @@ def get_costs_summary(_: None = Depends(_require_secret)) -> dict[str, Any]:
     google_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
     google_configured = bool(google_key and not google_key.startswith("AIzaSy-placeholder"))
     
-    copilot_configured = True
+    ollama_configured = bool(os.getenv("OLLAMA_HOST"))
+    copilot_configured = False
     
     llm_subscriptions = [
         {
             "name": "Anthropic Claude Pro",
             "provider": "anthropic",
-            "status": "active" if anthropic_configured else "inactive",
+            "status": "configured" if anthropic_configured else "unknown",
+            "quota_status": "unknown",
             "key_configured": anthropic_configured,
             "cost_spent_usd": round(provider_spent["anthropic"], 4),
             "estimated_subscription_usd": 0.0,
@@ -4160,18 +4162,20 @@ def get_costs_summary(_: None = Depends(_require_secret)) -> dict[str, Any]:
         {
             "name": "Google Gemini Advanced",
             "provider": "google",
-            "status": "active" if google_configured else "inactive",
+            "status": "configured" if google_configured else "unknown",
+            "quota_status": "unknown",
             "key_configured": google_configured,
             "cost_spent_usd": round(provider_spent["google"], 4),
             "estimated_subscription_usd": 0.0,
             "billing_basis": provider_billing_basis["google"],
             "receipt_total_krw": receipt_provider_krw.get("google"),
-            "models": ["claude-sonnet-4-5", "claude-haiku-4-5", "gemini-2.5-flash"]
+            "models": ["gemini-2.5-flash", "gemini-1.5-pro-latest"]
         },
         {
-            "name": "OpenAI ChatGPT Plus",
+            "name": "OpenAI ChatGPT Pro / API (separate billing)",
             "provider": "openai",
-            "status": "active" if openai_configured else "inactive",
+            "status": "configured" if openai_configured else "unknown",
+            "quota_status": "unknown",
             "key_configured": openai_configured,
             "cost_spent_usd": round(provider_spent["openai"], 4),
             "estimated_subscription_usd": round(ESTIMATED_SUBS["openai"], 4),
@@ -4182,13 +4186,26 @@ def get_costs_summary(_: None = Depends(_require_secret)) -> dict[str, Any]:
         {
             "name": "GitHub Copilot Pro",
             "provider": "copilot",
-            "status": "active",
+            "status": "unknown",
+            "quota_status": "not_probed",
             "key_configured": copilot_configured,
             "cost_spent_usd": round(provider_spent["copilot"], 4),
             "estimated_subscription_usd": 0.0,
             "billing_basis": provider_billing_basis["copilot"],
             "receipt_total_krw": receipt_provider_krw.get("copilot"),
             "models": ["copilot-chat", "copilot-agent"]
+        },
+        {
+            "name": "Ollama local (no API charge)",
+            "provider": "ollama",
+            "status": "configured" if ollama_configured else "unknown",
+            "quota_status": "local_capacity_unverified",
+            "key_configured": False,
+            "cost_spent_usd": 0.0,
+            "estimated_subscription_usd": 0.0,
+            "billing_basis": "local_runtime",
+            "receipt_total_krw": None,
+            "models": [os.getenv("OLLAMA_MODEL", "gemma2:27b"), os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")]
         }
     ]
     

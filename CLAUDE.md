@@ -270,6 +270,8 @@ Harness는 다음 순서로 가치를 만든다.
 
 ### Multi-Model Operating Rule
 
+The zero-base routing and quota policy is defined in `docs/operations/LLM_ZERO_BASE_OPERATING_STRATEGY_20260717.md`. Deterministic code and local Ollama work run first; subscription presence, installed CLI, or API key presence never proves remaining quota. Paid API calls require an explicit task budget.
+
 Codex는 회사 운영의 단독 두뇌가 아니다.
 
 Codex의 기본 책임은 engineering execution, codebase change, schema migration, automation, tests, local integration이다.

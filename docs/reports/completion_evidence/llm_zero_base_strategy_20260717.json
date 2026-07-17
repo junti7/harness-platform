@@ -1,0 +1,52 @@
+{
+  "task": "Rebuild Harness LLM operations from zero base",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-17T10:00:00+09:00",
+      "summary": "Model routing, cost gates, local-first processing, and completion evidence rules were reviewed."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-17T10:00:00+09:00",
+      "summary": "Unknown provider state must not be presented as available and runtime changes require real verification."
+    }
+  ],
+  "changes": [
+    "Added zero-base routing strategy with deterministic and local-first work classes.",
+    "Defined subscription, API key, CLI authentication, and quota as separate evidence fields.",
+    "Changed .env.example paid API budget default to zero.",
+    "Corrected Harness OS LLM inventory labels and added quota_status plus Ollama local entry."
+  ],
+  "verification": [
+    {
+      "name": "CLI inventory",
+      "target": "local provider CLIs",
+      "command": "claude auth status; codex --version; gemini --version; copilot --version",
+      "result": "Claude reported loggedIn=false; Codex, Gemini, and Copilot binaries were installed; remaining token/quota balances were not exposed."
+    },
+    {
+      "name": "historical token usage inventory",
+      "target": "harness_dev api_cost_log",
+      "command": "psql harness_dev aggregate api_cost_log by provider/model",
+      "result": "Recent 30-day usage showed Ollama 52 calls, Google 32, Anthropic 2; historical totals showed premium-heavy Gemini/Claude usage."
+    },
+    {
+      "name": "backend syntax verification",
+      "target": "Harness OS backend",
+      "command": ".venv/bin/python -m py_compile harness-os/backend/main.py",
+      "result": "Passed."
+    }
+  ],
+  "safety": {
+    "paid_api_budget_default_usd": 0,
+    "automatic_premium_fallback": false,
+    "local_first": true,
+    "capital_action": false
+  },
+  "residual_risk": [
+    "Exact ChatGPT Pro/Codex, Claude, Gemini, and Copilot remaining quotas require authenticated account pages or provider quota endpoints and were not available from this workspace.",
+    "Ollama server health was not reachable from this shell and must be probed on the runtime host before batch execution."
+  ]
+}
