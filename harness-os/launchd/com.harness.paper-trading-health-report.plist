@@ -12,14 +12,8 @@
   </array>
   <key>WorkingDirectory</key>
   <string>__ROOT__</string>
-  <key>StartCalendarInterval</key>
-  <array>
-    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>45</integer></dict>
-    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>45</integer></dict>
-    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>45</integer></dict>
-    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>45</integer></dict>
-    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>45</integer></dict>
-  </array>
+  <key>StartInterval</key>
+  <integer>300</integer>
   <key>StandardOutPath</key>
   <string>__ROOT__/docs/reports/paper_trading_health_report_stdout.log</string>
   <key>StandardErrorPath</key>

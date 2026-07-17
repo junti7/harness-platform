@@ -17,6 +17,8 @@
     "Preserved launchd environment controls instead of overriding them from .env.",
     "Canceled timed-out Alpaca orders and re-polled terminal broker status.",
     "Made health reports fail on active entry orders or positions outside the lock baseline.",
+    "Updated both Harness OS trading health cards to show lock-violating orders/positions explicitly and refresh every 30 seconds.",
+    "Changed the health LaunchAgent from weekday-only execution to a 5-minute StartInterval. ",
     "Aligned current Turtle risk language to 1N sizing and no more than 2 percent loss at the 2N stop."
   ],
   "verification": [
@@ -55,6 +57,18 @@
       "target": "dist",
       "command": "npm run build in harness-os/frontend",
       "result": "TypeScript and Vite production build passed; only the existing chunk-size warning remained."
+    },
+    {
+      "name": "Mac Mini Harness OS health API payload",
+      "target": "macmini Harness OS API",
+      "command": "GET /api/paper-trading/health",
+      "result": "Returned ok=false with DBC missing stop and DBC/META unexpected lock positions; API payload contains the fields rendered by both health cards."
+    },
+    {
+      "name": "health refresh runtime configuration",
+      "target": "macmini launchd",
+      "command": "plutil -lint and launchctl print com.harness.paper-trading-health-report",
+      "result": "StartInterval=300 and PAPER_ENTRY_LOCK_ALLOWED_SYMBOLS=ASX,TSM,VRT verified."
     }
   ],
   "safety": {

@@ -120,6 +120,9 @@ type PaperTradingHealth = {
     missing_stops?: string[]
     positions?: unknown[]
     stop_orders?: unknown[]
+    active_entry_orders?: PaperHealthOpenOrder[]
+    unexpected_positions_during_entry_lock?: string[]
+    open_orders?: PaperHealthOpenOrder[]
   }
   ibkr?: {
     ok?: boolean
@@ -497,6 +500,8 @@ function PaperTradingHealthCard({
   const problems = health?.problems ?? []
   const ok = Boolean(health?.ok)
   const alpacaMissing = health?.alpaca?.missing_stops ?? []
+  const alpacaEntryOrders = health?.alpaca?.active_entry_orders ?? []
+  const unexpectedPositions = health?.alpaca?.unexpected_positions_during_entry_lock ?? []
   const ibkrMissing = health?.ibkr?.missing_stops ?? []
   const locks = health?.launchd_entry_lock ?? {}
   const ibkrStops = (health?.ibkr?.open_orders ?? []).filter(o => {
@@ -557,6 +562,13 @@ function PaperTradingHealthCard({
           {[...problems, ...alpacaMissing.map(s => `alpaca_missing_stop:${s}`), ...ibkrMissing.map(s => `ibkr_missing_stop:${s}`)].map(item => (
             <span key={item}>{item}</span>
           ))}
+        </div>
+      )}
+
+      {(alpacaEntryOrders.length > 0 || unexpectedPositions.length > 0) && (
+        <div className="paper-health-alerts paper-health-lock-alerts">
+          {alpacaEntryOrders.map(o => <span key={`entry-${o.order_id ?? o.symbol}`}>잠금 중 신규 주문: {healthStopLabel(o)}</span>)}
+          {unexpectedPositions.map(symbol => <span key={`position-${symbol}`}>잠금 기준 외 포지션: {symbol}</span>)}
         </div>
       )}
 
@@ -903,7 +915,7 @@ export function IbkrTurtleMonitor({ apiBase, authHeaders }: Props) {
 
   useEffect(() => {
     void loadHealth()
-    const iv = setInterval(() => void loadHealth(), 5 * 60 * 1000)
+    const iv = setInterval(() => void loadHealth(), 30 * 1000)
     return () => clearInterval(iv)
   }, [loadHealth])
 
