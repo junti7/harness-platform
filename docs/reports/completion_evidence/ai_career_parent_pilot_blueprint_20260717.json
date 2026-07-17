@@ -1,0 +1,17 @@
+{
+  "task": "Define and red-team AI career parent pilot blueprint",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {"path": "CLAUDE.md", "read_at": "2026-07-17T14:40:00+09:00", "summary": "Customer-facing paid content requires legal, red-team, QA, and human decision gates."},
+    {"path": "docs/governance/LLM_GROUND_RULES.md", "read_at": "2026-07-17T14:40:00+09:00", "summary": "Completion evidence records real review results and unresolved risks before launch."}
+  ],
+  "verification": [
+    {"name": "ARK reference inspection", "target": "reference PDF", "command": "pdfinfo and rendered page inspection of docs/ARK-Invest_Big-Ideas-2024.pdf", "result": "Confirmed 163-page landscape report with structured thesis pages, diagrams, charts, citations, and disclosures."},
+    {"name": "pilot blueprint artifact check", "target": "PDF production workflow", "command": "Inspect the committed blueprint and its page-by-page PDF acceptance criteria", "result": "Confirmed the artifact defines a user-facing 8-page report contract, visual QA gates, evidence grades, and paid-pilot stop rules."},
+    {"name": "first red-team review", "target": "pilot blueprint", "command": "Independent Copilot review of page plan and rubric", "result": "red_team_block; scope, payment proof, and decision linkage were tightened."},
+    {"name": "revised red-team review", "target": "revised pilot constraints", "command": "Independent Copilot verdict on one-decision pilot with 3 prepaying households", "result": "Ready for limited paid pilot, conditional on offer contract, legal/payment hygiene, ops cap, pass/fail rules, and visible evidence grades."}
+  ],
+  "deploy": {"method": "scripts/deploy_to_macmini.sh docs/product/AI_CAREER_PARENT_PILOT_BLUEPRINT.md docs/reports/completion_evidence/ai_career_parent_pilot_blueprint_20260717.json", "result": "Documentation is source-of-truth; Mac Mini deployment is not required for this planning artifact."},
+  "red_team": {"models": ["Claude", "Gemini"], "artifacts": [{"artifact": "/Users/juntae.park/projects/harness-platform/docs/product/AI_CAREER_PARENT_PILOT_BLUEPRINT.md"}, {"artifact": "/Users/juntae.park/projects/harness-platform/docs/ARK-Invest_Big-Ideas-2024.pdf"}], "verdict": "red_team_residual_risk"},
+  "residual_risk": ["No customer-facing PDF has been authored or paid pilot launched yet.", "Claude/Gemini live calls were unavailable; the independent runtime review used Copilot and Codex, so no false red_team_clear is claimed."]
+}
