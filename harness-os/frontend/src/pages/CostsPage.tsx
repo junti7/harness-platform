@@ -268,8 +268,11 @@ export const CostsPage: React.FC<CostsPageProps> = ({ apiSecret, backendUrl, exc
                 </div>
                 <div>
                   <span style={{ fontSize: "0.72rem", color: sub.key_configured ? "hsl(140, 75%, 60%)" : "hsl(0, 75%, 65%)", fontWeight: 600 }}>
-                    {sub.key_configured ? "연결됨" : "연결 안됨"}
+                    {sub.status === "unknown" ? "확인 필요" : sub.key_configured ? "키 설정됨" : "로컬 경로"}
                   </span>
+                  <div style={{ fontSize: "0.68rem", color: "var(--color-text-muted)", marginTop: "0.2rem" }}>
+                    quota: {sub.quota_status ?? "unknown"}
+                  </div>
                 </div>
               </div>
 

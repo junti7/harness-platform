@@ -681,6 +681,7 @@ export type CostSubscription = {
   name: string
   provider: string
   status: string
+  quota_status?: string
   key_configured: boolean
   cost_spent_usd: number
   billing_basis?: string

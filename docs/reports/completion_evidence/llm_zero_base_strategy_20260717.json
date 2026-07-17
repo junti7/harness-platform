@@ -18,6 +18,7 @@
     "Defined subscription, API key, CLI authentication, and quota as separate evidence fields.",
     "Changed .env.example paid API budget default to zero.",
     "Corrected Harness OS LLM inventory labels and added quota_status plus Ollama local entry."
+    ,"Updated Costs page to expose quota_status and distinguish unknown quota from configured credentials."
   ],
   "verification": [
     {
@@ -37,6 +38,12 @@
       "target": "Harness OS backend",
       "command": ".venv/bin/python -m py_compile harness-os/backend/main.py",
       "result": "Passed."
+    },
+    {
+      "name": "costs UI production build",
+      "target": "Harness OS frontend",
+      "command": "npm run build in harness-os/frontend",
+      "result": "TypeScript and Vite build passed after quota_status display changes."
     }
   ],
   "safety": {
