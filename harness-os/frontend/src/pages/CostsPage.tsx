@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react"
-import type { CostsSummaryPayload } from "../components/types"
+import type { ArtifactCostsPayload, CostsSummaryPayload } from "../components/types"
 import { formatUsdAndKrw, formatUsdAndKrwDetailed } from "../components/utils"
 
 interface CostsPageProps {
@@ -10,6 +10,7 @@ interface CostsPageProps {
 
 export const CostsPage: React.FC<CostsPageProps> = ({ apiSecret, backendUrl, exchangeRate = 1400 }) => {
   const [data, setData] = useState<CostsSummaryPayload | null>(null)
+  const [artifactCosts, setArtifactCosts] = useState<ArtifactCostsPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
@@ -17,16 +18,19 @@ export const CostsPage: React.FC<CostsPageProps> = ({ apiSecret, backendUrl, exc
   const fetchCosts = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await fetch(`${backendUrl}/api/costs/summary`, {
-        headers: {
-          "X-Harness-Secret": apiSecret,
-        },
-      })
+      const headers = {
+        "X-Harness-Secret": apiSecret,
+      }
+      const [res, artifactRes] = await Promise.all([
+        fetch(`${backendUrl}/api/costs/summary`, { headers }),
+        fetch(`${backendUrl}/api/costs/artifacts`, { headers }),
+      ])
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`)
       }
       const payload: CostsSummaryPayload = await res.json()
       setData(payload)
+      if (artifactRes.ok) setArtifactCosts(await artifactRes.json())
       setError(null)
     } catch (err) {
       console.error("Failed to fetch cost summary:", err)
@@ -129,6 +133,29 @@ export const CostsPage: React.FC<CostsPageProps> = ({ apiSecret, backendUrl, exc
     <div className="costs-page-container animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
       
       {/* 1. TOP OVERVIEW PANEL */}
+      <div className="panel" style={{ position: "relative" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "1rem", flexWrap: "wrap" }}>
+          <div>
+            <h2 style={{ fontSize: "1.15rem", fontWeight: 650, margin: 0 }}>시각 제작 비용</h2>
+            <div className="text-muted" style={{ fontSize: ".78rem", marginTop: ".35rem" }}>이미지 생성·디자인·렌더링·QA 계측값</div>
+          </div>
+          <div style={{ fontSize: "1.25rem", fontWeight: 750, color: "hsl(28, 78%, 60%)" }}>
+            ${((artifactCosts?.estimated_total_usd ?? 0)).toFixed(4)}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: "1.25rem", marginTop: "1rem", fontSize: ".78rem", color: "var(--color-text-muted)" }}>
+          <span>실제 대조: ${(artifactCosts?.actual_total_usd ?? 0).toFixed(4)}</span>
+          <span>미대조 기록: {artifactCosts?.unreconciled_count ?? 0}건</span>
+        </div>
+        <div style={{ overflowX: "auto", marginTop: "1rem" }}>
+          <table className="table" style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr><th style={{ textAlign: "left", fontSize: ".75rem" }}>작업</th><th style={{ textAlign: "left", fontSize: ".75rem" }}>구분</th><th style={{ textAlign: "right", fontSize: ".75rem" }}>추정 비용</th><th style={{ textAlign: "right", fontSize: ".75rem" }}>시각</th></tr></thead>
+            <tbody>{(artifactCosts?.items ?? []).slice(0, 8).map((item) => <tr key={`${item.job_id}-${item.created_at}`} style={{ borderBottom: "1px solid var(--color-border)" }}><td style={{ fontSize: ".76rem", padding: ".5rem 0" }}>{item.job_id}</td><td style={{ fontSize: ".76rem" }}>{item.artifact_type} · {item.provider}</td><td style={{ textAlign: "right", fontSize: ".76rem" }}>${item.estimated_cost_usd.toFixed(4)}</td><td style={{ textAlign: "right", fontSize: ".72rem", color: "var(--color-text-muted)" }}>{item.created_at ? new Date(item.created_at).toLocaleString("ko-KR") : "-"}</td></tr>)}</tbody>
+          </table>
+          {(artifactCosts?.items ?? []).length === 0 && <div className="text-muted" style={{ fontSize: ".8rem", padding: "1rem 0" }}>계측된 시각 제작 비용이 없습니다.</div>}
+        </div>
+      </div>
+
       <div className="panel" style={{ position: "relative", overflow: "hidden" }}>
         <div style={{
           position: "absolute",

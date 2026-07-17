@@ -4047,6 +4047,31 @@ def end_conference_room(item_id: str, _: None = Depends(_require_secret)) -> dic
     return _end_conference_room(item_id)
 
 
+@app.get("/api/costs/artifacts")
+def get_artifact_costs(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    """Visual production cost ledger: image generation, design, render, and QA."""
+    try:
+        rows = _execute_query(
+            """SELECT job_id, artifact_type, provider, model, units, unit_name,
+                      estimated_cost_usd, actual_cost_usd, metadata, created_at
+               FROM artifact_cost_log ORDER BY created_at DESC LIMIT 100"""
+        ) or []
+    except Exception:
+        rows = []
+    items = [dict(r) for r in rows]
+    for item in items:
+        item["units"] = float(item.get("units") or 0)
+        item["estimated_cost_usd"] = float(item.get("estimated_cost_usd") or 0)
+        item["actual_cost_usd"] = float(item["actual_cost_usd"]) if item.get("actual_cost_usd") is not None else None
+        item["created_at"] = item["created_at"].isoformat() if item.get("created_at") else None
+    return {
+        "estimated_total_usd": round(sum(x["estimated_cost_usd"] for x in items), 8),
+        "actual_total_usd": round(sum(x["actual_cost_usd"] or 0 for x in items), 8),
+        "unreconciled_count": sum(1 for x in items if x["actual_cost_usd"] is None),
+        "items": items,
+    }
+
+
 @app.get("/api/costs/summary")
 def get_costs_summary(_: None = Depends(_require_secret)) -> dict[str, Any]:
     rows = _execute_query(

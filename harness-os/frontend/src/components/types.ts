@@ -717,3 +717,20 @@ export type CostsSummaryPayload = {
     }>
   }
 }
+
+export type ArtifactCostsPayload = {
+  estimated_total_usd: number
+  actual_total_usd: number
+  unreconciled_count: number
+  items: Array<{
+    job_id: string
+    artifact_type: string
+    provider: string
+    model?: string | null
+    units: number
+    unit_name: string
+    estimated_cost_usd: number
+    actual_cost_usd?: number | null
+    created_at?: string | null
+  }>
+}

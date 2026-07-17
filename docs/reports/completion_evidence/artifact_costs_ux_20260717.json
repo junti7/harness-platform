@@ -1,0 +1,15 @@
+{
+  "task": "Expose visual production costs in Harness OS Costs UX",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {"path": "CLAUDE.md", "read_at": "2026-07-17T15:45:00+09:00", "summary": "Customer-facing UI changes require scoped verification and deployment evidence."},
+    {"path": "docs/governance/LLM_GROUND_RULES.md", "read_at": "2026-07-17T15:45:00+09:00", "summary": "Runtime completion must distinguish estimated costs from reconciled receipts."}
+  ],
+  "verification": [
+    {"name": "backend syntax", "target": "production API", "command": "python3 -m py_compile harness-os/backend/main.py", "result": "Passed."},
+    {"name": "frontend production build", "target": "Harness OS Costs UX", "command": "npm run build in harness-os/frontend", "result": "TypeScript and Vite build passed; existing chunk-size warning remains."},
+    {"name": "artifact cost API contract", "target": "macmini API", "command": "GET /api/costs/artifacts after artifact_cost_log migration", "result": "Endpoint returns estimated_total_usd, actual_total_usd, unreconciled_count, and recent items."}
+  ],
+  "deploy": {"method": "scripts/deploy_to_macmini.sh harness-os/backend/main.py harness-os/frontend/src/components/types.ts harness-os/frontend/src/pages/CostsPage.tsx", "result": "Pending commit and targeted production deployment."},
+  "red_team": {"models": ["Claude", "Gemini"], "artifacts": [{"artifact": "/Users/juntae.park/projects/harness-platform/harness-os/frontend/src/pages/CostsPage.tsx"}], "verdict": "red_team_residual_risk"}
+}
