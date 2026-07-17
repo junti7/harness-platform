@@ -1,0 +1,13 @@
+{
+  "task": "Fix artifact cost CLI import path",
+  "status": "complete",
+  "governance_bootstrap": [
+    {"path": "CLAUDE.md", "read_at": "2026-07-17T15:20:00+09:00", "summary": "Runtime changes require production verification and scoped deployment."},
+    {"path": "docs/governance/LLM_GROUND_RULES.md", "read_at": "2026-07-17T15:20:00+09:00", "summary": "Completion evidence records real entrypoint checks."}
+  ],
+  "verification": [
+    {"name": "Mac Mini artifact cost CLI smoke test", "target": "macmini production database", "command": ".venv/bin/python3 scripts/log_artifact_cost.py --job-id smoke-test --artifact-type render --provider chrome --units 0", "result": "CLI executed and inserted a row into artifact_cost_log after migration."}
+  ],
+  "deploy": {"method": "scripts/deploy_to_macmini.sh scripts/log_artifact_cost.py", "result": "Targeted deployment completed after the import-path fix."},
+  "red_team": {"models": ["Claude", "Gemini"], "artifacts": [{"artifact": "/Users/juntae.park/projects/harness-platform/scripts/log_artifact_cost.py"}], "verdict": "red_team_residual_risk"}
+}

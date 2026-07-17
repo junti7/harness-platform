@@ -2,6 +2,10 @@
 """Record image/render/QA production usage in artifact_cost_log."""
 import argparse
 import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.artifact_costs import log_artifact_cost
 
