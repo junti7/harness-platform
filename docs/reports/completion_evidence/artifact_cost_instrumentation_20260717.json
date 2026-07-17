@@ -1,0 +1,15 @@
+{
+  "task": "Add visual artifact cost instrumentation",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {"path": "CLAUDE.md", "read_at": "2026-07-17T15:00:00+09:00", "summary": "Cost and production changes require real verification and explicit uncertainty."},
+    {"path": "docs/governance/LLM_GROUND_RULES.md", "read_at": "2026-07-17T15:00:00+09:00", "summary": "Completion evidence must distinguish estimates from provider receipts."}
+  ],
+  "verification": [
+    {"name": "artifact cost module compile", "target": "production entrypoint", "command": "python3 -m py_compile core/artifact_costs.py scripts/log_artifact_cost.py", "result": "Passed."},
+    {"name": "migration contract inspection", "target": "database", "command": "Inspect infra/migrations/2026-07-17_artifact_cost_log.sql", "result": "Creates a job-scoped ledger for image generation, rendering, QA, estimates, and actual receipts."}
+  ],
+  "deploy": {"method": "scripts/deploy_to_macmini.sh infra/migrations/2026-07-17_artifact_cost_log.sql core/artifact_costs.py scripts/log_artifact_cost.py", "result": "Source-of-truth changes prepared; production migration/application remains pending."},
+  "red_team": {"models": ["Claude", "Gemini"], "artifacts": [{"artifact": "/Users/juntae.park/projects/harness-platform/core/artifact_costs.py"}], "verdict": "red_team_residual_risk"},
+  "residual_risk": ["Provider image prices are not hardcoded; IMAGE_GENERATION_UNIT_PRICE_USD must be configured from the provider receipt.", "Database migration must be applied before runtime writes." ]
+}
