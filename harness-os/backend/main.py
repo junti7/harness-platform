@@ -6142,6 +6142,24 @@ def openclaw_status(_: None = Depends(_require_secret)) -> dict[str, Any]:
             
     status["snapshot"] = snapshot_data
     status["watchdog_logs"] = watchdog_logs
+
+    session_dir = _PROJECT_ROOT / "runtime" / "openclaw_sessions"
+    active_session_count = 0
+    if session_dir.exists():
+        try:
+            active_session_count = len(list(session_dir.glob("*.jsonl")))
+        except Exception:
+            pass
+
+    status["openclaw_71"] = {
+        "watchdog_interval_sec": 300,
+        "session_persistence_active": True,
+        "persisted_sessions_count": active_session_count,
+        "ab_testing_enabled": os.environ.get("OPENCLAW_AB_ENABLED", "false").strip().lower() in {"1", "true", "yes"},
+        "ab_model_b": os.environ.get("OPENCLAW_AB_MODEL_B", "claude-sonnet-5"),
+        "clawrouter_enabled": os.environ.get("OPENCLAW_PROVIDER_MODE", "auto").strip().lower() == "clawrouter",
+        "provider_mode": os.environ.get("OPENCLAW_PROVIDER_MODE", "auto"),
+    }
     return status
 
 

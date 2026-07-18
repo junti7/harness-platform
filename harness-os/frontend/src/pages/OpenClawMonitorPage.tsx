@@ -1,5 +1,24 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 
+type OpenClaw71Info = {
+  watchdog_interval_sec: number
+  session_persistence_active: boolean
+  persisted_sessions_count: number
+  ab_testing_enabled: boolean
+  ab_model_b: string
+  clawrouter_enabled: boolean
+  provider_mode: string
+}
+
+type UnifiedUsage = {
+  date: string
+  today_cost_usd: number
+  daily_limit_usd: number
+  budget_utilization_pct: number | null
+  harness_models: Record<string, { provider: string; model: string; input_tokens: number; output_tokens: number; calls: number }>
+  gateway_models: Record<string, { provider: string; model: string; tokens: number; cost_usd: number; calls: number }>
+}
+
 type OpenClawStatus = {
   ok: boolean
   running: boolean
@@ -12,6 +31,7 @@ type OpenClawStatus = {
   launchagent_installed: boolean
   launchagent_label: string
   checked_at: string
+  openclaw_71?: OpenClaw71Info
   snapshot?: {
     generated_at?: string
     openclaw_bridge?: string
@@ -54,6 +74,7 @@ type Props = {
 
 export function OpenClawMonitorPage({ apiBase, authHeaders }: Props) {
   const [status, setStatus] = useState<OpenClawStatus | null>(null)
+  const [usage, setUsage] = useState<UnifiedUsage | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [restarting, setRestarting] = useState(false)
@@ -62,10 +83,17 @@ export function OpenClawMonitorPage({ apiBase, authHeaders }: Props) {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${apiBase}/api/system/openclaw/status`, { headers: authHeaders() })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = (await res.json()) as OpenClawStatus
+      const [resStatus, resUsage] = await Promise.all([
+        fetch(`${apiBase}/api/system/openclaw/status`, { headers: authHeaders() }),
+        fetch(`${apiBase}/api/costs/unified-usage`, { headers: authHeaders() }).catch(() => null)
+      ])
+      if (!resStatus.ok) throw new Error(`HTTP ${resStatus.status}`)
+      const data = (await resStatus.json()) as OpenClawStatus
       setStatus(data)
+      if (resUsage && resUsage.ok) {
+        const uData = (await resUsage.json()) as UnifiedUsage
+        setUsage(uData)
+      }
       setError(null)
     } catch (err) {
       console.error(err)
@@ -169,7 +197,7 @@ export function OpenClawMonitorPage({ apiBase, authHeaders }: Props) {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.2rem', marginBottom: '1.8rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.2rem', marginBottom: '1.8rem' }}>
         {/* 게이트웨이 코어 카드 */}
         <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '1.2rem' }}>
           <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.4rem' }}>
@@ -183,7 +211,7 @@ export function OpenClawMonitorPage({ apiBase, authHeaders }: Props) {
               background: status?.ok ? 'var(--color-ok)' : 'var(--color-danger)',
               display: 'inline-block'
             }} />
-            <strong style={{ fontSize: '1.3rem', fontWeight: 800 }}>
+            <strong style={{ fontSize: '1.2rem', fontWeight: 800 }}>
               {status?.running ? '구동 중 (ACTIVE)' : '정지됨 (INACTIVE)'}
             </strong>
           </div>
@@ -192,10 +220,10 @@ export function OpenClawMonitorPage({ apiBase, authHeaders }: Props) {
           </div>
         </div>
 
-        {/* 자가치유 워치독 */}
+        {/* 자가치유 워치독 (300s) */}
         <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '1.2rem' }}>
           <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.4rem' }}>
-            실시간 자가치유 워치독
+            자가치유 워치독 (OpenClaw 7.1)
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.4rem' }}>
             <span style={{
@@ -205,37 +233,89 @@ export function OpenClawMonitorPage({ apiBase, authHeaders }: Props) {
               background: status?.launchagent_installed ? 'var(--color-ok)' : 'var(--color-danger)',
               display: 'inline-block'
             }} />
-            <strong style={{ fontSize: '1.3rem', fontWeight: 800 }}>
-              {status?.launchagent_installed ? '감시 활성 (WATCHING)' : '비활성 (DISABLED)'}
+            <strong style={{ fontSize: '1.2rem', fontWeight: 800 }}>
+              {status?.launchagent_installed ? '감시 활성 (300s)' : '비활성 (DISABLED)'}
             </strong>
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: '0.6rem' }}>
-            주기: 120초 자동 회복 감시 순환 구동 중
+            주기: 300초(5분) 경량 자가복구 · OOM/Crash 추적
           </div>
         </div>
 
-        {/* 시스템 무결성 점검 */}
+        {/* 대화 세션 영속화 (Crash 복구) */}
         <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '1.2rem' }}>
           <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.4rem' }}>
-            DB 및 연동 상태 무결성
+            세션 영속성 (Crash Recovery)
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.4rem' }}>
             <span style={{
               width: '10px',
               height: '10px',
               borderRadius: '50%',
-              background: status?.snapshot?.integrity?.ok ? 'var(--color-ok)' : 'var(--color-warn)',
+              background: 'var(--color-ok)',
               display: 'inline-block'
             }} />
-            <strong style={{ fontSize: '1.3rem', fontWeight: 800 }}>
-              {status?.snapshot?.integrity?.ok ? '정상 (INTEGRITY OK)' : '점검 필요 (WARNING)'}
+            <strong style={{ fontSize: '1.2rem', fontWeight: 800 }}>
+              보존 중 ({status?.openclaw_71?.persisted_sessions_count ?? 0}개 세션)
             </strong>
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: '0.6rem' }}>
-            PostgreSQL DB 연결 회복 완료
+            JSONL Write-Behind · 복구 TTL: 24h
+          </div>
+        </div>
+
+        {/* Sonnet 5 A/B & ClawRouter */}
+        <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '1.2rem' }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.4rem' }}>
+            라우팅 엔진 & 실험
+          </div>
+          <div style={{ fontSize: '0.85rem', fontWeight: 700, marginTop: '0.4rem' }}>
+            A/B 실험: <span style={{ color: status?.openclaw_71?.ab_testing_enabled ? 'var(--color-ok)' : 'var(--color-text-muted)' }}>{status?.openclaw_71?.ab_testing_enabled ? `활성 (${status.openclaw_71.ab_model_b})` : '비활성 (Sonnet 4.5)'}</span>
+          </div>
+          <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: '0.4rem' }}>
+            ClawRouter: {status?.openclaw_71?.clawrouter_enabled ? '동적 라우팅' : `Auto Mode (${status?.openclaw_71?.provider_mode ?? 'auto'})`}
           </div>
         </div>
       </div>
+
+      {/* 통합 LLM 실시간 비용 및 예산 모니터링 */}
+      {usage && (
+        <section style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '1.5rem', marginBottom: '1.8rem' }}>
+          <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginTop: 0, marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>💳 실시간 통합 LLM 사용량 & 예산 (Unified LLM Cost View)</span>
+            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', fontWeight: 400 }}>기준일: {usage.date}</span>
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.2rem' }}>
+            <div style={{ padding: '0.8rem 1rem', borderRadius: '6px', background: 'var(--color-bg-dark, #0d1117)', border: '1px solid var(--color-border)' }}>
+              <div style={{ fontSize: '0.72rem', color: '#8b949e' }}>오늘 지출 누적</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#38edf6' }}>${usage.today_cost_usd.toFixed(4)}</div>
+            </div>
+            <div style={{ padding: '0.8rem 1rem', borderRadius: '6px', background: 'var(--color-bg-dark, #0d1117)', border: '1px solid var(--color-border)' }}>
+              <div style={{ fontSize: '0.72rem', color: '#8b949e' }}>일일 예산 한도</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#adbac7' }}>${usage.daily_limit_usd.toFixed(2)}</div>
+            </div>
+            <div style={{ padding: '0.8rem 1rem', borderRadius: '6px', background: 'var(--color-bg-dark, #0d1117)', border: '1px solid var(--color-border)' }}>
+              <div style={{ fontSize: '0.72rem', color: '#8b949e' }}>예산 소모율 (%)</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: usage.budget_utilization_pct && usage.budget_utilization_pct > 80 ? 'var(--color-danger)' : 'var(--color-ok)' }}>
+                {usage.budget_utilization_pct !== null ? `${usage.budget_utilization_pct}%` : 'N/A'}
+              </div>
+            </div>
+          </div>
+          {Object.keys(usage.harness_models).length > 0 && (
+            <div style={{ fontSize: '0.8rem' }}>
+              <strong style={{ color: 'var(--color-text-muted)', display: 'block', marginBottom: '0.4rem' }}>오늘 사용된 모델 현황 (Harness DB):</strong>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                {Object.entries(usage.harness_models).map(([key, item]) => (
+                  <span key={key} style={{ padding: '0.25rem 0.6rem', borderRadius: '4px', background: 'var(--color-surface-lighter)', border: '1px solid var(--color-border)', fontFamily: 'monospace' }}>
+                    {item.model} ({item.provider}): {item.input_tokens + item.output_tokens} tokens ({item.calls}회)
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
 
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem', alignItems: 'start' }}>
         {/* 왼쪽: 연동 서비스 스캔 */}

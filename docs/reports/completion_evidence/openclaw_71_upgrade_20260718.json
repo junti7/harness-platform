@@ -1,5 +1,5 @@
 {
-  "task": "OpenClaw 2026.7.1 Upgrade and Feature Adoption (proposals 1-6)",
+  "task": "OpenClaw 2026.7.1 Upgrade, Feature Adoption, and Harness OS Web Dashboard Integration",
   "status": "complete",
   "governance_bootstrap": [
     {
@@ -33,15 +33,15 @@
       "result": "JSONL session persistence write-behind and restore routines integrated."
     },
     {
-      "name": "unified usage API",
-      "target": "harness-os/backend/main.py",
-      "command": "python compilation",
-      "result": "/api/costs/unified-usage endpoint added for OpenClaw gateway + Harness cost log integration."
+      "name": "unified usage API & dashboard",
+      "target": "harness-os/backend/main.py & OpenClawMonitorPage.tsx",
+      "command": "curl /api/costs/unified-usage",
+      "result": "Unified usage API and OpenClaw 7.1 dashboard UI active and displaying live metrics."
     }
   ],
   "deploy": {
     "method": "commit and push followed by scripts/deploy_to_macmini.sh",
-    "result": "Commit and push via SoT flow."
+    "result": "Commit, push, and targeted Mac Mini deploy with frontend rebuild."
   },
   "red_team": {
     "models": ["Claude", "Gemini"],
@@ -52,6 +52,6 @@
     "verdict": "red_team_clear"
   },
   "residual_risk": [
-    "ClawRouter and Sonnet 5 A/B disabled by default until explicit env toggle."
+    "Sonnet 5 A/B testing active on Mac Mini .env."
   ]
 }
