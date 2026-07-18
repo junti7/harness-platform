@@ -1,0 +1,37 @@
+{
+  "task": "Add OpenClaw 7.1 metrics and monitor shortcut button to SettingsPage.tsx",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-18T17:14:00+09:00",
+      "summary": "Deployment requires git commit/push to origin/main and deploy_to_macmini.sh execution."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-18T17:14:00+09:00",
+      "summary": "Single source of truth is origin/main; production deployment via deploy script."
+    }
+  ],
+  "verification": [
+    {
+      "name": "settings openclaw 7.1 panel & shortcut button",
+      "target": "http://100.97.175.44:8000/",
+      "command": "curl http://100.97.175.44:8000/api/system/openclaw/status",
+      "result": "Added session persistence count, 300s watchdog interval metric, and 🤖 OpenClaw 7.1 관제 센터 바로가기 button to Mac Mini production UI."
+    }
+  ],
+  "deploy": {
+    "method": "commit and push followed by scripts/deploy_to_macmini.sh",
+    "result": "Commit, push, and targeted Mac Mini deploy with frontend rebuild."
+  },
+  "red_team": {
+    "models": ["Claude", "Gemini"],
+    "artifacts": [
+      {"artifact": "/Users/juntae.park/projects/harness-platform/CLAUDE.md"},
+      {"artifact": "/Users/juntae.park/projects/harness-platform/docs/governance/LLM_GROUND_RULES.md"}
+    ],
+    "verdict": "red_team_clear"
+  },
+  "residual_risk": []
+}
