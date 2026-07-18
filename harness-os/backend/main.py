@@ -5335,6 +5335,93 @@ def get_token_usage(_: None = Depends(_require_secret)) -> list[dict[str, Any]]:
     return result
 
 
+@app.get("/api/costs/unified-usage")
+def get_unified_usage(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    """Unified LLM cost view: Harness api_cost_log + OpenClaw gateway usage."""
+    import httpx as _httpx
+
+    # 1. Harness DB costs (today)
+    try:
+        rows = _execute_query(
+            """
+            SELECT
+                provider,
+                model,
+                SUM(input_tokens) as input_tokens,
+                SUM(output_tokens) as output_tokens,
+                COUNT(*) as calls
+            FROM api_cost_log
+            WHERE created_at >= CURRENT_DATE
+            GROUP BY provider, model
+            """
+        )
+    except Exception:
+        rows = []
+
+    harness_models: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        model = str(r.get("model", "unknown"))
+        provider = str(r.get("provider", "unknown"))
+        key = f"{provider}/{model}"
+        harness_models[key] = {
+            "provider": provider,
+            "model": model,
+            "input_tokens": int(r.get("input_tokens") or 0),
+            "output_tokens": int(r.get("output_tokens") or 0),
+            "calls": int(r.get("calls") or 0),
+            "source": "harness_db",
+        }
+
+    # 2. OpenClaw gateway usage (best-effort)
+    gateway_models: dict[str, dict[str, Any]] = {}
+    gw_port = int(os.getenv("HARNESS_OPENCLAW_GATEWAY_PORT", "18789"))
+    try:
+        resp = _httpx.get(
+            f"http://127.0.0.1:{gw_port}/api/usage",
+            params={"period": "daily"},
+            timeout=3.0,
+        )
+        if resp.status_code == 200:
+            for provider_name, models in resp.json().items():
+                if not isinstance(models, dict):
+                    continue
+                for model_name, stats in models.items():
+                    if not isinstance(stats, dict):
+                        continue
+                    key = f"{provider_name}/{model_name}"
+                    gateway_models[key] = {
+                        "provider": provider_name,
+                        "model": model_name,
+                        "tokens": stats.get("tokens", 0),
+                        "cost_usd": stats.get("cost", 0.0),
+                        "calls": stats.get("calls", 0),
+                        "source": "openclaw_gateway",
+                    }
+    except Exception:
+        pass  # Gateway may not support /api/usage yet
+
+    # 3. Today's cost from Harness cost tracker
+    today_cost = 0.0
+    daily_limit = float(os.getenv("DAILY_COST_LIMIT_USD", "0.00"))
+    try:
+        from adapters.content.refiner import get_today_cost, DAILY_COST_LIMIT
+        today_cost = get_today_cost()
+        daily_limit = DAILY_COST_LIMIT
+    except Exception:
+        pass
+
+    return {
+        "date": datetime.now().date().isoformat(),
+        "harness_models": harness_models,
+        "gateway_models": gateway_models,
+        "today_cost_usd": round(today_cost, 4),
+        "daily_limit_usd": daily_limit,
+        "budget_utilization_pct": round(today_cost / daily_limit * 100, 1) if daily_limit > 0 else None,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+
 class ActionRequiredToggleRequest(BaseModel):
     id: str
 

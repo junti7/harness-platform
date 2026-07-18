@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # OpenClaw 게이트웨이 워치독
-# Mac Mini LaunchAgent에서 120초마다 실행.
+# Mac Mini LaunchAgent에서 300초마다 실행.
 # 프로세스가 죽었거나 게이트웨이 응답이 없으면 launchctl로 재시동.
 
 set -euo pipefail
@@ -94,7 +94,20 @@ fi
 
 # 죽었거나 응답 없음 → 재시동
 UID_VAL=$(id -u)
-log "DEAD pid=${PID:-none} gateway=${HTTP_CODE} → kickstart ${LABEL}"
+# Crash cause classification (2026-07-18 OpenClaw 7.1 improvement)
+CRASH_CAUSE="unknown"
+if [[ -n "$PID" && "$GATEWAY_OK" -eq 0 ]]; then
+    CRASH_CAUSE="gateway_unresponsive"
+elif [[ -z "$PID" ]]; then
+    if dmesg 2>/dev/null | tail -20 | grep -qi "openclaw.*killed"; then
+        CRASH_CAUSE="oom_kill"
+    else
+        CRASH_CAUSE="process_died"
+    fi
+fi
+SESSION_DIR="/Users/juntaepark/projects/harness-platform/runtime/openclaw_sessions"
+SESSION_COUNT=$(find "$SESSION_DIR" -name '*.jsonl' -mmin -1440 2>/dev/null | wc -l | tr -d ' ')
+log "DEAD pid=${PID:-none} gateway=${HTTP_CODE} cause=${CRASH_CAUSE} active_sessions=${SESSION_COUNT} → kickstart ${LABEL}"
 
 if launchctl kickstart -k "gui/${UID_VAL}/${LABEL}" 2>>"$LOG_FILE"; then
     log "kickstart 완료 - 3초 대기 후 재검증"

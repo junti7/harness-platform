@@ -63,6 +63,9 @@ SOUL_PATH = PROJECT_ROOT / "SOUL.md"
 GROUND_RULES_PATH = PROJECT_ROOT / "docs/openclaw/OPENCLAW_GROUND_RULES.md"
 FAILURE_MEMORY_PATH = PROJECT_ROOT / "docs/openclaw/OPENCLAW_FAILURE_MEMORY.md"
 
+SESSION_PERSIST_DIR = PROJECT_ROOT / "runtime" / "openclaw_sessions"
+SESSION_PERSIST_TTL_HOURS = int(os.environ.get("OPENCLAW_SESSION_TTL_HOURS", "24"))
+
 # .env 값을 항상 현재 프로젝트 기준으로 다시 로드한다.
 # launchd / Slack listener / ad-hoc python 실행에서 환경 해석이 엇갈리지 않도록 override=True를 사용한다.
 load_dotenv(PROJECT_ROOT / ".env", override=True)
@@ -84,6 +87,12 @@ OPENCLAW_MAX_HISTORY_CHARS = int(os.environ.get("OPENCLAW_MAX_HISTORY_CHARS", "1
 OPENCLAW_CHAT_MAX_TOKENS = int(os.environ.get("OPENCLAW_CHAT_MAX_TOKENS", "4096"))
 OPENCLAW_TOOL_MAX_TOKENS = int(os.environ.get("OPENCLAW_TOOL_MAX_TOKENS", "4096"))
 OPENCLAW_INTENT_ENABLED = os.environ.get("OPENCLAW_INTENT_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+
+# OpenClaw 7.1 Features Configuration
+OPENCLAW_AB_ENABLED = os.environ.get("OPENCLAW_AB_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+OPENCLAW_AB_MODEL_B = os.environ.get("OPENCLAW_AB_MODEL_B", "claude-sonnet-5")
+OPENCLAW_CLAWROUTER_ENABLED = OPENCLAW_PROVIDER_MODE == "clawrouter"
+OPENCLAW_CLAWROUTER_BUDGET_CAP = float(os.environ.get("OPENCLAW_CLAWROUTER_BUDGET_CAP", os.environ.get("DAILY_COST_LIMIT_USD", "0.00")))
 
 # 도구 사용이 필요한 키워드 — 매칭 시 Claude Sonnet tool path로 라우팅
 TOOL_KEYWORDS = [
@@ -624,10 +633,59 @@ def _try_gmail_summary_response(user_message: str) -> str | None:
     return "\n".join(lines)
 
 
+def _persist_session_message(session_id: str, role: str, content: str) -> None:
+    """Write-behind: append message to JSONL file for crash recovery."""
+    if not session_id or SESSION_PERSIST_TTL_HOURS <= 0:
+        return
+    try:
+        SESSION_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
+        path = SESSION_PERSIST_DIR / f"{session_id.replace('/', '_')}.jsonl"
+        with open(path, "a", encoding="utf-8") as f:
+            json.dump(
+                {"role": role, "content": content[:4000], "ts": datetime.now().isoformat(timespec="seconds")},
+                f, ensure_ascii=False,
+            )
+            f.write("\n")
+    except Exception as exc:
+        logger.warning(f"[session-persist] write failed: {exc}")
+
+
+def _restore_session(session_id: str) -> list[dict[str, str]]:
+    """Restore conversation history from persisted JSONL after gateway restart."""
+    if not session_id or SESSION_PERSIST_TTL_HOURS <= 0:
+        return []
+    path = SESSION_PERSIST_DIR / f"{session_id.replace('/', '_')}.jsonl"
+    if not path.exists():
+        return []
+    try:
+        age_hours = (time.time() - path.stat().st_mtime) / 3600
+        if age_hours > SESSION_PERSIST_TTL_HOURS:
+            path.unlink(missing_ok=True)
+            return []
+        messages: list[dict[str, str]] = []
+        for line in path.read_text(encoding="utf-8").splitlines()[-(OPENCLAW_HISTORY_TURNS * 2):]:
+            try:
+                entry = json.loads(line)
+                messages.append({"role": entry["role"], "content": entry["content"]})
+            except (json.JSONDecodeError, KeyError):
+                continue
+        return messages
+    except Exception as exc:
+        logger.warning(f"[session-persist] restore failed for {session_id}: {exc}")
+        return []
+
+
 def _get_conversation_history(session_id: str | None) -> list[dict[str, str]]:
     if not session_id:
         return []
     with _CONVERSATION_HISTORY_LOCK:
+        if not _CONVERSATION_HISTORY[session_id]:
+            # Attempt crash recovery from persisted session
+            restored = _restore_session(session_id)
+            if restored:
+                for msg in restored:
+                    _CONVERSATION_HISTORY[session_id].append(msg)
+                logger.info(f"[session-persist] restored {len(restored)} messages for {session_id}")
         history = list(_CONVERSATION_HISTORY[session_id])
 
     if OPENCLAW_MAX_HISTORY_CHARS <= 0:
@@ -647,10 +705,15 @@ def _get_conversation_history(session_id: str | None) -> list[dict[str, str]]:
 def _record_conversation_turn(session_id: str | None, user_message: str, assistant_response: str) -> None:
     if not session_id:
         return
+    user_content = f"<user_message>{user_message}</user_message>"
+    assistant_content = assistant_response[:12000]
     with _CONVERSATION_HISTORY_LOCK:
         history = _CONVERSATION_HISTORY[session_id]
-        history.append({"role": "user", "content": f"<user_message>{user_message}</user_message>"})
-        history.append({"role": "assistant", "content": assistant_response[:12000]})
+        history.append({"role": "user", "content": user_content})
+        history.append({"role": "assistant", "content": assistant_content})
+    # Write-behind persistence for crash recovery
+    _persist_session_message(session_id, "user", user_content)
+    _persist_session_message(session_id, "assistant", assistant_content)
 
 
 def _redact_for_audit(text: str, max_len: int = 500) -> str:
@@ -1903,6 +1966,25 @@ def _should_preserve_premium_context(
     return bool(risk_scan.get("context_sensitive_terms"))
 
 
+def _query_clawrouter(purpose: str = "chat") -> dict[str, str] | None:
+    """Query ClawRouter for optimal model selection respecting budget cap."""
+    if not OPENCLAW_CLAWROUTER_ENABLED:
+        return None
+    try:
+        gw_port = os.environ.get("OPENCLAW_GATEWAY_PORT", "18789")
+        resp = httpx.post(
+            f"http://127.0.0.1:{gw_port}/api/router/select",
+            json={"purpose": purpose, "budget_cap_usd": OPENCLAW_CLAWROUTER_BUDGET_CAP},
+            timeout=3.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            return {"provider": data.get("provider", ""), "model": data.get("model", "")}
+    except Exception as exc:
+        logger.warning(f"[clawrouter] query failed, falling back to manual routing: {exc}")
+    return None
+
+
 def _select_chat_route(
     *,
     user_message: str,
@@ -1911,11 +1993,18 @@ def _select_chat_route(
     requester_role: str,
     chat_backend_mode: str,
     effective_chat_model: str,
+    session_id: str = "",
 ) -> tuple[str, str]:
     """
     Returns (route_label, model_label).
-    model_label is one of: local, haiku, sonnet.
+    model_label is one of: local, haiku, sonnet, sonnet_b.
     """
+    # ClawRouter: dynamic model discovery when enabled (zero-base budget-aware)
+    if OPENCLAW_CLAWROUTER_ENABLED:
+        cr = _query_clawrouter("chat")
+        if cr:
+            return (f"clawrouter_{cr['provider']}_chat", cr.get("model", "sonnet"))
+
     if chat_backend_mode in ("gemini", "openai"):
         return (f"{chat_backend_mode}_chat", "sonnet")
 
@@ -1928,10 +2017,10 @@ def _select_chat_route(
         return ("local_chat", "local")
 
     if _should_preserve_premium_context(user_message, history, risk_scan):
-        return ("premium_chat", "sonnet")
+        return ("premium_chat", "sonnet_b" if OPENCLAW_AB_ENABLED and session_id and hash(session_id) % 2 == 1 else "sonnet")
 
     if _HIGH_STAKES_CHAT_RE.search(user_message):
-        return ("premium_chat", "sonnet")
+        return ("premium_chat", "sonnet_b" if OPENCLAW_AB_ENABLED and session_id and hash(session_id) % 2 == 1 else "sonnet")
 
     if requester_role == "vp" and _VP_REVIEW_CHAT_RE.search(user_message) and risk_scan["risk_level"] == "low":
         return ("economy_chat", "haiku")
@@ -1941,6 +2030,9 @@ def _select_chat_route(
 
     if _ANALYSIS_CHAT_RE.search(user_message) and risk_scan["risk_level"] == "medium" and not _HIGH_STAKES_CHAT_RE.search(user_message):
         return ("economy_chat", "haiku")
+
+    if OPENCLAW_AB_ENABLED and session_id and hash(session_id) % 2 == 1:
+        return ("premium_chat", "sonnet_b")
 
     return ("premium_chat", "sonnet")
 
@@ -2997,6 +3089,7 @@ def run(
             requester_role=requester_role,
             chat_backend_mode=chat_backend_mode,
             effective_chat_model=effective_chat_model,
+            session_id=effective_session_id,
         )
         _log_route_audit(
             session_id=effective_session_id,
@@ -3015,7 +3108,12 @@ def run(
                 fallback_max_tokens=effective_chat_max_tokens,
             )
         else:
-            selected_model = OPENCLAW_INTENT_MODEL if model_label == "haiku" else effective_chat_model
+            if model_label == "haiku":
+                selected_model = OPENCLAW_INTENT_MODEL
+            elif model_label == "sonnet_b":
+                selected_model = OPENCLAW_AB_MODEL_B
+            else:
+                selected_model = effective_chat_model
             response = _run_chat_with_handoff(
                 user_message,
                 session_id=effective_session_id,

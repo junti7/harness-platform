@@ -1,0 +1,57 @@
+{
+  "task": "OpenClaw 2026.7.1 Upgrade and Feature Adoption (proposals 1-6)",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-18T16:37:00+09:00",
+      "summary": "Deployment requires git commit/push to origin/main and deploy_to_macmini.sh execution."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-18T16:37:00+09:00",
+      "summary": "Single source of truth is origin/main; production deployment via deploy script."
+    }
+  ],
+  "verification": [
+    {
+      "name": "openclaw-cli version",
+      "target": "macmini binary",
+      "command": "openclaw --version",
+      "result": "OpenClaw 2026.7.1 verified on Mac Mini."
+    },
+    {
+      "name": "watchdog interval and logging",
+      "target": "scripts/openclaw_watchdog.sh & setup_openclaw_watchdog_mac_mini.sh",
+      "command": "diff check",
+      "result": "Interval updated to 300s with crash cause classification and session count logging."
+    },
+    {
+      "name": "session persistence",
+      "target": "adapters/content/openclaw_agent.py",
+      "command": "python compilation and unit check",
+      "result": "JSONL session persistence write-behind and restore routines integrated."
+    },
+    {
+      "name": "unified usage API",
+      "target": "harness-os/backend/main.py",
+      "command": "python compilation",
+      "result": "/api/costs/unified-usage endpoint added for OpenClaw gateway + Harness cost log integration."
+    }
+  ],
+  "deploy": {
+    "method": "commit and push followed by scripts/deploy_to_macmini.sh",
+    "result": "Commit and push via SoT flow."
+  },
+  "red_team": {
+    "models": ["Claude", "Gemini"],
+    "artifacts": [
+      {"artifact": "/Users/juntae.park/projects/harness-platform/CLAUDE.md"},
+      {"artifact": "/Users/juntae.park/projects/harness-platform/docs/governance/LLM_GROUND_RULES.md"}
+    ],
+    "verdict": "red_team_clear"
+  },
+  "residual_risk": [
+    "ClawRouter and Sonnet 5 A/B disabled by default until explicit env toggle."
+  ]
+}

@@ -41,7 +41,7 @@ cat > "$PLIST_PATH" << PLIST_EOF
     <string>${PROJECT_ROOT}/scripts/openclaw_watchdog.sh</string>
   </array>
   <key>StartInterval</key>
-  <integer>120</integer>
+  <integer>300</integer>
   <key>RunAtLoad</key>
   <true/>
   <key>StandardOutPath</key>

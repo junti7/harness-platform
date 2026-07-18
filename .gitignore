@@ -60,6 +60,7 @@ docs/reviews/edu_pilot_simulations/
 docs/reviews/conference_room_audit/
 docs/reviews/trading_theme_bridge_precision/
 docs/reviews/openclaw_route_audit/
+runtime/openclaw_sessions/
 data/collection_health_status.json
 
 # 런타임 트레이딩/ops 상태 (prod 재생성)
