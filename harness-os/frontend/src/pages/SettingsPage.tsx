@@ -79,7 +79,7 @@ function formatRuntimeHealthError(error?: string | null): string {
   return text
 }
 
-export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase, authHeaders }: Props) {
+export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase, authHeaders, onNavigate }: Props) {
   const [runtimeHealth, setRuntimeHealth] = useState<{
     ok: boolean
     target?: string
