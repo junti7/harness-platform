@@ -801,6 +801,7 @@ function App() {
           currentRole={viewRole}
           apiBase={API_BASE}
           authHeaders={authHeaders}
+          onNavigate={(view) => setActiveView(view as any)}
           onSettingsChange={(role, settings) => {
             localStorage.setItem(`harness-settings-${role}`, JSON.stringify(settings))
             if (settings.theme) setTheme(settings.theme)

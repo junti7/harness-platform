@@ -22,6 +22,15 @@ type OpenClawStatus = {
   launchagent_installed: boolean
   launchagent_label: string
   checked_at: string
+  openclaw_71?: {
+    watchdog_interval_sec: number
+    session_persistence_active: boolean
+    persisted_sessions_count: number
+    ab_testing_enabled: boolean
+    ab_model_b: string
+    clawrouter_enabled: boolean
+    provider_mode: string
+  }
 }
 
 const defaultSettings = {
@@ -51,6 +60,7 @@ type Props = {
   onLogout: () => void
   apiBase: string
   authHeaders: () => Record<string, string>
+  onNavigate?: (view: string) => void
 }
 
 function formatRuntimeHealthError(error?: string | null): string {
@@ -474,17 +484,15 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase,
                   </strong>
                 </div>
                 <div>
-                  <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>LaunchAgent</span>
-                  <strong style={{ fontSize: '0.88rem', color: openClawStatus?.launchagent_installed ? 'var(--color-text)' : 'var(--color-danger)' }}>
-                    {openClawStatus?.launchagent_installed ? '등록됨' : '미등록'}
+                  <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>세션 영속성</span>
+                  <strong style={{ fontSize: '0.88rem', color: 'var(--color-accent)' }}>
+                    보존 중 ({openClawStatus?.openclaw_71?.persisted_sessions_count ?? 0}개)
                   </strong>
                 </div>
                 <div>
-                  <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>최종 점검</span>
+                  <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>자가치유 워치독</span>
                   <strong style={{ fontSize: '0.88rem', color: 'var(--color-text)' }}>
-                    {openClawStatus?.checked_at
-                      ? new Date(openClawStatus.checked_at).toLocaleTimeString('ko-KR')
-                      : '—'}
+                    {openClawStatus?.openclaw_71?.watchdog_interval_sec ?? 300}초 주기
                   </strong>
                 </div>
               </div>
@@ -503,26 +511,46 @@ export function SettingsPage({ onSettingsChange, currentRole, onLogout, apiBase,
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={() => void handleOpenClawRestart()}
-                disabled={openClawRestartLoading}
-                style={{
-                  alignSelf: 'flex-start',
-                  padding: '0.45rem 1.1rem',
-                  borderRadius: '8px',
-                  border: '1px solid color-mix(in srgb, var(--color-danger) 40%, var(--color-border))',
-                  background: openClawRestartLoading ? 'var(--color-surface)' : 'color-mix(in srgb, var(--color-danger) 8%, var(--color-surface))',
-                  color: 'var(--color-danger)',
-                  fontWeight: 700,
-                  fontSize: '0.82rem',
-                  cursor: openClawRestartLoading ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s ease',
-                  opacity: openClawRestartLoading ? 0.6 : 1,
-                }}
-              >
-                {openClawRestartLoading ? '재시동 중…' : '강제 재시동'}
-              </button>
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => void handleOpenClawRestart()}
+                  disabled={openClawRestartLoading}
+                  style={{
+                    padding: '0.45rem 1.1rem',
+                    borderRadius: '8px',
+                    border: '1px solid color-mix(in srgb, var(--color-danger) 40%, var(--color-border))',
+                    background: openClawRestartLoading ? 'var(--color-surface)' : 'color-mix(in srgb, var(--color-danger) 8%, var(--color-surface))',
+                    color: 'var(--color-danger)',
+                    fontWeight: 700,
+                    fontSize: '0.82rem',
+                    cursor: openClawRestartLoading ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.2s ease',
+                    opacity: openClawRestartLoading ? 0.6 : 1,
+                  }}
+                >
+                  {openClawRestartLoading ? '재시동 중…' : '강제 재시동'}
+                </button>
+                {onNavigate && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('openclaw')}
+                    style={{
+                      padding: '0.45rem 1.1rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--color-accent)',
+                      background: 'color-mix(in srgb, var(--color-accent) 15%, var(--color-surface))',
+                      color: 'var(--color-accent)',
+                      fontWeight: 700,
+                      fontSize: '0.82rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    🤖 OpenClaw 7.1 자가치유 관제 센터 바로가기 →
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
