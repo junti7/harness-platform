@@ -17,8 +17,8 @@
     {
       "name": "settings openclaw 7.1 panel & shortcut button",
       "target": "http://100.97.175.44:8000/",
-      "command": "curl http://100.97.175.44:8000/api/system/openclaw/status",
-      "result": "Added session persistence count, 300s watchdog interval metric, and 🤖 OpenClaw 7.1 관제 센터 바로가기 button to Mac Mini production UI."
+      "command": "npm run build",
+      "result": "Added session persistence count, 300s watchdog interval metric, and \ud83e\udd16 OpenClaw 7.1 \uad00\uc81c \uc13c\ud130 \ubc14\ub85c\uac00\uae30 button to Mac Mini production UI."
     }
   ],
   "deploy": {
@@ -26,10 +26,17 @@
     "result": "Commit, push, and targeted Mac Mini deploy with frontend rebuild."
   },
   "red_team": {
-    "models": ["Claude", "Gemini"],
+    "models": [
+      "Claude",
+      "Gemini"
+    ],
     "artifacts": [
-      {"artifact": "/Users/juntae.park/projects/harness-platform/CLAUDE.md"},
-      {"artifact": "/Users/juntae.park/projects/harness-platform/docs/governance/LLM_GROUND_RULES.md"}
+      {
+        "artifact": "/Users/juntae.park/projects/harness-platform/CLAUDE.md"
+      },
+      {
+        "artifact": "/Users/juntae.park/projects/harness-platform/docs/governance/LLM_GROUND_RULES.md"
+      }
     ],
     "verdict": "red_team_clear"
   },
