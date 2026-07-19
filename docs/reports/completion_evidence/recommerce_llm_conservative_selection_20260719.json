@@ -1,6 +1,6 @@
 {
   "task": "Replace manual recommerce OJT product selection with conservative local-LLM evidence selection",
-  "status": "residual_risk",
+  "status": "complete",
   "date": "2026-07-19",
   "requirements": [
     {"requirement": "LLM performs evidence-based product selection", "status": "pass", "evidence": "core/recommerce_market_research.py requires a local Ollama selector and persists model identity, decision evidence and candidate evidence."},
@@ -13,10 +13,17 @@
     {"path": "docs/governance/LLM_GROUND_RULES.md", "read_at": "2026-07-19T20:10:00+09:00", "summary": "Applied origin-main deployment, secret protection, fail-safe completion evidence and no automatic Red Team invariant."}
   ],
   "verification": [
-    {"name": "local live Naver plus Ollama selection", "target": "local runtime market-research script", "command": ".venv/bin/python scripts/run_recommerce_market_research.py", "result": "passed: local Ollama gemma4:latest returned a valid decision; no product passed all conservative gates, so candidates=[] and selection hold was preserved."}
+    {"name": "local live Naver plus Ollama selection", "target": "local runtime market-research script", "command": ".venv/bin/python scripts/run_recommerce_market_research.py", "result": "passed: local Ollama gemma4:latest returned a valid decision; no product passed all conservative gates, so candidates=[] and selection hold was preserved."},
+    {"name": "focused recommerce regression suite", "target": "local recommerce API and selection logic", "command": ".venv/bin/python -m unittest discover -s tests -p 'test_recommerce*.py' -v", "result": "passed: 18 tests, including local-LLM absence, low LLM score and source-failure fail-closed regression cases."},
+    {"name": "frontend build and page lint", "target": "local user-facing frontend dist", "command": "cd harness-os/frontend && npm run build && npx eslint src/pages/RecommercePage.tsx", "result": "passed: Vite production bundle built and the changed Recommerce page has zero lint findings."},
+    {"name": "Mac Mini production API selection state", "target": "macmini backend API /api/recommerce/market-research", "command": "Mac Mini local authenticated curl after scripts/run_recommerce_market_research.py", "result": "passed: API returned selection_blocked_no_evidence_qualified_product, provider ollama, model gemma4:latest, error null, candidate_pool_count 10 and candidate_count 0."},
+    {"name": "Mac Mini served frontend bundle", "target": "macmini production frontend on port 5173", "command": "curl served index-C6AFXxao.js and verify four UX markers", "result": "passed: 사람이 상품을 고르지 않습니다, LLM 보수심사, 선정 보류 and 허용 공급가 상한 are in the served bundle; port 5173 is listening."}
   ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh core/recommerce_market_research.py scripts/run_recommerce_market_research.py harness-os/frontend/src/pages/RecommercePage.tsx docs/strategy/RECOMMERCE_LLM_CONSERVATIVE_SELECTION_POLICY_20260719.md docs/reports/completion_evidence/recommerce_llm_conservative_selection_20260719.json",
+    "result": "passed: Mac Mini backup scratch/pre_deploy_backup_20260719_204954, atomic frontend bundle index-C6AFXxao.js, backend reload on port 8000, and all five scoped paths matched origin/main."
+  },
   "residual_risk": [
-    "Mac Mini deploy and production-entrypoint verification are pending at the time this evidence was created.",
     "Naver API omits shipping, supplier stock and wholesale terms; the system intentionally blocks commercial readiness until separately evidenced."
   ]
 }
