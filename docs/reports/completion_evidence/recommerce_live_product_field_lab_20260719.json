@@ -1,6 +1,6 @@
 {
   "task": "Add practical live-product field research mode to recommerce OJT",
-  "status": "residual_risk",
+  "status": "complete",
   "date": "2026-07-19",
   "requirements": [
     {"requirement": "Use a specific real product instead of a simulated quiz", "status": "pass", "evidence": "Public Ownerclan product WFIR5I7 is the fixed case with source link and observation date"},
@@ -38,10 +38,19 @@
       "target": "recommerce API and workspace runtime",
       "command": ".venv/bin/python -m unittest discover -s tests -p 'test_recommerce*.py' -q",
       "result": "passed 15 tests; real supplier and SKU workspace state remains untouched"
+    },
+    {
+      "name": "Mac Mini production field-lab bundle verification",
+      "target": "macmini production URL, dist bundle and service",
+      "command": "curl 127.0.0.1:5173, inspect served index-daWkgxM7.js, check listener, run focused tests and scoped origin diff",
+      "result": "passed: five field-lab markers served, port 5173 listening, 15 tests passed and scoped diff 0"
     }
   ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh harness-os/frontend/src/pages/RecommercePage.tsx harness-os/frontend/src/pages/RecommercePage.css docs/reports/completion_evidence/recommerce_live_product_field_lab_20260719.json",
+    "result": "passed: backup scratch/pre_deploy_backup_20260719_193819, atomic frontend build index-daWkgxM7.js and all scoped paths matched origin/main"
+  },
   "residual_risk": [
-    "Mac Mini production deployment and served-bundle verification remain pending.",
     "Public supplier facts can change after the observation date; UI tells user to re-check the source rather than treating the snapshot as current truth.",
     "No supplier inquiry was sent and no sample was ordered, so stock, identity, defect rate and negotiated price remain unverified."
   ]
