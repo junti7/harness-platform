@@ -156,6 +156,50 @@
 .recommerce-ojt-actions > span { color: var(--text-muted); font-size: .8rem; font-variant-numeric: tabular-nums; }
 .recommerce-ojt-actions button:first-child { justify-self: start; }
 .recommerce-ojt-actions button:last-child { justify-self: end; }
+.recommerce-field-lab { overflow: hidden; scroll-margin-top: 18px; border: 1px solid var(--border-strong); border-top: 3px solid var(--accent-cyan); border-radius: var(--r-lg); background: var(--surface); }
+.recommerce-field-head { display: flex; justify-content: space-between; gap: 20px; padding: 26px 28px 20px; }
+.recommerce-field-head h3 { margin: 0; font-size: clamp(1.35rem, 2.5vw, 1.85rem); }
+.recommerce-field-head p { margin: 8px 0 0; color: var(--text-muted); }
+.recommerce-field-status { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px 28px; color: #fff; background: #0f172a; }
+.recommerce-field-status div { display: grid; gap: 3px; }
+.recommerce-field-status span { color: #94a3b8; font-size: .72rem; }
+.recommerce-text-button.dark { margin: 0; color: #93c5fd; }
+.recommerce-field-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--border); }
+.recommerce-field-task { min-width: 0; padding: 26px 28px; background: var(--surface); }
+.recommerce-task-number { color: var(--accent); font-size: .75rem; font-weight: 800; letter-spacing: .08em; }
+.recommerce-field-task h4 { margin: 5px 0 10px; font-size: 1.1rem; }
+.recommerce-field-task > p { color: var(--text-muted); line-height: 1.55; }
+.recommerce-external-link { display: inline-flex; align-items: center; margin-top: 8px; text-decoration: none; }
+.recommerce-observed-facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 18px; }
+.recommerce-observed-facts div { display: grid; gap: 5px; padding: 11px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-muted); }
+.recommerce-observed-facts span, .recommerce-live-math span { color: var(--text-muted); font-size: .72rem; }
+.recommerce-observed-facts strong, .recommerce-live-math strong { font-variant-numeric: tabular-nums; }
+.recommerce-source-note { margin-top: 12px; padding: 10px 12px; color: var(--warning); border-left: 3px solid var(--warning); background: var(--warning-soft); font-size: .78rem; line-height: 1.45; }
+.recommerce-field-input-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 11px; }
+.recommerce-field-input-grid label { display: grid; gap: 6px; color: var(--text-muted); font-size: .78rem; font-weight: 700; }
+.recommerce-field-input-grid label div { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 7px; }
+.recommerce-field-input-grid input { min-width: 0; min-height: 44px; padding: 9px 10px; color: var(--ink); border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--surface); font: inherit; }
+.recommerce-field-input-grid em { font-style: normal; }
+.recommerce-live-math { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; overflow: hidden; margin-top: 16px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--border); }
+.recommerce-live-math div { display: grid; gap: 5px; padding: 13px; background: var(--surface-muted); }
+.recommerce-live-math .positive strong { color: var(--success); }
+.recommerce-live-math .negative strong { color: var(--danger); }
+.recommerce-live-math small { grid-column: 1 / -1; padding: 10px 12px; color: var(--text-muted); background: var(--surface); }
+.recommerce-field-checks { display: grid; gap: 7px; margin-top: 14px; }
+.recommerce-field-checks label { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--r-sm); cursor: pointer; }
+.recommerce-field-checks label.checked { border-color: var(--accent); background: var(--accent-soft); }
+.recommerce-field-checks input { width: 18px; height: 18px; accent-color: var(--accent); }
+.recommerce-field-verdict { margin-top: 15px; padding: 14px; border: 1px solid; border-radius: var(--r-md); }
+.recommerce-field-verdict span { display: block; margin-bottom: 4px; font-size: .72rem; font-weight: 800; }
+.recommerce-field-verdict p { margin: 5px 0 0; color: var(--text-muted); line-height: 1.45; }
+.recommerce-field-verdict.hold { border-color: var(--warning); background: var(--warning-soft); }
+.recommerce-field-verdict.hold strong, .recommerce-field-verdict.hold span { color: var(--warning); }
+.recommerce-field-verdict.review { border-color: var(--accent); background: var(--info-soft); }
+.recommerce-field-verdict.review strong, .recommerce-field-verdict.review span { color: var(--accent); }
+.recommerce-inquiry { overflow: auto; max-height: 250px; padding: 15px; white-space: pre-wrap; color: var(--ink); border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-muted); font: .82rem/1.6 inherit; }
+.recommerce-field-outcome { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; border-top: 1px solid var(--border); background: var(--border); }
+.recommerce-field-outcome div { display: grid; gap: 4px; padding: 17px 28px; background: var(--info-soft); }
+.recommerce-field-outcome span { color: var(--accent); font-size: .72rem; font-weight: 800; }
 .recommerce-primary:disabled { opacity: .55; cursor: not-allowed; }
 .recommerce-card-list { display: grid; gap: 9px; }
 .recommerce-record-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--r-md); }
@@ -186,6 +230,7 @@
   .recommerce-product-overview { grid-template-columns: 1fr; }
   .recommerce-choice-grid, .recommerce-decision-grid { grid-template-columns: 1fr; }
   .recommerce-choice-grid button, .recommerce-decision-grid button { min-height: auto; }
+  .recommerce-field-columns { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 760px) {
@@ -219,9 +264,16 @@
   .recommerce-spec-list, .recommerce-evidence-check, .recommerce-quote-metrics { grid-template-columns: 1fr; }
   .recommerce-flow { grid-template-columns: 1fr; }
   .recommerce-flow b { transform: rotate(90deg); justify-self: center; }
+  .recommerce-field-head, .recommerce-field-status { align-items: flex-start; flex-direction: column; padding: 20px 16px; }
+  .recommerce-field-task { padding: 22px 16px; }
+  .recommerce-observed-facts { grid-template-columns: repeat(2, 1fr); }
+  .recommerce-field-outcome { grid-template-columns: 1fr; }
+  .recommerce-field-outcome div { padding: 15px 16px; }
 }
 
 @media (max-width: 430px) {
   .recommerce-kpis { grid-template-columns: 1fr; }
   .recommerce-sku-card dl { grid-template-columns: 1fr 1fr; }
+  .recommerce-field-input-grid, .recommerce-live-math { grid-template-columns: 1fr; }
+  .recommerce-live-math small { grid-column: auto; }
 }
