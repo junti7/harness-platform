@@ -1,6 +1,6 @@
 {
   "task": "Add conservative adaptive fallback to recommerce LLM OJT selection",
-  "status": "residual_risk",
+  "status": "complete",
   "date": "2026-07-19",
   "requirements": [
     {"requirement": "Lower thresholds gradually only when stricter scan returns zero", "status": "pass", "evidence": "Three ordered selection profiles are evaluated independently: strict, adaptive_1, then adaptive_2."},
@@ -13,12 +13,16 @@
     {"path": "docs/governance/LLM_GROUND_RULES.md", "read_at": "2026-07-19T21:10:00+09:00", "summary": "Applied origin-main deployment, secret protection, atomic runtime writes and CEO-only Red Team rule."}
   ],
   "verification": [
-    {"name": "local adaptive live scan", "target": "local Naver Shopping plus Ollama runtime", "command": ".venv/bin/python scripts/run_recommerce_market_research.py", "result": "passed before final dedup patch: strict profile selected 0; adaptive_1 selected the 34-compartment organizer with LLM score 90, price spread 1.898 and allowable supplier cost 2,648 KRW."},
+    {"name": "local adaptive live scan", "target": "local Naver Shopping plus Ollama runtime", "command": ".venv/bin/python scripts/run_recommerce_market_research.py", "result": "passed: strict profile selected 0; adaptive_1 selected the 34-compartment organizer with LLM score 90, price spread 1.898 and allowable supplier cost 2,648 KRW."},
     {"name": "focused recommerce regression suite", "target": "local recommerce selection and API tests", "command": ".venv/bin/python -m unittest discover -s tests -p 'test_recommerce*.py' -q", "result": "passed: 20 tests including strict-first adaptive fallback and duplicate-selection prevention."},
-    {"name": "frontend build and changed-page lint", "target": "local frontend production bundle", "command": "cd harness-os/frontend && npm run build && npx eslint src/pages/RecommercePage.tsx", "result": "passed: production build and changed-page lint."}
+    {"name": "frontend build and changed-page lint", "target": "local frontend production bundle", "command": "cd harness-os/frontend && npm run build && npx eslint src/pages/RecommercePage.tsx", "result": "passed: production build and changed-page lint."},
+    {"name": "Mac Mini production API and served bundle", "target": "macmini backend API and port 5173 frontend", "command": "Run production market scan, authenticated curl /api/recommerce/market-research, inspect served index-BfdKv5vP.js", "result": "passed: API returned one adaptive_1 candidate, strict_candidate_count 0, score 90, price spread 1.898 and supplier ceiling 2,648 KRW. Served bundle contains selection_profile_label and port 8000/5173 are listening."}
   ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh core/recommerce_market_research.py harness-os/frontend/src/pages/RecommercePage.tsx docs/strategy/RECOMMERCE_LLM_CONSERVATIVE_SELECTION_POLICY_20260719.md docs/reports/completion_evidence/recommerce_adaptive_selection_20260719.json",
+    "result": "passed: Mac Mini backup scratch/pre_deploy_backup_20260719_210746, atomic frontend bundle index-BfdKv5vP.js, backend reload and scoped origin/main diff 0."
+  },
   "residual_risk": [
-    "Mac Mini deploy and final post-dedup live scan are pending.",
     "The selected item remains an OJT investigation target, not an inventory purchase recommendation; shipping, stock and wholesale terms are not present in Naver data."
   ]
 }
