@@ -38,17 +38,35 @@
       "target": "local py_compile",
       "command": ".venv/bin/python -m py_compile adapters/content/refiner.py scripts/run_edu_tier3_parallel.py scripts/retry_dlq.py harness-os/backend/main.py",
       "result": "passed; also exposed and fixed pre-existing retry_dlq SyntaxError"
+    },
+    {
+      "name": "Mac Mini production API and backlog drain",
+      "target": "macmini API and database",
+      "command": "deploy, apply DLQ index migration, run terminal triage drain, then GET /api/pipeline/backlog?domain=edu_consulting",
+      "result": "passed: refined_total 70277, refine_backlog 0, retry_backlog 0, failed_terminal 0, refined_per_hour 834"
+    },
+    {
+      "name": "Mac Mini retry LaunchAgent recovery",
+      "target": "macmini launchd and database",
+      "command": "launchctl kickstart gui/UID/com.harness.retry-dlq then inspect exit code and DLQ retry timestamps",
+      "result": "passed: last exit code 0, 20 entries received retry_count and last_retry_at updates"
+    },
+    {
+      "name": "Mac Mini production frontend bundle",
+      "target": "production dist and HTTP entrypoint",
+      "command": "curl production root and inspect served asset after deploy_to_macmini frontend rebuild",
+      "result": "passed: production HTML serves index-CChnss1Z.js"
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh with exact changed runtime paths after origin/main push",
-    "result": "pending because pre-push completion evidence guard requires this artifact in origin/main first"
+    "result": "deployed successfully; frontend atomic build, backend reload, seven target paths matched origin/main, migration applied"
   },
   "review": {
     "copilot": "Initial red_team_block findings addressed: retry ownership documented and syntax-fixed, DLQ state index added, SQL guards strengthened, rolling response compatibility added.",
     "claude": "Unavailable: Claude Code session limit reached; no clear verdict claimed."
   },
   "residual_risk": [
-    "Mac Mini deploy, migration application, backlog drain, API response, frontend bundle, and LaunchAgent retry verification remain pending until push succeeds."
+    "In-app browser was unavailable, so visible card layout was not screenshot-verified; production API shape, served bundle, and HTML asset reference were verified."
   ]
 }
