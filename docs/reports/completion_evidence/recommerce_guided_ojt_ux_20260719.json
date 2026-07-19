@@ -1,6 +1,6 @@
 {
   "task": "Rebuild recommerce beginner OJT as a guided decision simulator",
-  "status": "residual_risk",
+  "status": "complete",
   "date": "2026-07-19",
   "requirements": [
     {"requirement": "Apply DESIGN.md calm mission-control hierarchy", "status": "pass", "evidence": "Dedicated workbench, risk-first sourcing warning, restrained blue light surfaces, thin borders, tabular cost figures"},
@@ -40,11 +40,20 @@
       "target": "recommerce API and workspace runtime",
       "command": ".venv/bin/python -m unittest discover -s tests -p 'test_recommerce*.py' -v",
       "result": "passed 15 tests; research and workspace boundaries unchanged"
+    },
+    {
+      "name": "Mac Mini served OJT bundle and service verification",
+      "target": "macmini production URL and dist service",
+      "command": "curl http://127.0.0.1:5173 then inspect served index-DrkrWJY5.js, listener, scoped origin diff and run focused tests",
+      "result": "passed: four guided-OJT markers served, port 5173 listening, scoped diff 0, and 15 recommerce tests passed"
     }
   ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh harness-os/frontend/src/pages/RecommercePage.tsx harness-os/frontend/src/pages/RecommercePage.css docs/reports/completion_evidence/recommerce_guided_ojt_ux_20260719.json",
+    "result": "passed: backup scratch/pre_deploy_backup_20260719_192832, atomic frontend build index-DrkrWJY5.js, and all three scoped paths matched origin/main"
+  },
   "residual_risk": [
-    "Mac Mini production deployment and served-bundle verification remain pending.",
-    "In-app browser was unavailable, so no rendered screenshot was captured; production bundle and service checks will be used after deploy.",
+    "In-app browser was unavailable, so no rendered screenshot was captured; production served-bundle and service checks were used instead.",
     "Repository-wide lint still has 37 pre-existing errors outside RecommercePage; changed-page lint is clean."
   ]
 }
