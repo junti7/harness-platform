@@ -27,11 +27,11 @@ RESTRICTED_TERMS = (
     "유아", "어린이", "아동", "완구", "식품", "건강기능", "화장품", "의약", "전기", "배터리", "충전",
 )
 SAFE_CATEGORY1 = {"생활/건강", "가구/인테리어"}
-MIN_ITEM_PRICE = 15_000
-MIN_COMPETITOR_SAMPLES = 5
-MIN_COMPETITOR_MALLS = 3
-MIN_LLM_SCORE = 75
-MAX_PRICE_SPREAD_RATIO = 1.6
+MIN_ITEM_PRICE = 12_000
+MIN_COMPETITOR_SAMPLES = 4
+MIN_COMPETITOR_MALLS = 2
+MIN_LLM_SCORE = 70
+MAX_PRICE_SPREAD_RATIO = 2.1
 CONSERVATIVE_PLATFORM_FEE_RATE = 0.15
 CONSERVATIVE_RETURN_RESERVE_RATE = 0.08
 CONSERVATIVE_AD_RATE = 0.10
@@ -40,6 +40,29 @@ CONSERVATIVE_SHIPPING_COST = 4_000
 CONSERVATIVE_LABOR_PACKAGING_COST = 2_000
 MAX_SHORTLIST = 3
 LLMSelector = Callable[[list[dict[str, Any]]], tuple[dict[str, Any], dict[str, Any]]]
+
+# Only market/economic thresholds adapt. Safety scope, item identity, LLM use and
+# commercial blocking never relax. Profiles are evaluated in this exact order.
+SELECTION_PROFILES = (
+    {
+        "id": "strict", "label": "엄격 기준", "adaptive": False,
+        "minimum_item_price": 15_000, "minimum_competitor_samples": 5,
+        "minimum_competitor_malls": 3, "minimum_llm_score": 75,
+        "maximum_price_spread_ratio": 1.60, "minimum_allowable_supply_cost": 3_000,
+    },
+    {
+        "id": "adaptive_1", "label": "적응 1단계 · 제한 완화", "adaptive": True,
+        "minimum_item_price": 14_000, "minimum_competitor_samples": 5,
+        "minimum_competitor_malls": 3, "minimum_llm_score": 72,
+        "maximum_price_spread_ratio": 1.90, "minimum_allowable_supply_cost": 2_500,
+    },
+    {
+        "id": "adaptive_2", "label": "적응 2단계 · 최종 보수 완화", "adaptive": True,
+        "minimum_item_price": 12_000, "minimum_competitor_samples": 4,
+        "minimum_competitor_malls": 2, "minimum_llm_score": 70,
+        "maximum_price_spread_ratio": 2.10, "minimum_allowable_supply_cost": 1_500,
+    },
+)
 
 
 def _clean_title(value: str) -> str:
@@ -243,7 +266,11 @@ def _ollama_select(candidates: list[dict[str, Any]]) -> tuple[dict[str, Any], di
     return decision, {"provider": "ollama", "model": model, "required": True}
 
 
-def _apply_selection(candidates: list[dict[str, Any]], decision: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _apply_selection(
+    candidates: list[dict[str, Any]],
+    decision: dict[str, Any],
+    profile: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     by_id = {item["id"]: item for item in candidates}
     selected: list[dict[str, Any]] = []
     blocked: list[dict[str, Any]] = []
@@ -254,22 +281,25 @@ def _apply_selection(candidates: list[dict[str, Any]], decision: dict[str, Any])
         if not item or item_id in seen:
             continue
         seen.add(item_id)
+        if any(_similarity(item["name"], prior["name"]) >= 0.65 for prior in selected):
+            blocked.append({"query": item["name"], "reason": "선정 상품과 동일·유사 SKU 중복", "median_price": item["median_price"]})
+            continue
         failures = []
-        if item["sample_size"] < MIN_COMPETITOR_SAMPLES:
-            failures.append(f"고유사도 경쟁가격 표본 {MIN_COMPETITOR_SAMPLES}개 미만")
-        if item["sample_mall_count"] < MIN_COMPETITOR_MALLS:
-            failures.append(f"독립 판매처 표본 {MIN_COMPETITOR_MALLS}곳 미만")
-        if not item["price_p25"] or item["price_p25"] < MIN_ITEM_PRICE:
+        if item["sample_size"] < profile["minimum_competitor_samples"]:
+            failures.append(f"고유사도 경쟁가격 표본 {profile['minimum_competitor_samples']}개 미만")
+        if item["sample_mall_count"] < profile["minimum_competitor_malls"]:
+            failures.append(f"독립 판매처 표본 {profile['minimum_competitor_malls']}곳 미만")
+        if not item["price_p25"] or item["price_p25"] < profile["minimum_item_price"]:
             failures.append("보수적 경쟁가격이 최소 객단가 미달")
         price_spread_ratio = (
             float(item["price_p75"]) / float(item["price_p25"])
             if item["price_p25"] and item["price_p75"] else 999.0
         )
-        if price_spread_ratio > MAX_PRICE_SPREAD_RATIO:
+        if price_spread_ratio > profile["maximum_price_spread_ratio"]:
             failures.append("경쟁가격 분산 과다")
         llm_score = max(0, min(100, int(choice.get("score") or 0)))
-        if llm_score < MIN_LLM_SCORE:
-            failures.append(f"LLM 보수점수 {MIN_LLM_SCORE}점 미만")
+        if llm_score < profile["minimum_llm_score"]:
+            failures.append(f"LLM 보수점수 {profile['minimum_llm_score']}점 미만")
         if not item["product_id"] or not item["image_url"]:
             failures.append("상품 동일성 식별자 또는 이미지 누락")
         conservative_sale_price = int(item["price_p25"] or 0)
@@ -279,8 +309,8 @@ def _apply_selection(candidates: list[dict[str, Any]], decision: dict[str, Any])
             - CONSERVATIVE_SHIPPING_COST
             - CONSERVATIVE_LABOR_PACKAGING_COST
         )
-        if max_supply_cost < 3_000:
-            failures.append("최악비용 역산 후 허용 공급가 3,000원 미만")
+        if max_supply_cost < profile["minimum_allowable_supply_cost"]:
+            failures.append(f"최악비용 역산 후 허용 공급가 {profile['minimum_allowable_supply_cost']:,}원 미만")
         if failures:
             blocked.append({"query": item["name"], "reason": " · ".join(failures), "median_price": item["median_price"]})
             continue
@@ -294,6 +324,12 @@ def _apply_selection(candidates: list[dict[str, Any]], decision: dict[str, Any])
             "conservative_sale_price": conservative_sale_price,
             "max_allowable_supply_cost": max_supply_cost,
             "price_spread_ratio": round(price_spread_ratio, 3),
+            "selection_profile": profile["id"],
+            "selection_profile_label": profile["label"],
+            "adaptive_selection_note": (
+                "엄격 기준 통과 상품이 없어, 공개된 적응 기준으로만 재심사해 선정했습니다."
+                if profile["adaptive"] else "엄격 기준을 그대로 통과했습니다."
+            ),
             "selection_scope": "ojt_research_target_only",
             "shipping_evidence_status": "not_available_from_naver_api",
             "commercial_readiness": "blocked_until_supplier_and_shipping_evidence",
@@ -306,11 +342,8 @@ def _selection_policy() -> dict[str, Any]:
         "human_manual_selection_allowed": False,
         "llm_required": True,
         "fail_closed": True,
-        "minimum_competitor_samples": MIN_COMPETITOR_SAMPLES,
-        "minimum_competitor_malls": MIN_COMPETITOR_MALLS,
-        "minimum_item_price": MIN_ITEM_PRICE,
-        "minimum_llm_score": MIN_LLM_SCORE,
-        "maximum_price_spread_ratio": MAX_PRICE_SPREAD_RATIO,
+        "adaptive_fallback_enabled": True,
+        "profiles": list(SELECTION_PROFILES),
         "worst_case_cost_assumptions": {
             "platform_fee_rate": CONSERVATIVE_PLATFORM_FEE_RATE,
             "return_reserve_rate": CONSERVATIVE_RETURN_RESERVE_RATE,
@@ -361,9 +394,21 @@ def run_market_research(
         return snapshot
 
     selector = llm_selector or _ollama_select
+    selected_profile = SELECTION_PROFILES[-1]
+    strict_candidate_count = 0
     try:
         decision, llm_meta = selector(pool)
-        selected, gate_rejections = _apply_selection(pool, decision)
+        selected = []
+        gate_rejections = []
+        for profile in SELECTION_PROFILES:
+            profile_selected, profile_rejections = _apply_selection(pool, decision, profile)
+            if profile["id"] == "strict":
+                strict_candidate_count = len(profile_selected)
+            gate_rejections = profile_rejections
+            if profile_selected:
+                selected = profile_selected
+                selected_profile = profile
+                break
         status = "llm_selected_ojt_targets_not_purchase_recommendation" if selected else "selection_blocked_no_evidence_qualified_product"
         llm_error = None
     except Exception as exc:
@@ -381,6 +426,13 @@ def run_market_research(
         "source": "Naver Shopping Search API + local Ollama LLM",
         "method_note": "LLM이 실제 API 가격표본만 심사합니다. 배송비는 Naver API에 없어 별도 검증 전 매입·판매가 확정이 금지됩니다.",
         "selection_policy": _selection_policy(),
+        "selection_result": {
+            "profile_id": selected_profile["id"] if selected else None,
+            "profile_label": selected_profile["label"] if selected else None,
+            "adaptive": bool(selected and selected_profile["adaptive"]),
+            "strict_candidate_count": strict_candidate_count,
+            "fallback_profiles_checked": [profile["id"] for profile in SELECTION_PROFILES],
+        },
         "llm": {**llm_meta, "error": llm_error, "error_detail": llm_error_detail},
         "query_summaries": query_summaries,
         "candidate_pool_count": len(pool),

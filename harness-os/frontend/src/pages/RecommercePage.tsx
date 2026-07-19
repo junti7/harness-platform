@@ -64,10 +64,12 @@ type MarketCandidate = {
   market_low_price?: number; market_link?: string; image_url?: string; sample_size?: number; sample_mall_count?: number
   competitor_samples?: Array<{ name: string; price: number; mall: string; link: string }>; llm_score?: number
   conservative_sale_price?: number; max_allowable_supply_cost?: number; commercial_readiness?: string
+  selection_profile?: string; selection_profile_label?: string; adaptive_selection_note?: string
 }
 type MarketResearch = {
   status: string; observed_at?: string | null; source?: string; method_note?: string
-  selection_policy?: { human_manual_selection_allowed: boolean; llm_required: boolean; fail_closed: boolean; minimum_item_price: number }
+  selection_policy?: { human_manual_selection_allowed: boolean; llm_required: boolean; fail_closed: boolean; adaptive_fallback_enabled?: boolean }
+  selection_result?: { profile_id?: string | null; profile_label?: string | null; adaptive?: boolean; strict_candidate_count?: number }
   llm?: { provider?: string; model?: string; required?: boolean; error?: string | null }
   candidates: MarketCandidate[]; rejected: Array<{ query: string; reason: string; result_count?: number; median_price?: number | null }>
 }
@@ -273,7 +275,7 @@ export function RecommercePage({ apiBase, authHeaders, viewRole }: Props) {
           <p>싸게 사는 화면이 아닙니다. 증빙 가능한 공급과 보수적 비용을 먼저 검토하는 내부 작업실입니다.</p>
           <div className="recommerce-hero-actions">
             <button className="recommerce-primary" disabled={!fieldCandidate} onClick={() => startFieldResearch()}>LLM 선정 OJT 시작</button>
-            <span>{fieldCandidate ? '실제 시장근거로 공급가를 검증합니다' : '보수조건 통과 상품 없음'}</span>
+            <span>{fieldCandidate ? '실제 시장근거로 공급가를 검증합니다' : '적응형 보수기준 재심사 중 또는 통과 상품 없음'}</span>
           </div>
         </div>
         <div className="recommerce-status-stack" aria-label="사업기회 상태">
@@ -355,10 +357,10 @@ export function RecommercePage({ apiBase, authHeaders, viewRole }: Props) {
 
       <section className="recommerce-section recommerce-ojt-launcher">
         <div className="recommerce-section-head"><div><span>초보자 OJT · 모의훈련</span><h3>상품을 보고, 공급을 이해하고, 매입하지 않는 판단까지</h3></div>{canWrite && <button className="recommerce-secondary" disabled={researchLoading} onClick={() => void refreshResearch()}>{researchLoading ? '조사 중…' : '시장 표본 갱신'}</button>}</div>
-        <div className="recommerce-source-warning"><strong>사람이 상품을 고르지 않습니다.</strong><p>로컬 LLM이 실제 가격표본을 심사하고 코드 하드게이트가 재검증합니다. 통과 상품이 없으면 OJT도 시작되지 않습니다.</p></div>
+        <div className="recommerce-source-warning"><strong>사람이 상품을 고르지 않습니다.</strong><p>로컬 LLM과 하드게이트가 먼저 엄격 기준을 심사합니다. 0개일 때만 공개된 적응 기준을 한 단계씩 적용하며, 안전·식별·구매금지 경계는 절대 완화하지 않습니다.</p></div>
         <div className="recommerce-training-grid">
-          {research?.candidates.map(candidate => <article key={candidate.id} className={`recommerce-training-card ${candidate.rank === 1 ? 'recommended' : ''}`}><div className="recommerce-sku-head"><div><span>LLM 보수심사 {candidate.rank}순위</span><h4>{candidate.name}</h4></div><span className="recommerce-chip neutral">매입 금지</span></div><dl><div><dt>고유사도 가격표본</dt><dd>{candidate.sample_size || 0}건</dd></div><div><dt>보수 판매가</dt><dd>{candidate.conservative_sale_price ? money(candidate.conservative_sale_price) : '미확인'}</dd></div><div><dt>허용 공급가 상한</dt><dd>{candidate.max_allowable_supply_cost ? money(candidate.max_allowable_supply_cost) : '미확인'}</dd></div><div><dt>LLM 점수</dt><dd>{candidate.llm_score || 0}/100</dd></div></dl><p>{candidate.why}</p><button className={candidate.rank === 1 ? 'recommerce-primary' : 'recommerce-secondary'} onClick={() => startFieldResearch(candidate.id)}>근거 확인하며 조사</button></article>)}
-          {research && research.candidates.length === 0 && <div className="recommerce-empty"><strong>선정 보류</strong><p>현재 표본에서 보수조건을 모두 통과한 상품이 없습니다. 상품을 억지로 추천하지 않습니다.</p><small>{research.llm?.provider || 'LLM'} · {research.llm?.model || '모델 미확인'} · {research.status}</small></div>}
+          {research?.candidates.map(candidate => <article key={candidate.id} className={`recommerce-training-card ${candidate.rank === 1 ? 'recommended' : ''}`}><div className="recommerce-sku-head"><div><span>{candidate.selection_profile_label || `LLM 보수심사 ${candidate.rank}순위`}</span><h4>{candidate.name}</h4></div><span className="recommerce-chip neutral">매입 금지</span></div><dl><div><dt>고유사도 가격표본</dt><dd>{candidate.sample_size || 0}건</dd></div><div><dt>보수 판매가</dt><dd>{candidate.conservative_sale_price ? money(candidate.conservative_sale_price) : '미확인'}</dd></div><div><dt>허용 공급가 상한</dt><dd>{candidate.max_allowable_supply_cost ? money(candidate.max_allowable_supply_cost) : '미확인'}</dd></div><div><dt>LLM 점수</dt><dd>{candidate.llm_score || 0}/100</dd></div></dl><p>{candidate.why}</p>{candidate.adaptive_selection_note && <small className="recommerce-method-note">{candidate.adaptive_selection_note}</small>}<button className={candidate.rank === 1 ? 'recommerce-primary' : 'recommerce-secondary'} onClick={() => startFieldResearch(candidate.id)}>근거 확인하며 조사</button></article>)}
+          {research && research.candidates.length === 0 && <div className="recommerce-empty"><strong>선정 보류</strong><p>엄격 기준과 적응 1·2단계를 모두 통과한 상품이 없습니다. 상품을 억지로 추천하지 않습니다.</p><small>{research.llm?.provider || 'LLM'} · {research.llm?.model || '모델 미확인'} · {research.status}</small></div>}
           {!research && <div className="recommerce-empty">시장조사 결과를 불러오지 못했습니다.</div>}
         </div>
         <p className="recommerce-method-note">{research?.method_note || '검색 결과 수와 가격 표본은 판매량 증명이 아닙니다.'}</p>

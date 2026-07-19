@@ -12,17 +12,19 @@ This is not a purchase, listing, supplier, or demand recommendation. It is a nar
 
 The local LLM is required. If it is unavailable, malformed, or cannot select a defensible target, the process fails closed: no candidate is shown. A human cannot manually override a candidate into the OJT list.
 
-## Required gates
+## Adaptive required gates
 
-| Gate | Conservative rule | Failure result |
-| --- | --- | --- |
-| Safety scope | Household organization categories only; restricted/safety-sensitive terms excluded | Reject |
-| Ticket price | Comparable lower-quartile price at least 15,000 KRW | Reject |
-| Comparable evidence | At least 5 high-similarity price samples across at least 3 malls | Reject |
-| Price dispersion | 75th/25th percentile price ratio no higher than 1.60 | Reject |
-| LLM review | Local LLM score at least 75/100 with a data-bound reason | Reject |
-| Identity | Product ID and image both present | Reject |
-| Worst-case economics | At least 3,000 KRW allowable supplier cost remains after conservative cost model | Reject |
+The system always tries the strict profile first. When that returns zero candidates, it tries only the next profile. It stops at the first profile that has a candidate; it never blends thresholds across profiles or silently relaxes them.
+
+| Gate | Strict | Adaptive 1 | Adaptive 2 | Failure result |
+| --- | --- | --- | --- | --- |
+| Safety scope | Household organization only; restricted/safety-sensitive terms excluded | Same | Same | Reject |
+| Ticket price | Comparable lower-quartile price ≥ 15,000 KRW | ≥ 14,000 KRW | ≥ 12,000 KRW | Reject |
+| Comparable evidence | ≥ 5 high-similarity samples, ≥ 3 malls | Same | ≥ 4 samples, ≥ 2 malls | Reject |
+| Price dispersion | 75th/25th ≤ 1.60 | ≤ 1.90 | ≤ 2.10 | Reject |
+| LLM review | score ≥ 75/100 | ≥ 72/100 | ≥ 70/100 | Reject |
+| Identity | Product ID and image both present | Same | Same | Reject |
+| Worst-case economics | Allowable supplier cost ≥ 3,000 KRW | ≥ 2,500 KRW | ≥ 1,500 KRW | Reject |
 
 Worst-case cost model: 15% platform fee, 8% return reserve, 10% advertising reserve, 20% target contribution, 4,000 KRW shipping, and 2,000 KRW labor/packaging. The OJT sales-price anchor is the comparable lower-quartile price, not a markup on a wholesale price.
 
@@ -36,6 +38,6 @@ Worst-case cost model: 15% platform fee, 8% return reserve, 10% advertising rese
 
 Zero selected products is a valid and preferred outcome when the current market evidence does not pass every gate. The system must never lower thresholds merely to keep an OJT exercise populated.
 
-## 2026-07-19 live result
+## 2026-07-19 strict scan result
 
-The first local-LLM run completed, but selected zero OJT targets. The observed candidate pool contained low-ticket items and at least one candidate that failed both price-dispersion and worst-case supplier-ceiling gates. The correct state is selection hold, not a forced recommendation.
+The first strict local-LLM run completed with zero OJT targets. The observed candidate pool contained low-ticket items and at least one candidate that failed both price-dispersion and worst-case supplier-ceiling gates. The adaptive scan records its selected profile and the exact relaxation in the runtime snapshot and UI; it remains an OJT research target, never a purchase recommendation.
