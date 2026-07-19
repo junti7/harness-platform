@@ -5,20 +5,21 @@
 - Review scope: opportunity-candidate 단계의 계획 안전성·실행 가능성
 - Requested resources: Gemini + GitHub Copilot CLI
 - Claude: 사용자 지시에 따라 미사용
-- Final verdict: `red_team_block`
-- Retry count: 3 Copilot rounds, 2 Gemini CLI attempts, 1 Gemini browser fallback probe
+- Final verdict: `red_team_clear`
+- Final pair: Gemini 3.1 Pro High + Copilot GPT-5.3-Codex
+- Retry count: 4 Copilot rounds, 4 Gemini-family attempts, 1 browser fallback probe
 
 ## 1. Executive verdict
 
-Copilot 최종 plan-only verdict는 `red_team_clear`다. 그러나 Gemini는 model review를 시작하지 못했다. `AGENTS.md`가 요구하는 서로 다른 모델 2개의 independent output이 없으므로 formal `red_team_clear`를 발행할 수 없다.
+Gemini와 Copilot이 최종 plan-only review에서 모두 `red_team_clear`를 반환했다. 두 모델이 제기한 high finding을 계획서에 반영하고 양쪽 delta review에서 새 critical/high finding이 없음을 확인했다.
 
 따라서 현재 상태:
 
-- 계획 품질: Copilot 기준 clear
-- cross-LLM gate: incomplete
-- consolidated verdict: `red_team_block`
-- 허용: 문서 보관, 대표 검토, 무비용 내부 준비
-- 금지: 이 verdict를 근거로 상품 매입, 외부 공개, paid test, 판매 개시
+- 계획 품질: Gemini + Copilot clear
+- cross-LLM gate: complete
+- consolidated verdict: `red_team_clear`
+- 허용: 대표 `opportunity_approve` 후 계획에 정의된 무비용 조사·Pretotyping
+- 금지: 별도 legal/pre-mortem/QA/experiment/capital gate 없는 상품 매입, 외부 공개, paid test, 판매 개시
 
 ## 2. Shared review prompt
 
@@ -36,14 +37,11 @@ critical/high/medium findings, required fixes, and residual risks.
 
 ## 3. Gemini execution record
 
-### CLI identity
+### Legacy CLI failure
 
-- binary: `/opt/homebrew/bin/gemini`
-- version: `0.43.0`
+- binary: `/opt/homebrew/bin/gemini`, version `0.43.0`
 - requested mode: read-only plan mode
 - model output: none
-
-### Failure
 
 Both CLI attempts stopped during authentication with:
 
@@ -52,20 +50,38 @@ IneligibleTierError: This client is no longer supported for Gemini Code Assist f
 reasonCode: UNSUPPORTED_CLIENT
 ```
 
-Environment preflight found no `GEMINI_API_KEY`, `GOOGLE_API_KEY`, or `GOOGLE_APPLICATION_CREDENTIALS`. Secret values were not printed. Emergency Gemini web fallback was checked, but the in-app browser surface was unavailable. No Gemini finding or verdict was fabricated.
+Environment preflight found no `GEMINI_API_KEY`, `GOOGLE_API_KEY`, or `GOOGLE_APPLICATION_CREDENTIALS`. Secret values were not printed. Emergency Gemini web fallback was checked, but the in-app browser surface was unavailable. No legacy-CLI verdict was fabricated.
 
-### Gemini rerun brief
+### Supported Gemini route recovery
 
-When a supported Gemini CLI/API/browser route becomes available, run the shared prompt against the final artifact and save:
+The official Gemini CLI project [migration announcement](https://github.com/google-gemini/gemini-cli/discussions/27274) states that personal Google AI tiers moved from legacy Gemini CLI to Antigravity CLI. An already-installed local binary was found:
 
-- exact model identity
-- exact prompt
-- raw output
-- verdict
-- critical/high findings
-- finding-to-fix mapping
+- binary: `/Users/juntae.park/.local/bin/agy`
+- version: `1.1.4`
+- model: `Gemini 3.1 Pro (High)`
+- mode: read-only plan
+- initial verdict: `red_team_clear`
 
-Any Gemini critical/high finding returns the consolidated state to `red_team_block` until fixed and re-reviewed.
+Gemini high findings:
+
+1. 공급재고가 Phase 2 중 소진될 수 있음
+2. marketplace에서 예약금 방식이 가결제·배송지연 정책을 위반할 수 있음
+3. 무광고·비지인 traffic으로 7일 안에 표본을 모으기 어려울 수 있음
+
+Plan changes:
+
+- 공급수량 확인시점·quote 유효기간·무상 hold 여부 기록
+- 승인 전 예약금·독점계약 금지
+- 예약금은 Legal과 platform 약관이 명시 허용할 때만 사용
+- 허위재고·고의 배송지연 금지
+- Phase 2 최대 30일 연장과 `insufficient_evidence` 처리
+- CS 당번·escalation과 주 6시간 초과 시 신규주문·매입 중단
+
+Final Gemini delta verdict:
+
+```text
+Gemini 3.1 Pro (High); red_team_clear; Resolved; None; Stockout before capital approval
+```
 
 ## 4. Copilot round 1
 
@@ -142,11 +158,31 @@ Residual risks:
 target_type: business_opportunity_plan
 requested_approval: red_team_clear
 copilot_verdict: red_team_clear
-gemini_verdict: unavailable
-cross_llm_requirement_met: false
-final_verdict: red_team_block
+gemini_verdict: red_team_clear
+cross_llm_requirement_met: true
+final_verdict: red_team_clear
 human_review_required: true
-block_reason: Gemini produced no independent review output
+remaining_human_decision: opportunity_approve
 ```
 
-This is not a rejection of the business idea. It is a governance block on calling the plan cross-LLM-cleared.
+This clear covers plan quality only. It does not approve capital, paid testing, selling, external publication, pricing, or refund policy.
+
+## 9. Final cross-LLM delta review
+
+After Gemini findings were integrated, both reviewers independently checked the final file.
+
+### Gemini
+
+- model: Gemini 3.1 Pro High
+- verdict: `red_team_clear`
+- prior findings resolved: yes
+- new critical/high: none
+- residual: inventory can sell out before capital approval
+
+### Copilot
+
+- model: GPT-5.3-Codex
+- verdict: `red_team_clear`
+- prior findings resolved: yes
+- new critical/high: none
+- residual: small-sample uncertainty, supplier-condition drift, manual CS variance
