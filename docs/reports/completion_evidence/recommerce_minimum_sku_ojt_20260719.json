@@ -1,6 +1,6 @@
 {
   "task": "Automate minimum-SKU market research and add beginner OJT practice mode",
-  "status": "residual_risk",
+  "status": "complete",
   "date": "2026-07-19",
   "governance_bootstrap": [
     {
@@ -32,10 +32,32 @@
       "target": "local dist bundle",
       "command": "cd harness-os/frontend && npm run build",
       "result": "passed: index-5dmtNCPN.js and index-DhFXGwGz.css"
+    },
+    {
+      "name": "Mac Mini production market research refresh",
+      "target": "macmini production API and Naver Shopping API",
+      "command": "CEO POST /api/recommerce/market-research/refresh then VP GET /api/recommerce/market-research",
+      "result": "passed: refresh 200, VP read 200, three expected candidate IDs, status explicitly says not a purchase recommendation"
+    },
+    {
+      "name": "Mac Mini production OJT bundle and regressions",
+      "target": "macmini production dist and API repository",
+      "command": "curl served bundle marker and run focused recommerce unittest suite",
+      "result": "passed: index-CZ4ZrOMY.js contains 3개 후보로 배우기; 15 tests passed; scoped origin diff 0"
+    },
+    {
+      "name": "Business workspace non-interference check",
+      "target": "macmini production workspace API",
+      "command": "VP GET /api/recommerce/workspace after research refresh",
+      "result": "passed: supplier count 0 and SKU count 0; research automation did not insert real business candidates or purchase data"
     }
   ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh with nine scoped OJT research, API, UI, test, plan and evidence paths",
+    "result": "passed: backup scratch/pre_deploy_backup_20260719_185758, atomic frontend build index-CZ4ZrOMY.js, backend launchd reload, production refresh and scoped diff verification"
+  },
   "residual_risk": [
-    "Mac Mini deployment and production market-research refresh are pending.",
-    "Search result counts and price samples are not verified demand or a purchase recommendation."
+    "Search result counts and price samples are not verified demand or a purchase recommendation.",
+    "Supplier quotes, evidence, defect terms and actual inventory availability remain intentionally unverified until the OJT interview step."
   ]
 }
