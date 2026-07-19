@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refresh the recommerce OJT shortlist using Naver Shopping Search API."""
+"""Refresh conservative local-LLM OJT targets from Naver price evidence."""
 
 from __future__ import annotations
 

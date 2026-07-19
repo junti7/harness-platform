@@ -1,0 +1,22 @@
+{
+  "task": "Replace manual recommerce OJT product selection with conservative local-LLM evidence selection",
+  "status": "residual_risk",
+  "date": "2026-07-19",
+  "requirements": [
+    {"requirement": "LLM performs evidence-based product selection", "status": "pass", "evidence": "core/recommerce_market_research.py requires a local Ollama selector and persists model identity, decision evidence and candidate evidence."},
+    {"requirement": "No manual product selection or forced recommendation", "status": "pass", "evidence": "selection_policy sets human_manual_selection_allowed=false and fail_closed=true; empty qualified output renders selection hold."},
+    {"requirement": "Use maximally conservative logic", "status": "pass", "evidence": "Hard gates require comparable samples, mall diversity, low price dispersion, LLM score >=75 and worst-case supplier ceiling >=3000 KRW."},
+    {"requirement": "No actual purchase or external inquiry", "status": "pass", "evidence": "Frontend has no order/listing/message API and keeps commercial readiness blocked pending supplier and shipping evidence."}
+  ],
+  "governance_bootstrap": [
+    {"path": "CLAUDE.md", "read_at": "2026-07-19T20:10:00+09:00", "summary": "Applied real-entrypoint verification, completion evidence, capital-action boundary and CEO-only Red Team rule."},
+    {"path": "docs/governance/LLM_GROUND_RULES.md", "read_at": "2026-07-19T20:10:00+09:00", "summary": "Applied origin-main deployment, secret protection, fail-safe completion evidence and no automatic Red Team invariant."}
+  ],
+  "verification": [
+    {"name": "local live Naver plus Ollama selection", "target": "local runtime market-research script", "command": ".venv/bin/python scripts/run_recommerce_market_research.py", "result": "passed: local Ollama gemma4:latest returned a valid decision; no product passed all conservative gates, so candidates=[] and selection hold was preserved."}
+  ],
+  "residual_risk": [
+    "Mac Mini deploy and production-entrypoint verification are pending at the time this evidence was created.",
+    "Naver API omits shipping, supplier stock and wholesale terms; the system intentionally blocks commercial readiness until separately evidenced."
+  ]
+}

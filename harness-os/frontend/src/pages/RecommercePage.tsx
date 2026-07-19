@@ -61,42 +61,17 @@ type Workspace = {
 type MarketCandidate = {
   id: string; rank: number; name: string; query: string; category: string; why: string; training_goal: string
   risks: string[]; result_count: number; median_price: number | null; price_p25: number | null; price_p75: number | null
+  market_low_price?: number; market_link?: string; image_url?: string; sample_size?: number; sample_mall_count?: number
+  competitor_samples?: Array<{ name: string; price: number; mall: string; link: string }>; llm_score?: number
+  conservative_sale_price?: number; max_allowable_supply_cost?: number; commercial_readiness?: string
 }
 type MarketResearch = {
   status: string; observed_at?: string | null; source?: string; method_note?: string
+  selection_policy?: { human_manual_selection_allowed: boolean; llm_required: boolean; fail_closed: boolean; minimum_item_price: number }
+  llm?: { provider?: string; model?: string; required?: boolean; error?: string | null }
   candidates: MarketCandidate[]; rejected: Array<{ query: string; reason: string; result_count?: number; median_price?: number | null }>
 }
 
-type PracticeAnswers = {
-  sourcingModel: string
-  evidence: string[]
-  salePrice: string
-  decision: string
-}
-
-const PRACTICE_STEPS = ['상품 이해', '공급 구조', '모의 견적', '원가 계산', '판정']
-const SIMULATED_QUOTE = {
-  product: '24칸 투명 PP 소형부품 수납함',
-  size: '약 25 × 16 × 4 cm',
-  unitCost: 3200,
-  minimumOrder: 30,
-  availableStock: 240,
-  inboundShipping: 30000,
-  defectRate: 2,
-  quoteValidDays: 7,
-}
-const REQUIRED_EVIDENCE = ['tax_invoice', 'inventory', 'manufacturer', 'returns']
-const initialPracticeAnswers: PracticeAnswers = { sourcingModel: '', evidence: [], salePrice: '', decision: '' }
-const LIVE_CASE = {
-  observedAt: '2026-07-19',
-  supplier: '오너클랜 공개 B2B 상품',
-  productCode: 'WFIR5I7',
-  productName: '6칸 투명 부품통 보관함',
-  sourceUrl: 'https://web4.ownerclan.com/V2/product/view.php?selfcode=WFIR5I7',
-  displayedPrice: 1290,
-  shipping: 3000,
-  returnShipping: 4000,
-}
 
 const COST_LABELS: Record<string, string> = {
   unit_purchase_cost: '상품 매입원가',
@@ -156,11 +131,8 @@ export function RecommercePage({ apiBase, authHeaders, viewRole }: Props) {
   const [skuForm, setSkuForm] = useState(initialSkuForm)
   const [research, setResearch] = useState<MarketResearch | null>(null)
   const [researchLoading, setResearchLoading] = useState(false)
-  const [practiceId, setPracticeId] = useState<string | null>(null)
-  const [practiceStep, setPracticeStep] = useState(0)
-  const [practiceAnswers, setPracticeAnswers] = useState<PracticeAnswers>(initialPracticeAnswers)
-  const [practiceGraded, setPracticeGraded] = useState(false)
   const [fieldMode, setFieldMode] = useState(false)
+  const [fieldCandidateId, setFieldCandidateId] = useState<string | null>(null)
   const [fieldInputs, setFieldInputs] = useState({ price: '', shipping: '', returnShipping: '', targetPrice: '', bundleQuantity: '1' })
   const [fieldChecks, setFieldChecks] = useState<string[]>([])
   const [copied, setCopied] = useState(false)
@@ -249,30 +221,23 @@ export function RecommercePage({ apiBase, authHeaders, viewRole }: Props) {
 
   const supplierName = (id: string) => workspace?.suppliers.find(item => item.id === id)?.name || '공급처 미연결'
 
-  const startPractice = (candidateId: string) => {
-    setPracticeId(candidateId)
-    setPracticeStep(0)
-    setPracticeAnswers(initialPracticeAnswers)
-    setPracticeGraded(false)
-    window.setTimeout(() => document.getElementById('recommerce-ojt-workbench')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
-  }
-
-  const toggleEvidence = (value: string) => {
-    setPracticeAnswers(current => ({
-      ...current,
-      evidence: current.evidence.includes(value) ? current.evidence.filter(item => item !== value) : [...current.evidence, value],
-    }))
-  }
-
-  const practicePassed = practiceAnswers.sourcingModel === 'wholesale'
-    && REQUIRED_EVIDENCE.every(item => practiceAnswers.evidence.includes(item))
-    && !practiceAnswers.evidence.includes('follower')
-    && Number(practiceAnswers.salePrice) === 10000
-    && practiceAnswers.decision === 'hold'
+  const fieldCandidate = research?.candidates.find(item => item.id === fieldCandidateId) || research?.candidates[0] || null
   const fieldUnitCost = (Number(fieldInputs.price) || 0) + ((Number(fieldInputs.shipping) || 0) / Math.max(1, Number(fieldInputs.bundleQuantity) || 1))
-  const fieldContribution = (Number(fieldInputs.targetPrice) || 0) - fieldUnitCost - ((Number(fieldInputs.targetPrice) || 0) * 0.13) - 2500 - 500
+  const fieldContribution = (Number(fieldInputs.targetPrice) || 0) - fieldUnitCost - ((Number(fieldInputs.targetPrice) || 0) * 0.33) - 2000
   const fieldReady = ['page', 'price', 'shipping', 'returns', 'identity'].every(item => fieldChecks.includes(item))
-  const inquiryText = `[상품코드 ${LIVE_CASE.productCode}] 판매 검토를 위해 아래 내용을 확인 부탁드립니다.\n1. 현재 실제 재고 수량과 확인 일시\n2. 사업자 판매 단가 및 수량별 할인 구간\n3. 최소 주문수량과 합배송 가능 수량\n4. 제조자·수입자·정확한 원산지\n5. 세금계산서 발행 가능 여부\n6. 최근 3개월 불량·파손률\n7. 불량·오배송·단순변심별 반품비 부담 주체\n※ 아직 주문 의사가 확정된 것은 아니며 견적·증빙 확인 요청입니다.`
+    && Number(fieldInputs.price) > 0 && Number(fieldInputs.shipping) >= 0
+    && Number(fieldInputs.price) <= Number(fieldCandidate?.max_allowable_supply_cost || 0)
+  const inquiryText = `[LLM 선정 조사대상: ${fieldCandidate?.name || '상품 미선정'}]\n1. 현재 실제 재고 수량과 확인 일시\n2. 사업자 판매 단가 및 수량별 할인 구간\n3. 최소 주문수량과 합배송 가능 수량\n4. 제조자·수입자·정확한 원산지\n5. 세금계산서 발행 가능 여부\n6. 최근 3개월 불량·파손률\n7. 불량·오배송·단순변심별 반품비 부담 주체\n※ 아직 주문 의사가 확정된 것은 아니며 견적·증빙 확인 요청입니다.`
+
+  const startFieldResearch = (candidateId?: string) => {
+    const target = research?.candidates.find(item => item.id === candidateId) || fieldCandidate
+    if (!target) return
+    setFieldCandidateId(target.id)
+    setFieldInputs({ price: '', shipping: '', returnShipping: '', targetPrice: String(target.conservative_sale_price || ''), bundleQuantity: '1' })
+    setFieldChecks([])
+    setFieldMode(true)
+    window.setTimeout(() => document.getElementById('recommerce-field-lab')?.scrollIntoView({ behavior: 'smooth' }), 0)
+  }
 
   const submitSupplier = async (event: FormEvent) => {
     event.preventDefault()
@@ -307,9 +272,8 @@ export function RecommercePage({ apiBase, authHeaders, viewRole }: Props) {
           <h2>재고가치회복 Mall 검증실</h2>
           <p>싸게 사는 화면이 아닙니다. 증빙 가능한 공급과 보수적 비용을 먼저 검토하는 내부 작업실입니다.</p>
           <div className="recommerce-hero-actions">
-            <button className="recommerce-primary" disabled={!research?.candidates.length} onClick={() => research?.candidates[0] && startPractice(research.candidates[0].id)}>초보자 OJT 바로 시작</button>
-            <button className="recommerce-secondary" onClick={() => { setFieldMode(true); window.setTimeout(() => document.getElementById('recommerce-field-lab')?.scrollIntoView({ behavior: 'smooth' }), 0) }}>실제 상품 조사 시작</button>
-            <span>실제 주문 없이 10분 모의훈련</span>
+            <button className="recommerce-primary" disabled={!fieldCandidate} onClick={() => startFieldResearch()}>LLM 선정 OJT 시작</button>
+            <span>{fieldCandidate ? '실제 시장근거로 공급가를 검증합니다' : '보수조건 통과 상품 없음'}</span>
           </div>
         </div>
         <div className="recommerce-status-stack" aria-label="사업기회 상태">
@@ -391,40 +355,23 @@ export function RecommercePage({ apiBase, authHeaders, viewRole }: Props) {
 
       <section className="recommerce-section recommerce-ojt-launcher">
         <div className="recommerce-section-head"><div><span>초보자 OJT · 모의훈련</span><h3>상품을 보고, 공급을 이해하고, 매입하지 않는 판단까지</h3></div>{canWrite && <button className="recommerce-secondary" disabled={researchLoading} onClick={() => void refreshResearch()}>{researchLoading ? '조사 중…' : '시장 표본 갱신'}</button>}</div>
-        <div className="recommerce-source-warning"><strong>기존 쇼핑몰에서 사서 되파는 연습이 아닙니다.</strong><p>쇼핑몰은 판매가·리뷰 조사에만 사용. 실제 조달은 사업자 도매, 위탁배송, 제조사·수입사·재고보유 공급처 견적에서 시작합니다.</p></div>
+        <div className="recommerce-source-warning"><strong>사람이 상품을 고르지 않습니다.</strong><p>로컬 LLM이 실제 가격표본을 심사하고 코드 하드게이트가 재검증합니다. 통과 상품이 없으면 OJT도 시작되지 않습니다.</p></div>
         <div className="recommerce-training-grid">
-          {research?.candidates.map(candidate => <article key={candidate.id} className={`recommerce-training-card ${candidate.rank === 1 ? 'recommended' : ''}`}><div className="recommerce-sku-head"><div><span>{candidate.rank === 1 ? '추천 첫 연습' : `후속 연습 ${candidate.rank}`}</span><h4>{candidate.name}</h4></div><span className="recommerce-chip neutral">실제 매입 없음</span></div><dl><div><dt>시장 검색 표본</dt><dd>{candidate.result_count.toLocaleString('ko-KR')}건</dd></div><div><dt>가격 중간값</dt><dd>{candidate.median_price ? money(candidate.median_price) : '미확인'}</dd></div></dl><p>{candidate.why}</p><button className={candidate.rank === 1 ? 'recommerce-primary' : 'recommerce-secondary'} onClick={() => startPractice(candidate.id)}>{candidate.rank === 1 ? '안내받으며 시작' : '이 상품으로 연습'}</button></article>)}
-          {(!research || research.candidates.length === 0) && <div className="recommerce-empty">대표 계정에서 ‘시장 표본 갱신’을 실행하면 OJT 후보 3개가 생성됩니다.</div>}
+          {research?.candidates.map(candidate => <article key={candidate.id} className={`recommerce-training-card ${candidate.rank === 1 ? 'recommended' : ''}`}><div className="recommerce-sku-head"><div><span>LLM 보수심사 {candidate.rank}순위</span><h4>{candidate.name}</h4></div><span className="recommerce-chip neutral">매입 금지</span></div><dl><div><dt>고유사도 가격표본</dt><dd>{candidate.sample_size || 0}건</dd></div><div><dt>보수 판매가</dt><dd>{candidate.conservative_sale_price ? money(candidate.conservative_sale_price) : '미확인'}</dd></div><div><dt>허용 공급가 상한</dt><dd>{candidate.max_allowable_supply_cost ? money(candidate.max_allowable_supply_cost) : '미확인'}</dd></div><div><dt>LLM 점수</dt><dd>{candidate.llm_score || 0}/100</dd></div></dl><p>{candidate.why}</p><button className={candidate.rank === 1 ? 'recommerce-primary' : 'recommerce-secondary'} onClick={() => startFieldResearch(candidate.id)}>근거 확인하며 조사</button></article>)}
+          {research && research.candidates.length === 0 && <div className="recommerce-empty"><strong>선정 보류</strong><p>현재 표본에서 보수조건을 모두 통과한 상품이 없습니다. 상품을 억지로 추천하지 않습니다.</p><small>{research.llm?.provider || 'LLM'} · {research.llm?.model || '모델 미확인'} · {research.status}</small></div>}
+          {!research && <div className="recommerce-empty">시장조사 결과를 불러오지 못했습니다.</div>}
         </div>
         <p className="recommerce-method-note">{research?.method_note || '검색 결과 수와 가격 표본은 판매량 증명이 아닙니다.'}</p>
         {research && research.rejected.length > 0 && <details className="recommerce-rejected"><summary>자동 탈락 후보 {research.rejected.length}개 보기</summary>{research.rejected.map(item => <p key={item.query}><strong>{item.query}</strong> — {item.reason}</p>)}</details>}
       </section>
 
-      {practiceId && <section id="recommerce-ojt-workbench" className="recommerce-ojt-workbench" aria-labelledby="ojt-workbench-title">
-        <aside className="recommerce-ojt-sidebar">
-          <span className="recommerce-eyebrow">Guided OJT · 약 10분</span>
-          <h3 id="ojt-workbench-title">성인 공예·소형부품 수납함</h3>
-          <p>한 단계씩 읽고 선택하세요. 틀려도 실제 주문·저장은 발생하지 않습니다.</p>
-          <nav aria-label="OJT 진행 단계">{PRACTICE_STEPS.map((label, index) => <button key={label} className={index === practiceStep ? 'active' : index < practiceStep ? 'done' : ''} onClick={() => setPracticeStep(index)}><span>{index < practiceStep ? '✓' : index + 1}</span>{label}</button>)}</nav>
-          <button className="recommerce-text-button" onClick={() => setPracticeId(null)}>연습 종료</button>
-        </aside>
-        <div className="recommerce-ojt-stage">
-          {practiceStep === 0 && <div className="recommerce-lesson"><div className="recommerce-lesson-kicker">STEP 1 · 상품 이해</div><h3>이렇게 생긴 빈 플라스틱 정리함입니다</h3><p className="recommerce-lesson-lead">비즈, 단추, 나사 같은 작은 물건을 칸별로 보관합니다. 내용물은 상품에 포함되지 않습니다.</p><div className="recommerce-product-overview"><div className="recommerce-product-visual" role="img" aria-label="뚜껑이 열린 24칸 투명 소형부품 수납함 도식"><div className="organizer-lid"><span>투명 뚜껑</span></div><div className="organizer-box">{Array.from({ length: 24 }, (_, index) => <i key={index} />)}</div></div><dl className="recommerce-spec-list"><div><dt>연습 규격</dt><dd>{SIMULATED_QUOTE.product}</dd></div><div><dt>크기 감각</dt><dd>{SIMULATED_QUOTE.size} · A4 용지보다 작음</dd></div><div><dt>소재</dt><dd>반투명 PP 플라스틱</dd></div><div><dt>확인할 품질</dt><dd>뚜껑 잠금, 칸막이 유격, 균열, 냄새</dd></div></dl></div><div className="recommerce-callout info"><strong>오늘 목표</strong><span>좋아 보이는 상품을 고르는 것보다, 증거가 없을 때 멈추는 법을 배웁니다.</span></div></div>}
-          {practiceStep === 1 && <div className="recommerce-lesson"><div className="recommerce-lesson-kicker">STEP 2 · 공급 구조</div><h3>누구에게서 받아 파는가?</h3><p className="recommerce-lesson-lead">정답 구조를 고르세요. 이 선택은 모의 답안이며 외부 사이트로 이동하지 않습니다.</p><div className="recommerce-choice-grid"><button className={practiceAnswers.sourcingModel === 'retail' ? 'selected' : ''} onClick={() => setPracticeAnswers(value => ({ ...value, sourcingModel: 'retail' }))}><strong>소매 쇼핑몰 구매</strong><span>일반 소비자가로 주문 후 보관·재판매</span><small>마진·증빙·재고 안정성이 약함</small></button><button className={practiceAnswers.sourcingModel === 'wholesale' ? 'selected' : ''} onClick={() => setPracticeAnswers(value => ({ ...value, sourcingModel: 'wholesale' }))}><strong>사업자 공급처 견적</strong><span>도매·제조·수입·재고보유 업체와 거래</span><small>세금계산서와 실제 재고 증빙 확인</small></button><button className={practiceAnswers.sourcingModel === 'dropship' ? 'selected' : ''} onClick={() => setPracticeAnswers(value => ({ ...value, sourcingModel: 'dropship' }))}><strong>위탁배송</strong><span>공급처가 고객에게 직접 발송</span><small>초기 재고 부담은 낮지만 품질 통제 필요</small></button></div><div className="recommerce-flow"><div><span>1</span><strong>시장 조사</strong><small>네이버·쿠팡 가격/리뷰</small></div><b>→</b><div><span>2</span><strong>공급처 발굴</strong><small>B2B·제조·수입·재고</small></div><b>→</b><div><span>3</span><strong>증빙 견적</strong><small>단가·수량·반품</small></div><b>→</b><div><span>4</span><strong>소량 검증</strong><small>승인 전 구매 없음</small></div></div></div>}
-          {practiceStep === 2 && <div className="recommerce-lesson"><div className="recommerce-lesson-kicker">STEP 3 · 모의 견적</div><h3>공급처가 보낸 견적서를 검토하세요</h3><div className="recommerce-simulation-banner">훈련용 가상 데이터 · 실제 공급처/주문 아님</div><div className="recommerce-quote"><div className="recommerce-quote-head"><div><span>견적번호</span><strong>TRAINING-2401</strong></div><div><span>유효기간</span><strong>{SIMULATED_QUOTE.quoteValidDays}일</strong></div></div><h4>{SIMULATED_QUOTE.product}</h4><div className="recommerce-quote-metrics"><div><span>공급 단가</span><strong>{money(SIMULATED_QUOTE.unitCost)}</strong></div><div><span>최소 주문</span><strong>{SIMULATED_QUOTE.minimumOrder}개</strong></div><div><span>확인 재고</span><strong>{SIMULATED_QUOTE.availableStock}개</strong></div><div><span>입고 배송비</span><strong>{money(SIMULATED_QUOTE.inboundShipping)}</strong></div><div><span>표본 불량률</span><strong>{SIMULATED_QUOTE.defectRate}%</strong></div><div><span>반품 조건</span><strong>불량 교환만</strong></div></div></div><fieldset className="recommerce-evidence-check"><legend>실제 거래 전 반드시 받아야 할 증빙을 모두 선택</legend>{[['tax_invoice','세금계산서 발행 가능 확인'],['inventory','실재고 사진·수량·촬영일'],['manufacturer','제조사 또는 수입자 정보'],['returns','불량·반품 책임 조건'],['follower','쇼핑몰 팔로워 수']].map(([value,label]) => <label key={value} className={practiceAnswers.evidence.includes(value) ? 'selected' : ''}><input type="checkbox" checked={practiceAnswers.evidence.includes(value)} onChange={() => toggleEvidence(value)} /><span>{label}</span></label>)}</fieldset></div>}
-          {practiceStep === 3 && <div className="recommerce-lesson"><div className="recommerce-lesson-kicker">STEP 4 · 원가 계산</div><h3>상품값 외 비용까지 보세요</h3><p className="recommerce-lesson-lead">판매가 10,000원 가정. 1개당 실제 남는 돈을 계산한 뒤 판매가를 입력하세요.</p><div className="recommerce-cost-waterfall"><div><span>판매가</span><strong>10,000원</strong></div><div className="minus"><span>매입원가</span><strong>−3,200원</strong></div><div className="minus"><span>입고배송 배분</span><strong>−1,000원</strong></div><div className="minus"><span>플랫폼 수수료 가정</span><strong>−1,300원</strong></div><div className="minus"><span>출고·포장 가정</span><strong>−3,000원</strong></div><div className="result"><span>모의 공헌이익</span><strong>1,500원</strong></div></div><label className="recommerce-answer-field"><span>위 계산에서 가정한 판매가</span><div><input type="number" value={practiceAnswers.salePrice} onChange={event => setPracticeAnswers(value => ({ ...value, salePrice: event.target.value }))} /><em>원</em></div><small>실제 판매가가 아니라 계산 이해 확인용입니다.</small></label></div>}
-          {practiceStep === 4 && <div className="recommerce-lesson"><div className="recommerce-lesson-kicker">STEP 5 · 판정</div><h3>이 견적만 보고 지금 무엇을 해야 할까요?</h3><div className="recommerce-decision-grid"><button className={practiceAnswers.decision === 'buy' ? 'selected' : ''} onClick={() => setPracticeAnswers(value => ({ ...value, decision: 'buy' }))}><strong>BUY · 30개 매입</strong><span>가격이 싸 보이므로 바로 주문</span></button><button className={practiceAnswers.decision === 'hold' ? 'selected' : ''} onClick={() => setPracticeAnswers(value => ({ ...value, decision: 'hold' }))}><strong>HOLD · 증빙 요청</strong><span>실재고·사업자·반품 증빙 후 재검토</span></button><button className={practiceAnswers.decision === 'reject' ? 'selected' : ''} onClick={() => setPracticeAnswers(value => ({ ...value, decision: 'reject' }))}><strong>REJECT · 즉시 폐기</strong><span>추가 확인 없이 후보 제거</span></button></div><button className="recommerce-primary recommerce-grade-button" onClick={() => setPracticeGraded(true)}>답안 확인</button>{practiceGraded && <div className={`recommerce-grade ${practicePassed ? 'pass' : 'retry'}`} role="status"><strong>{practicePassed ? 'OJT 통과 · HOLD가 맞습니다' : '다시 확인 필요'}</strong><p>{practicePassed ? '공급 구조, 필수 증빙, 원가 가정, 중단 판단을 모두 이해했습니다. 실제 구매 승인은 아직 아닙니다.' : '사업자 공급처 견적을 선택하고, 팔로워 수를 제외한 4개 증빙을 고른 뒤, 판매가 10,000원과 HOLD를 선택하세요.'}</p></div>}</div>}
-          <div className="recommerce-ojt-actions"><button className="recommerce-secondary" disabled={practiceStep === 0} onClick={() => setPracticeStep(step => Math.max(0, step - 1))}>이전</button><span>{practiceStep + 1} / {PRACTICE_STEPS.length}</span><button className="recommerce-primary" disabled={practiceStep === PRACTICE_STEPS.length - 1} onClick={() => setPracticeStep(step => Math.min(PRACTICE_STEPS.length - 1, step + 1))}>다음 단계</button></div>
-        </div>
-      </section>}
-
-      {fieldMode && <section id="recommerce-field-lab" className="recommerce-field-lab" aria-labelledby="field-lab-title">
-        <header className="recommerce-field-head"><div><span className="recommerce-eyebrow">LIVE CASE · 구매 없는 실전 조사</span><h3 id="field-lab-title">상품코드 {LIVE_CASE.productCode} 직접 검토</h3><p>실제 공개 상품 페이지를 읽고, 보이는 숫자를 직접 옮겨 적고, 공급처에 물어볼 내용을 완성합니다.</p></div><span className="recommerce-chip locked">주문·문의 전송 없음</span></header>
+      {fieldMode && fieldCandidate && <section id="recommerce-field-lab" className="recommerce-field-lab" aria-labelledby="field-lab-title">
+        <header className="recommerce-field-head"><div><span className="recommerce-eyebrow">LLM SELECTED · 구매 없는 실전 조사</span><h3 id="field-lab-title">{fieldCandidate.name}</h3><p>LLM이 선정한 근거를 확인하고, 허용 공급가 이하의 실제 공급처 견적이 존재하는지 검증합니다.</p></div><span className="recommerce-chip locked">상업 준비도 BLOCK</span></header>
         <div className="recommerce-field-status"><div><span>현재 목표</span><strong>구매가 아니라 “추가 확인이 필요한 이유”를 증거로 설명</strong></div><button className="recommerce-text-button dark" onClick={() => setFieldMode(false)}>실전 조사 닫기</button></div>
         <div className="recommerce-field-columns">
-          <article className="recommerce-field-task"><span className="recommerce-task-number">01</span><h4>실제 상품 원문 확인</h4><p><strong>{LIVE_CASE.productName}</strong><br />관찰일 {LIVE_CASE.observedAt} · {LIVE_CASE.supplier}</p><a className="recommerce-primary recommerce-external-link" href={LIVE_CASE.sourceUrl} target="_blank" rel="noreferrer">실제 공급 페이지 열기 ↗</a><div className="recommerce-observed-facts"><div><span>표시 상품가</span><strong>{money(LIVE_CASE.displayedPrice)}</strong></div><div><span>배송비</span><strong>{money(LIVE_CASE.shipping)}</strong></div><div><span>반품 편도</span><strong>{money(LIVE_CASE.returnShipping)}</strong></div><div><span>리뷰</span><strong>0건</strong></div></div><div className="recommerce-source-note">페이지가 바뀔 수 있습니다. 위 숫자를 정답처럼 복사하지 말고 원문에서 현재값을 확인하세요.</div></article>
-          <article className="recommerce-field-task"><span className="recommerce-task-number">02</span><h4>내 눈으로 확인한 값 입력</h4><div className="recommerce-field-input-grid"><label><span>현재 표시 상품가</span><div><input type="number" value={fieldInputs.price} onChange={event => setFieldInputs(value => ({ ...value, price: event.target.value }))} /><em>원</em></div></label><label><span>기본 배송비</span><div><input type="number" value={fieldInputs.shipping} onChange={event => setFieldInputs(value => ({ ...value, shipping: event.target.value }))} /><em>원</em></div></label><label><span>반품 편도비</span><div><input type="number" value={fieldInputs.returnShipping} onChange={event => setFieldInputs(value => ({ ...value, returnShipping: event.target.value }))} /><em>원</em></div></label><label><span>가정 판매가</span><div><input type="number" value={fieldInputs.targetPrice} onChange={event => setFieldInputs(value => ({ ...value, targetPrice: event.target.value }))} /><em>원</em></div></label><label><span>배송 1건당 묶음 수량</span><div><input type="number" min="1" value={fieldInputs.bundleQuantity} onChange={event => setFieldInputs(value => ({ ...value, bundleQuantity: event.target.value }))} /><em>개</em></div></label></div><div className="recommerce-live-math"><div><span>배송 배분 포함 원가</span><strong>{money(fieldUnitCost)}</strong></div><div className={fieldContribution > 0 ? 'positive' : 'negative'}><span>모의 공헌이익</span><strong>{money(fieldContribution)}</strong></div><small>수수료 13% + 출고 2,500원 + 충당금 500원 가정. 광고·노동비 미포함.</small></div></article>
-          <article className="recommerce-field-task"><span className="recommerce-task-number">03</span><h4>증빙 빈칸 표시</h4><p>원문에서 직접 확인했으면 체크. “상세참조”는 확인으로 보지 않습니다.</p><div className="recommerce-field-checks">{[['page','상품명·상품코드'],['price','현재 상품가'],['shipping','배송·합배송 조건'],['returns','반품비와 책임 조건'],['identity','제조자·수입자·원산지']].map(([value,label]) => <label key={value} className={fieldChecks.includes(value) ? 'checked' : ''}><input type="checkbox" checked={fieldChecks.includes(value)} onChange={() => setFieldChecks(items => items.includes(value) ? items.filter(item => item !== value) : [...items, value])} /><span>{label}</span></label>)}</div><div className={`recommerce-field-verdict ${fieldReady ? 'review' : 'hold'}`}><span>현재 판정</span><strong>{fieldReady ? '계산 검토 가능 · 아직 구매 금지' : 'HOLD · 증빙 미완료'}</strong><p>{fieldReady ? '다음은 공급처 답변으로 단가·재고·불량률을 갱신하는 단계입니다.' : '체크되지 않은 항목을 공급처에 질문해야 합니다.'}</p></div></article>
+          <article className="recommerce-field-task"><span className="recommerce-task-number">01</span><h4>LLM 시장근거 확인</h4><p><strong>{fieldCandidate.name}</strong><br />가격표본 {fieldCandidate.sample_size || 0}건 · 판매처 {fieldCandidate.sample_mall_count || 0}곳</p><a className="recommerce-primary recommerce-external-link" href={fieldCandidate.market_link} target="_blank" rel="noreferrer">Naver 상품 원문 열기 ↗</a><div className="recommerce-observed-facts"><div><span>시장 최저표본</span><strong>{money(fieldCandidate.market_low_price || 0)}</strong></div><div><span>하위 25% 가격</span><strong>{money(fieldCandidate.price_p25 || 0)}</strong></div><div><span>가격 중간값</span><strong>{money(fieldCandidate.median_price || 0)}</strong></div><div><span>허용 공급가 상한</span><strong>{money(fieldCandidate.max_allowable_supply_cost || 0)}</strong></div></div><div className="recommerce-source-note">Naver API 가격에는 배송비가 없습니다. 따라서 이 선정은 공급처 조사대상일 뿐 판매·매입 추천이 아닙니다.</div></article>
+          <article className="recommerce-field-task"><span className="recommerce-task-number">02</span><h4>실제 공급견적 입력</h4><div className="recommerce-field-input-grid"><label><span>공급처 견적 단가</span><div><input type="number" value={fieldInputs.price} onChange={event => setFieldInputs(value => ({ ...value, price: event.target.value }))} /><em>원</em></div></label><label><span>소비자 배송비</span><div><input type="number" value={fieldInputs.shipping} onChange={event => setFieldInputs(value => ({ ...value, shipping: event.target.value }))} /><em>원</em></div></label><label><span>반품 편도비</span><div><input type="number" value={fieldInputs.returnShipping} onChange={event => setFieldInputs(value => ({ ...value, returnShipping: event.target.value }))} /><em>원</em></div></label><label><span>보수적 판매가</span><div><input type="number" value={fieldInputs.targetPrice} readOnly /><em>원</em></div></label><label><span>배송 1건당 묶음 수량</span><div><input type="number" min="1" value={fieldInputs.bundleQuantity} onChange={event => setFieldInputs(value => ({ ...value, bundleQuantity: event.target.value }))} /><em>개</em></div></label></div><div className="recommerce-live-math"><div><span>배송 배분 포함 원가</span><strong>{money(fieldUnitCost)}</strong></div><div className={fieldContribution > 0 ? 'positive' : 'negative'}><span>보수비용 차감 후 잔액</span><strong>{money(fieldContribution)}</strong></div><small>수수료 15% + 반품 8% + 광고 10% + 노동·포장 2,000원 가정. 배송비는 한 번만 계산.</small></div></article>
+          <article className="recommerce-field-task"><span className="recommerce-task-number">03</span><h4>증빙 빈칸 표시</h4><p>원문에서 직접 확인했으면 체크. “상세참조”는 확인으로 보지 않습니다.</p><div className="recommerce-field-checks">{[['page','상품명·상품코드'],['price','공급처 견적 단가'],['shipping','배송·합배송 조건'],['returns','반품비와 책임 조건'],['identity','제조자·수입자·원산지']].map(([value,label]) => <label key={value} className={fieldChecks.includes(value) ? 'checked' : ''}><input type="checkbox" checked={fieldChecks.includes(value)} onChange={() => setFieldChecks(items => items.includes(value) ? items.filter(item => item !== value) : [...items, value])} /><span>{label}</span></label>)}</div><div className={`recommerce-field-verdict ${fieldReady ? 'review' : 'hold'}`}><span>현재 판정</span><strong>{fieldReady ? '계산 검토 가능 · 아직 구매 금지' : 'HOLD · 증빙 미완료'}</strong><p>{fieldReady ? '다음은 공급처 답변으로 단가·재고·불량률을 갱신하는 단계입니다.' : '체크되지 않은 항목을 공급처에 질문해야 합니다.'}</p></div></article>
           <article className="recommerce-field-task"><span className="recommerce-task-number">04</span><h4>실제 문의 초안 만들기</h4><p>복사만 합니다. 자동 발송하지 않습니다. 오너클랜 정책상 플랫폼 1:1 문의를 사용하고 직거래를 제안하지 마세요.</p><pre className="recommerce-inquiry">{inquiryText}</pre><button className="recommerce-secondary" onClick={() => { void navigator.clipboard.writeText(inquiryText).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1800) }) }}>{copied ? '복사됨' : '문의문 복사'}</button></article>
         </div>
         <footer className="recommerce-field-outcome"><div><span>이 실전에서 얻는 경험</span><strong>실제 페이지 판독 → 비용 입력 → 결손 증빙 식별 → 공급처 질문 작성</strong></div><div><span>아직 하지 않는 일</span><strong>회원가입 · 문의 전송 · 샘플 주문 · 판매 등록</strong></div></footer>
