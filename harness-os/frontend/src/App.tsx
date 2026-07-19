@@ -24,6 +24,7 @@ import { NewsCenterPage } from './pages/NewsCenterPage'
 import { EduVpTrainingPage } from './pages/EduVpTrainingPage'
 import { EduPatternPage } from './pages/EduPatternPage'
 import { EduDbInspectorPage } from './pages/EduDbInspectorPage'
+import { RecommercePage } from './pages/RecommercePage'
 
 const SESSION_KEY = 'harness-session'
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000 // 30분
@@ -150,7 +151,7 @@ function App() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   })
   const [viewRole, setViewRole] = useState<'ceo' | 'vp'>(() => session?.role ?? 'ceo')
-  const [activeView, setActiveView] = useState<'dashboard' | 'approvals' | 'conference' | 'ars' | 'meetings' | 'costs' | 'tokens' | 'settings' | 'pipeline' | 'trading-diary' | 'openclaw' | 'news-center' | 'edu-pilot' | 'edu-patterns' | 'edu-db-inspector'>('dashboard')
+  const [activeView, setActiveView] = useState<'dashboard' | 'approvals' | 'conference' | 'ars' | 'meetings' | 'costs' | 'tokens' | 'settings' | 'pipeline' | 'trading-diary' | 'openclaw' | 'news-center' | 'edu-pilot' | 'edu-patterns' | 'edu-db-inspector' | 'recommerce'>('dashboard')
   const [selectedPlatform, setSelectedPlatform] = useState('all')
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null)
   const [loading, setLoading] = useState(true)
@@ -796,12 +797,16 @@ function App() {
           <EduDbInspectorPage apiBase={API_BASE} authHeaders={authHeaders} />
         )}
 
+        {activeView === 'recommerce' && (
+          <RecommercePage apiBase={API_BASE} authHeaders={authHeaders} viewRole={viewRole} />
+        )}
+
       {activeView === 'settings' && (
         <SettingsPage
           currentRole={viewRole}
           apiBase={API_BASE}
           authHeaders={authHeaders}
-          onNavigate={(view) => setActiveView(view as any)}
+          onNavigate={(view) => setActiveView(view as typeof activeView)}
           onSettingsChange={(role, settings) => {
             localStorage.setItem(`harness-settings-${role}`, JSON.stringify(settings))
             if (settings.theme) setTheme(settings.theme)

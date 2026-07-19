@@ -67,6 +67,12 @@ from core.topic_registry import ensure_fresh_topic_registry
 from agents.registry import get_active_personas, get_persona
 from scripts.llm_fallback_manager import get_fallback_info, load_recent_fallback_events
 from core.gemini_sdk import generate_text, gemini_model_name
+from core.recommerce_workspace import (
+    WorkspaceConflictError,
+    WorkspaceValidationError,
+    get_workspace as get_recommerce_workspace,
+    mutate_workspace as mutate_recommerce_workspace,
+)
 
 TARGET_FREE_SUBSCRIBERS = 50
 TARGET_PAID_SUBSCRIBERS = 1
@@ -92,6 +98,9 @@ APPROVAL_INTAKE_PATH = PROJECT_ROOT / "docs" / "reports" / "approval_intake.json
 NOTION_MINUTES_RUN_LOG_PATH = PROJECT_ROOT / "docs" / "reports" / "notion_minutes_runs.jsonl"
 CONFERENCE_ROOM_STREAM_PATH = PROJECT_ROOT / "docs" / "reports" / "conference_room_stream.jsonl"
 CONFERENCE_ROOM_NOTION_QUEUE_PATH = PROJECT_ROOT / "docs" / "reports" / "conference_room_notion_queue.jsonl"
+RECOMMERCE_WORKSPACE_PATH = Path(
+    os.getenv("HARNESS_RECOMMERCE_WORKSPACE_PATH", str(PROJECT_ROOT / "runtime" / "recommerce" / "workspace.json"))
+).expanduser()
 
 AR_OWNER_LABELS: dict[str, str] = {
     "jarvis": "Jarvis(비서실)",
@@ -277,6 +286,15 @@ def _require_secret(x_harness_secret: str | None = Header(default=None)) -> None
         raise HTTPException(status_code=401, detail="Invalid dashboard secret")
 
 
+def _require_recommerce_secret(x_harness_secret: str | None = Header(default=None)) -> None:
+    """Fail closed for the business workspace even if the global dashboard runs in dev mode."""
+    expected = os.getenv("HARNESS_OS_SECRET_KEY", "").strip()
+    if not expected:
+        raise HTTPException(status_code=503, detail="Recommerce workspace secret is not configured")
+    if not hmac.compare_digest(x_harness_secret or "", expected):
+        raise HTTPException(status_code=401, detail="Invalid dashboard secret")
+
+
 # ── 비밀번호 관리 ─────────────────────────────────────────────────────────────
 # ~/.harness/passwords.json — git 바깥, 배포/재시작에 절대 영향받지 않음.
 # 우선순위: ~/.harness/passwords.json > 기본값(ceo123/vp123)
@@ -438,6 +456,28 @@ class AuthChangePasswordRequest(BaseModel):
     role: str
     current_password: str
     new_password: str
+
+
+class RecommerceWorkspaceRequest(BaseModel):
+    expected_version: int = Field(ge=0)
+    action: str = Field(min_length=1, max_length=50)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+def _require_harness_role(request: Request, _: None = Depends(_require_recommerce_secret)) -> str:
+    role = _request_harness_role(request)
+    if not role:
+        raise HTTPException(status_code=401, detail="Valid Harness role token required")
+    return role
+
+
+def _require_harness_ceo(request: Request, _: None = Depends(_require_recommerce_secret)) -> str:
+    role = _request_harness_role(request)
+    if not role:
+        raise HTTPException(status_code=401, detail="Valid Harness role token required")
+    if role != "ceo":
+        raise HTTPException(status_code=403, detail="CEO role required for recommerce workspace writes")
+    return role
 
 
 @app.post("/api/auth/login")
@@ -3633,6 +3673,30 @@ def get_advanced_dashboard(force_refresh: bool = False, _: None = Depends(_requi
             _CACHE["advanced_dashboard"] = CacheEntry(value=value, expires_at=time.time() + CACHE_TTL_SECONDS)
         return value
     return _cached("advanced_dashboard", _advanced_dashboard_payload)
+
+
+@app.get("/api/recommerce/workspace")
+def recommerce_workspace_get(_: str = Depends(_require_harness_role)) -> dict[str, Any]:
+    return get_recommerce_workspace(RECOMMERCE_WORKSPACE_PATH)
+
+
+@app.post("/api/recommerce/workspace")
+def recommerce_workspace_post(
+    req: RecommerceWorkspaceRequest,
+    role: str = Depends(_require_harness_ceo),
+) -> dict[str, Any]:
+    try:
+        return mutate_recommerce_workspace(
+            RECOMMERCE_WORKSPACE_PATH,
+            expected_version=req.expected_version,
+            action=req.action,
+            payload=req.payload,
+            actor=role,
+        )
+    except WorkspaceConflictError as exc:
+        raise HTTPException(status_code=409, detail={"message": str(exc), "workspace": exc.workspace}) from exc
+    except WorkspaceValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/admin/edu/db/transparency")
