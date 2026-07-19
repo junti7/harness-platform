@@ -58,6 +58,14 @@ type Workspace = {
   updated_at?: string | null
   updated_by?: string | null
 }
+type MarketCandidate = {
+  id: string; rank: number; name: string; query: string; category: string; why: string; training_goal: string
+  risks: string[]; result_count: number; median_price: number | null; price_p25: number | null; price_p75: number | null
+}
+type MarketResearch = {
+  status: string; observed_at?: string | null; source?: string; method_note?: string
+  candidates: MarketCandidate[]; rejected: Array<{ query: string; reason: string; result_count?: number; median_price?: number | null }>
+}
 
 const COST_LABELS: Record<string, string> = {
   unit_purchase_cost: '상품 매입원가',
@@ -115,7 +123,17 @@ export function RecommercePage({ apiBase, authHeaders, viewRole }: Props) {
   const [notice, setNotice] = useState<string | null>(null)
   const [supplierForm, setSupplierForm] = useState(initialSupplierForm)
   const [skuForm, setSkuForm] = useState(initialSkuForm)
+  const [research, setResearch] = useState<MarketResearch | null>(null)
+  const [researchLoading, setResearchLoading] = useState(false)
+  const [practiceId, setPracticeId] = useState<string | null>(null)
   const canWrite = viewRole === 'ceo'
+
+  const loadResearch = useCallback(async () => {
+    const response = await fetch(`${apiBase}/api/recommerce/market-research`, { headers: authHeaders() })
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(apiErrorMessage(payload, `Market research API ${response.status}`))
+    setResearch(payload as MarketResearch)
+  }, [apiBase, authHeaders])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -133,9 +151,29 @@ export function RecommercePage({ apiBase, authHeaders, viewRole }: Props) {
   }, [apiBase, authHeaders])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 0)
+    const timer = window.setTimeout(() => {
+      void load()
+      void loadResearch().catch(() => setResearch(null))
+    }, 0)
     return () => window.clearTimeout(timer)
-  }, [load])
+  }, [load, loadResearch])
+
+  const refreshResearch = async () => {
+    if (!canWrite) return
+    setResearchLoading(true)
+    setError(null)
+    try {
+      const response = await fetch(`${apiBase}/api/recommerce/market-research/refresh`, { method: 'POST', headers: authHeaders() })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(apiErrorMessage(payload, `Refresh API ${response.status}`))
+      setResearch(payload as MarketResearch)
+      setNotice('시장 표본을 갱신했습니다. 매입 추천이 아니라 OJT shortlist입니다.')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '시장조사를 갱신하지 못했습니다.')
+    } finally {
+      setResearchLoading(false)
+    }
+  }
 
   const mutate = async (action: string, payload: Record<string, unknown>, successMessage: string) => {
     if (!workspace || !canWrite) return false
@@ -281,6 +319,16 @@ export function RecommercePage({ apiBase, authHeaders, viewRole }: Props) {
           {workspace.suppliers.map(item => <article key={item.id} className="recommerce-record-card"><div><strong>{item.name}</strong><span>{item.evidence_status === 'verified' ? '증빙 확인' : '증빙 미완료'} · 수량 {item.available_quantity}</span></div><div><span>견적 유효일 {item.quote_valid_until || '미입력'}</span>{canWrite && <button className="recommerce-delete" disabled={saving} onClick={() => void mutate('delete_supplier', { id: item.id }, '공급처 후보를 삭제했습니다.')}>삭제</button>}</div></article>)}
           {workspace.suppliers.length === 0 && <div className="recommerce-empty">등록된 공급처 후보가 없습니다.</div>}
         </div>
+      </section>
+
+      <section className="recommerce-section">
+        <div className="recommerce-section-head"><div><span>자동 시장조사 · OJT</span><h3>3개 후보로 배우기</h3></div>{canWrite && <button className="recommerce-secondary" disabled={researchLoading} onClick={() => void refreshResearch()}>{researchLoading ? '조사 중…' : '시장 표본 갱신'}</button>}</div>
+        <div className="recommerce-rule-card"><strong>판정 경계</strong><p>{research?.method_note || '아직 자동 시장조사를 실행하지 않았습니다. 결과 수와 가격 표본은 판매량 증명이 아닙니다.'}</p></div>
+        <div className="recommerce-training-grid">
+          {research?.candidates.map(candidate => <article key={candidate.id} className="recommerce-training-card"><div className="recommerce-sku-head"><div><span>OJT {candidate.rank}순위</span><h4>{candidate.name}</h4></div><span className="recommerce-chip neutral">매입 금지</span></div><dl><div><dt>검색 결과</dt><dd>{candidate.result_count.toLocaleString('ko-KR')}건</dd></div><div><dt>표본 중간가</dt><dd>{candidate.median_price ? money(candidate.median_price) : '미확인'}</dd></div></dl><p>{candidate.why}</p><button className="recommerce-secondary" onClick={() => setPracticeId(practiceId === candidate.id ? null : candidate.id)}>{practiceId === candidate.id ? '연습 닫기' : '이 후보로 연습'}</button>{practiceId === candidate.id && <div className="recommerce-practice" role="status"><strong>초보자 미션</strong><ol><li>{candidate.training_goal}</li><li>공급처 견적·실재고·반품 조건을 확인한다.</li><li>10개 비용을 모두 입력한 뒤 탈락 여부를 판단한다.</li></ol><strong>먼저 찾을 위험</strong><ul>{candidate.risks.map(risk => <li key={risk}>{risk}</li>)}</ul><p>정답: 지금은 매입하지 않고 공급처 인터뷰 대상으로만 유지합니다.</p></div>}</article>)}
+          {(!research || research.candidates.length === 0) && <div className="recommerce-empty">대표 계정에서 ‘시장 표본 갱신’을 실행하면 OJT 후보 3개가 생성됩니다.</div>}
+        </div>
+        {research && research.rejected.length > 0 && <details className="recommerce-rejected"><summary>자동 탈락 후보 {research.rejected.length}개 보기</summary>{research.rejected.map(item => <p key={item.query}><strong>{item.query}</strong> — {item.reason}</p>)}</details>}
       </section>
 
       <section className="recommerce-section">

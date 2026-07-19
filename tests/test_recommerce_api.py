@@ -73,6 +73,16 @@ class RecommerceApiTests(unittest.TestCase):
         self.assertEqual(conflict.status_code, 409)
         self.assertEqual(conflict.json()["detail"]["workspace"]["metrics"]["weekly_hours"], 2)
 
+    def test_market_research_is_readable_by_vp_but_refresh_is_ceo_only(self):
+        with patch.object(self.main, "load_market_research", return_value={"status": "not_run", "candidates": []}):
+            read = self.client.get("/api/recommerce/market-research", headers=self.vp_headers)
+        self.assertEqual(read.status_code, 200)
+        denied = self.client.post("/api/recommerce/market-research/refresh", headers=self.vp_headers)
+        self.assertEqual(denied.status_code, 403)
+        with patch.object(self.main, "run_market_research", return_value={"status": "training_shortlist_not_purchase_recommendation", "candidates": []}):
+            refreshed = self.client.post("/api/recommerce/market-research/refresh", headers=self.ceo_headers)
+        self.assertEqual(refreshed.status_code, 200)
+
 
 if __name__ == "__main__":
     unittest.main()

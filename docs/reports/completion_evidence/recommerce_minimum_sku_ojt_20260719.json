@@ -1,0 +1,41 @@
+{
+  "task": "Automate minimum-SKU market research and add beginner OJT practice mode",
+  "status": "residual_risk",
+  "date": "2026-07-19",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-19T18:08:06+09:00",
+      "summary": "Applied mobile-first, no-capital-action, evidence-backed completion and real-entrypoint verification boundaries."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-19T18:08:06+09:00",
+      "summary": "Applied origin-main deployment, atomic runtime state, secret protection, and Mac Mini verification invariants."
+    }
+  ],
+  "verification": [
+    {
+      "name": "live Naver Shopping API research refresh",
+      "target": "local API-backed market research runtime",
+      "command": ".venv/bin/python scripts/run_recommerce_market_research.py",
+      "result": "passed: created three ranked training candidates without exposing credentials"
+    },
+    {
+      "name": "focused recommerce test suite",
+      "target": "local API and runtime modules",
+      "command": ".venv/bin/python -m unittest discover -s tests -p 'test_recommerce*.py' -v",
+      "result": "passed 15 tests including market refresh, VP read-only and CEO refresh boundaries"
+    },
+    {
+      "name": "Harness OS frontend production build",
+      "target": "local dist bundle",
+      "command": "cd harness-os/frontend && npm run build",
+      "result": "passed: index-5dmtNCPN.js and index-DhFXGwGz.css"
+    }
+  ],
+  "residual_risk": [
+    "Mac Mini deployment and production market-research refresh are pending.",
+    "Search result counts and price samples are not verified demand or a purchase recommendation."
+  ]
+}

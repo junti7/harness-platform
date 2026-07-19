@@ -73,6 +73,7 @@ from core.recommerce_workspace import (
     get_workspace as get_recommerce_workspace,
     mutate_workspace as mutate_recommerce_workspace,
 )
+from core.recommerce_market_research import load_market_research, run_market_research
 
 TARGET_FREE_SUBSCRIBERS = 50
 TARGET_PAID_SUBSCRIBERS = 1
@@ -100,6 +101,9 @@ CONFERENCE_ROOM_STREAM_PATH = PROJECT_ROOT / "docs" / "reports" / "conference_ro
 CONFERENCE_ROOM_NOTION_QUEUE_PATH = PROJECT_ROOT / "docs" / "reports" / "conference_room_notion_queue.jsonl"
 RECOMMERCE_WORKSPACE_PATH = Path(
     os.getenv("HARNESS_RECOMMERCE_WORKSPACE_PATH", str(PROJECT_ROOT / "runtime" / "recommerce" / "workspace.json"))
+).expanduser()
+RECOMMERCE_MARKET_RESEARCH_PATH = Path(
+    os.getenv("HARNESS_RECOMMERCE_MARKET_RESEARCH_PATH", str(PROJECT_ROOT / "runtime" / "recommerce" / "market_research.json"))
 ).expanduser()
 
 AR_OWNER_LABELS: dict[str, str] = {
@@ -3697,6 +3701,19 @@ def recommerce_workspace_post(
         raise HTTPException(status_code=409, detail={"message": str(exc), "workspace": exc.workspace}) from exc
     except WorkspaceValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/recommerce/market-research")
+def recommerce_market_research_get(_: str = Depends(_require_harness_role)) -> dict[str, Any]:
+    return load_market_research(RECOMMERCE_MARKET_RESEARCH_PATH)
+
+
+@app.post("/api/recommerce/market-research/refresh")
+def recommerce_market_research_refresh(_: str = Depends(_require_harness_ceo)) -> dict[str, Any]:
+    try:
+        return run_market_research(RECOMMERCE_MARKET_RESEARCH_PATH)
+    except (RuntimeError, httpx.HTTPError) as exc:
+        raise HTTPException(status_code=503, detail=f"Market research refresh failed: {exc}") from exc
 
 
 @app.get("/api/admin/edu/db/transparency")
