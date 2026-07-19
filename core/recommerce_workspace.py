@@ -200,7 +200,10 @@ def _normalize_sku(raw: Any) -> dict[str, Any] | None:
         "category": category,
         "conservative_sale_price": _number(raw.get("conservative_sale_price", 0), "conservative_sale_price"),
         **{key: _number(raw.get(key, 0), key) for key in COST_KEYS},
-        "zero_cost_confirmed": bool(raw.get("zero_cost_confirmed")),
+        "zero_cost_confirmed_keys": [
+            key for key in raw.get("zero_cost_confirmed_keys", [])
+            if key in OPTIONAL_ZERO_COST_KEYS and float(raw.get(key) or 0) == 0
+        ] if isinstance(raw.get("zero_cost_confirmed_keys"), list) else [],
         "evidence_status": str(raw.get("evidence_status") or "unverified"),
         "scores": _normalize_scores(raw.get("scores")),
         "note": note,
@@ -333,9 +336,17 @@ def _new_sku(payload: dict[str, Any], suppliers: list[dict[str, Any]]) -> dict[s
     costs = {key: _number(payload.get(key), key, minimum=0) for key in COST_KEYS}
     if costs["unit_purchase_cost"] <= 0:
         raise WorkspaceValidationError("unit_purchase_cost must be greater than zero")
-    zero_cost_confirmed = bool(payload.get("zero_cost_confirmed"))
-    if any(costs[key] == 0 for key in OPTIONAL_ZERO_COST_KEYS) and not zero_cost_confirmed:
-        raise WorkspaceValidationError("zero cost fields require confirmation")
+    raw_confirmed_keys = payload.get("zero_cost_confirmed_keys")
+    if not isinstance(raw_confirmed_keys, list):
+        raise WorkspaceValidationError("zero_cost_confirmed_keys must be a list")
+    confirmed_keys = {
+        str(key) for key in raw_confirmed_keys
+        if str(key) in OPTIONAL_ZERO_COST_KEYS
+    }
+    zero_cost_keys = {key for key in OPTIONAL_ZERO_COST_KEYS if costs[key] == 0}
+    missing_confirmations = sorted(zero_cost_keys - confirmed_keys)
+    if missing_confirmations:
+        raise WorkspaceValidationError(f"zero cost fields require individual confirmation: {', '.join(missing_confirmations)}")
     scores = _normalize_scores(payload.get("scores"))
     evidence_status = str(payload.get("evidence_status") or "unverified")
     if evidence_status not in EVIDENCE_STATUSES:
@@ -347,7 +358,7 @@ def _new_sku(payload: dict[str, Any], suppliers: list[dict[str, Any]]) -> dict[s
         "category": category,
         "conservative_sale_price": sale_price,
         **costs,
-        "zero_cost_confirmed": zero_cost_confirmed,
+        "zero_cost_confirmed_keys": sorted(zero_cost_keys),
         "evidence_status": evidence_status,
         "scores": scores,
         "note": note,

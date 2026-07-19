@@ -57,8 +57,14 @@ class RecommerceWorkspaceTests(unittest.TestCase):
 
     def test_zero_cost_requires_explicit_confirmation(self):
         payload = self.valid_sku()
-        payload["zero_cost_confirmed"] = False
+        payload["zero_cost_confirmed_keys"] = []
         with self.assertRaisesRegex(WorkspaceValidationError, "zero cost"):
+            self.mutate("add_sku", payload)
+
+    def test_each_zero_cost_requires_its_own_confirmation(self):
+        payload = self.valid_sku()
+        payload["labor_cost"] = 0
+        with self.assertRaisesRegex(WorkspaceValidationError, "labor_cost"):
             self.mutate("add_sku", payload)
 
     def test_full_cost_contribution_and_score_are_computed(self):
@@ -95,7 +101,7 @@ class RecommerceWorkspaceTests(unittest.TestCase):
             "labor_cost": 1000,
             "aging_markdown_loss": 500,
             "dispute_tax_reserve": 200,
-            "zero_cost_confirmed": True,
+            "zero_cost_confirmed_keys": ["ad_coupon_cost"],
             "evidence_status": "verified",
             "scores": {key: 4 for key in ("demand", "supply", "competition", "shipping", "returns", "evidence", "turnover", "content")},
             "note": "비규제 수납용품",

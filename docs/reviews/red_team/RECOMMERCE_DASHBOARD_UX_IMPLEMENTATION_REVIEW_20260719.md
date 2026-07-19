@@ -12,6 +12,7 @@ The implementation may proceed as an internal Phase 0–2 discovery workspace. I
 | --- | --- | --- |
 | Gemini 3.1 Pro (High) | independent acceptance/conformance review | `red_team_clear` |
 | GitHub Copilot CLI / GPT-5.3-Codex | adversarial code and plan review | `red_team_clear` |
+| Claude Sonnet 5 | independent final completion review after 18:30 KST | `red_team_clear` |
 
 ## Findings resolved before clear
 
@@ -23,6 +24,7 @@ The implementation may proceed as an internal Phase 0–2 discovery workspace. I
 6. Read-time quarantine for legacy/tampered restricted SKU records.
 7. No runtime `red_team_clear`, demand-validation, sales, revenue, or approval claims.
 8. Phase 3–4 execution remains visually and functionally locked.
+9. Every cost starts blank; optional zero costs require individual server-authoritative confirmation.
 
 ## Residual risks
 
@@ -35,3 +37,4 @@ The implementation may proceed as an internal Phase 0–2 discovery workspace. I
 - Prompt target and implementation contract: `docs/strategy/RECOMMERCE_DASHBOARD_UX_IMPLEMENTATION_PLAN_20260719.md`
 - Gemini output: `docs/reviews/red_team/recommerce_dashboard_ux_gemini_20260719.md`
 - Copilot output: `docs/reviews/red_team/recommerce_dashboard_ux_copilot_20260719.md`
+- Claude output: `docs/reviews/red_team/recommerce_dashboard_ux_claude_20260719.md`

@@ -25,13 +25,13 @@
       "name": "focused recommerce core and API tests",
       "target": "local API and atomic runtime workspace",
       "command": ".venv/bin/python -m unittest discover -s tests -p 'test_recommerce*.py' -v",
-      "result": "passed 11 tests including authentication, CEO-VP boundary, CAS conflict, full cost, and restricted-item quarantine"
+      "result": "passed 12 tests including authentication, CEO-VP boundary, CAS conflict, full cost, individual zero-cost confirmation, and restricted-item quarantine"
     },
     {
       "name": "Harness OS production bundle build",
       "target": "local dist user-facing bundle",
       "command": "cd harness-os/frontend && npm run build",
-      "result": "passed TypeScript and Vite build; generated index-C_uDdY2c.js and index-CxindeTa.css"
+      "result": "passed TypeScript and Vite build after Red Team remediation; generated index-O_ztmCkx.js and index-CvOOTXd3.css locally"
     },
     {
       "name": "changed frontend lint",
@@ -40,9 +40,21 @@
       "result": "passed with zero errors; three pre-existing App.tsx hook warnings remain"
     }
   ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh with the 13 scoped implementation, test, plan, review, and evidence paths",
+    "result": "initial Mac Mini deployment passed with atomic frontend build, backend launchd reload, target origin diff zero, authenticated production API checks, and bundle marker; final zero-cost remediation deployment is pending"
+  },
+  "red_team": {
+    "models": ["Claude", "Gemini", "GitHub Copilot CLI"],
+    "artifacts": [
+      {"artifact": "../../reviews/red_team/recommerce_dashboard_ux_claude_20260719.md"},
+      {"artifact": "../../reviews/red_team/recommerce_dashboard_ux_gemini_20260719.md"},
+      {"artifact": "../../reviews/red_team/recommerce_dashboard_ux_copilot_20260719.md"}
+    ],
+    "verdict": "red_team_clear"
+  },
   "residual_risk": [
-    "Mac Mini deployment and production endpoint verification are pending.",
-    "Claude is intentionally not called before the CEO-provided 18:30 availability time; final mandatory Claude plus Gemini completion artifact is pending.",
-    "In-app browser was unavailable, so rendered browser inspection is pending and cannot yet support a complete status."
+    "Final zero-cost remediation deployment and production re-verification are pending.",
+    "In-app browser was unavailable; production API, bundle marker, service process, responsive CSS, and accessibility source checks are used instead."
   ]
 }

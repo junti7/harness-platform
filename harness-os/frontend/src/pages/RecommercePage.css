@@ -49,6 +49,9 @@
 .recommerce-field { display: grid; align-content: start; gap: 7px; }
 .recommerce-field > span { color: var(--text-muted); font-size: .8rem; font-weight: 700; }
 .recommerce-field input, .recommerce-field select { width: 100%; min-height: 44px; padding: 9px 10px; color: var(--ink); border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--surface); font: inherit; }
+.recommerce-cost-field { display: grid; align-content: start; gap: 6px; }
+.recommerce-zero-confirm { display: flex; align-items: center; gap: 8px; min-height: 44px; color: var(--warning); font-size: .78rem; font-weight: 700; }
+.recommerce-zero-confirm input { width: 18px; height: 18px; accent-color: var(--accent); }
 .recommerce-field input:focus-visible, .recommerce-field select:focus-visible, .recommerce-page button:focus-visible { outline: 3px solid var(--accent-glow); outline-offset: 2px; border-color: var(--accent); }
 .recommerce-input-suffix { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
 .recommerce-input-suffix > span { color: var(--text-muted); }

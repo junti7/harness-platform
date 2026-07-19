@@ -83,14 +83,18 @@ const initialSupplierForm = {
 }
 
 const initialSkuForm = {
-  name: '', supplier_id: '', category: 'stationery', conservative_sale_price: 0,
-  evidence_status: 'unverified', note: '', zero_cost_confirmed: false,
-  costs: Object.fromEntries(Object.keys(COST_LABELS).map(key => [key, 0])) as Record<string, number>,
+  name: '', supplier_id: '', category: 'stationery', conservative_sale_price: '',
+  evidence_status: 'unverified', note: '', zero_cost_confirmed_keys: [] as string[],
+  costs: Object.fromEntries(Object.keys(COST_LABELS).map(key => [key, ''])) as Record<string, string>,
   scores: Object.fromEntries(Object.keys(SCORE_LABELS).map(key => [key, 0])) as Scores,
 }
 
 function money(value: number) {
   return `${Math.round(value).toLocaleString('ko-KR')}원`
+}
+
+function isZeroCostValue(value: string) {
+  return value.trim() !== '' && Number(value) === 0
 }
 
 function apiErrorMessage(payload: unknown, fallback: string) {
@@ -184,8 +188,8 @@ export function RecommercePage({ apiBase, authHeaders, viewRole }: Props) {
       conservative_sale_price: skuForm.conservative_sale_price,
       evidence_status: skuForm.evidence_status,
       note: skuForm.note,
-      zero_cost_confirmed: skuForm.zero_cost_confirmed,
-      ...skuForm.costs,
+      zero_cost_confirmed_keys: skuForm.zero_cost_confirmed_keys,
+      ...Object.fromEntries(Object.entries(skuForm.costs).map(([key, value]) => [key, Number(value)])),
       scores: skuForm.scores,
     }, 'SKU 후보를 저장했습니다. 이는 시장검증 완료가 아닙니다.')
     if (saved) setSkuForm(initialSkuForm)
@@ -285,10 +289,9 @@ export function RecommercePage({ apiBase, authHeaders, viewRole }: Props) {
           <label className="recommerce-field"><span>상품 후보명</span><input required maxLength={100} value={skuForm.name} onChange={event => setSkuForm(form => ({ ...form, name: event.target.value }))} /></label>
           <label className="recommerce-field"><span>공급처</span><select value={skuForm.supplier_id} onChange={event => setSkuForm(form => ({ ...form, supplier_id: event.target.value }))}><option value="">미연결</option>{workspace.suppliers.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           <label className="recommerce-field"><span>허용 category</span><select value={skuForm.category} onChange={event => setSkuForm(form => ({ ...form, category: event.target.value }))}>{workspace.allowed_categories.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-          <label className="recommerce-field"><span>보수적 판매가</span><input type="number" required min="1" value={skuForm.conservative_sale_price} onChange={event => setSkuForm(form => ({ ...form, conservative_sale_price: Number(event.target.value) }))} /></label>
+          <label className="recommerce-field"><span>보수적 판매가</span><input type="number" required min="1" value={skuForm.conservative_sale_price} onChange={event => setSkuForm(form => ({ ...form, conservative_sale_price: event.target.value }))} /></label>
           <div className="recommerce-subhead wide"><strong>모든 비용 입력</strong><span>빈칸을 0원으로 가정하지 않습니다.</span></div>
-          {Object.entries(COST_LABELS).map(([key, label]) => <label key={key} className="recommerce-field"><span>{label}</span><input type="number" required min="0" value={skuForm.costs[key]} onChange={event => setSkuForm(form => ({ ...form, costs: { ...form.costs, [key]: Number(event.target.value) } }))} /></label>)}
-          <label className="recommerce-confirm wide"><input type="checkbox" checked={skuForm.zero_cost_confirmed} onChange={event => setSkuForm(form => ({ ...form, zero_cost_confirmed: event.target.checked }))} /><span>0원으로 입력한 비용은 실제 해당 비용이 없음을 확인했습니다.</span></label>
+          {Object.entries(COST_LABELS).map(([key, label]) => <div key={key} className="recommerce-cost-field"><label className="recommerce-field"><span>{label}</span><input type="number" required min={key === 'unit_purchase_cost' ? 1 : 0} value={skuForm.costs[key]} onChange={event => setSkuForm(form => ({ ...form, costs: { ...form.costs, [key]: event.target.value }, zero_cost_confirmed_keys: isZeroCostValue(event.target.value) ? form.zero_cost_confirmed_keys : form.zero_cost_confirmed_keys.filter(item => item !== key) }))} /></label>{key !== 'unit_purchase_cost' && isZeroCostValue(skuForm.costs[key]) && <label className="recommerce-zero-confirm"><input type="checkbox" required checked={skuForm.zero_cost_confirmed_keys.includes(key)} onChange={event => setSkuForm(form => ({ ...form, zero_cost_confirmed_keys: event.target.checked ? [...new Set([...form.zero_cost_confirmed_keys, key])] : form.zero_cost_confirmed_keys.filter(item => item !== key) }))} /><span>{label} 없음 확인</span></label>}</div>)}
           <div className="recommerce-subhead wide"><strong>8축 score</strong><span>각 0~5점. 증빙·안전 4점 미만이면 비용조건 충족 불가.</span></div>
           {Object.entries(SCORE_LABELS).map(([key, label]) => <label key={key} className="recommerce-field"><span>{label}</span><input type="number" required min="0" max="5" value={skuForm.scores[key]} onChange={event => setSkuForm(form => ({ ...form, scores: { ...form.scores, [key]: Number(event.target.value) } }))} /></label>)}
           <label className="recommerce-field"><span>증빙 관찰 상태</span><select value={skuForm.evidence_status} onChange={event => setSkuForm(form => ({ ...form, evidence_status: event.target.value }))}><option value="unverified">미확인</option><option value="requested">요청함</option><option value="verified">확인함</option></select></label>
