@@ -3,7 +3,7 @@
 검증 포인트(Red Team Codex v3 MAJOR 반영):
   1. 정제 깔때기(filtered/refined/backlog)는 *단일 쿼리·단일 스냅샷*으로 읽어야 한다
      (4개 순차 쿼리 시 동시 쓰기 중 refined+backlog==filtered 불변식이 깨짐).
-  2. 단위 정합: refined_total + refine_backlog == filtered_total.
+  2. 단위 정합: refined + 신규대기 + 오류재시도 + 영구실패 == filtered.
   3. ETA = backlog / per_hour, 처리율 0이면 None(div-by-zero 방지).
   4. domain 파라미터가 SQL 바인딩과 응답에 그대로 반영된다.
 """
@@ -51,9 +51,22 @@ class PipelineBacklogTests(unittest.TestCase):
             self.mod._execute_query = orig
         return result, executed
 
+    @staticmethod
+    def _funnel(**overrides):
+        row = {
+            "filtered_total": 100,
+            "refine_backlog": 35,
+            "retry_backlog": 4,
+            "failed_terminal": 1,
+            "refined_total": 60,
+            "refined_per_hour": 5,
+        }
+        row.update(overrides)
+        return row
+
     def test_single_snapshot_query_for_funnel(self):
         """정제 깔때기 4개 지표는 1개 쿼리(단일 스냅샷)에서 나와야 한다."""
-        funnel = {"filtered_total": 100, "refine_backlog": 40, "refined_total": 60, "refined_per_hour": 5}
+        funnel = self._funnel()
         _, executed = self._run(funnel)
         funnel_queries = [q for q, _ in executed if "filtered_signals" in q]
         self.assertEqual(len(funnel_queries), 1, "정제 깔때기는 단일 쿼리여야 한다")
@@ -62,20 +75,27 @@ class PipelineBacklogTests(unittest.TestCase):
         self.assertIn("LEFT JOIN refined_outputs", q)
         self.assertIn("FILTER", q)
         self.assertIn("DISTINCT", q)
+        self.assertIn("dead_letter_queue", q)
+        self.assertIn("coalesce(d.resolved, false) = false", q)
+        # precedence: unresolved retry가 하나라도 있으면 failed terminal로 이중 분류하지 않는다.
+        self.assertIn("AND NOT EXISTS (", q)
 
     def test_unit_reconciliation(self):
-        """refined_total + refine_backlog == filtered_total (단위 정합)."""
-        funnel = {"filtered_total": 100, "refine_backlog": 40, "refined_total": 60, "refined_per_hour": 5}
+        """모든 filtered row가 겹치지 않는 terminal/queue 상태 하나에 속한다."""
+        funnel = self._funnel()
         result, _ = self._run(funnel)
-        self.assertEqual(result["refined_total"] + result["refine_backlog"], result["filtered_total"])
+        self.assertEqual(
+            result["refined_total"] + result["refine_backlog"] + result["retry_backlog"] + result["failed_terminal"],
+            result["filtered_total"],
+        )
 
     def test_eta_computation(self):
-        funnel = {"filtered_total": 100, "refine_backlog": 40, "refined_total": 60, "refined_per_hour": 8}
+        funnel = self._funnel(refine_backlog=40, retry_backlog=0, failed_terminal=0, refined_per_hour=8)
         result, _ = self._run(funnel)
         self.assertEqual(result["eta_hours"], 5.0)  # 40 / 8
 
     def test_eta_none_when_no_throughput(self):
-        funnel = {"filtered_total": 100, "refine_backlog": 40, "refined_total": 60, "refined_per_hour": 0}
+        funnel = self._funnel(refine_backlog=40, retry_backlog=0, failed_terminal=0, refined_per_hour=0)
         result, _ = self._run(funnel)
         self.assertIsNone(result["eta_hours"])
 
@@ -85,7 +105,7 @@ class PipelineBacklogTests(unittest.TestCase):
         get_pipeline_signals 와 동일하게 coalesce(domain, raw_data->>'domain', '') 로 해석해야
         '수집 직후~태깅 전 pending' 을 누락하지 않는다.
         """
-        funnel = {"filtered_total": 1, "refine_backlog": 1, "refined_total": 0, "refined_per_hour": 0}
+        funnel = self._funnel(filtered_total=1, refine_backlog=1, retry_backlog=0, failed_terminal=0, refined_total=0, refined_per_hour=0)
         _, executed = self._run(funnel)
         raw_queries = [q for q, _ in executed if "raw_signals" in q]
         self.assertEqual(len(raw_queries), 1)
@@ -93,7 +113,7 @@ class PipelineBacklogTests(unittest.TestCase):
 
     def test_filtered_uses_plain_domain(self):
         """filtered_signals 는 필터가 domain 을 항상 채우므로 plain f.domain = %s 로 집계한다."""
-        funnel = {"filtered_total": 1, "refine_backlog": 1, "refined_total": 0, "refined_per_hour": 0}
+        funnel = self._funnel(filtered_total=1, refine_backlog=1, retry_backlog=0, failed_terminal=0, refined_total=0, refined_per_hour=0)
         _, executed = self._run(funnel)
         funnel_queries = [q for q, _ in executed if "filtered_signals" in q and "raw_signals" not in q]
         self.assertEqual(len(funnel_queries), 1)
@@ -115,7 +135,7 @@ class PipelineBacklogTests(unittest.TestCase):
             calls["n"] += 1
             if "raw_signals" in query:
                 return [{"raw_pending": 0}]
-            return [{"filtered_total": 10, "refine_backlog": 4, "refined_total": 6, "refined_per_hour": 2}]
+            return [self._funnel(filtered_total=10, refine_backlog=4, retry_backlog=0, failed_terminal=0, refined_total=6, refined_per_hour=2)]
 
         orig = self.mod._execute_query
         self.mod._execute_query = fake_execute_query
@@ -129,7 +149,7 @@ class PipelineBacklogTests(unittest.TestCase):
             self.mod._BACKLOG_CACHE.clear()
 
     def test_domain_is_bound_and_echoed(self):
-        funnel = {"filtered_total": 1, "refine_backlog": 1, "refined_total": 0, "refined_per_hour": 0}
+        funnel = self._funnel(filtered_total=1, refine_backlog=1, retry_backlog=0, failed_terminal=0, refined_total=0, refined_per_hour=0)
         result, executed = self._run(funnel, domain="physical_ai")
         self.assertEqual(result["domain"], "physical_ai")
         for _q, params in executed:

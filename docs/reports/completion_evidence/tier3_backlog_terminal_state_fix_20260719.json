@@ -1,0 +1,54 @@
+{
+  "task": "Tier3 backlog terminal state and throughput recurrence prevention",
+  "status": "residual_risk",
+  "date": "2026-07-19",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-19T16:36:54+09:00",
+      "summary": "Completion requires requirement-to-evidence mapping, real Mac Mini verification, completion evidence, and scoped origin/main deployment."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-19T16:36:54+09:00",
+      "summary": "Production changes require commit, push, deploy_to_macmini, runtime verification, and honest residual-risk reporting."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Mac Mini production backlog diagnosis",
+      "target": "macmini database and launchd logs",
+      "command": "ssh macmini with read-only DB counts, launchctl state, and Tier3 log inspection",
+      "result": "Observed EDU backlog 834, hourly free worker returning no candidates, paid worker disabled, and retry-dlq LaunchAgent exit 1."
+    },
+    {
+      "name": "Tier3 state regression suite",
+      "target": "local pytest",
+      "command": ".venv/bin/python -m pytest tests/test_edu_tier3_candidate_gate.py tests/test_refiner_terminal_state.py tests/test_pipeline_backlog.py",
+      "result": "passed: 17 tests"
+    },
+    {
+      "name": "frontend production bundle build",
+      "target": "local dist build",
+      "command": "npm run build --prefix harness-os/frontend",
+      "result": "passed: TypeScript and Vite production build"
+    },
+    {
+      "name": "Python entrypoint syntax check",
+      "target": "local py_compile",
+      "command": ".venv/bin/python -m py_compile adapters/content/refiner.py scripts/run_edu_tier3_parallel.py scripts/retry_dlq.py harness-os/backend/main.py",
+      "result": "passed; also exposed and fixed pre-existing retry_dlq SyntaxError"
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh with exact changed runtime paths after origin/main push",
+    "result": "pending because pre-push completion evidence guard requires this artifact in origin/main first"
+  },
+  "review": {
+    "copilot": "Initial red_team_block findings addressed: retry ownership documented and syntax-fixed, DLQ state index added, SQL guards strengthened, rolling response compatibility added.",
+    "claude": "Unavailable: Claude Code session limit reached; no clear verdict claimed."
+  },
+  "residual_risk": [
+    "Mac Mini deploy, migration application, backlog drain, API response, frontend bundle, and LaunchAgent retry verification remain pending until push succeeds."
+  ]
+}

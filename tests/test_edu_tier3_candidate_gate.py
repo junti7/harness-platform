@@ -61,7 +61,10 @@ def test_rule_skip_fetch_excludes_high_precision_keep_gate(monkeypatch):
     assert "AND NOT (" in captured["query"]
     assert "fs.source = ANY(%s)" in captured["query"]
     assert "outside-curated-source-allowlist" in captured["query"]
-    assert "OR NOT (fs.source = ANY(%s))" in captured["query"]
+    assert "missing-required-topic-or-audience-signal" in captured["query"]
+    # Keep gate 바깥 모든 row가 terminal triage 대상이어야 한다. 별도 pre-filter를 두면
+    # allowlist 안이지만 topic/audience marker가 없는 row가 영구 backlog로 남는다.
+    assert "OR NOT (fs.source = ANY(%s))" not in captured["query"]
     assert captured["params"] == (
         tier3.EDU_TIER3_TRIAGE_SKIP_SOURCES,
         tier3.EDU_TIER3_SOURCE_ALLOWLIST,
@@ -69,9 +72,6 @@ def test_rule_skip_fetch_excludes_high_precision_keep_gate(monkeypatch):
         0.1,
         1,
         0,
-        tier3.EDU_TIER3_TRIAGE_SKIP_SOURCES,
-        tier3.EDU_TIER3_SOURCE_ALLOWLIST,
-        tier3.EDU_TIER3_TRIAGE_SKIP_PATTERNS,
         tier3.EDU_TIER3_SOURCE_ALLOWLIST,
         tier3.EDU_TIER3_TEXT_GATE_PATTERNS,
         tier3.EDU_TIER3_AUDIENCE_PATTERNS,

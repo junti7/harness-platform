@@ -352,6 +352,12 @@ CREATE TABLE IF NOT EXISTS dead_letter_queue (
     created_at     TIMESTAMP DEFAULT NOW()
 );
 
+-- Tier3 selector/backlog KPI가 filtered_signal의 DLQ 소유권을 빠르게 판정한다.
+ALTER TABLE dead_letter_queue
+    ADD COLUMN IF NOT EXISTS resolved BOOLEAN DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS idx_dlq_item_state
+    ON dead_letter_queue(item_type, item_id, resolved);
+
 CREATE TABLE IF NOT EXISTS pipeline_runs (
     id              SERIAL PRIMARY KEY,
     correlation_id  VARCHAR(8) NOT NULL,

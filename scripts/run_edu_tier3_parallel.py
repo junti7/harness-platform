@@ -173,7 +173,7 @@ def _triage_reason_sql(text_expr: str) -> str:
                  WHEN fs.source = ANY(%s) THEN 'source-skip'
                  WHEN NOT (fs.source = ANY(%s)) THEN 'outside-curated-source-allowlist'
                  WHEN {text_expr} ILIKE ANY(%s) THEN 'text-skip'
-                 ELSE 'rule-skip'
+                 ELSE 'missing-required-topic-or-audience-signal'
                END AS triage_reason
     """
 
@@ -249,11 +249,9 @@ def _fetch_rule_skip_candidates(min_score: float, shard_i: int, shard_n: int, li
           AND fs.domain = 'edu_consulting'
           AND fs.score >= %s
           AND (MOD(fs.id, %s) = %s)
-          AND (
-            fs.source = ANY(%s)
-            OR NOT (fs.source = ANY(%s))
-            OR {text_expr} ILIKE ANY(%s)
-          )
+          -- Keep gate의 정확한 여집합을 terminal triage 대상으로 삼는다.
+          -- 이전 조건은 allowlist 안에 있으나 topic/audience marker가 없는 row를 어느 쪽에도
+          -- 넣지 않아 영구 backlog를 만들었다.
           AND NOT (
             fs.source = ANY(%s)
             AND {text_expr} ILIKE ANY(%s)
@@ -274,9 +272,6 @@ def _fetch_rule_skip_candidates(min_score: float, shard_i: int, shard_n: int, li
             min_score,
             shard_n,
             shard_i,
-            EDU_TIER3_TRIAGE_SKIP_SOURCES,
-            EDU_TIER3_SOURCE_ALLOWLIST,
-            EDU_TIER3_TRIAGE_SKIP_PATTERNS,
             EDU_TIER3_SOURCE_ALLOWLIST,
             EDU_TIER3_TEXT_GATE_PATTERNS,
             EDU_TIER3_AUDIENCE_PATTERNS,

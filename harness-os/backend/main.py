@@ -5904,7 +5904,19 @@ def pipeline_backlog(
     funnel_rows = _execute_query(
         "SELECT "
         "count(DISTINCT f.id) AS filtered_total, "
-        "count(DISTINCT f.id) FILTER (WHERE r.id IS NULL) AS refine_backlog, "
+        "count(DISTINCT f.id) FILTER (WHERE r.id IS NULL AND NOT EXISTS ("
+        "  SELECT 1 FROM dead_letter_queue d WHERE d.item_type = 'filtered_signal' AND d.item_id = f.id"
+        ")) AS refine_backlog, "
+        "count(DISTINCT f.id) FILTER (WHERE r.id IS NULL AND EXISTS ("
+        "  SELECT 1 FROM dead_letter_queue d WHERE d.item_type = 'filtered_signal' AND d.item_id = f.id "
+        "    AND coalesce(d.resolved, false) = false"
+        ")) AS retry_backlog, "
+        "count(DISTINCT f.id) FILTER (WHERE r.id IS NULL AND NOT EXISTS ("
+        "  SELECT 1 FROM dead_letter_queue d WHERE d.item_type = 'filtered_signal' AND d.item_id = f.id "
+        "    AND coalesce(d.resolved, false) = false"
+        ") AND EXISTS ("
+        "  SELECT 1 FROM dead_letter_queue d WHERE d.item_type = 'filtered_signal' AND d.item_id = f.id"
+        ")) AS failed_terminal, "
         "count(DISTINCT r.filtered_signal_id) AS refined_total, "
         "count(DISTINCT r.filtered_signal_id) "
         "  FILTER (WHERE r.created_at > now() - interval '1 hour') AS refined_per_hour "
@@ -5915,6 +5927,8 @@ def pipeline_backlog(
     )
     filtered_total = _first(funnel_rows, "filtered_total")
     refine_backlog = _first(funnel_rows, "refine_backlog")
+    retry_backlog = _first(funnel_rows, "retry_backlog")
+    failed_terminal = _first(funnel_rows, "failed_terminal")
     refined_total = _first(funnel_rows, "refined_total")
     refined_per_hour = _first(funnel_rows, "refined_per_hour")
 
@@ -5926,6 +5940,8 @@ def pipeline_backlog(
         "filtered_total": filtered_total,
         "refined_total": refined_total,
         "refine_backlog": refine_backlog,
+        "retry_backlog": retry_backlog,
+        "failed_terminal": failed_terminal,
         "refined_per_hour": refined_per_hour,
         "eta_hours": eta_hours,
     }

@@ -188,6 +188,8 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
     filtered_total: number
     refined_total: number
     refine_backlog: number
+    retry_backlog: number
+    failed_terminal: number
     refined_per_hour: number
     eta_hours: number | null
   }
@@ -316,14 +318,16 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
         return
       }
       const d = await res.json()
+      // backend/frontend 순차 재시작 중 구버전 backend 응답도 잠시 표시 가능하게 신규 분류는 0 기본값.
+      const normalized = { ...d, retry_backlog: d?.retry_backlog ?? 0, failed_terminal: d?.failed_terminal ?? 0 }
       // 운영 지표 화면이므로 shape 오염을 0으로 위장하지 않는다(서버/스키마 회귀를 0 backlog 로 숨기면 안 됨).
       // 필수 숫자 필드가 유효하지 않으면 '표시 실패'로 처리하고 이전 값을 그대로 둔다.
       const isNum = (v: unknown) => typeof v === 'number' && Number.isFinite(v)
-      const required = ['raw_pending', 'filtered_total', 'refined_total', 'refine_backlog', 'refined_per_hour'] as const
-      const shapeOk = !!d && typeof d.domain === 'string' && required.every(k => isNum(d[k]))
-        && (d.eta_hours === null || isNum(d.eta_hours))
+      const required = ['raw_pending', 'filtered_total', 'refined_total', 'refine_backlog', 'retry_backlog', 'failed_terminal', 'refined_per_hour'] as const
+      const shapeOk = !!normalized && typeof normalized.domain === 'string' && required.every(k => isNum(normalized[k]))
+        && (normalized.eta_hours === null || isNum(normalized.eta_hours))
       if (!shapeOk) { setBacklogError('응답 형식 오류'); setBacklogStale(true); return }
-      setBacklog(d as BacklogStatus)
+      setBacklog(normalized as BacklogStatus)
       setBacklogAt(Date.now())
       setBacklogStale(false)
       setBacklogError(null)
@@ -817,7 +821,7 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.85rem' }}>
                 <div style={{ background: 'var(--color-surface-lighter)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
                   <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.3rem' }}>
-                    정제 대기
+                    신규 정제 대기
                   </div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem' }}>
                     <span style={{ fontSize: '1.5rem', fontWeight: 800, color: backlog.refine_backlog > 5000 ? 'var(--color-warn)' : 'var(--color-text)' }}>
@@ -829,7 +833,19 @@ export function PipelinePage({ apiBase, authHeaders, monitor }: Props) {
 
                 <div style={{ background: 'var(--color-surface-lighter)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
                   <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.3rem' }}>
-                    처리율 (최근 1시간)
+                    오류 재시도 / 영구 실패
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem' }}>
+                    <span style={{ fontSize: '1.5rem', fontWeight: 800, color: backlog.retry_backlog > 0 ? 'var(--color-warn)' : 'var(--color-text)' }}>
+                      {backlog.retry_backlog.toLocaleString('ko-KR')} / {backlog.failed_terminal.toLocaleString('ko-KR')}
+                    </span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>건</span>
+                  </div>
+                </div>
+
+                <div style={{ background: 'var(--color-surface-lighter)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.3rem' }}>
+                    종결 처리량 (최근 1시간)
                   </div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem' }}>
                     <span style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--color-ok)' }}>

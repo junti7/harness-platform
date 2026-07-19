@@ -376,7 +376,14 @@ def _fetch_refine_batch(limit: int) -> list:
                fs.extracted_facts, COALESCE(fs.domain, 'physical_ai') AS domain
         FROM filtered_signals fs
         LEFT JOIN refined_outputs ro ON fs.id = ro.filtered_signal_id
-        WHERE ro.id IS NULL AND ({cond})
+        WHERE ro.id IS NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM dead_letter_queue dlq
+              WHERE dlq.item_type = 'filtered_signal' AND dlq.item_id = fs.id
+          )
+          -- DLQ에 들어간 row는 scripts/retry_dlq.py가 소유한다. resolved=false는 6시간 재시도,
+          -- resolved=true는 영구실패 terminal이므로 일반 배치가 다시 집어 starvation시키지 않는다.
+          AND ({cond})
         ORDER BY fs.score DESC
         LIMIT %s
     """
@@ -455,7 +462,10 @@ def refine(correlation_id: str = None):
             continue
 
         if not result.get("is_relevant", True):
-            logger.info("  → Gemini 판단: 관련 없음, 탈락")
+            # 관련 없음도 성공적으로 끝난 terminal 판정이다. 저장하지 않으면 같은 고득점 row가
+            # 매 실행 재선택되어 비용을 쓰고 후순위 신호를 영구 starvation 시킨다.
+            save_refined_output(row["id"], result, f"{_gemini_model_name}:irrelevant")
+            logger.info("  → Gemini 판단: 관련 없음, terminal 저장")
             skipped += 1
             continue
 

@@ -139,7 +139,7 @@ def main():
         if item_type == "filtered_signal":
             success = retry_tier3_signal(entry, client, args.dry_run, logger)
 
-        if not dry_run := args.dry_run:
+        if not args.dry_run:
             if success:
                 _mark_resolved(dlq_id)
                 resolved += 1
