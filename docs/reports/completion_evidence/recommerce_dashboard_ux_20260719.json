@@ -1,6 +1,6 @@
 {
   "task": "Build the Harness OS recommerce discovery dashboard UX",
-  "status": "residual_risk",
+  "status": "complete",
   "date": "2026-07-19",
   "governance_bootstrap": [
     {
@@ -38,11 +38,29 @@
       "target": "local UI source",
       "command": "cd harness-os/frontend && npx eslint src/pages/RecommercePage.tsx src/components/TopBar.tsx src/App.tsx",
       "result": "passed with zero errors; three pre-existing App.tsx hook warnings remain"
+    },
+    {
+      "name": "Mac Mini production API and role-boundary check",
+      "target": "macmini production API and launchd service",
+      "command": "authenticated GET and non-mutating rejected POST checks against http://127.0.0.1:8000/api/recommerce/workspace",
+      "result": "passed: missing secret 401, VP GET 200, VP write 403, CEO invalid action 400, version 0, Phase 3-4 locked, runtime file still absent"
+    },
+    {
+      "name": "Mac Mini production bundle and process check",
+      "target": "macmini production dist and frontend URL",
+      "command": "curl 127.0.0.1:5173 index and asset; inspect launchd backend, port 5173, and scoped origin diff",
+      "result": "passed: index-DH9qTKqD.js contains recommerce-opportunity-workspace; backend running; 5173 listening; scoped origin diff 0"
+    },
+    {
+      "name": "Mac Mini focused recommerce regression suite",
+      "target": "macmini production repository",
+      "command": ".venv/bin/python -m unittest discover -s tests -p 'test_recommerce*.py' -q",
+      "result": "passed 12 tests after final deployment"
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh with the 13 scoped implementation, test, plan, review, and evidence paths",
-    "result": "initial Mac Mini deployment passed with atomic frontend build, backend launchd reload, target origin diff zero, authenticated production API checks, and bundle marker; final zero-cost remediation deployment is pending"
+    "result": "final Mac Mini deployment passed: backup scratch/pre_deploy_backup_20260719_184303, atomic frontend bundle index-DH9qTKqD.js, backend launchd reload, 12 production-repo tests, authenticated live API role checks, bundle marker, and target origin diff zero"
   },
   "red_team": {
     "models": ["Claude", "Gemini", "GitHub Copilot CLI"],
@@ -54,7 +72,7 @@
     "verdict": "red_team_clear"
   },
   "residual_risk": [
-    "Final zero-cost remediation deployment and production re-verification are pending.",
-    "In-app browser was unavailable; production API, bundle marker, service process, responsive CSS, and accessibility source checks are used instead."
+    "In-app browser was unavailable; the fallback verification used the production API, served bundle marker, launchd/process state, responsive CSS, accessibility source checks, and Mac Mini regression tests.",
+    "Restricted-item keyword screening is conservative and does not replace later human product-safety and legal review."
   ]
 }
