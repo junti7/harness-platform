@@ -1,0 +1,50 @@
+{
+  "task": "Rebuild recommerce beginner OJT as a guided decision simulator",
+  "status": "residual_risk",
+  "date": "2026-07-19",
+  "requirements": [
+    {"requirement": "Apply DESIGN.md calm mission-control hierarchy", "status": "pass", "evidence": "Dedicated workbench, risk-first sourcing warning, restrained blue light surfaces, thin borders, tabular cost figures"},
+    {"requirement": "Make the product immediately understandable", "status": "pass", "evidence": "Original 24-compartment organizer diagram, dimensions, material, contents exclusion and quality checks in step 1"},
+    {"requirement": "Explain sourcing without retail arbitrage confusion", "status": "pass", "evidence": "Persistent retail-resale warning plus market research to B2B quote to evidence to small validation flow"},
+    {"requirement": "Provide actionable beginner OJT", "status": "pass", "evidence": "Five guided steps covering product, sourcing, simulated quote, unit economics and HOLD decision"},
+    {"requirement": "Keep training separate from real orders", "status": "pass", "evidence": "Training state remains frontend-only; no workspace mutation, supplier insert or purchase endpoint is called"},
+    {"requirement": "Support mobile use", "status": "pass", "evidence": "Single-column responsive layout, compact five-step rail and minimum 44px controls below 760px"}
+  ],
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-19T19:25:00+09:00",
+      "summary": "Applied mobile-first behavior, CEO-only Red Team invocation, real-entrypoint verification and completion evidence requirements."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-19T19:25:00+09:00",
+      "summary": "Applied origin-main deployment, scoped Mac Mini checkout, no automatic Red Team, and production verification invariants."
+    }
+  ],
+  "verification": [
+    {
+      "name": "frontend production dist build",
+      "target": "local dist user-facing bundle",
+      "command": "npm run build --prefix harness-os/frontend",
+      "result": "passed: TypeScript and Vite production build created index-CGpLZH8i.js and index-kY1-Irfg.css"
+    },
+    {
+      "name": "changed-page lint",
+      "target": "RecommercePage frontend source",
+      "command": "harness-os/frontend/node_modules/.bin/eslint harness-os/frontend/src/pages/RecommercePage.tsx",
+      "result": "passed with zero errors and warnings"
+    },
+    {
+      "name": "focused recommerce regression suite",
+      "target": "recommerce API and workspace runtime",
+      "command": ".venv/bin/python -m unittest discover -s tests -p 'test_recommerce*.py' -v",
+      "result": "passed 15 tests; research and workspace boundaries unchanged"
+    }
+  ],
+  "residual_risk": [
+    "Mac Mini production deployment and served-bundle verification remain pending.",
+    "In-app browser was unavailable, so no rendered screenshot was captured; production bundle and service checks will be used after deploy.",
+    "Repository-wide lint still has 37 pre-existing errors outside RecommercePage; changed-page lint is clean."
+  ]
+}
