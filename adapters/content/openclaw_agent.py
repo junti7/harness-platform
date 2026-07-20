@@ -36,6 +36,7 @@ import time
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from email.utils import parsedate_to_datetime
 from html import unescape
 from pathlib import Path
 from typing import Any
@@ -573,18 +574,58 @@ def _try_status_brief_response(user_message: str) -> str | None:
 
 def _infer_gmail_query(user_message: str) -> str:
     lowered = (user_message or "").lower()
-    today = datetime.now(ZoneInfo("Asia/Seoul")).date()
     if "오늘" in lowered or "금일" in lowered:
-        tomorrow = today.fromordinal(today.toordinal() + 1)
-        return f"after:{today:%Y/%m/%d} before:{tomorrow:%Y/%m/%d}"
+        # Gmail's date-only after/before syntax may use a non-KST boundary.
+        # Search a wider window, then filter returned message timestamps in KST.
+        return "newer_than:2d"
     if "어제" in lowered:
-        yesterday = today.fromordinal(today.toordinal() - 1)
-        return f"after:{yesterday:%Y/%m/%d} before:{today:%Y/%m/%d}"
+        return "newer_than:3d"
     if "2주" in lowered or "14일" in lowered:
         return "newer_than:14d"
     if "이번주" in lowered or "7일" in lowered or "일주일" in lowered:
         return "newer_than:7d"
     return "newer_than:1d"
+
+
+def _gmail_kst_window(user_message: str) -> tuple[datetime, datetime] | None:
+    lowered = (user_message or "").lower()
+    if not any(term in lowered for term in ("오늘", "금일", "어제")):
+        return None
+    now_kst = datetime.now(ZoneInfo("Asia/Seoul"))
+    start = now_kst.replace(hour=0, minute=0, second=0, microsecond=0)
+    if "어제" in lowered:
+        end = start
+        start = start.fromtimestamp(start.timestamp() - 86400, tz=ZoneInfo("Asia/Seoul"))
+        return start, end
+    end = start.fromtimestamp(start.timestamp() + 86400, tz=ZoneInfo("Asia/Seoul"))
+    return start, end
+
+
+def _parse_gmail_item_datetime(value: Any) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            parsed = parsedate_to_datetime(raw)
+        except (TypeError, ValueError, IndexError):
+            return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=ZoneInfo("Asia/Seoul"))
+    return parsed.astimezone(ZoneInfo("Asia/Seoul"))
+
+
+def _filter_gmail_items_to_kst_window(items: list[dict[str, Any]], window: tuple[datetime, datetime] | None) -> list[dict[str, Any]]:
+    if window is None:
+        return items
+    start, end = window
+    return [
+        item
+        for item in items
+        if (parsed := _parse_gmail_item_datetime(item.get("date"))) is not None and start <= parsed < end
+    ]
 
 
 def _gmail_search_json(query: str, limit: int = 5) -> dict[str, Any]:
@@ -742,13 +783,18 @@ def _try_gmail_summary_response(user_message: str) -> tuple[str, str] | None:
         return None
 
     query = _infer_gmail_query(user_message)
-    payload = _gmail_search_json(query, limit=5)
+    window = _gmail_kst_window(user_message)
+    payload = _gmail_search_json(query, limit=25 if window else 5)
     if payload.get("ok") is False and payload.get("error"):
-        return ("gmail_lookup", f"Gmail 조회 오류\n- {payload['error']}")
+        return (
+            f"gmail_{contract}",
+            "Gmail 조회에 실패했습니다.\n- 상세 오류는 노출하지 않았습니다. Gmail 연결 상태를 확인한 뒤 다시 요청해 주세요.",
+        )
 
     items = payload.get("items")
     if not isinstance(items, list):
         return None
+    items = _filter_gmail_items_to_kst_window([item for item in items if isinstance(item, dict)], window)
 
     if not items:
         return (f"gmail_{contract}", f"최근 메일 없음\n- 검색 조건: `{query}`")

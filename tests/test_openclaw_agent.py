@@ -1,6 +1,7 @@
 import json
 import unittest
 from datetime import datetime as real_datetime
+from zoneinfo import ZoneInfo
 from unittest.mock import patch
 from tempfile import TemporaryDirectory
 from pathlib import Path
@@ -14,6 +15,7 @@ from adapters.content import tools as openclaw_tools
 class OpenClawAgentTests(unittest.TestCase):
     def setUp(self):
         openclaw_agent._CONVERSATION_HISTORY.clear()
+        openclaw_agent._rate_buckets.clear()
         self._session_persist_ttl_hours = openclaw_agent.SESSION_PERSIST_TTL_HOURS
         openclaw_agent.SESSION_PERSIST_TTL_HOURS = 0
 
@@ -195,11 +197,11 @@ class OpenClawAgentTests(unittest.TestCase):
             ],
         }
 
-        result = openclaw_agent.run("오늘 온 메일 보여줘", session_id="mail-session")
+        result = openclaw_agent.run("최근 온 메일 보여줘", session_id="mail-session")
 
         self.assertIn("최근 메일 1건", result)
         self.assertIn("Budget warning", result)
-        mock_gmail.assert_called_once_with(openclaw_agent._infer_gmail_query("오늘 온 메일 보여줘"), limit=5)
+        mock_gmail.assert_called_once_with(openclaw_agent._infer_gmail_query("최근 온 메일 보여줘"), limit=5)
         mock_gmail_get.assert_not_called()
         mock_ollama.assert_not_called()
         mock_chat.assert_not_called()
@@ -218,7 +220,7 @@ class OpenClawAgentTests(unittest.TestCase):
             {"id": "mail-2", "from": "googlealerts-noreply@google.com", "subject": "Google 알리미 - AI", "body": "AI 관련 새 기사 3건입니다."},
         ]
 
-        result = openclaw_agent.run("오늘 온 메일 내용 요약해", session_id="mail-summary-session")
+        result = openclaw_agent.run("최근 온 메일 내용 요약해", session_id="mail-summary-session")
 
         self.assertIn("메일 본문 브리핑", result)
         self.assertIn("내일까지 예산안을 검토", result)
@@ -231,11 +233,34 @@ class OpenClawAgentTests(unittest.TestCase):
         mock_gmail.return_value = {"items": [{"id": "mail-1", "from": "alerts@example.com", "subject": "Budget warning"}]}
         mock_gmail_get.return_value = {"ok": False, "error": "Gmail timeout"}
 
-        result = openclaw_agent.run("오늘 온 메일 요약해", session_id="mail-partial-session")
+        result = openclaw_agent.run("최근 온 메일 요약해", session_id="mail-partial-session")
 
         self.assertIn("부분 결과", result)
         self.assertIn("누락 메일 내용에 관한 판단은 보류", result)
         self.assertNotIn("Budget warning", result)
+
+    def test_kst_today_filter_uses_message_timestamp_not_gmail_date_syntax(self):
+        kst = ZoneInfo("Asia/Seoul")
+        window = (real_datetime(2026, 7, 20, 0, 0, tzinfo=kst), real_datetime(2026, 7, 21, 0, 0, tzinfo=kst))
+        items = [
+            {"id": "today", "date": "2026-07-20 00:01"},
+            {"id": "yesterday", "date": "Sun, 19 Jul 2026 23:59:00 +0900"},
+            {"id": "unknown", "date": "not-a-date"},
+        ]
+
+        filtered = openclaw_agent._filter_gmail_items_to_kst_window(items, window)
+
+        self.assertEqual([item["id"] for item in filtered], ["today"])
+        self.assertEqual(openclaw_agent._infer_gmail_query("오늘 온 메일 내용 요약해"), "newer_than:2d")
+
+    @patch("adapters.content.openclaw_agent._gmail_search_json")
+    def test_gmail_runtime_error_does_not_expose_internal_detail(self, mock_gmail):
+        mock_gmail.return_value = {"ok": False, "error": "ssh host=secret.internal stack trace"}
+
+        result = openclaw_agent.run("최근 온 메일 내용 요약해", session_id="mail-error-session")
+
+        self.assertIn("Gmail 조회에 실패", result)
+        self.assertNotIn("secret.internal", result)
 
     @patch("adapters.content.openclaw_agent._gmail_get_json")
     @patch("adapters.content.openclaw_agent._gmail_search_json")
@@ -243,7 +268,7 @@ class OpenClawAgentTests(unittest.TestCase):
         mock_gmail.return_value = {"items": [{"id": "mail-1", "from": "ceo@example.com", "subject": "Private"}]}
         mock_gmail_get.return_value = {"id": "mail-1", "from": "ceo@example.com", "subject": "Private", "body": "private body text"}
 
-        result = openclaw_agent.run("오늘 온 메일 내용 요약해", session_id="private-mail-session")
+        result = openclaw_agent.run("최근 온 메일 내용 요약해", session_id="private-mail-session")
 
         self.assertIn("private body text", result)
         self.assertEqual(list(openclaw_agent._CONVERSATION_HISTORY["private-mail-session"]), [])

@@ -70,3 +70,14 @@ The first reference adapter is implemented locally but remains unapproved for pr
 - Tests passed: `67` OpenClaw agent tests and `5` route-audit summary tests.
 
 Actual-diff Copilot re-review did not return a verdict after file inspection, so it is inconclusive and does not replace the required independent review. Claude CLI remains unavailable because it is not logged in. Verdict remains `red_team_block`.
+
+## Authenticated re-review and remediation
+
+Claude CLI authentication was restored and independent Claude + Copilot reviews ran on 2026-07-20. Both reviewers returned `red_team_residual_risk`, not a clear, because the Slack production path had not yet been exercised.
+
+- Claude artifact: `docs/reviews/red_team/openclaw_gmail_brief_claude_20260720.md`
+- Copilot artifact: `docs/reviews/red_team/openclaw_gmail_brief_copilot_20260720.md`
+- Copilot KST-boundary and raw-error findings were remediated before deployment: KST requests now filter returned message timestamps locally; raw bridge errors are normalized out of the user response.
+- Regression evidence after remediation: 69 OpenClaw agent tests, 5 route-audit tests, and a configured Gmail runtime KST brief check passed.
+
+Verdict remains `red_team_residual_risk` until targeted Mac Mini Slack listener deployment and actual DM-path verification complete.
