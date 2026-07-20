@@ -31,11 +31,22 @@
       "target": "OpenClaw Gmail runtime API/bridge",
       "command": ".venv/bin/python inline call to openclaw_agent.run('오늘 온 메일 내용 요약해') with response content suppressed",
       "result": "gmail_kst_brief_runtime=pass; response began with a valid Gmail brief or no-mail response and measured 1653 characters without exposing mailbox content."
+    },
+    {
+      "name": "Mac Mini OpenClaw Slack listener deployment and process verification",
+      "target": "Mac Mini launchd Slack Socket Mode service",
+      "command": "scripts/deploy_to_macmini.sh adapters/content/openclaw_agent.py; ssh macmini launchctl kickstart and launchctl print",
+      "result": "Targeted checkout matched origin/main with diff 0; backup scratch/pre_deploy_backup_20260720_221710 created; com.harness.slack-listener state=running pid=3962; log confirmed a new Socket Mode session and Bolt app running."
     }
   ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh adapters/content/openclaw_agent.py",
+    "result": "Targeted Mac Mini deploy passed origin/main diff verification and Slack listener was restarted successfully."
+  },
   "residual_risk": [
     "Mac Mini Slack listener has not received this commit because production deployment is blocked pending required independent Red Team review.",
     "Authenticated Claude and Copilot reviews both returned red_team_residual_risk; review artifacts record remaining production Slack-path verification.",
+    "A real post-deploy Slack DM response has not yet been observed; listener process and Socket Mode connection are verified.",
     "This commit establishes Gmail as the first reference adapter. The all-intent verifier architecture remains planned work."
   ]
 }
