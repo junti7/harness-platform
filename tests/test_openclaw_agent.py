@@ -222,9 +222,9 @@ class OpenClawAgentTests(unittest.TestCase):
 
         result = openclaw_agent.run("최근 온 메일 내용 요약해", session_id="mail-summary-session")
 
-        self.assertIn("오늘 메일 결론", result)
+        self.assertIn("오늘 확인할 메일이 1건 있습니다.", result)
         self.assertIn("내일까지 예산안을 검토", result)
-        self.assertIn("Google Alerts 1건: 지금 볼 필요 없는 무관 알림", result)
+        self.assertIn("나머지 1건은 업무와 무관한 Google Alerts라 넘겨도 됩니다.", result)
         self.assertEqual(mock_gmail_get.call_count, 2)
 
     @patch("adapters.content.openclaw_agent._gmail_get_json")
@@ -235,8 +235,8 @@ class OpenClawAgentTests(unittest.TestCase):
 
         result = openclaw_agent.run("최근 온 메일 요약해", session_id="mail-partial-session")
 
-        self.assertIn("부분 결과", result)
-        self.assertIn("누락 메일 내용에 관한 판단은 보류", result)
+        self.assertIn("일부 메일 본문을 불러오지 못해", result)
+        self.assertIn("누락된 메일은 판단하지 않았습니다", result)
         self.assertNotIn("Budget warning", result)
 
     def test_kst_today_filter_uses_message_timestamp_not_gmail_date_syntax(self):
@@ -272,6 +272,29 @@ class OpenClawAgentTests(unittest.TestCase):
 
         self.assertIn("본인이 요청한 경우", result)
         self.assertNotIn("magic-token", result)
+
+    def test_gmail_brief_leads_with_a_human_conclusion_and_discards_noise(self):
+        items = [
+            {"id": "security", "from": "no-reply@mail.anthropic.com", "subject": "Claude.ai의 보안 링크가 도착했습니다"},
+            {"id": "promo", "from": "no-reply@newsletter.example.com", "subject": "Price drop"},
+            {"id": "alert-lg", "from": "googlealerts-noreply@google.com", "subject": "Google 알리미 - LG"},
+            {"id": "alert-echo", "from": "googlealerts-noreply@google.com", "subject": "Google 알리미 - 에코"},
+        ]
+        details = {
+            "security": {"from": "no-reply@mail.anthropic.com", "subject": "Claude.ai의 보안 링크가 도착했습니다", "body": "로그인 링크"},
+            "promo": {"from": "no-reply@newsletter.example.com", "subject": "Price drop", "body": "sale"},
+            "alert-lg": {"from": "googlealerts-noreply@google.com", "subject": "Google 알리미 - LG", "body": "=== 뉴스 - 다음에 대한 새로운 검색결과 10개: [LG] === LG전자 흉기난동 협력사 직원 첫 공판 - 연합뉴스"},
+            "alert-echo": {"from": "googlealerts-noreply@google.com", "subject": "Google 알리미 - 에코", "body": "=== 뉴스 - 다음에 대한 새로운 검색결과 10개: [에코] === 이펙스 단독 콘서트 성료 - 데일리안"},
+        }
+
+        with patch("adapters.content.openclaw_agent._gmail_get_json", side_effect=lambda message_id: details[message_id]):
+            result = openclaw_agent._render_gmail_brief(items, "newer_than:2d")
+
+        self.assertIn("오늘 확인할 메일이 1건 있습니다.", result)
+        self.assertIn("Claude.ai 로그인 링크는 방금 직접 요청한 경우에만 사용하세요.", result)
+        self.assertIn("나머지 3건은 광고·가격 알림과 업무와 무관한 Google Alerts라 넘겨도 됩니다.", result)
+        self.assertNotIn("검색 조건", result)
+        self.assertNotIn("첫 항목 기준", result)
 
     def test_gmail_lookup_redacts_url_and_long_token_in_subject(self):
         result = openclaw_agent._render_gmail_lookup(

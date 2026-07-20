@@ -833,13 +833,12 @@ def _render_gmail_brief(items: list[dict[str, Any]], query: str) -> str:
                 details[message_id] = payload
 
     is_partial = bool(failures)
-    prefix = "오늘 메일 결론" if not is_partial else "오늘 메일 결론 (부분 결과)"
-    lines = [prefix]
+    lines: list[str] = []
     if is_partial:
         lines.extend(
             [
-                "- 일부 본문을 가져오지 못했습니다. 누락 메일 내용에 관한 판단은 보류합니다.",
-                "- 다음 조치: Gmail 연결을 확인한 뒤 같은 요청을 다시 보내 주세요.",
+                "일부 메일 본문을 불러오지 못해, 누락된 메일은 판단하지 않았습니다.",
+                "Gmail 연결을 확인한 뒤 다시 요청해 주세요.",
             ]
         )
 
@@ -861,24 +860,29 @@ def _render_gmail_brief(items: list[dict[str, Any]], query: str) -> str:
                 alert_noise_topics.append(_gmail_alert_topic(detail))
             continue
         if any(term in lowered_subject for term in ("security", "sign in", "login", "로그인", "보안", "verify", "verification")):
-            actions.append("Claude.ai 로그인 링크 1건. 본인이 요청한 링크가 아니라면 계정을 확인하세요.")
+            service = "Claude.ai" if "claude" in f"{sender} {subject}".lower() else "해당 서비스"
+            actions.append(f"{service} 로그인 링크는 방금 직접 요청한 경우에만 사용하세요. 아니라면 계정을 확인하세요.")
         elif any(term in lowered_subject for term in ("price alert", "price drop", "가격")) or any(term in sender.lower() for term in ("newsletter", "e-mail", "marketing")):
             references.append(f"{sender or '-'} — {subject}")
         else:
             reviews.append(f"{sender or '-'} — {subject}: {_gmail_action_summary(item, detail)}")
 
-    if actions:
-        lines.append(f"- 지금 확인할 것 {len(actions)}건")
-        lines.extend(f"  - {action}" for action in actions)
+    if actions or reviews:
+        lines.append(f"오늘 확인할 메일이 {len(actions) + len(reviews)}건 있습니다.")
     else:
-        lines.append("- 지금 처리할 메일 없음")
+        lines.append("오늘은 업무상 처리할 메일이 없습니다.")
+    if actions:
+        lines.extend(actions)
     if reviews:
-        lines.append(f"- 확인 권장 {len(reviews)}건")
-        lines.extend(f"  - {review}" for review in reviews)
-    if alert_noise_topics:
-        lines.append(f"- Google Alerts {len(alert_noise_topics)}건: 지금 볼 필요 없는 무관 알림")
-    if references:
-        lines.append(f"- 광고·가격 알림 {len(references)}건: 별도 조치 없음")
+        lines.extend(reviews)
+    non_action_count = len(alert_noise_topics) + len(references)
+    if non_action_count:
+        sources: list[str] = []
+        if references:
+            sources.append("광고·가격 알림")
+        if alert_noise_topics:
+            sources.append("업무와 무관한 Google Alerts")
+        lines.append(f"나머지 {non_action_count}건은 {'과 '.join(sources)}라 넘겨도 됩니다.")
     return "\n".join(lines)
 
 
