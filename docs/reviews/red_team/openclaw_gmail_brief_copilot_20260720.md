@@ -14,4 +14,5 @@
 
 - KST requests now query a bounded wider window and filter returned item timestamps in Asia/Seoul before selecting messages.
 - User-facing Gmail query errors are normalized; raw bridge errors are not included in Slack response text.
+- The reviewer identified a lookup-path risk, but lookup renders only search metadata and never calls `gmail_get`. As added defense in depth, all displayed subjects now redact URLs and opaque 32+ character tokens.
 - Remaining residual risk is production Slack path verification after targeted deployment.

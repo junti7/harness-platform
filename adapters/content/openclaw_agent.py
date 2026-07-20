@@ -38,6 +38,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from html import unescape
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlencode, urlparse
@@ -699,13 +700,75 @@ def _gmail_request_contract(user_message: str) -> str | None:
     return "brief" if _GMAIL_BRIEF_RE.search(user_message) else "lookup"
 
 
+class _GmailHTMLTextExtractor(HTMLParser):
+    """Extract visible text; mail HTML styling is not user-facing evidence."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._hidden_depth = 0
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() in {"style", "script", "head", "title", "noscript"}:
+            self._hidden_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in {"style", "script", "head", "title", "noscript"} and self._hidden_depth:
+            self._hidden_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if not self._hidden_depth:
+            self.parts.append(data)
+
+
+def _gmail_plaintext(message: dict[str, Any]) -> str:
+    body = str(message.get("body") or "")
+    snippet = str(message.get("snippet") or "")
+    extractor = _GmailHTMLTextExtractor()
+    try:
+        extractor.feed(body)
+        extractor.close()
+        rendered = " ".join(extractor.parts)
+    except Exception:
+        rendered = re.sub(r"<[^>]+>", " ", body)
+    rendered = unescape(rendered)
+    # Some mail APIs emit CSS text without its enclosing <style> tag. Prefer the
+    # provider snippet in that case; it is already a text preview of visible mail.
+    css_markers = ("#outlook", "-webkit-text-size-adjust", "mso-table", "border-collapse")
+    if snippet and any(marker in rendered[:800].lower() for marker in css_markers):
+        rendered = unescape(snippet)
+    rendered = re.sub(r"[\u200b-\u200f\u2060\ufeff]", "", rendered)
+    rendered = re.sub(r"\s+", " ", rendered).strip()
+    return rendered
+
+
 def _gmail_excerpt(message: dict[str, Any], limit: int = 280) -> str:
-    source = str(message.get("body") or message.get("snippet") or "")
-    normalized = re.sub(r"<[^>]+>", " ", unescape(source))
-    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = _gmail_plaintext(message)
     if not normalized:
         return "본문에서 추출 가능한 텍스트가 없습니다."
     return normalized[:limit].rstrip() + ("…" if len(normalized) > limit else "")
+
+
+def _gmail_safe_header_text(value: Any) -> str:
+    text = str(value or "(제목 없음)")
+    text = re.sub(r"https?://\S+", "[링크 생략]", text)
+    return re.sub(r"(?<![\w-])[A-Za-z0-9_-]{32,}(?![\w-])", "[토큰 생략]", text)
+
+
+def _gmail_action_summary(item: dict[str, Any], detail: dict[str, Any]) -> str:
+    subject = str(detail.get("subject") or item.get("subject") or "")
+    sender = str(detail.get("from") or item.get("from") or "").lower()
+    lowered_subject = subject.lower()
+    if any(term in lowered_subject for term in ("security", "sign in", "login", "로그인", "보안", "verify", "verification")):
+        return "보안/로그인 안내입니다. 본인이 요청한 경우에만 링크를 사용하고, 요청하지 않았다면 열지 마세요."
+    if "googlealerts" in sender:
+        preview = _gmail_excerpt(detail, limit=180)
+        return f"뉴스 알림입니다. 첫 항목 기준: {preview}"
+    if any(term in lowered_subject for term in ("price alert", "price drop", "가격")):
+        return "가격 변동 알림입니다. 해당 여행·구매 계획이 없으면 참고만 하세요."
+    if any(term in sender for term in ("newsletter", "e-mail", "marketing")):
+        return "프로모션/제품 안내입니다. 구매 또는 등록 계획이 없으면 참고만 하세요."
+    return _gmail_excerpt(detail)
 
 
 def _render_gmail_lookup(items: list[dict[str, Any]], query: str) -> str:
@@ -714,7 +777,7 @@ def _render_gmail_lookup(items: list[dict[str, Any]], query: str) -> str:
         if not isinstance(item, dict):
             continue
         lines.append(
-            f"- {item.get('date') or '-'} | {item.get('from') or '-'} | {item.get('subject') or '(제목 없음)'}"
+            f"- {item.get('date') or '-'} | {item.get('from') or '-'} | {_gmail_safe_header_text(item.get('subject'))}"
         )
     return "\n".join(lines)
 
@@ -765,15 +828,15 @@ def _render_gmail_brief(items: list[dict[str, Any]], query: str) -> str:
             alert_items.append((item, detail))
             continue
         lines.append(
-            f"- {sender or '-'} | {detail.get('subject') or item.get('subject') or '(제목 없음)'}\n"
-            f"  핵심: {_gmail_excerpt(detail)}"
+            f"- {sender or '-'} | {_gmail_safe_header_text(detail.get('subject') or item.get('subject'))}\n"
+            f"  요점: {_gmail_action_summary(item, detail)}"
         )
 
     if alert_items:
-        subjects = ", ".join(str(detail.get("subject") or item.get("subject") or "(제목 없음)") for item, detail in alert_items)
+        subjects = ", ".join(_gmail_safe_header_text(detail.get("subject") or item.get("subject")) for item, detail in alert_items)
         lines.append(f"- Google Alerts {len(alert_items)}건 묶음: {subjects}")
-        for _item, detail in alert_items[:3]:
-            lines.append(f"  핵심: {_gmail_excerpt(detail, limit=180)}")
+        for item, detail in alert_items[:3]:
+            lines.append(f"  요점: {_gmail_action_summary(item, detail)}")
     return "\n".join(lines)
 
 

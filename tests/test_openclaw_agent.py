@@ -253,6 +253,36 @@ class OpenClawAgentTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in filtered], ["today"])
         self.assertEqual(openclaw_agent._infer_gmail_query("오늘 온 메일 내용 요약해"), "newer_than:2d")
 
+    def test_gmail_html_css_body_uses_visible_snippet_instead_of_stylesheet(self):
+        message = {
+            "body": "#outlook a { padding:0; } body { margin:0; } -webkit-text-size-adjust:100%;",
+            "snippet": "Claude.ai 보안 로그인 링크가 도착했습니다.",
+        }
+
+        result = openclaw_agent._gmail_excerpt(message)
+
+        self.assertIn("Claude.ai 보안 로그인 링크", result)
+        self.assertNotIn("#outlook", result)
+
+    def test_gmail_security_summary_does_not_echo_login_link(self):
+        result = openclaw_agent._gmail_action_summary(
+            {"subject": "Claude.ai의 보안 링크가 도착했습니다"},
+            {"from": "no-reply@mail.anthropic.com", "subject": "Claude.ai의 보안 링크가 도착했습니다", "body": "https://example.test/magic-token"},
+        )
+
+        self.assertIn("본인이 요청한 경우", result)
+        self.assertNotIn("magic-token", result)
+
+    def test_gmail_lookup_redacts_url_and_long_token_in_subject(self):
+        result = openclaw_agent._render_gmail_lookup(
+            [{"date": "2026-07-20", "from": "security@example.com", "subject": "Sign in https://example.test/abc SECRET_TOKEN_12345678901234567890123456789012"}],
+            "newer_than:1d",
+        )
+
+        self.assertIn("[링크 생략]", result)
+        self.assertIn("[토큰 생략]", result)
+        self.assertNotIn("example.test", result)
+
     @patch("adapters.content.openclaw_agent._gmail_search_json")
     def test_gmail_runtime_error_does_not_expose_internal_detail(self, mock_gmail):
         mock_gmail.return_value = {"ok": False, "error": "ssh host=secret.internal stack trace"}
