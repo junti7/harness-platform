@@ -283,6 +283,15 @@ class OpenClawAgentTests(unittest.TestCase):
         self.assertIn("[토큰 생략]", result)
         self.assertNotIn("example.test", result)
 
+    def test_gmail_alert_signal_checks_only_first_headline(self):
+        detail = {
+            "subject": "Google 알리미 - LG | 2026-07-20 22:06:46",
+            "body": "=== 뉴스 - 다음에 대한 새로운 검색결과 10개: [LG] === LG전자 흉기난동 협력사 직원 첫 공판 - 연합뉴스 이후 AI 반도체 기사",
+        }
+
+        self.assertFalse(openclaw_agent._gmail_alert_is_signal(detail))
+        self.assertEqual(openclaw_agent._gmail_safe_header_text(detail["subject"]), "Google 알리미 - LG")
+
     @patch("adapters.content.openclaw_agent._gmail_search_json")
     def test_gmail_runtime_error_does_not_expose_internal_detail(self, mock_gmail):
         mock_gmail.return_value = {"ok": False, "error": "ssh host=secret.internal stack trace"}

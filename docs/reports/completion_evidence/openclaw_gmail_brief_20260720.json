@@ -18,7 +18,7 @@
       "name": "OpenClaw Gmail brief unit and regression suite",
       "target": "adapters/content/openclaw_agent.py and tests/test_openclaw_agent.py",
       "command": ".venv/bin/python -m unittest discover -s tests -p 'test_openclaw_agent.py'",
-      "result": "72 tests passed, including headers-only lookup, body-backed brief, partial-result, private-body session-persistence, KST timestamp filtering, HTML/CSS cleanup, security-link masking, subject URL/token redaction, and decision-bucket output."
+      "result": "73 tests passed, including decision-bucket output, first-headline-only Google Alert signal filtering, and subject metadata cleanup."
     },
     {
       "name": "OpenClaw route-audit compatibility suite",
@@ -30,7 +30,7 @@
       "name": "Configured Gmail runtime through OpenClaw user-facing agent entrypoint",
       "target": "OpenClaw Gmail runtime API/bridge",
       "command": ".venv/bin/python inline call to openclaw_agent.run('오늘 온 메일 내용 요약해') with response content suppressed",
-      "result": "gmail_decision_brief_runtime=pass; response used the decision-brief shape, measured 830 characters, and contained no CSS markers without exposing mailbox content."
+      "result": "gmail_alert_priority_runtime=pass; unrelated Google Alerts did not appear in the review bucket."
     },
     {
       "name": "Mac Mini OpenClaw Slack listener deployment and process verification",

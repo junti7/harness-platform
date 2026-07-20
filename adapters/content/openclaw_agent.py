@@ -751,6 +751,7 @@ def _gmail_excerpt(message: dict[str, Any], limit: int = 280) -> str:
 
 def _gmail_safe_header_text(value: Any) -> str:
     text = str(value or "(제목 없음)")
+    text = re.sub(r"\s*\|\s*\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?\s*$", "", text)
     text = re.sub(r"https?://\S+", "[링크 생략]", text)
     return re.sub(r"(?<![\w-])[A-Za-z0-9_-]{32,}(?![\w-])", "[토큰 생략]", text)
 
@@ -762,8 +763,7 @@ def _gmail_action_summary(item: dict[str, Any], detail: dict[str, Any]) -> str:
     if any(term in lowered_subject for term in ("security", "sign in", "login", "로그인", "보안", "verify", "verification")):
         return "보안/로그인 안내입니다. 본인이 요청한 경우에만 링크를 사용하고, 요청하지 않았다면 열지 마세요."
     if "googlealerts" in sender:
-        preview = _gmail_excerpt(detail, limit=180)
-        return f"뉴스 알림입니다. 첫 항목 기준: {preview}"
+        return f"뉴스 알림입니다. 첫 기사: {_gmail_alert_headline(detail)}"
     if any(term in lowered_subject for term in ("price alert", "price drop", "가격")):
         return "가격 변동 알림입니다. 해당 여행·구매 계획이 없으면 참고만 하세요."
     if any(term in sender for term in ("newsletter", "e-mail", "marketing")):
@@ -783,8 +783,17 @@ def _gmail_alert_topic(detail: dict[str, Any]) -> str:
     return match.group(1).strip() if match else _gmail_safe_header_text(detail.get("subject"))
 
 
+def _gmail_alert_headline(detail: dict[str, Any]) -> str:
+    text = _gmail_plaintext(detail)
+    marker = re.search(r"\[[^\]]{1,80}\]\s*===\s*(.+)", text)
+    candidate = marker.group(1).strip() if marker else text
+    # Google Alerts format is "headline - publisher". Judge only this first
+    # result, never a later unrelated result in the same digest.
+    return candidate.split(" - ", 1)[0].strip()[:220]
+
+
 def _gmail_alert_is_signal(detail: dict[str, Any]) -> bool:
-    return bool(_GMAIL_SIGNAL_RE.search(_gmail_plaintext(detail)))
+    return bool(_GMAIL_SIGNAL_RE.search(_gmail_alert_headline(detail)))
 
 
 def _render_gmail_lookup(items: list[dict[str, Any]], query: str) -> str:
