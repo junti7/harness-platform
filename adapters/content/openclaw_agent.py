@@ -771,6 +771,22 @@ def _gmail_action_summary(item: dict[str, Any], detail: dict[str, Any]) -> str:
     return _gmail_excerpt(detail)
 
 
+_GMAIL_SIGNAL_RE = re.compile(
+    r"\b(ai|llm|robot|robotics|semiconductor|chip|earnings|revenue|investment|funding|market|economy|policy)\b|"
+    r"(인공지능|반도체|로봇|실적|매출|투자|시장|경제|정책|규제)",
+    re.IGNORECASE,
+)
+
+
+def _gmail_alert_topic(detail: dict[str, Any]) -> str:
+    match = re.search(r"\[([^\]]{1,80})\]", _gmail_plaintext(detail))
+    return match.group(1).strip() if match else _gmail_safe_header_text(detail.get("subject"))
+
+
+def _gmail_alert_is_signal(detail: dict[str, Any]) -> bool:
+    return bool(_GMAIL_SIGNAL_RE.search(_gmail_plaintext(detail)))
+
+
 def _render_gmail_lookup(items: list[dict[str, Any]], query: str) -> str:
     lines = [f"최근 메일 {len(items)}건", f"- 검색 조건: `{query}`"]
     for item in items[:5]:
@@ -808,8 +824,8 @@ def _render_gmail_brief(items: list[dict[str, Any]], query: str) -> str:
                 details[message_id] = payload
 
     is_partial = bool(failures)
-    prefix = "메일 본문 브리핑" if not is_partial else "메일 본문 브리핑 (부분 결과)"
-    lines = [prefix, f"- 검색 조건: `{query}`", f"- 본문 확인: {len(details)}/{len(selected)}건"]
+    prefix = "오늘 메일 판단" if not is_partial else "오늘 메일 판단 (부분 결과)"
+    lines = [prefix]
     if is_partial:
         lines.extend(
             [
@@ -818,25 +834,43 @@ def _render_gmail_brief(items: list[dict[str, Any]], query: str) -> str:
             ]
         )
 
-    alert_items: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    actions: list[str] = []
+    reviews: list[str] = []
+    references: list[str] = []
+    alert_noise_topics: list[str] = []
     for item in selected:
         detail = details.get(str(item["id"]))
         if not detail:
             continue
         sender = str(detail.get("from") or item.get("from") or "")
+        subject = _gmail_safe_header_text(detail.get("subject") or item.get("subject"))
+        lowered_subject = subject.lower()
         if "googlealerts" in sender.lower():
-            alert_items.append((item, detail))
+            if _gmail_alert_is_signal(detail):
+                reviews.append(f"Google Alerts — {subject}: {_gmail_action_summary(item, detail)}")
+            else:
+                alert_noise_topics.append(_gmail_alert_topic(detail))
             continue
-        lines.append(
-            f"- {sender or '-'} | {_gmail_safe_header_text(detail.get('subject') or item.get('subject'))}\n"
-            f"  요점: {_gmail_action_summary(item, detail)}"
-        )
+        if any(term in lowered_subject for term in ("security", "sign in", "login", "로그인", "보안", "verify", "verification")):
+            actions.append(f"{subject}: {_gmail_action_summary(item, detail)}")
+        elif any(term in lowered_subject for term in ("price alert", "price drop", "가격")) or any(term in sender.lower() for term in ("newsletter", "e-mail", "marketing")):
+            references.append(f"{sender or '-'} — {subject}")
+        else:
+            reviews.append(f"{sender or '-'} — {subject}: {_gmail_action_summary(item, detail)}")
 
-    if alert_items:
-        subjects = ", ".join(_gmail_safe_header_text(detail.get("subject") or item.get("subject")) for item, detail in alert_items)
-        lines.append(f"- Google Alerts {len(alert_items)}건 묶음: {subjects}")
-        for item, detail in alert_items[:3]:
-            lines.append(f"  요점: {_gmail_action_summary(item, detail)}")
+    if actions:
+        lines.append(f"- 바로 확인 {len(actions)}건")
+        lines.extend(f"  - {action}" for action in actions)
+    else:
+        lines.append("- 바로 처리할 메일 없음")
+    if reviews:
+        lines.append(f"- 확인 권장 {len(reviews)}건")
+        lines.extend(f"  - {review}" for review in reviews)
+    if alert_noise_topics:
+        topics = ", ".join(alert_noise_topics[:3])
+        lines.append(f"- Google Alerts {len(alert_noise_topics)}건: 업무·사업 관련 신호 없어 제외 ({topics})")
+    if references:
+        lines.append(f"- 참고만 하면 되는 홍보/가격 알림 {len(references)}건: " + ", ".join(references))
     return "\n".join(lines)
 
 

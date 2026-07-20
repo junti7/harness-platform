@@ -81,3 +81,7 @@ Claude CLI authentication was restored and independent Claude + Copilot reviews 
 - Regression evidence after remediation: 69 OpenClaw agent tests, 5 route-audit tests, and a configured Gmail runtime KST brief check passed.
 
 Verdict remains `red_team_residual_risk` until targeted Mac Mini Slack listener deployment and actual DM-path verification complete.
+
+## Decision-brief re-review
+
+After a user-facing quality failure, Gmail output changed from per-message excerpts to decision buckets: immediate check, review, excluded unrelated alerts, and optional promotions. Claude Sonnet and GitHub Copilot CLI independently reviewed this policy on 2026-07-20 and both returned `red_team_clear`. Security mail remains visible, direct mail preserves evidence, and generic Google Alerts are excluded only when no business-signal marker is present.

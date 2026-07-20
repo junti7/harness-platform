@@ -217,14 +217,14 @@ class OpenClawAgentTests(unittest.TestCase):
         }
         mock_gmail_get.side_effect = [
             {"id": "mail-1", "from": "ceo@example.com", "subject": "Budget decision", "body": "내일까지 예산안을 검토해 승인 여부를 알려주세요."},
-            {"id": "mail-2", "from": "googlealerts-noreply@google.com", "subject": "Google 알리미 - AI", "body": "AI 관련 새 기사 3건입니다."},
+            {"id": "mail-2", "from": "googlealerts-noreply@google.com", "subject": "Google 알리미 - 문화", "body": "=== 뉴스 - 다음에 대한 새로운 검색결과 10개: [문화] === 공연 소식입니다."},
         ]
 
         result = openclaw_agent.run("최근 온 메일 내용 요약해", session_id="mail-summary-session")
 
-        self.assertIn("메일 본문 브리핑", result)
+        self.assertIn("오늘 메일 판단", result)
         self.assertIn("내일까지 예산안을 검토", result)
-        self.assertIn("Google Alerts 1건 묶음", result)
+        self.assertIn("Google Alerts 1건: 업무·사업 관련 신호 없어 제외", result)
         self.assertEqual(mock_gmail_get.call_count, 2)
 
     @patch("adapters.content.openclaw_agent._gmail_get_json")
