@@ -1,7 +1,7 @@
 {
   "task": "Enhance OpenClaw capability for complex global market analysis and investment strategy queries",
   "correlation_id": "global-market-routing-fix-20260720",
-  "completed_at": "2026-07-20T20:30:00+09:00",
+  "completed_at": "2026-07-20T20:32:00+09:00",
   "status": "complete",
   "governance_bootstrap": [
     {
@@ -17,12 +17,17 @@
   ],
   "root_causes": [
     "TOOL_KEYWORDS lacked market/finance terms ('증시', '시황', '거시경제', '글로벌 증시'), preventing web search tool trigger for general market queries",
-    "_maybe_inject_trading_context over-emphasized internal Turtle Trading positions (ASX, META), overriding general global macro market syntheses"
+    "_maybe_inject_trading_context over-emphasized internal Turtle Trading positions (ASX, META), overriding general global macro market syntheses",
+    "_prefer_gemini_openclaw returned True due to claude CLI stdin timeout in _is_provider_available, blocking Tier2 tool agent"
   ],
   "changes": [
     {
       "file": "adapters/content/openclaw_agent.py",
-      "description": "Added '증시', '시황', '글로벌 증시', '주식 시장', '거시경제', '마켓', '나스닥', 's&p500' to TOOL_KEYWORDS & regexes to enable tool/search routing. Disambiguated global macro queries from internal position reports in _maybe_inject_trading_context instructions."
+      "description": "Added '증시', '시황', '글로벌 증시', '주식 시장', '거시경제', '마켓', '나스닥', 's&p500' to TOOL_KEYWORDS & regexes to enable tool/search routing. Disambiguated global macro queries from internal position reports in _maybe_inject_trading_context instructions. Fixed _prefer_gemini_openclaw to check ANTHROPIC_API_KEY first."
+    },
+    {
+      "file": "scripts/llm_fallback_manager.py",
+      "description": "Fixed _is_provider_available for claude CLI to use stdin=DEVNULL to prevent 3s stdin wait timeout"
     }
   ],
   "verification": [

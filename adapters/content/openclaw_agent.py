@@ -2277,7 +2277,11 @@ def _run_haiku_chat(user_message: str, history: list[dict[str, str]] | None = No
 
 
 def _prefer_gemini_openclaw() -> bool:
-    return OPENCLAW_PROVIDER_MODE == "force_gemini" or not _is_provider_available("claude", timeout=3)
+    if OPENCLAW_PROVIDER_MODE == "force_gemini":
+        return True
+    if os.environ.get("ANTHROPIC_API_KEY", "").strip():
+        return False
+    return not _is_provider_available("claude", timeout=5)
 
 
 def _run_gemini_chat(

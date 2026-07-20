@@ -111,8 +111,8 @@ def _is_provider_available(provider: str, timeout: int = 5) -> bool:
         if provider == "claude":
             cli = "/opt/homebrew/bin/claude"
             completed = subprocess.run(
-                [cli, "-p", "-"],
-                input="reply with ok",
+                [cli, "-p", "reply with ok"],
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
