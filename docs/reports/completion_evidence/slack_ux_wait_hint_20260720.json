@@ -1,0 +1,39 @@
+{
+  "task": "UX: '처리 중...' 메시지에 결과 도착 안내 추가 및 Ollama 34초 응답 지연 투명성 개선",
+  "correlation_id": "slack-ux-wait-hint-20260720",
+  "completed_at": "2026-07-20T20:23:40+09:00",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-20T20:08:00+09:00",
+      "summary": "Production changes via git commit/push to origin/main + deploy_to_macmini.sh"
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-20T20:08:00+09:00",
+      "summary": "Single source of truth is origin/main; direct Mac Mini modification prohibited"
+    }
+  ],
+  "root_causes": [
+    "Ollama gemma4 local model takes ~34s for general questions — user sees '처리 중...' and gives up before second result message arrives"
+  ],
+  "changes": [
+    {
+      "file": "adapters/content/slack_listener.py",
+      "description": "Changed async ack message from ':thinking_face: 처리 중...' to ':thinking_face: 처리 중... (잠시 기다려주세요 — 결과가 별도 메시지로 도착합니다)' to set correct expectation"
+    }
+  ],
+  "verification": [
+    {
+      "name": "live agent_run timing test on Mac Mini",
+      "target": "adapters/content/openclaw_agent.py:run via Ollama",
+      "command": "ssh macmini python3 -c 'run(\"오늘 날씨 어때?\", session_id=\"test\")'",
+      "result": "elapsed: 34.12s — Ollama responds, result returned correctly"
+    }
+  ],
+  "deploy": {
+    "method": "git commit + push to origin/main, then scripts/deploy_to_macmini.sh",
+    "result": "pending"
+  }
+}

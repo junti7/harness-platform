@@ -166,7 +166,7 @@ def handle_dm(event, say, logger):
             response = future.result(timeout=_FAST_DM_TIMEOUT_SECONDS)
         except FutureTimeoutError:
             logger.info(f"[DM] fast-path timeout -> async ack channel={channel}")
-            say(text=":thinking_face: 처리 중...")
+            say(text=":thinking_face: 처리 중... (잠시 기다려주세요 — 결과가 별도 메시지로 도착합니다)")
 
             def _wait_and_reply():
                 try:
