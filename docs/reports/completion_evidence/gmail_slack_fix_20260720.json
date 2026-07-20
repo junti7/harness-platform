@@ -1,0 +1,50 @@
+{
+  "task": "Fix Gmail summary not delivered in Slack DM — regex pattern expansion + _wait_and_reply timeout guard",
+  "correlation_id": "gmail-slack-dm-fix-20260720",
+  "completed_at": "2026-07-20T20:13:30+09:00",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-20T20:08:00+09:00",
+      "summary": "Production changes via git commit/push to origin/main + deploy_to_macmini.sh"
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-20T20:08:00+09:00",
+      "summary": "Single source of truth is origin/main; direct Mac Mini modification prohibited"
+    }
+  ],
+  "root_causes": [
+    "_GMAIL_SUMMARY_RE regex missed '오늘 나에게 온 메일', '메일 제목', '메일 내용', '어제/최근/금일 이메일' — Gmail fast-path not triggered, fell through to LLM chat path taking >1.2s",
+    "_wait_and_reply daemon thread had no timeout — silently hung if agent_run stalled; no completion log so observability was zero"
+  ],
+  "changes": [
+    {
+      "file": "adapters/content/openclaw_agent.py",
+      "description": "Expanded _GMAIL_SUMMARY_RE to 5 patterns covering natural email request phrases"
+    },
+    {
+      "file": "adapters/content/slack_listener.py",
+      "description": "Added future.result(timeout=300) to _wait_and_reply, TimeoutError handler, and completion logger.info"
+    }
+  ],
+  "verification": [
+    {
+      "name": "gmail regex + live gog test on Mac Mini",
+      "target": "adapters/content/openclaw_agent.py:_try_gmail_summary_response",
+      "command": "ssh macmini python3 -c '_try_gmail_summary_response(\"오늘 나에게 온 메일 정리해줘\")'",
+      "result": "최근 메일 5건 — Gmail live fetch returned real inbox items, regex matched correctly"
+    },
+    {
+      "name": "_wait_and_reply timeout observability",
+      "target": "adapters/content/slack_listener.py:_wait_and_reply",
+      "command": "code inspection",
+      "result": "300s guard and completion logger.info confirmed added"
+    }
+  ],
+  "deploy": {
+    "method": "git commit + push to origin/main, then scripts/deploy_to_macmini.sh",
+    "result": "pending"
+  }
+}

@@ -170,7 +170,13 @@ def handle_dm(event, say, logger):
 
             def _wait_and_reply():
                 try:
-                    response_text = future.result()
+                    response_text = future.result(timeout=300)  # max 5min guard
+                except TimeoutError:
+                    logger.error("[DM] _wait_and_reply 300s timeout — agent_run did not complete")
+                    response_text = (
+                        ":warning: OpenClaw 응답 시간이 초과되었습니다 (5분).\n"
+                        "- 메일 조회 등 시간이 걸리는 작업은 다시 시도해 주세요."
+                    )
                 except Exception as exc:
                     logger.exception("[DM] OpenClaw agent 처리 실패")
                     response_text = (
@@ -178,6 +184,8 @@ def handle_dm(event, say, logger):
                         f"- 오류: {type(exc).__name__}\n"
                         "- 조치: 로그에 기록했습니다. 같은 지시를 반복 실행하지 말고 원인 확인 후 재시도하겠습니다."
                     )
+                else:
+                    logger.info(f"[DM] _wait_and_reply 완료 channel={channel} len={len(response_text)}")
                 _post_response(response_text)
 
             threading.Thread(target=_wait_and_reply, daemon=True).start()

@@ -398,9 +398,11 @@ _STATUS_BRIEF_RE = re.compile(
     re.IGNORECASE,
 )
 _GMAIL_SUMMARY_RE = re.compile(
-    r"(메일|gmail).*(확인|보여|정리|요약|브리핑|체크)|"
-    r"(확인|보여|정리|요약|브리핑|체크).*(메일|gmail)|"
-    r"오늘\s*온\s*메일",
+    r"(메일|gmail).*(확인|보여|정리|요약|브리핑|체크|제목|내용|리스트|알려)|"
+    r"(확인|보여|정리|요약|브리핑|체크|제목|내용|리스트|알려).*(메일|gmail)|"
+    r"(오늘|어제|최근|금일).*(메일|이메일|mail)|"
+    r"(메일|이메일).*(온|받은|왔)|"
+    r"(받은|온).*(메일|이메일)",
     re.IGNORECASE,
 )
 _CURRENT_TIME_RE = re.compile(
