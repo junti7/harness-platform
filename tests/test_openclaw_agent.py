@@ -222,9 +222,9 @@ class OpenClawAgentTests(unittest.TestCase):
 
         result = openclaw_agent.run("최근 온 메일 내용 요약해", session_id="mail-summary-session")
 
-        self.assertIn("오늘 메일 판단", result)
+        self.assertIn("오늘 메일 결론", result)
         self.assertIn("내일까지 예산안을 검토", result)
-        self.assertIn("Google Alerts 1건: 업무·사업 관련 신호 없어 제외", result)
+        self.assertIn("Google Alerts 1건: 지금 볼 필요 없는 무관 알림", result)
         self.assertEqual(mock_gmail_get.call_count, 2)
 
     @patch("adapters.content.openclaw_agent._gmail_get_json")

@@ -18,7 +18,7 @@
       "name": "OpenClaw Gmail brief unit and regression suite",
       "target": "adapters/content/openclaw_agent.py and tests/test_openclaw_agent.py",
       "command": ".venv/bin/python -m unittest discover -s tests -p 'test_openclaw_agent.py'",
-      "result": "73 tests passed, including decision-bucket output, first-headline-only Google Alert signal filtering, and subject metadata cleanup."
+      "result": "73 tests passed, including decision-bucket output, first-headline-only Google Alert signal filtering, subject metadata cleanup, and action-first concise rendering."
     },
     {
       "name": "OpenClaw route-audit compatibility suite",

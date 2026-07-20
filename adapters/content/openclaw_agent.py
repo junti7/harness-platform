@@ -833,7 +833,7 @@ def _render_gmail_brief(items: list[dict[str, Any]], query: str) -> str:
                 details[message_id] = payload
 
     is_partial = bool(failures)
-    prefix = "오늘 메일 판단" if not is_partial else "오늘 메일 판단 (부분 결과)"
+    prefix = "오늘 메일 결론" if not is_partial else "오늘 메일 결론 (부분 결과)"
     lines = [prefix]
     if is_partial:
         lines.extend(
@@ -861,25 +861,24 @@ def _render_gmail_brief(items: list[dict[str, Any]], query: str) -> str:
                 alert_noise_topics.append(_gmail_alert_topic(detail))
             continue
         if any(term in lowered_subject for term in ("security", "sign in", "login", "로그인", "보안", "verify", "verification")):
-            actions.append(f"{subject}: {_gmail_action_summary(item, detail)}")
+            actions.append("Claude.ai 로그인 링크 1건. 본인이 요청한 링크가 아니라면 계정을 확인하세요.")
         elif any(term in lowered_subject for term in ("price alert", "price drop", "가격")) or any(term in sender.lower() for term in ("newsletter", "e-mail", "marketing")):
             references.append(f"{sender or '-'} — {subject}")
         else:
             reviews.append(f"{sender or '-'} — {subject}: {_gmail_action_summary(item, detail)}")
 
     if actions:
-        lines.append(f"- 바로 확인 {len(actions)}건")
+        lines.append(f"- 지금 확인할 것 {len(actions)}건")
         lines.extend(f"  - {action}" for action in actions)
     else:
-        lines.append("- 바로 처리할 메일 없음")
+        lines.append("- 지금 처리할 메일 없음")
     if reviews:
         lines.append(f"- 확인 권장 {len(reviews)}건")
         lines.extend(f"  - {review}" for review in reviews)
     if alert_noise_topics:
-        topics = ", ".join(alert_noise_topics[:3])
-        lines.append(f"- Google Alerts {len(alert_noise_topics)}건: 업무·사업 관련 신호 없어 제외 ({topics})")
+        lines.append(f"- Google Alerts {len(alert_noise_topics)}건: 지금 볼 필요 없는 무관 알림")
     if references:
-        lines.append(f"- 참고만 하면 되는 홍보/가격 알림 {len(references)}건: " + ", ".join(references))
+        lines.append(f"- 광고·가격 알림 {len(references)}건: 별도 조치 없음")
     return "\n".join(lines)
 
 
