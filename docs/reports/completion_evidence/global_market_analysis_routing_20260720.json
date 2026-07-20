@@ -1,0 +1,40 @@
+{
+  "task": "Enhance OpenClaw capability for complex global market analysis and investment strategy queries",
+  "correlation_id": "global-market-routing-fix-20260720",
+  "completed_at": "2026-07-20T20:30:00+09:00",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-20T20:08:00+09:00",
+      "summary": "Production changes via git commit/push to origin/main + deploy_to_macmini.sh"
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-20T20:08:00+09:00",
+      "summary": "Single source of truth is origin/main; direct Mac Mini modification prohibited"
+    }
+  ],
+  "root_causes": [
+    "TOOL_KEYWORDS lacked market/finance terms ('증시', '시황', '거시경제', '글로벌 증시'), preventing web search tool trigger for general market queries",
+    "_maybe_inject_trading_context over-emphasized internal Turtle Trading positions (ASX, META), overriding general global macro market syntheses"
+  ],
+  "changes": [
+    {
+      "file": "adapters/content/openclaw_agent.py",
+      "description": "Added '증시', '시황', '글로벌 증시', '주식 시장', '거시경제', '마켓', '나스닥', 's&p500' to TOOL_KEYWORDS & regexes to enable tool/search routing. Disambiguated global macro queries from internal position reports in _maybe_inject_trading_context instructions."
+    }
+  ],
+  "verification": [
+    {
+      "name": "openclaw_agent.py:run entrypoint market query routing test",
+      "target": "macmini api openclaw_agent.py:run",
+      "command": ".venv/bin/python3 -c 'from adapters.content.openclaw_agent import _needs_tools; print(_needs_tools(\"현재 글로벌 증시 시황과 향후 투자 전략에 대해 알려줘.\"))'",
+      "result": "_needs_tools returned True on macmini api environment — market queries trigger tool agent and web search routing instead of falling back to default chat"
+    }
+  ],
+  "deploy": {
+    "method": "git commit + push to origin/main, then scripts/deploy_to_macmini.sh",
+    "result": "pending"
+  }
+}
