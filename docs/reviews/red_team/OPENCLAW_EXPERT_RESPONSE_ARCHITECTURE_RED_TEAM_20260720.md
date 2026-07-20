@@ -58,3 +58,15 @@ Re-review after implementation evidence includes:
 - successful independent Claude and Copilot reviews.
 
 Until then, no `red_team_clear` and no production rollout approval.
+
+## Implementation follow-up
+
+The first reference adapter is implemented locally but remains unapproved for production rollout.
+
+- Gmail requests now split into `gmail_lookup` (explicit metadata requests) and `gmail_brief` (content/summary requests).
+- `gmail_brief` fetches selected bodies concurrently; any missing body produces an explicit partial result instead of a headers-only summary.
+- Asia/Seoul calendar boundaries are used for `today` and `yesterday` Gmail queries.
+- Gmail body excerpts are excluded from persisted conversation history.
+- Tests passed: `67` OpenClaw agent tests and `5` route-audit summary tests.
+
+Actual-diff Copilot re-review did not return a verdict after file inspection, so it is inconclusive and does not replace the required independent review. Claude CLI remains unavailable because it is not logged in. Verdict remains `red_team_block`.

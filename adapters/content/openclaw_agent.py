@@ -34,11 +34,13 @@ import subprocess
 import threading
 import time
 from collections import defaultdict, deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from html import unescape
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlencode, urlparse
+from zoneinfo import ZoneInfo
 
 import anthropic
 import httpx
@@ -408,6 +410,10 @@ _GMAIL_SUMMARY_RE = re.compile(
     r"(받은|온).*(메일|이메일)",
     re.IGNORECASE,
 )
+_GMAIL_BRIEF_RE = re.compile(
+    r"(내용|요약|브리핑|핵심|중요|검토|해야|할 일|액션|action)",
+    re.IGNORECASE,
+)
 _CURRENT_TIME_RE = re.compile(
     r"(지금\s*(시각|시간)|현재\s*(시각|시간)|몇\s*시|current\s*time|what\s*time)",
     re.IGNORECASE,
@@ -430,7 +436,8 @@ _ROUTE_RESPONSE_LIMITS = {
     "deterministic_arithmetic": 80,
     "deterministic_newsletter_status": 1000,
     "deterministic_status_brief": 800,
-    "deterministic_gmail_summary": 1500,
+    "deterministic_gmail_lookup": 1500,
+    "deterministic_gmail_brief": 2500,
     "deterministic_current_time": 120,
     "deterministic_greeting": 120,
     "bypass_minutes_latest": 1500,
@@ -566,12 +573,17 @@ def _try_status_brief_response(user_message: str) -> str | None:
 
 def _infer_gmail_query(user_message: str) -> str:
     lowered = (user_message or "").lower()
+    today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+    if "오늘" in lowered or "금일" in lowered:
+        tomorrow = today.fromordinal(today.toordinal() + 1)
+        return f"after:{today:%Y/%m/%d} before:{tomorrow:%Y/%m/%d}"
+    if "어제" in lowered:
+        yesterday = today.fromordinal(today.toordinal() - 1)
+        return f"after:{yesterday:%Y/%m/%d} before:{today:%Y/%m/%d}"
     if "2주" in lowered or "14일" in lowered:
         return "newer_than:14d"
     if "이번주" in lowered or "7일" in lowered or "일주일" in lowered:
         return "newer_than:7d"
-    if "어제" in lowered:
-        return "newer_than:2d"
     return "newer_than:1d"
 
 
@@ -612,22 +624,50 @@ def _gmail_search_json(query: str, limit: int = 5) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {"ok": False, "error": "unexpected gmail payload"}
 
 
-def _try_gmail_summary_response(user_message: str) -> str | None:
+def _gmail_get_json(message_id: str) -> dict[str, Any]:
+    cmd = [str(VENV_PYTHON), str(BRIDGE_SCRIPT), "gmail-get", message_id, "--format", "json"]
+    try:
+        result_proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=20,
+            cwd=str(PROJECT_ROOT),
+        )
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+    output = ((result_proc.stdout or "") + (result_proc.stderr or "")).strip()
+    try:
+        payload = json.loads(output) if output else {}
+    except json.JSONDecodeError:
+        return {"ok": False, "error": output or "invalid gmail payload"}
+    if result_proc.returncode != 0:
+        if isinstance(payload, dict):
+            payload.setdefault("ok", False)
+        return payload if isinstance(payload, dict) else {"ok": False, "error": output}
+    return payload if isinstance(payload, dict) else {"ok": False, "error": "unexpected gmail payload"}
+
+
+def _gmail_request_contract(user_message: str) -> str | None:
     if not _GMAIL_SUMMARY_RE.search(user_message):
         return None
+    return "brief" if _GMAIL_BRIEF_RE.search(user_message) else "lookup"
 
-    query = _infer_gmail_query(user_message)
-    payload = _gmail_search_json(query, limit=5)
-    if payload.get("ok") is False and payload.get("error"):
-        return f"Gmail 조회 오류\n- {payload['error']}"
 
-    items = payload.get("items")
-    if not isinstance(items, list):
-        return None
+def _gmail_excerpt(message: dict[str, Any], limit: int = 280) -> str:
+    source = str(message.get("body") or message.get("snippet") or "")
+    normalized = re.sub(r"<[^>]+>", " ", unescape(source))
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    if not normalized:
+        return "본문에서 추출 가능한 텍스트가 없습니다."
+    return normalized[:limit].rstrip() + ("…" if len(normalized) > limit else "")
 
-    if not items:
-        return f"최근 메일 없음\n- 검색 조건: `{query}`"
 
+def _render_gmail_lookup(items: list[dict[str, Any]], query: str) -> str:
     lines = [f"최근 메일 {len(items)}건", f"- 검색 조건: `{query}`"]
     for item in items[:5]:
         if not isinstance(item, dict):
@@ -636,6 +676,86 @@ def _try_gmail_summary_response(user_message: str) -> str | None:
             f"- {item.get('date') or '-'} | {item.get('from') or '-'} | {item.get('subject') or '(제목 없음)'}"
         )
     return "\n".join(lines)
+
+
+def _render_gmail_brief(items: list[dict[str, Any]], query: str) -> str:
+    selected = [item for item in items[:5] if isinstance(item, dict) and item.get("id")]
+    if not selected:
+        return (
+            "메일 본문 요약 불가\n"
+            f"- 검색 조건: `{query}`\n"
+            "- 본문 ID가 없어 제목 목록을 요약으로 바꾸지 않았습니다.\n"
+            "- 다음 조치: Gmail 연결 상태를 확인한 뒤 다시 요청해 주세요."
+        )
+
+    details: dict[str, dict[str, Any]] = {}
+    failures: list[str] = []
+    with ThreadPoolExecutor(max_workers=min(3, len(selected))) as executor:
+        future_to_id = {executor.submit(_gmail_get_json, str(item["id"])): str(item["id"]) for item in selected}
+        for future in as_completed(future_to_id):
+            message_id = future_to_id[future]
+            try:
+                payload = future.result()
+            except Exception as exc:
+                payload = {"ok": False, "error": str(exc)}
+            if payload.get("ok") is False or not (payload.get("body") or payload.get("snippet")):
+                failures.append(message_id)
+            else:
+                details[message_id] = payload
+
+    is_partial = bool(failures)
+    prefix = "메일 본문 브리핑" if not is_partial else "메일 본문 브리핑 (부분 결과)"
+    lines = [prefix, f"- 검색 조건: `{query}`", f"- 본문 확인: {len(details)}/{len(selected)}건"]
+    if is_partial:
+        lines.extend(
+            [
+                "- 일부 본문을 가져오지 못했습니다. 누락 메일 내용에 관한 판단은 보류합니다.",
+                "- 다음 조치: Gmail 연결을 확인한 뒤 같은 요청을 다시 보내 주세요.",
+            ]
+        )
+
+    alert_items: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for item in selected:
+        detail = details.get(str(item["id"]))
+        if not detail:
+            continue
+        sender = str(detail.get("from") or item.get("from") or "")
+        if "googlealerts" in sender.lower():
+            alert_items.append((item, detail))
+            continue
+        lines.append(
+            f"- {sender or '-'} | {detail.get('subject') or item.get('subject') or '(제목 없음)'}\n"
+            f"  핵심: {_gmail_excerpt(detail)}"
+        )
+
+    if alert_items:
+        subjects = ", ".join(str(detail.get("subject") or item.get("subject") or "(제목 없음)") for item, detail in alert_items)
+        lines.append(f"- Google Alerts {len(alert_items)}건 묶음: {subjects}")
+        for _item, detail in alert_items[:3]:
+            lines.append(f"  핵심: {_gmail_excerpt(detail, limit=180)}")
+    return "\n".join(lines)
+
+
+def _try_gmail_summary_response(user_message: str) -> tuple[str, str] | None:
+    contract = _gmail_request_contract(user_message)
+    if contract is None:
+        return None
+
+    query = _infer_gmail_query(user_message)
+    payload = _gmail_search_json(query, limit=5)
+    if payload.get("ok") is False and payload.get("error"):
+        return ("gmail_lookup", f"Gmail 조회 오류\n- {payload['error']}")
+
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return None
+
+    if not items:
+        return (f"gmail_{contract}", f"최근 메일 없음\n- 검색 조건: `{query}`")
+
+    if contract == "lookup":
+        return ("gmail_lookup", _render_gmail_lookup(items, query))
+    return ("gmail_brief", _render_gmail_brief(items, query))
 
 
 def _persist_session_message(session_id: str, role: str, content: str) -> None:
@@ -2883,17 +3003,21 @@ def run(
         )
         return _finish("deterministic_status_brief", status_brief_response)
 
-    gmail_summary_response = _try_gmail_summary_response(user_message)
-    if gmail_summary_response is not None:
+    gmail_response = _try_gmail_summary_response(user_message)
+    if gmail_response is not None:
+        gmail_contract, gmail_response_text = gmail_response
+        gmail_route = f"deterministic_{gmail_contract}"
         _log_route_audit(
             session_id=effective_session_id,
             requester_user_id=requester_user_id,
             user_message=user_message,
-            route="deterministic_gmail_summary",
+            route=gmail_route,
             risk_scan=risk_scan,
-            action_name="gmail_summary",
+            action_name=gmail_contract,
         )
-        return _finish("deterministic_gmail_summary", gmail_summary_response)
+        # Gmail body excerpts are private evidence. Route metrics are retained,
+        # but the response body is not copied into session persistence.
+        return _finish(gmail_route, gmail_response_text, record=False)
 
     current_time_response = _try_current_time_response(user_message)
     if current_time_response is not None:

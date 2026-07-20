@@ -14,6 +14,11 @@ from adapters.content import tools as openclaw_tools
 class OpenClawAgentTests(unittest.TestCase):
     def setUp(self):
         openclaw_agent._CONVERSATION_HISTORY.clear()
+        self._session_persist_ttl_hours = openclaw_agent.SESSION_PERSIST_TTL_HOURS
+        openclaw_agent.SESSION_PERSIST_TTL_HOURS = 0
+
+    def tearDown(self):
+        openclaw_agent.SESSION_PERSIST_TTL_HOURS = self._session_persist_ttl_hours
 
     def test_parse_status_command(self):
         parsed = openclaw_agent._parse_structured_command("status 확인해줘")
@@ -174,14 +179,15 @@ class OpenClawAgentTests(unittest.TestCase):
         mock_ollama.assert_not_called()
         mock_chat.assert_not_called()
 
+    @patch("adapters.content.openclaw_agent._gmail_get_json")
     @patch("adapters.content.openclaw_agent._gmail_search_json")
     @patch("adapters.content.openclaw_agent._run_ollama_chat")
     @patch("adapters.content.openclaw_agent._run_anthropic_chat")
-    def test_mail_summary_uses_deterministic_gmail_path(self, mock_chat, mock_ollama, mock_gmail):
+    def test_mail_lookup_does_not_fetch_bodies(self, mock_chat, mock_ollama, mock_gmail, mock_gmail_get):
         mock_gmail.return_value = {
-            "query": "newer_than:1d",
             "items": [
                 {
+                    "id": "mail-1",
                     "date": "2026-05-31 09:00",
                     "from": "alerts@example.com",
                     "subject": "Budget warning",
@@ -193,9 +199,54 @@ class OpenClawAgentTests(unittest.TestCase):
 
         self.assertIn("최근 메일 1건", result)
         self.assertIn("Budget warning", result)
-        mock_gmail.assert_called_once_with("newer_than:1d", limit=5)
+        mock_gmail.assert_called_once_with(openclaw_agent._infer_gmail_query("오늘 온 메일 보여줘"), limit=5)
+        mock_gmail_get.assert_not_called()
         mock_ollama.assert_not_called()
         mock_chat.assert_not_called()
+
+    @patch("adapters.content.openclaw_agent._gmail_get_json")
+    @patch("adapters.content.openclaw_agent._gmail_search_json")
+    def test_mail_content_summary_requires_and_uses_bodies(self, mock_gmail, mock_gmail_get):
+        mock_gmail.return_value = {
+            "items": [
+                {"id": "mail-1", "from": "ceo@example.com", "subject": "Budget decision"},
+                {"id": "mail-2", "from": "googlealerts-noreply@google.com", "subject": "Google 알리미 - AI"},
+            ]
+        }
+        mock_gmail_get.side_effect = [
+            {"id": "mail-1", "from": "ceo@example.com", "subject": "Budget decision", "body": "내일까지 예산안을 검토해 승인 여부를 알려주세요."},
+            {"id": "mail-2", "from": "googlealerts-noreply@google.com", "subject": "Google 알리미 - AI", "body": "AI 관련 새 기사 3건입니다."},
+        ]
+
+        result = openclaw_agent.run("오늘 온 메일 내용 요약해", session_id="mail-summary-session")
+
+        self.assertIn("메일 본문 브리핑", result)
+        self.assertIn("내일까지 예산안을 검토", result)
+        self.assertIn("Google Alerts 1건 묶음", result)
+        self.assertEqual(mock_gmail_get.call_count, 2)
+
+    @patch("adapters.content.openclaw_agent._gmail_get_json")
+    @patch("adapters.content.openclaw_agent._gmail_search_json")
+    def test_mail_summary_returns_explicit_partial_result_when_body_missing(self, mock_gmail, mock_gmail_get):
+        mock_gmail.return_value = {"items": [{"id": "mail-1", "from": "alerts@example.com", "subject": "Budget warning"}]}
+        mock_gmail_get.return_value = {"ok": False, "error": "Gmail timeout"}
+
+        result = openclaw_agent.run("오늘 온 메일 요약해", session_id="mail-partial-session")
+
+        self.assertIn("부분 결과", result)
+        self.assertIn("누락 메일 내용에 관한 판단은 보류", result)
+        self.assertNotIn("Budget warning", result)
+
+    @patch("adapters.content.openclaw_agent._gmail_get_json")
+    @patch("adapters.content.openclaw_agent._gmail_search_json")
+    def test_mail_brief_does_not_persist_private_body_excerpt(self, mock_gmail, mock_gmail_get):
+        mock_gmail.return_value = {"items": [{"id": "mail-1", "from": "ceo@example.com", "subject": "Private"}]}
+        mock_gmail_get.return_value = {"id": "mail-1", "from": "ceo@example.com", "subject": "Private", "body": "private body text"}
+
+        result = openclaw_agent.run("오늘 온 메일 내용 요약해", session_id="private-mail-session")
+
+        self.assertIn("private body text", result)
+        self.assertEqual(list(openclaw_agent._CONVERSATION_HISTORY["private-mail-session"]), [])
 
     @patch("adapters.content.openclaw_agent._run_ollama_chat")
     @patch("adapters.content.openclaw_agent.datetime")

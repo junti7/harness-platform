@@ -1,0 +1,41 @@
+{
+  "task": "OpenClaw Gmail lookup and evidence-backed content brief",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-20T21:55:00+09:00",
+      "summary": "Customer-facing code needs evidence mapping, real entrypoint verification, and residual-risk reporting when a gate is incomplete."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-20T21:55:00+09:00",
+      "summary": "OpenClaw Slack ingress is Mac Mini only; customer-facing changes need completion evidence and explicit non-completion when Red Team is blocked."
+    }
+  ],
+  "verification": [
+    {
+      "name": "OpenClaw Gmail brief unit and regression suite",
+      "target": "adapters/content/openclaw_agent.py and tests/test_openclaw_agent.py",
+      "command": ".venv/bin/python -m unittest discover -s tests -p 'test_openclaw_agent.py'",
+      "result": "67 tests passed, including headers-only lookup, body-backed brief, partial-result, and private-body session-persistence cases."
+    },
+    {
+      "name": "OpenClaw route-audit compatibility suite",
+      "target": "route audit runtime reports",
+      "command": ".venv/bin/python -m unittest discover -s tests -p 'test_openclaw_route_audit_summary.py'",
+      "result": "5 tests passed."
+    },
+    {
+      "name": "Configured Gmail runtime through OpenClaw user-facing agent entrypoint",
+      "target": "OpenClaw Gmail runtime API/bridge",
+      "command": ".venv/bin/python inline call to openclaw_agent.run('오늘 온 메일 내용 요약해') with response content suppressed",
+      "result": "gmail_brief_runtime=pass; response began with a valid Gmail brief or no-mail response and measured 1477 characters without exposing mailbox content."
+    }
+  ],
+  "residual_risk": [
+    "Mac Mini Slack listener has not received this commit because production deployment is blocked pending required independent Red Team review.",
+    "Claude CLI is not logged in and Copilot actual-diff review did not return a verdict; no red_team_clear is claimed.",
+    "This commit establishes Gmail as the first reference adapter. The all-intent verifier architecture remains planned work."
+  ]
+}
