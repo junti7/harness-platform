@@ -26,8 +26,18 @@
       "target": "pre-push runtime boundaries",
       "command": ".venv/bin/python -m pytest tests/test_agent_completion_guard.py tests/test_openclaw_response_quality.py tests/test_openclaw_agent.py tests/test_slack_listener.py tests/test_openclaw_slack_e2e_probe.py -q",
       "result": "passed: 103 tests; one third-party deprecation warning"
+    },
+    {
+      "name": "Mac Mini Slack listener runtime",
+      "target": "macmini production launchd service",
+      "command": "launchctl kickstart -k gui/UID/com.harness.slack-listener; inspect process and listener log",
+      "result": "passed: listener PID 13889, Socket Mode session established, Bolt app running, Ollama prewarm completed"
     }
   ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh with 19 scoped OpenClaw implementation, test, scorer, and review paths",
+    "result": "passed: backup scratch/pre_deploy_backup_20260721_215304; every deployed path matched origin/main; backend and Slack listener restarted"
+  },
   "red_team": {
     "models": ["Claude", "Copilot"],
     "artifacts": [
@@ -39,6 +49,6 @@
   },
   "residual_risk": [
     "Production verified delivery remains shadow-only until at least 7 distinct days, 200 cases, and minimum coverage for all required task types pass.",
-    "Mac Mini deployment and live Slack DM verification are not yet recorded in this pre-deploy evidence revision."
+    "Live Slack DM E2E remains blocked on this workstation because the approved xoxp Keychain item is not visible to the probe process; sent=false, so no message was emitted."
   ]
 }
