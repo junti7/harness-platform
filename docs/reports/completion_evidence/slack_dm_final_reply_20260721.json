@@ -1,0 +1,13 @@
+{
+  "task": "Slack DM final-reply-only delivery",
+  "status": "complete",
+  "governance_bootstrap": [
+    {"path": "CLAUDE.md", "read_at": "2026-07-21T20:30:00+09:00", "summary": "Customer-facing Slack behavior requires real entrypoint verification and completion evidence."},
+    {"path": "docs/governance/LLM_GROUND_RULES.md", "read_at": "2026-07-21T20:30:00+09:00", "summary": "OpenClaw Slack ingress runs on the Mac Mini and deploys through origin/main."}
+  ],
+  "verification": [
+    {"name": "Slack listener DM regression", "target": "Slack listener service", "command": ".venv/bin/python -m unittest discover -s tests -p 'test_slack_listener.py'", "result": "3 tests passed; DM bot-event loop protections remain intact."},
+    {"name": "Mac Mini Slack listener", "target": "Mac Mini launchd service", "command": "scripts/deploy_to_macmini.sh adapters/content/slack_listener.py; launchctl print", "result": "Pending deployment verification."}
+  ],
+  "deploy": {"method": "scripts/deploy_to_macmini.sh adapters/content/slack_listener.py", "result": "Pending deployment verification."}
+}
