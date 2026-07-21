@@ -99,6 +99,22 @@ if not SLACK_APP_TOKEN:
 app = App(token=SLACK_BOT_TOKEN)
 
 
+def _should_ignore_dm_event(event: dict) -> bool:
+    """Reject bot traffic, except the CEO's explicitly authorized user-token E2E probe.
+
+    Slack marks a message sent with this app's xoxp token with ``bot_id`` even
+    though the event's ``user`` remains the CEO.  Treating that message as a
+    normal bot response makes an end-to-end DM test impossible.  The exception
+    is intentionally bound to the configured CEO user; all actual bot traffic
+    remains ignored to prevent reply loops.
+    """
+    if event.get("subtype"):
+        return True
+    if not event.get("bot_id"):
+        return False
+    return not (CEO_SLACK_USER_ID and event.get("user") == CEO_SLACK_USER_ID)
+
+
 @app.event("app_mention")
 def handle_mention(event, say, logger):
     if _is_duplicate_event(event):
@@ -123,7 +139,7 @@ def handle_mention(event, say, logger):
 
 @app.event("message")
 def handle_dm(event, say, logger):
-    if event.get("bot_id") or event.get("subtype"):
+    if _should_ignore_dm_event(event):
         return
     if _is_duplicate_event(event):
         logger.info("[DM] 중복 이벤트 무시 (Slack retry)")

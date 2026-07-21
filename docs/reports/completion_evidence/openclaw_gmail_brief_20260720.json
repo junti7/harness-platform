@@ -43,6 +43,12 @@
       "target": "Slack API and Mac Mini OpenClaw listener",
       "command": ".venv/bin/python scripts/openclaw_slack_e2e_probe.py --help; .venv/bin/python -m py_compile scripts/openclaw_slack_e2e_probe.py",
       "result": "Pass. The probe reads only an xoxp user token from macOS Keychain, explicitly reports SSH-vs-GUI Keychain access failure, verifies token ownership against SLACK_CEO_USER_ID, and requires explicit --send before one real DM."
+    },
+    {
+      "name": "Slack listener CEO user-token event guard",
+      "target": "adapters/content/slack_listener.py",
+      "command": ".venv/bin/python -m unittest discover -s tests -p 'test_slack_listener.py'",
+      "result": "3 tests passed. CEO user-token E2E messages tagged with bot_id are accepted; non-CEO bot traffic and subtype events remain ignored."
     }
   ],
   "deploy": {
@@ -50,8 +56,8 @@
     "result": "Targeted Mac Mini deploy passed origin/main diff verification and Slack listener was restarted successfully."
   },
   "residual_risk": [
-    "Slack app User Token Scopes chat:write, im:write, and im:history have not yet been added/re-authorized; no xoxp token is available in the approved Keychain slot.",
-    "Therefore a real post-deploy Slack DM response has not yet been observed; listener process and Socket Mode connection are verified.",
+    "A real-user E2E probe reached Slack but was ignored before this release because Slack tags same-app user-token messages with bot_id. This release narrows acceptance to the configured CEO user and requires a fresh E2E run.",
+    "Therefore a passing post-deploy Slack DM response has not yet been observed; listener process and Socket Mode connection are verified.",
     "This commit establishes Gmail as the first reference adapter. The all-intent verifier architecture remains planned work."
   ]
 }

@@ -38,6 +38,10 @@ class ProbeError(RuntimeError):
     """A safe, operator-actionable E2E failure."""
 
 
+def _progress(message: str) -> None:
+    print(f"[Slack E2E] {message}", file=sys.stderr, flush=True)
+
+
 def _keychain_token(service: str, account: str) -> str:
     result = subprocess.run(
         ["security", "find-generic-password", "-s", service, "-a", account, "-w"],
@@ -111,6 +115,7 @@ def main() -> int:
 
     artifact: dict[str, Any] = {"probe": "openclaw_slack_dm_e2e", "sent": False, "status": "blocked"}
     try:
+        _progress("Keychain 사용자 토큰 확인 중")
         user_token = _keychain_token(args.keychain_service, args.keychain_account)
         bot_token = os.environ.get("SLACK_BOT_TOKEN", "").strip()
         ceo_user_id = os.environ.get("SLACK_CEO_USER_ID", "").strip()
@@ -127,11 +132,14 @@ def main() -> int:
             print(json.dumps(artifact, ensure_ascii=False))
             return 0
 
+        _progress("CEO 사용자 토큰 확인 완료; OpenClaw DM 열기")
         channel = _api(user_token, "conversations.open", {"users": bot_auth["user_id"]})["channel"]
         marker = uuid.uuid4().hex[:8]
+        _progress("승인된 테스트 DM 전송")
         sent = _api(user_token, "chat.postMessage", {"channel": channel["id"], "text": PROBE_TEXT})
         sent_ts = float(sent["ts"])
         artifact.update({"sent": True, "probe_id": marker, "channel_id": channel["id"]})
+        _progress(f"OpenClaw 응답 대기 중 (최대 {args.timeout_seconds}초)")
         deadline = time.monotonic() + args.timeout_seconds
         reply: dict[str, Any] | None = None
         while time.monotonic() < deadline:
