@@ -3099,11 +3099,15 @@ def _evidence_for_route(route: str, response_text: str) -> EvidenceSet:
     return EvidenceSet("model_reasoning", "declared")
 
 
-def _verify_delivery_contract(contract: RequestContract, evidence: EvidenceSet, route: str) -> VerificationResult:
+def _verify_delivery_contract(contract: RequestContract, evidence: EvidenceSet, route: str, user_message: str = "") -> VerificationResult:
     if contract.kind == "summary" and evidence.source != "gmail_message_bodies":
         return VerificationResult("block", "summary requires primary body evidence")
     if contract.requires_primary_evidence and evidence.coverage != "complete":
         return VerificationResult("partial", "primary evidence coverage is incomplete")
+    if contract.kind in {"analysis", "recommendation"} and evidence.source == "model_reasoning":
+        if _is_recency_sensitive_query(user_message):
+            return VerificationResult("block", "current external claim requires verified evidence")
+        return VerificationResult("partial", "model-only analysis must be labeled as an unverified hypothesis")
     return VerificationResult("pass", "contract evidence requirement satisfied")
 
 
@@ -3237,12 +3241,14 @@ def run(
     def _finish(route: str, response_text: str, *, record: bool = True) -> str:
         contract = _infer_request_contract(user_message)
         evidence = _evidence_for_route(route, response_text)
-        verification = _verify_delivery_contract(contract, evidence, route)
+        verification = _verify_delivery_contract(contract, evidence, route, user_message)
         if verification.verdict == "block":
             response_text = (
                 "결론: 요청한 요약을 근거 없이 전달하지 않습니다.\n"
                 "다음 조치: 원문 근거를 확인할 수 있는 경로로 다시 조회하겠습니다."
             )
+        elif verification.verdict == "partial":
+            response_text = "판단 상태: 가설 — 외부 근거가 아직 검증되지 않았습니다.\n" + response_text
         _log_route_audit(
             session_id=effective_session_id, requester_user_id=requester_user_id,
             user_message=user_message, route=route, risk_scan=risk_scan,

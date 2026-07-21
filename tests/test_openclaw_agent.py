@@ -761,7 +761,8 @@ class OpenClawAgentTests(unittest.TestCase):
     ):
         result = openclaw_agent.run("지금 진행되고 있는 AI 교육 사업 아이템에 대해 브리핑 해주세요.")
 
-        self.assertEqual(result, "결론: briefing-chat")
+        self.assertIn("판단 상태: 가설", result)
+        self.assertIn("briefing-chat", result)
         mock_chat.assert_called_once()
         mock_tool.assert_not_called()
 
