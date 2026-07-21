@@ -1,0 +1,40 @@
+{
+  "task": "OpenClaw shared expert-response delivery guard",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-21T20:18:00+09:00",
+      "summary": "Customer-facing changes require exact verification evidence, deployment through origin/main, and no completion claim before a real entrypoint check."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-21T20:18:00+09:00",
+      "summary": "OpenClaw runs on the Mac Mini; customer-facing code requires completion evidence and a real production verification."
+    }
+  ],
+  "verification": [
+    {
+      "name": "OpenClaw response-quality unit and regression suite",
+      "target": "adapters/content/openclaw_agent.py",
+      "command": ".venv/bin/python -m unittest discover -s tests -p 'test_openclaw_agent.py'",
+      "result": "78 tests passed, including conclusion-first delivery, secret redaction, rendering-artifact blocking, and explicit-markup preservation."
+    },
+    {
+      "name": "Slack delivery and E2E-probe regression suites",
+      "target": "OpenClaw Slack listener and E2E script",
+      "command": ".venv/bin/python -m unittest discover -s tests -p 'test_slack_listener.py'; .venv/bin/python -m unittest discover -s tests -p 'test_openclaw_slack_e2e_probe.py'",
+      "result": "4 tests passed. CEO user-token probe acceptance and final-answer selection remain guarded."
+    },
+    {
+      "name": "OpenClaw runtime entrypoint smoke test",
+      "target": "OpenClaw service runtime entrypoint",
+      "command": ".venv/bin/python -c run('현재 시각 알려줘')",
+      "result": "Pass. The actual OpenClaw run entrypoint returned the deterministic current-time response."
+    }
+  ],
+  "residual_risk": [
+    "Mac Mini runtime verification and independent Red Team review are pending this change.",
+    "The shared delivery guard does not replace the planned typed request/evidence verifier for every tool route."
+  ]
+}

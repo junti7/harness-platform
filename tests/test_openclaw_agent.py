@@ -324,6 +324,36 @@ class OpenClawAgentTests(unittest.TestCase):
         self.assertIn("[토큰 생략]", result)
         self.assertNotIn("example.test", result)
 
+    def test_executive_request_gets_conclusion_first_without_inventing_evidence(self):
+        result = openclaw_agent._finalize_response(
+            "핵심 리스크는 공급 일정이 불확실하다는 점입니다.",
+            "premium_chat",
+            "이번 주 리스크를 분석해줘",
+        )
+
+        self.assertEqual(result, "결론: 핵심 리스크는 공급 일정이 불확실하다는 점입니다.")
+
+    def test_quality_guard_redacts_secret_and_blocks_rendering_artifact(self):
+        secret_result = openclaw_agent._finalize_response(
+            "xoxp-secret-token-value-1234567890", "premium_chat", "상태 알려줘"
+        )
+        artifact_result = openclaw_agent._finalize_response(
+            "#outlook a { padding: 0; } -webkit-text-size-adjust: 100%;",
+            "premium_chat",
+            "내용 요약해줘",
+        )
+
+        self.assertIn("[민감 정보 생략]", secret_result)
+        self.assertNotIn("secret-token", secret_result)
+        self.assertIn("렌더링 조각", artifact_result)
+
+    def test_quality_guard_keeps_markup_when_explicitly_requested(self):
+        result = openclaw_agent._finalize_response(
+            "body { border-collapse: collapse; }", "premium_chat", "CSS 코드 보여줘"
+        )
+
+        self.assertIn("border-collapse", result)
+
     def test_gmail_alert_signal_checks_only_first_headline(self):
         detail = {
             "subject": "Google 알리미 - LG | 2026-07-20 22:06:46",
@@ -721,7 +751,7 @@ class OpenClawAgentTests(unittest.TestCase):
     ):
         result = openclaw_agent.run("지금 진행되고 있는 AI 교육 사업 아이템에 대해 브리핑 해주세요.")
 
-        self.assertEqual(result, "briefing-chat")
+        self.assertEqual(result, "결론: briefing-chat")
         mock_chat.assert_called_once()
         mock_tool.assert_not_called()
 

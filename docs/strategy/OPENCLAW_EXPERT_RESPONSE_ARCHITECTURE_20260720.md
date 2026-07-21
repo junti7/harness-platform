@@ -1,7 +1,7 @@
 # OpenClaw Expert Response Architecture
 
 - Date: 2026-07-20
-- Status: proposed; not production-cleared
+- Status: baseline delivery guard implemented; deeper evidence verifier remains incremental work
 - Scope: all Slack DM responses. This is not a Gmail-only patch.
 
 ## Outcome
@@ -91,3 +91,21 @@ Any body-fetch failure lowers coverage. If coverage falls below contract thresho
 ## Rollout decision
 
 Do not ship yet. Red Team clearance is missing because Claude review could not run, and Copilot identified missing hard gates in the original proposal. Implement the controls above, then rerun Claude + Copilot independent review with test evidence.
+
+## 2026-07-21 implementation baseline
+
+The shared delivery path (`_finalize_response`) now applies a route-independent
+quality guard to every OpenClaw response:
+
+- prompts require answer-first delivery; briefing, summary, analysis, decision,
+  review, and report requests use a conclusion-first structure;
+- secret-shaped strings are redacted before delivery;
+- accidental email/CSS rendering fragments are blocked unless the user explicitly
+  requested code or markup;
+- the guard never invents evidence. It only redacts unsafe output or adds a
+  structural `결론:` label where the response did not already lead naturally;
+- Gmail remains the first reference adapter with its own evidence/coverage gate.
+
+This is not yet the full typed all-intent verifier proposed above. In
+particular, `RequestContract`, `EvidenceSet`, per-claim provenance, and
+fail-closed evidence coverage for every tool route remain follow-up work.
