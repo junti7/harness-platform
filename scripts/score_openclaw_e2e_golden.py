@@ -33,7 +33,9 @@ def main() -> int:
     args = parser.parse_args()
     rows = [json.loads(line) for line in Path(args.corpus).read_text(encoding="utf-8").splitlines() if line.strip()]
     failures = []
-    with patch.object(openclaw_agent, "_load_status_payload", return_value=STATUS_FIXTURE), patch.object(
+    with patch.object(openclaw_agent, "OPENCLAW_VERIFIED_DELIVERY_ENABLED", True), patch.object(
+        openclaw_agent, "OPENCLAW_QUALITY_SHADOW_ENABLED", False
+    ), patch.object(openclaw_agent, "_load_status_payload", return_value=STATUS_FIXTURE), patch.object(
         openclaw_agent, "_run_ollama_chat", side_effect=AssertionError("golden corpus must not use ungrounded model chat")
     ), patch.object(openclaw_agent, "_run_anthropic_chat", side_effect=AssertionError("golden corpus must not use ungrounded model chat")):
         def classifier(message: str):
