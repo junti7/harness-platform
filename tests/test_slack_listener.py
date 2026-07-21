@@ -2,9 +2,15 @@ import unittest
 from unittest.mock import patch
 
 from adapters.content import slack_listener
+from core.openclaw_response_quality import DeliveryDecision, SCHEMA_VERSION, VerifiedText
 
 
 class SlackListenerDmEventTests(unittest.TestCase):
+    def test_verified_text_without_system_reason_does_not_crash(self):
+        verified = VerifiedText(DeliveryDecision(SCHEMA_VERSION, "deliver", "검증됨"))
+
+        self.assertEqual(slack_listener._outbound_text(verified), "검증됨")
+
     @patch.object(slack_listener, "CEO_SLACK_USER_ID", "U_CEO")
     def test_ceo_user_token_probe_with_bot_id_is_accepted(self):
         event = {"user": "U_CEO", "bot_id": "B_APP", "app_id": "A_APP"}

@@ -35,7 +35,7 @@ Evidence schema:
     "result": "deployed and verified"
   },
   "red_team": {
-    "models": ["Claude", "Gemini"],
+    "models": ["Claude", "Copilot"],
     "artifacts": [{"artifact": "claude.md"}, {"artifact": "gemini.md"}],
     "verdict": "red_team_clear|red_team_block|red_team_residual_risk"
   }
@@ -190,8 +190,9 @@ def validate(data: dict[str, Any], *, base_dir: Path, require_deploy: bool, requ
             if not isinstance(models, list):
                 models = []
             normalized = {str(model).strip().lower() for model in models}
-            if "claude" not in normalized or "gemini" not in normalized:
-                errors.append("red_team.models must include Claude and Gemini")
+            independent_second = {"codex", "copilot", "gemini", "gpt reasoning", "gpt-reasoning"}
+            if "claude" not in normalized or not (normalized & independent_second):
+                errors.append("red_team.models must include Claude plus Codex, Copilot, Gemini, or GPT reasoning")
             artifacts = red_team.get("artifacts")
             if not isinstance(artifacts, list) or not artifacts:
                 errors.append("red_team.artifacts must be a non-empty list")

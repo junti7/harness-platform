@@ -1,0 +1,44 @@
+{
+  "task": "OpenClaw general response quality fail-closed rebuild",
+  "status": "residual_risk",
+  "date": "2026-07-21",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-21T21:51:38+09:00",
+      "summary": "Read Harness operating, verification, deployment, and cross-model governance requirements before closeout."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-21T21:51:38+09:00",
+      "summary": "Read mandatory real-entrypoint evidence, completion guard, and non-fabrication requirements before closeout."
+    }
+  ],
+  "verification": [
+    {
+      "name": "OpenClaw fixed quality corpus pre-push gate",
+      "target": "pre-push quality scorer",
+      "command": ".venv/bin/python scripts/score_openclaw_response_quality.py --corpus configs/openclaw/response_quality_corpus_v1.jsonl --min-cases 240 --output runtime/openclaw_quality_eval.json",
+      "result": "passed: 240 cases across the exact 12 required families, 0 failures"
+    },
+    {
+      "name": "OpenClaw response and completion-guard regression suite",
+      "target": "pre-push runtime boundaries",
+      "command": ".venv/bin/python -m pytest tests/test_agent_completion_guard.py tests/test_openclaw_response_quality.py tests/test_openclaw_agent.py tests/test_slack_listener.py tests/test_openclaw_slack_e2e_probe.py -q",
+      "result": "passed: 103 tests; one third-party deprecation warning"
+    }
+  ],
+  "red_team": {
+    "models": ["Claude", "Copilot"],
+    "artifacts": [
+      {"artifact": "/Users/juntae.park/projects/harness-platform/docs/reviews/red_team/openclaw_general_quality_impl_claude_20260721.md"},
+      {"artifact": "/Users/juntae.park/projects/harness-platform/docs/reviews/red_team/openclaw_general_quality_impl_copilot_20260721.md"},
+      {"artifact": "/Users/juntae.park/projects/harness-platform/docs/reviews/red_team/OPENCLAW_GENERAL_RESPONSE_QUALITY_IMPLEMENTATION_REVIEW_20260721.md"}
+    ],
+    "verdict": "red_team_clear"
+  },
+  "residual_risk": [
+    "Production verified delivery remains shadow-only until at least 7 distinct days, 200 cases, and minimum coverage for all required task types pass.",
+    "Mac Mini deployment and live Slack DM verification are not yet recorded in this pre-deploy evidence revision."
+  ]
+}

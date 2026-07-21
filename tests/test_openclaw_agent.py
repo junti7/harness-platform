@@ -133,9 +133,9 @@ class OpenClawAgentTests(unittest.TestCase):
     def test_high_risk_terms_do_not_fall_to_local_llm(self, mock_chat, mock_ollama):
         result = openclaw_agent.run("가격 바꿀까?", session_id="risk-session")
 
-        self.assertEqual(result, "premium-route")
+        self.assertIn("최신 근거를 확인하지 못했습니다", result)
         mock_ollama.assert_not_called()
-        mock_chat.assert_called_once()
+        mock_chat.assert_not_called()
 
     @patch("adapters.content.openclaw_agent.httpx.post")
     def test_ollama_chat_sends_expanded_workplace_shorthand(self, mock_post):
@@ -355,14 +355,11 @@ class OpenClawAgentTests(unittest.TestCase):
         self.assertIn("border-collapse", result)
 
     def test_summary_contract_fails_closed_without_primary_body_evidence(self):
-        contract = openclaw_agent._infer_request_contract("오늘 온 메일 내용 요약해")
-        verification = openclaw_agent._verify_delivery_contract(
-            contract,
-            openclaw_agent.EvidenceSet("gmail_metadata", "complete"),
-            "deterministic_gmail_lookup",
-        )
+        contract = openclaw_agent.infer_answer_contract("오늘 온 메일 내용 요약해")
+        decision = openclaw_agent.verify_delivery(contract, ())
 
-        self.assertEqual(verification.verdict, "block")
+        self.assertEqual(decision.verdict, "abstain")
+        self.assertIn("eligible_evidence_missing", decision.reasons)
 
     def test_gmail_alert_signal_checks_only_first_headline(self):
         detail = {
@@ -478,7 +475,7 @@ class OpenClawAgentTests(unittest.TestCase):
             ):
                 result = openclaw_agent.run("내 이름이 뭐야?", session_id="metric-session")
 
-            self.assertEqual(result, "대표님 이름은 준태입니다.")
+            self.assertIn("최신 근거를 확인하지 못했습니다", result)
             records = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
             metric_records = [record for record in records if record.get("kind") == "response_metric"]
             self.assertTrue(metric_records)
@@ -632,10 +629,8 @@ class OpenClawAgentTests(unittest.TestCase):
         second = openclaw_agent.run("내 이름이 뭐야?", session_id="test-session")
 
         self.assertEqual(first, "준태로 기억했습니다.")
-        self.assertEqual(second, "대표님 이름은 준태입니다.")
-        second_call = mock_ollama.call_args_list[1]
-        self.assertEqual(second_call.kwargs["history"][0]["content"], "<user_message>내 이름은 준태야</user_message>")
-        self.assertEqual(second_call.kwargs["history"][1]["content"], "준태로 기억했습니다.")
+        self.assertIn("최신 근거를 확인하지 못했습니다", second)
+        mock_ollama.assert_called_once()
 
     @patch("adapters.content.openclaw_agent._run_ollama_chat", return_value="8")
     @patch("adapters.content.openclaw_agent._classify_intent_with_haiku")
@@ -643,9 +638,9 @@ class OpenClawAgentTests(unittest.TestCase):
     def test_simple_followup_uses_low_cost_route_without_intent_classifier(self, mock_intent, mock_ollama):
         result = openclaw_agent.run("거기에 4를 곱하면?", session_id="test-session")
 
-        self.assertEqual(result, "8")
+        self.assertIn("최신 근거를 확인하지 못했습니다", result)
         mock_intent.assert_not_called()
-        mock_ollama.assert_called_once()
+        mock_ollama.assert_not_called()
 
     def test_contextual_followup_is_not_low_cost_candidate(self):
         history = [
@@ -761,9 +756,9 @@ class OpenClawAgentTests(unittest.TestCase):
     ):
         result = openclaw_agent.run("지금 진행되고 있는 AI 교육 사업 아이템에 대해 브리핑 해주세요.")
 
-        self.assertIn("판단 상태: 가설", result)
-        self.assertIn("briefing-chat", result)
-        mock_chat.assert_called_once()
+        self.assertIn("최신 근거를 확인하지 못했습니다", result)
+        self.assertNotIn("briefing-chat", result)
+        mock_chat.assert_not_called()
         mock_tool.assert_not_called()
 
     @patch("adapters.content.openclaw_agent._load_status_payload")

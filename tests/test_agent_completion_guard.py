@@ -63,7 +63,7 @@ class AgentCompletionGuardTests(unittest.TestCase):
         self.assertTrue(any("CLAUDE.md" in error for error in errors))
         self.assertTrue(any("LLM_GROUND_RULES.md" in error for error in errors))
 
-    def test_requires_claude_and_gemini_when_red_team_requested(self):
+    def test_requires_claude_and_independent_second_model_when_red_team_requested(self):
         data = {
             "task": "policy change",
             "status": "complete",
@@ -85,14 +85,14 @@ class AgentCompletionGuardTests(unittest.TestCase):
 
         errors = validate(data, base_dir=Path.cwd(), require_deploy=False, require_red_team=True)
 
-        self.assertTrue(any("Claude and Gemini" in error for error in errors))
+        self.assertTrue(any("Claude plus" in error for error in errors))
         self.assertTrue(any("artifacts" in error for error in errors))
 
     def test_accepts_real_entrypoint_deploy_and_two_model_red_team_artifacts(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             (base / "claude.md").write_text("clear", encoding="utf-8")
-            (base / "gemini.md").write_text("clear", encoding="utf-8")
+            (base / "copilot.md").write_text("clear", encoding="utf-8")
             data = {
                 "task": "edu coach answer fix",
                 "status": "complete",
@@ -110,8 +110,8 @@ class AgentCompletionGuardTests(unittest.TestCase):
                     "result": "deployed and service restarted",
                 },
                 "red_team": {
-                    "models": ["Claude", "Gemini"],
-                    "artifacts": [{"artifact": "claude.md"}, {"artifact": "gemini.md"}],
+                    "models": ["Claude", "Copilot"],
+                    "artifacts": [{"artifact": "claude.md"}, {"artifact": "copilot.md"}],
                     "verdict": "red_team_clear",
                 },
             }

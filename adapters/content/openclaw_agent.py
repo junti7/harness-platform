@@ -33,10 +33,11 @@ import socket
 import subprocess
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timezone
+from datetime import datetime as _RuntimeDateTime
 from email.utils import parsedate_to_datetime
 from html import unescape
 from html.parser import HTMLParser
@@ -50,10 +51,22 @@ import httpx
 from dotenv import load_dotenv
 from core.logger import HarnessLogger
 from adapters.content.substack_publisher import fetch_draft_as_text
-from adapters.content.runtime_host import should_use_remote_ollama
+from adapters.content.outbound_delivery import OutboundEnvelope, post_slack_token
+from adapters.content.runtime_host import is_macmini_host, should_use_remote_ollama
 from adapters.content.refiner import log_api_cost, get_today_cost, DAILY_COST_LIMIT
 from core.cost_alerts import check_and_alert
 from core.gemini_sdk import generate_text, gemini_model_name
+from core.openclaw_response_quality import (
+    AnswerContract,
+    DeliveryDecision,
+    EvidenceItem,
+    SCHEMA_VERSION,
+    VerifiedText,
+    evidence_from_text,
+    extract_subject_ids,
+    infer_answer_contract,
+    verify_delivery,
+)
 from scripts.llm_fallback_manager import _is_provider_available
 
 logger = logging.getLogger(__name__)
@@ -63,6 +76,7 @@ VENV_PYTHON = PROJECT_ROOT / ".venv/bin/python"
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 BRIDGE_SCRIPT = PROJECT_ROOT / "scripts/openclaw_codex_bridge.py"
 ROUTE_AUDIT_PATH = PROJECT_ROOT / "runtime" / "openclaw_route_audit.jsonl"
+QUALITY_SHADOW_PATH = PROJECT_ROOT / "runtime" / "openclaw_verified_delivery_shadow.jsonl"
 STATUS_JSON_PATH = PROJECT_ROOT / "runtime" / "openclaw_status.json"
 SOUL_PATH = PROJECT_ROOT / "SOUL.md"
 GROUND_RULES_PATH = PROJECT_ROOT / "docs/openclaw/OPENCLAW_GROUND_RULES.md"
@@ -92,6 +106,14 @@ OPENCLAW_MAX_HISTORY_CHARS = int(os.environ.get("OPENCLAW_MAX_HISTORY_CHARS", "1
 OPENCLAW_CHAT_MAX_TOKENS = int(os.environ.get("OPENCLAW_CHAT_MAX_TOKENS", "4096"))
 OPENCLAW_TOOL_MAX_TOKENS = int(os.environ.get("OPENCLAW_TOOL_MAX_TOKENS", "4096"))
 OPENCLAW_INTENT_ENABLED = os.environ.get("OPENCLAW_INTENT_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+OPENCLAW_VERIFIED_DELIVERY_ENABLED = os.environ.get(
+    "OPENCLAW_VERIFIED_DELIVERY_ENABLED",
+    "false" if is_macmini_host() else "true",
+).strip().lower() in {"1", "true", "yes"}
+OPENCLAW_QUALITY_SHADOW_ENABLED = os.environ.get(
+    "OPENCLAW_QUALITY_SHADOW_ENABLED",
+    "true" if is_macmini_host() else "false",
+).strip().lower() in {"1", "true", "yes"}
 
 # OpenClaw 7.1 Features Configuration
 OPENCLAW_AB_ENABLED = os.environ.get("OPENCLAW_AB_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
@@ -262,6 +284,7 @@ ACTION_REGISTRY: dict[str, dict[str, Any]] = {
     "goal-status": {"risk_level": "low", "action_type": "read_only", "mutates_state": False, "external_effect": False, "requires_approval": False},
     "goal-diagnose": {"risk_level": "low", "action_type": "read_only", "mutates_state": False, "external_effect": False, "requires_approval": False},
     "goal-model": {"risk_level": "medium", "action_type": "goal_model", "mutates_state": False, "external_effect": False, "requires_approval": False},
+    "goal-model-write": {"risk_level": "high", "action_type": "goal_model_write", "mutates_state": True, "external_effect": False, "requires_approval": True},
     "record-decision": {"risk_level": "high", "action_type": "approval_record", "mutates_state": True, "external_effect": False, "requires_approval": True},
     "run-pipeline": {"risk_level": "high", "action_type": "pipeline_execution", "mutates_state": True, "external_effect": True, "requires_approval": True},
     "goal-create": {"risk_level": "high", "action_type": "goal_mutation", "mutates_state": True, "external_effect": False, "requires_approval": True},
@@ -281,6 +304,19 @@ TOOL_ACTION_REGISTRY: dict[str, dict[str, Any]] = {
     "run_script": {"risk_level": "high", "action_type": "script_execution", "mutates_state": True, "external_effect": True, "requires_approval": True},
     "send_slack": {"risk_level": "high", "action_type": "slack_broadcast", "mutates_state": False, "external_effect": True, "requires_approval": True},
     "render_pdf": {"risk_level": "high", "action_type": "artifact_delivery", "mutates_state": True, "external_effect": True, "requires_approval": True},
+}
+
+# Generic model tool use is read-only. State changes and outbound delivery must
+# use typed structured commands with their dedicated authorization gates.
+READ_ONLY_TOOL_NAMES = {
+    "read_file",
+    "list_files",
+    "fetch_url",
+    "web_search",
+    "browser_research",
+    "coupang_product_search",
+    "gmail_search",
+    "gmail_get",
 }
 
 HIGH_RISK_CONTEXT_TERMS = [
@@ -1191,11 +1227,11 @@ def _preflight_action(
 
     if spec.get("requires_approval") and not _authorized_for_high_risk(requester_user_id):
         return (
-            "❌ 이 작업은 상태 변경 또는 외부 효과가 있어서 여기서 바로 실행할 수는 없습니다.\n"
+            "❌ 이 작업은 상태 변경 또는 외부 효과가 있어 CEO 승인 surface에서만 실행할 수 있습니다.\n"
             "대신 바로 할 수 있는 다음 단계는 있습니다:\n"
             "- 현재 상태와 영향 범위를 읽어서 요약\n"
-            "- 실행 전 필요한 gate/approval checklist 정리\n"
-            "- 대표 승인용 decision card 또는 승인 요청 문안 준비"
+            "- 실행 전 필요한 gate/approval 체크리스트(checklist) 정리\n"
+            "- 대표 승인용 decision card 또는 승인 문안 준비"
         )
 
     return None
@@ -1208,8 +1244,11 @@ def _preflight_bridge_command(
 ) -> str | None:
     if not bridge_args:
         return "❌ bridge command가 비어 있어 실행하지 않습니다."
+    action_name = bridge_args[0]
+    if action_name == "goal-model" and "--equation" in bridge_args:
+        action_name = "goal-model-write"
     return _preflight_action(
-        action_name=bridge_args[0],
+        action_name=action_name,
         registry=ACTION_REGISTRY,
         requester_user_id=requester_user_id,
         risk_scan=risk_scan,
@@ -1952,42 +1991,13 @@ def _maybe_inject_trading_context(user_message: str) -> str:
     return "\n\n[실시간 트레이딩 정보 컨텍스트 (실제 데이터)]\n" + "\n\n".join(context_parts)
 
 
-def _is_mutating_intent(intent: str) -> bool:
-    return intent in {
-        "record-decision",
-        "run-pipeline",
-        "minutes-upload",
-        "minutes-reupload",
-        "ibkr-etf-approve",
-        "goal-create",
-        "goal-model",
-        "goal-snapshot",
-        "goal-substack-snapshot",
-        "goal-provider-snapshot",
-    }
-
-
 def _authorize_structured_command(intent: str, requester_user_id: str | None) -> str | None:
-    if not _is_mutating_intent(intent):
-        return None
-
-    expected_user_id = os.environ.get("SLACK_CEO_USER_ID", "").strip()
-    if not expected_user_id:
-        return (
-            "❌ 서버에 `SLACK_CEO_USER_ID`가 설정되지 않아 변경 작업을 잠가 두었습니다.\n"
-            "지금은 읽기/요약/초안 준비까지만 처리할 수 있습니다."
-        )
-    if not requester_user_id:
-        return (
-            "❌ 호출자 식별값이 없어서 변경 작업을 실행할 수 없습니다.\n"
-            "CEO Slack 계정에서 다시 실행하거나, 제가 승인 전 점검용 요약을 먼저 준비하겠습니다."
-        )
-    if requester_user_id != expected_user_id:
-        return (
-            "❌ 이 명령은 CEO 승인 surface에서만 바로 실행할 수 있습니다.\n"
-            "대신 제가 실행 전 체크리스트, 영향 범위, 승인 문안을 바로 준비할 수 있습니다."
-        )
-    return None
+    return _preflight_action(
+        action_name=intent,
+        registry=ACTION_REGISTRY,
+        requester_user_id=requester_user_id,
+        risk_scan={"risk_level": "low", "flags": []},
+    )
 
 TOOLS = [
     {
@@ -2984,18 +2994,20 @@ def _register_ar(title: str, owner: str = "Jarvis", category: str = "LLM_EXECUTA
         logger.warning(f"[ar-register] 등록 실패: {exc}")
 
 
-def _slack_post(channel_id: str, text: str) -> None:
+def _slack_post(channel_id: str, decision: DeliveryDecision) -> None:
     """SLACK_BOT_TOKEN으로 채널에 메시지 발송."""
     token = os.getenv("SLACK_BOT_TOKEN", "")
     if not token or not channel_id:
         return
     try:
-        import httpx as _httpx
-        _httpx.post(
-            "https://slack.com/api/chat.postMessage",
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json={"channel": channel_id, "text": text[:3900]},
-            timeout=15.0,
+        post_slack_token(
+            token,
+            OutboundEnvelope(
+                channel=channel_id,
+                audience="requester_dm",
+                decision=decision,
+                idempotency_key=f"orchestrate:{channel_id}:{time.time_ns()}",
+            ),
         )
     except Exception as exc:
         logger.error(f"[slack_post] 발송 실패: {exc}")
@@ -3015,16 +3027,21 @@ def _orchestrate_and_dm(order: str, dm_channel_id: str | None) -> None:
             f"{decision}"
         )
         if dm_channel_id:
-            _slack_post(dm_channel_id, summary)
+            contract = infer_answer_contract(f"분석 검토: {order}")
+            delivery = verify_delivery(contract, (), non_factual_text=summary)
+            _slack_post(dm_channel_id, delivery)
     except Exception as exc:
         logger.error(f"[orchestrate_dm] 오류: {exc}")
         # 실패 시 대표님께 에러 알림 (묵묵부답 방지)
         if dm_channel_id:
-            _slack_post(dm_channel_id,
-                f"⚠️ *[비서실장 오류]* 전사 회의 실행 중 오류가 발생했습니다.\n"
-                f"- 오류: `{type(exc).__name__}: {exc}`\n"
-                f"- 지시: {order[:100]}\n"
-                f"- 조치: 로그 확인 후 재시도하겠습니다."
+            _slack_post(
+                dm_channel_id,
+                DeliveryDecision(
+                    SCHEMA_VERSION,
+                    "abstain",
+                    "전사 회의 처리 중 내부 오류가 발생했습니다. 로그 확인 후 재시도가 필요합니다.",
+                    reasons=("orchestration_error",),
+                ),
             )
 
 
@@ -3054,61 +3071,6 @@ _MARKUP_OR_CODE_REQUEST_RE = re.compile(
 )
 _CONCLUSION_PREFIX_RE = re.compile(r"^(?:[#>*\-\d. ]*)?(?:결론|핵심 판단|핵심)\s*[:：]", re.IGNORECASE)
 _NATURAL_CONCLUSION_RE = re.compile(r"^(?:오늘|현재|지금|바로|처리|확인|가능|불가|없(?:습니다|음)|있(?:습니다|음))")
-
-
-@dataclass(frozen=True)
-class RequestContract:
-    kind: str
-    requires_primary_evidence: bool
-
-
-@dataclass(frozen=True)
-class EvidenceSet:
-    source: str
-    coverage: str
-
-
-@dataclass(frozen=True)
-class VerificationResult:
-    verdict: str
-    reason: str
-
-
-def _infer_request_contract(user_message: str) -> RequestContract:
-    gmail = _gmail_request_contract(user_message)
-    if gmail == "brief":
-        return RequestContract("summary", True)
-    if gmail == "lookup":
-        return RequestContract("lookup", False)
-    if re.search(r"추천|권고|어떻게 해야|전략", user_message, re.IGNORECASE):
-        return RequestContract("recommendation", False)
-    if re.search(r"분석|브리핑|요약|검토|판단|보고", user_message, re.IGNORECASE):
-        return RequestContract("analysis", False)
-    return RequestContract("direct", False)
-
-
-def _evidence_for_route(route: str, response_text: str) -> EvidenceSet:
-    if route == "deterministic_gmail_brief":
-        return EvidenceSet("gmail_message_bodies", "partial" if "일부 메일 본문" in response_text else "complete")
-    if route == "deterministic_gmail_lookup":
-        return EvidenceSet("gmail_metadata", "complete")
-    if route.startswith("deterministic_") or "bridge" in route:
-        return EvidenceSet("runtime_record", "complete")
-    if route == "premium_tool_agent":
-        return EvidenceSet("tool_result", "declared")
-    return EvidenceSet("model_reasoning", "declared")
-
-
-def _verify_delivery_contract(contract: RequestContract, evidence: EvidenceSet, route: str, user_message: str = "") -> VerificationResult:
-    if contract.kind == "summary" and evidence.source != "gmail_message_bodies":
-        return VerificationResult("block", "summary requires primary body evidence")
-    if contract.requires_primary_evidence and evidence.coverage != "complete":
-        return VerificationResult("partial", "primary evidence coverage is incomplete")
-    if contract.kind in {"analysis", "recommendation"} and evidence.source == "model_reasoning":
-        if _is_recency_sensitive_query(user_message):
-            return VerificationResult("block", "current external claim requires verified evidence")
-        return VerificationResult("partial", "model-only analysis must be labeled as an unverified hypothesis")
-    return VerificationResult("pass", "contract evidence requirement satisfied")
 
 
 def _sanitize_response(text: str) -> str:
@@ -3196,6 +3158,147 @@ def _finalize_response(text: str, route: str, user_message: str = "") -> str:
     return _trim_response_text(_apply_response_quality_guard(sanitized, user_message, route), limit)
 
 
+def _adapter_evidence(
+    *,
+    source_id: str,
+    subjects: tuple[str, ...],
+    dimensions: tuple[str, ...],
+    text: str,
+    authority: str = "authoritative_runtime",
+    coverage: str = "complete",
+    privacy_class: str = "internal",
+    partial: bool = False,
+) -> tuple[EvidenceItem, ...]:
+    """Evidence adapter boundary. Callers declare actual source capability."""
+    return (
+        evidence_from_text(
+            source_id=source_id,
+            subject_ids=subjects,
+            dimensions=dimensions,
+            text=text,
+            authority=authority,  # type: ignore[arg-type]
+            coverage=coverage,  # type: ignore[arg-type]
+            privacy_class=privacy_class,  # type: ignore[arg-type]
+            observed_at=_RuntimeDateTime.fromtimestamp(time.time(), tz=timezone.utc),
+            fetch_status="partial" if partial else "ok",
+        ),
+    )
+
+
+_BRIDGE_EVIDENCE_CAPABILITIES: dict[str, tuple[tuple[str, ...], tuple[str, ...], str]] = {
+    "status": (("harness", "harness-project", "platform", "파이프라인", "운영"), ("state",), "authoritative_runtime"),
+    "ar-list": (("ar", "action", "액션", "조치"), ("content", "state"), "authoritative_runtime"),
+    "minutes-status": (("회의록", "minutes", "notion"), ("state",), "authoritative_runtime"),
+    "minutes-latest": (("회의", "회의록", "minutes"), ("content", "state"), "primary"),
+    "goal-status": (("goal", "목표"), ("state",), "authoritative_runtime"),
+    "goal-diagnose": (("goal", "목표"), ("evidence", "analysis"), "authoritative_runtime"),
+    "goal-model": (("goal", "목표", "모델"), ("content", "state"), "authoritative_runtime"),
+    "decision-card": (("decision", "결정", "카드"), ("content",), "primary"),
+    "ibkr-etf-check": (("ibkr", "etf"), ("state",), "authoritative_runtime"),
+}
+
+
+def _bridge_evidence(bridge_args: list[str], text: str) -> tuple[EvidenceItem, ...]:
+    if not bridge_args:
+        return ()
+    capability = _BRIDGE_EVIDENCE_CAPABILITIES.get(bridge_args[0])
+    if not capability:
+        return ()
+    subjects, dimensions, authority = capability
+    return _adapter_evidence(
+        source_id=f"bridge:{bridge_args[0]}",
+        subjects=subjects,
+        dimensions=dimensions,
+        text=text,
+        authority=authority,
+    )
+
+
+def _bridge_contract(message: str, bridge_args: list[str], *, authorized: bool) -> AnswerContract:
+    contract = infer_answer_contract(message, authorized=authorized)
+    capability = _BRIDGE_EVIDENCE_CAPABILITIES.get(bridge_args[0]) if bridge_args else None
+    if capability and (not contract.subject_ids or contract.ambiguities):
+        subjects, _, _ = capability
+        contract = replace(contract, subject_ids=subjects, ambiguities=())
+    return contract
+
+
+def _log_quality_shadow(
+    *,
+    contract: AnswerContract,
+    evidence_items: tuple[EvidenceItem, ...],
+    decision: DeliveryDecision,
+    route: str,
+    latency_ms: int,
+) -> None:
+    """Privacy-safe metadata only. Never stores request, evidence, claims, or output text."""
+    if not OPENCLAW_QUALITY_SHADOW_ENABLED:
+        return
+    day = _RuntimeDateTime.now(timezone.utc).date().isoformat()
+    subject_material = "|".join(sorted(contract.subject_ids))
+    subject_bucket = hashlib.sha256(f"{day}|openclaw-shadow|{subject_material}".encode()).hexdigest()[:16]
+    record = {
+        "ts": _RuntimeDateTime.now(timezone.utc).isoformat(timespec="seconds"),
+        "schema_version": SCHEMA_VERSION,
+        "contract_schema": contract.schema_version,
+        "task_type": contract.task_type,
+        "subject_bucket": subject_bucket,
+        "route_class": route.split(":", 1)[0],
+        "adapter_ids": sorted({item.source_type for item in evidence_items}),
+        "authority_buckets": sorted({item.authority for item in evidence_items}),
+        "coverage_buckets": sorted({item.coverage for item in evidence_items}),
+        "decision": decision.verdict,
+        "reason_codes": list(decision.reasons),
+        "evidence_count": len(evidence_items),
+        "claim_count": len(decision.eligible_claim_ids),
+        "missing_dimension_count": len(decision.missing_dimensions),
+        "latency_ms": latency_ms,
+    }
+    try:
+        QUALITY_SHADOW_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with QUALITY_SHADOW_PATH.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        logger.warning("[quality-shadow] append failed: %s", exc)
+
+
+@dataclass(frozen=True)
+class ToolAgentResult:
+    text: str
+    evidence_items: tuple[EvidenceItem, ...]
+
+
+_TOOL_EVIDENCE_CAPABILITIES: dict[str, tuple[tuple[str, ...], str, str]] = {
+    "read_file": (("content", "evidence"), "primary", "internal"),
+    "list_files": (("content", "state"), "authoritative_runtime", "internal"),
+    "fetch_url": (("content", "evidence"), "primary", "public"),
+    "web_search": (("content", "evidence"), "secondary", "public"),
+    "browser_research": (("content", "evidence"), "secondary", "public"),
+    "coupang_product_search": (("content", "state"), "primary", "public"),
+    "gmail_search": (("content", "state"), "primary", "private"),
+    "gmail_get": (("content",), "primary", "private"),
+}
+
+
+def _tool_result_evidence(tool_name: str, tool_input: dict[str, Any], result: str) -> tuple[EvidenceItem, ...]:
+    capability = _TOOL_EVIDENCE_CAPABILITIES.get(tool_name)
+    if not capability or result.lstrip().startswith("❌"):
+        return ()
+    dimensions, authority, privacy_class = capability
+    source_descriptor = " ".join(str(value) for value in tool_input.values() if isinstance(value, (str, int, float)))
+    subjects = tuple(dict.fromkeys(extract_subject_ids(source_descriptor) + extract_subject_ids(result[:1200])))
+    if tool_name.startswith("gmail_"):
+        subjects = tuple(dict.fromkeys(("gmail", "메일", "이메일") + subjects))
+    return _adapter_evidence(
+        source_id=f"tool:{tool_name}",
+        subjects=subjects,
+        dimensions=dimensions,
+        text=result,
+        authority=authority,
+        privacy_class=privacy_class,
+    )
+
+
 
 # ── 메인 라우터 ──────────────────────────────────────────────────────────────
 
@@ -3212,11 +3315,14 @@ def run(
     CEO 메시지를 라우팅하여 최적 LLM으로 처리.
     """
     if _rate_limit_check(requester_user_id):
-        return _rate_limit_block_message()
+        return VerifiedText(
+            DeliveryDecision(SCHEMA_VERSION, "abstain", _rate_limit_block_message(), reasons=("rate_limited",))
+        )
 
     effective_session_id = session_id or (
         f"{requester_user_id}:{dm_channel_id}" if requester_user_id and dm_channel_id else requester_user_id
     )
+    request_started = time.monotonic()
 
     # === 대화 히스토리 강제 초기화 (Reset Command Handler) ===
     msg_strip = user_message.strip().lower()
@@ -3225,7 +3331,13 @@ def run(
             if effective_session_id in _CONVERSATION_HISTORY:
                 _CONVERSATION_HISTORY[effective_session_id].clear()
         logger.info(f"[session-reset] 세션 ID {effective_session_id} 대화 기억 초기화 완료")
-        return "🧹 대표님, 이 세션의 이전 대화 기억(Context)을 완벽히 초기화했습니다. 지금부터 깨끗한 상태에서 새 지시를 내리실 수 있습니다!"
+        return VerifiedText(
+            DeliveryDecision(
+                SCHEMA_VERSION,
+                "deliver",
+                "이 세션의 이전 대화 기록을 초기화했습니다. 다음 메시지부터 새 맥락으로 처리합니다.",
+            )
+        )
 
     history = _get_conversation_history(effective_session_id)
     risk_scan = _scan_rolling_risk(user_message, history)
@@ -3238,24 +3350,49 @@ def run(
     )
     requester_role = _infer_requester_role(requester_user_id, dm_channel_id)
 
-    def _finish(route: str, response_text: str, *, record: bool = True) -> str:
-        contract = _infer_request_contract(user_message)
-        evidence = _evidence_for_route(route, response_text)
-        verification = _verify_delivery_contract(contract, evidence, route, user_message)
-        if verification.verdict == "block":
-            response_text = (
-                "결론: 요청한 요약을 근거 없이 전달하지 않습니다.\n"
-                "다음 조치: 원문 근거를 확인할 수 있는 경로로 다시 조회하겠습니다."
+    def _finish(
+        route: str,
+        response_text: str,
+        *,
+        evidence_items: tuple[EvidenceItem, ...] = (),
+        contract_override: AnswerContract | None = None,
+        decision_override: DeliveryDecision | None = None,
+        record: bool = True,
+    ) -> str:
+        contract = contract_override or infer_answer_contract(
+            user_message,
+            authorized=_authorized_for_high_risk(requester_user_id),
+        )
+        prepared_text = response_text if decision_override else _finalize_response(response_text, route, user_message)
+        decision = decision_override or verify_delivery(
+            contract, evidence_items, non_factual_text=prepared_text
+        )
+        _log_quality_shadow(
+            contract=contract,
+            evidence_items=evidence_items,
+            decision=decision,
+            route=route,
+            latency_ms=max(0, int((time.monotonic() - request_started) * 1000)),
+        )
+        if not OPENCLAW_VERIFIED_DELIVERY_ENABLED:
+            decision = DeliveryDecision(
+                SCHEMA_VERSION,
+                "abstain",
+                "검증된 응답은 shadow 검증 완료 전까지 전달하지 않습니다.",
+                reasons=("verified_delivery_shadow_only",),
             )
-        elif verification.verdict == "partial":
-            response_text = "판단 상태: 가설 — 외부 근거가 아직 검증되지 않았습니다.\n" + response_text
+        response_text = decision.rendered_text
         _log_route_audit(
             session_id=effective_session_id, requester_user_id=requester_user_id,
             user_message=user_message, route=route, risk_scan=risk_scan,
-            kind="contract_verification", blocked=verification.verdict == "block",
-            reason=f"{contract.kind}|{evidence.source}|{evidence.coverage}|{verification.verdict}:{verification.reason}",
+            kind="contract_verification", blocked=decision.verdict == "abstain",
+            reason=(
+                f"schema={contract.schema_version}|task={contract.task_type}|"
+                f"subjects={len(contract.subject_ids)}|evidence={len(evidence_items)}|"
+                f"decision={decision.verdict}|reasons={','.join(decision.reasons)}"
+            ),
         )
-        final_text = _finalize_response(response_text, route, user_message)
+        final_text = response_text
         _log_route_audit(
             session_id=effective_session_id,
             requester_user_id=requester_user_id,
@@ -3267,7 +3404,7 @@ def run(
         )
         if record:
             _record_conversation_turn(effective_session_id, user_message, final_text)
-        return final_text
+        return VerifiedText(decision)
 
     arithmetic_response = _try_arithmetic_response(user_message, history)
     if arithmetic_response is not None:
@@ -3278,7 +3415,22 @@ def run(
             route="deterministic_arithmetic",
             risk_scan=risk_scan,
         )
-        return _finish("deterministic_arithmetic", arithmetic_response)
+        arithmetic_contract = replace(
+            infer_answer_contract(user_message),
+            task_type="transform",
+            subject_ids=("calculation",),
+            requested_dimensions=(),
+            time_kind="timeless",
+            minimum_authority="none",
+            freshness_seconds=None,
+            required_coverage="best_effort",
+            ambiguities=(),
+        )
+        return _finish(
+            "deterministic_arithmetic",
+            arithmetic_response,
+            contract_override=arithmetic_contract,
+        )
 
     newsletter_status_response = _try_newsletter_draft_status_response(user_message)
     if newsletter_status_response is not None:
@@ -3290,7 +3442,16 @@ def run(
             risk_scan=risk_scan,
             action_name="newsletter_draft_status",
         )
-        return _finish("deterministic_newsletter_status", newsletter_status_response)
+        return _finish(
+            "deterministic_newsletter_status",
+            newsletter_status_response,
+            evidence_items=_adapter_evidence(
+                source_id="newsletter_draft_registry",
+                subjects=("뉴스레터", "초안", "newsletter", "draft"),
+                dimensions=("state", "content"),
+                text=newsletter_status_response,
+            ),
+        )
 
     status_brief_response = _try_status_brief_response(user_message)
     if status_brief_response is not None:
@@ -3302,7 +3463,21 @@ def run(
             risk_scan=risk_scan,
             action_name="status_brief",
         )
-        return _finish("deterministic_status_brief", status_brief_response)
+        return _finish(
+            "deterministic_status_brief",
+            status_brief_response,
+            evidence_items=_adapter_evidence(
+                source_id="harness_status_snapshot",
+                subjects=("harness", "harness-project", "platform", "파이프라인", "운영", "리스크", "risk"),
+                dimensions=("state", "evidence", "risk", "next_action"),
+                text=status_brief_response,
+            ),
+            contract_override=_bridge_contract(
+                user_message,
+                ["status"],
+                authorized=_authorized_for_high_risk(requester_user_id),
+            ),
+        )
 
     gmail_response = _try_gmail_summary_response(user_message)
     if gmail_response is not None:
@@ -3318,7 +3493,34 @@ def run(
         )
         # Gmail body excerpts are private evidence. Route metrics are retained,
         # but the response body is not copied into session persistence.
-        return _finish(gmail_route, gmail_response_text, record=False)
+        gmail_partial = "일부 메일 본문" in gmail_response_text
+        gmail_failed = "Gmail 조회에 실패" in gmail_response_text or "메일을 조회하지 못했습니다" in gmail_response_text
+        if gmail_failed or gmail_partial:
+            verdict = "abstain" if gmail_failed else "partial"
+            reason = "gmail_fetch_failed" if gmail_failed else "gmail_body_coverage_partial"
+            return _finish(
+                gmail_route,
+                gmail_response_text,
+                decision_override=DeliveryDecision(
+                    SCHEMA_VERSION, verdict, gmail_response_text, reasons=(reason,)
+                ),
+                record=False,
+            )
+        return _finish(
+            gmail_route,
+            gmail_response_text,
+            evidence_items=_adapter_evidence(
+                source_id="gmail_message_bodies" if gmail_contract == "brief" else "gmail_metadata",
+                subjects=("gmail", "메일", "이메일"),
+                dimensions=("content", "state"),
+                text=gmail_response_text,
+                authority="primary",
+                coverage="partial" if gmail_partial else "complete",
+                privacy_class="private",
+                partial=gmail_partial,
+            ),
+            record=False,
+        )
 
     current_time_response = _try_current_time_response(user_message)
     if current_time_response is not None:
@@ -3330,7 +3532,16 @@ def run(
             risk_scan=risk_scan,
             action_name="current_time",
         )
-        return _finish("deterministic_current_time", current_time_response)
+        return _finish(
+            "deterministic_current_time",
+            current_time_response,
+            evidence_items=_adapter_evidence(
+                source_id="system_clock",
+                subjects=("시각", "시간", "time", "clock"),
+                dimensions=("state",),
+                text=current_time_response,
+            ),
+        )
 
     greeting_response = _try_greeting_response(user_message)
     if greeting_response is not None:
@@ -3358,8 +3569,15 @@ def run(
             risk_scan=risk_scan,
         )
         raw = _run_bridge_command(["minutes-latest", "--format", "text"])
-        response = _format_with_haiku(user_message, raw) if "error" not in raw.lower() else raw
-        return _finish("bypass_minutes_latest", response)
+        response = raw
+        return _finish(
+            "bypass_minutes_latest",
+            response,
+            evidence_items=_bridge_evidence(["minutes-latest"], raw),
+            contract_override=_bridge_contract(
+                user_message, ["minutes-latest"], authorized=_authorized_for_high_risk(requester_user_id)
+            ),
+        )
 
     # 2. 단순 AR 목록 요청 감지 시 Haiku API 우회
     if "ar" in msg_clean and ("목록" in msg_clean or "리스트" in msg_clean or "list" in msg_clean or "현황" in msg_clean or "조회" in msg_clean):
@@ -3374,8 +3592,15 @@ def run(
         include_all = "전체" in msg_clean or "모든" in msg_clean or "all" in msg_clean
         args = ["ar-list", "--format", "text"] + (["--all"] if include_all else [])
         raw = _run_bridge_command(args)
-        response = _format_with_haiku(user_message, raw)
-        return _finish("bypass_ar_list", response)
+        response = raw
+        return _finish(
+            "bypass_ar_list",
+            response,
+            evidence_items=_bridge_evidence(args, raw),
+            contract_override=_bridge_contract(
+                user_message, args, authorized=_authorized_for_high_risk(requester_user_id)
+            ),
+        )
 
 
     # Orchestration shortcut — multi-persona 전사 협의 요청을 orchestrate()로 위임.
@@ -3429,7 +3654,14 @@ def run(
                 blocked=True,
                 reason=auth_error,
             )
-            return _finish("structured_command_auth_block", auth_error, record=False)
+            return _finish(
+                "structured_command_auth_block",
+                auth_error,
+                decision_override=DeliveryDecision(
+                    SCHEMA_VERSION, "abstain", auth_error, reasons=("authorization_required",)
+                ),
+                record=False,
+            )
         preflight_error = _preflight_bridge_command(
             parsed_command["bridge_args"],
             requester_user_id,
@@ -3447,7 +3679,14 @@ def run(
                 blocked=True,
                 reason=preflight_error,
             )
-            return _finish("structured_command_preflight_block", preflight_error, record=False)
+            return _finish(
+                "structured_command_preflight_block",
+                preflight_error,
+                decision_override=DeliveryDecision(
+                    SCHEMA_VERSION, "abstain", preflight_error, reasons=("action_preflight_block",)
+                ),
+                record=False,
+            )
         logger.info(f"[router] 구조화 명령 감지 → bridge {parsed_command['intent']}")
         _log_route_audit(
             session_id=effective_session_id,
@@ -3459,7 +3698,14 @@ def run(
         )
         bridge_args = _augment_bridge_args(parsed_command["intent"], parsed_command["bridge_args"], requester_user_id)
         response = _run_bridge_command(bridge_args)
-        return _finish("structured_bridge", response)
+        return _finish(
+            "structured_bridge",
+            response,
+            evidence_items=_bridge_evidence(bridge_args, response),
+            contract_override=_bridge_contract(
+                user_message, bridge_args, authorized=_authorized_for_high_risk(requester_user_id)
+            ),
+        )
 
     # Rules are not a complete classifier. They only allow deterministic safe
     # actions or force escalation/blocking. Anything risk-bearing must not be
@@ -3488,7 +3734,14 @@ def run(
                         blocked=True,
                         reason=preflight_error,
                     )
-                    return _finish("intent_bridge_preflight_block", preflight_error, record=False)
+                    return _finish(
+                        "intent_bridge_preflight_block",
+                        preflight_error,
+                        decision_override=DeliveryDecision(
+                            SCHEMA_VERSION, "abstain", preflight_error, reasons=("action_preflight_block",)
+                        ),
+                        record=False,
+                    )
                 logger.info(f"[router] intent-classifier → bridge {intent['tool']}")
                 _log_route_audit(
                     session_id=effective_session_id,
@@ -3500,8 +3753,15 @@ def run(
                     model=OPENCLAW_INTENT_MODEL,
                 )
                 raw = _run_bridge_command(bridge_args)
-                response = _format_with_haiku(user_message, raw)
-                return _finish("intent_bridge", response)
+                response = raw
+                return _finish(
+                    "intent_bridge",
+                    response,
+                    evidence_items=_bridge_evidence(bridge_args, raw),
+                    contract_override=_bridge_contract(
+                        user_message, bridge_args, authorized=_authorized_for_high_risk(requester_user_id)
+                    ),
+                )
 
     if "contextual_high_risk_reference" in risk_scan.get("flags", []):
         response = _contextual_risk_block_message(risk_scan)
@@ -3514,9 +3774,22 @@ def run(
             blocked=True,
             reason=response,
         )
-        return _finish("contextual_risk_block", response, record=False)
+        return _finish(
+            "contextual_risk_block",
+            response,
+            decision_override=DeliveryDecision(
+                SCHEMA_VERSION, "abstain", response, reasons=("contextual_high_risk_reference",)
+            ),
+            record=False,
+        )
 
     if not _needs_tools(user_message):
+        pending_contract = infer_answer_contract(
+            user_message,
+            authorized=_authorized_for_high_risk(requester_user_id),
+        )
+        if pending_contract.requires_evidence:
+            return _finish("evidence_unavailable", "", record=False)
         route_label, model_label = _select_chat_route(
             user_message=user_message,
             history=history,
@@ -3571,7 +3844,12 @@ def run(
             blocked=True,
             reason=response,
         )
-        return _finish("cost_guard_block", response, record=False)
+        return _finish(
+            "cost_guard_block",
+            response,
+            decision_override=DeliveryDecision(SCHEMA_VERSION, "abstain", response, reasons=("cost_guard_block",)),
+            record=False,
+        )
     if "contextual_high_risk_reference" in risk_scan.get("flags", []):
         response = _contextual_risk_block_message(risk_scan)
         _log_route_audit(
@@ -3583,7 +3861,14 @@ def run(
             blocked=True,
             reason=response,
         )
-        return _finish("tool_contextual_risk_block", response, record=False)
+        return _finish(
+            "tool_contextual_risk_block",
+            response,
+            decision_override=DeliveryDecision(
+                SCHEMA_VERSION, "abstain", response, reasons=("contextual_high_risk_reference",)
+            ),
+            record=False,
+        )
     _log_route_audit(
         session_id=effective_session_id,
         requester_user_id=requester_user_id,
@@ -3592,14 +3877,20 @@ def run(
         risk_scan=risk_scan,
         model=OPENCLAW_TOOL_MODEL,
     )
-    response = _run_tool_agent(
+    tool_result = _run_tool_agent(
         user_message,
         dm_channel_id,
         history=history,
         requester_user_id=requester_user_id,
         risk_scan=risk_scan,
     )
-    return _finish("premium_tool_agent", response)
+    if isinstance(tool_result, ToolAgentResult):
+        return _finish(
+            "premium_tool_agent",
+            tool_result.text,
+            evidence_items=tool_result.evidence_items,
+        )
+    return _finish("premium_tool_agent", tool_result)
 
 
 def _run_tool_agent(
@@ -3608,7 +3899,7 @@ def _run_tool_agent(
     history: list[dict[str, str]] | None = None,
     requester_user_id: str | None = None,
     risk_scan: dict[str, Any] | None = None,
-) -> str:
+) -> str | ToolAgentResult:
     """Tier 2: Claude Sonnet 4.5 + Tool Calling"""
     if _cost_limit_reached():
         return _budget_block_message()
@@ -3633,13 +3924,15 @@ def _run_tool_agent(
     total_input_tokens = 0
     total_output_tokens = 0
     tool_calls_log = []
+    collected_evidence: list[EvidenceItem] = []
+    read_only_tools = [tool for tool in TOOLS if tool.get("name") in READ_ONLY_TOOL_NAMES]
 
     for turn in range(10):  # 최대 10 turn 안전장치
         response = client.messages.create(
             model=OPENCLAW_TOOL_MODEL,
             max_tokens=OPENCLAW_TOOL_MAX_TOKENS,
             system=system,
-            tools=TOOLS,
+            tools=read_only_tools,
             messages=messages,
         )
 
@@ -3657,8 +3950,8 @@ def _run_tool_agent(
             )
             for block in response.content:
                 if hasattr(block, "text"):
-                    return _sanitize_response(block.text)
-            return "✅ 완료 (응답 없음)"
+                    return ToolAgentResult(_sanitize_response(block.text), tuple(collected_evidence))
+            return ToolAgentResult("✅ 완료 (응답 없음)", tuple(collected_evidence))
 
         if response.stop_reason == "tool_use":
             tool_results = []
@@ -3686,6 +3979,7 @@ def _run_tool_agent(
                         )
                         return preflight_error
                     result = TOOL_EXECUTORS.get(block.name, lambda _: "❌ 알 수 없는 tool")(block.input)
+                    collected_evidence.extend(_tool_result_evidence(block.name, block.input, str(result)))
                     logger.info(f"[agent] tool_result={str(result)[:200]}")
                     tool_results.append({
                         "type": "tool_result",
@@ -3698,4 +3992,4 @@ def _run_tool_agent(
 
         break
 
-    return "❌ 에이전트 루프가 예상치 못하게 종료되었습니다."
+    return ToolAgentResult("❌ 에이전트 루프가 예상치 못하게 종료되었습니다.", tuple(collected_evidence))

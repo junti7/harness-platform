@@ -11,6 +11,7 @@ import os
 import sys
 import logging
 import threading
+from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FutureTimeoutError
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -30,6 +31,8 @@ from adapters.content.openclaw_agent import run as agent_run, OLLAMA_CHAT_MODEL,
 from adapters.content.runtime_host import should_use_remote_ollama
 from adapters.content.slack_runtime_guard import assert_slack_runtime_allowed
 from adapters.content.slack_format import to_slack_mrkdwn
+from adapters.content.outbound_delivery import OutboundEnvelope, post_slack, prepare_outbound
+from core.openclaw_response_quality import DeliveryDecision, SCHEMA_VERSION, VerifiedText
 from core.reader_feedback import classify_feedback, upsert_reader_profile, record_feedback
 from adapters.content.vp_review_card import parse_vp_response
 from agents.registry import find_mentioned_personas, get_active_personas
@@ -99,6 +102,28 @@ if not SLACK_APP_TOKEN:
 app = App(token=SLACK_BOT_TOKEN)
 
 
+def _outbound_text(value: str | VerifiedText, *, system_reason: str | None = None) -> str:
+    if isinstance(value, VerifiedText):
+        decision = replace(value.decision, rendered_text=to_slack_mrkdwn(value.decision.rendered_text))
+    elif system_reason:
+        decision = DeliveryDecision(SCHEMA_VERSION, "deliver", str(value), reasons=(system_reason,))
+    else:
+        decision = DeliveryDecision(
+            SCHEMA_VERSION,
+            "abstain",
+            "검증된 응답 envelope가 없어 전달을 중단했습니다.",
+            reasons=("unverified_sync_response",),
+        )
+    return prepare_outbound(
+        OutboundEnvelope(
+            channel="listener_callback",
+            audience="internal_error" if "error" in (system_reason or "") else "requester_dm",
+            decision=decision,
+            idempotency_key=system_reason,
+        )
+    )
+
+
 def _should_ignore_dm_event(event: dict) -> bool:
     """Reject bot traffic, except the CEO's explicitly authorized user-token E2E probe.
 
@@ -128,10 +153,10 @@ def handle_mention(event, say, logger):
     logger.info(f"[app_mention] user={user} channel={channel} text={text!r}")
 
     if CEO_SLACK_USER_ID and user == CEO_SLACK_USER_ID:
-        say(text=":thinking_face: 처리 중...", thread_ts=event.get("ts"))
+        say(text=_outbound_text(":thinking_face: 처리 중...", system_reason="mention_progress"), thread_ts=event.get("ts"))
         session_id = f"slack:{channel}:{user}"
         response = agent_run(text, dm_channel_id=channel, requester_user_id=user, session_id=session_id)
-        say(text=to_slack_mrkdwn(response), thread_ts=event.get("ts"))
+        say(text=_outbound_text(response), thread_ts=event.get("ts"))
     else:
         _handle_reader_feedback(user, text, source_channel=f"slack_mention:{channel}", say=say,
                                 thread_ts=event.get("ts"), logger=logger)
@@ -173,7 +198,21 @@ def handle_dm(event, say, logger):
 
         def _post_response(response_text: str) -> None:
             try:
-                app.client.chat_postMessage(channel=channel, text=to_slack_mrkdwn(response_text))
+                decision = response_text.decision if isinstance(response_text, VerifiedText) else DeliveryDecision(
+                    SCHEMA_VERSION,
+                    "abstain",
+                    "검증된 응답 envelope가 없어 결과 전달을 중단했습니다.",
+                    reasons=("unverified_async_response",),
+                )
+                post_slack(
+                    app.client,
+                    OutboundEnvelope(
+                        channel=channel,
+                        audience="requester_dm",
+                        decision=replace(decision, rendered_text=to_slack_mrkdwn(decision.rendered_text)),
+                        idempotency_key=f"dm:{channel}:{event.get('ts', '')}",
+                    ),
+                )
                 logger.info(f"[DM] Slack 응답 전송 성공 channel={channel}")
             except Exception as post_exc:
                 logger.error(f"[DM] Slack 응답 전송 실패: {post_exc}")
@@ -210,15 +249,15 @@ def handle_dm(event, say, logger):
         except Exception as exc:
             logger.exception("[DM] OpenClaw agent 처리 실패")
             say(
-                text=to_slack_mrkdwn(
+                text=_outbound_text(to_slack_mrkdwn(
                     ":warning: OpenClaw 처리 중 내부 오류가 발생했습니다.\n"
                     f"- 오류: {type(exc).__name__}\n"
                     "- 조치: 로그에 기록했습니다. 같은 지시를 반복 실행하지 말고 원인 확인 후 재시도하겠습니다."
-                )
+                ), system_reason="listener_error")
             )
         else:
             logger.info(f"[DM] fast-path direct reply channel={channel}")
-            say(text=to_slack_mrkdwn(response))
+            say(text=_outbound_text(response))
 
     elif VP_SLACK_USER_ID and user == VP_SLACK_USER_ID:
         _handle_vp_dm(user, text, say=say, logger=logger)
@@ -471,7 +510,7 @@ def _handle_meeting_message(user: str, text: str, channel: str, say, logger):
     from core.persona_state import personas_paused, pause_reason
     if personas_paused():
         logger.info(f"[meeting] 페르소나 정지 중 — 오케스트레이션 생략 by {user}")
-        say(text=f":pause_button: {pause_reason()}")
+        say(text=_outbound_text(f":pause_button: {pause_reason()}", system_reason="persona_pause"))
         return
 
     # 1. 소집 트리거 → 오케스트레이션 시작
@@ -483,10 +522,10 @@ def _handle_meeting_message(user: str, text: str, channel: str, say, logger):
         if when:
             rec = add_meeting(when, order, channel, user)
             logger.info(f"[meeting] 예약 by {user}: {rec['id']} {rec['when']} {order!r}")
-            say(text=f":calendar: {when.strftime('%m월 %d일 %H:%M')} 회의 예약했습니다.\n> {order}")
+            say(text=_outbound_text(f":calendar: {when.strftime('%m월 %d일 %H:%M')} 회의 예약했습니다.\n> {order}", system_reason="meeting_schedule_ack"))
             return
         logger.info(f"[meeting] 회의 소집 by {user}: {order!r}")
-        say(text=":speech_balloon: 회의 소집하겠습니다. 잠시만 기다려 주세요.")
+        say(text=_outbound_text(":speech_balloon: 회의 소집하겠습니다. 잠시만 기다려 주세요.", system_reason="meeting_ack"))
         threading.Thread(target=_orchestrate_bg, args=(order, logger), daemon=True).start()
         return
 
@@ -496,7 +535,7 @@ def _handle_meeting_message(user: str, text: str, channel: str, say, logger):
         handles = [p.handle for p in personas]
         names = ", ".join(f"{p.name}님" for p in personas)
         logger.info(f"[meeting] 멘션 by {user}: {handles}")
-        say(text=f":speech_balloon: {names} 호출하셨습니다. 답변 준비하겠습니다.")
+        say(text=_outbound_text(f":speech_balloon: {names} 호출하셨습니다. 답변 준비하겠습니다.", system_reason="mention_ack"))
         threading.Thread(target=_mentions_bg, args=(handles, text, channel, logger), daemon=True).start()
         return
 
@@ -520,7 +559,7 @@ def _handle_vp_dm(user: str, text: str, say, logger):
                 "revise": f"🔁 수정 요청 기록됨. 메모: {result['jargon_notes'] or '(없음)'}",
                 "hold": "⏸ 보류 기록됨.",
             }
-            say(text=replies.get(rec, "기록 완료"))
+            say(text=_outbound_text(replies.get(rec, "기록 완료"), system_reason="vp_record_ack"))
             logger.info(f"[vp_review] 응답 처리: issue={issue_id} rec={rec}")
             return
     _handle_reader_feedback(user, text, source_channel="slack_dm:vp", say=say,
@@ -549,7 +588,7 @@ def _handle_reader_feedback(user: str, text: str, source_channel: str, say, thre
         else:
             reply = "메시지 감사합니다! 📬"
 
-        kwargs = {"text": reply}
+        kwargs = {"text": _outbound_text(reply, system_reason="reader_feedback_template")}
         if thread_ts:
             kwargs["thread_ts"] = thread_ts
         say(**kwargs)
