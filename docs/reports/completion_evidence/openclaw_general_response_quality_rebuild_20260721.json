@@ -43,7 +43,7 @@
       "name": "Production failure E2E golden regression",
       "target": "pre-push OpenClaw run entrypoint",
       "command": ".venv/bin/python scripts/score_openclaw_e2e_golden.py --corpus configs/openclaw/e2e_golden_corpus_v1.jsonl --output runtime/openclaw_e2e_golden.json",
-      "result": "passed: 9 hand-authored end-to-end cases including the production Harness status wording, Turtle wrong-subject defense, ambiguous classifier bypass, unsupported facts, arithmetic, and greeting"
+      "result": "passed: 9 hand-authored end-to-end cases including the production Harness status wording, Turtle wrong-subject defense, ambiguous classifier bypass, unsupported facts, arithmetic, and greeting; scorer resolves repository imports independently on Mac Mini"
     }
   ],
   "deploy": {
