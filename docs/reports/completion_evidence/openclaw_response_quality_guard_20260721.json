@@ -36,7 +36,7 @@
       "name": "Mac Mini production response-quality guard",
       "target": "Mac Mini OpenClaw production service code",
       "command": "ssh macmini .venv/bin/python _finalize_response quality assertions",
-      "result": "Pass. Deployed code emitted a conclusion-first analysis response, redacted an xoxp-shaped secret, and blocked a CSS rendering artifact. Slack listener state=running after restart."
+      "result": "Pass. Deployed code emitted a conclusion-first analysis response, redacted an xoxp-shaped secret, blocked a CSS rendering artifact, and fail-closed a Gmail summary with metadata-only evidence. Slack listener state=running after restart."
     }
   ],
   "residual_risk": [
