@@ -32,6 +32,12 @@
       "target": "macmini production launchd service",
       "command": "launchctl kickstart -k gui/UID/com.harness.slack-listener; inspect process and listener log",
       "result": "passed: listener PID 13889, Socket Mode session established, Bolt app running, Ollama prewarm completed"
+    },
+    {
+      "name": "Mac Mini verified delivery activation",
+      "target": "macmini production launchd service",
+      "command": "back up LaunchAgent plist; set OPENCLAW_VERIFIED_DELIVERY_ENABLED=true and OPENCLAW_QUALITY_SHADOW_ENABLED=true; lint; bootout/bootstrap",
+      "result": "passed: plist lint OK; LaunchAgent environment shows both flags true; listener PID 14175; new Slack Socket Mode session established"
     }
   ],
   "deploy": {
@@ -48,7 +54,7 @@
     "verdict": "red_team_clear"
   },
   "residual_risk": [
-    "Production verified delivery remains shadow-only until at least 7 distinct days, 200 cases, and minimum coverage for all required task types pass.",
+    "Verified delivery was explicitly activated by CEO instruction before the observational 7-day/200-case shadow target elapsed; shadow telemetry remains enabled and the scorer must continue reporting progress.",
     "Live Slack DM E2E remains blocked on this workstation because the approved xoxp Keychain item is not visible to the probe process; sent=false, so no message was emitted."
   ]
 }
