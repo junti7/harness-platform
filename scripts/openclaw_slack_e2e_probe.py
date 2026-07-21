@@ -100,6 +100,7 @@ def _find_bot_reply(messages: list[dict[str, Any]], bot_user_id: str, sent_ts: f
         message for message in messages
         if float(message.get("ts", "0")) > sent_ts
         and (message.get("bot_id") or message.get("user") == bot_user_id)
+        and "처리 중..." not in str(message.get("text", ""))
     ]
     return min(candidates, key=lambda message: float(message["ts"])) if candidates else None
 

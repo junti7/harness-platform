@@ -18,7 +18,7 @@
       "name": "OpenClaw Gmail brief unit and regression suite",
       "target": "adapters/content/openclaw_agent.py and tests/test_openclaw_agent.py",
       "command": ".venv/bin/python -m unittest discover -s tests -p 'test_openclaw_agent.py'",
-      "result": "74 tests passed, including human-conclusion rendering: one required action followed by a single discardable-noise sentence."
+      "result": "75 tests passed, including Slack verification-code grouping/redaction, human-conclusion rendering, and discardable-noise output."
     },
     {
       "name": "OpenClaw route-audit compatibility suite",
@@ -49,6 +49,12 @@
       "target": "adapters/content/slack_listener.py",
       "command": ".venv/bin/python -m unittest discover -s tests -p 'test_slack_listener.py'",
       "result": "3 tests passed. CEO user-token E2E messages tagged with bot_id are accepted; non-CEO bot traffic and subtype events remain ignored."
+    },
+    {
+      "name": "Slack E2E final-reply selection",
+      "target": "scripts/openclaw_slack_e2e_probe.py",
+      "command": ".venv/bin/python -m unittest discover -s tests -p 'test_openclaw_slack_e2e_probe.py'",
+      "result": "1 test passed. The asynchronous processing acknowledgement is not accepted as the final answer."
     }
   ],
   "deploy": {
@@ -56,7 +62,7 @@
     "result": "Targeted Mac Mini deploy passed origin/main diff verification and Slack listener was restarted successfully."
   },
   "residual_risk": [
-    "A real-user E2E probe reached Slack but was ignored before this release because Slack tags same-app user-token messages with bot_id. This release narrows acceptance to the configured CEO user and requires a fresh E2E run.",
+    "A real-user E2E probe reached Slack but was ignored before this release because Slack tags same-app user-token messages with bot_id. This release narrows acceptance to the configured CEO user, redacts verification codes/links, and requires a fresh E2E run.",
     "Therefore a passing post-deploy Slack DM response has not yet been observed; listener process and Socket Mode connection are verified.",
     "This commit establishes Gmail as the first reference adapter. The all-intent verifier architecture remains planned work."
   ]

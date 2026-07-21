@@ -273,6 +273,24 @@ class OpenClawAgentTests(unittest.TestCase):
         self.assertIn("본인이 요청한 경우", result)
         self.assertNotIn("magic-token", result)
 
+    def test_gmail_slack_verification_codes_are_grouped_and_redacted(self):
+        items = [
+            {"id": "slack-1", "from": "Slack <no-reply@slack.com>", "subject": "Slack 확인 코드: ABC-123"},
+            {"id": "slack-2", "from": "Slack <no-reply@slack.com>", "subject": "Slack 확인 코드: DEF-456"},
+        ]
+        details = {
+            "slack-1": {"from": "Slack <no-reply@slack.com>", "subject": "Slack 확인 코드: ABC-123", "body": "확인 코드 ABC-123 https://go.slack.com/secret"},
+            "slack-2": {"from": "Slack <no-reply@slack.com>", "subject": "Slack 확인 코드: DEF-456", "body": "확인 코드 DEF-456 https://go.slack.com/secret"},
+        }
+
+        with patch("adapters.content.openclaw_agent._gmail_get_json", side_effect=lambda message_id: details[message_id]):
+            result = openclaw_agent._render_gmail_brief(items, "newer_than:2d")
+
+        self.assertIn("오늘 확인할 메일이 2건 있습니다.", result)
+        self.assertIn("Slack 확인 코드 2건.", result)
+        self.assertNotIn("ABC-123", result)
+        self.assertNotIn("go.slack.com", result)
+
     def test_gmail_brief_leads_with_a_human_conclusion_and_discards_noise(self):
         items = [
             {"id": "security", "from": "no-reply@mail.anthropic.com", "subject": "Claude.ai의 보안 링크가 도착했습니다"},
@@ -291,7 +309,7 @@ class OpenClawAgentTests(unittest.TestCase):
             result = openclaw_agent._render_gmail_brief(items, "newer_than:2d")
 
         self.assertIn("오늘 확인할 메일이 1건 있습니다.", result)
-        self.assertIn("Claude.ai 로그인 링크는 방금 직접 요청한 경우에만 사용하세요.", result)
+        self.assertIn("Claude.ai 로그인 링크 1건. 방금 직접 요청한 경우에만 사용하세요.", result)
         self.assertIn("나머지 3건은 광고·가격 알림과 업무와 무관한 Google Alerts라 넘겨도 됩니다.", result)
         self.assertNotIn("검색 조건", result)
         self.assertNotIn("첫 항목 기준", result)

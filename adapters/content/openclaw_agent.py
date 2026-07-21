@@ -756,11 +756,35 @@ def _gmail_safe_header_text(value: Any) -> str:
     return re.sub(r"(?<![\w-])[A-Za-z0-9_-]{32,}(?![\w-])", "[토큰 생략]", text)
 
 
+_GMAIL_SECURITY_SUBJECT_RE = re.compile(
+    r"security|sign[ -]?in|login|로그인|보안|verify|verification|"
+    r"확인\s*코드|인증\s*코드|로그인\s*코드|verification\s*code|one[ -]?time|\botp\b",
+    re.IGNORECASE,
+)
+
+
+def _gmail_is_security_message(subject: str) -> bool:
+    return bool(_GMAIL_SECURITY_SUBJECT_RE.search(subject))
+
+
+def _gmail_security_service(sender: str, subject: str) -> str:
+    lowered = f"{sender} {subject}".lower()
+    if "slack" in lowered:
+        return "Slack"
+    if "claude" in lowered or "anthropic" in lowered:
+        return "Claude.ai"
+    return "해당 서비스"
+
+
+def _gmail_security_kind(subject: str) -> str:
+    return "확인 코드" if re.search(r"코드|code|otp|one[ -]?time", subject, re.IGNORECASE) else "로그인 링크"
+
+
 def _gmail_action_summary(item: dict[str, Any], detail: dict[str, Any]) -> str:
     subject = str(detail.get("subject") or item.get("subject") or "")
     sender = str(detail.get("from") or item.get("from") or "").lower()
     lowered_subject = subject.lower()
-    if any(term in lowered_subject for term in ("security", "sign in", "login", "로그인", "보안", "verify", "verification")):
+    if _gmail_is_security_message(subject):
         return "보안/로그인 안내입니다. 본인이 요청한 경우에만 링크를 사용하고, 요청하지 않았다면 열지 마세요."
     if "googlealerts" in sender:
         return f"뉴스 알림입니다. 첫 기사: {_gmail_alert_headline(detail)}"
@@ -842,7 +866,7 @@ def _render_gmail_brief(items: list[dict[str, Any]], query: str) -> str:
             ]
         )
 
-    actions: list[str] = []
+    actions: dict[tuple[str, str], int] = defaultdict(int)
     reviews: list[str] = []
     references: list[str] = []
     alert_noise_topics: list[str] = []
@@ -859,20 +883,23 @@ def _render_gmail_brief(items: list[dict[str, Any]], query: str) -> str:
             else:
                 alert_noise_topics.append(_gmail_alert_topic(detail))
             continue
-        if any(term in lowered_subject for term in ("security", "sign in", "login", "로그인", "보안", "verify", "verification")):
-            service = "Claude.ai" if "claude" in f"{sender} {subject}".lower() else "해당 서비스"
-            actions.append(f"{service} 로그인 링크는 방금 직접 요청한 경우에만 사용하세요. 아니라면 계정을 확인하세요.")
+        if _gmail_is_security_message(subject):
+            actions[(_gmail_security_service(sender, subject), _gmail_security_kind(subject))] += 1
         elif any(term in lowered_subject for term in ("price alert", "price drop", "가격")) or any(term in sender.lower() for term in ("newsletter", "e-mail", "marketing")):
             references.append(f"{sender or '-'} — {subject}")
         else:
             reviews.append(f"{sender or '-'} — {subject}: {_gmail_action_summary(item, detail)}")
 
-    if actions or reviews:
-        lines.append(f"오늘 확인할 메일이 {len(actions) + len(reviews)}건 있습니다.")
+    action_count = sum(actions.values())
+    if action_count or reviews:
+        lines.append(f"오늘 확인할 메일이 {action_count + len(reviews)}건 있습니다.")
     else:
         lines.append("오늘은 업무상 처리할 메일이 없습니다.")
     if actions:
-        lines.extend(actions)
+        lines.extend(
+            f"{service} {kind} {count}건. 방금 직접 요청한 경우에만 사용하세요. 아니라면 계정을 확인하세요."
+            for (service, kind), count in actions.items()
+        )
     if reviews:
         lines.extend(reviews)
     non_action_count = len(alert_noise_topics) + len(references)
