@@ -18,7 +18,7 @@
       "name": "OpenClaw response-quality unit and regression suite",
       "target": "adapters/content/openclaw_agent.py",
       "command": ".venv/bin/python -m unittest discover -s tests -p 'test_openclaw_agent.py'",
-      "result": "79 tests passed, including conclusion-first delivery, secret redaction, rendering-artifact blocking, explicit-markup preservation, and summary fail-closed evidence verification."
+      "result": "79 tests passed, including summary fail-closed evidence verification and mandatory hypothesis labeling for unevidenced analysis or recommendation responses."
     },
     {
       "name": "Slack delivery and E2E-probe regression suites",
