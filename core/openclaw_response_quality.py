@@ -60,6 +60,9 @@ _QUESTION_STOP_WORDS = {
     "온", "받은", "내용", "결과", "현재", "이번", "top", "즉시", "조치안", "준비됐어",
     "개와", "요약해줘", "요약해주세요", "정리해줘", "정리해주세요", "확인해줘", "확인해주세요",
     "current", "latest", "status", "summary", "analyze", "analysis", "review", "report",
+    "실제", "데이터", "기준", "근거", "근거도", "시각과", "표시", "표시해", "확인한",
+    "기반", "바탕", "정확히", "구체적", "객관적", "팩트", "팩트로", "출처", "출처도",
+    "actual", "data", "evidence", "basis", "timestamp", "time", "source", "sources", "verified",
 }
 _BROAD_CLAIM_RE = re.compile(
     r"모든|전체|전부|완벽|완료|정상\s*운영|문제\s*없|준비\s*완료|"

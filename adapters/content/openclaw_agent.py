@@ -570,6 +570,10 @@ def _extract_top_risks(payload: dict[str, Any]) -> list[str]:
 def _try_status_brief_response(user_message: str) -> str | None:
     if not _STATUS_BRIEF_RE.search(user_message):
         return None
+    risk_query = bool(re.search(r"top\s*risk|리스크|병목", user_message, re.IGNORECASE))
+    harness_scoped = bool(re.search(r"harness|platform|플랫폼|파이프라인|pipeline|ops|운영", user_message, re.IGNORECASE))
+    if not risk_query and not harness_scoped:
+        return None
 
     payload = _load_status_payload()
     if not payload:
@@ -1334,7 +1338,12 @@ def _last_numeric_value(history: list[dict[str, str]]) -> float | None:
 
 def _try_arithmetic_response(user_message: str, history: list[dict[str, str]]) -> str | None:
     text = user_message.strip()
-    direct = _safe_eval_arithmetic(text)
+    normalized = re.sub(r"(?<=\d)\s*(?:더하기|플러스)\s*(?=\d)", "+", text)
+    normalized = re.sub(r"(?<=\d)\s*(?:빼기|마이너스)\s*(?=\d)", "-", normalized)
+    normalized = re.sub(r"(?<=\d)\s*(?:곱하기|곱|×)\s*(?=\d)", "*", normalized)
+    normalized = re.sub(r"(?<=\d)\s*(?:나누기|÷)\s*(?=\d)", "/", normalized)
+    normalized = re.sub(r"(?:은|는|이|가|\?|얼마(?:야|인가요?)?)\s*$", "", normalized).strip()
+    direct = _safe_eval_arithmetic(normalized)
     if direct is not None:
         return _format_number(direct)
 
@@ -1750,12 +1759,12 @@ def _parse_structured_command(message: str) -> dict[str, Any] | None:
             "hint": COMMAND_HINTS["minutes-latest"],
         }
 
-    if "이상하면" not in text_lower and (
-        re.fullmatch(r"/?status", text_lower) or re.search(
-            r"(^|\s)(status|상태|현황|health)(\s|$).*(확인|보여|알려|체크|조회)?",
-            text_lower,
-        )
-    ):
+    explicit_status_command = bool(re.fullmatch(r"/?status(?:\s+(?:확인|보여|알려|체크|조회)(?:해줘|해주세요)?)?", text_lower))
+    harness_status_request = bool(
+        re.search(r"harness|platform|플랫폼|파이프라인|pipeline|ops|운영", text_lower)
+        and re.search(r"status|상태|현황|health", text_lower)
+    )
+    if "이상하면" not in text_lower and (explicit_status_command or harness_status_request):
         return {
             "intent": "status",
             "bridge_args": ["status", "--format", "text"],
@@ -3716,6 +3725,21 @@ def run(
         if intent:
             bridge_args = _intent_to_bridge_args(intent)
             if bridge_args:
+                intent_contract = infer_answer_contract(
+                    user_message,
+                    authorized=_authorized_for_high_risk(requester_user_id),
+                )
+                if bridge_args[0] == "status" and intent_contract.ambiguities:
+                    return _finish(
+                        "intent_bridge_ambiguous_subject",
+                        "확인할 대상을 특정할 수 없습니다. 대상 이름이나 범위를 한 줄로 지정해 주세요.",
+                        decision_override=DeliveryDecision(
+                            SCHEMA_VERSION,
+                            "abstain",
+                            "확인할 대상을 특정할 수 없습니다. 대상 이름이나 범위를 한 줄로 지정해 주세요.",
+                            reasons=("subject_missing",),
+                        ),
+                    )
                 preflight_error = _preflight_bridge_command(
                     bridge_args,
                     requester_user_id,

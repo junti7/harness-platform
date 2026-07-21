@@ -92,6 +92,8 @@ def main() -> int:
             failures.append({"case_id": family, "reason": "family_count<20"})
     report = {
         "schema_version": "1.0",
+        "evaluation_scope": "contract_safety_only",
+        "quality_claim_allowed": False,
         "corpus": args.corpus,
         "case_count": len(rows),
         "family_counts": dict(family_counts),
@@ -103,7 +105,7 @@ def main() -> int:
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({"status": report["status"], "cases": len(rows), "failures": len(failures)}))
+    print(json.dumps({"status": "contract_safety_pass" if not failures else "fail", "cases": len(rows), "failures": len(failures)}))
     return 0 if not failures else 1
 
 

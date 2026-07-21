@@ -9,6 +9,10 @@ cd "$repo_dir"
   --min-cases 240 \
   --output runtime/openclaw_quality_eval.json
 
+.venv/bin/python scripts/score_openclaw_e2e_golden.py \
+  --corpus configs/openclaw/e2e_golden_corpus_v1.jsonl \
+  --output runtime/openclaw_e2e_golden.json
+
 .venv/bin/python -m pytest \
   tests/test_openclaw_response_quality.py \
   tests/test_openclaw_agent.py \

@@ -481,6 +481,41 @@ class OpenClawAgentTests(unittest.TestCase):
             self.assertTrue(metric_records)
             self.assertEqual(metric_records[-1]["response_chars"], len(result))
 
+    @patch("adapters.content.openclaw_agent._load_status_payload")
+    def test_harness_status_with_evidence_wording_uses_adapter_subjects(self, mock_status):
+        mock_status.return_value = {
+            "generated_at": "2026-07-21T21:59:00+09:00",
+            "runtime": {"capital_actions_enabled": False, "slack_phase": "phase-1"},
+            "integrations": {"postgres": {"available": True}, "openclaw": {"available": True}},
+            "services": {"ollama_11434": True},
+        }
+
+        result = openclaw_agent.run(
+            "현재 harness-project 운영 상태를 실제 데이터 기준으로 정리해. 확인한 시각과 근거도 표시해.",
+            session_id="status-evidence-wording",
+        )
+
+        self.assertIn("Harness ops status", result)
+        self.assertIn("snapshot: 2026-07-21T21:59:00+09:00", result)
+        self.assertNotIn("최신 근거를 확인하지 못했습니다", result)
+
+    @patch("adapters.content.openclaw_agent._load_status_payload")
+    def test_named_subsystem_status_cannot_use_generic_harness_snapshot(self, mock_status):
+        mock_status.return_value = {
+            "generated_at": "2026-07-21T21:59:00+09:00",
+            "runtime": {"capital_actions_enabled": False},
+            "integrations": {"postgres": {"available": True}},
+            "services": {"ollama_11434": True},
+        }
+
+        result = openclaw_agent.run(
+            "현재 Turtle Trading 거래 시스템 상태를 실제 데이터 기준으로 정리해.",
+            session_id="named-subsystem-status",
+        )
+
+        self.assertIn("최신 근거를 확인하지 못했습니다", result)
+        self.assertNotIn("Harness ops status", result)
+
     def test_parse_goal_cli_status_command(self):
         parsed = openclaw_agent._parse_structured_command("/goal status 3")
         self.assertIsNotNone(parsed)

@@ -38,6 +38,12 @@
       "target": "macmini production launchd service",
       "command": "back up LaunchAgent plist; set OPENCLAW_VERIFIED_DELIVERY_ENABLED=true and OPENCLAW_QUALITY_SHADOW_ENABLED=true; lint; bootout/bootstrap",
       "result": "passed: plist lint OK; LaunchAgent environment shows both flags true; listener PID 14175; new Slack Socket Mode session established"
+    },
+    {
+      "name": "Production failure E2E golden regression",
+      "target": "pre-push OpenClaw run entrypoint",
+      "command": ".venv/bin/python scripts/score_openclaw_e2e_golden.py --corpus configs/openclaw/e2e_golden_corpus_v1.jsonl --output runtime/openclaw_e2e_golden.json",
+      "result": "passed: 9 hand-authored end-to-end cases including the production Harness status wording, Turtle wrong-subject defense, ambiguous classifier bypass, unsupported facts, arithmetic, and greeting"
     }
   ],
   "deploy": {
@@ -55,6 +61,8 @@
   },
   "residual_risk": [
     "Verified delivery was explicitly activated by CEO instruction before the observational 7-day/200-case shadow target elapsed; shadow telemetry remains enabled and the scorer must continue reporting progress.",
+    "The prior 240-case result is contract-safety-only and must never be represented as answer-quality evidence; real answer quality uses the separate hand-authored E2E golden corpus.",
+    "Claude delta review was unavailable due HTTP 429 session limit; Copilot independently blocked two bypasses, both were fixed, and its final delta verdict was red_team_clear.",
     "Live Slack DM E2E remains blocked on this workstation because the approved xoxp Keychain item is not visible to the probe process; sent=false, so no message was emitted."
   ]
 }

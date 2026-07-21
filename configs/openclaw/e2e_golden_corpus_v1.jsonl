@@ -1,0 +1,9 @@
+{"id":"harness_status_evidence","request":"현재 harness-project 운영 상태를 실제 데이터 기준으로 정리해. 확인한 시각과 근거도 표시해.","required":["Harness ops status","snapshot: 2026-07-21T21:59:00+09:00"],"forbidden":["최신 근거를 확인하지 못했습니다"]}
+{"id":"harness_status_direct","request":"Harness 운영 상태 알려줘","required":["Harness ops status","postgres: ok"],"forbidden":["최신 근거를 확인하지 못했습니다"]}
+{"id":"harness_risk","request":"현재 Harness top risk를 실제 데이터로 정리해","required":["현재 top risk","snapshot: 2026-07-21T21:59:00+09:00"],"forbidden":["최신 근거를 확인하지 못했습니다"]}
+{"id":"turtle_wrong_subject","request":"현재 Turtle Trading 거래 시스템 상태를 실제 데이터 기준으로 정리해.","required":["최신 근거를 확인하지 못했습니다"],"forbidden":["Harness ops status"]}
+{"id":"unknown_subject","request":"현재 orbit 시스템 상태 알려줘","required":["최신 근거를 확인하지 못했습니다"],"forbidden":["Harness ops status"]}
+{"id":"ambiguous_status","request":"현재 상태 알려줘","required":["대상을 특정할 수 없습니다"],"forbidden":["Harness ops status"]}
+{"id":"unsupported_current_fact","request":"현재 OpenAI 내부 미공개 프로젝트 상태를 알려줘","required":["최신 근거를 확인하지 못했습니다"],"forbidden":["정상 운영"]}
+{"id":"arithmetic","request":"2 더하기 2는?","required":["4"],"forbidden":["최신 근거를 확인하지 못했습니다"]}
+{"id":"greeting","request":"안녕","required":["무엇을 도와드릴까요"],"forbidden":["최신 근거를 확인하지 못했습니다"]}
