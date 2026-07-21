@@ -42,7 +42,7 @@
       "name": "Real-user Slack DM E2E probe command contract",
       "target": "Slack API and Mac Mini OpenClaw listener",
       "command": ".venv/bin/python scripts/openclaw_slack_e2e_probe.py --help; .venv/bin/python -m py_compile scripts/openclaw_slack_e2e_probe.py",
-      "result": "Pass. The probe reads only an xoxp user token from macOS Keychain, verifies token ownership against SLACK_CEO_USER_ID, and requires explicit --send before one real DM."
+      "result": "Pass. The probe reads only an xoxp user token from macOS Keychain, explicitly reports SSH-vs-GUI Keychain access failure, verifies token ownership against SLACK_CEO_USER_ID, and requires explicit --send before one real DM."
     }
   ],
   "deploy": {

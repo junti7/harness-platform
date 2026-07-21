@@ -46,6 +46,12 @@ def _keychain_token(service: str, account: str) -> str:
         check=False,
     )
     token = result.stdout.strip()
+    stderr = result.stderr.lower()
+    if "user interaction is not allowed" in stderr or "interaction not allowed" in stderr:
+        raise ProbeError(
+            "SSH 세션에서는 macOS login Keychain을 읽을 수 없습니다. "
+            "Mac Mini 화면에 직접 로그인한 Terminal에서 이 프로브를 실행하세요."
+        )
     if result.returncode != 0 or not token.startswith("xoxp-"):
         raise ProbeError(
             "Keychain에 Slack 사용자 토큰이 없습니다. Slack OAuth 재승인 후 "
