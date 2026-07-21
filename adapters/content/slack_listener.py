@@ -181,8 +181,10 @@ def handle_dm(event, say, logger):
         try:
             response = future.result(timeout=_FAST_DM_TIMEOUT_SECONDS)
         except FutureTimeoutError:
-            logger.info(f"[DM] fast-path timeout -> async ack channel={channel}")
-            say(text=":thinking_face: 처리 중... (잠시 기다려주세요 — 결과가 별도 메시지로 도착합니다)")
+            # Socket Mode receives the event handler return within Slack's
+            # acknowledgement window.  Do not add a visible progress message:
+            # a DM should contain the final answer only, not a pseudo-thread.
+            logger.info(f"[DM] fast-path timeout -> async final reply channel={channel}")
 
             def _wait_and_reply():
                 try:
