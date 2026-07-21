@@ -354,6 +354,16 @@ class OpenClawAgentTests(unittest.TestCase):
 
         self.assertIn("border-collapse", result)
 
+    def test_summary_contract_fails_closed_without_primary_body_evidence(self):
+        contract = openclaw_agent._infer_request_contract("오늘 온 메일 내용 요약해")
+        verification = openclaw_agent._verify_delivery_contract(
+            contract,
+            openclaw_agent.EvidenceSet("gmail_metadata", "complete"),
+            "deterministic_gmail_lookup",
+        )
+
+        self.assertEqual(verification.verdict, "block")
+
     def test_gmail_alert_signal_checks_only_first_headline(self):
         detail = {
             "subject": "Google 알리미 - LG | 2026-07-20 22:06:46",

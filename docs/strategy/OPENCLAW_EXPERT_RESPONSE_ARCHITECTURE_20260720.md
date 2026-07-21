@@ -106,6 +106,11 @@ quality guard to every OpenClaw response:
   structural `결론:` label where the response did not already lead naturally;
 - Gmail remains the first reference adapter with its own evidence/coverage gate.
 
+`run()` now also emits a `contract_verification` audit record for each delivery,
+using `RequestContract`, `EvidenceSet`, and `VerificationResult`. A Gmail
+summary without message-body evidence is fail-closed; incomplete body coverage
+uses the existing explicit partial-result response.
+
 This is not yet the full typed all-intent verifier proposed above. In
 particular, `RequestContract`, `EvidenceSet`, per-claim provenance, and
 fail-closed evidence coverage for every tool route remain follow-up work.
