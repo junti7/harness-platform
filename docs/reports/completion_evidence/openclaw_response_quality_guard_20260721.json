@@ -31,10 +31,16 @@
       "target": "OpenClaw service runtime entrypoint",
       "command": ".venv/bin/python -c run('현재 시각 알려줘')",
       "result": "Pass. The actual OpenClaw run entrypoint returned the deterministic current-time response."
+    },
+    {
+      "name": "Mac Mini production response-quality guard",
+      "target": "Mac Mini OpenClaw production service code",
+      "command": "ssh macmini .venv/bin/python _finalize_response quality assertions",
+      "result": "Pass. Deployed code emitted a conclusion-first analysis response, redacted an xoxp-shaped secret, and blocked a CSS rendering artifact. Slack listener state=running after restart."
     }
   ],
   "residual_risk": [
-    "Mac Mini runtime verification and independent Red Team review are pending this change.",
+    "Independent Claude/Copilot Red Team verdict remains unavailable for this commit; do not treat this baseline guard as a full all-intent evidence verifier.",
     "The shared delivery guard does not replace the planned typed request/evidence verifier for every tool route."
   ]
 }
