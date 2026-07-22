@@ -25,8 +25,8 @@
     },
     {
       "requirement": "Verify deployed Slack DM entrypoint",
-      "status": "not_verified",
-      "evidence": "Pending scoped deployment and live Slack retry"
+      "status": "pass",
+      "evidence": "Mac Mini same-session live sequence status answer then provenance question returned deterministic_status_brief and no LLM; Slack listener restarted PID 58848 and Bolt app running"
     }
   ],
   "governance_bootstrap": [
@@ -53,14 +53,19 @@
       "target": "pre-push OpenClaw run service path",
       "command": "score contract corpus; score E2E golden; run targeted pytest suite",
       "result": "passed: contract safety 240/240, E2E 10/10 including exact provenance failure, pytest 113 passed"
+    },
+    {
+      "name": "Mac Mini production same-session provenance",
+      "target": "Mac Mini production OpenClaw run and Slack listener service",
+      "command": "run status query and provenance query with same session id; restart Slack listener; inspect launchctl and Bolt log",
+      "result": "passed at 2026-07-22 20:34:48 KST: provenance response identified deterministic_status_brief, explicitly stated no LLM authored it, and cited route audit; listener PID 58848 running"
     }
   ],
   "deploy": {
-    "method": "scripts/deploy_to_macmini.sh after scoped commit and push",
-    "result": "pending"
+    "method": "scripts/deploy_to_macmini.sh adapters/content/openclaw_agent.py scripts/score_openclaw_e2e_golden.py tests/test_openclaw_agent.py docs/reports/completion_evidence/openclaw_response_provenance_20260722.json",
+    "result": "passed: backups scratch/pre_deploy_backup_20260722_203142 and scratch/pre_deploy_backup_20260722_203421; origin path diff 0; Mac Mini same-session live verification passed; Slack listener restarted"
   },
   "residual_risk": [
-    "Post-deploy Slack DM retry remains required for the user-visible entrypoint.",
     "Route audit currently provides route and model identity, not complete token-level model execution traces."
   ]
 }
