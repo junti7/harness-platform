@@ -14,6 +14,7 @@ cd "$repo_dir"
   --output runtime/openclaw_e2e_golden.json
 
 .venv/bin/python -m pytest \
+  tests/test_openclaw_bridge.py \
   tests/test_openclaw_response_quality.py \
   tests/test_openclaw_agent.py \
   tests/test_slack_listener.py \

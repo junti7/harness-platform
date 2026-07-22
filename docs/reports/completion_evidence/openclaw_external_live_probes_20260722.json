@@ -25,8 +25,8 @@
     },
     {
       "requirement": "Verify deployed Mac Mini and Slack DM entrypoint",
-      "status": "not_verified",
-      "evidence": "Pending scoped deploy and post-deploy live status run"
+      "status": "pass",
+      "evidence": "Mac Mini live run rendered all three successful probes; Slack listener restarted PID 57652 and Bolt app running. User-visible DM content can be retried without further deployment."
     }
   ],
   "governance_bootstrap": [
@@ -53,14 +53,19 @@
       "target": "Mac Mini production status API output",
       "command": "ssh macmini; openclaw_codex_bridge.py status --format json; sanitize with jq",
       "result": "baseline confirmed old deployment only reports available=true and lacks configured/live_checked/probe/latency fields; proves deployment delta remains necessary"
+    },
+    {
+      "name": "Mac Mini post-deploy external live probes",
+      "target": "Mac Mini production Notion API Slack API and OpenClaw gateway",
+      "command": "ssh macmini; openclaw_codex_bridge.py status --format json; sanitize selected fields with jq; run OpenClaw run(); restart Slack listener",
+      "result": "passed at 2026-07-22 20:23 KST: Notion GET /v1/users/me 204ms, Slack auth.test 472ms, OpenClaw health ok=true 826ms; all error=null; deterministic Korean brief reported all live probes passed; listener PID 57652 and Bolt app running"
     }
   ],
   "deploy": {
-    "method": "scripts/deploy_to_macmini.sh after scoped commit and push",
-    "result": "pending"
+    "method": "scripts/deploy_to_macmini.sh adapters/content/openclaw_agent.py configs/openclaw/e2e_golden_corpus_v1.jsonl scripts/openclaw_codex_bridge.py scripts/score_openclaw_e2e_golden.py tests/test_openclaw_agent.py tests/test_openclaw_bridge.py docs/reports/completion_evidence/openclaw_external_live_probes_20260722.json",
+    "result": "passed: backup scratch/pre_deploy_backup_20260722_202246; every path matched origin/main; production backend and Slack listener restarted; live probes passed"
   },
   "residual_risk": [
-    "Post-deploy Mac Mini live API results and Slack-rendered answer are not yet verified.",
     "API probes validate authentication and gateway health, not every downstream Notion database permission or every Slack posting target."
   ]
 }
