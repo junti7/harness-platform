@@ -19,6 +19,11 @@
       "evidence": "E2E golden response_provenance case with prior deterministic_status_brief route"
     },
     {
+      "requirement": "Correlate provenance to the last user-visible response rather than an unrelated route event",
+      "status": "pass",
+      "evidence": "Lookup starts from latest session-scoped response_metric, then resolves the matching route record and model"
+    },
+    {
       "requirement": "Verify deployed Slack DM entrypoint",
       "status": "not_verified",
       "evidence": "Pending scoped deployment and live Slack retry"

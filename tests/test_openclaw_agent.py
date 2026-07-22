@@ -32,15 +32,26 @@ class OpenClawAgentTests(unittest.TestCase):
         with TemporaryDirectory() as tmpdir:
             audit_path = Path(tmpdir) / "route.jsonl"
             audit_path.write_text(
-                json.dumps(
-                    {
-                        "ts": "2026-07-22T20:26:35",
-                        "kind": "route",
-                        "session_id": "provenance-session",
-                        "route": "deterministic_status_brief",
-                        "model": None,
-                    },
-                    ensure_ascii=False,
+                "\n".join(
+                    json.dumps(record, ensure_ascii=False)
+                    for record in (
+                        {
+                            "ts": "2026-07-22T20:26:35",
+                            "kind": "route",
+                            "session_id": "provenance-session",
+                            "message": "현재 Harness 운영 상태 알려줘",
+                            "route": "deterministic_status_brief",
+                            "model": None,
+                        },
+                        {
+                            "ts": "2026-07-22T20:26:36",
+                            "kind": "response_metric",
+                            "session_id": "provenance-session",
+                            "message": "현재 Harness 운영 상태 알려줘",
+                            "route": "deterministic_status_brief",
+                            "response_chars": 400,
+                        },
+                    )
                 )
                 + "\n",
                 encoding="utf-8",

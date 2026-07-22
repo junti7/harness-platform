@@ -1306,21 +1306,29 @@ def _try_response_provenance_response(user_message: str, session_id: str | None)
         lines = ROUTE_AUDIT_PATH.read_text(encoding="utf-8").splitlines()
     except (FileNotFoundError, OSError):
         return "직전 답변의 실행 기록을 찾지 못했습니다. 모델을 추측하지 않습니다."
-    prior: dict[str, Any] | None = None
-    for raw in reversed(lines[-4000:]):
+    parsed_records: list[dict[str, Any]] = []
+    for raw in lines[-4000:]:
         try:
             record = json.loads(raw)
         except json.JSONDecodeError:
             continue
-        if record.get("session_id") != session_id or record.get("kind") != "route":
+        if record.get("session_id") != session_id:
             continue
-        prior = record
-        break
+        parsed_records.append(record)
+    prior = next((record for record in reversed(parsed_records) if record.get("kind") == "response_metric"), None)
     if not prior:
         return "직전 답변의 실행 기록을 찾지 못했습니다. 모델을 추측하지 않습니다."
 
     route = str(prior.get("route") or "unknown")
-    model = str(prior.get("model") or "").strip()
+    message = str(prior.get("message") or "")
+    model = ""
+    for record in reversed(parsed_records):
+        if record.get("kind") != "route" or str(record.get("route") or "") != route:
+            continue
+        if message and str(record.get("message") or "") != message:
+            continue
+        model = str(record.get("model") or "").strip()
+        break
     ts = str(prior.get("ts") or "-")
     if route.startswith("deterministic_"):
         return (

@@ -58,16 +58,28 @@ def main() -> int:
                 session_id = f"golden:{row['id']}:{id(rows)}"
                 prior_route = row.get("prior_route")
                 if prior_route:
+                    prior_message = "prior response request"
                     openclaw_agent.ROUTE_AUDIT_PATH.write_text(
-                        json.dumps(
-                            {
-                                "ts": "2026-07-22T20:26:35",
-                                "kind": "route",
-                                "session_id": session_id,
-                                "route": prior_route,
-                                "model": row.get("prior_model"),
-                            },
-                            ensure_ascii=False,
+                        "\n".join(
+                            json.dumps(record, ensure_ascii=False)
+                            for record in (
+                                {
+                                    "ts": "2026-07-22T20:26:35",
+                                    "kind": "route",
+                                    "session_id": session_id,
+                                    "message": prior_message,
+                                    "route": prior_route,
+                                    "model": row.get("prior_model"),
+                                },
+                                {
+                                    "ts": "2026-07-22T20:26:36",
+                                    "kind": "response_metric",
+                                    "session_id": session_id,
+                                    "message": prior_message,
+                                    "route": prior_route,
+                                    "response_chars": 200,
+                                },
+                            )
                         )
                         + "\n",
                         encoding="utf-8",
