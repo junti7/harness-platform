@@ -1,0 +1,85 @@
+{
+  "task": "OpenClaw universal high-quality answers through ChatGPT Codex subscription",
+  "status": "residual_risk",
+  "date": "2026-07-22",
+  "requirements": [
+    {
+      "requirement": "Find the root cause of the market-answer abstention",
+      "status": "pass",
+      "evidence": "Production route audit showed Claude completed web_search but verified delivery discarded the answer with evidence_authority_insufficient"
+    },
+    {
+      "requirement": "Use the existing ChatGPT subscription without OpenAI API billing",
+      "status": "pass",
+      "evidence": "Mac Mini Codex CLI reports Logged in using ChatGPT; subprocess removes OPENAI_API_KEY and CODEX_API_KEY, uses gpt-5.5, ephemeral mode, and read-only sandbox"
+    },
+    {
+      "requirement": "Route normal read-only questions through the subscription model regardless of keyword coverage",
+      "status": "pass",
+      "evidence": "Common codex_subscription_answer route runs before the legacy intent classifier; explicit mutations and governance blocks remain on controlled routes"
+    },
+    {
+      "requirement": "Keep current-fact answers useful and sourced",
+      "status": "pass",
+      "evidence": "Recency-sensitive subscription answers require an HTTP source URL; a real market run included KOSPI, KOSDAQ, US futures, time-zone distinction, check time, interpretation, and source URLs"
+    },
+    {
+      "requirement": "Do not silently fall back to separately billed APIs",
+      "status": "pass",
+      "evidence": "Subscription failure returns an explicit no-paid-fallback response; grounded adapters fall back only to local Ollama"
+    },
+    {
+      "requirement": "Verify the deployed Slack user entrypoint",
+      "status": "not_verified",
+      "evidence": "Awaiting commit, selective Mac Mini deployment, listener restart, and production run"
+    }
+  ],
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-22T21:10:00+09:00",
+      "summary": "Applied source-of-truth deployment, completion evidence, and real-entrypoint verification rules."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-22T21:10:00+09:00",
+      "summary": "Applied Mac Mini ingress ownership, prompt-injection defense, secrets, and selective deployment rules."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Production failure audit",
+      "target": "Mac Mini Slack listener log and OpenClaw route audit",
+      "command": "ssh macmini; inspect 2026-07-22 20:59 market request route, tool calls, and contract verdict",
+      "result": "confirmed premium_tool_agent called web_search and generated a response; delivery then blocked solely for evidence_authority_insufficient"
+    },
+    {
+      "name": "ChatGPT subscription model availability",
+      "target": "Mac Mini Codex CLI OAuth runtime",
+      "command": "codex login status; codex exec --ephemeral --sandbox read-only -m gpt-5.5",
+      "result": "passed: Logged in using ChatGPT; gpt-5.5 executed through provider=openai without API credentials"
+    },
+    {
+      "name": "Real current-market answer",
+      "target": "Codex subscription web-research entrypoint",
+      "command": "run subscription answer for 오늘 증시 시황은? with gpt-5.5 and high reasoning",
+      "result": "passed at 2026-07-22 21:25 KST: produced conclusion-first Korean briefing with KOSPI/KOSDAQ, US market timing, observation versus interpretation, and three direct source URLs"
+    },
+    {
+      "name": "OpenClaw quality regressions",
+      "target": "OpenClaw contract verifier and run routing",
+      "command": "pytest targeted suites; score contract corpus; score E2E golden",
+      "result": "passed: pytest 106, contract safety 240/240, E2E golden 10/10; one third-party deprecation warning"
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh adapters/content/openclaw_agent.py scripts/score_openclaw_e2e_golden.py tests/test_openclaw_agent.py docs/reports/completion_evidence/openclaw_codex_subscription_answers_20260722.json",
+    "result": "pending post-commit selective deployment"
+  },
+  "residual_risk": [
+    "Mac Mini production code and Slack listener have not yet loaded this revision.",
+    "ChatGPT subscription usage remains subject to the plan's usage limits and Codex service availability.",
+    "OpenClaw native Codex plugin import is blocked for an existing workspace; the implementation safely invokes the already authenticated Codex CLI instead.",
+    "The OpenClaw plugin registry still reports a pre-existing Slack metadata conflict warning."
+  ]
+}

@@ -31,6 +31,7 @@ import re
 import shlex
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, replace
@@ -99,6 +100,12 @@ OPENCLAW_INTENT_MODEL = os.environ.get("OPENCLAW_INTENT_MODEL", "claude-haiku-4-
 OPENCLAW_CHAT_MODEL = os.environ.get("OPENCLAW_CHAT_MODEL", "claude-sonnet-4-5")
 OPENCLAW_TOOL_MODEL = os.environ.get("OPENCLAW_TOOL_MODEL", OPENCLAW_CHAT_MODEL)
 OPENCLAW_FORMATTER_MODEL = os.environ.get("OPENCLAW_FORMATTER_MODEL", OPENCLAW_CHAT_MODEL)
+OPENCLAW_CODEX_SUBSCRIPTION_ENABLED = os.environ.get(
+    "OPENCLAW_CODEX_SUBSCRIPTION_ENABLED", "true"
+).strip().lower() in {"1", "true", "yes"}
+OPENCLAW_CODEX_MODEL = os.environ.get("OPENCLAW_CODEX_MODEL", "gpt-5.5")
+OPENCLAW_CODEX_REASONING_EFFORT = os.environ.get("OPENCLAW_CODEX_REASONING_EFFORT", "high")
+OPENCLAW_CODEX_TIMEOUT_SECONDS = int(os.environ.get("OPENCLAW_CODEX_TIMEOUT_SECONDS", "180"))
 OPENCLAW_CHAT_BACKEND = os.environ.get("OPENCLAW_CHAT_BACKEND", "auto").strip().lower()
 OPENCLAW_PROVIDER_MODE = os.environ.get("OPENCLAW_PROVIDER_MODE", "auto").strip().lower()
 OPENCLAW_HISTORY_TURNS = int(os.environ.get("OPENCLAW_HISTORY_TURNS", "40"))
@@ -507,6 +514,9 @@ _ROUTE_RESPONSE_LIMITS = {
     "gemini_chat": 8192,
     "openai_chat": 8192,
     "premium_tool_agent": 16384,
+    "llm_grounded_status": 3000,
+    "llm_grounded_gmail": 3000,
+    "codex_subscription_answer": 3000,
     "contextual_risk_block": 1000,
     "structured_command_auth_block": 1000,
     "structured_command_preflight_block": 1000,
@@ -3074,6 +3084,20 @@ def _run_grounded_synthesis(
     max_tokens: int | None = None,
 ) -> str:
     """Have an LLM write the answer while deterministic adapters own facts."""
+    subscription_answer = _run_codex_subscription_answer(
+        user_message,
+        history=history,
+        evidence_text=evidence_text,
+    )
+    if subscription_answer:
+        return subscription_answer
+    if OPENCLAW_CODEX_SUBSCRIPTION_ENABLED:
+        local_prompt = (
+            f"사용자 요청: {user_message}\n검증 근거:\n{evidence_text}\n"
+            "근거 밖 사실을 만들지 말고 결론과 다음 행동을 한국어로 정리하세요."
+        )
+        local_answer = _ollama_chat(OLLAMA_HOST, "local-grounded-fallback", local_prompt, history=history)
+        return local_answer or "ChatGPT 구독 모델이 응답하지 않아 답변을 만들지 못했습니다. 잠시 후 다시 요청해 주세요."
     synthesis_request = (
         "다음은 사용자의 원래 요청과 시스템이 방금 읽기 전용으로 수집한 검증 근거입니다.\n"
         "근거의 원시 형식을 복사하지 말고 사용자의 의도와 맥락을 이해해 유능한 비서실장처럼 답하세요.\n"
@@ -3090,6 +3114,105 @@ def _run_grounded_synthesis(
         max_tokens=max_tokens,
         target_models=["claude", "gemini", "openai"],
         chat_model=chat_model,
+    )
+
+
+def _codex_subscription_binary() -> str | None:
+    candidates = ("/opt/homebrew/bin/codex", "/usr/local/bin/codex")
+    return next((path for path in candidates if Path(path).is_file()), None)
+
+
+def _run_codex_subscription_answer(
+    user_message: str,
+    *,
+    history: list[dict[str, str]] | None = None,
+    evidence_text: str | None = None,
+) -> str | None:
+    """Use the existing ChatGPT/Codex OAuth subscription, never an API key."""
+    if not OPENCLAW_CODEX_SUBSCRIPTION_ENABLED:
+        return None
+    binary = _codex_subscription_binary()
+    if not binary:
+        return None
+    transcript = "\n".join(
+        f"{turn.get('role', 'user')}: {turn.get('content', '')}"
+        for turn in (history or [])[-8:]
+    )
+    now_kst = datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="seconds")
+    prompt = (
+        "당신은 Harness의 최고 수준 AI 비서실장이다. 한국어로 답한다. "
+        "첫 문장에 결론을 제시하고, 사용자의 실제 의도와 대화 맥락을 해석한다. "
+        "최신 사실 질문은 반드시 웹 검색으로 확인하고 확인 시각과 직접 URL 출처를 쓴다. "
+        "관찰 사실과 해석을 분리하며, 모르는 내용은 한계를 밝히되 유용한 답 전체를 폐기하지 않는다. "
+        "투자·법률·의료 질문은 정보 제공과 개인화된 실행 권고를 구분한다.\n"
+        f"현재 시각: {now_kst}\n"
+        f"대화 맥락:\n{transcript or '(없음)'}\n"
+        f"검증 근거:\n{evidence_text or '(필요하면 직접 읽기 전용 도구와 웹 검색으로 수집)'}\n"
+        f"사용자 요청: {user_message}"
+    )
+    env = os.environ.copy()
+    # Codex must use the existing ChatGPT OAuth subscription. Removing API
+    # credentials prevents accidental pay-as-you-go fallback.
+    env.pop("OPENAI_API_KEY", None)
+    env.pop("CODEX_API_KEY", None)
+    output_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(prefix="openclaw_codex_", suffix=".txt", delete=False) as handle:
+            output_path = handle.name
+        result = subprocess.run(
+            [
+                binary,
+                "exec",
+                "--ephemeral",
+                "--sandbox",
+                "read-only",
+                "--skip-git-repo-check",
+                "--ignore-rules",
+                "-C",
+                str(PROJECT_ROOT),
+                "-m",
+                OPENCLAW_CODEX_MODEL,
+                "-c",
+                f'model_reasoning_effort="{OPENCLAW_CODEX_REASONING_EFFORT}"',
+                "-o",
+                output_path,
+                "-",
+            ],
+            input=prompt,
+            text=True,
+            capture_output=True,
+            timeout=OPENCLAW_CODEX_TIMEOUT_SECONDS,
+            env=env,
+            cwd=PROJECT_ROOT,
+            check=False,
+        )
+        if result.returncode != 0:
+            logger.warning("[codex-subscription] failed rc=%s stderr=%s", result.returncode, result.stderr[-500:])
+            return None
+        answer = Path(output_path).read_text(encoding="utf-8").strip()
+        if not answer:
+            return None
+        if _is_recency_sensitive_query(user_message) and not re.search(r"https?://", answer):
+            logger.warning("[codex-subscription] recency answer missing source URL")
+            return None
+        return answer
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logger.warning("[codex-subscription] unavailable: %s", exc)
+        return None
+    finally:
+        if output_path:
+            Path(output_path).unlink(missing_ok=True)
+
+
+def _codex_subscription_evidence(user_message: str, answer: str) -> tuple[EvidenceItem, ...]:
+    subjects = tuple(dict.fromkeys(extract_subject_ids(user_message) + extract_subject_ids(answer[:1600])))
+    return _adapter_evidence(
+        source_id="codex_subscription_research",
+        subjects=subjects or ("답변",),
+        dimensions=("content", "state", "evidence", "analysis", "risk", "next_action"),
+        text=answer,
+        authority="primary",
+        privacy_class="public",
     )
 
 
@@ -3823,7 +3946,11 @@ def run(
             user_message=user_message,
             route=route,
             risk_scan=risk_scan,
-            model=OPENCLAW_TOOL_MODEL,
+            model=(
+                f"{OPENCLAW_CODEX_MODEL}-chatgpt-subscription"
+                if OPENCLAW_CODEX_SUBSCRIPTION_ENABLED
+                else OPENCLAW_TOOL_MODEL
+            ),
         )
         if status_evidence_request:
             status_payload = _load_status_payload()
@@ -4048,6 +4175,48 @@ def run(
                 user_message, bridge_args, authorized=_authorized_for_high_risk(requester_user_id)
             ),
         )
+
+    mutation_candidate = bool(
+        re.search(
+            r"(삭제|수정|저장|전송|보내|발행|배포|실행|승인|업로드|파일.*(?:써|만들)|"
+            r"delete|modify|save|send|publish|deploy|execute|approve|upload)",
+            user_message,
+            re.IGNORECASE,
+        )
+    )
+    if not mutation_candidate and "contextual_high_risk_reference" not in risk_scan.get("flags", []):
+        subscription_answer = _run_codex_subscription_answer(user_message, history=history)
+        if subscription_answer:
+            route = "codex_subscription_answer"
+            _log_route_audit(
+                session_id=effective_session_id,
+                requester_user_id=requester_user_id,
+                user_message=user_message,
+                route=route,
+                risk_scan=risk_scan,
+                model=f"{OPENCLAW_CODEX_MODEL}-chatgpt-subscription",
+            )
+            return _finish(
+                route,
+                subscription_answer,
+                evidence_items=_codex_subscription_evidence(user_message, subscription_answer),
+            )
+        if OPENCLAW_CODEX_SUBSCRIPTION_ENABLED:
+            unavailable = (
+                "ChatGPT 구독 모델이 응답하지 않았습니다. 별도 과금 API로 자동 전환하지 않았습니다. "
+                "잠시 후 다시 요청해 주세요."
+            )
+            return _finish(
+                "codex_subscription_unavailable",
+                unavailable,
+                decision_override=DeliveryDecision(
+                    SCHEMA_VERSION,
+                    "partial",
+                    unavailable,
+                    reasons=("subscription_model_unavailable",),
+                ),
+                record=False,
+            )
 
     # Rules are not a complete classifier. They only allow deterministic safe
     # actions or force escalation/blocking. Anything risk-bearing must not be

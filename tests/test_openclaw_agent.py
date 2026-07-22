@@ -17,10 +17,13 @@ class OpenClawAgentTests(unittest.TestCase):
         openclaw_agent._CONVERSATION_HISTORY.clear()
         openclaw_agent._rate_buckets.clear()
         self._session_persist_ttl_hours = openclaw_agent.SESSION_PERSIST_TTL_HOURS
+        self._codex_subscription_enabled = openclaw_agent.OPENCLAW_CODEX_SUBSCRIPTION_ENABLED
         openclaw_agent.SESSION_PERSIST_TTL_HOURS = 0
+        openclaw_agent.OPENCLAW_CODEX_SUBSCRIPTION_ENABLED = False
 
     def tearDown(self):
         openclaw_agent.SESSION_PERSIST_TTL_HOURS = self._session_persist_ttl_hours
+        openclaw_agent.OPENCLAW_CODEX_SUBSCRIPTION_ENABLED = self._codex_subscription_enabled
 
     def test_parse_status_command(self):
         parsed = openclaw_agent._parse_structured_command("status 확인해줘")
@@ -33,6 +36,28 @@ class OpenClawAgentTests(unittest.TestCase):
             openclaw_agent._normalize_user_message("<@U0B2KH5RX98> 오늘 온 메일 정리해"),
             "오늘 온 메일 정리해",
         )
+
+    @patch("adapters.content.openclaw_agent._run_codex_subscription_answer")
+    def test_current_market_question_uses_chatgpt_subscription_answer(self, mock_codex):
+        openclaw_agent.OPENCLAW_CODEX_SUBSCRIPTION_ENABLED = True
+        mock_codex.return_value = (
+            "결론: 한국장은 상승 마감했고 미국장은 아직 개장 전입니다.\n"
+            "- 확인 시각: 2026-07-22 21:19 KST\n"
+            "- 출처: https://www.yna.co.kr/example"
+        )
+
+        result = openclaw_agent.run("오늘 증시 시황은?", session_id="market-subscription")
+
+        self.assertIn("한국장은 상승 마감", result)
+        self.assertNotIn("최신 근거를 확인하지 못했습니다", result)
+        mock_codex.assert_called_once()
+
+    def test_subscription_answer_keeps_sources_beyond_legacy_700_char_limit(self):
+        answer = "결론: 시장 요약입니다.\n" + ("관찰 사실과 해석입니다. " * 45) + "\n출처: https://example.com/market"
+
+        result = openclaw_agent._finalize_response(answer, "codex_subscription_answer", "오늘 증시 시황은?")
+
+        self.assertIn("https://example.com/market", result)
 
     @patch("adapters.content.openclaw_agent._run_grounded_synthesis")
     @patch("adapters.content.openclaw_agent._try_gmail_summary_response")
