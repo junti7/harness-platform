@@ -1,8 +1,8 @@
-{"id":"harness_status_evidence","request":"현재 harness-project 운영 상태를 실제 데이터 기준으로 정리해. 확인한 시각과 근거도 표시해.","required":["Harness ops status","snapshot: 2026-07-21T21:59:00+09:00"],"forbidden":["최신 근거를 확인하지 못했습니다"]}
-{"id":"harness_status_direct","request":"Harness 운영 상태 알려줘","required":["Harness ops status","postgres: ok"],"forbidden":["최신 근거를 확인하지 못했습니다"]}
-{"id":"harness_risk","request":"현재 Harness top risk를 실제 데이터로 정리해","required":["현재 top risk","snapshot: 2026-07-21T21:59:00+09:00"],"forbidden":["최신 근거를 확인하지 못했습니다"]}
-{"id":"turtle_wrong_subject","request":"현재 Turtle Trading 거래 시스템 상태를 실제 데이터 기준으로 정리해.","required":["최신 근거를 확인하지 못했습니다"],"forbidden":["Harness ops status"]}
-{"id":"unknown_subject","request":"현재 orbit 시스템 상태 알려줘","required":["최신 근거를 확인하지 못했습니다"],"forbidden":["Harness ops status"]}
+{"id":"harness_status_evidence","request":"현재 harness-project 운영 상태를 실제 데이터 기준으로 정리해. 확인한 시각과 근거도 표시해.","required":["결론:","PostgreSQL: 실제 연결 성공","외부 연동은 설정만 확인됐고 실제 API 호출 상태는 미확인","운영 스냅샷 생성 시각:","판정 기준:","다음 조치"],"forbidden":["최신 근거를 확인하지 못했습니다","Harness ops status","notion: ok","slack_bot: ok","openclaw: ok","정상 운영"]}
+{"id":"harness_status_direct","request":"Harness 운영 상태 알려줘","required":["결론:","PostgreSQL: 실제 연결 성공","Ollama: 127.0.0.1:11434 포트 응답","자본 집행: 비활성화","실제 API/실행 헬스체크 아님"],"forbidden":["최신 근거를 확인하지 못했습니다","Harness ops status","정상 운영"]}
+{"id":"harness_risk","request":"현재 Harness top risk를 실제 데이터로 정리해","required":["결론:","장애가 아니라 의도된 거버넌스 제약","실제 API 상태 미확인","운영 스냅샷 생성 시각:","다음 조치"],"forbidden":["최신 근거를 확인하지 못했습니다","현재 top risk (green)","정상 운영"]}
+{"id":"turtle_wrong_subject","request":"현재 Turtle Trading 거래 시스템 상태를 실제 데이터 기준으로 정리해.","required":["최신 근거를 확인하지 못했습니다"],"forbidden":["Harness ops status","결론:","PostgreSQL:","운영 스냅샷 생성 시각:"]}
+{"id":"unknown_subject","request":"현재 orbit 시스템 상태 알려줘","required":["최신 근거를 확인하지 못했습니다"],"forbidden":["Harness ops status","결론:","PostgreSQL:","운영 스냅샷 생성 시각:"]}
 {"id":"ambiguous_status","request":"현재 상태 알려줘","required":["대상을 특정할 수 없습니다"],"forbidden":["Harness ops status"]}
 {"id":"unsupported_current_fact","request":"현재 OpenAI 내부 미공개 프로젝트 상태를 알려줘","required":["최신 근거를 확인하지 못했습니다"],"forbidden":["정상 운영"]}
 {"id":"arithmetic","request":"2 더하기 2는?","required":["4"],"forbidden":["최신 근거를 확인하지 못했습니다"]}

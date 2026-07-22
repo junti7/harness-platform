@@ -1,0 +1,92 @@
+{
+  "task": "OpenClaw evidence-backed status response semantics",
+  "status": "residual_risk",
+  "date": "2026-07-22",
+  "requirements": [
+    {
+      "requirement": "Replace raw status dump with conclusion, verified state, limits, evidence, and next action",
+      "status": "pass",
+      "evidence": "adapters/content/openclaw_agent.py deterministic status route"
+    },
+    {
+      "requirement": "Do not present token presence or CLI installation as live API health",
+      "status": "pass",
+      "evidence": "Notion, Slack Bot, and OpenClaw are explicitly labeled configured/detected and live-unverified"
+    },
+    {
+      "requirement": "Keep Korean input in Korean and unify English status routing",
+      "status": "pass",
+      "evidence": "tests/test_openclaw_agent.py Korean and English route regressions"
+    },
+    {
+      "requirement": "Prevent generic Harness evidence from answering named subsystem status",
+      "status": "pass",
+      "evidence": "Turtle and unknown-subject E2E forbidden-marker assertions"
+    },
+    {
+      "requirement": "Reject stale status snapshots instead of treating file-read time as observation time",
+      "status": "pass",
+      "evidence": "Real local run() entrypoint rejected runtime/openclaw_status.json generated 2026-05-31; dedicated stale-snapshot regression added"
+    },
+    {
+      "requirement": "Verify the deployed Slack user entrypoint",
+      "status": "not_verified",
+      "evidence": "Requires post-deploy Slack DM retry by CEO token context"
+    }
+  ],
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-22T20:01:22+09:00",
+      "summary": "Read completion, deployment, model-routing, and Red Team rules."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-22T20:01:22+09:00",
+      "summary": "Read real-entrypoint verification, completion evidence, and source-of-truth rules."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Contract safety scorer",
+      "command": ".venv/bin/python scripts/score_openclaw_response_quality.py --corpus configs/openclaw/response_quality_corpus_v1.jsonl --min-cases 240 --output runtime/openclaw_quality_eval.json",
+      "result": "passed: 240 cases, 0 failures; contract safety only"
+    },
+    {
+      "name": "Actual run-path golden scorer",
+      "command": ".venv/bin/python scripts/score_openclaw_e2e_golden.py --corpus configs/openclaw/e2e_golden_corpus_v1.jsonl --output runtime/openclaw_e2e_golden.json",
+      "result": "passed: 9 hand-authored cases, 0 failures"
+    },
+    {
+      "name": "OpenClaw targeted regression suite",
+      "command": ".venv/bin/python -m pytest tests/test_openclaw_response_quality.py tests/test_openclaw_agent.py tests/test_slack_listener.py tests/test_openclaw_slack_e2e_probe.py -q",
+      "result": "passed: 106 tests; one third-party deprecation warning"
+    },
+    {
+      "name": "Real OpenClaw service run entrypoint stale-evidence check",
+      "target": "local OpenClaw service run() entrypoint with real runtime/openclaw_status.json",
+      "command": "OPENCLAW_VERIFIED_DELIVERY_ENABLED=true OPENCLAW_QUALITY_SHADOW_ENABLED=false .venv/bin/python -c 'from adapters.content.openclaw_agent import run; print(run(...))'",
+      "result": "passed fail-closed behavior: real stale 2026-05-31 status snapshot returned latest-evidence abstention and emitted no stale health claims"
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh after scoped commit and push",
+    "result": "pending"
+  },
+  "red_team": {
+    "models": ["Copilot", "Claude"],
+    "artifacts": [
+      {
+        "artifact": "/Users/juntae.park/projects/harness-platform/docs/reviews/red_team/openclaw_status_semantics_copilot_20260722.md"
+      }
+    ],
+    "verdict": "red_team_residual_risk",
+    "notes": "Copilot initially blocked three rounds and found real route, semantic, and guard weaknesses; all were fixed and final verdict was clear. Claude CLI attempts hung with no output, so cross-model clear is not claimed."
+  },
+  "residual_risk": [
+    "Live Slack DM output is not yet verified after deployment.",
+    "Claude independent delta review unavailable; no cross-model red_team_clear claim.",
+    "The 9-case E2E corpus is regression evidence for known paths, not proof of universal answer quality.",
+    "The MBP runtime status file is stale by design/operation; production Mac Mini must generate a fresh snapshot before a substantive current-status answer is allowed."
+  ]
+}

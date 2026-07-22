@@ -163,7 +163,7 @@ class OpenClawAgentTests(unittest.TestCase):
     @patch("adapters.content.openclaw_agent._run_anthropic_chat")
     def test_top_risk_summary_uses_deterministic_status_brief(self, mock_chat, mock_ollama, mock_status):
         mock_status.return_value = {
-            "generated_at": "2026-05-31T10:00:00",
+            "generated_at": real_datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="seconds"),
             "runtime": {"slack_phase": "phase1", "capital_actions_enabled": "false"},
             "integrations": {
                 "postgres": {"available": False},
@@ -175,9 +175,13 @@ class OpenClawAgentTests(unittest.TestCase):
 
         result = openclaw_agent.run("이번 주 top risk 5개와 즉시 조치안을 요약해줘", session_id="ops-session")
 
-        self.assertIn("현재 top risk", result)
-        self.assertIn("Postgres unavailable", result)
-        self.assertIn("Capital actions remain gated off", result)
+        self.assertIn("결론:", result)
+        self.assertIn("최우선 운영 문제는 PostgreSQL 연결 실패", result)
+        self.assertIn("다음 조치", result)
+        self.assertNotIn("top risk (", result)
+        self.assertIn("PostgreSQL 연결 실패 또는 미확인", result)
+        self.assertNotIn("미확인 범위: analysis", result)
+        self.assertIn("자본 집행 비활성화: 장애가 아니라 의도된 거버넌스 제약", result)
         mock_ollama.assert_not_called()
         mock_chat.assert_not_called()
 
@@ -484,10 +488,11 @@ class OpenClawAgentTests(unittest.TestCase):
     @patch("adapters.content.openclaw_agent._load_status_payload")
     def test_harness_status_with_evidence_wording_uses_adapter_subjects(self, mock_status):
         mock_status.return_value = {
-            "generated_at": "2026-07-21T21:59:00+09:00",
+            "generated_at": real_datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="seconds"),
             "runtime": {"capital_actions_enabled": False, "slack_phase": "phase-1"},
             "integrations": {"postgres": {"available": True}, "openclaw": {"available": True}},
             "services": {"ollama_11434": True},
+            "integrity": {"ok": True, "findings": []},
         }
 
         result = openclaw_agent.run(
@@ -495,14 +500,98 @@ class OpenClawAgentTests(unittest.TestCase):
             session_id="status-evidence-wording",
         )
 
-        self.assertIn("Harness ops status", result)
-        self.assertIn("snapshot: 2026-07-21T21:59:00+09:00", result)
+        self.assertIn("결론:", result)
+        self.assertIn("PostgreSQL: 실제 연결 성공", result)
+        self.assertIn("운영 스냅샷 생성 시각:", result)
+        self.assertIn("외부 연동은 설정만 확인됐고 실제 API 호출 상태는 미확인", result)
+        self.assertIn("다음 조치", result)
+        self.assertNotIn("Harness ops status", result)
+        self.assertNotIn("notion: ok", result)
+        self.assertNotIn("정상 운영", result)
         self.assertNotIn("최신 근거를 확인하지 못했습니다", result)
+
+    @patch("adapters.content.openclaw_agent._load_status_payload")
+    def test_harness_status_reports_integrity_failure_as_degraded(self, mock_status):
+        mock_status.return_value = {
+            "generated_at": real_datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="seconds"),
+            "runtime": {"capital_actions_enabled": "false", "slack_phase": "phase1"},
+            "integrations": {"postgres": {"available": True}},
+            "services": {"ollama_11434": True},
+            "integrity": {"ok": False, "findings": ["missing_env:OLLAMA_MODEL"]},
+        }
+
+        result = openclaw_agent.run("Harness 운영 상태 알려줘", session_id="status-integrity-failure")
+
+        self.assertIn("결론: 장애 또는 구성 문제 신호가 있습니다.", result)
+        self.assertIn("무결성 사전검사: 실패", result)
+        self.assertIn("missing_env:OLLAMA_MODEL", result)
+        self.assertNotIn("정상 운영", result)
+
+    @patch("adapters.content.openclaw_agent._load_status_payload")
+    def test_harness_status_english_request_stays_english(self, mock_status):
+        mock_status.return_value = {
+            "generated_at": real_datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="seconds"),
+            "runtime": {"capital_actions_enabled": "false", "slack_phase": "phase1"},
+            "integrations": {"postgres": {"available": True}},
+            "services": {"ollama_11434": True},
+            "integrity": {"ok": True, "findings": []},
+        }
+
+        result = openclaw_agent.run("Show Harness operations status", session_id="status-english")
+
+        self.assertIn("Conclusion:", result)
+        self.assertIn("Integrity preflight: passed", result)
+        self.assertNotIn("결론:", result)
+
+    @patch("adapters.content.openclaw_agent._load_status_payload")
+    def test_harness_top_risk_does_not_claim_capital_constraint_when_enabled(self, mock_status):
+        mock_status.return_value = {
+            "generated_at": real_datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="seconds"),
+            "runtime": {"capital_actions_enabled": "true", "slack_phase": "phase1"},
+            "integrations": {"postgres": {"available": True}},
+            "services": {"ollama_11434": True},
+            "integrity": {"ok": True, "findings": []},
+        }
+
+        result = openclaw_agent.run("현재 Harness top risk 알려줘", session_id="risk-capital-enabled")
+
+        self.assertIn("즉시 장애나 자본 집행 제약은 없습니다", result)
+        self.assertNotIn("가장 큰 운영 제약은 자본 집행 비활성화", result)
+
+    @patch("adapters.content.openclaw_agent._load_status_payload")
+    def test_harness_current_status_rejects_stale_snapshot(self, mock_status):
+        mock_status.return_value = {
+            "generated_at": "2026-05-31T21:04:56+09:00",
+            "runtime": {"capital_actions_enabled": "false", "slack_phase": "phase1"},
+            "integrations": {"postgres": {"available": True}},
+            "services": {"ollama_11434": True},
+            "integrity": {"ok": True, "findings": []},
+        }
+
+        result = openclaw_agent.run("현재 Harness 운영 상태 알려줘", session_id="status-stale-snapshot")
+
+        self.assertIn("최신 근거를 확인하지 못했습니다", result)
+        self.assertNotIn("PostgreSQL: 실제 연결 성공", result)
+
+    @patch("adapters.content.openclaw_agent._load_status_payload")
+    def test_harness_top_risk_rejects_snapshot_older_than_status_sla(self, mock_status):
+        mock_status.return_value = {
+            "generated_at": "2026-05-31T21:04:56+09:00",
+            "runtime": {"capital_actions_enabled": "false", "slack_phase": "phase1"},
+            "integrations": {"postgres": {"available": True}},
+            "services": {"ollama_11434": True},
+            "integrity": {"ok": True, "findings": []},
+        }
+
+        result = openclaw_agent.run("현재 Harness top risk 알려줘", session_id="risk-stale-snapshot")
+
+        self.assertIn("최신 근거를 확인하지 못했습니다", result)
+        self.assertNotIn("즉시 장애는 없습니다", result)
 
     @patch("adapters.content.openclaw_agent._load_status_payload")
     def test_named_subsystem_status_cannot_use_generic_harness_snapshot(self, mock_status):
         mock_status.return_value = {
-            "generated_at": "2026-07-21T21:59:00+09:00",
+            "generated_at": real_datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="seconds"),
             "runtime": {"capital_actions_enabled": False},
             "integrations": {"postgres": {"available": True}},
             "services": {"ollama_11434": True},
@@ -514,7 +603,8 @@ class OpenClawAgentTests(unittest.TestCase):
         )
 
         self.assertIn("최신 근거를 확인하지 못했습니다", result)
-        self.assertNotIn("Harness ops status", result)
+        for generic_status_marker in ("결론:", "PostgreSQL:", "운영 스냅샷 생성 시각:"):
+            self.assertNotIn(generic_status_marker, result)
 
     def test_parse_goal_cli_status_command(self):
         parsed = openclaw_agent._parse_structured_command("/goal status 3")
@@ -807,7 +897,7 @@ class OpenClawAgentTests(unittest.TestCase):
         mock_status,
     ):
         mock_status.return_value = {
-            "generated_at": "2026-05-31T10:00:00",
+            "generated_at": real_datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="seconds"),
             "runtime": {"slack_phase": "phase1", "capital_actions_enabled": "false"},
             "integrations": {"postgres": {"available": False}},
             "services": {},
@@ -815,7 +905,10 @@ class OpenClawAgentTests(unittest.TestCase):
 
         result = openclaw_agent.run("이번 주 top risk 5개와 즉시 조치안을 요약해줘")
 
-        self.assertIn("현재 top risk", result)
+        self.assertIn("결론:", result)
+        self.assertIn("최우선 운영 문제는 PostgreSQL 연결 실패", result)
+        self.assertIn("다음 조치", result)
+        self.assertNotIn("미확인 범위: analysis", result)
         mock_haiku.assert_not_called()
         mock_premium.assert_not_called()
 

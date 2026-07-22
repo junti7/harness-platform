@@ -439,7 +439,7 @@ _STATUS_HINT_RE = re.compile(
     re.IGNORECASE,
 )
 _STATUS_BRIEF_RE = re.compile(
-    r"(top\s*risk|리스크|병목|현황|상태|health|헬스|ops|운영상황|운영\s*상태|"
+    r"(top\s*risk|리스크|병목|현황|상태|status|health|헬스|ops|운영상황|운영\s*상태|"
     r"파이프라인\s*어때|지금\s*어때|상황\s*어때|무슨\s*문제)",
     re.IGNORECASE,
 )
@@ -567,7 +567,18 @@ def _extract_top_risks(payload: dict[str, Any]) -> list[str]:
     return risks[:5]
 
 
-def _try_status_brief_response(user_message: str) -> str | None:
+def _status_snapshot_observed_at(payload: dict[str, Any]) -> datetime:
+    raw = str(payload.get("generated_at") or "").strip()
+    try:
+        observed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime(1970, 1, 1, tzinfo=timezone.utc)
+    if observed.tzinfo is None:
+        observed = observed.replace(tzinfo=ZoneInfo("Asia/Seoul"))
+    return observed.astimezone(timezone.utc)
+
+
+def _try_status_brief_response(user_message: str, payload: dict[str, Any] | None = None) -> str | None:
     if not _STATUS_BRIEF_RE.search(user_message):
         return None
     risk_query = bool(re.search(r"top\s*risk|리스크|병목", user_message, re.IGNORECASE))
@@ -575,44 +586,172 @@ def _try_status_brief_response(user_message: str) -> str | None:
     if not risk_query and not harness_scoped:
         return None
 
-    payload = _load_status_payload()
+    payload = payload if payload is not None else _load_status_payload()
     if not payload:
         return None
 
-    health = _derive_status_health(payload)
     generated_at = str(payload.get("generated_at") or "-")
     runtime = payload.get("runtime") if isinstance(payload.get("runtime"), dict) else {}
     phase = runtime.get("slack_phase") if isinstance(runtime, dict) else None
-    risks = _extract_top_risks(payload)
-
-    if re.search(r"(top\s*risk|리스크|병목)", user_message, re.IGNORECASE):
-        lines = [f"현재 top risk ({health})"]
-        if phase:
-            lines.append(f"- phase: {phase}")
-        if risks:
-            lines.extend(f"- {risk}" for risk in risks[:5])
-        else:
-            lines.append("- 확인된 핵심 리스크 없음")
-        lines.append(f"- snapshot: {generated_at}")
-        return "\n".join(lines)
 
     integrations = payload.get("integrations") if isinstance(payload.get("integrations"), dict) else {}
     services = payload.get("services") if isinstance(payload.get("services"), dict) else {}
-    lines = [f"Harness ops status: {health}"]
+    korean = bool(re.search(r"[가-힣]", user_message))
+    postgres = integrations.get("postgres") if isinstance(integrations, dict) else None
+    notion = integrations.get("notion") if isinstance(integrations, dict) else None
+    slack_bot = integrations.get("slack_bot") if isinstance(integrations, dict) else None
+    openclaw = integrations.get("openclaw") if isinstance(integrations, dict) else None
+    integrity = payload.get("integrity") if isinstance(payload.get("integrity"), dict) else None
+    postgres_live = isinstance(postgres, dict) and postgres.get("available") is True
+    ollama_live = isinstance(services, dict) and services.get("ollama_11434") is True
+    external_unverified = any(
+        isinstance(item, dict) and item.get("available") is True
+        for item in (notion, slack_bot, openclaw)
+    )
+    capital_enabled = str(runtime.get("capital_actions_enabled", "-")).lower() in {"1", "true", "yes"}
+    integrity_ok = isinstance(integrity, dict) and integrity.get("ok") is True
+    integrity_failed = isinstance(integrity, dict) and integrity.get("ok") is False
+    integrity_findings = [str(value) for value in (integrity or {}).get("findings", [])][:3]
+
+    if risk_query:
+        operational_issues: list[str] = []
+        if not postgres_live:
+            operational_issues.append(
+                "PostgreSQL 연결 실패 또는 미확인" if korean else "PostgreSQL connection failed or is unverified"
+            )
+        if not ollama_live:
+            operational_issues.append(
+                "Ollama 127.0.0.1:11434 포트 미응답" if korean else "Ollama 127.0.0.1:11434 did not respond"
+            )
+        if integrity_failed:
+            operational_issues.append("무결성 사전검사 실패" if korean else "Integrity preflight failed")
+        if korean:
+            conclusion = (
+                f"확인 범위의 최우선 운영 문제는 {operational_issues[0]}입니다."
+                if operational_issues
+                else (
+                    "확인 범위에서 즉시 장애는 없습니다. 가장 큰 운영 제약은 자본 집행 비활성화입니다."
+                    if not capital_enabled
+                    else "확인 범위에서 즉시 장애나 자본 집행 제약은 없습니다. 외부 연동 실제 API 상태는 미확인입니다."
+                )
+            )
+            lines = [f"결론: {conclusion}", "", "1. 확인된 리스크·제약"]
+            lines.extend(f"- {issue}" for issue in operational_issues)
+            if not capital_enabled:
+                lines.append("- 자본 집행 비활성화: 장애가 아니라 의도된 거버넌스 제약")
+            lines.extend(
+                [
+                    "- Notion·Slack·OpenClaw는 설정/설치 여부만 확인; 실제 API 상태 미확인",
+                    "",
+                    "2. 근거",
+                    f"- 운영 스냅샷 생성 시각: {generated_at}",
+                    "- 판정 기준: DB 연결 시도, 로컬 포트, 무결성 사전검사, 설정·CLI 존재 여부",
+                    "",
+                    "3. 다음 조치",
+                    "- 외부 연동 실제 API probe 후 최종 운영 리스크를 재판정해야 합니다.",
+                ]
+            )
+            return "\n".join(lines)
+        conclusion = (
+            f"Top observed operational issue: {operational_issues[0]}."
+            if operational_issues
+            else (
+                "No immediate failure was observed in scope; disabled capital actions are the main constraint."
+                if not capital_enabled
+                else "No immediate failure or capital-action constraint was observed in scope; external live API health is unverified."
+            )
+        )
+        return "\n".join(
+            [
+                f"Conclusion: {conclusion}",
+                "",
+                "1. Observed risks and constraints",
+                *(f"- {issue}" for issue in operational_issues),
+                "- Capital actions are disabled by governance, not an incident." if not capital_enabled else "- Capital actions are enabled.",
+                "- Notion, Slack, and OpenClaw live API health is unverified.",
+                "",
+                "2. Evidence",
+                f"- Snapshot generated: {generated_at}",
+                "",
+                "3. Next action",
+                "- Run live external-integration probes, then reassess operational risk.",
+            ]
+        )
+
+    if korean:
+        if not postgres_live or not ollama_live or integrity_failed:
+            conclusion = "장애 또는 구성 문제 신호가 있습니다."
+        elif integrity_ok:
+            conclusion = "핵심 로컬 경로가 응답하고 무결성 사전검사를 통과했습니다."
+        else:
+            conclusion = "핵심 로컬 경로는 응답하지만 무결성 사전검사 결과는 미확인입니다."
+        if external_unverified:
+            conclusion += " 외부 연동은 설정만 확인됐고 실제 API 호출 상태는 미확인입니다."
+        lines = [f"결론: {conclusion}", "", "1. 확인된 상태"]
+        if phase:
+            lines.append(f"- 운영 단계: {phase}")
+        lines.extend(
+            [
+                f"- PostgreSQL: {'실제 연결 성공' if postgres_live else '연결 실패 또는 미확인'}",
+                f"- Ollama: {'127.0.0.1:11434 포트 응답' if ollama_live else '127.0.0.1:11434 포트 미응답'}",
+                f"- 무결성 사전검사: {'통과' if integrity_ok else ('실패' if integrity_failed else '미확인')}",
+            ]
+        )
+        if integrity_findings:
+            lines.append(f"- 무결성 발견사항: {', '.join(integrity_findings)}")
+        lines.extend(["", "2. 제한·미확인"])
+        lines.append(f"- 자본 집행: {'활성화' if capital_enabled else '비활성화(CAPITAL_ACTIONS_ENABLED=false)'}")
+        for label, item, basis in (
+            ("Notion", notion, "API 키 설정"),
+            ("Slack Bot", slack_bot, "봇 토큰 설정"),
+            ("OpenClaw", openclaw, "CLI 설치 감지"),
+        ):
+            configured = isinstance(item, dict) and item.get("available") is True
+            lines.append(f"- {label}: {basis} {'확인' if configured else '미확인'}; 실제 API/실행 헬스체크 아님")
+        lines.extend(
+            [
+                "",
+                "3. 근거",
+                f"- 운영 스냅샷 생성 시각: {generated_at}",
+                "- 판정 기준: DB 연결 시도, 로컬 포트 확인, 환경설정·CLI 존재 여부",
+                "",
+                "4. 다음 조치",
+                "- 완전한 운영 판정이 필요하면 Notion·Slack·OpenClaw 실제 API 호출 검사를 추가 실행해야 합니다.",
+            ]
+        )
+        return "\n".join(lines)
+
+    if not postgres_live or not ollama_live or integrity_failed:
+        conclusion = "A failure or configuration issue is present."
+    elif integrity_ok:
+        conclusion = "Core local paths respond and the integrity preflight passed."
+    else:
+        conclusion = "Core local paths respond; the integrity preflight result is unavailable."
+    if external_unverified:
+        conclusion += " External integrations are configured but not live-API verified."
+    lines = [f"Conclusion: {conclusion}", "", "1. Verified state"]
     if phase:
-        lines.append(f"- phase: {phase}")
-    if isinstance(runtime, dict):
-        lines.append(f"- capital_actions_enabled: {runtime.get('capital_actions_enabled', '-')}")
-    if isinstance(integrations, dict):
-        for key in ("postgres", "notion", "slack_bot", "openclaw"):
-            value = integrations.get(key)
-            if isinstance(value, dict):
-                lines.append(f"- {key}: {'ok' if value.get('available') else 'down'}")
-    if isinstance(services, dict) and "ollama_11434" in services:
-        lines.append(f"- ollama_11434: {'ok' if services.get('ollama_11434') else 'down'}")
-    if risks:
-        lines.append(f"- top_risk: {risks[0]}")
-    lines.append(f"- snapshot: {generated_at}")
+        lines.append(f"- Operating phase: {phase}")
+    lines.extend(
+        [
+            f"- PostgreSQL: {'connection succeeded' if postgres_live else 'failed or unverified'}",
+            f"- Ollama: {'127.0.0.1:11434 responded' if ollama_live else '127.0.0.1:11434 did not respond'}",
+            f"- Integrity preflight: {'passed' if integrity_ok else ('failed' if integrity_failed else 'unverified')}",
+            "",
+            "2. Constraints and unverified scope",
+            f"- Capital actions: {'enabled' if capital_enabled else 'disabled (CAPITAL_ACTIONS_ENABLED=false)'}",
+            f"- Notion: {'API key configured' if isinstance(notion, dict) and notion.get('available') is True else 'configuration unverified'}; no live API check",
+            f"- Slack Bot: {'token configured' if isinstance(slack_bot, dict) and slack_bot.get('available') is True else 'configuration unverified'}; no live API check",
+            f"- OpenClaw: {'CLI detected' if isinstance(openclaw, dict) and openclaw.get('available') is True else 'CLI not detected'}; no execution health check",
+            "",
+            "3. Evidence",
+            f"- Snapshot generated: {generated_at}",
+            "- Checks: DB connection attempt, local port probe, configuration and CLI presence",
+            "",
+            "4. Next action",
+            "- Run live Notion, Slack, and OpenClaw API probes before claiming full operational health.",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -3177,6 +3316,7 @@ def _adapter_evidence(
     coverage: str = "complete",
     privacy_class: str = "internal",
     partial: bool = False,
+    observed_at: datetime | None = None,
 ) -> tuple[EvidenceItem, ...]:
     """Evidence adapter boundary. Callers declare actual source capability."""
     return (
@@ -3188,7 +3328,7 @@ def _adapter_evidence(
             authority=authority,  # type: ignore[arg-type]
             coverage=coverage,  # type: ignore[arg-type]
             privacy_class=privacy_class,  # type: ignore[arg-type]
-            observed_at=_RuntimeDateTime.fromtimestamp(time.time(), tz=timezone.utc),
+            observed_at=observed_at or _RuntimeDateTime.fromtimestamp(time.time(), tz=timezone.utc),
             fetch_status="partial" if partial else "ok",
         ),
     )
@@ -3226,6 +3366,16 @@ def _bridge_evidence(bridge_args: list[str], text: str) -> tuple[EvidenceItem, .
 def _bridge_contract(message: str, bridge_args: list[str], *, authorized: bool) -> AnswerContract:
     contract = infer_answer_contract(message, authorized=authorized)
     capability = _BRIDGE_EVIDENCE_CAPABILITIES.get(bridge_args[0]) if bridge_args else None
+    if bridge_args and bridge_args[0] == "status":
+        contract = replace(
+            contract,
+            task_type="status",
+            requested_dimensions=tuple(dict.fromkeys(("state",) + contract.requested_dimensions)),
+            time_kind="current",
+            minimum_authority="authoritative_runtime",
+            freshness_seconds=300,
+            required_coverage="complete",
+        )
     if capability and (not contract.subject_ids or contract.ambiguities):
         subjects, _, _ = capability
         contract = replace(contract, subject_ids=subjects, ambiguities=())
@@ -3462,7 +3612,8 @@ def run(
             ),
         )
 
-    status_brief_response = _try_status_brief_response(user_message)
+    status_payload = _load_status_payload()
+    status_brief_response = _try_status_brief_response(user_message, status_payload)
     if status_brief_response is not None:
         _log_route_audit(
             session_id=effective_session_id,
@@ -3478,8 +3629,9 @@ def run(
             evidence_items=_adapter_evidence(
                 source_id="harness_status_snapshot",
                 subjects=("harness", "harness-project", "platform", "파이프라인", "운영", "리스크", "risk"),
-                dimensions=("state", "evidence", "risk", "next_action"),
+                dimensions=("state", "evidence", "analysis", "risk", "next_action"),
                 text=status_brief_response,
+                observed_at=_status_snapshot_observed_at(status_payload),
             ),
             contract_override=_bridge_contract(
                 user_message,

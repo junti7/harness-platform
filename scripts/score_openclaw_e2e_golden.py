@@ -6,8 +6,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -16,13 +18,14 @@ from adapters.content import openclaw_agent
 
 
 STATUS_FIXTURE = {
-    "generated_at": "2026-07-21T21:59:00+09:00",
+    "generated_at": datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="seconds"),
     "runtime": {"capital_actions_enabled": False, "slack_phase": "phase-1"},
     "integrations": {
         "postgres": {"available": True}, "notion": {"available": True},
         "slack_bot": {"available": True}, "openclaw": {"available": True},
     },
     "services": {"ollama_11434": True},
+    "integrity": {"ok": True, "findings": []},
 }
 
 
