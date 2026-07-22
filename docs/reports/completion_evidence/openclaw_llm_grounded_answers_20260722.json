@@ -25,8 +25,8 @@
     },
     {
       "requirement": "Production Slack listener uses deployed change",
-      "status": "not_verified",
-      "evidence": "Awaiting commit, push, selective Mac Mini deployment, listener restart, and production run verification"
+      "status": "pass",
+      "evidence": "Mac Mini paths match origin/main; production run returned the grounded Gmail answer; listener restarted running as PID 60622 with verified delivery and shadow enabled"
     }
   ],
   "governance_bootstrap": [
@@ -59,14 +59,26 @@
       "target": "Local OpenClaw run() using live status bridge probes and Anthropic API",
       "command": "run('<@U0B2KH5RX98> 현재 harness-project 운영 상태를 실제 데이터 기준으로 정리해...')",
       "result": "passed at 2026-07-22 20:52 KST: LLM summarized live DB, Ollama, integrity, Notion and Slack evidence, separated OpenClaw cli_missing, and included snapshot time"
+    },
+    {
+      "name": "Mac Mini production Gmail and listener entrypoint",
+      "target": "Mac Mini production OpenClaw run service and Slack listener process",
+      "command": "ssh macmini; run exact Slack-mentioned Gmail request; launchctl kickstart com.harness.slack-listener; inspect process flags",
+      "result": "passed at 2026-07-22 20:53 KST: Claude summarized five current messages with grounded categories and no-action conclusion; listener PID 60622 state=running; verified delivery and quality shadow both true"
+    },
+    {
+      "name": "Slack outbound DM probe",
+      "target": "Real Slack user-DM transport",
+      "command": ".venv/bin/python scripts/openclaw_slack_e2e_probe.py --send",
+      "result": "not sent: this process could not read the approved xoxp Keychain item; no Slack message was emitted"
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh adapters/content/openclaw_agent.py core/openclaw_response_quality.py scripts/score_openclaw_e2e_golden.py tests/test_openclaw_agent.py docs/reports/completion_evidence/openclaw_llm_grounded_answers_20260722.json",
-    "result": "pending post-commit selective deployment"
+    "result": "passed: commit e99381c pushed to origin/main; selective backup scratch/pre_deploy_backup_20260722_205330; all five deployed path diffs were 0; backend reloaded; production Gmail run passed; Slack listener restarted PID 60622"
   },
   "residual_risk": [
-    "Production Mac Mini and Slack listener have not yet loaded this revision.",
+    "A synthetic Slack DM could not be sent because the local probe process could not read the xoxp Keychain item; the Mac Mini production run and listener process were verified separately.",
     "LLM synthesis can still vary in wording; contract safety prevents unsupported evidence sources and secret-bearing facts but is not a token-level entailment proof.",
     "API cost logging reports a pre-existing api_cost_log.source schema mismatch while answers continue successfully."
   ]
