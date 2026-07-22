@@ -21,8 +21,10 @@ STATUS_FIXTURE = {
     "generated_at": datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="seconds"),
     "runtime": {"capital_actions_enabled": False, "slack_phase": "phase-1"},
     "integrations": {
-        "postgres": {"available": True}, "notion": {"available": True},
-        "slack_bot": {"available": True}, "openclaw": {"available": True},
+        "postgres": {"available": True},
+        "notion": {"available": True, "live_checked": True, "error": None},
+        "slack_bot": {"available": True, "live_checked": True, "error": None},
+        "openclaw": {"available": True, "live_checked": True, "error": None},
     },
     "services": {"ollama_11434": True},
     "integrity": {"ok": True, "findings": []},

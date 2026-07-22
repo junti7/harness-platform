@@ -624,8 +624,16 @@ def _try_status_brief_response(user_message: str, payload: dict[str, Any] | None
     integrity = payload.get("integrity") if isinstance(payload.get("integrity"), dict) else None
     postgres_live = isinstance(postgres, dict) and postgres.get("available") is True
     ollama_live = isinstance(services, dict) and services.get("ollama_11434") is True
+    notion_live = isinstance(notion, dict) and notion.get("live_checked") is True and notion.get("available") is True
+    slack_live = isinstance(slack_bot, dict) and slack_bot.get("live_checked") is True and slack_bot.get("available") is True
+    openclaw_live = isinstance(openclaw, dict) and openclaw.get("live_checked") is True and openclaw.get("available") is True
+    external_live = notion_live and slack_live and openclaw_live
     external_unverified = any(
-        isinstance(item, dict) and item.get("available") is True
+        not isinstance(item, dict) or item.get("live_checked") is not True
+        for item in (notion, slack_bot, openclaw)
+    )
+    external_failed = any(
+        isinstance(item, dict) and item.get("live_checked") is True and item.get("available") is not True
         for item in (notion, slack_bot, openclaw)
     )
     capital_enabled = str(runtime.get("capital_actions_enabled", "-")).lower() in {"1", "true", "yes"}
@@ -645,6 +653,8 @@ def _try_status_brief_response(user_message: str, payload: dict[str, Any] | None
             )
         if integrity_failed:
             operational_issues.append("무결성 사전검사 실패" if korean else "Integrity preflight failed")
+        if external_failed:
+            operational_issues.append("외부 연동 live probe 실패" if korean else "External integration live probe failed")
         if korean:
             conclusion = (
                 f"확인 범위의 최우선 운영 문제는 {operational_issues[0]}입니다."
@@ -652,7 +662,7 @@ def _try_status_brief_response(user_message: str, payload: dict[str, Any] | None
                 else (
                     "확인 범위에서 즉시 장애는 없습니다. 가장 큰 운영 제약은 자본 집행 비활성화입니다."
                     if not capital_enabled
-                    else "확인 범위에서 즉시 장애나 자본 집행 제약은 없습니다. 외부 연동 실제 API 상태는 미확인입니다."
+                    else "확인 범위에서 즉시 장애나 자본 집행 제약은 없습니다."
                 )
             )
             lines = [f"결론: {conclusion}", "", "1. 확인된 리스크·제약"]
@@ -661,14 +671,15 @@ def _try_status_brief_response(user_message: str, payload: dict[str, Any] | None
                 lines.append("- 자본 집행 비활성화: 장애가 아니라 의도된 거버넌스 제약")
             lines.extend(
                 [
-                    "- Notion·Slack·OpenClaw는 설정/설치 여부만 확인; 실제 API 상태 미확인",
+                    f"- 외부 연동: {'Notion·Slack·OpenClaw live probe 성공' if external_live else ('일부 live probe 실패' if external_failed else '일부 live probe 미확인')}",
                     "",
                     "2. 근거",
                     f"- 운영 스냅샷 생성 시각: {generated_at}",
                     "- 판정 기준: DB 연결 시도, 로컬 포트, 무결성 사전검사, 설정·CLI 존재 여부",
                     "",
                     "3. 다음 조치",
-                    "- 외부 연동 실제 API probe 후 최종 운영 리스크를 재판정해야 합니다.",
+                    "- 실패하거나 미확인인 probe가 있으면 해당 연동의 인증·gateway 상태를 점검해야 합니다."
+                    if not external_live else "- 현재 확인 범위에서는 즉시 복구 조치가 필요하지 않습니다.",
                 ]
             )
             return "\n".join(lines)
@@ -678,7 +689,7 @@ def _try_status_brief_response(user_message: str, payload: dict[str, Any] | None
             else (
                 "No immediate failure was observed in scope; disabled capital actions are the main constraint."
                 if not capital_enabled
-                else "No immediate failure or capital-action constraint was observed in scope; external live API health is unverified."
+                else "No immediate failure or capital-action constraint was observed in scope."
             )
         )
         return "\n".join(
@@ -688,24 +699,27 @@ def _try_status_brief_response(user_message: str, payload: dict[str, Any] | None
                 "1. Observed risks and constraints",
                 *(f"- {issue}" for issue in operational_issues),
                 "- Capital actions are disabled by governance, not an incident." if not capital_enabled else "- Capital actions are enabled.",
-                "- Notion, Slack, and OpenClaw live API health is unverified.",
+                f"- External integrations: {'Notion, Slack, and OpenClaw live probes passed' if external_live else ('one or more live probes failed' if external_failed else 'one or more live probes are unverified')}",
                 "",
                 "2. Evidence",
                 f"- Snapshot generated: {generated_at}",
                 "",
                 "3. Next action",
-                "- Run live external-integration probes, then reassess operational risk.",
+                "- Inspect authentication or gateway health for failed/unverified probes."
+                if not external_live else "- No immediate recovery action is required in the verified scope.",
             ]
         )
 
     if korean:
-        if not postgres_live or not ollama_live or integrity_failed:
+        if not postgres_live or not ollama_live or integrity_failed or external_failed:
             conclusion = "장애 또는 구성 문제 신호가 있습니다."
+        elif integrity_ok and external_live:
+            conclusion = "핵심 로컬 경로와 외부 연동 live probe가 모두 통과했습니다."
         elif integrity_ok:
             conclusion = "핵심 로컬 경로가 응답하고 무결성 사전검사를 통과했습니다."
         else:
             conclusion = "핵심 로컬 경로는 응답하지만 무결성 사전검사 결과는 미확인입니다."
-        if external_unverified:
+        if external_unverified and not external_failed:
             conclusion += " 외부 연동은 설정만 확인됐고 실제 API 호출 상태는 미확인입니다."
         lines = [f"결론: {conclusion}", "", "1. 확인된 상태"]
         if phase:
@@ -721,33 +735,38 @@ def _try_status_brief_response(user_message: str, payload: dict[str, Any] | None
             lines.append(f"- 무결성 발견사항: {', '.join(integrity_findings)}")
         lines.extend(["", "2. 제한·미확인"])
         lines.append(f"- 자본 집행: {'활성화' if capital_enabled else '비활성화(CAPITAL_ACTIONS_ENABLED=false)'}")
-        for label, item, basis in (
-            ("Notion", notion, "API 키 설정"),
-            ("Slack Bot", slack_bot, "봇 토큰 설정"),
-            ("OpenClaw", openclaw, "CLI 설치 감지"),
+        for label, item, success_basis in (
+            ("Notion", notion, "GET /v1/users/me 인증 성공"),
+            ("Slack Bot", slack_bot, "auth.test 성공"),
+            ("OpenClaw", openclaw, "Gateway health ok=true"),
         ):
-            configured = isinstance(item, dict) and item.get("available") is True
-            lines.append(f"- {label}: {basis} {'확인' if configured else '미확인'}; 실제 API/실행 헬스체크 아님")
+            live_checked = isinstance(item, dict) and item.get("live_checked") is True
+            available = live_checked and item.get("available") is True
+            error = str(item.get("error") or "미확인") if isinstance(item, dict) else "미확인"
+            lines.append(f"- {label}: {success_basis}" if available else f"- {label}: live probe {'실패' if live_checked else '미실행'} ({error})")
         lines.extend(
             [
                 "",
                 "3. 근거",
                 f"- 운영 스냅샷 생성 시각: {generated_at}",
-                "- 판정 기준: DB 연결 시도, 로컬 포트 확인, 환경설정·CLI 존재 여부",
+                "- 판정 기준: DB 연결, 로컬 포트, 무결성 검사, Notion·Slack 인증 API, OpenClaw Gateway health",
                 "",
                 "4. 다음 조치",
-                "- 완전한 운영 판정이 필요하면 Notion·Slack·OpenClaw 실제 API 호출 검사를 추가 실행해야 합니다.",
+                "- 실패한 probe가 없으면 현재 확인 범위에서 추가 복구 조치는 없습니다."
+                if external_live else "- 실패하거나 미실행인 외부 연동 probe를 복구해야 합니다.",
             ]
         )
         return "\n".join(lines)
 
-    if not postgres_live or not ollama_live or integrity_failed:
+    if not postgres_live or not ollama_live or integrity_failed or external_failed:
         conclusion = "A failure or configuration issue is present."
+    elif integrity_ok and external_live:
+        conclusion = "Core local paths and external integration live probes passed."
     elif integrity_ok:
         conclusion = "Core local paths respond and the integrity preflight passed."
     else:
         conclusion = "Core local paths respond; the integrity preflight result is unavailable."
-    if external_unverified:
+    if external_unverified and not external_failed:
         conclusion += " External integrations are configured but not live-API verified."
     lines = [f"Conclusion: {conclusion}", "", "1. Verified state"]
     if phase:
@@ -760,16 +779,17 @@ def _try_status_brief_response(user_message: str, payload: dict[str, Any] | None
             "",
             "2. Constraints and unverified scope",
             f"- Capital actions: {'enabled' if capital_enabled else 'disabled (CAPITAL_ACTIONS_ENABLED=false)'}",
-            f"- Notion: {'API key configured' if isinstance(notion, dict) and notion.get('available') is True else 'configuration unverified'}; no live API check",
-            f"- Slack Bot: {'token configured' if isinstance(slack_bot, dict) and slack_bot.get('available') is True else 'configuration unverified'}; no live API check",
-            f"- OpenClaw: {'CLI detected' if isinstance(openclaw, dict) and openclaw.get('available') is True else 'CLI not detected'}; no execution health check",
+            f"- Notion: {'GET /v1/users/me authentication passed' if notion_live else 'live probe failed or was not run'}",
+            f"- Slack Bot: {'auth.test passed' if slack_live else 'live probe failed or was not run'}",
+            f"- OpenClaw: {'gateway health ok=true' if openclaw_live else 'live probe failed or was not run'}",
             "",
             "3. Evidence",
             f"- Snapshot generated: {generated_at}",
-            "- Checks: DB connection attempt, local port probe, configuration and CLI presence",
+            "- Checks: DB connection, local port, integrity preflight, Notion and Slack auth APIs, OpenClaw gateway health",
             "",
             "4. Next action",
-            "- Run live Notion, Slack, and OpenClaw API probes before claiming full operational health.",
+            "- No immediate recovery action is required in the verified scope."
+            if external_live else "- Repair failed or unexecuted external integration probes.",
         ]
     )
     return "\n".join(lines)

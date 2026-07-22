@@ -8,10 +8,14 @@ import shutil
 import socket
 import subprocess
 import sys
+import time
 from contextlib import closing
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 # Ensure all Harness environment variables are loaded explicitly from the repo .env file
@@ -132,9 +136,86 @@ def _port_open(host: str, port: int, timeout: float = 0.5) -> bool:
         return sock.connect_ex((host, port)) == 0
 
 
+def _probe_notion_api() -> dict[str, Any]:
+    token = os.getenv("NOTION_API_KEY", "").strip()
+    observed_at = _now()
+    if not token:
+        return {"available": False, "configured": False, "live_checked": False, "probe": "GET /v1/users/me", "observed_at": observed_at, "error": "credential_missing"}
+    started = time.monotonic()
+    request = Request(
+        "https://api.notion.com/v1/users/me",
+        headers={"Authorization": f"Bearer {token}", "Notion-Version": "2022-06-28"},
+        method="GET",
+    )
+    try:
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        ok = response.status == 200 and isinstance(payload, dict) and bool(payload.get("id"))
+        return {"available": ok, "configured": True, "live_checked": True, "probe": "GET /v1/users/me", "observed_at": observed_at, "latency_ms": round((time.monotonic() - started) * 1000), "error": None if ok else "invalid_response"}
+    except HTTPError as exc:
+        return {"available": False, "configured": True, "live_checked": True, "probe": "GET /v1/users/me", "observed_at": observed_at, "latency_ms": round((time.monotonic() - started) * 1000), "error": f"http_{exc.code}"}
+    except (URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+        return {"available": False, "configured": True, "live_checked": True, "probe": "GET /v1/users/me", "observed_at": observed_at, "latency_ms": round((time.monotonic() - started) * 1000), "error": type(exc).__name__}
+
+
+def _probe_slack_bot_api() -> dict[str, Any]:
+    token = os.getenv("SLACK_BOT_TOKEN", "").strip()
+    observed_at = _now()
+    if not token:
+        return {"available": False, "configured": False, "live_checked": False, "probe": "POST auth.test", "observed_at": observed_at, "error": "credential_missing"}
+    started = time.monotonic()
+    request = Request(
+        "https://slack.com/api/auth.test",
+        data=b"",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        ok = response.status == 200 and isinstance(payload, dict) and payload.get("ok") is True
+        error = None if ok else str(payload.get("error") or "invalid_response")
+        return {"available": ok, "configured": True, "live_checked": True, "probe": "POST auth.test", "observed_at": observed_at, "latency_ms": round((time.monotonic() - started) * 1000), "error": error}
+    except HTTPError as exc:
+        return {"available": False, "configured": True, "live_checked": True, "probe": "POST auth.test", "observed_at": observed_at, "latency_ms": round((time.monotonic() - started) * 1000), "error": f"http_{exc.code}"}
+    except (URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+        return {"available": False, "configured": True, "live_checked": True, "probe": "POST auth.test", "observed_at": observed_at, "latency_ms": round((time.monotonic() - started) * 1000), "error": type(exc).__name__}
+
+
+def _probe_openclaw_gateway() -> dict[str, Any]:
+    detected = _detect_cli("openclaw")
+    observed_at = _now()
+    path = detected.get("path")
+    if not path:
+        return {"available": False, "configured": False, "live_checked": False, "probe": "openclaw health --json", "observed_at": observed_at, "error": "cli_missing"}
+    started = time.monotonic()
+    try:
+        result = subprocess.run(
+            [str(path), "health", "--json", "--timeout", "4000"],
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=6,
+        )
+        payload = json.loads(result.stdout) if result.returncode == 0 and result.stdout.strip() else {}
+        ok = result.returncode == 0 and isinstance(payload, dict) and payload.get("ok") is True
+        return {"available": ok, "configured": True, "live_checked": True, "probe": "openclaw health --json", "observed_at": observed_at, "latency_ms": round((time.monotonic() - started) * 1000), "error": None if ok else "gateway_unhealthy"}
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as exc:
+        return {"available": False, "configured": True, "live_checked": True, "probe": "openclaw health --json", "observed_at": observed_at, "latency_ms": round((time.monotonic() - started) * 1000), "error": type(exc).__name__}
+
+
 def status_snapshot() -> dict[str, Any]:
     db_ok, db_error = _can_connect_db()
     integrity = run_system_integrity_check()
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        notion_future = executor.submit(_probe_notion_api)
+        slack_future = executor.submit(_probe_slack_bot_api)
+        openclaw_future = executor.submit(_probe_openclaw_gateway)
+        notion_probe = notion_future.result()
+        slack_probe = slack_future.result()
+        openclaw_probe = openclaw_future.result()
     return {
         "generated_at": _now(),
         "openclaw_bridge": "ready",
@@ -147,15 +228,15 @@ def status_snapshot() -> dict[str, Any]:
         },
         "integrations": {
             "codex": {"available": True, "path": "current_session"},
-            "openclaw": _detect_cli("openclaw"),
+            "openclaw": openclaw_probe,
             "claude": _detect_cli("claude"),
             "gemini": _detect_cli("gemini"),
             "copilot": _detect_copilot(),
             "ollama": _detect_cli("ollama"),
             "postgres": {"available": db_ok, "error": db_error},
-            "slack_bot": {"available": bool(os.getenv("SLACK_BOT_TOKEN"))},
+            "slack_bot": slack_probe,
             "slack_webhook": {"available": bool(os.getenv("SLACK_WEBHOOK_URL"))},
-            "notion": {"available": bool(os.getenv("NOTION_API_KEY"))},
+            "notion": notion_probe,
         },
         "services": {
             "ollama_11434": _port_open("127.0.0.1", 11434),

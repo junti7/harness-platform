@@ -490,7 +490,12 @@ class OpenClawAgentTests(unittest.TestCase):
         mock_status.return_value = {
             "generated_at": real_datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="seconds"),
             "runtime": {"capital_actions_enabled": False, "slack_phase": "phase-1"},
-            "integrations": {"postgres": {"available": True}, "openclaw": {"available": True}},
+            "integrations": {
+                "postgres": {"available": True},
+                "notion": {"available": True, "live_checked": True, "error": None},
+                "slack_bot": {"available": True, "live_checked": True, "error": None},
+                "openclaw": {"available": True, "live_checked": True, "error": None},
+            },
             "services": {"ollama_11434": True},
             "integrity": {"ok": True, "findings": []},
         }
@@ -503,7 +508,10 @@ class OpenClawAgentTests(unittest.TestCase):
         self.assertIn("결론:", result)
         self.assertIn("PostgreSQL: 실제 연결 성공", result)
         self.assertIn("운영 스냅샷 생성 시각:", result)
-        self.assertIn("외부 연동은 설정만 확인됐고 실제 API 호출 상태는 미확인", result)
+        self.assertIn("외부 연동 live probe가 모두 통과", result)
+        self.assertIn("Notion: GET /v1/users/me 인증 성공", result)
+        self.assertIn("Slack Bot: auth.test 성공", result)
+        self.assertIn("OpenClaw: Gateway health ok=true", result)
         self.assertIn("다음 조치", result)
         self.assertNotIn("Harness ops status", result)
         self.assertNotIn("notion: ok", result)

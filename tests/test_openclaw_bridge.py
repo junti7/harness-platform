@@ -8,6 +8,31 @@ from scripts import openclaw_codex_bridge
 
 
 class OpenClawBridgeTests(unittest.TestCase):
+    @patch.object(openclaw_codex_bridge, "_probe_openclaw_gateway")
+    @patch.object(openclaw_codex_bridge, "_probe_slack_bot_api")
+    @patch.object(openclaw_codex_bridge, "_probe_notion_api")
+    @patch.object(openclaw_codex_bridge, "run_system_integrity_check", return_value={"ok": True, "findings": []})
+    @patch.object(openclaw_codex_bridge, "_can_connect_db", return_value=(True, None))
+    @patch.object(openclaw_codex_bridge, "_port_open", return_value=True)
+    def test_status_snapshot_uses_live_external_probes(
+        self,
+        _mock_port,
+        _mock_db,
+        _mock_integrity,
+        mock_notion,
+        mock_slack,
+        mock_openclaw,
+    ):
+        mock_notion.return_value = {"available": True, "live_checked": True, "probe": "GET /v1/users/me"}
+        mock_slack.return_value = {"available": True, "live_checked": True, "probe": "POST auth.test"}
+        mock_openclaw.return_value = {"available": True, "live_checked": True, "probe": "openclaw health --json"}
+
+        payload = openclaw_codex_bridge.status_snapshot()
+
+        self.assertTrue(payload["integrations"]["notion"]["live_checked"])
+        self.assertEqual(payload["integrations"]["slack_bot"]["probe"], "POST auth.test")
+        self.assertEqual(payload["integrations"]["openclaw"]["probe"], "openclaw health --json")
+
     def test_render_ar_list_text(self):
         payload = {
             "items": [

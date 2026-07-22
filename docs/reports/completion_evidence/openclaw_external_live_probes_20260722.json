@@ -1,0 +1,66 @@
+{
+  "task": "OpenClaw Notion Slack and gateway live health probes",
+  "status": "residual_risk",
+  "date": "2026-07-22",
+  "requirements": [
+    {
+      "requirement": "Verify Notion with a real read-only API call",
+      "status": "pass",
+      "evidence": "GET https://api.notion.com/v1/users/me with integration auth; no content mutation"
+    },
+    {
+      "requirement": "Verify Slack bot with a real read-only API call",
+      "status": "pass",
+      "evidence": "POST https://slack.com/api/auth.test; no Slack message emitted"
+    },
+    {
+      "requirement": "Verify OpenClaw runtime rather than CLI presence",
+      "status": "pass",
+      "evidence": "openclaw health --json --timeout 4000 requires gateway ok=true"
+    },
+    {
+      "requirement": "Expose probe result, observed time, latency, and safe error without secrets",
+      "status": "pass",
+      "evidence": "status_snapshot integration records and deterministic status brief"
+    },
+    {
+      "requirement": "Verify deployed Mac Mini and Slack DM entrypoint",
+      "status": "not_verified",
+      "evidence": "Pending scoped deploy and post-deploy live status run"
+    }
+  ],
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-22T20:21:34+09:00",
+      "summary": "Read completion, deployment, secrets, and live-entrypoint requirements."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-22T20:21:34+09:00",
+      "summary": "Read source-of-truth, real runtime verification, and completion evidence rules."
+    }
+  ],
+  "verification": [
+    {
+      "name": "OpenClaw quality and integration regression",
+      "target": "pre-push service quality gate",
+      "command": ".venv/bin/python scripts/score_openclaw_response_quality.py ...; .venv/bin/python scripts/score_openclaw_e2e_golden.py ...; .venv/bin/python -m pytest tests/test_openclaw_bridge.py tests/test_openclaw_response_quality.py tests/test_openclaw_agent.py tests/test_slack_listener.py tests/test_openclaw_slack_e2e_probe.py -q",
+      "result": "passed: contract safety 240/240, actual run E2E 9/9, pytest 112 passed with one third-party deprecation warning"
+    },
+    {
+      "name": "Mac Mini pre-deploy API baseline",
+      "target": "Mac Mini production status API output",
+      "command": "ssh macmini; openclaw_codex_bridge.py status --format json; sanitize with jq",
+      "result": "baseline confirmed old deployment only reports available=true and lacks configured/live_checked/probe/latency fields; proves deployment delta remains necessary"
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh after scoped commit and push",
+    "result": "pending"
+  },
+  "residual_risk": [
+    "Post-deploy Mac Mini live API results and Slack-rendered answer are not yet verified.",
+    "API probes validate authentication and gateway health, not every downstream Notion database permission or every Slack posting target."
+  ]
+}
