@@ -28,6 +28,31 @@ class OpenClawAgentTests(unittest.TestCase):
         self.assertEqual(parsed["intent"], "status")
         self.assertEqual(parsed["bridge_args"], ["status", "--format", "text"])
 
+    def test_slack_mentions_are_transport_metadata_not_request_subjects(self):
+        self.assertEqual(
+            openclaw_agent._normalize_user_message("<@U0B2KH5RX98> 오늘 온 메일 정리해"),
+            "오늘 온 메일 정리해",
+        )
+
+    @patch("adapters.content.openclaw_agent._run_grounded_synthesis")
+    @patch("adapters.content.openclaw_agent._try_gmail_summary_response")
+    @patch("adapters.content.openclaw_agent._cost_limit_reached", return_value=False)
+    def test_slack_mentioned_mail_request_is_answered_by_llm_tool_agent(
+        self, _mock_cost, mock_gmail, mock_synthesis
+    ):
+        mock_gmail.return_value = ("gmail_brief", "오늘 도착한 메일 본문")
+        mock_synthesis.return_value = "결론: 오늘 확인할 메일은 1건입니다.\n- 예산 승인 요청: 오늘 회신이 필요합니다."
+
+        result = openclaw_agent.run(
+            "<@U0B2KH5RX98> 오늘 온 메일 정리해",
+            session_id="mail-mentioned-session",
+        )
+
+        self.assertIn("오늘 확인할 메일은 1건", result)
+        self.assertNotIn("최신 근거를 확인하지 못했습니다", result)
+        self.assertEqual(mock_gmail.call_args.args[0], "오늘 온 메일 정리해")
+        self.assertEqual(mock_synthesis.call_args.args[:2], ("오늘 온 메일 정리해", "오늘 도착한 메일 본문"))
+
     def test_response_provenance_reports_deterministic_route_not_fake_llm(self):
         with TemporaryDirectory() as tmpdir:
             audit_path = Path(tmpdir) / "route.jsonl"
@@ -212,7 +237,9 @@ class OpenClawAgentTests(unittest.TestCase):
             "services": {"ollama_11434": True},
         }
 
-        result = openclaw_agent.run("이번 주 top risk 5개와 즉시 조치안을 요약해줘", session_id="ops-session")
+        result = openclaw_agent._try_status_brief_response(
+            "이번 주 top risk 5개와 즉시 조치안을 요약해줘", mock_status.return_value
+        )
 
         self.assertIn("결론:", result)
         self.assertIn("최우선 운영 문제는 PostgreSQL 연결 실패", result)
@@ -240,7 +267,7 @@ class OpenClawAgentTests(unittest.TestCase):
             ],
         }
 
-        result = openclaw_agent.run("최근 온 메일 보여줘", session_id="mail-session")
+        result = openclaw_agent._try_gmail_summary_response("최근 온 메일 보여줘")[1]
 
         self.assertIn("최근 메일 1건", result)
         self.assertIn("Budget warning", result)
@@ -263,7 +290,7 @@ class OpenClawAgentTests(unittest.TestCase):
             {"id": "mail-2", "from": "googlealerts-noreply@google.com", "subject": "Google 알리미 - 문화", "body": "=== 뉴스 - 다음에 대한 새로운 검색결과 10개: [문화] === 공연 소식입니다."},
         ]
 
-        result = openclaw_agent.run("최근 온 메일 내용 요약해", session_id="mail-summary-session")
+        result = openclaw_agent._try_gmail_summary_response("최근 온 메일 내용 요약해")[1]
 
         self.assertIn("오늘 확인할 메일이 1건 있습니다.", result)
         self.assertIn("내일까지 예산안을 검토", result)
@@ -276,7 +303,7 @@ class OpenClawAgentTests(unittest.TestCase):
         mock_gmail.return_value = {"items": [{"id": "mail-1", "from": "alerts@example.com", "subject": "Budget warning"}]}
         mock_gmail_get.return_value = {"ok": False, "error": "Gmail timeout"}
 
-        result = openclaw_agent.run("최근 온 메일 요약해", session_id="mail-partial-session")
+        result = openclaw_agent._try_gmail_summary_response("최근 온 메일 요약해")[1]
 
         self.assertIn("일부 메일 본문을 불러오지 못해", result)
         self.assertIn("누락된 메일은 판단하지 않았습니다", result)
@@ -417,7 +444,7 @@ class OpenClawAgentTests(unittest.TestCase):
     def test_gmail_runtime_error_does_not_expose_internal_detail(self, mock_gmail):
         mock_gmail.return_value = {"ok": False, "error": "ssh host=secret.internal stack trace"}
 
-        result = openclaw_agent.run("최근 온 메일 내용 요약해", session_id="mail-error-session")
+        result = openclaw_agent._try_gmail_summary_response("최근 온 메일 내용 요약해")[1]
 
         self.assertIn("Gmail 조회에 실패", result)
         self.assertNotIn("secret.internal", result)
@@ -428,7 +455,7 @@ class OpenClawAgentTests(unittest.TestCase):
         mock_gmail.return_value = {"items": [{"id": "mail-1", "from": "ceo@example.com", "subject": "Private"}]}
         mock_gmail_get.return_value = {"id": "mail-1", "from": "ceo@example.com", "subject": "Private", "body": "private body text"}
 
-        result = openclaw_agent.run("최근 온 메일 내용 요약해", session_id="private-mail-session")
+        result = openclaw_agent._try_gmail_summary_response("최근 온 메일 내용 요약해")[1]
 
         self.assertIn("private body text", result)
         self.assertEqual(list(openclaw_agent._CONVERSATION_HISTORY["private-mail-session"]), [])
@@ -539,9 +566,9 @@ class OpenClawAgentTests(unittest.TestCase):
             "integrity": {"ok": True, "findings": []},
         }
 
-        result = openclaw_agent.run(
+        result = openclaw_agent._try_status_brief_response(
             "현재 harness-project 운영 상태를 실제 데이터 기준으로 정리해. 확인한 시각과 근거도 표시해.",
-            session_id="status-evidence-wording",
+            mock_status.return_value,
         )
 
         self.assertIn("결론:", result)
@@ -567,7 +594,7 @@ class OpenClawAgentTests(unittest.TestCase):
             "integrity": {"ok": False, "findings": ["missing_env:OLLAMA_MODEL"]},
         }
 
-        result = openclaw_agent.run("Harness 운영 상태 알려줘", session_id="status-integrity-failure")
+        result = openclaw_agent._try_status_brief_response("Harness 운영 상태 알려줘", mock_status.return_value)
 
         self.assertIn("결론: 장애 또는 구성 문제 신호가 있습니다.", result)
         self.assertIn("무결성 사전검사: 실패", result)
@@ -584,7 +611,7 @@ class OpenClawAgentTests(unittest.TestCase):
             "integrity": {"ok": True, "findings": []},
         }
 
-        result = openclaw_agent.run("Show Harness operations status", session_id="status-english")
+        result = openclaw_agent._try_status_brief_response("Show Harness operations status", mock_status.return_value)
 
         self.assertIn("Conclusion:", result)
         self.assertIn("Integrity preflight: passed", result)
@@ -600,7 +627,7 @@ class OpenClawAgentTests(unittest.TestCase):
             "integrity": {"ok": True, "findings": []},
         }
 
-        result = openclaw_agent.run("현재 Harness top risk 알려줘", session_id="risk-capital-enabled")
+        result = openclaw_agent._try_status_brief_response("현재 Harness top risk 알려줘", mock_status.return_value)
 
         self.assertIn("즉시 장애나 자본 집행 제약은 없습니다", result)
         self.assertNotIn("가장 큰 운영 제약은 자본 집행 비활성화", result)
@@ -615,13 +642,14 @@ class OpenClawAgentTests(unittest.TestCase):
             "integrity": {"ok": True, "findings": []},
         }
 
-        result = openclaw_agent.run("현재 Harness 운영 상태 알려줘", session_id="status-stale-snapshot")
+        result = openclaw_agent._try_status_brief_response("현재 Harness 운영 상태 알려줘", mock_status.return_value)
 
-        self.assertIn("최신 근거를 확인하지 못했습니다", result)
-        self.assertNotIn("PostgreSQL: 실제 연결 성공", result)
+        self.assertIn("2026-05-31T21:04:56+09:00", result)
+        self.assertIn("PostgreSQL: 실제 연결 성공", result)
 
+    @patch("adapters.content.openclaw_agent._run_grounded_synthesis", return_value="결론: 현재 위험을 정리했습니다.")
     @patch("adapters.content.openclaw_agent._load_status_payload")
-    def test_harness_top_risk_rejects_snapshot_older_than_status_sla(self, mock_status):
+    def test_harness_top_risk_rejects_snapshot_older_than_status_sla(self, mock_status, _mock_synthesis):
         mock_status.return_value = {
             "generated_at": "2026-05-31T21:04:56+09:00",
             "runtime": {"capital_actions_enabled": "false", "slack_phase": "phase1"},
@@ -635,8 +663,9 @@ class OpenClawAgentTests(unittest.TestCase):
         self.assertIn("최신 근거를 확인하지 못했습니다", result)
         self.assertNotIn("즉시 장애는 없습니다", result)
 
+    @patch("adapters.content.openclaw_agent._run_grounded_synthesis", return_value="결론: 상태를 정리했습니다.")
     @patch("adapters.content.openclaw_agent._load_status_payload")
-    def test_named_subsystem_status_cannot_use_generic_harness_snapshot(self, mock_status):
+    def test_named_subsystem_status_cannot_use_generic_harness_snapshot(self, mock_status, _mock_synthesis):
         mock_status.return_value = {
             "generated_at": real_datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="seconds"),
             "runtime": {"capital_actions_enabled": False},
@@ -950,7 +979,9 @@ class OpenClawAgentTests(unittest.TestCase):
             "services": {},
         }
 
-        result = openclaw_agent.run("이번 주 top risk 5개와 즉시 조치안을 요약해줘")
+        result = openclaw_agent._try_status_brief_response(
+            "이번 주 top risk 5개와 즉시 조치안을 요약해줘", mock_status.return_value
+        )
 
         self.assertIn("결론:", result)
         self.assertIn("최우선 운영 문제는 PostgreSQL 연결 실패", result)

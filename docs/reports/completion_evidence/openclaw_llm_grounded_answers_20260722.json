@@ -1,0 +1,73 @@
+{
+  "task": "OpenClaw LLM-grounded Gmail and operational status answers",
+  "status": "residual_risk",
+  "date": "2026-07-22",
+  "requirements": [
+    {
+      "requirement": "Slack mentions must not become semantic request subjects",
+      "status": "pass",
+      "evidence": "Transport normalization strips <@USER_ID> before routing, contract inference, audit, and LLM synthesis"
+    },
+    {
+      "requirement": "Gmail and status adapters collect facts but an LLM writes the final contextual answer",
+      "status": "pass",
+      "evidence": "llm_grounded_gmail and llm_grounded_status routes use deterministic evidence collection followed by Claude/Gemini/OpenAI synthesis"
+    },
+    {
+      "requirement": "Verified delivery must preserve the grounded LLM answer instead of replacing it with raw EvidenceFact text",
+      "status": "pass",
+      "evidence": "verify_delivery keeps synthesized text only after eligible non-secret evidence facts pass contract checks"
+    },
+    {
+      "requirement": "Exact user Gmail wording produces a useful real answer",
+      "status": "pass",
+      "evidence": "Local real run with Slack mention queried current Gmail and Claude returned a conclusion, categorized five messages, and stated no action was needed"
+    },
+    {
+      "requirement": "Production Slack listener uses deployed change",
+      "status": "not_verified",
+      "evidence": "Awaiting commit, push, selective Mac Mini deployment, listener restart, and production run verification"
+    }
+  ],
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-22T20:52:30+09:00",
+      "summary": "Read completion evidence, real entrypoint verification, source-of-truth deployment, and Red Team-on-request rules."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-22T20:52:30+09:00",
+      "summary": "Read Mac Mini ingress ownership, contract safety, secret handling, and commit-push-selective-deploy requirements."
+    }
+  ],
+  "verification": [
+    {
+      "name": "OpenClaw contract and runtime regressions",
+      "target": "OpenClaw run service and verification boundary",
+      "command": "score contract corpus; score E2E golden; run OpenClaw pytest suites",
+      "result": "passed: contract safety 240/240, E2E golden 10/10, targeted pytest 115 passed with one third-party deprecation warning"
+    },
+    {
+      "name": "Real Gmail and Claude synthesis entrypoint",
+      "target": "Local OpenClaw run() using real Gmail adapter and Anthropic API",
+      "command": "run('<@U0B2KH5RX98> 오늘 온 메일 정리해') with verified delivery enabled",
+      "result": "passed at 2026-07-22 20:51 KST: five current messages were categorized as marketing or alerts; conclusion and no-action recommendation were grounded; no generic abstention or raw CSS appeared"
+    },
+    {
+      "name": "Real status and Claude synthesis entrypoint",
+      "target": "Local OpenClaw run() using live status bridge probes and Anthropic API",
+      "command": "run('<@U0B2KH5RX98> 현재 harness-project 운영 상태를 실제 데이터 기준으로 정리해...')",
+      "result": "passed at 2026-07-22 20:52 KST: LLM summarized live DB, Ollama, integrity, Notion and Slack evidence, separated OpenClaw cli_missing, and included snapshot time"
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh adapters/content/openclaw_agent.py core/openclaw_response_quality.py scripts/score_openclaw_e2e_golden.py tests/test_openclaw_agent.py docs/reports/completion_evidence/openclaw_llm_grounded_answers_20260722.json",
+    "result": "pending post-commit selective deployment"
+  },
+  "residual_risk": [
+    "Production Mac Mini and Slack listener have not yet loaded this revision.",
+    "LLM synthesis can still vary in wording; contract safety prevents unsupported evidence sources and secret-bearing facts but is not a token-level entailment proof.",
+    "API cost logging reports a pre-existing api_cost_log.source schema mismatch while answers continue successfully."
+  ]
+}

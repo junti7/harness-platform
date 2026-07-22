@@ -123,7 +123,7 @@ OPENCLAW_CLAWROUTER_BUDGET_CAP = float(os.environ.get("OPENCLAW_CLAWROUTER_BUDGE
 
 # 도구 사용이 필요한 키워드 — 매칭 시 Claude Sonnet tool path로 라우팅
 TOOL_KEYWORDS = [
-    "파일", "보고서", "pdf", "실행", "스크립트", "수정", "저장", "삭제",
+    "파일", "보고서", "메일", "이메일", "gmail", "pdf", "실행", "스크립트", "수정", "저장", "삭제",
     "보내", "전송", "작성", "만들어", "만들어줘", "읽어", "읽어줘", "목록",
     "채널", "슬랙", "slack", "생성", "업로드", "분석", "코드", "수집",
     "브리핑", "신호", "스케줄", "edit", "write", "read", "send", "create",
@@ -144,7 +144,7 @@ _EXPLICIT_TOOL_NEED_RE = re.compile(
     re.IGNORECASE,
 )
 _HARD_TOOL_NEED_RE = re.compile(
-    r"(파일|pdf|실행|스크립트|수정|저장|삭제|보내|전송|작성|만들어|읽어|목록|"
+    r"(파일|메일|이메일|gmail|pdf|실행|스크립트|수정|저장|삭제|보내|전송|작성|만들어|읽어|목록|"
     r"채널|슬랙|생성|업로드|코드|수집|뉴스레터|이슈|배포|구독자|"
     r"링크|url|http://|https://|웹검색|웹 검색|브라우저|browser|"
     r"쿠팡|파트너스 api|상품|최저가|가격비교|가격 비교|검색|찾아줘|최신|페이지|substack\.com|"
@@ -468,6 +468,17 @@ _RESPONSE_PROVENANCE_RE = re.compile(
     r"(llm|모델|model).{0,20}(뭐|무엇|누구|담당|썼|사용)",
     re.IGNORECASE,
 )
+_SLACK_MENTION_RE = re.compile(r"<@[A-Z0-9]+>", re.IGNORECASE)
+
+
+def _normalize_user_message(user_message: str) -> str:
+    """Remove transport markup before intent, contract, and LLM processing.
+
+    Slack app mentions identify the recipient, not the subject of the request.
+    Keeping them in the semantic message can corrupt evidence-subject matching
+    for every tool-backed capability (Gmail, status, Notion, and so on).
+    """
+    return " ".join(_SLACK_MENTION_RE.sub(" ", user_message or "").split())
 _LOG_REQUEST_RE = re.compile(
     r"(로그|log).*(보여|확인|조회|읽어|요약|분석)|"
     r"(보여|확인|조회|읽어|요약|분석).*(로그|log)|"
@@ -1140,7 +1151,11 @@ def _render_gmail_brief(items: list[dict[str, Any]], query: str) -> str:
     return "\n".join(lines)
 
 
-def _try_gmail_summary_response(user_message: str) -> tuple[str, str] | None:
+def _try_gmail_summary_response(
+    user_message: str,
+    *,
+    include_metadata_for_synthesis: bool = False,
+) -> tuple[str, str] | None:
     contract = _gmail_request_contract(user_message)
     if contract is None:
         return None
@@ -1164,7 +1179,16 @@ def _try_gmail_summary_response(user_message: str) -> tuple[str, str] | None:
 
     if contract == "lookup":
         return ("gmail_lookup", _render_gmail_lookup(items, query))
-    return ("gmail_brief", _render_gmail_brief(items, query))
+    brief = _render_gmail_brief(items, query)
+    if include_metadata_for_synthesis:
+        metadata = ["수집된 메일 메타데이터:"]
+        for item in items[:5]:
+            metadata.append(
+                f"- 수신={item.get('date') or '미확인'} | 발신={item.get('from') or '미확인'} | "
+                f"제목={_gmail_safe_header_text(item.get('subject'))}"
+            )
+        brief = brief + "\n\n" + "\n".join(metadata)
+    return ("gmail_brief", brief)
 
 
 def _persist_session_message(session_id: str, role: str, content: str) -> None:
@@ -3040,6 +3064,35 @@ def _run_chat_with_handoff(
     return "🚨 모든 가용 LLM(Claude, Gemini, OpenAI)의 토큰/잔액이 소진되었거나 응답에 실패했습니다."
 
 
+def _run_grounded_synthesis(
+    user_message: str,
+    evidence_text: str,
+    *,
+    session_id: str,
+    history: list[dict[str, str]] | None = None,
+    chat_model: str | None = None,
+    max_tokens: int | None = None,
+) -> str:
+    """Have an LLM write the answer while deterministic adapters own facts."""
+    synthesis_request = (
+        "다음은 사용자의 원래 요청과 시스템이 방금 읽기 전용으로 수집한 검증 근거입니다.\n"
+        "근거의 원시 형식을 복사하지 말고 사용자의 의도와 맥락을 이해해 유능한 비서실장처럼 답하세요.\n"
+        "첫 줄은 반드시 `결론:`으로 시작하고 별도의 결론 제목을 또 만들지 마세요. "
+        "결론과 중요한 내용, 필요한 다음 행동을 우선순위대로 간결하게 쓰세요. "
+        "근거에 없는 사실은 만들지 말고, 확인 한계는 판단에 중요할 때만 밝히세요.\n\n"
+        f"<original_request>{user_message}</original_request>\n"
+        f"<verified_evidence>{evidence_text}</verified_evidence>"
+    )
+    return _run_chat_with_handoff(
+        synthesis_request,
+        session_id=session_id,
+        history=history,
+        max_tokens=max_tokens,
+        target_models=["claude", "gemini", "openai"],
+        chat_model=chat_model,
+    )
+
+
 def _postprocess_list_format(text: str) -> str:
     """LLM 응답의 평면 번호 리스트를 대제목(숫자) + 하위항목(bullet) 계층 구조로 강제 변환한다.
 
@@ -3571,6 +3624,7 @@ def run(
     """
     CEO 메시지를 라우팅하여 최적 LLM으로 처리.
     """
+    user_message = _normalize_user_message(user_message)
     if _rate_limit_check(requester_user_id):
         return VerifiedText(
             DeliveryDecision(SCHEMA_VERSION, "abstain", _rate_limit_block_message(), reasons=("rate_limited",))
@@ -3743,81 +3797,72 @@ def run(
             ),
         )
 
-    status_payload: dict[str, Any] = {}
-    status_candidate = bool(_STATUS_BRIEF_RE.search(user_message)) and bool(
-        re.search(r"top\s*risk|리스크|병목|harness|platform|플랫폼|파이프라인|pipeline|ops|운영", user_message, re.IGNORECASE)
+    status_evidence_request = bool(_STATUS_BRIEF_RE.search(user_message)) and bool(
+        re.search(
+            r"top\s*risk|리스크|병목|harness|platform|플랫폼|파이프라인|pipeline|ops|운영",
+            user_message,
+            re.IGNORECASE,
+        )
     )
-    if status_candidate:
-        status_payload = _load_status_payload()
-    status_brief_response = _try_status_brief_response(user_message, status_payload) if status_payload else None
-    if status_brief_response is not None:
-        _log_route_audit(
-            session_id=effective_session_id,
-            requester_user_id=requester_user_id,
-            user_message=user_message,
-            route="deterministic_status_brief",
-            risk_scan=risk_scan,
-            action_name="status_brief",
-        )
-        return _finish(
-            "deterministic_status_brief",
-            status_brief_response,
-            evidence_items=_adapter_evidence(
-                source_id="harness_status_snapshot",
-                subjects=("harness", "harness-project", "platform", "파이프라인", "운영", "리스크", "risk"),
-                dimensions=("state", "evidence", "analysis", "risk", "next_action"),
-                text=status_brief_response,
-                observed_at=_status_snapshot_observed_at(status_payload),
-            ),
-            contract_override=_bridge_contract(
-                user_message,
-                ["status"],
-                authorized=_authorized_for_high_risk(requester_user_id),
-            ),
-        )
-
-    gmail_response = _try_gmail_summary_response(user_message)
-    if gmail_response is not None:
-        gmail_contract, gmail_response_text = gmail_response
-        gmail_route = f"deterministic_{gmail_contract}"
-        _log_route_audit(
-            session_id=effective_session_id,
-            requester_user_id=requester_user_id,
-            user_message=user_message,
-            route=gmail_route,
-            risk_scan=risk_scan,
-            action_name=gmail_contract,
-        )
-        # Gmail body excerpts are private evidence. Route metrics are retained,
-        # but the response body is not copied into session persistence.
-        gmail_partial = "일부 메일 본문" in gmail_response_text
-        gmail_failed = "Gmail 조회에 실패" in gmail_response_text or "메일을 조회하지 못했습니다" in gmail_response_text
-        if gmail_failed or gmail_partial:
-            verdict = "abstain" if gmail_failed else "partial"
-            reason = "gmail_fetch_failed" if gmail_failed else "gmail_body_coverage_partial"
+    gmail_evidence_request = bool(_GMAIL_SUMMARY_RE.search(user_message))
+    if status_evidence_request or gmail_evidence_request:
+        if _cost_limit_reached():
+            response = _budget_block_message()
             return _finish(
-                gmail_route,
-                gmail_response_text,
+                "cost_guard_block",
+                response,
                 decision_override=DeliveryDecision(
-                    SCHEMA_VERSION, verdict, gmail_response_text, reasons=(reason,)
+                    SCHEMA_VERSION, "abstain", response, reasons=("cost_guard_block",)
                 ),
                 record=False,
             )
-        return _finish(
-            gmail_route,
-            gmail_response_text,
-            evidence_items=_adapter_evidence(
-                source_id="gmail_message_bodies" if gmail_contract == "brief" else "gmail_metadata",
+        route = "llm_grounded_status" if status_evidence_request else "llm_grounded_gmail"
+        _log_route_audit(
+            session_id=effective_session_id,
+            requester_user_id=requester_user_id,
+            user_message=user_message,
+            route=route,
+            risk_scan=risk_scan,
+            model=OPENCLAW_TOOL_MODEL,
+        )
+        if status_evidence_request:
+            status_payload = _load_status_payload()
+            evidence_text = _try_status_brief_response(user_message, status_payload)
+            if evidence_text is None:
+                evidence_text = "현재 상태 근거를 수집하지 못했습니다."
+            evidence_items = _adapter_evidence(
+                source_id="harness_status_snapshot",
+                subjects=("harness", "harness-project", "platform", "파이프라인", "운영", "리스크", "risk"),
+                dimensions=("state", "evidence", "analysis", "risk", "next_action"),
+                text=evidence_text,
+                observed_at=_status_snapshot_observed_at(status_payload),
+            )
+        else:
+            gmail_result = _try_gmail_summary_response(user_message, include_metadata_for_synthesis=True)
+            evidence_text = gmail_result[1] if gmail_result else "Gmail 근거를 수집하지 못했습니다."
+            evidence_items = _adapter_evidence(
+                source_id="gmail_message_bodies",
                 subjects=("gmail", "메일", "이메일"),
                 dimensions=("content", "state"),
-                text=gmail_response_text,
+                text=evidence_text,
                 authority="primary",
-                coverage="partial" if gmail_partial else "complete",
                 privacy_class="private",
-                partial=gmail_partial,
-            ),
-            record=False,
+                partial="일부 메일 본문" in evidence_text,
+                coverage="partial" if "일부 메일 본문" in evidence_text else "complete",
+            )
+        response = _run_grounded_synthesis(
+            user_message,
+            evidence_text,
+            session_id=effective_session_id or "openclaw-grounded",
+            history=history,
+            chat_model=effective_chat_model,
+            max_tokens=effective_chat_max_tokens,
         )
+        return _finish(route, response, evidence_items=evidence_items, record=False)
+
+    # Status and Gmail are evidence adapters, not answer writers. They continue
+    # through the premium tool agent so an LLM interprets the request, calls the
+    # read-only tools, and writes the final grounded response.
 
     current_time_response = _try_current_time_response(user_message)
     if current_time_response is not None:
@@ -4007,7 +4052,10 @@ def run(
     # Rules are not a complete classifier. They only allow deterministic safe
     # actions or force escalation/blocking. Anything risk-bearing must not be
     # downgraded to a local LLM just because no rule matched perfectly.
-    if risk_scan["risk_level"] == "low" and not _should_skip_intent_classifier(user_message, history):
+    if (
+        risk_scan["risk_level"] == "low"
+        and not _should_skip_intent_classifier(user_message, history)
+    ):
         # Tier I: Haiku intent classifier — natural language → bridge command
         intent = _classify_intent_with_haiku(user_message)
         if intent:

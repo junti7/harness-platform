@@ -43,7 +43,11 @@ def main() -> int:
         openclaw_agent, "OPENCLAW_QUALITY_SHADOW_ENABLED", False
     ), patch.object(openclaw_agent, "_load_status_payload", return_value=STATUS_FIXTURE), patch.object(
         openclaw_agent, "_run_ollama_chat", side_effect=AssertionError("golden corpus must not use ungrounded model chat")
-    ), patch.object(openclaw_agent, "_run_anthropic_chat", side_effect=AssertionError("golden corpus must not use ungrounded model chat")):
+    ), patch.object(openclaw_agent, "_run_anthropic_chat", side_effect=AssertionError("golden corpus must not use ungrounded model chat")), patch.object(
+        openclaw_agent,
+        "_run_grounded_synthesis",
+        side_effect=lambda _request, evidence, **_kwargs: evidence,
+    ):
         def classifier(message: str):
             if message == "현재 상태 알려줘":
                 return {"tool": "harness_status", "params": {}}

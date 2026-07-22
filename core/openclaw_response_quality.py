@@ -393,6 +393,16 @@ def verify_delivery(
         if claim_rendered:
             accepted_claims.append(claim.claim_id)
 
+    synthesized_text = non_factual_text.strip()
+    if synthesized_text and _SECRET_RE.search(synthesized_text):
+        return DeliveryDecision(
+            SCHEMA_VERSION,
+            "abstain",
+            "민감정보가 감지되어 응답을 전달하지 않습니다.",
+            missing_dimensions=missing,
+            reasons=("secret_detected",),
+        )
+
     if not rendered:
         return DeliveryDecision(
             SCHEMA_VERSION,
@@ -408,10 +418,14 @@ def verify_delivery(
     suffix = ""
     if missing:
         suffix = f"\n미확인 범위: {', '.join(missing)}"
+    # Evidence determines whether a response may be delivered; it must not
+    # replace the LLM's grounded synthesis with raw adapter facts. Raw facts
+    # are a fallback only for callers that did not provide a final response.
+    final_body = synthesized_text or "\n".join(rendered)
     return DeliveryDecision(
         SCHEMA_VERSION,
         verdict,
-        prefix + "\n".join(rendered) + suffix,
+        prefix + final_body + suffix,
         eligible_claim_ids=tuple(accepted_claims),
         missing_dimensions=missing,
         reasons=tuple(dict.fromkeys(reasons)),
