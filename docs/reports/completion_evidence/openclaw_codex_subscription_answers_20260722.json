@@ -29,7 +29,7 @@
       "evidence": "Subscription failure returns an explicit no-paid-fallback response; grounded adapters fall back only to local Ollama"
     },
     {
-      "requirement": "Verify the deployed Slack user entrypoint",
+      "requirement": "Verify the deployed production runtime and Slack listener readiness",
       "status": "pass",
       "evidence": "Production run delivered 2111 characters through codex_subscription_answer with model=gpt-5.5-chatgpt-subscription; Slack listener restarted PID 64642"
     }
