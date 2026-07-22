@@ -67,11 +67,17 @@
       "target": "local OpenClaw service run() entrypoint with real runtime/openclaw_status.json",
       "command": "OPENCLAW_VERIFIED_DELIVERY_ENABLED=true OPENCLAW_QUALITY_SHADOW_ENABLED=false .venv/bin/python -c 'from adapters.content.openclaw_agent import run; print(run(...))'",
       "result": "passed: live bridge generated a fresh 2026-07-22T20:11:02 snapshot; answer separated verified DB/port/integrity checks from configured-but-live-unverified external integrations"
+    },
+    {
+      "name": "Mac Mini production OpenClaw run and listener",
+      "target": "Mac Mini production service and Slack listener launchd",
+      "command": "ssh macmini; run OpenClaw E2E scorer and live status run(); launchctl kickstart -k gui/UID/com.harness.slack-listener; inspect launchctl and listener log",
+      "result": "passed: E2E 9/9; live snapshot 2026-07-22T20:13:34 rendered grounded Korean brief; listener running PID 56186 with verified delivery and shadow enabled; Bolt app running"
     }
   ],
   "deploy": {
-    "method": "scripts/deploy_to_macmini.sh after scoped commit and push",
-    "result": "pending"
+    "method": "scripts/deploy_to_macmini.sh with seven scoped paths, followed by three-path live-probe delta deploy",
+    "result": "passed: origin/main path diff 0; backups scratch/pre_deploy_backup_20260722_200942 and scratch/pre_deploy_backup_20260722_201317; Mac Mini E2E and live run passed; Slack listener restarted"
   },
   "red_team": {
     "models": ["Copilot", "Claude"],
