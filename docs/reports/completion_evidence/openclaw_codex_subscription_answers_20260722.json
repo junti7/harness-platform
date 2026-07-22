@@ -30,8 +30,8 @@
     },
     {
       "requirement": "Verify the deployed Slack user entrypoint",
-      "status": "not_verified",
-      "evidence": "Awaiting commit, selective Mac Mini deployment, listener restart, and production run"
+      "status": "pass",
+      "evidence": "Production run delivered 2111 characters through codex_subscription_answer with model=gpt-5.5-chatgpt-subscription; Slack listener restarted PID 64642"
     }
   ],
   "governance_bootstrap": [
@@ -69,17 +69,23 @@
       "name": "OpenClaw quality regressions",
       "target": "OpenClaw contract verifier and run routing",
       "command": "pytest targeted suites; score contract corpus; score E2E golden",
-      "result": "passed: pytest 106, contract safety 240/240, E2E golden 10/10; one third-party deprecation warning"
+      "result": "passed: final pre-push pytest 117, contract safety 240/240, E2E golden 10/10; one third-party deprecation warning"
+    },
+    {
+      "name": "Mac Mini production OpenClaw subscription route",
+      "target": "Mac Mini production run() and Slack listener service",
+      "command": "run 오늘 증시 시황은?; inspect route audit; restart com.harness.slack-listener",
+      "result": "passed at 2026-07-22 21:31 KST: 2111-character sourced market brief delivered; route=codex_subscription_answer, model=gpt-5.5-chatgpt-subscription, contract decision=deliver; listener PID 64642 running"
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh adapters/content/openclaw_agent.py scripts/score_openclaw_e2e_golden.py tests/test_openclaw_agent.py docs/reports/completion_evidence/openclaw_codex_subscription_answers_20260722.json",
-    "result": "pending post-commit selective deployment"
+    "result": "passed: commit 9398562 pushed to origin/main; backup scratch/pre_deploy_backup_20260722_212916; all four deployed path diffs 0; production run and listener restart passed"
   },
   "residual_risk": [
-    "Mac Mini production code and Slack listener have not yet loaded this revision.",
     "ChatGPT subscription usage remains subject to the plan's usage limits and Codex service availability.",
     "OpenClaw native Codex plugin import is blocked for an existing workspace; the implementation safely invokes the already authenticated Codex CLI instead.",
-    "The OpenClaw plugin registry still reports a pre-existing Slack metadata conflict warning."
+    "The OpenClaw plugin registry still reports a pre-existing Slack metadata conflict warning.",
+    "One minimal gpt-5.5 API request was made before the subscription-only requirement was clarified; production normal-answer routing removes API credentials and does not use that path."
   ]
 }
