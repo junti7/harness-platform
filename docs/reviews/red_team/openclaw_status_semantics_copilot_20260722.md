@@ -15,11 +15,12 @@
 5. The quality-gate trigger omitted the E2E scorer and corpus paths. Both now trigger the pre-push gate; the gate executes both scorers.
 6. Real-entrypoint verification found that an old snapshot could be treated as fresh because evidence time used file-read time. Status evidence now uses payload `generated_at`; stale snapshots fail closed.
 7. Copilot found that top-risk wording was inferred as `analysis`, leaving a 24-hour freshness window. All status bridge contracts now force the five-minute status SLA; stale top-risk regression added.
+8. A five-minute SLA over a non-continuous heartbeat would reject most legitimate requests. Status requests now run the bridge live; the persisted snapshot is failover only and remains subject to payload-time freshness.
 
 ## Final evidence
 
 - Final Copilot verdict: `VERDICT: clear`
-- Final session: `70c0cdcc-6b8d-49e4-8f29-97b07429a497`
+- Final session: `b62ccbb3-352e-4b99-aada-9376a076ab46`
 - Contract safety: 240/240
 - Real `run()` E2E golden: 9/9
 - Targeted regression suite: 106 passed

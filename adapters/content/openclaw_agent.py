@@ -517,6 +517,26 @@ def _load_soul_rules() -> str:
 
 def _load_status_payload() -> dict[str, Any]:
     try:
+        result = subprocess.run(
+            [str(VENV_PYTHON), str(BRIDGE_SCRIPT), "status", "--format", "json"],
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+            cwd=str(PROJECT_ROOT),
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            live = json.loads(result.stdout)
+            if isinstance(live, dict):
+                return live
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as exc:
+        logger.warning("[status] live bridge snapshot unavailable: %s", exc)
+
+    # Failover only. Delivery freshness is evaluated from payload generated_at,
+    # never from the time this file happens to be read.
+    try:
         data = json.loads(STATUS_JSON_PATH.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return {}
@@ -3612,8 +3632,13 @@ def run(
             ),
         )
 
-    status_payload = _load_status_payload()
-    status_brief_response = _try_status_brief_response(user_message, status_payload)
+    status_payload: dict[str, Any] = {}
+    status_candidate = bool(_STATUS_BRIEF_RE.search(user_message)) and bool(
+        re.search(r"top\s*risk|리스크|병목|harness|platform|플랫폼|파이프라인|pipeline|ops|운영", user_message, re.IGNORECASE)
+    )
+    if status_candidate:
+        status_payload = _load_status_payload()
+    status_brief_response = _try_status_brief_response(user_message, status_payload) if status_payload else None
     if status_brief_response is not None:
         _log_route_audit(
             session_id=effective_session_id,

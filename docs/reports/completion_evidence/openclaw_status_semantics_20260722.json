@@ -26,7 +26,7 @@
     {
       "requirement": "Reject stale status snapshots instead of treating file-read time as observation time",
       "status": "pass",
-      "evidence": "Real local run() entrypoint rejected runtime/openclaw_status.json generated 2026-05-31; dedicated stale-snapshot regression added"
+      "evidence": "Status requests execute a live bridge snapshot; persisted file is fallback only and freshness uses payload generated_at. Dedicated current-status and top-risk stale regressions added."
     },
     {
       "requirement": "Verify the deployed Slack user entrypoint",
@@ -66,7 +66,7 @@
       "name": "Real OpenClaw service run entrypoint stale-evidence check",
       "target": "local OpenClaw service run() entrypoint with real runtime/openclaw_status.json",
       "command": "OPENCLAW_VERIFIED_DELIVERY_ENABLED=true OPENCLAW_QUALITY_SHADOW_ENABLED=false .venv/bin/python -c 'from adapters.content.openclaw_agent import run; print(run(...))'",
-      "result": "passed fail-closed behavior: real stale 2026-05-31 status snapshot returned latest-evidence abstention and emitted no stale health claims"
+      "result": "passed: live bridge generated a fresh 2026-07-22T20:11:02 snapshot; answer separated verified DB/port/integrity checks from configured-but-live-unverified external integrations"
     }
   ],
   "deploy": {
@@ -87,6 +87,6 @@
     "Live Slack DM output is not yet verified after deployment.",
     "Claude independent delta review unavailable; no cross-model red_team_clear claim.",
     "The 9-case E2E corpus is regression evidence for known paths, not proof of universal answer quality.",
-    "The MBP runtime status file is stale by design/operation; production Mac Mini must generate a fresh snapshot before a substantive current-status answer is allowed."
+    "If the live bridge probe fails, a stale persisted snapshot is rejected rather than used for a substantive current-status answer."
   ]
 }
