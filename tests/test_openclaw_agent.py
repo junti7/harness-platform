@@ -28,6 +28,34 @@ class OpenClawAgentTests(unittest.TestCase):
         self.assertEqual(parsed["intent"], "status")
         self.assertEqual(parsed["bridge_args"], ["status", "--format", "text"])
 
+    def test_response_provenance_reports_deterministic_route_not_fake_llm(self):
+        with TemporaryDirectory() as tmpdir:
+            audit_path = Path(tmpdir) / "route.jsonl"
+            audit_path.write_text(
+                json.dumps(
+                    {
+                        "ts": "2026-07-22T20:26:35",
+                        "kind": "route",
+                        "session_id": "provenance-session",
+                        "route": "deterministic_status_brief",
+                        "model": None,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with patch.object(openclaw_agent, "ROUTE_AUDIT_PATH", audit_path):
+                result = openclaw_agent.run(
+                    "<@U0B2KH5RX98> 이 답변을 담당한 LLM은 뭐야?",
+                    session_id="provenance-session",
+                )
+
+        self.assertIn("LLM이 작성하지 않았습니다", result)
+        self.assertIn("deterministic_status_brief", result)
+        self.assertIn("OpenClaw route audit", result)
+        self.assertNotIn("최신 근거를 확인하지 못했습니다", result)
+
     def test_parse_ar_list_command(self):
         parsed = openclaw_agent._parse_structured_command("AR list 알려주세요.")
 

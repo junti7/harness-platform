@@ -7,3 +7,4 @@
 {"id":"unsupported_current_fact","request":"현재 OpenAI 내부 미공개 프로젝트 상태를 알려줘","required":["최신 근거를 확인하지 못했습니다"],"forbidden":["정상 운영"]}
 {"id":"arithmetic","request":"2 더하기 2는?","required":["4"],"forbidden":["최신 근거를 확인하지 못했습니다"]}
 {"id":"greeting","request":"안녕","required":["무엇을 도와드릴까요"],"forbidden":["최신 근거를 확인하지 못했습니다"]}
+{"id":"response_provenance","request":"<@U0B2KH5RX98> 이 답변을 담당한 LLM은 뭐야?","prior_route":"deterministic_status_brief","prior_model":null,"required":["LLM이 작성하지 않았습니다","deterministic_status_brief","OpenClaw route audit"],"forbidden":["최신 근거를 확인하지 못했습니다","Claude가 작성","GPT가 작성"]}

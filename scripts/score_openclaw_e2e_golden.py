@@ -8,6 +8,7 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
@@ -48,11 +49,30 @@ def main() -> int:
                 return {"tool": "harness_status", "params": {}}
             return None
 
-        with patch.object(openclaw_agent, "_run_tool_agent", return_value="unverified model response"), patch.object(
+        with TemporaryDirectory() as tmpdir, patch.object(
+            openclaw_agent, "ROUTE_AUDIT_PATH", Path(tmpdir) / "route.jsonl"
+        ), patch.object(openclaw_agent, "_run_tool_agent", return_value="unverified model response"), patch.object(
             openclaw_agent, "_classify_intent_with_haiku", side_effect=classifier
         ):
             for row in rows:
-                result = str(openclaw_agent.run(row["request"], session_id=f"golden:{row['id']}:{id(rows)}"))
+                session_id = f"golden:{row['id']}:{id(rows)}"
+                prior_route = row.get("prior_route")
+                if prior_route:
+                    openclaw_agent.ROUTE_AUDIT_PATH.write_text(
+                        json.dumps(
+                            {
+                                "ts": "2026-07-22T20:26:35",
+                                "kind": "route",
+                                "session_id": session_id,
+                                "route": prior_route,
+                                "model": row.get("prior_model"),
+                            },
+                            ensure_ascii=False,
+                        )
+                        + "\n",
+                        encoding="utf-8",
+                    )
+                result = str(openclaw_agent.run(row["request"], session_id=session_id))
                 missing = [value for value in row["required"] if value not in result]
                 leaked = [value for value in row["forbidden"] if value in result]
                 if missing or leaked:

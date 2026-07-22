@@ -463,6 +463,11 @@ _GREETING_ONLY_RE = re.compile(
     r"^\s*(안녕(?:하세요)?|하이|hello|hey|헬로)\s*[!.?~]*\s*$",
     re.IGNORECASE,
 )
+_RESPONSE_PROVENANCE_RE = re.compile(
+    r"(이|그|직전|방금|위).{0,12}(답변|응답).{0,20}(llm|모델|model|담당|생성)|"
+    r"(llm|모델|model).{0,20}(뭐|무엇|누구|담당|썼|사용)",
+    re.IGNORECASE,
+)
 _LOG_REQUEST_RE = re.compile(
     r"(로그|log).*(보여|확인|조회|읽어|요약|분석)|"
     r"(보여|확인|조회|읽어|요약|분석).*(로그|log)|"
@@ -1292,6 +1297,51 @@ def _log_route_audit(
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception as exc:
         logger.warning(f"[route-audit] write failed: {exc}")
+
+
+def _try_response_provenance_response(user_message: str, session_id: str | None) -> str | None:
+    if not _RESPONSE_PROVENANCE_RE.search(user_message) or not session_id:
+        return None
+    try:
+        lines = ROUTE_AUDIT_PATH.read_text(encoding="utf-8").splitlines()
+    except (FileNotFoundError, OSError):
+        return "직전 답변의 실행 기록을 찾지 못했습니다. 모델을 추측하지 않습니다."
+    prior: dict[str, Any] | None = None
+    for raw in reversed(lines[-4000:]):
+        try:
+            record = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if record.get("session_id") != session_id or record.get("kind") != "route":
+            continue
+        prior = record
+        break
+    if not prior:
+        return "직전 답변의 실행 기록을 찾지 못했습니다. 모델을 추측하지 않습니다."
+
+    route = str(prior.get("route") or "unknown")
+    model = str(prior.get("model") or "").strip()
+    ts = str(prior.get("ts") or "-")
+    if route.startswith("deterministic_"):
+        return (
+            "직전 답변은 LLM이 작성하지 않았습니다. "
+            f"검증된 deterministic 경로 `{route}`가 생성했습니다.\n"
+            f"- 실행 기록 시각: {ts}\n"
+            "- 근거: OpenClaw route audit"
+        )
+    if model:
+        return (
+            f"직전 답변 담당 LLM은 `{model}`입니다.\n"
+            f"- route: `{route}`\n"
+            f"- 실행 기록 시각: {ts}\n"
+            "- 근거: OpenClaw route audit"
+        )
+    return (
+        f"직전 답변 route는 `{route}`이지만 모델 식별자는 기록되지 않았습니다. "
+        "확인되지 않은 모델명을 추측하지 않습니다.\n"
+        f"- 실행 기록 시각: {ts}\n"
+        "- 근거: OpenClaw route audit"
+    )
 
 
 def _cost_limit_reached() -> bool:
@@ -3604,6 +3654,39 @@ def run(
         if record:
             _record_conversation_turn(effective_session_id, user_message, final_text)
         return VerifiedText(decision)
+
+    provenance_response = _try_response_provenance_response(user_message, effective_session_id)
+    if provenance_response is not None:
+        _log_route_audit(
+            session_id=effective_session_id,
+            requester_user_id=requester_user_id,
+            user_message=user_message,
+            route="deterministic_response_provenance",
+            risk_scan=risk_scan,
+            action_name="response_provenance",
+        )
+        provenance_contract = replace(
+            infer_answer_contract(user_message),
+            task_type="lookup",
+            subject_ids=("llm", "모델", "답변", "route", "provenance"),
+            requested_dimensions=("state", "evidence"),
+            time_kind="current",
+            minimum_authority="authoritative_runtime",
+            freshness_seconds=86400,
+            required_coverage="complete",
+            ambiguities=(),
+        )
+        return _finish(
+            "deterministic_response_provenance",
+            provenance_response,
+            evidence_items=_adapter_evidence(
+                source_id="openclaw_route_audit",
+                subjects=("llm", "모델", "답변", "route", "provenance"),
+                dimensions=("state", "evidence"),
+                text=provenance_response,
+            ),
+            contract_override=provenance_contract,
+        )
 
     arithmetic_response = _try_arithmetic_response(user_message, history)
     if arithmetic_response is not None:

@@ -1,0 +1,61 @@
+{
+  "task": "OpenClaw prior response model and route provenance",
+  "status": "residual_risk",
+  "date": "2026-07-22",
+  "requirements": [
+    {
+      "requirement": "Answer which LLM or execution path produced the prior response",
+      "status": "pass",
+      "evidence": "Session-scoped OpenClaw route audit lookup; deterministic routes explicitly state that no LLM authored the response"
+    },
+    {
+      "requirement": "Do not guess a model when model identity is absent",
+      "status": "pass",
+      "evidence": "Explicit unknown-model response for non-deterministic route records without model identity"
+    },
+    {
+      "requirement": "Cover the exact production failure through real run() routing",
+      "status": "pass",
+      "evidence": "E2E golden response_provenance case with prior deterministic_status_brief route"
+    },
+    {
+      "requirement": "Verify deployed Slack DM entrypoint",
+      "status": "not_verified",
+      "evidence": "Pending scoped deployment and live Slack retry"
+    }
+  ],
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-22T20:21:34+09:00",
+      "summary": "Read completion, deployment, secrets, and live-entrypoint requirements."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-22T20:21:34+09:00",
+      "summary": "Read source-of-truth, real runtime verification, and completion evidence rules."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Production Slack API and listener audit",
+      "target": "Mac Mini production Slack API history, listener log, and route audit",
+      "command": "ssh macmini; inspect 20:27 listener log and route audit; query conversations.history read-only",
+      "result": "confirmed request received 20:27:13, evidence_unavailable produced 57-char abstention, Slack API stored it as a top-level DM at 20:27:16; prior answer route was deterministic_status_brief with model=null"
+    },
+    {
+      "name": "OpenClaw provenance regression",
+      "target": "pre-push OpenClaw run service path",
+      "command": "score contract corpus; score E2E golden; run targeted pytest suite",
+      "result": "passed: contract safety 240/240, E2E 10/10 including exact provenance failure, pytest 113 passed"
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh after scoped commit and push",
+    "result": "pending"
+  },
+  "residual_risk": [
+    "Post-deploy Slack DM retry remains required for the user-visible entrypoint.",
+    "Route audit currently provides route and model identity, not complete token-level model execution traces."
+  ]
+}
