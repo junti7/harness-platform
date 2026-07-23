@@ -1,0 +1,112 @@
+{
+  "version": "1.0",
+  "currency": "KRW",
+  "market": "KR",
+  "items": [
+    {
+      "id": "full_spectrum_led_grow_light",
+      "name_ko": "흰색 full-spectrum LED 식물등",
+      "required_checks": [
+        "white_full_spectrum",
+        "rated_power_w",
+        "coverage_area",
+        "mounting_distance",
+        "timer_compatibility",
+        "kc_or_equivalent_safety_mark",
+        "warranty"
+      ],
+      "search_queries": [
+        "흰색 풀스펙트럼 LED 식물등 상추 실내재배",
+        "LED 식물등 소비전력 KC 인증 가격"
+      ]
+    },
+    {
+      "id": "timer_or_smart_plug",
+      "name_ko": "타이머 또는 스마트플러그",
+      "required_checks": [
+        "rated_voltage",
+        "rated_current_a",
+        "local_schedule_without_cloud",
+        "power_outage_recovery",
+        "kc_or_equivalent_safety_mark",
+        "app_dependency",
+        "warranty"
+      ],
+      "search_queries": [
+        "스마트플러그 로컬 타이머 정전 복구 KC 인증",
+        "콘센트 타이머 220V 식물등 가격"
+      ]
+    },
+    {
+      "id": "grow_tray_and_drain_pan",
+      "name_ko": "재배 트레이와 배수받침",
+      "required_checks": [
+        "dimensions_mm",
+        "food_contact_or_material",
+        "drainage",
+        "leak_protection",
+        "capacity",
+        "cleaning"
+      ],
+      "search_queries": [
+        "상추 재배 트레이 배수받침 실내",
+        "육묘 트레이 받침 규격 가격"
+      ]
+    },
+    {
+      "id": "potting_mix_or_coco_coir",
+      "name_ko": "상토 또는 코코피트",
+      "required_checks": [
+        "volume_l",
+        "composition",
+        "ph_or_ec_if_declared",
+        "fertilizer_included",
+        "food_crop_suitability",
+        "storage",
+        "shipping_weight"
+      ],
+      "search_queries": [
+        "채소용 상토 소포장 가격",
+        "코코피트 채소 재배 pH EC 가격"
+      ]
+    },
+    {
+      "id": "sensor_mounting_case",
+      "name_ko": "온습도·조도 센서용 고정 케이스",
+      "required_checks": [
+        "am2302_fit",
+        "bh1750_fit",
+        "ventilation",
+        "light_sensor_window",
+        "splash_protection",
+        "mounting_method",
+        "cable_exit"
+      ],
+      "search_queries": [
+        "AM2302 DHT22 BH1750 센서 케이스 브라켓",
+        "라즈베리파이 온습도 조도 센서 방수 통풍 케이스"
+      ]
+    },
+    {
+      "id": "soil_sensor_and_watering_pump",
+      "name_ko": "토양수분 센서와 급수펌프",
+      "phase": "later",
+      "required_checks": [
+        "capacitive_soil_sensor",
+        "sensor_voltage",
+        "esp32_adc1_compatibility",
+        "adc_calibration_method",
+        "pump_voltage",
+        "pump_flow_rate",
+        "separate_power_supply",
+        "normally_off_fail_safe",
+        "food_safe_tubing",
+        "relay_or_mosfet_requirement"
+      ],
+      "search_queries": [
+        "정전용량식 토양수분 센서 ESP32 ADC1 GPIO34 캘리브레이션",
+        "12V 소형 급수펌프 식품용 튜브 유량"
+      ]
+    }
+  ]
+}

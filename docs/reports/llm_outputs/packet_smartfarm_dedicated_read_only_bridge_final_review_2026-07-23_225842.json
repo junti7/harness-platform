@@ -1,0 +1,21 @@
+{
+  "generated_at": "2026-07-23T22:58:42",
+  "owner": "Codex Chief of Staff",
+  "task_kind": "red_team",
+  "title": "Smartfarm dedicated read-only bridge final review",
+  "objective": "Final review of the dedicated smartfarm-market-research OpenClaw skill and scripts/openclaw_smartfarm_research_bridge.py. Confirm its parser exposes only plan/search/open/extract/validate and no form-fill/cart/order/payment/GPIO/actuator path; confirm it still enforces six categories, direct/fresh evidence, resolved recommended/alternate checks, and ESP32 Arduino-framework ADC1 architecture. Inspect tests and return APPROVE or BLOCK.",
+  "input_artifacts": [
+    "scripts/openclaw_smartfarm_research_bridge.py",
+    "scripts/smartfarm_market_research.py",
+    "configs/smartfarm/procurement_items_v1.json",
+    "plugins/harness-bridge/skills/smartfarm-market-research/SKILL.md",
+    "tests/test_smartfarm_market_research.py"
+  ],
+  "output_artifacts": [],
+  "checks": [
+    "Dedicated research command surface is machine read-only",
+    "All prior evidence and safety blocks remain enforced"
+  ],
+  "notes": [],
+  "callback_route": "agent_openclaw_routing"
+}

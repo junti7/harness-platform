@@ -1,0 +1,82 @@
+{
+  "task": "OpenClaw smartfarm market research employee",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-23T23:00:00+09:00",
+      "summary": "Read completion evidence, CLI-first operation, purchase approval, source safety, and selective deployment requirements."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-23T23:00:00+09:00",
+      "summary": "Read real-entrypoint verification, secret handling, OpenClaw host ownership, and commit-push-deploy requirements."
+    }
+  ],
+  "requirements": [
+    {
+      "requirement": "OpenClaw researches all six requested smartfarm procurement categories",
+      "status": "pass",
+      "evidence": "Catalog and generated plan contain six fixed item categories with at least three candidates required per category."
+    },
+    {
+      "requirement": "Research preserves current price, delivery, direct evidence, safety, and compatibility checks",
+      "status": "pass",
+      "evidence": "Validator requires timezone-aware observations within 14 days, direct URLs, evidence mapping, and resolved checks for recommended and alternate candidates."
+    },
+    {
+      "requirement": "Smartfarm employee cannot cart, order, pay, or activate GPIO and pumps",
+      "status": "pass",
+      "evidence": "Dedicated parser exposes exactly plan, search, open, extract, and validate."
+    },
+    {
+      "requirement": "Arduino decision is reflected in the architecture",
+      "status": "pass",
+      "evidence": "Plan specifies Raspberry Pi gateway plus ESP32 programmed with Arduino framework and ADC1 for analog soil sensing while Wi-Fi is active."
+    },
+    {
+      "requirement": "Mac Mini OpenClaw can see and execute the deployed skill",
+      "status": "not_verified",
+      "evidence": "Pending commit, push, selective deployment, and live OpenClaw host verification."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Smartfarm and OpenClaw regression tests",
+      "target": "OpenClaw bridge, adapter, and market-research validation",
+      "command": ".venv/bin/python -m pytest tests/test_smartfarm_market_research.py tests/test_openclaw_bridge.py tests/test_openclaw_agent.py -q",
+      "result": "passed: 117 tests; one third-party Google GenAI deprecation warning"
+    },
+    {
+      "name": "Real structured browser search entrypoint",
+      "target": "browser search over the live web through the dedicated smartfarm bridge",
+      "command": "OPENCLAW_WEB_SEARCH_PROVIDER=duckduckgo .venv/bin/python scripts/openclaw_smartfarm_research_bridge.py search '흰색 풀스펙트럼 LED 식물등 KC 인증' --limit 3",
+      "result": "passed: three direct result URLs returned, including a direct Coupang product page and KC certification information pages; no search-page URL returned"
+    },
+    {
+      "name": "Dedicated command surface inspection",
+      "target": "OpenClaw smartfarm research CLI",
+      "command": ".venv/bin/python scripts/openclaw_smartfarm_research_bridge.py --help",
+      "result": "passed: only plan, validate, search, open, and extract were exposed"
+    }
+  ],
+  "red_team": {
+    "models": [
+      "Claude",
+      "Copilot"
+    ],
+    "artifacts": [
+      {
+        "artifact": "../llm_outputs/claude_smartfarm_structured_search_final_delta_review_2026-07-23_230307.md"
+      },
+      {
+        "artifact": "../llm_outputs/copilot_smartfarm_structured_search_final_delta_review_2026-07-23_230307.md"
+      }
+    ],
+    "verdict": "red_team_clear"
+  },
+  "residual_risk": [
+    "Mac Mini deployment and live OpenClaw skill visibility are not yet verified.",
+    "Static report validation cannot prove that every cited page substantively supports every recorded claim; OpenClaw must compare each check against its evidence URL."
+  ]
+}

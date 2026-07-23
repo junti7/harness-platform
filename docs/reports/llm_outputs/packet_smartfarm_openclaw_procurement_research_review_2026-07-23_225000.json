@@ -1,0 +1,22 @@
+{
+  "generated_at": "2026-07-23T22:50:00",
+  "owner": "Codex Chief of Staff",
+  "task_kind": "red_team",
+  "title": "Smartfarm OpenClaw procurement research review",
+  "objective": "Independently review the new smartfarm procurement market-research capability for correctness, source/evidence rigor, electrical and pump safety, purchase approval boundaries, parser integration, and test gaps. Inspect configs/smartfarm/procurement_items_v1.json, scripts/smartfarm_market_research.py, scripts/openclaw_codex_bridge.py, plugins/harness-bridge/skills/harness-control/SKILL.md, docs/OPENCLAW_HARNESS_COMMANDS.md, and tests/test_smartfarm_market_research.py. Return APPROVE or BLOCK with concrete findings.",
+  "input_artifacts": [
+    "configs/smartfarm/procurement_items_v1.json",
+    "scripts/smartfarm_market_research.py",
+    "plugins/harness-bridge/skills/harness-control/SKILL.md"
+  ],
+  "output_artifacts": [
+    "docs/reviews/red_team/smartfarm_openclaw_procurement_review_20260723.md"
+  ],
+  "checks": [
+    "No research action may add to cart, order, or pay",
+    "Recommended candidates must have resolved safety and compatibility evidence",
+    "All six requested item categories are covered"
+  ],
+  "notes": [],
+  "callback_route": "agent_openclaw_routing"
+}

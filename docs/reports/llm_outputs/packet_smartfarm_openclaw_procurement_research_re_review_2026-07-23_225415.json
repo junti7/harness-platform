@@ -1,0 +1,21 @@
+{
+  "generated_at": "2026-07-23T22:54:15",
+  "owner": "Codex Chief of Staff",
+  "task_kind": "red_team",
+  "title": "Smartfarm OpenClaw procurement research re-review",
+  "objective": "Re-review the updated implementation after prior findings. Confirm whether search-result URLs are blocked, recommended candidates require two evidence URLs, every recommended/alternate required check has verified status plus direct evidence URL, stale observations are blocked, ESP32 Arduino-framework plus ADC1 architecture is encoded, all six categories remain covered, and research cannot cart/order/pay. Run tests if possible. Return APPROVE or BLOCK.",
+  "input_artifacts": [
+    "configs/smartfarm/procurement_items_v1.json",
+    "scripts/smartfarm_market_research.py",
+    "scripts/openclaw_codex_bridge.py",
+    "plugins/harness-bridge/skills/harness-control/SKILL.md",
+    "tests/test_smartfarm_market_research.py"
+  ],
+  "output_artifacts": [],
+  "checks": [
+    "Previous safety blocks are machine-enforced",
+    "Research remains read-only"
+  ],
+  "notes": [],
+  "callback_route": "agent_openclaw_routing"
+}

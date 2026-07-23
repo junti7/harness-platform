@@ -284,7 +284,7 @@ def _normalize_duckduckgo_url(href: str) -> str:
     return href
 
 
-def _web_search_brave(query: str, count: int) -> str:
+def _web_search_brave_results(query: str, count: int) -> list[dict[str, str]]:
     api_key = os.environ.get("BRAVE_SEARCH_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("BRAVE_SEARCH_API_KEY is not configured")
@@ -307,10 +307,14 @@ def _web_search_brave(query: str, count: int) -> str:
             "snippet": item.get("description", ""),
             "published": item.get("page_age") or item.get("age") or "",
         })
-    return _search_result_lines("brave", query, results)
+    return results
 
 
-def _web_search_duckduckgo(query: str, count: int) -> str:
+def _web_search_brave(query: str, count: int) -> str:
+    return _search_result_lines("brave", query, _web_search_brave_results(query, count))
+
+
+def _web_search_duckduckgo_results(query: str, count: int) -> list[dict[str, str]]:
     headers = {"User-Agent": "Mozilla/5.0"}
 
     def _parse_html_results(html: str) -> list[dict[str, str]]:
@@ -371,7 +375,49 @@ def _web_search_duckduckgo(query: str, count: int) -> str:
         )
         lite_resp.raise_for_status()
         results = _parse_lite_results(lite_resp.text)
-    return _search_result_lines("duckduckgo_html", query, results)
+    return results
+
+
+def _web_search_duckduckgo(query: str, count: int) -> str:
+    return _search_result_lines(
+        "duckduckgo_html",
+        query,
+        _web_search_duckduckgo_results(query, count),
+    )
+
+
+def structured_web_search(query: str, count: int = 5) -> dict[str, Any]:
+    """Return source URLs as structured data for read-only research workers."""
+    count = max(1, min(int(count or 5), 10))
+    provider = os.environ.get("OPENCLAW_WEB_SEARCH_PROVIDER", "auto").strip().lower()
+    try:
+        if provider == "brave":
+            results = _web_search_brave_results(query, count)
+            used_provider = "brave"
+        elif provider in {"duckduckgo", "ddg"}:
+            results = _web_search_duckduckgo_results(query, count)
+            used_provider = "duckduckgo_html"
+        elif os.environ.get("BRAVE_SEARCH_API_KEY", "").strip():
+            results = _web_search_brave_results(query, count)
+            used_provider = "brave"
+        else:
+            results = _web_search_duckduckgo_results(query, count)
+            used_provider = "duckduckgo_html"
+        return {
+            "ok": bool(results),
+            "query": query,
+            "provider": used_provider,
+            "results": results,
+            **({} if results else {"error": "no search results returned"}),
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "query": query,
+            "provider": provider,
+            "results": [],
+            "error": f"{type(exc).__name__}: {exc}",
+        }
 
 
 def tool_web_search(query: str, count: int = 5) -> str:

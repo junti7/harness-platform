@@ -1,0 +1,19 @@
+{
+  "generated_at": "2026-07-23T23:03:07",
+  "owner": "Codex Chief of Staff",
+  "task_kind": "red_team",
+  "title": "Smartfarm structured search final delta review",
+  "objective": "Review only the final structured-search delta in adapters/content/tools.py, scripts/openclaw_smartfarm_research_bridge.py, and tests/test_smartfarm_market_research.py. Confirm search returns direct result URLs instead of a search page, remains read-only, exposes no mutation commands, preserves prior procurement safety validation, and has adequate tests. Return APPROVE or BLOCK.",
+  "input_artifacts": [
+    "adapters/content/tools.py",
+    "scripts/openclaw_smartfarm_research_bridge.py",
+    "tests/test_smartfarm_market_research.py"
+  ],
+  "output_artifacts": [],
+  "checks": [
+    "Structured search provides direct URLs",
+    "Dedicated bridge remains machine read-only"
+  ],
+  "notes": [],
+  "callback_route": "agent_openclaw_routing"
+}

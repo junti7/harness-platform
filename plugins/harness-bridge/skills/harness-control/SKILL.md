@@ -259,7 +259,13 @@ Mandatory handling:
 4. High-impact publish/investment decisions still require Legal, Red Team, QA, and President approval gates.
 5. If the bridge status is degraded, post an ops note first and then investigate.
 
-### 17. 웹 페이지 열기 (browser-open)
+### 17. Smartfarm market research
+
+Use the separate `smartfarm-market-research` skill. Its dedicated bridge is
+read-only and intentionally excludes form-fill, cart, order, payment, GPIO, and
+actuator commands.
+
+### 18. 웹 페이지 열기 (browser-open)
 
 ```bash
 cd ~/projects/harness-platform
@@ -271,7 +277,7 @@ Use for:
 - `--no-text`: 텍스트 추출 없이 제목만 가져올 때
 - `--format json`: JSON 형식 출력
 
-### 18. 웹 검색 (browser-search)
+### 19. 웹 검색 (browser-search)
 
 ```bash
 cd ~/projects/harness-platform
@@ -283,7 +289,7 @@ Use for:
 - `--engine`: `naver` (기본), `duckduckgo`, `google` 중 선택
 - `--limit`: 최대 결과 수 (기본: 5)
 
-### 19. 웹 페이지 스크린샷 (browser-screenshot)
+### 20. 웹 페이지 스크린샷 (browser-screenshot)
 
 ```bash
 cd ~/projects/harness-platform
@@ -295,7 +301,7 @@ Use for:
 - 저장 경로: `docs/browser_screenshots/`
 - `--filename`: 파일명 (비워두면 자동 생성)
 
-### 20. 웹 요소 추출 (browser-extract)
+### 21. 웹 요소 추출 (browser-extract)
 
 ```bash
 cd ~/projects/harness-platform
@@ -306,7 +312,7 @@ Use for:
 - 특정 페이지에서 CSS selector 기반으로 요소 텍스트를 추출할 때
 - 예: `h1`, `.title`, `#main p`, `table tr`
 
-### 21. 웹 폼 자동화 (browser-fill)
+### 22. 웹 폼 자동화 (browser-fill)
 
 ```bash
 cd ~/projects/harness-platform
