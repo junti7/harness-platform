@@ -43,8 +43,18 @@
       "target": "commit 57f6ea8",
       "command": "Claude CLI and GitHub Copilot CLI independent read-only reviews",
       "result": "Claude red_team_clear; Copilot red_team_clear after unsupported Python 3.9 assumption was corrected with verified Python 3.12+ runtime evidence"
+    },
+    {
+      "name": "production NotebookLM identity and regression verification",
+      "target": "production Mac mini NotebookLM runtime",
+      "command": "saju-notebook-status --format json; PYTHONPATH=. .venv/bin/pytest -q tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py",
+      "result": "ok=true; fixed UUID and title verified; source_count=26; production regression suite 61 passed"
     }
   ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh core/notebook_query_planning.py core/saju_calendar.py docs/OPENCLAW_CODEX_INTEGRATION.md docs/reports/completion_evidence/openclaw_notebook_orchestration_20260724.json docs/reviews/red_team/openclaw_notebook_orchestration_claude_20260724.md docs/reviews/red_team/openclaw_notebook_orchestration_copilot_20260724.md plugins/harness-bridge/skills/harness-control/SKILL.md requirements.txt scripts/notebooklm_private_query.py scripts/openclaw_codex_bridge.py tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py",
+    "result": "sxtwl 2.0.7 installed in production Python 3.12 venv; 12 selected paths matched origin/main; backend restarted and served port 8000; NotebookLM identity check passed; production regression suite passed 61/61"
+  },
   "red_team": {
     "models": ["Claude", "Copilot"],
     "artifacts": [
