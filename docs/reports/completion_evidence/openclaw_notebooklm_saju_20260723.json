@@ -1,6 +1,6 @@
 {
   "task": "Connect the existing NotebookLM notebook 사주명리학자료 to the production OpenClaw command surface",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -31,11 +31,17 @@
       "target": "production Mac mini NotebookLM runtime",
       "command": "ssh macmini '~/.local/bin/nlm login --check && ~/.local/bin/nlm notebook list --json'",
       "result": "authentication valid; target UUID and title found with 26 sources"
+    },
+    {
+      "name": "production OpenClaw agent grounded query",
+      "target": "Mac mini OpenClaw gateway agent main",
+      "command": "openclaw agent --agent main --session-id codex-saju-verify-20260723 --message '<grounded query>' --thinking low --timeout 300 --json",
+      "result": "status=done; OpenClaw loaded harness-control, invoked saju-notebook-query, returned a Korean definition of 용신 with 4 named sources, and reported 26 total notebook sources"
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh scripts/openclaw_codex_bridge.py plugins/harness-bridge/skills/harness-control/SKILL.md docs/OPENCLAW_CODEX_INTEGRATION.md tests/test_openclaw_bridge.py docs/reviews/red_team/openclaw_notebooklm_claude_20260723.md docs/reviews/red_team/openclaw_notebooklm_copilot_20260723.md docs/reports/completion_evidence/openclaw_notebooklm_saju_20260723.json",
-    "result": "pending origin/main push and selected Mac mini deployment"
+    "result": "selected checkout completed; backend restarted on port 8000; all 7 deployed paths matched origin/main; Mac mini bridge tests passed 18/18; live OpenClaw agent query completed"
   },
   "red_team": {
     "models": ["Claude", "Copilot"],
