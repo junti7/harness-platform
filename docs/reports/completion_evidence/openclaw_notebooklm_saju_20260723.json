@@ -1,0 +1,52 @@
+{
+  "task": "Connect the existing NotebookLM notebook 사주명리학자료 to the production OpenClaw command surface",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-23T21:50:00+09:00",
+      "summary": "Checked the completion evidence, real-entrypoint verification, source-of-truth deployment, and human decision boundary requirements."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-23T21:50:00+09:00",
+      "summary": "Checked the Mac mini-only OpenClaw runtime, selective deployment, secret protection, prompt-injection boundary, and completion guard requirements."
+    }
+  ],
+  "verification": [
+    {
+      "name": "local live NotebookLM API-backed identity check",
+      "target": "real NotebookLM service through nlm CLI",
+      "command": ".venv/bin/python scripts/openclaw_codex_bridge.py saju-notebook-status --format json",
+      "result": "ok=true; notebook UUID d3fe3696-ff81-4810-94a8-9584c329c440; title 사주명리학자료; source_count=26"
+    },
+    {
+      "name": "bridge regression suite",
+      "target": "OpenClaw bridge command and safety behavior",
+      "command": ".venv/bin/python -m pytest -q tests/test_openclaw_bridge.py",
+      "result": "18 passed"
+    },
+    {
+      "name": "Mac mini NotebookLM authentication and notebook visibility",
+      "target": "production Mac mini NotebookLM runtime",
+      "command": "ssh macmini '~/.local/bin/nlm login --check && ~/.local/bin/nlm notebook list --json'",
+      "result": "authentication valid; target UUID and title found with 26 sources"
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh scripts/openclaw_codex_bridge.py plugins/harness-bridge/skills/harness-control/SKILL.md docs/OPENCLAW_CODEX_INTEGRATION.md tests/test_openclaw_bridge.py docs/reviews/red_team/openclaw_notebooklm_claude_20260723.md docs/reviews/red_team/openclaw_notebooklm_copilot_20260723.md docs/reports/completion_evidence/openclaw_notebooklm_saju_20260723.json",
+    "result": "pending origin/main push and selected Mac mini deployment"
+  },
+  "red_team": {
+    "models": ["Claude", "Copilot"],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/openclaw_notebooklm_claude_20260723.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_notebooklm_copilot_20260723.md"
+      }
+    ],
+    "verdict": "red_team_clear"
+  }
+}
