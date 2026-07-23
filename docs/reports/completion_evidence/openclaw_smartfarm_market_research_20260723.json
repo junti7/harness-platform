@@ -58,6 +58,12 @@
       "target": "OpenClaw smartfarm research CLI",
       "command": ".venv/bin/python scripts/openclaw_smartfarm_research_bridge.py --help",
       "result": "passed: only plan, validate, search, open, and extract were exposed"
+    },
+    {
+      "name": "Non-repo working-directory import regression",
+      "target": "direct CLI process started from /tmp",
+      "command": "cd /tmp; repo/.venv/bin/python repo/scripts/openclaw_smartfarm_research_bridge.py plan",
+      "result": "passed locally: six-item plan generated after explicit repo-root module bootstrap"
     }
   ],
   "red_team": {

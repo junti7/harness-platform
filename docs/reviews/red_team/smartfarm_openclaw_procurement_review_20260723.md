@@ -2,7 +2,7 @@
 
 Date: 2026-07-23
 Final verdict: `red_team_clear`
-Retry count: 4
+Retry count: 5
 
 ## Scope
 
@@ -76,6 +76,22 @@ Artifacts:
 
 - `docs/reports/llm_outputs/claude_smartfarm_structured_search_final_delta_review_2026-07-23_230307.md`
 - `docs/reports/llm_outputs/copilot_smartfarm_structured_search_final_delta_review_2026-07-23_230307.md`
+
+### Round 5
+
+- Claude: approve
+- Copilot: temporary block pending Mac Mini execution evidence
+
+Finding:
+
+- the repo-root import bootstrap is minimal and leaves the read-only command
+  surface unchanged
+- target-host verification is required before final closeout
+
+Artifacts:
+
+- `docs/reports/llm_outputs/claude_smartfarm_remote_import_bootstrap_review_2026-07-23_230806.md`
+- `docs/reports/llm_outputs/copilot_smartfarm_remote_import_bootstrap_review_2026-07-23_230806.md`
 
 ## Residual risks
 

@@ -1,0 +1,17 @@
+{
+  "generated_at": "2026-07-23T23:08:06",
+  "owner": "Codex Chief of Staff",
+  "task_kind": "red_team",
+  "title": "Smartfarm remote import bootstrap review",
+  "objective": "Review the final three-line repo-root sys.path bootstrap added to scripts/openclaw_smartfarm_research_bridge.py after Mac Mini exposed ModuleNotFoundError. Confirm it safely fixes execution from non-repo working directories and does not weaken the read-only parser or procurement safety. Return APPROVE or BLOCK.",
+  "input_artifacts": [
+    "scripts/openclaw_smartfarm_research_bridge.py"
+  ],
+  "output_artifacts": [],
+  "checks": [
+    "Remote direct script execution imports repo modules",
+    "Read-only command surface unchanged"
+  ],
+  "notes": [],
+  "callback_route": "agent_openclaw_routing"
+}
