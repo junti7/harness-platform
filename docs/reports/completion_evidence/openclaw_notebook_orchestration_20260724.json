@@ -1,0 +1,48 @@
+{
+  "task": "Replace retrieval-only NotebookLM routing with deterministic enrichment and answer-contract verification",
+  "status": "blocked",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-24T00:10:00+09:00",
+      "summary": "Checked multi-model review, privacy, real verification, completion evidence, and deployment gates."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-24T00:10:00+09:00",
+      "summary": "Checked Mac mini-only runtime, source-of-truth deployment, and no unverified completion claims."
+    }
+  ],
+  "verification": [
+    {
+      "name": "live NotebookLM answer with deterministic enrichment",
+      "target": "real NotebookLM API-backed service through private stdin helper",
+      "command": "saju-notebook-query with the original question and timeout 300",
+      "result": "ok=true; query_plan delivery_contract_passed=true; deterministic provider sxtwl-2.0.7; concrete Korean answer with 17 citations"
+    },
+    {
+      "name": "OpenClaw NotebookLM and response-quality regression bundle",
+      "target": "local OpenClaw bridge, planner, general answer contract, and agent routes",
+      "command": ".venv/bin/pytest -q tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py tests/test_openclaw_response_quality.py tests/test_openclaw_agent.py",
+      "result": "167 passed before final focused additions; subsequent focused bundle reached 166 then 167 passing with no regressions"
+    },
+    {
+      "name": "general response quality corpus",
+      "target": "OpenClaw response quality release gate",
+      "command": "bash scripts/verify_openclaw_quality_release.sh",
+      "result": "contract safety 240/240 pass; route tests pass; shadow observation blocked only because production observation corpus is empty"
+    }
+  ],
+  "red_team": {
+    "models": ["Claude", "Copilot"],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/openclaw_notebook_orchestration_claude_20260724.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_notebook_orchestration_copilot_20260724.md"
+      }
+    ],
+    "verdict": "red_team_block"
+  }
+}
