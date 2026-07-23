@@ -1,6 +1,6 @@
 {
   "task": "OpenClaw smartfarm market research employee",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -36,8 +36,8 @@
     },
     {
       "requirement": "Mac Mini OpenClaw can see and execute the deployed skill",
-      "status": "not_verified",
-      "evidence": "Pending commit, push, selective deployment, and live OpenClaw host verification."
+      "status": "pass",
+      "evidence": "Mac Mini skill reports Ready, visible to model, and command available; target-host plan and live search passed after gateway restart."
     }
   ],
   "verification": [
@@ -64,6 +64,12 @@
       "target": "direct CLI process started from /tmp",
       "command": "cd /tmp; repo/.venv/bin/python repo/scripts/openclaw_smartfarm_research_bridge.py plan",
       "result": "passed locally: six-item plan generated after explicit repo-root module bootstrap"
+    },
+    {
+      "name": "Mac Mini OpenClaw production entrypoint",
+      "target": "Mac Mini OpenClaw gateway, plugin registry, backend, and dedicated research CLI",
+      "command": "ssh macmini; openclaw skills info smartfarm-market-research; run help, plan, and live search from /tmp; inspect gateway; curl backend",
+      "result": "passed: skill Ready and model-visible; five read-only commands only; six-item plan generated; two direct URLs returned; plugin doctor clear; gateway PID 35893 after restart; backend HTTP 200"
     }
   ],
   "red_team": {
@@ -73,16 +79,19 @@
     ],
     "artifacts": [
       {
-        "artifact": "../llm_outputs/claude_smartfarm_structured_search_final_delta_review_2026-07-23_230307.md"
+        "artifact": "../llm_outputs/claude_smartfarm_remote_import_bootstrap_review_2026-07-23_230806.md"
       },
       {
-        "artifact": "../llm_outputs/copilot_smartfarm_structured_search_final_delta_review_2026-07-23_230307.md"
+        "artifact": "../llm_outputs/copilot_smartfarm_mac_mini_verification_unblock_2026-07-23_231254.md"
       }
     ],
     "verdict": "red_team_clear"
   },
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh with the 22 functional and audit paths from commit 86733d7, followed by the six import-bootstrap and review paths from commit 59f776a",
+    "result": "passed: both commits pushed to origin/main; backups scratch/pre_deploy_backup_20260723_230716 and scratch/pre_deploy_backup_20260723_231114; all selected path diffs 0; backend reloaded and returned HTTP 200; OpenClaw plugin reinstalled from plugins/harness-bridge and gateway restarted"
+  },
   "residual_risk": [
-    "Mac Mini deployment and live OpenClaw skill visibility are not yet verified.",
     "Static report validation cannot prove that every cited page substantively supports every recorded claim; OpenClaw must compare each check against its evidence URL."
   ]
 }

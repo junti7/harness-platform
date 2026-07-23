@@ -2,7 +2,7 @@
 
 Date: 2026-07-23
 Final verdict: `red_team_clear`
-Retry count: 5
+Retry count: 6
 
 ## Scope
 
@@ -92,6 +92,23 @@ Artifacts:
 
 - `docs/reports/llm_outputs/claude_smartfarm_remote_import_bootstrap_review_2026-07-23_230806.md`
 - `docs/reports/llm_outputs/copilot_smartfarm_remote_import_bootstrap_review_2026-07-23_230806.md`
+
+### Round 6
+
+- Copilot: approve; prior target-host verification block removed
+
+Mac Mini evidence:
+
+- bridge help and plan succeeded from `/tmp`
+- live search returned direct result URLs
+- OpenClaw skill is Ready, model-visible, and command-available
+- plugin doctor clear
+- gateway restarted successfully
+- backend returned HTTP 200
+
+Artifacts:
+
+- `docs/reports/llm_outputs/copilot_smartfarm_mac_mini_verification_unblock_2026-07-23_231254.md`
 
 ## Residual risks
 

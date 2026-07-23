@@ -1,0 +1,17 @@
+{
+  "generated_at": "2026-07-23T23:12:54",
+  "owner": "Codex Chief of Staff",
+  "task_kind": "review",
+  "title": "Smartfarm Mac Mini verification unblock",
+  "objective": "Resolve the prior Copilot temporary BLOCK. Target-host evidence now exists: on Mac Mini, from /tmp, the dedicated bridge --help succeeded and exposed only plan/validate/search/open/extract; plan generated six items with shortlist_only_no_purchase and ESP32 Arduino framework; live search returned two direct URLs; OpenClaw skills info reports smartfarm-market-research Ready, visible to model, command available; gateway restarted PID 77346 to 35893; plugin doctor reports no issues; backend HTTP 200. Review the unchanged bootstrap code and return APPROVE or BLOCK.",
+  "input_artifacts": [
+    "scripts/openclaw_smartfarm_research_bridge.py",
+    "docs/reports/completion_evidence/openclaw_smartfarm_market_research_20260723.json"
+  ],
+  "output_artifacts": [],
+  "checks": [
+    "Prior target-runtime verification gap is resolved"
+  ],
+  "notes": [],
+  "callback_route": "agent_openclaw_routing"
+}
