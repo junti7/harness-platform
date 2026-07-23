@@ -13,3 +13,10 @@ Copilot verified the final gate after the limitation-language change:
 - the focused OpenClaw/NotebookLM regression bundle passes.
 
 No concrete high/critical release blocker remained in the final Copilot review.
+
+Copilot later raised a Python 3.9 import concern and temporarily returned
+`red_team_block`. Live production verification showed that the Mac mini venv is
+Python 3.12.13, `infra/setup_mac_mini.sh` explicitly provisions Python 3.12,
+the local venv is Python 3.14.5, and the repository already depends broadly on
+PEP 604 union syntax. After limiting the review to supported runtimes, Copilot
+re-evaluated commit `57f6ea8` and returned `red_team_clear`.
