@@ -86,9 +86,15 @@
       "target": "Mac mini production OpenClaw agent session",
       "command": "openclaw sessions tail and transcript inspection for codex-harness-knowledge-proof-20260724d",
       "result": "One knowledge call, zero extra searches, 147 ms warm index refresh, and a 36-second successful answer. Transcript review found English substring contamination (edu in schedule, trade in trading) and an unsupported standalone materials-import interpretation; word-boundary matching, canonical domain roots, and an exact-match caveat were added for final verification."
+    },
+    {
+      "name": "fifth production OpenClaw knowledge turn",
+      "target": "Mac mini production OpenClaw agent session",
+      "command": "OpenClaw transcript inspection for codex-harness-knowledge-proof-20260724e",
+      "result": "One knowledge call, zero extra searches, and a successful 43-second cold-index answer. Education, Turtle, smartfarm, and the materials-import caveat were correct. The answer invented nonexistent .openclaw/workspace Markdown paths, so plain repository-relative citation formatting was added for final verification."
     }
   ],
   "residual_risk": [
-    "The production latency/tool-count path passed, but corrected domain evidence quality remains pending origin-main deployment and re-verification."
+    "Production tool count and domain quality passed; corrected repository-relative citation formatting remains pending origin-main deployment and re-verification."
   ]
 }

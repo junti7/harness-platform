@@ -13,7 +13,8 @@ relevant files and evidence.
 
 1. Call `harness_knowledge_query` once.
 2. Answer immediately from `domainEvidence` and `evidence`.
-3. Cite repository-relative file paths and line numbers for material claims.
+3. Cite material claims as plain backticked `repository/relative/path:line` text.
+   Never construct an absolute path or Markdown file link.
 4. State the index refresh time and distinguish repository/document state from live runtime,
    account, market, sensor, email, calendar, or external-service state.
 5. Call `harness_alpaca_status` only when the user explicitly requests current account,

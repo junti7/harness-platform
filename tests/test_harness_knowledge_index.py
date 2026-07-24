@@ -49,6 +49,7 @@ def test_incremental_index_and_domain_query(tmp_path: Path) -> None:
     assert "turtle_gate_clear" in result["evidence"][0]["excerpt"]
     assert result["readyToAnswer"] is True
     assert result["domainEvidence"]["turtle-trading"][0]["path"] == "docs/trading/TURTLE.md"
+    assert any("never invent an absolute path" in item.lower() for item in result["answerContract"])
     _, second = refresh_index(repo, cache)
     assert second["cacheHit"] is True
     assert second["filesUpdated"] == 0
