@@ -232,7 +232,7 @@ Do not claim the notebook is connected when any of these checks fails.
 ```bash
 cd ~/projects/harness-platform
 .venv/bin/python scripts/openclaw_codex_bridge.py saju-notebook-query \
-  --question-stdin --format json
+  --question-stdin --format relay
 ```
 
 Write the question to the subprocess stdin stream. Never place a birth date or
@@ -254,8 +254,18 @@ Mandatory handling:
 6. Treat `ok=true` as valid only when `query_plan.delivery_contract_passed=true`.
    Computational requests are enriched by an allowed deterministic provider before
    NotebookLM interpretation; never ask NotebookLM to invent missing calculated facts.
-7. Require `--format json` whenever output will be forwarded verbatim to another
-   agent or channel so citation mappings and the trust boundary remain explicit.
+7. For a user-facing reply, use `--format relay` and send `delivery_text`
+   verbatim. Do not summarize, shorten, paraphrase, recalculate, or change its
+   dates. The relay payload intentionally omits bulky source excerpts while
+   preserving NotebookLM's cited answer and trust boundary.
+8. Use `--format json` only when an agent must inspect citation mappings or source
+   excerpts. Never load the full JSON merely to produce a user-facing answer.
+9. Resolve `오늘`, `내일`, and `어제` only through the bridge. It uses
+   `Asia/Seoul`; do not infer a date from the model/session UTC timestamp.
+10. The bridge privately caches equivalent grounded requests by calculated
+    profile, target date, requested sections, notebook identity, and source count.
+    Do not bypass it with a direct `nlm` query. `cache_hit=true` means the
+    contract-checked answer was reused without another NotebookLM query.
 
 ## Operator Rules
 

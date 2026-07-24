@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from core.notebook_query_planning import SupplementalFacts
 
@@ -17,6 +18,30 @@ _HOUR_BRANCHES = {
     "자시": 0, "축시": 2, "인시": 4, "묘시": 6, "진시": 8, "사시": 10,
     "오시": 12, "미시": 14, "신시": 16, "유시": 18, "술시": 20, "해시": 22,
 }
+_RELATIVE_DATES = {"오늘": 0, "내일": 1, "어제": -1}
+
+
+def normalize_relative_saju_dates(
+    question: str, *, today: date | None = None
+) -> str:
+    """Resolve Korean relative target dates deterministically in Korea time."""
+    if not any(
+        word in question
+        for word in ("사주", "일진", "운세", "명리", "전체운", "재물운", "건강운", "대인운")
+    ):
+        return question
+    base = today or datetime.now(ZoneInfo("Asia/Seoul")).date()
+    pattern = re.compile(r"(?<![가-힣])(?P<marker>오늘|내일|어제)(?!날|모레)")
+    matches = [match.group("marker") for match in pattern.finditer(question)]
+    if not matches:
+        return question
+    if len(set(matches)) != 1:
+        raise ValueError("계산형 사주 질문은 오늘/내일/어제 중 대상일 하나만 지원합니다")
+    marker = matches[0]
+    target = base + timedelta(days=_RELATIVE_DATES[marker])
+    resolved = f"{target.year}년 {target.month}월 {target.day}일"
+    replacement = f"{resolved}(Asia/Seoul 기준 {marker})"
+    return pattern.sub(replacement, question)
 
 
 def _gz_text(gz: object) -> str:

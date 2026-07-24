@@ -77,6 +77,20 @@ def build_query_plan(question: str, enrichers: Iterable[Enricher] = ()) -> Noteb
         for warning in supplement.warnings
     ]
     required = ", ".join(requirements) if requirements else "사용자가 요청한 모든 항목"
+    expert_contract: list[str] = []
+    if any(item.provider.startswith("sxtwl-") for item in supplements):
+        expert_contract = [
+            "",
+            "[전문가형 명리 분석 형식]",
+            "짧은 요약으로 축약하지 말고 다음을 각각 명시하라:",
+            "1. 계산 기준과 원국 4주, 일간",
+            "2. 대상일의 세운·월운·일진 및 일간 기준 십신",
+            "3. 천간의 합·충·극과 지지의 합·충·형·파·해 중 실제 성립하는 작용",
+            "4. 종합운·일/사업·재물·대인관계·건강·실행 조언",
+            "5. 노트북 근거와 해석상 추론의 구분, 계산 및 해석 한계",
+            "각 항목은 결론만 나열하지 말고 근거와 현실적인 발현 가능성을 설명하라. "
+            "출생지·절입시각 등 입력이 부족하면 대운이나 용신을 확정하지 말라.",
+        ]
     grounded = "\n".join(
         [
             "이 요청은 이전 대화와 독립적이다.",
@@ -96,6 +110,7 @@ def build_query_plan(question: str, enrichers: Iterable[Enricher] = ()) -> Noteb
             "",
             f"[답변 계약] {required}을 직접 답하라. 계산 입력을 되묻거나 외부 검색을 "
             "제안하는 것으로 끝내지 말라. 인용 근거와 한계를 함께 밝혀라.",
+            *expert_contract,
         ]
     )
     return NotebookQueryPlan(question, grounded, requirements, supplements)
@@ -120,6 +135,24 @@ def assess_notebook_answer(plan: NotebookQueryPlan, answer: str) -> tuple[bool, 
         if requirement == "근거":
             if not any(marker in text for marker in ("[1", "근거", "출처", "십신", "합", "충", "형")):
                 reasons.append("missing:근거")
+        elif requirement == "운세":
+            if not any(marker in text for marker in ("운세", "종합운", "전체운", "총평")):
+                reasons.append("missing:운세")
         elif requirement not in text:
             reasons.append(f"missing:{requirement}")
+    if any(item.provider.startswith("sxtwl-") for item in plan.supplemental_facts):
+        if len(text) < 800:
+            reasons.append("expert_answer_too_short")
+        expert_groups = {
+            "calculation_basis": ("원국", "일간"),
+            "time_layers": ("세운", "월운", "일진"),
+            "stem_branch_interactions": ("천간", "지지"),
+            "practical_domains": ("재물", "대인", "건강"),
+            "limitations": ("한계", "추정", "참고"),
+        }
+        covered = sum(
+            1 for markers in expert_groups.values() if any(marker in text for marker in markers)
+        )
+        if covered < 4:
+            reasons.append(f"insufficient_expert_coverage:{covered}/5")
     return not reasons, tuple(reasons)

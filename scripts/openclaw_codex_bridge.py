@@ -1,5 +1,6 @@
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -29,8 +30,9 @@ from adapters.content.decision_card import build_decision_card, card_to_json, re
 from adapters.content.mobile_dispatcher import build_slack_payload
 from adapters.content.slack_router import route_label, send_slack_route
 from core.approval import APPROVAL_TARGET_TYPES, VALID_APPROVAL_TYPES, VALID_DECISIONS
+from core.atomic_io import atomic_write_json
 from core.notebook_query_planning import assess_notebook_answer, build_query_plan
-from core.saju_calendar import enrich_saju_question
+from core.saju_calendar import enrich_saju_question, normalize_relative_saju_dates
 from scripts.ceo_decision import record_decision
 from scripts.dispatch_llm_task_packet import build_packet, dispatch_packet
 from scripts.goal_loop import (
@@ -70,12 +72,120 @@ NOTEBOOKLM_AUDIT_PATH = (
     Path(__file__).resolve().parent.parent / "runtime/openclaw_notebooklm_audit.jsonl"
 )
 NOTEBOOKLM_MAX_QUESTION_CHARS = 4000
+NOTEBOOKLM_CACHE_DIR = (
+    Path(__file__).resolve().parent.parent / "runtime/notebooklm_query_cache"
+)
+NOTEBOOKLM_CACHE_TTL_S = int(os.getenv("HARNESS_NOTEBOOKLM_CACHE_TTL_S", "21600"))
+NOTEBOOKLM_CACHE_LOCK_WAIT_S = int(
+    os.getenv("HARNESS_NOTEBOOKLM_CACHE_LOCK_WAIT_S", "180")
+)
+NOTEBOOKLM_CACHE_VERSION = 1
 
 
 class NotebookAnswerContractError(RuntimeError):
     def __init__(self, issues: tuple[str, ...]):
         super().__init__("nlm answer failed delivery contract")
         self.issues = issues
+
+
+def _saju_cache_key(plan: Any, notebook: dict[str, Any]) -> str | None:
+    updated_at = str(notebook.get("updated_at") or "").strip()
+    if not updated_at:
+        return None
+    if plan.supplemental_facts:
+        question_identity: Any = {
+            "requirements": plan.requirements,
+            "supplements": [
+                {
+                    "provider": item.provider,
+                    "facts": item.facts,
+                    "warnings": item.warnings,
+                }
+                for item in plan.supplemental_facts
+            ],
+            "mode": "expert-saju-v1",
+        }
+    else:
+        question_identity = {"grounded_question": plan.grounded_question}
+    material = json.dumps(
+        {
+            "version": NOTEBOOKLM_CACHE_VERSION,
+            "notebook_id": SAJU_NOTEBOOK_ID,
+            "source_count": notebook.get("source_count"),
+            "notebook_updated_at": updated_at,
+            "question": question_identity,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _read_notebooklm_cache(cache_key: str) -> dict[str, Any] | None:
+    path = NOTEBOOKLM_CACHE_DIR / f"{cache_key}.json"
+    try:
+        age_s = time.time() - path.stat().st_mtime
+        if age_s < 0 or age_s > NOTEBOOKLM_CACHE_TTL_S:
+            path.unlink(missing_ok=True)
+            return None
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict) or not str(payload.get("answer") or "").strip():
+            return None
+        return payload
+    except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _write_notebooklm_cache(cache_key: str, answer: dict[str, Any]) -> None:
+    NOTEBOOKLM_CACHE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(NOTEBOOKLM_CACHE_DIR, 0o700)
+    path = NOTEBOOKLM_CACHE_DIR / f"{cache_key}.json"
+    atomic_write_json(path, answer, indent=0, ensure_ascii=False)
+    os.chmod(path, 0o600)
+
+
+def _prune_expired_notebooklm_cache() -> bool:
+    """Enforce retention even when an expired key is never requested again."""
+    try:
+        cutoff = time.time() - NOTEBOOKLM_CACHE_TTL_S
+        for path in NOTEBOOKLM_CACHE_DIR.glob("*.json"):
+            if path.is_file() and path.stat().st_mtime < cutoff:
+                path.unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
+
+
+def _acquire_notebooklm_cache_lock(cache_key: str | None) -> tuple[int | None, str]:
+    """Bounded single-flight: wait for one producer, then degrade safely."""
+    if cache_key is None:
+        return None, "disabled_missing_notebook_revision"
+    try:
+        NOTEBOOKLM_CACHE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(NOTEBOOKLM_CACHE_DIR, 0o700)
+        lock_path = NOTEBOOKLM_CACHE_DIR / f"{cache_key}.lock"
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        deadline = time.monotonic() + NOTEBOOKLM_CACHE_LOCK_WAIT_S
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return fd, "ready"
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    os.close(fd)
+                    return None, "degraded_lock_timeout"
+                time.sleep(0.1)
+    except OSError:
+        return None, "degraded_cache_io"
+
+
+def _release_notebooklm_cache_lock(fd: int | None) -> None:
+    if fd is None:
+        return
+    try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
 
 
 def _candidate_ar_tracker_paths() -> list[Path]:
@@ -310,7 +420,7 @@ def saju_notebook_status() -> dict[str, Any]:
 
 
 def query_saju_notebook(question: str, *, timeout_s: int = 180) -> dict[str, Any]:
-    normalized = question.strip()
+    normalized = normalize_relative_saju_dates(question.strip())
     if not normalized:
         raise ValueError("question must not be empty")
     if len(normalized) > NOTEBOOKLM_MAX_QUESTION_CHARS:
@@ -350,21 +460,40 @@ def query_saju_notebook(question: str, *, timeout_s: int = 180) -> dict[str, Any
                 f"grounded question exceeds {NOTEBOOKLM_MAX_QUESTION_CHARS} characters"
             )
         verified = _verified_saju_notebook()
-        result = _run_nlm_private_query(
-            SAJU_NOTEBOOK_ID,
-            plan.grounded_question,
-            timeout_s=bounded_timeout,
-        )
-        answer = result["payload"]
-        if not isinstance(answer, dict) or not str(answer.get("answer") or "").strip():
-            raise RuntimeError("nlm query returned no answer")
-        answer = dict(answer)
-        answer.pop("question", None)
-        answer_ok, answer_issues = assess_notebook_answer(
-            plan, str(answer.get("answer") or "")
-        )
-        if not answer_ok:
-            raise NotebookAnswerContractError(answer_issues)
+        cache_prune_ok = _prune_expired_notebooklm_cache()
+        cache_key = _saju_cache_key(plan, verified["notebook"])
+        cache_lock_fd, cache_status = _acquire_notebooklm_cache_lock(cache_key)
+        if not cache_prune_ok and cache_status == "ready":
+            cache_status = "degraded_prune_io"
+        cache_available = cache_key is not None and cache_lock_fd is not None
+        try:
+            answer = _read_notebooklm_cache(cache_key) if cache_available else None
+            cache_hit = answer is not None
+            if cache_hit:
+                result = {"binary": verified["binary"], "payload": answer}
+            else:
+                result = _run_nlm_private_query(
+                    SAJU_NOTEBOOK_ID,
+                    plan.grounded_question,
+                    timeout_s=bounded_timeout,
+                )
+                answer = result["payload"]
+            if not isinstance(answer, dict) or not str(answer.get("answer") or "").strip():
+                raise RuntimeError("nlm query returned no answer")
+            answer = dict(answer)
+            answer.pop("question", None)
+            answer_ok, answer_issues = assess_notebook_answer(
+                plan, str(answer.get("answer") or "")
+            )
+            if not answer_ok:
+                raise NotebookAnswerContractError(answer_issues)
+            if not cache_hit and cache_available:
+                try:
+                    _write_notebooklm_cache(cache_key, answer)
+                except OSError:
+                    cache_status = "degraded_write_failed"
+        finally:
+            _release_notebooklm_cache_lock(cache_lock_fd)
         payload = {
             "ok": True,
             "observed_at": observed_at,
@@ -381,6 +510,12 @@ def query_saju_notebook(question: str, *, timeout_s: int = 180) -> dict[str, Any
                 "delivery_contract_passed": True,
             },
             "binary": result["binary"],
+            "cache": {
+                "hit": cache_hit,
+                "available": cache_available,
+                "status": cache_status,
+                "ttl_seconds": NOTEBOOKLM_CACHE_TTL_S,
+            },
             "latency_ms": round((time.monotonic() - started) * 1000),
         }
     except (RuntimeError, ValueError, subprocess.TimeoutExpired, OSError) as exc:
@@ -410,6 +545,9 @@ def query_saju_notebook(question: str, *, timeout_s: int = 180) -> dict[str, Any
             "ok": payload["ok"],
             "notebook_id": SAJU_NOTEBOOK_ID,
             "source_count": source_count,
+            "cache_hit": payload.get("cache", {}).get("hit", False),
+            "cache_available": payload.get("cache", {}).get("available", False),
+            "cache_status": payload.get("cache", {}).get("status", "unavailable"),
             "latency_ms": payload["latency_ms"],
         }
     )
@@ -1841,8 +1979,41 @@ def command_saju_notebook_query(args: argparse.Namespace) -> int:
             "error": type(exc).__name__,
             "detail": str(exc),
         }
+    delivery_ok = bool(payload["ok"])
     if args.format == "json":
         rendered = _json_dump(payload)
+    elif args.format == "relay":
+        contract_passed = (
+            payload.get("query_plan", {}).get("delivery_contract_passed") is True
+        )
+        if payload["ok"] and contract_passed:
+            result = payload["result"]
+            sources = result.get("sources_used") or []
+            rendered = _json_dump(
+                {
+                    "ok": True,
+                    "delivery_policy": "relay_delivery_text_verbatim",
+                    "delivery_text": result["answer"],
+                    "source_count": len(sources),
+                    "query_id": payload.get("query_id"),
+                    "latency_ms": payload.get("latency_ms"),
+                    "cache_hit": payload.get("cache", {}).get("hit", False),
+                    "delivery_contract_passed": True,
+                    "trust": payload.get("trust"),
+                    "instruction_policy": payload.get("instruction_policy"),
+                }
+            )
+        else:
+            delivery_ok = False
+            rendered = _json_dump(
+                {
+                    "ok": False,
+                    "error": payload.get("error", "delivery_contract_failed"),
+                    "detail": "NotebookLM answer could not be safely delivered.",
+                    "query_id": payload.get("query_id"),
+                    "latency_ms": payload.get("latency_ms"),
+                }
+            )
     elif payload["ok"]:
         result = payload["result"]
         sources = result.get("sources_used") or []
@@ -1858,7 +2029,7 @@ def command_saju_notebook_query(args: argparse.Namespace) -> int:
     else:
         rendered = f"NotebookLM query failed: {payload.get('detail', payload.get('error'))}"
     _write_output(rendered, args.output)
-    return 0 if payload["ok"] else 2
+    return 0 if delivery_ok else 2
 
 
 def command_gmail_get(args: argparse.Namespace) -> None:
@@ -3114,7 +3285,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Read the sensitive question from stdin instead of process argv.",
     )
     saju_query_parser.add_argument("--timeout", type=int, default=180)
-    saju_query_parser.add_argument("--format", choices=["json", "text"], default="json")
+    saju_query_parser.add_argument(
+        "--format", choices=["json", "text", "relay"], default="json"
+    )
     saju_query_parser.add_argument("--output")
     saju_query_parser.set_defaults(func=command_saju_notebook_query)
 

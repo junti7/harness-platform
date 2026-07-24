@@ -3,7 +3,9 @@ from core.notebook_query_planning import (
     assess_notebook_answer,
     build_query_plan,
 )
-from core.saju_calendar import enrich_saju_question
+from datetime import date
+
+from core.saju_calendar import enrich_saju_question, normalize_relative_saju_dates
 import pytest
 
 
@@ -186,3 +188,63 @@ def test_saju_enricher_fails_closed_on_solar_term_boundary_day():
 def test_saju_enricher_rejects_duplicate_dates_without_type_error():
     with pytest.raises(ValueError, match="역할이 모호"):
         enrich_saju_question("1990년 5월 3일생 남자 1990년 5월 3일 운세")
+
+
+def test_relative_target_date_uses_explicit_korea_calendar_date():
+    normalized = normalize_relative_saju_dates(
+        "1974년 2월 2일 유시생 남자 내일 운세",
+        today=date(2026, 7, 24),
+    )
+    assert "2026년 7월 25일(Asia/Seoul 기준 내일)" in normalized
+
+
+def test_relative_today_and_yesterday_are_resolved():
+    today = normalize_relative_saju_dates(
+        "1974년 2월 2일생 오늘 일진", today=date(2026, 7, 24)
+    )
+    yesterday = normalize_relative_saju_dates(
+        "1974년 2월 2일생 어제 운세", today=date(2026, 7, 24)
+    )
+    assert "2026년 7월 24일(Asia/Seoul 기준 오늘)" in today
+    assert "2026년 7월 23일(Asia/Seoul 기준 어제)" in yesterday
+
+
+@pytest.mark.parametrize("phrase", ["오늘의 운세", "오늘은 운세", "오늘도 운세"])
+def test_relative_date_allows_common_korean_particles(phrase):
+    normalized = normalize_relative_saju_dates(
+        f"1974년 2월 2일생 남자의 {phrase}",
+        today=date(2026, 7, 24),
+    )
+    assert "2026년 7월 24일(Asia/Seoul 기준 오늘)" in normalized
+
+
+def test_relative_words_in_non_saju_question_are_unchanged():
+    question = "오늘과 내일의 차이를 설명해줘"
+    assert normalize_relative_saju_dates(question, today=date(2026, 7, 24)) == question
+
+
+def test_relative_date_does_not_rewrite_compound_day_word():
+    question = "1974년 2월 2일생 남자의 내일모레 운세"
+    assert normalize_relative_saju_dates(question, today=date(2026, 7, 24)) == question
+
+
+def test_computational_plan_requests_expert_sections():
+    plan = build_query_plan(
+        "1974년 2월 2일 유시생 남자 2026년 7월 24일 운세",
+        (enrich_saju_question,),
+    )
+    assert "[전문가형 명리 분석 형식]" in plan.grounded_question
+    assert "세운·월운·일진" in plan.grounded_question
+    assert "종합운·일/사업·재물·대인관계·건강·실행 조언" in plan.grounded_question
+
+
+def test_computational_plan_rejects_brief_answer_even_if_it_mentions_fortune():
+    plan = build_query_plan(
+        "1974년 2월 2일 유시생 남자 2026년 7월 24일 운세와 일진",
+        (enrich_saju_question,),
+    )
+    passed, issues = assess_notebook_answer(
+        plan, "운세와 일진입니다. 원국 일간 천간 지지 재물 대인 건강 참고."
+    )
+    assert not passed
+    assert "expert_answer_too_short" in issues

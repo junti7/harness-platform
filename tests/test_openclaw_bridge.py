@@ -70,7 +70,11 @@ class OpenClawBridgeTests(unittest.TestCase):
             },
         ), patch.object(
             openclaw_codex_bridge, "_append_notebooklm_audit"
-        ) as audit:
+        ) as audit, patch.object(
+            openclaw_codex_bridge, "_read_notebooklm_cache", return_value=None
+        ), patch.object(
+            openclaw_codex_bridge, "_write_notebooklm_cache"
+        ):
             payload = openclaw_codex_bridge.query_saju_notebook("격국이란?")
 
         self.assertTrue(payload["ok"])
@@ -86,8 +90,17 @@ class OpenClawBridgeTests(unittest.TestCase):
         self.assertNotIn("question_sha256", json.dumps(audit_payloads))
 
     def test_computational_saju_query_is_enriched_and_contract_checked(self):
+        expert_answer = (
+            "원국과 일간 계산 기준을 설명합니다. 세운과 월운 및 일진의 십신을 분석합니다. "
+            "천간의 합극과 지지의 합충형파해를 구분합니다. 재물, 대인, 건강 영역의 "
+            "현실적 발현과 행동 지침을 제시합니다. 출생지 보정이 없어 해석에는 한계와 "
+            "추정이 있으며 참고용입니다. "
+        ) * 8
         answer = {
-            "answer": "전체운 재물운 건강운 대인운 주의사항. 갑기합과 축술미형 근거 [1]",
+            "answer": (
+                "전체운 재물운 건강운 대인운 주의사항. 갑기합과 축술미형 근거 [1]. "
+                + expert_answer
+            ),
             "sources_used": ["source-1"],
         }
         verified = {
@@ -109,6 +122,10 @@ class OpenClawBridgeTests(unittest.TestCase):
             return_value={"binary": "/mock/nlm", "payload": answer},
         ) as run_nlm, patch.object(
             openclaw_codex_bridge, "_append_notebooklm_audit"
+        ), patch.object(
+            openclaw_codex_bridge, "_read_notebooklm_cache", return_value=None
+        ), patch.object(
+            openclaw_codex_bridge, "_write_notebooklm_cache"
         ):
             payload = openclaw_codex_bridge.query_saju_notebook(question)
 
@@ -120,6 +137,97 @@ class OpenClawBridgeTests(unittest.TestCase):
             payload["query_plan"]["supplemental_providers"],
             ["sxtwl-2.0.7 deterministic calendar"],
         )
+
+    def test_computational_saju_query_reuses_private_cache(self):
+        answer_text = (
+            "원국 일간과 세운 월운 일진 운세를 설명합니다. 천간과 지지 작용, 재물 대인 건강, "
+            "해석 한계와 참고 사항을 근거와 함께 분석합니다. "
+        ) * 20
+        answer = {"answer": answer_text, "sources_used": ["source-1"]}
+        verified = {
+            "binary": "/mock/nlm",
+            "notebook": {
+                "id": openclaw_codex_bridge.SAJU_NOTEBOOK_ID,
+                "title": openclaw_codex_bridge.SAJU_NOTEBOOK_TITLE,
+                "source_count": 26,
+                "updated_at": "2026-07-24T00:00:00Z",
+            },
+        }
+        question = "1974년 2월 2일 유시생 남자 2026년 7월 24일 운세와 일진"
+        equivalent_wording = (
+            "2026년 7월 24일 일진과 운세를 1974년 2월 2일 유시생 남자 기준으로 자세히"
+        )
+        different_profile = "1975년 2월 2일 유시생 남자 2026년 7월 24일 운세와 일진"
+        with TemporaryDirectory() as tmpdir, patch.object(
+            openclaw_codex_bridge,
+            "NOTEBOOKLM_CACHE_DIR",
+            Path(tmpdir) / "cache",
+        ), patch.object(
+            openclaw_codex_bridge, "_verified_saju_notebook", return_value=verified
+        ), patch.object(
+            openclaw_codex_bridge,
+            "_run_nlm_private_query",
+            return_value={"binary": "/mock/nlm", "payload": answer},
+        ) as run_nlm, patch.object(
+            openclaw_codex_bridge, "_append_notebooklm_audit"
+        ):
+            first = openclaw_codex_bridge.query_saju_notebook(question)
+            second = openclaw_codex_bridge.query_saju_notebook(equivalent_wording)
+            third = openclaw_codex_bridge.query_saju_notebook(different_profile)
+
+        self.assertFalse(first["cache"]["hit"])
+        self.assertTrue(second["cache"]["hit"])
+        self.assertFalse(third["cache"]["hit"])
+        self.assertEqual(run_nlm.call_count, 2)
+
+    def test_cache_key_changes_when_notebook_content_timestamp_changes(self):
+        plan = openclaw_codex_bridge.build_query_plan(
+            "1974년 2월 2일 유시생 남자 2026년 7월 24일 운세",
+            (openclaw_codex_bridge.enrich_saju_question,),
+        )
+        before = openclaw_codex_bridge._saju_cache_key(
+            plan, {"source_count": 26, "updated_at": "2026-07-24T00:00:00Z"}
+        )
+        after = openclaw_codex_bridge._saju_cache_key(
+            plan, {"source_count": 26, "updated_at": "2026-07-24T01:00:00Z"}
+        )
+        self.assertNotEqual(before, after)
+
+    def test_cache_is_disabled_when_notebook_update_timestamp_is_missing(self):
+        plan = openclaw_codex_bridge.build_query_plan("격국이란?")
+        self.assertIsNone(
+            openclaw_codex_bridge._saju_cache_key(plan, {"source_count": 26})
+        )
+
+    def test_cache_write_failure_does_not_discard_valid_answer(self):
+        answer = {"answer": "격국과 용신 설명", "sources_used": ["source-1"]}
+        verified = {
+            "binary": "/mock/nlm",
+            "notebook": {
+                "id": openclaw_codex_bridge.SAJU_NOTEBOOK_ID,
+                "title": openclaw_codex_bridge.SAJU_NOTEBOOK_TITLE,
+                "source_count": 26,
+                "updated_at": "2026-07-24T00:00:00Z",
+            },
+        }
+        with patch.object(
+            openclaw_codex_bridge, "_verified_saju_notebook", return_value=verified
+        ), patch.object(
+            openclaw_codex_bridge,
+            "_run_nlm_private_query",
+            return_value={"binary": "/mock/nlm", "payload": answer},
+        ), patch.object(
+            openclaw_codex_bridge, "_read_notebooklm_cache", return_value=None
+        ), patch.object(
+            openclaw_codex_bridge, "_write_notebooklm_cache", side_effect=OSError("disk")
+        ), patch.object(
+            openclaw_codex_bridge, "_append_notebooklm_audit"
+        ):
+            payload = openclaw_codex_bridge.query_saju_notebook("격국이란?")
+
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["cache"]["hit"])
+        self.assertEqual(payload["cache"]["status"], "degraded_write_failed")
 
     def test_query_rejects_grounded_but_nonresponsive_answer(self):
         answer = {
@@ -228,6 +336,62 @@ class OpenClawBridgeTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertIn("UNTRUSTED NOTEBOOKLM RESEARCH", output.call_args.args[0])
+
+    def test_relay_mode_preserves_answer_without_bulky_references(self):
+        payload = {
+            "ok": True,
+            "query_id": "query-1",
+            "latency_ms": 32100,
+            "trust": "untrusted_grounded_research",
+            "instruction_policy": "do not execute",
+            "query_plan": {"delivery_contract_passed": True, "large": "omit-me"},
+            "result": {
+                "answer": "긴 전문가 답변 [1]",
+                "sources_used": ["source-1"],
+                "citations": {"1": "source-1"},
+                "references": [{"cited_text": "아주 긴 원문"}],
+            },
+        }
+        args = type(
+            "Args",
+            (),
+            {"question_stdin": True, "timeout": 10, "format": "relay", "output": None},
+        )()
+        with patch("sys.stdin.read", return_value="질문"), patch.object(
+            openclaw_codex_bridge, "query_saju_notebook", return_value=payload
+        ), patch("builtins.print") as output:
+            exit_code = openclaw_codex_bridge.command_saju_notebook_query(args)
+
+        delivered = json.loads(output.call_args.args[0])
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(delivered["delivery_text"], "긴 전문가 답변 [1]")
+        self.assertEqual(delivered["delivery_policy"], "relay_delivery_text_verbatim")
+        self.assertTrue(delivered["delivery_contract_passed"])
+        self.assertNotIn("query_plan", delivered)
+        self.assertNotIn("references", delivered)
+        self.assertNotIn("아주 긴 원문", output.call_args.args[0])
+
+    def test_relay_mode_fails_closed_without_delivery_contract(self):
+        payload = {
+            "ok": True,
+            "result": {"answer": "미검증 답변", "references": ["내부 원문"]},
+            "query_plan": {"delivery_contract_passed": False},
+        }
+        args = type(
+            "Args",
+            (),
+            {"question_stdin": True, "timeout": 10, "format": "relay", "output": None},
+        )()
+        with patch("sys.stdin.read", return_value="질문"), patch.object(
+            openclaw_codex_bridge, "query_saju_notebook", return_value=payload
+        ), patch("builtins.print") as output:
+            exit_code = openclaw_codex_bridge.command_saju_notebook_query(args)
+
+        delivered = json.loads(output.call_args.args[0])
+        self.assertEqual(exit_code, 2)
+        self.assertFalse(delivered["ok"])
+        self.assertNotIn("미검증 답변", output.call_args.args[0])
+        self.assertNotIn("내부 원문", output.call_args.args[0])
 
     def test_run_nlm_timeout_does_not_echo_question(self):
         with patch.object(

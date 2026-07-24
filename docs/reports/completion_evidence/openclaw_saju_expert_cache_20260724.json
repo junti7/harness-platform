@@ -1,0 +1,61 @@
+{
+  "task": "Generalize OpenClaw Saju expert answers and remove repeated NotebookLM latency and token waste",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-24T09:10:00+09:00",
+      "summary": "Checked real user-entrypoint verification, scoped commit and deploy, privacy, and explicit multi-model review requirements."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-24T09:10:00+09:00",
+      "summary": "Checked origin-main deployment source of truth, Mac mini runtime verification, untrusted content, and completion evidence gates."
+    }
+  ],
+  "verification": [
+    {
+      "name": "generalized NotebookLM and OpenClaw regression bundle",
+      "target": "local OpenClaw bridge and agent routes",
+      "command": ".venv/bin/pytest -q tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py tests/test_openclaw_response_quality.py tests/test_openclaw_agent.py",
+      "result": "182 passed; one third-party deprecation warning; no failures"
+    },
+    {
+      "name": "real expert NotebookLM answer",
+      "target": "real NotebookLM service through private stdin bridge",
+      "command": "saju-notebook-query --question-stdin --format relay --timeout 180",
+      "result": "ok=true; 5 expert sections; concrete natal and target pillars; 28 inline citations; delivery contract passed"
+    },
+    {
+      "name": "semantic cache latency",
+      "target": "real NotebookLM-backed local bridge",
+      "command": "same natal profile, target date, and requested sections with different Korean wording",
+      "result": "first unique request 72.629 seconds; equivalent reworded request cache_hit=true in 1.004 seconds; NotebookLM was not called again"
+    },
+    {
+      "name": "independent multi-model review",
+      "target": "final scoped diff",
+      "command": "authenticated Claude CLI and GitHub Copilot CLI read-only reviews",
+      "result": "Claude clear and Copilot clear; no blockers"
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh core/notebook_query_planning.py core/saju_calendar.py scripts/openclaw_codex_bridge.py plugins/harness-bridge/skills/harness-control/SKILL.md tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py docs/reviews/red_team/openclaw_saju_expert_cache_claude_20260724.md docs/reviews/red_team/openclaw_saju_expert_cache_copilot_20260724.md docs/reports/completion_evidence/openclaw_saju_expert_cache_20260724.json",
+    "result": "pending scoped commit, push, deploy, plugin refresh, and production verification"
+  },
+  "red_team": {
+    "models": [
+      "Claude",
+      "Copilot"
+    ],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/openclaw_saju_expert_cache_claude_20260724.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_saju_expert_cache_copilot_20260724.md"
+      }
+    ],
+    "verdict": "red_team_clear"
+  }
+}
