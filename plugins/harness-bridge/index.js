@@ -1,5 +1,6 @@
 // Harness Bridge — OpenClaw plugin entry point
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -8,6 +9,403 @@ const SAJU_FOLLOWUP_MARKERS =
   /시간대|좋은 시간|피할 시간|계속|이어서|더 자세히|그럼|같은 기준/;
 const SAJU_NOTEBOOK_MARKERS =
   /d3fe3696-ff81-4810-94a8-9584c329c440|사주명리학자료/;
+const MAX_TOOL_OUTPUT = 1_000_000;
+const MAX_WRITE_BYTES = 2_000_000;
+const READ_ONLY_GIT_SUBCOMMANDS = new Set([
+  "branch",
+  "diff",
+  "log",
+  "rev-parse",
+  "show",
+  "status",
+]);
+
+export function harnessRepoRoot() {
+  return path.join(process.env.HOME ?? "", "projects", "harness-platform");
+}
+
+export function resolveHarnessPath(relativePath = ".", { mustExist = false } = {}) {
+  const repo = fs.realpathSync(harnessRepoRoot());
+  const candidate = path.resolve(repo, String(relativePath || "."));
+  if (candidate !== repo && !candidate.startsWith(`${repo}${path.sep}`)) {
+    throw new Error("path_outside_harness_workspace");
+  }
+  if (mustExist) {
+    const real = fs.realpathSync(candidate);
+    if (real !== repo && !real.startsWith(`${repo}${path.sep}`)) {
+      throw new Error("symlink_outside_harness_workspace");
+    }
+    return real;
+  }
+  let existingParent = fs.existsSync(candidate) ? candidate : path.dirname(candidate);
+  while (!fs.existsSync(existingParent) && existingParent !== path.dirname(existingParent)) {
+    existingParent = path.dirname(existingParent);
+  }
+  const realParent = fs.realpathSync(existingParent);
+  if (realParent !== repo && !realParent.startsWith(`${repo}${path.sep}`)) {
+    throw new Error("symlink_outside_harness_workspace");
+  }
+  return candidate;
+}
+
+export function validateWorkspaceCommand(argv) {
+  if (!Array.isArray(argv) || argv.length === 0 || argv.length > 64) {
+    throw new Error("invalid_argv");
+  }
+  const parts = argv.map((value) => String(value));
+  const executable = path.basename(parts[0]).toLowerCase();
+  if (executable === "git") {
+    if (parts[0] !== "git" && fs.realpathSync(parts[0]) !== fs.realpathSync("/usr/bin/git")) {
+      throw new Error("untrusted_executable_path");
+    }
+    if (!READ_ONLY_GIT_SUBCOMMANDS.has(parts[1]) || parts.includes("-c")) {
+      throw new Error("command_not_in_safe_verification_allowlist");
+    }
+    parts[0] = "/usr/bin/git";
+    return parts;
+  }
+  if (executable === "node") {
+    if (parts[0] !== "node" && fs.realpathSync(parts[0]) !== fs.realpathSync(process.execPath)) {
+      throw new Error("untrusted_executable_path");
+    }
+    if (
+      parts.length < 2 ||
+      parts.slice(1).some((arg) => ["-e", "--eval", "-p", "--print", "-r", "--require", "--import"].includes(arg))
+    ) {
+      throw new Error("command_not_in_safe_verification_allowlist");
+    }
+    const script = resolveHarnessPath(parts[1], { mustExist: true });
+    const relative = path.relative(harnessRepoRoot(), script);
+    if (!relative.startsWith(`tests${path.sep}`) || !relative.endsWith(".mjs")) {
+      throw new Error("command_not_in_safe_verification_allowlist");
+    }
+    parts[0] = process.execPath;
+    parts[1] = script;
+    return parts;
+  }
+  if (/^(?:python\d*(?:\.\d+)?)?-?pytest$/.test(executable) || executable === "pytest") {
+    const trustedPytest = fs.realpathSync(path.join(harnessRepoRoot(), ".venv", "bin", "pytest"));
+    if (parts[0] !== "pytest" && fs.realpathSync(parts[0]) !== trustedPytest) {
+      throw new Error("untrusted_executable_path");
+    }
+    for (const arg of parts.slice(1)) {
+      if (arg.startsWith("-")) continue;
+      const selector = arg.split("::", 1)[0];
+      const target = resolveHarnessPath(selector, { mustExist: true });
+      const relative = path.relative(harnessRepoRoot(), target);
+      if (!relative.startsWith(`tests${path.sep}`) && relative !== "tests") {
+        throw new Error("command_not_in_safe_verification_allowlist");
+      }
+    }
+    parts[0] = trustedPytest;
+    return parts;
+  }
+  throw new Error("command_not_in_safe_verification_allowlist");
+}
+
+export function runProcess(executable, args, options = {}) {
+  const timeoutMs = Math.min(Math.max(Number(options.timeoutMs) || 30_000, 1_000), 900_000);
+  return new Promise((resolve, reject) => {
+    const child = spawn(executable, args, {
+      cwd: options.cwd ?? harnessRepoRoot(),
+      env: process.env,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const finish = (callback) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      callback();
+    };
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      setTimeout(() => child.kill("SIGKILL"), 2_000).unref();
+      finish(() => reject(new Error("command_timed_out")));
+    }, timeoutMs);
+    const collect = (field) => (chunk) => {
+      if (field === "stdout") stdout += String(chunk);
+      else stderr += String(chunk);
+      if (stdout.length + stderr.length > MAX_TOOL_OUTPUT) {
+        child.kill("SIGTERM");
+        finish(() => reject(new Error("command_output_limit_exceeded")));
+      }
+    };
+    child.stdout.on("data", collect("stdout"));
+    child.stderr.on("data", collect("stderr"));
+    child.on("error", (error) => finish(() => reject(error)));
+    child.on("close", (code, signal) =>
+      finish(() => resolve({ code, signal, stdout, stderr })),
+    );
+    if (options.stdin !== undefined) child.stdin.end(String(options.stdin));
+    else child.stdin.end();
+  });
+}
+
+function toolText(value, isError = false) {
+  return {
+    content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }],
+    ...(isError ? { isError: true } : {}),
+  };
+}
+
+function registerHarnessWorkspaceTools(api) {
+  api.registerTool({
+    name: "harness_workspace_read",
+    description: "Read a UTF-8 file inside the Harness repository with line numbers.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["path"],
+      properties: {
+        path: { type: "string", minLength: 1 },
+        startLine: { type: "integer", minimum: 1, default: 1 },
+        maxLines: { type: "integer", minimum: 1, maximum: 5000, default: 500 },
+      },
+    },
+    async execute(_id, params) {
+      try {
+        const file = resolveHarnessPath(params.path, { mustExist: true });
+        const lines = fs.readFileSync(file, "utf8").split("\n");
+        const start = (params.startLine ?? 1) - 1;
+        const end = Math.min(lines.length, start + (params.maxLines ?? 500));
+        return toolText({
+          path: path.relative(harnessRepoRoot(), file),
+          startLine: start + 1,
+          endLine: end,
+          totalLines: lines.length,
+          content: lines.slice(start, end).map((line, index) => `${start + index + 1}: ${line}`).join("\n"),
+        });
+      } catch (error) {
+        return toolText({ ok: false, error: error.message }, true);
+      }
+    },
+  });
+  api.registerTool({
+    name: "harness_workspace_search",
+    description: "Search Harness repository files using ripgrep. Returns matching file, line, and text.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["query"],
+      properties: {
+        query: { type: "string", minLength: 1, maxLength: 500 },
+        path: { type: "string", default: "." },
+        maxResults: { type: "integer", minimum: 1, maximum: 1000, default: 200 },
+      },
+    },
+    async execute(_id, params) {
+      try {
+        const target = resolveHarnessPath(params.path ?? ".", { mustExist: true });
+        const result = await runProcess(
+          "rg",
+          ["--line-number", "--color", "never", "--max-count", String(params.maxResults ?? 200), "--", params.query, target],
+          { timeoutMs: 30_000 },
+        );
+        return toolText({ code: result.code, matches: result.stdout, errors: result.stderr });
+      } catch (error) {
+        return toolText({ ok: false, error: error.message }, true);
+      }
+    },
+  });
+  api.registerTool({
+    name: "harness_workspace_write",
+    description: "Create or overwrite one UTF-8 file inside the Harness repository. Returns SHA-256 evidence.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["path", "content"],
+      properties: {
+        path: { type: "string", minLength: 1 },
+        content: { type: "string" },
+        expectedSha256: { type: "string", description: "Optional optimistic-lock hash of the current file." },
+      },
+    },
+    async execute(_id, params) {
+      try {
+        if (Buffer.byteLength(params.content, "utf8") > MAX_WRITE_BYTES) {
+          throw new Error("write_size_limit_exceeded");
+        }
+        const file = resolveHarnessPath(params.path);
+        if (params.expectedSha256) {
+          if (!fs.existsSync(file)) throw new Error("optimistic_lock_target_missing");
+          const current = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+          if (current !== params.expectedSha256) throw new Error("optimistic_lock_conflict");
+        }
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        const temp = `${file}.openclaw-${process.pid}-${Date.now()}.tmp`;
+        fs.writeFileSync(temp, params.content, { encoding: "utf8", flag: "wx" });
+        fs.renameSync(temp, file);
+        const sha256 = crypto.createHash("sha256").update(params.content).digest("hex");
+        return toolText({ ok: true, path: path.relative(harnessRepoRoot(), file), bytes: Buffer.byteLength(params.content), sha256 });
+      } catch (error) {
+        return toolText({ ok: false, error: error.message }, true);
+      }
+    },
+  });
+  api.registerTool({
+    name: "harness_workspace_exec",
+    description: "Run allowlisted Harness verification commands: read-only git operations and repository tests. Uses argv, never a shell string.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["argv"],
+      properties: {
+        argv: { type: "array", minItems: 1, maxItems: 64, items: { type: "string" } },
+        cwd: { type: "string", default: "." },
+        timeoutSeconds: { type: "integer", minimum: 1, maximum: 900, default: 30 },
+      },
+    },
+    async execute(_id, params) {
+      try {
+        const argv = validateWorkspaceCommand(params.argv);
+        const cwd = resolveHarnessPath(params.cwd ?? ".", { mustExist: true });
+        const result = await runProcess(argv[0], argv.slice(1), {
+          cwd,
+          timeoutMs: (params.timeoutSeconds ?? 30) * 1000,
+        });
+        return toolText(result, result.code !== 0);
+      } catch (error) {
+        return toolText({ ok: false, error: error.message }, true);
+      }
+    },
+  });
+}
+
+function registerHarnessAssistantTools(api) {
+  const python = () => path.join(harnessRepoRoot(), ".venv", "bin", "python");
+  const bridge = () => path.join(harnessRepoRoot(), "scripts", "openclaw_codex_bridge.py");
+  const bridgeTool = (name, description, buildArgs, parameters) =>
+    api.registerTool({
+      name,
+      description,
+      parameters,
+      async execute(_id, params) {
+        try {
+          const result = await runProcess(python(), [bridge(), ...buildArgs(params)], { timeoutMs: 180_000 });
+          if (result.code !== 0) return toolText(result, true);
+          return toolText(result.stdout);
+        } catch (error) {
+          return toolText({ ok: false, error: error.message }, true);
+        }
+      },
+    });
+  bridgeTool(
+    "harness_gmail_search",
+    "Search the CEO Gmail inbox read-only. Use before summarizing messages.",
+    (p) => ["gmail-search", p.query, "--limit", String(p.limit ?? 10)],
+    {
+      type: "object", additionalProperties: false, required: ["query"],
+      properties: { query: { type: "string", minLength: 1 }, limit: { type: "integer", minimum: 1, maximum: 100, default: 10 } },
+    },
+  );
+  bridgeTool(
+    "harness_gmail_get",
+    "Retrieve one Gmail message body read-only by message ID.",
+    (p) => ["gmail-get", p.messageId],
+    {
+      type: "object", additionalProperties: false, required: ["messageId"],
+      properties: { messageId: { type: "string", minLength: 1 } },
+    },
+  );
+  bridgeTool(
+    "harness_calendar_list",
+    "List Google Calendar events in a time range.",
+    (p) => ["calendar-list", "--from-time", p.fromTime ?? "today", "--to-time", p.toTime ?? "", "--limit", String(p.limit ?? 10)],
+    {
+      type: "object", additionalProperties: false,
+      properties: {
+        fromTime: { type: "string", default: "today" },
+        toTime: { type: "string", default: "" },
+        limit: { type: "integer", minimum: 1, maximum: 100, default: 10 },
+      },
+    },
+  );
+  bridgeTool(
+    "harness_calendar_create",
+    "Create a Google Calendar event. Return the real event ID; never claim success without it.",
+    (p) => [
+      "calendar-create", p.summary, p.fromTime, p.toTime,
+      "--description", p.description ?? "", "--location", p.location ?? "",
+    ],
+    {
+      type: "object", additionalProperties: false, required: ["summary", "fromTime", "toTime"],
+      properties: {
+        summary: { type: "string", minLength: 1 },
+        fromTime: { type: "string", minLength: 1, description: "ISO8601 with timezone offset" },
+        toTime: { type: "string", minLength: 1, description: "ISO8601 with timezone offset" },
+        description: { type: "string", default: "" },
+        location: { type: "string", default: "" },
+      },
+    },
+  );
+  api.registerTool({
+    name: "harness_cron_list",
+    description: "List the real OpenClaw cron jobs and their IDs.",
+    parameters: { type: "object", additionalProperties: false, properties: {} },
+    async execute() {
+      try {
+        const result = await runProcess("/opt/homebrew/bin/openclaw", ["cron", "list", "--json"]);
+        return toolText(result.stdout, result.code !== 0);
+      } catch (error) {
+        return toolText({ ok: false, error: error.message }, true);
+      }
+    },
+  });
+  api.registerTool({
+    name: "harness_cron_create",
+    description: "Create an OpenClaw recurring assistant job. Return the real cron job ID; never claim success without it.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["name", "cron", "message"],
+      properties: {
+        name: { type: "string", minLength: 1, maxLength: 120 },
+        cron: { type: "string", minLength: 1, maxLength: 120, description: "5-field cron expression" },
+        timezone: { type: "string", default: "Asia/Seoul" },
+        message: { type: "string", minLength: 1, maxLength: 8000 },
+        announce: { type: "boolean", default: true },
+        channel: { type: "string", default: "last" },
+        destination: { type: "string", description: "Optional Discord channel/user or other supported destination." },
+      },
+    },
+    async execute(_id, params) {
+      try {
+        const args = [
+          "cron", "add", "--json", "--name", params.name,
+          "--cron", params.cron, "--tz", params.timezone ?? "Asia/Seoul",
+          "--agent", "main", "--session", "isolated",
+          "--message", params.message, "--timeout-seconds", "300",
+          "--channel", params.channel ?? "last",
+          params.announce === false ? "--no-deliver" : "--announce",
+        ];
+        if (params.destination) args.push("--to", params.destination);
+        const result = await runProcess("/opt/homebrew/bin/openclaw", args);
+        return toolText(result.stdout || result.stderr, result.code !== 0);
+      } catch (error) {
+        return toolText({ ok: false, error: error.message }, true);
+      }
+    },
+  });
+  api.registerTool({
+    name: "harness_cron_remove",
+    description: "Remove one OpenClaw cron job by exact ID after the user explicitly requests cancellation.",
+    parameters: {
+      type: "object", additionalProperties: false, required: ["jobId"],
+      properties: { jobId: { type: "string", minLength: 1 } },
+    },
+    async execute(_id, params) {
+      try {
+        const result = await runProcess("/opt/homebrew/bin/openclaw", ["cron", "remove", params.jobId, "--json"]);
+        return toolText(result.stdout || result.stderr, result.code !== 0);
+      } catch (error) {
+        return toolText({ ok: false, error: error.message }, true);
+      }
+    },
+  });
+}
 
 export function shouldEnforceSajuBridge(prompt, messages = []) {
   if (SAJU_MARKERS.test(String(prompt ?? ""))) {
@@ -128,6 +526,8 @@ export default {
   name: "Harness Bridge",
   description: "Harness OpenClaw command bundle for the Codex bridge",
   register(api) {
+    registerHarnessWorkspaceTools(api);
+    registerHarnessAssistantTools(api);
     const activeSajuRuns = new Map();
     const runKeys = (event = {}, context = {}) =>
       [event.runId, context.runId, context.sessionKey, context.sessionId]

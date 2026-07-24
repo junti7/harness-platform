@@ -1,0 +1,88 @@
+{
+  "task": "Give OpenClaw verified read/write and operational access to the complete Harness repository plus Gmail, Calendar, and recurring assistant tools",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-24T13:20:00+09:00",
+      "summary": "Applied CEO authority, completion evidence, production verification, and approval boundaries."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-24T13:20:00+09:00",
+      "summary": "Applied origin-main deployment, Mac mini-only OpenClaw runtime, secret hygiene, and real-entrypoint verification."
+    }
+  ],
+  "requirements": [
+    {
+      "requirement": "OpenClaw can inspect all Harness repository content in real time",
+      "status": "pass",
+      "evidence": "Native harness_workspace_read and harness_workspace_search tools use the live Mac mini repository and enforce the real repository root."
+    },
+    {
+      "requirement": "OpenClaw can create and update Harness files",
+      "status": "pass",
+      "evidence": "Native harness_workspace_write uses root validation, symlink escape checks, atomic rename, size bounds, and optional SHA-256 optimistic locking."
+    },
+    {
+      "requirement": "OpenClaw can run verification and inspect Git state without arbitrary machine-wide execution",
+      "status": "pass",
+      "evidence": "harness_workspace_exec permits trusted-path read-only Git commands and repository-scoped Node/pytest tests; arbitrary Python, shell, destructive Git, and executable-basename substitution are blocked."
+    },
+    {
+      "requirement": "OpenClaw can inspect Gmail and manage Calendar",
+      "status": "pass",
+      "evidence": "Native Gmail search/get and Calendar list/create tools call the verified bridge; mutations must return real service output."
+    },
+    {
+      "requirement": "OpenClaw can create and remove recurring assistant jobs",
+      "status": "pass",
+      "evidence": "Native cron list/create/remove tools call the production OpenClaw CLI and return real job JSON/IDs."
+    },
+    {
+      "requirement": "OpenClaw cannot claim completion without evidence",
+      "status": "pass",
+      "evidence": "Skill contract requires path/hash, Calendar event ID, or cron job ID and explicit confirmation for deletion, external messages, deployment, push, finance, or destructive actions."
+    }
+  ],
+  "verification": [
+    {
+      "name": "local plugin regression",
+      "command": "node tests/test_harness_bridge_plugin.mjs",
+      "result": "passed"
+    },
+    {
+      "name": "bridge regression",
+      "command": ".venv/bin/pytest -q tests/test_openclaw_bridge.py",
+      "result": "33 passed"
+    },
+    {
+      "name": "independent review",
+      "result": "Claude architecture clear; Copilot full-diff clear after two blocking command-boundary findings were fixed"
+    },
+    {
+      "name": "production baseline user path",
+      "command": "OpenClaw agent no-mutation readiness prompt plus live Calendar list and Gmail search on the Mac mini",
+      "result": "Calendar and Gmail bridge calls returned real data, while the OpenClaw agent tool trace proved the missing native workspace/Gmail/Calendar/cron tools; this is the production gap addressed by the pending deployment"
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh with only the plugin, skill, tests, review artifacts, and completion evidence paths",
+    "result": "pending origin-main push and production deployment; status remains residual_risk until native tools are visible and exercised on the Mac mini"
+  },
+  "red_team": {
+    "models": [
+      "Claude",
+      "Copilot"
+    ],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/openclaw_harness_workspace_access_claude_20260724.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_harness_workspace_access_copilot_20260724.md"
+      }
+    ],
+    "verdict": "red_team_clear"
+  }
+}

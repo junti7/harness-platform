@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import harnessBridge from "../plugins/harness-bridge/index.js";
 import {
+  resolveHarnessPath,
   isDirectSajuNotebookQuery,
   isShellTool,
   shouldEnforceSajuBridge,
+  validateWorkspaceCommand,
 } from "../plugins/harness-bridge/index.js";
 
 assert.equal(shouldEnforceSajuBridge("오늘 사주 운세 알려줘"), true);
@@ -82,14 +84,56 @@ assert.equal(
 
 assert.equal(isShellTool("terminal_command"), true);
 assert.equal(isShellTool("message"), false);
+assert.throws(() => resolveHarnessPath("../outside"), /path_outside_harness_workspace/);
+assert.deepEqual(validateWorkspaceCommand(["git", "status", "--short"]), [
+  "/usr/bin/git",
+  "status",
+  "--short",
+]);
+assert.throws(
+  () => validateWorkspaceCommand(["git", "reset", "--hard"]),
+  /command_not_in_safe_verification_allowlist/,
+);
+assert.throws(
+  () => validateWorkspaceCommand(["python3", "-c", "open('/tmp/x','w').write('x')"]),
+  /command_not_in_safe_verification_allowlist/,
+);
+assert.throws(
+  () => validateWorkspaceCommand(["node", "-e", "process.exit(0)"]),
+  /command_not_in_safe_verification_allowlist/,
+);
+assert.throws(
+  () => validateWorkspaceCommand(["/tmp/git", "status"]),
+  /ENOENT|untrusted_executable_path/,
+);
 
 const hooks = new Map();
+const toolNames = [];
 harnessBridge.register({
-  registerTool() {},
+  registerTool(tool) {
+    toolNames.push(tool.name);
+  },
   on(name, handler) {
     hooks.set(name, handler);
   },
 });
+assert.deepEqual(
+  toolNames.sort(),
+  [
+    "harness_calendar_create",
+    "harness_calendar_list",
+    "harness_cron_create",
+    "harness_cron_list",
+    "harness_cron_remove",
+    "harness_gmail_get",
+    "harness_gmail_search",
+    "harness_saju_query",
+    "harness_workspace_exec",
+    "harness_workspace_read",
+    "harness_workspace_search",
+    "harness_workspace_write",
+  ],
+);
 const context = { runId: "run-saju-1", sessionKey: "session-saju-1" };
 await hooks.get("before_prompt_build")(
   { prompt: "오늘 사주 운세 알려줘", messages: [], runId: "run-saju-1" },
