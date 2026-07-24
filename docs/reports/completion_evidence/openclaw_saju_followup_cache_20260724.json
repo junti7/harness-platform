@@ -25,13 +25,14 @@
     "Separated still-unclassified Saju intents by normalized-question hash to prevent incorrect cross-intent cache hits.",
     "Generalized time-window intent using bounded polarity and time-term composition, including Korean negation, instead of one exact user phrase.",
     "Accepted Korean, ISO, slash, and dotted solar dates so model-reconstructed tool arguments do not fail merely because their date notation differs.",
-    "Applied one shared semantic matcher to both request classification and answer validation, assigning each concrete time to its nearest positive or caution category."
+    "Applied one shared semantic matcher to both request classification and answer validation, assigning each concrete time to its nearest positive or caution category.",
+    "Required stable machine-readable headings for requested time categories so variable NotebookLM prose does not cause valid expert answers to be discarded."
   ],
   "verification": [
     {
       "name": "focused regression bundle",
       "command": "node tests/test_harness_bridge_plugin.mjs && .venv/bin/pytest -q tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py tests/test_openclaw_response_quality.py tests/test_openclaw_agent.py",
-      "result": "Node plugin tests passed; final focused Python bundle passed 207 tests with one third-party deprecation warning"
+      "result": "Node plugin tests passed; final focused Python bundle passed 208 tests with one third-party deprecation warning"
     },
     {
       "name": "stateful routing lifecycle",
@@ -49,7 +50,7 @@
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh core/notebook_query_planning.py scripts/openclaw_codex_bridge.py plugins/harness-bridge/index.js plugins/harness-bridge/openclaw.plugin.json plugins/harness-bridge/package.json plugins/harness-bridge/ROUTING.md plugins/harness-bridge/skills/harness-control/SKILL.md tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py tests/test_harness_bridge_plugin.mjs docs/reviews/red_team/openclaw_saju_followup_cache_claude_20260724.md docs/reviews/red_team/openclaw_saju_followup_cache_copilot_20260724.md docs/reports/completion_evidence/openclaw_saju_followup_cache_20260724.json",
-    "result": "Native plugin and tool exposure verified; first time-window generation completed in 254.898 seconds and same-session follow-up completed in 13.614 seconds. Operator diagnostic confirmed detailed NotebookLM output with concrete auspicious and caution sections; final shared-semantic patch is pending production deployment, so status remains residual_risk."
+    "result": "Native plugin and tool exposure verified; first time-window generation completed in 254.898 seconds and same-session follow-up completed in 13.614 seconds. Operator diagnostic confirmed detailed NotebookLM output with concrete auspicious and caution sections; final stable-heading contract is pending production deployment, so status remains residual_risk."
   },
   "red_team": {
     "models": [

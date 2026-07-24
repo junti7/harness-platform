@@ -40,6 +40,15 @@ def test_time_window_requirements_use_composed_semantics(question, expected):
     assert infer_requirements(question) == expected
 
 
+def test_saju_time_plan_requires_machine_readable_time_headings():
+    plan = build_query_plan(
+        "1974년 2월 2일 유시생 남성의 2026년 7월 24일 사주 좋은 시간대와 피할 시간대",
+        (enrich_saju_question,),
+    )
+    assert "좋은 시간대:" in plan.grounded_question
+    assert "피할 시간대:" in plan.grounded_question
+
+
 def test_delivery_contract_rejects_non_answer_even_when_tool_succeeded():
     plan = build_query_plan("전체운과 근거를 알려줘")
     passed, reasons = assess_notebook_answer(

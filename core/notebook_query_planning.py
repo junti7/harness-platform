@@ -151,6 +151,23 @@ def build_query_plan(question: str, enrichers: Iterable[Enricher] = ()) -> Noteb
             "각 항목은 결론만 나열하지 말고 근거와 현실적인 발현 가능성을 설명하라. "
             "출생지·절입시각 등 입력이 부족하면 대운이나 용신을 확정하지 말라.",
         ]
+        time_requirements = {
+            requirement
+            for requirement in requirements
+            if requirement in ("좋은 시간대", "피할 시간대")
+        }
+        if time_requirements:
+            expert_contract.extend(
+                [
+                    "시간대 요청은 표제를 바꾸거나 생략하지 말고 아래 기계 판독 표제를 그대로 사용하라:",
+                    *[
+                        f"{label}:"
+                        for label in ("좋은 시간대", "피할 시간대")
+                        if label in time_requirements
+                    ],
+                    "각 표제 아래에 최소 한 개의 구체적인 시진과 24시간 값을 함께 제시하라.",
+                ]
+            )
     grounded = "\n".join(
         [
             "이 요청은 이전 대화와 독립적이다.",
