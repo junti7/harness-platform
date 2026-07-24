@@ -116,6 +116,21 @@ def test_saju_enricher_fails_closed_for_ambiguous_rat_hour():
         enrich_saju_question("양력 1974년 2월 2일 자시생 남자 2026년 7월 24일 운세")
 
 
+@pytest.mark.parametrize(
+    "question",
+    [
+        "양력 1974-02-02 유시생 남성의 2026-07-24 사주 운세",
+        "양력 1974/02/02 유시생 남성의 2026/07/24 사주 운세",
+        "양력 1974.02.02 유시생 남성의 2026.07.24 사주 운세",
+    ],
+)
+def test_saju_enricher_accepts_machine_friendly_solar_dates(question):
+    result = enrich_saju_question(question)
+    assert result is not None
+    assert result.facts[0].startswith("출생 양력 1974-02-02")
+    assert result.facts[1].startswith("대상일 양력 2026-07-24")
+
+
 def test_saju_enricher_fails_closed_for_23_hour_day_boundary():
     with pytest.raises(ValueError, match="23시"):
         enrich_saju_question("양력 1974년 2월 2일 자시 23시생 남자 2026년 7월 24일 운세")
