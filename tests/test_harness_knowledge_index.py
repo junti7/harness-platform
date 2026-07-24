@@ -114,3 +114,142 @@ def test_multi_domain_query_preserves_each_domain() -> None:
     assert _domain_strength(canonical, "education-training") > _domain_strength(
         unrelated, "education-training"
     )
+
+
+def test_model_typo_is_normalized_and_connection_evidence_is_ranked(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    soil_node = repo / "hardware" / "smartfarm" / "soil_node"
+    soil_node.mkdir()
+    (soil_node / "config.example.esp8266.h").write_text(
+        "\n".join(
+            [
+                "// ESP8266 node configuration",
+                "#define SOIL_MOISTURE_PIN A0",
+                "#define DHT_PIN 4",
+                "#define PUMP_RELAY_PIN 5",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (repo / "hardware" / "smartfarm" / "README.md").write_text(
+        "\n".join(
+            [
+                "# Smartfarm",
+                "ESP8266 physical wiring uses soil A0, DHT22 GPIO4, and relay GPIO5.",
+                "The node connects over WiFi and publishes sensor values through MQTT.",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "esp8266 fixture"], cwd=repo, check=True)
+
+    payload, metrics = refresh_index(repo, tmp_path / "cache.json")
+    result = query_index(
+        repo,
+        payload,
+        metrics,
+        "ESP8255에 연결된 것들 알려줘.",
+        max_files=5,
+        max_excerpts=5,
+    )
+
+    assert result["matchedDomains"] == ["smartfarm"]
+    assert result["queryNormalization"]["corrections"] == [
+        {
+            "input": "esp8255",
+            "normalized": "esp8266",
+            "reason": "nearby repository model identifier",
+        }
+    ]
+    assert result["files"][0]["path"] == (
+        "hardware/smartfarm/soil_node/config.example.esp8266.h"
+    )
+    excerpt = next(
+        item["excerpt"]
+        for item in result["evidence"]
+        if item["path"] == "hardware/smartfarm/soil_node/config.example.esp8266.h"
+    )
+    assert "SOIL_MOISTURE_PIN A0" in excerpt
+    assert "DHT_PIN 4" in excerpt
+    assert "PUMP_RELAY_PIN 5" in excerpt
+    readme_excerpt = next(
+        item["excerpt"]
+        for item in result["evidence"]
+        if item["path"] == "hardware/smartfarm/README.md"
+    )
+    assert "WiFi" in readme_excerpt
+    assert "MQTT" in readme_excerpt
+    assert any(
+        "instead of stopping at the typo" in item
+        for item in result["answerContract"]
+    )
+
+
+def test_model_normalization_is_fail_safe_for_exact_repeated_and_ambiguous_tokens() -> None:
+    from scripts.harness_knowledge_index import _normalize_question
+
+    payload = {
+        "files": {
+            "esp8266": {
+                "path": "hardware/smartfarm/esp8266.md",
+                "title": "ESP8266",
+                "headings": [],
+            },
+            "esp8244": {
+                "path": "hardware/smartfarm/esp8244.md",
+                "title": "ESP8244",
+                "headings": [],
+            },
+        }
+    }
+
+    exact, exact_corrections = _normalize_question("ESP8266 연결", payload)
+    assert exact == "ESP8266 연결"
+    assert exact_corrections == []
+
+    ambiguous, ambiguous_corrections = _normalize_question("ESP8255 연결", payload)
+    assert ambiguous == "ESP8255 연결"
+    assert ambiguous_corrections == []
+
+    repeated_payload = {
+        "files": {
+            "esp8266": {
+                "path": "hardware/smartfarm/esp8266.md",
+                "title": "ESP8266",
+                "headings": [],
+            }
+        }
+    }
+    repeated, repeated_corrections = _normalize_question(
+        "ESP8255와 esp8255 연결", repeated_payload
+    )
+    assert repeated == "ESP8255와 esp8255 연결 esp8266"
+    assert len(repeated_corrections) == 1
+
+    plain, plain_corrections = _normalize_question("스마트팜 연결 현황", payload)
+    assert plain == "스마트팜 연결 현황"
+    assert plain_corrections == []
+
+    unrelated, unrelated_corrections = _normalize_question(
+        "release ESP8255 티켓 상태", repeated_payload
+    )
+    assert unrelated == "release ESP8255 티켓 상태"
+    assert unrelated_corrections == []
+
+    non_model_payload = {
+        "files": {
+            "gpio8266": {
+                "path": "hardware/smartfarm/gpio8266.md",
+                "title": "GPIO8266",
+                "headings": [],
+            }
+        }
+    }
+    non_model, non_model_corrections = _normalize_question(
+        "GPIO8255 핀 연결", non_model_payload
+    )
+    assert non_model == "GPIO8255 핀 연결"
+    assert non_model_corrections == []

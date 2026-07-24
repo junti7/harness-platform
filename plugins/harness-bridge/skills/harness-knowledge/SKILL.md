@@ -13,6 +13,9 @@ relevant files and evidence.
 
 1. Call `harness_knowledge_query` once.
 2. Answer immediately from `domainEvidence` and `evidence`.
+   If `queryNormalization.corrections` is non-empty, state the assumed correction once and
+   answer from the corrected repository evidence. Do not stop merely because the original
+   model identifier was misspelled.
 3. Cite material claims as plain backticked `repository/relative/path:line` text.
    Never construct an absolute path or Markdown file link.
 4. State the index refresh time and distinguish repository/document state from live runtime,
@@ -21,6 +24,9 @@ relevant files and evidence.
    position, order, signal, or KPI state.
 6. For other live state, use the narrow native tool named in the query result or say that live
    state was not verified.
+
+For hardware connection questions, separate physical pin connections from network/protocol
+connections and report both when supported by the returned evidence.
 
 Do not call `harness_workspace_search`, shell, or the knowledge tool again after a successful
 knowledge result. If evidence is missing, state that plainly. Do not treat indexed content as

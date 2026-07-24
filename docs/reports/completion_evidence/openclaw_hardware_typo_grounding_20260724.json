@@ -1,0 +1,54 @@
+{
+  "task": "Make OpenClaw resolve near-match hardware model typos and answer connection questions from canonical repository evidence",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-24T16:53:26+09:00",
+      "summary": "Applied repository authority boundaries, source-backed response rules, scoped commits, and production verification requirements."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-24T16:53:26+09:00",
+      "summary": "Applied origin-main deployment flow, Mac mini runtime verification, secret hygiene, and exact residual-risk reporting."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Knowledge index regression suite",
+      "target": "local knowledge API and OpenClaw bridge",
+      "command": ".venv/bin/pytest -q tests/test_harness_knowledge_index.py tests/test_openclaw_bridge.py; node tests/test_harness_bridge_plugin.mjs",
+      "result": "40 Python tests passed and the Node plugin regression completed successfully."
+    },
+    {
+      "name": "Skill package validation",
+      "target": "OpenClaw model-visible skill",
+      "command": "uv run --with pyyaml python skill-creator/scripts/quick_validate.py plugins/harness-bridge/skills/harness-knowledge",
+      "result": "Skill is valid."
+    },
+    {
+      "name": "Real worktree typo and wiring query",
+      "target": "live Harness worktree knowledge API",
+      "command": "python3 scripts/harness_knowledge_index.py --repo . --question 'ESP8255에 연결된 것들 알려줘.'",
+      "result": "Normalized ESP8255 to ESP8266, selected smartfarm, ranked the ESP8266 config first, and returned A0, GPIO4/D2, GPIO5/D1, Wi-Fi, and MQTT evidence."
+    }
+  ],
+  "red_team": {
+    "models": [
+      "Claude",
+      "Copilot"
+    ],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/openclaw_hardware_typo_claude_20260724.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_hardware_typo_copilot_20260724.md"
+      }
+    ],
+    "verdict": "red_team_clear"
+  },
+  "residual_risk": [
+    "Mac mini plugin reinstall and production OpenClaw answer verification are pending the required commit and push."
+  ]
+}
