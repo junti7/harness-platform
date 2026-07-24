@@ -9,6 +9,17 @@ from scripts import openclaw_codex_bridge
 
 
 class OpenClawBridgeTests(unittest.TestCase):
+    def test_calendar_create_parser_provides_optional_output(self):
+        args = openclaw_codex_bridge.build_parser().parse_args(
+            [
+                "calendar-create",
+                "test",
+                "2035-01-02T03:00:00+09:00",
+                "2035-01-02T03:05:00+09:00",
+            ]
+        )
+        self.assertIsNone(args.output)
+
     def test_verified_notebook_builds_stable_source_revision(self):
         notebook = {
             "id": openclaw_codex_bridge.SAJU_NOTEBOOK_ID,

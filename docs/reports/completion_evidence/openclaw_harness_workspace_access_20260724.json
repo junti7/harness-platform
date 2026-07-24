@@ -54,7 +54,7 @@
     {
       "name": "bridge regression",
       "command": ".venv/bin/pytest -q tests/test_openclaw_bridge.py",
-      "result": "33 passed"
+      "result": "34 passed after adding a Calendar-create parser regression"
     },
     {
       "name": "independent review",
@@ -64,11 +64,21 @@
       "name": "production baseline user path",
       "command": "OpenClaw agent no-mutation readiness prompt plus live Calendar list and Gmail search on the Mac mini",
       "result": "Calendar and Gmail bridge calls returned real data, while the OpenClaw agent tool trace proved the missing native workspace/Gmail/Calendar/cron tools; this is the production gap addressed by the pending deployment"
+    },
+    {
+      "name": "production native tool proof",
+      "command": "OpenClaw agent invoked native repository read/search/write/verification, Gmail search/get, Calendar list, and cron create/remove/list tools",
+      "result": "Repository read/search/write returned real paths and SHA-256; read-only Git status ran; Gmail body and Calendar event were retrieved; cron ID e98a2909-f3c3-4823-9dd8-ae8d6a590add was created, removed, and final list returned zero jobs. The temporary repository probe was deleted."
+    },
+    {
+      "name": "Calendar mutation proof and cleanup",
+      "command": "OpenClaw native Calendar create followed by exact-ID cleanup",
+      "result": "The first production mutation created event jr5v61f4p8c8rgvhppo3vscbn0 but exposed a missing argparse output field during result rendering. The temporary event was then deleted successfully and the parser defect was fixed with a regression test; redeployment and a clean create-result proof remain pending."
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh with only the plugin, skill, tests, review artifacts, and completion evidence paths",
-    "result": "pending origin-main push and production deployment; status remains residual_risk until native tools are visible and exercised on the Mac mini"
+    "result": "Initial native tools were deployed and exercised. A Calendar result-rendering defect found by the live mutation proof is fixed locally; status remains residual_risk until that fix is pushed, redeployed, and reverified."
   },
   "red_team": {
     "models": [

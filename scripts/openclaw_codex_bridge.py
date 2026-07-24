@@ -3356,6 +3356,7 @@ def build_parser() -> argparse.ArgumentParser:
     calendar_create.add_argument("--description", default="")
     calendar_create.add_argument("--location", default="")
     calendar_create.add_argument("--format", choices=["json", "text"], default="json")
+    calendar_create.add_argument("--output")
     calendar_create.set_defaults(func=command_calendar_create)
 
     alpaca_status = subparsers.add_parser("alpaca-status", help="Fetch Alpaca paper trading account status and KPIs (read-only).")
