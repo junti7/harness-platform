@@ -16,5 +16,9 @@
   language edge case.
 - Verified: relay fail-closed, 0700/0600 cache permissions, bounded
   single-flight, source-revision invalidation, and degraded cache operation.
+- Production follow-up: after `notebook.updated_at` proved conversation-mutated,
+  the cache revision changed to a stable sorted source-identity hash. Copilot
+  re-reviewed the follow-up with no blocker or major finding. Same-ID in-place
+  source changes remain bounded by the hard six-hour TTL.
 
 VERDICT: clear

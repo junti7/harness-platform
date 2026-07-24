@@ -75,7 +75,9 @@ NOTEBOOKLM_MAX_QUESTION_CHARS = 4000
 NOTEBOOKLM_CACHE_DIR = (
     Path(__file__).resolve().parent.parent / "runtime/notebooklm_query_cache"
 )
-NOTEBOOKLM_CACHE_TTL_S = int(os.getenv("HARNESS_NOTEBOOKLM_CACHE_TTL_S", "21600"))
+NOTEBOOKLM_CACHE_TTL_S = min(
+    21600, max(60, int(os.getenv("HARNESS_NOTEBOOKLM_CACHE_TTL_S", "21600")))
+)
 NOTEBOOKLM_CACHE_LOCK_WAIT_S = int(
     os.getenv("HARNESS_NOTEBOOKLM_CACHE_LOCK_WAIT_S", "180")
 )
@@ -89,8 +91,8 @@ class NotebookAnswerContractError(RuntimeError):
 
 
 def _saju_cache_key(plan: Any, notebook: dict[str, Any]) -> str | None:
-    updated_at = str(notebook.get("updated_at") or "").strip()
-    if not updated_at:
+    source_revision = str(notebook.get("source_revision") or "").strip()
+    if not source_revision:
         return None
     if plan.supplemental_facts:
         question_identity: Any = {
@@ -112,7 +114,7 @@ def _saju_cache_key(plan: Any, notebook: dict[str, Any]) -> str | None:
             "version": NOTEBOOKLM_CACHE_VERSION,
             "notebook_id": SAJU_NOTEBOOK_ID,
             "source_count": notebook.get("source_count"),
-            "notebook_updated_at": updated_at,
+            "source_revision": source_revision,
             "question": question_identity,
         },
         ensure_ascii=False,
@@ -374,7 +376,43 @@ def _verified_saju_notebook() -> dict[str, Any]:
         raise RuntimeError(
             f"notebook title mismatch: expected {SAJU_NOTEBOOK_TITLE!r}, got {target.get('title')!r}"
         )
-    return {"binary": result["binary"], "notebook": target}
+    verified_notebook = dict(target)
+    try:
+        sources_result = _run_nlm(
+            ["source", "list", SAJU_NOTEBOOK_ID, "--json"], timeout_s=30
+        )
+        sources = sources_result["payload"]
+        if not isinstance(sources, list):
+            raise RuntimeError("nlm source list did not return a list")
+        source_identity = sorted(
+            (
+                {
+                    "id": item.get("id"),
+                    "title": item.get("title"),
+                    "type": item.get("type"),
+                    "status": item.get("status"),
+                }
+                for item in sources
+                if isinstance(item, dict)
+            ),
+            key=lambda item: (
+                str(item.get("id") or ""),
+                str(item.get("title") or ""),
+            ),
+        )
+        verified_notebook["source_count"] = len(source_identity)
+        verified_notebook["source_revision"] = hashlib.sha256(
+            json.dumps(source_identity, ensure_ascii=False, sort_keys=True).encode(
+                "utf-8"
+            )
+        ).hexdigest()
+        verified_notebook["source_revision_status"] = "verified"
+    except (RuntimeError, subprocess.TimeoutExpired, OSError):
+        # Source revision is a cache optimization. A transient source-list
+        # failure disables cache but must not discard a valid notebook query.
+        verified_notebook.pop("source_revision", None)
+        verified_notebook["source_revision_status"] = "degraded_source_list"
+    return {"binary": result["binary"], "notebook": verified_notebook}
 
 
 def saju_notebook_status() -> dict[str, Any]:
@@ -463,6 +501,12 @@ def query_saju_notebook(question: str, *, timeout_s: int = 180) -> dict[str, Any
         cache_prune_ok = _prune_expired_notebooklm_cache()
         cache_key = _saju_cache_key(plan, verified["notebook"])
         cache_lock_fd, cache_status = _acquire_notebooklm_cache_lock(cache_key)
+        if (
+            cache_status == "disabled_missing_notebook_revision"
+            and verified["notebook"].get("source_revision_status")
+            == "degraded_source_list"
+        ):
+            cache_status = "degraded_source_list"
         if not cache_prune_ok and cache_status == "ready":
             cache_status = "degraded_prune_io"
         cache_available = cache_key is not None and cache_lock_fd is not None

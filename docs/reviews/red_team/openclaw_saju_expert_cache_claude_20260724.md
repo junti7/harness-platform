@@ -16,5 +16,9 @@
 - Residual observations: cache contract changes must bump
   `NOTEBOOKLM_CACHE_VERSION`; cache cleanup is query-triggered; rare Korean
   compound relative-date forms remain edge cases.
+- Production follow-up: Claude independently cleared the replacement of
+  conversation-mutated `notebook.updated_at` with a sorted source-identity
+  revision. It requested production confirmation that repeated source-list
+  calls produce the same revision.
 
 VERDICT: clear

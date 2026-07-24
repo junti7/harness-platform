@@ -9,6 +9,68 @@ from scripts import openclaw_codex_bridge
 
 
 class OpenClawBridgeTests(unittest.TestCase):
+    def test_verified_notebook_builds_stable_source_revision(self):
+        notebook = {
+            "id": openclaw_codex_bridge.SAJU_NOTEBOOK_ID,
+            "title": openclaw_codex_bridge.SAJU_NOTEBOOK_TITLE,
+            "updated_at": "conversation-dependent",
+        }
+        sources = [
+            {"id": "s1", "title": "one", "type": "pdf", "status": 2},
+            {"id": "s2", "title": "two", "type": "text", "status": 2},
+        ]
+        with patch.object(
+            openclaw_codex_bridge,
+            "_run_nlm",
+            side_effect=[
+                {"binary": "/mock/nlm", "payload": [notebook]},
+                {"binary": "/mock/nlm", "payload": sources},
+            ],
+        ):
+            verified = openclaw_codex_bridge._verified_saju_notebook()
+
+        self.assertEqual(verified["notebook"]["source_count"], 2)
+        self.assertEqual(len(verified["notebook"]["source_revision"]), 64)
+
+        with patch.object(
+            openclaw_codex_bridge,
+            "_run_nlm",
+            side_effect=[
+                {"binary": "/mock/nlm", "payload": [notebook]},
+                {"binary": "/mock/nlm", "payload": list(reversed(sources))},
+            ],
+        ):
+            reordered = openclaw_codex_bridge._verified_saju_notebook()
+        self.assertEqual(
+            verified["notebook"]["source_revision"],
+            reordered["notebook"]["source_revision"],
+        )
+
+    def test_source_list_failure_disables_cache_without_blocking_notebook(self):
+        notebook = {
+            "id": openclaw_codex_bridge.SAJU_NOTEBOOK_ID,
+            "title": openclaw_codex_bridge.SAJU_NOTEBOOK_TITLE,
+            "source_count": 26,
+        }
+        with patch.object(
+            openclaw_codex_bridge,
+            "_run_nlm",
+            side_effect=[
+                {"binary": "/mock/nlm", "payload": [notebook]},
+                RuntimeError("source list unavailable"),
+            ],
+        ):
+            verified = openclaw_codex_bridge._verified_saju_notebook()
+
+        self.assertEqual(verified["notebook"]["source_count"], 26)
+        self.assertNotIn("source_revision", verified["notebook"])
+        self.assertEqual(
+            verified["notebook"]["source_revision_status"], "degraded_source_list"
+        )
+
+    def test_cache_ttl_is_hard_capped_at_six_hours(self):
+        self.assertLessEqual(openclaw_codex_bridge.NOTEBOOKLM_CACHE_TTL_S, 21600)
+
     def test_saju_notebook_status_verifies_uuid_title_and_source_count(self):
         notebooks = [
             {
@@ -150,7 +212,7 @@ class OpenClawBridgeTests(unittest.TestCase):
                 "id": openclaw_codex_bridge.SAJU_NOTEBOOK_ID,
                 "title": openclaw_codex_bridge.SAJU_NOTEBOOK_TITLE,
                 "source_count": 26,
-                "updated_at": "2026-07-24T00:00:00Z",
+                "source_revision": "revision-1",
             },
         }
         question = "1974년 2월 2일 유시생 남자 2026년 7월 24일 운세와 일진"
@@ -180,20 +242,20 @@ class OpenClawBridgeTests(unittest.TestCase):
         self.assertFalse(third["cache"]["hit"])
         self.assertEqual(run_nlm.call_count, 2)
 
-    def test_cache_key_changes_when_notebook_content_timestamp_changes(self):
+    def test_cache_key_changes_when_source_revision_changes(self):
         plan = openclaw_codex_bridge.build_query_plan(
             "1974년 2월 2일 유시생 남자 2026년 7월 24일 운세",
             (openclaw_codex_bridge.enrich_saju_question,),
         )
         before = openclaw_codex_bridge._saju_cache_key(
-            plan, {"source_count": 26, "updated_at": "2026-07-24T00:00:00Z"}
+            plan, {"source_count": 26, "source_revision": "revision-1"}
         )
         after = openclaw_codex_bridge._saju_cache_key(
-            plan, {"source_count": 26, "updated_at": "2026-07-24T01:00:00Z"}
+            plan, {"source_count": 26, "source_revision": "revision-2"}
         )
         self.assertNotEqual(before, after)
 
-    def test_cache_is_disabled_when_notebook_update_timestamp_is_missing(self):
+    def test_cache_is_disabled_when_source_revision_is_missing(self):
         plan = openclaw_codex_bridge.build_query_plan("격국이란?")
         self.assertIsNone(
             openclaw_codex_bridge._saju_cache_key(plan, {"source_count": 26})
@@ -207,7 +269,7 @@ class OpenClawBridgeTests(unittest.TestCase):
                 "id": openclaw_codex_bridge.SAJU_NOTEBOOK_ID,
                 "title": openclaw_codex_bridge.SAJU_NOTEBOOK_TITLE,
                 "source_count": 26,
-                "updated_at": "2026-07-24T00:00:00Z",
+                "source_revision": "revision-1",
             },
         }
         with patch.object(

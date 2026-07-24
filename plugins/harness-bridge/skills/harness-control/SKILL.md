@@ -263,7 +263,9 @@ Mandatory handling:
 9. Resolve `오늘`, `내일`, and `어제` only through the bridge. It uses
    `Asia/Seoul`; do not infer a date from the model/session UTC timestamp.
 10. The bridge privately caches equivalent grounded requests by calculated
-    profile, target date, requested sections, notebook identity, and source count.
+    profile, target date, requested sections, notebook identity, and a stable
+    sorted source-identity revision (not the conversation-mutated notebook
+    timestamp).
     Do not bypass it with a direct `nlm` query. `cache_hit=true` means the
     contract-checked answer was reused without another NotebookLM query.
 

@@ -18,7 +18,7 @@
       "name": "generalized NotebookLM and OpenClaw regression bundle",
       "target": "local OpenClaw bridge and agent routes",
       "command": ".venv/bin/pytest -q tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py tests/test_openclaw_response_quality.py tests/test_openclaw_agent.py",
-      "result": "182 passed; one third-party deprecation warning; no failures"
+      "result": "184 passed after source-revision stabilization; one third-party deprecation warning; no failures"
     },
     {
       "name": "real expert NotebookLM answer",
@@ -36,12 +36,12 @@
       "name": "independent multi-model review",
       "target": "final scoped diff",
       "command": "authenticated Claude CLI and GitHub Copilot CLI read-only reviews",
-      "result": "Claude clear and Copilot clear; no blockers"
+      "result": "Claude clear and Copilot clear on the full change and the production-discovered source-revision follow-up; no blockers"
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh core/notebook_query_planning.py core/saju_calendar.py scripts/openclaw_codex_bridge.py plugins/harness-bridge/skills/harness-control/SKILL.md tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py docs/reviews/red_team/openclaw_saju_expert_cache_claude_20260724.md docs/reviews/red_team/openclaw_saju_expert_cache_copilot_20260724.md docs/reports/completion_evidence/openclaw_saju_expert_cache_20260724.json",
-    "result": "pending scoped commit, push, deploy, plugin refresh, and production verification"
+    "result": "initial deploy passed path checks and plugin refresh; production exposed conversation-mutated notebook.updated_at, so source-revision follow-up is pending final deploy and cache-hit verification"
   },
   "red_team": {
     "models": [
