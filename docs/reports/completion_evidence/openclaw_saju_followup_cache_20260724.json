@@ -1,6 +1,6 @@
 {
   "task": "Route contextual Saju follow-ups through the expert semantic cache instead of direct NotebookLM",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -47,11 +47,21 @@
       "name": "real production user-path diagnosis",
       "command": "inspect OpenClaw session and bridge audit logs for the user's contextual good-time/avoid-time follow-up",
       "result": "OpenClaw executed direct nlm notebook query; approximately 118 seconds elapsed; no bridge audit record was created, proving cache bypass rather than cache failure"
+    },
+    {
+      "name": "real production corrected cache path",
+      "command": "run the exact natal/target time-window intent once, then reword it with an explicit target plus today in a second private bridge call",
+      "result": "correct 유시생 first generation passed the expert contract in 64.595 seconds; equivalent reworded query returned cache_hit=true in 2.039 seconds; source_count 26 and source_revision 3f3c96c3da9a3b75d8e939dc58c6e41e0502bedca6d8d0563b15162fac23b6e9"
+    },
+    {
+      "name": "real OpenClaw contextual follow-up",
+      "command": "isolated OpenClaw session, then same-session contextual request for the best and avoid time windows",
+      "result": "harness_saju_query was exposed and used; detailed first answer was produced; contextual follow-up completed in 13.614 seconds without another NotebookLM query"
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh core/notebook_query_planning.py scripts/openclaw_codex_bridge.py plugins/harness-bridge/index.js plugins/harness-bridge/openclaw.plugin.json plugins/harness-bridge/package.json plugins/harness-bridge/ROUTING.md plugins/harness-bridge/skills/harness-control/SKILL.md tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py tests/test_harness_bridge_plugin.mjs docs/reviews/red_team/openclaw_saju_followup_cache_claude_20260724.md docs/reviews/red_team/openclaw_saju_followup_cache_copilot_20260724.md docs/reports/completion_evidence/openclaw_saju_followup_cache_20260724.json",
-    "result": "Native plugin and tool exposure verified; first time-window generation completed in 254.898 seconds and same-session follow-up completed in 13.614 seconds. Operator diagnostic confirmed detailed NotebookLM output with concrete auspicious and caution sections; final stable-heading contract is pending production deployment, so status remains residual_risk."
+    "result": "All selected paths aligned with origin/main on Mac mini; native harness-bridge loaded as the sixth gateway plugin; conversation access and tools.alsoAllow enabled; stale managed-hook copy moved to recoverable scratch; harness_saju_query exposed; production focused tests passed; correct first generation took 64.595 seconds and semantic cache hit took 2.039 seconds; same-session follow-up took 13.614 seconds."
   },
   "red_team": {
     "models": [
