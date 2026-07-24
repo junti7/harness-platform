@@ -80,9 +80,15 @@
       "target": "Mac mini production OpenClaw agent session",
       "command": "openclaw sessions tail --session-key agent:main:explicit:codex-harness-knowledge-proof-20260724c",
       "result": "The duplicate knowledge call returned a tiny successful reuse marker, but the model then issued many narrow workspace searches because evidence was not grouped by domain. domainEvidence and readyToAnswer were added with a strict answer-immediately contract; final verification remains."
+    },
+    {
+      "name": "fourth production OpenClaw knowledge turn",
+      "target": "Mac mini production OpenClaw agent session",
+      "command": "openclaw sessions tail and transcript inspection for codex-harness-knowledge-proof-20260724d",
+      "result": "One knowledge call, zero extra searches, 147 ms warm index refresh, and a 36-second successful answer. Transcript review found English substring contamination (edu in schedule, trade in trading) and an unsupported standalone materials-import interpretation; word-boundary matching, canonical domain roots, and an exact-match caveat were added for final verification."
     }
   ],
   "residual_risk": [
-    "The production user path and non-error duplicate reuse worked, but grouped domain evidence and the answer-immediately contract remain pending origin-main deployment and re-verification."
+    "The production latency/tool-count path passed, but corrected domain evidence quality remains pending origin-main deployment and re-verification."
   ]
 }

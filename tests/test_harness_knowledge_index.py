@@ -86,10 +86,30 @@ def test_cli_returns_compact_json(tmp_path: Path) -> None:
 
 
 def test_multi_domain_query_preserves_each_domain() -> None:
-    from scripts.harness_knowledge_index import _selected_domains
+    from scripts.harness_knowledge_index import (
+        _contains_marker,
+        _domain_strength,
+        _selected_domains,
+    )
 
     assert _selected_domains("교육 사업과 스마트팜") == [
         "education-training",
         "smartfarm",
     ]
     assert _selected_domains("자료 수입 사업") == ["materials-import"]
+    assert _contains_marker("schedule", "edu") is False
+    assert _contains_marker("trading", "trade") is False
+    assert _contains_marker("docs/education/plan.md", "education") is True
+    canonical = {
+        "path": "docs/education/MASTER_PLAN.md",
+        "title": "Master Plan",
+        "headings": [],
+    }
+    unrelated = {
+        "path": "docs/reports/red_team.md",
+        "title": "교육 Red Team",
+        "headings": [],
+    }
+    assert _domain_strength(canonical, "education-training") > _domain_strength(
+        unrelated, "education-training"
+    )

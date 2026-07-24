@@ -15,7 +15,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 MAX_INDEX_BYTES = 96_000
 MAX_SOURCE_BYTES = 2_000_000
 TEXT_SUFFIXES = {
@@ -36,11 +36,11 @@ STOP_WORDS = {
 DOMAIN_RULES = {
     "turtle-trading": ("turtle", "trading", "alpaca", "ibkr", "투자", "트레이딩", "터틀"),
     "education-training": (
-        "career", "curriculum", "edu", "ojt", "training", "교육", "부대표",
+        "career", "curriculum", "edu", "education", "ojt", "training", "교육", "부대표",
     ),
     "materials-import": (
         "import business", "material import", "procurement", "supply chain",
-        "trade", "구매", "무역", "수입", "자재", "조달",
+        "구매", "무역", "수입", "자재", "조달",
     ),
     "smartfarm": ("esp32", "farm", "gpio", "raspberry", "sensor", "smartfarm", "스마트팜"),
     "content-subscription": (
@@ -62,6 +62,12 @@ GOVERNANCE_PATHS = (
     "docs/product/PLATFORM.md", "CLAUDE.md", "AGENTS.md",
     "docs/governance/LLM_GROUND_RULES.md",
 )
+DOMAIN_ROOTS = {
+    "turtle-trading": ("docs/trading/", "configs/trading/", "scripts/turtle_"),
+    "education-training": ("docs/education/", "configs/education/", "core/edu_"),
+    "materials-import": ("configs/smartfarm/procurement",),
+    "smartfarm": ("hardware/smartfarm/", "configs/smartfarm/"),
+}
 
 
 def _repo_root(value: str | None) -> Path:
@@ -121,6 +127,14 @@ def _headings(text: str) -> list[str]:
     return found
 
 
+def _contains_marker(text: str, marker: str) -> bool:
+    lowered_marker = marker.lower()
+    if re.search(r"[가-힣]", lowered_marker):
+        return lowered_marker in text
+    pattern = re.escape(lowered_marker).replace(r"\ ", r"\s+")
+    return re.search(rf"(?<![a-z0-9]){pattern}(?![a-z0-9])", text) is not None
+
+
 def _redact_secrets(text: str) -> str:
     patterns = (
         re.compile(
@@ -148,11 +162,11 @@ def _record(repo: Path, relative: str, stat: os.stat_result) -> dict[str, Any]:
     strong_text = "\n".join([relative, title, *headings]).lower()
     domains = [
         domain for domain, markers in DOMAIN_RULES.items()
-        if any(marker.lower() in lowered for marker in markers)
+        if any(_contains_marker(lowered, marker) for marker in markers)
     ]
     strong_domains = [
         domain for domain, markers in DOMAIN_RULES.items()
-        if any(marker.lower() in strong_text for marker in markers)
+        if any(_contains_marker(strong_text, marker) for marker in markers)
     ]
     return {
         "path": relative, "size": stat.st_size, "mtimeNs": stat.st_mtime_ns,
@@ -241,7 +255,7 @@ def _selected_domains(question: str) -> list[str]:
     lowered = question.lower()
     return [
         domain for domain, markers in DOMAIN_RULES.items()
-        if any(marker.lower() in lowered for marker in markers)
+        if any(_contains_marker(lowered, marker) for marker in markers)
     ]
 
 
@@ -258,6 +272,23 @@ def _score(record: dict[str, Any], terms: list[str], domains: list[str]) -> int:
     score += 20 * len(set(domains) & set(record.get("strongDomains", [])))
     if record["path"] in GOVERNANCE_PATHS:
         score += 2
+    return score
+
+
+def _domain_strength(record: dict[str, Any], domain: str) -> int:
+    markers = DOMAIN_RULES[domain]
+    path = record["path"].lower()
+    title = record["title"].lower()
+    headings = "\n".join(record["headings"]).lower()
+    score = sum(30 for marker in markers if _contains_marker(path, marker))
+    score += sum(18 for marker in markers if _contains_marker(title, marker))
+    score += sum(6 for marker in markers if _contains_marker(headings, marker))
+    if any(record["path"].startswith(root) for root in DOMAIN_ROOTS.get(domain, ())):
+        score += 60
+    if record["path"].startswith("tests/"):
+        score -= 40
+    if "/reviews/" in record["path"]:
+        score -= 10
     return score
 
 
@@ -329,11 +360,14 @@ def query_index(
         live_tools.append("harness_cron_list")
     domain_evidence = {}
     for domain in domains:
-        domain_records = [
+        domain_records = sorted(
+            [
             record
             for _, record in ranked
             if domain in record.get("strongDomains", [])
-        ][:3]
+            ],
+            key=lambda record: (-_domain_strength(record, domain), record["path"]),
+        )[:3]
         domain_evidence[domain] = [
             {
                 "path": record["path"],
@@ -342,6 +376,21 @@ def query_index(
             }
             for record in domain_records
         ]
+    domain_caveats = {}
+    if "materials-import" in domains and "자료 수입" in question.lower():
+        exact_match = any(
+            "자료 수입" in record["searchText"].lower()
+            for record in payload["files"].values()
+            if not record["path"].startswith("tests/")
+            and record["path"] != "scripts/harness_knowledge_index.py"
+            and "completion_evidence/openclaw_harness_knowledge" not in record["path"]
+            and "skills/harness-knowledge/" not in record["path"]
+        )
+        if not exact_match:
+            domain_caveats["materials-import"] = (
+                "No exact '자료 수입' repository match was found. Nearby evidence may describe "
+                "procurement or supply-chain work, not a confirmed standalone import business."
+            )
     return {
         "ok": True,
         "readyToAnswer": True,
@@ -356,6 +405,7 @@ def query_index(
         },
         "matchedDomains": domains,
         "domainEvidence": domain_evidence,
+        "domainCaveats": domain_caveats,
         "domainCatalog": dict(domain_counts.most_common()),
         "repositoryAreas": dict(top_level_counts.most_common(20)),
         "files": [
