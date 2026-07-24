@@ -1,6 +1,6 @@
 {
   "task": "Route Harness repository size and file-count questions to a fast native OpenClaw tool",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -44,10 +44,15 @@
     {
       "name": "production Discord failure diagnosis",
       "result": "Real user entrypoint confirmed a 130.184-second failed run caused by Bash approval waits, not disk traversal time."
+    },
+    {
+      "name": "exact production prompt replay",
+      "command": "OpenClaw agent on the Mac mini with the exact user sentence",
+      "result": "Completed successfully in 14.149 seconds of agent runtime with one harness_workspace_stats call, zero tool failures, and no Bash call. Native stats took 2.074 seconds and returned allocated 4.08 GiB, logical files 3.86 GiB, 77,219 files, 8,033 directories, 53 symlinks, and 0 unreadable entries."
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh with only the plugin, skill, test, and completion evidence paths",
-    "result": "pending origin-main push, force-install, gateway restart, and exact Discord-equivalent production proof"
+    "result": "Selected paths deployed from origin/main; plugin force-installed; gateway restarted; harness_workspace_stats allowlisted and exposed; exact production prompt replay completed with one native tool call and no failure."
   }
 }
