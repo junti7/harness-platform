@@ -68,9 +68,15 @@
       "target": "Mac mini production OpenClaw agent session",
       "command": "openclaw agent --agent main --session-id codex-harness-knowledge-proof-20260724 ...",
       "result": "The session ended successfully and harness_knowledge_query returned real production results, but the model redundantly called it three times. A per-turn runtime guard was added and awaits redeployment verification."
+    },
+    {
+      "name": "second production OpenClaw knowledge turn",
+      "target": "Mac mini production OpenClaw agent session",
+      "command": "openclaw sessions tail --session-key agent:main:explicit:codex-harness-knowledge-proof-20260724b",
+      "result": "The first knowledge call succeeded; hard-blocking a duplicate caused Bash fallback attempts. The guard was redesigned to force the full original question on the first call and return a tiny successful reuse marker on duplicates; final redeployment verification remains."
     }
   ],
   "residual_risk": [
-    "The production user path worked, but the new one-query-per-turn runtime guard remains pending origin-main deployment and re-verification."
+    "The production user path worked, but the non-error duplicate reuse behavior remains pending origin-main deployment and re-verification."
   ]
 }

@@ -408,10 +408,23 @@ function registerHarnessAssistantTools(api) {
         maxFiles: { type: "integer", minimum: 1, maximum: 30, default: 12 },
         maxExcerpts: { type: "integer", minimum: 1, maximum: 20, default: 8 },
         forceRefresh: { type: "boolean", default: false },
+        reuseOnly: {
+          type: "boolean",
+          default: false,
+          description: "Internal per-turn duplicate-call suppression flag.",
+        },
       },
     },
     async execute(_id, params) {
       try {
+        if (params.reuseOnly) {
+          return toolText({
+            ok: true,
+            reused: true,
+            instruction:
+              "Reuse the first harness_knowledge_query result from this turn; do not search again.",
+          });
+        }
         const args = [
           path.join(harnessRepoRoot(), "scripts", "harness_knowledge_index.py"),
           "--repo",
@@ -708,7 +721,11 @@ export default {
     };
     const markKnowledgeRun = (event, context) => {
       pruneRuns();
-      const state = { expiresAt: Date.now() + 10 * 60_000, queryCalls: 0 };
+      const state = {
+        expiresAt: Date.now() + 10 * 60_000,
+        queryCalls: 0,
+        question: String(event.prompt ?? ""),
+      };
       for (const key of runKeys(event, context)) activeKnowledgeRuns.set(key, state);
     };
     const knowledgeRunState = (event, context) => {
@@ -817,12 +834,21 @@ export default {
           if (state) {
             if (state.queryCalls >= 1) {
               return {
-                block: true,
-                blockReason:
-                  "Harness knowledge was already retrieved for this turn; reuse the first compact result and read only a returned file if needed.",
+                params: {
+                  ...event.params,
+                  question: state.question,
+                  reuseOnly: true,
+                },
               };
             }
             state.queryCalls += 1;
+            return {
+              params: {
+                ...event.params,
+                question: state.question,
+                reuseOnly: false,
+              },
+            };
           }
         }
         if (!isDirectSajuNotebookQuery(event.toolName, event.params, isSajuRun(event, context))) {

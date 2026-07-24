@@ -12,7 +12,7 @@ import {
 } from "../plugins/harness-bridge/index.js";
 
 assert.equal(shouldEnforceSajuBridge("오늘 사주 운세 알려줘"), true);
-assert.equal(
+assert.deepEqual(
   shouldEnforceSajuBridge("그럼 시간대는?", [
     { role: "assistant", content: "사주명리학자료 기준 오늘 일진" },
   ]),
@@ -181,7 +181,7 @@ assert.deepEqual(
   },
 );
 await hooks.get("agent_end")({ runId: "run-saju-1" }, context);
-assert.equal(
+assert.deepEqual(
   await hooks.get("before_tool_call")(
     {
       toolName: "bash",
@@ -206,7 +206,7 @@ const knowledgeRouting = await hooks.get("before_prompt_build")(
   knowledgeContext,
 );
 assert.match(knowledgeRouting.appendSystemContext, /HARNESS KNOWLEDGE ROUTING/);
-assert.equal(
+assert.deepEqual(
   await hooks.get("before_tool_call")(
     {
       toolName: "harness_knowledge_query",
@@ -215,7 +215,12 @@ assert.equal(
     },
     knowledgeContext,
   ),
-  undefined,
+  {
+    params: {
+      question: "Harness의 교육 사업과 스마트팜 현황 알려줘",
+      reuseOnly: false,
+    },
+  },
 );
 assert.deepEqual(
   await hooks.get("before_tool_call")(
@@ -227,9 +232,10 @@ assert.deepEqual(
     knowledgeContext,
   ),
   {
-    block: true,
-    blockReason:
-      "Harness knowledge was already retrieved for this turn; reuse the first compact result and read only a returned file if needed.",
+    params: {
+      question: "Harness의 교육 사업과 스마트팜 현황 알려줘",
+      reuseOnly: true,
+    },
   },
 );
 await hooks.get("agent_end")({ runId: "run-knowledge-1" }, knowledgeContext);
