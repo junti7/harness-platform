@@ -25,11 +25,23 @@
       "target": "Python runtime",
       "command": ".venv/bin/pytest -q tests/test_smartfarm_pump_control.py tests/test_harness_knowledge_index.py tests/test_openclaw_bridge.py",
       "result": "PASS: 53 tests."
+    },
+    {
+      "name": "Mac mini production semantic actuator conversation",
+      "target": "Mac mini production OpenClaw agent service",
+      "command": "openclaw agent session codex-semantic-actuator-proof2-20260724: '릴레이 좀 가동해봐' then '두 번째 구역으로 해줘'",
+      "result": "PASS: first run c5d70736-9478-4251-9a60-f0bac5bdce28 called the native tool and requested only the missing zone in 15.318 seconds. Second run ec262c64-34cb-47a2-8a30-ff7ca867c921 semantically resolved zone2, merged the pending ON action, called the native tool, and returned the watchdog safety block in 8.729 seconds. No phrase parser or shell actuator path was used."
+    },
+    {
+      "name": "Mac mini production plugin verification",
+      "target": "Mac mini production OpenClaw gateway",
+      "command": "openclaw plugins doctor; /opt/homebrew/opt/node/bin/node tests/test_harness_bridge_plugin.mjs",
+      "result": "PASS: no plugin issues and the production JavaScript regression passed."
     }
   ],
   "deploy": {
-    "method": "scripts/deploy_to_macmini.sh pending selected paths",
-    "result": "Pending production deployment and semantic two-turn OpenClaw verification."
+    "method": "scripts/deploy_to_macmini.sh with scoped plugin, tests, reviews, and evidence paths; force plugin install; gateway restart",
+    "result": "Selected paths aligned with origin/main on Mac mini. Plugin force-install, gateway restart, doctor, production regression, and semantic two-turn agent verification passed. Latest backup: scratch/pre_deploy_backup_20260724_184204."
   },
   "red_team": {
     "models": [
