@@ -55,11 +55,42 @@ def infer_requirements(question: str) -> tuple[str, ...]:
         ("건강운", ("건강운",)),
         ("대인운", ("대인운", "인간관계")),
         ("주의사항", ("주의사항", "주의할")),
-        ("좋은 시간대", ("좋은 시간대", "좋은 시간", "길한 시간")),
-        ("피할 시간대", ("피할 시간대", "피해야 할 시간", "흉한 시간")),
-        ("근거", ("근거", "출처", "이유", "해석")),
     )
-    return tuple(label for label, needles in mappings if any(n in question for n in needles))
+    requirements = [
+        label for label, needles in mappings if any(needle in question for needle in needles)
+    ]
+    time_term = r"(?:시간대|시간|시각|시진|길시|몇\s*시)"
+    positive_term = (
+        r"(?:(?<!안)(?<!안\s)좋(?:은|을|다|다고)|길한|유리한|적합한|"
+        r"추천할|최적(?:의|인)?|베스트)"
+    )
+    negative_term = (
+        r"(?:안\s*좋(?:은|을)|좋지\s*않은|피할|피해야\s*할|주의할|조심할|"
+        r"흉한|불리한|나쁜|위험한|금기인)"
+    )
+    near = r"[^,.;!?，。；！？\n]{0,4}"
+    positive_time = re.search(
+        rf"(?:{positive_term}{near}{time_term}|{time_term}{near}{positive_term})",
+        question,
+    ) or re.search(r"(?:좋은|길한|유리한|적합한|추천할|최적인)\s*때", question)
+    negative_time = re.search(
+        rf"(?:{negative_term}{near}{time_term}|{time_term}{near}{negative_term})",
+        question,
+    ) or re.search(r"(?:피할|피해야\s*할|주의할|조심할|불리한|나쁜|위험한)\s*때", question)
+    postposed_negation = re.search(
+        rf"{positive_term}\s*{time_term}(?:은|는|이|가)?\s*아(?:니|닌)",
+        question,
+    )
+    if postposed_negation:
+        positive_time = None
+        negative_time = postposed_negation
+    if positive_time:
+        requirements.append("좋은 시간대")
+    if negative_time:
+        requirements.append("피할 시간대")
+    if any(needle in question for needle in ("근거", "출처", "이유", "해석")):
+        requirements.append("근거")
+    return tuple(requirements)
 
 
 def build_query_plan(question: str, enrichers: Iterable[Enricher] = ()) -> NotebookQueryPlan:

@@ -19,6 +19,27 @@ def test_planner_supports_domain_independent_enricher():
     assert plan.requirements == ("근거",)
 
 
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        ("오늘 좋은 시간대와 피할 시간대", ("좋은 시간대", "피할 시간대")),
+        ("오늘 길한 시각과 피해야 할 시각", ("좋은 시간대", "피할 시간대")),
+        ("유리한 때와 조심할 때", ("좋은 시간대", "피할 시간대")),
+        ("최적의 몇 시와 위험한 몇 시", ("좋은 시간대", "피할 시간대")),
+        ("오늘 좋은 시간만", ("좋은 시간대",)),
+        ("오늘 흉한 시간만", ("피할 시간대",)),
+        ("좋은 결과가 났을 때 주의할 점", ("주의사항",)),
+        ("오늘 몇 시가 안 좋을까요?", ("피할 시간대",)),
+        ("오늘 좋은 운과 피할 시간대는?", ("피할 시간대",)),
+        ("오늘 길운과 피할 시간대는?", ("피할 시간대",)),
+        ("좋은 시간은 아닌 때를 알려줘", ("피할 시간대",)),
+        ("유리한 시각은 아니다", ("피할 시간대",)),
+    ],
+)
+def test_time_window_requirements_use_composed_semantics(question, expected):
+    assert infer_requirements(question) == expected
+
+
 def test_delivery_contract_rejects_non_answer_even_when_tool_succeeded():
     plan = build_query_plan("전체운과 근거를 알려줘")
     passed, reasons = assess_notebook_answer(
