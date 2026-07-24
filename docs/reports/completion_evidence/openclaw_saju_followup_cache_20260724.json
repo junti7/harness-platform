@@ -39,7 +39,7 @@
     },
     {
       "name": "independent multi-model review",
-      "result": "Claude clear and Copilot red_team_clear; no blocker or major finding remained"
+      "result": "Claude clear and Copilot red_team_clear on the final shared request/answer semantic matcher; no blocker or major finding remained"
     },
     {
       "name": "real production user-path diagnosis",
@@ -49,7 +49,7 @@
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh core/notebook_query_planning.py scripts/openclaw_codex_bridge.py plugins/harness-bridge/index.js plugins/harness-bridge/openclaw.plugin.json plugins/harness-bridge/package.json plugins/harness-bridge/ROUTING.md plugins/harness-bridge/skills/harness-control/SKILL.md tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py tests/test_harness_bridge_plugin.mjs docs/reviews/red_team/openclaw_saju_followup_cache_claude_20260724.md docs/reviews/red_team/openclaw_saju_followup_cache_copilot_20260724.md docs/reports/completion_evidence/openclaw_saju_followup_cache_20260724.json",
-    "result": "Native plugin and tool exposure verified; first time-window generation completed in 254.898 seconds and same-session follow-up completed in 13.614 seconds. Fresh-session tests exposed date-notation and answer-label contract mismatches; both are fixed locally, with the final shared-semantic patch pending production deployment, so status remains residual_risk."
+    "result": "Native plugin and tool exposure verified; first time-window generation completed in 254.898 seconds and same-session follow-up completed in 13.614 seconds. Operator diagnostic confirmed detailed NotebookLM output with concrete auspicious and caution sections; final shared-semantic patch is pending production deployment, so status remains residual_risk."
   },
   "red_team": {
     "models": [
