@@ -1,0 +1,19 @@
+{
+  "artifact": "output/pdf/ai_career_parent_pilot_8p_v7.pdf",
+  "verdict": "red_team_block",
+  "reviewers": ["data_content", "redteam_plan"],
+  "passed": [
+    "customer scope returned to middle-school AI/robotics/engineering parents",
+    "v6 unrelated adult/B2B/retiree content removed",
+    "page-specific claim IDs and source footer added",
+    "parent-topic evidence slice uses parent+topic filters and content_hash deduplication"
+  ],
+  "blockers": [
+    "69,905 user-reported, 49,345 local all-domain, and 34,424 local education counts require external export/hash reconciliation before publication",
+    "most external claim locators still require chapter/table/page verification",
+    "P05 is the only published Harness evidence claim; remaining pages are labeled design claims or pilot rules",
+    "p3-p8 have material unused lower-page area; diagrams are functional editorial schemas, not source-derived charts",
+    "pixel checker reports 50.6-79.9% background proxy, so the <=20% whitespace requirement is not met"
+  ],
+  "next_gate": "Attach Mac mini export and exact external locators, add at least two additional source-derived evidence modules, then rerender and repeat independent review."
+}

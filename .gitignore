@@ -99,3 +99,8 @@ docs/trading/universe.json
 
 # 상태파일 멀티-writer 락(core.atomic_io.update_json_atomic) — 런타임 산출물
 *.lock
+
+# Smartfarm 프로토타입 - 로컬 secret/설정 및 런타임 DB
+hardware/smartfarm/soil_node/config.h
+hardware/smartfarm/pi_hub/config.yaml
+hardware/smartfarm/pi_hub/smartfarm.db

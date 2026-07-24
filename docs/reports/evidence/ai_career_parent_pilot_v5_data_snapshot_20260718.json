@@ -1,0 +1,9 @@
+{
+  "snapshot": "local harness_dev 2026-07-18",
+  "scope": "raw_signals where domain = edu_consulting",
+  "total": 34424,
+  "source_counts": {"Naver_blog":12298,"Naver_cafe":11093,"Naver_knowledge":8118,"semantic_scholar":800,"youtube_search":572,"arxiv_api":128,"eric":116,"openalex":106,"pubmed":67,"youtube_topic_search":60,"Google_DeepMind_Blog":50,"OpenAI_Blog":50},
+  "keyword_clusters": {"ai":16486,"career":3662,"academy":3211,"project":2222,"other":8843},
+  "calculation": "case-insensitive title + full_content keyword classification; clusters overlap and are not market shares",
+  "limitations": ["source mix is collection inventory, not parent population", "keyword clusters overlap", "no claim about education outcomes or willingness to pay"]
+}

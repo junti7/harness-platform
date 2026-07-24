@@ -1,0 +1,190 @@
+{
+  "artifact_scope": "중학생 AI·공학 진로 탐색 부모용 8페이지 파일럿",
+  "cutoff": "2026-07-18",
+  "claims": [
+    {
+      "claim_id": "P01-C01",
+      "claim": "부모가 먼저 정해야 하는 것은 직업명이 아니라 다음 4주에 관찰할 증거다.",
+      "source_ids": [
+        "S-OECD-2025",
+        "S-WEF-2025"
+      ],
+      "evidence_grade": "C",
+      "source_type": "editorial_synthesis",
+      "counterpoint": "프로젝트가 모든 자녀에게 첫 선택은 아님",
+      "action": "질문·산출물·수정 로그를 4주 단위로 기록",
+      "status": "design_claim"
+    },
+    {
+      "claim_id": "P02-C01",
+      "claim": "AI 도구 확산은 결과 검토와 설명의 중요성을 높인다.",
+      "source_ids": [
+        "S-WEF-2025",
+        "S-OPENAI-LITERACY"
+      ],
+      "evidence_grade": "B",
+      "source_type": "official_report",
+      "counterpoint": "직무별 영향과 연령별 학습 효과는 다름",
+      "action": "AI 답을 독립 출처와 반례로 확인",
+      "status": "source_supported"
+    },
+    {
+      "claim_id": "P03-C01",
+      "claim": "질문·제작·검증·수정은 본 파일럿의 관찰 가능한 작업 프레임이다.",
+      "source_ids": [
+        "S-OECD-2025",
+        "S-OPENAI-LITERACY"
+      ],
+      "evidence_grade": "C",
+      "source_type": "editorial_synthesis",
+      "counterpoint": "표준 적성검사나 교육 효과 척도가 아님",
+      "action": "네 항목 중 가장 낮은 한 항목만 다음 달 목표로 선택",
+      "status": "design_claim"
+    },
+    {
+      "claim_id": "P04-C01",
+      "claim": "학원·캠프·독학·프로젝트는 가격보다 산출물·피드백·가역성으로 비교해야 한다.",
+      "source_ids": [
+        "S-MOE-TUITION-2024",
+        "S-KHANMIGO-PARENTS"
+      ],
+      "evidence_grade": "C",
+      "source_type": "decision_framework",
+      "counterpoint": "상품별 운영·가격 차이가 커 평균값 일반화 금지",
+      "action": "계약 전 4주 산출물과 중도 해지 조건 확인",
+      "status": "design_claim"
+    },
+    {
+      "claim_id": "P05-C01",
+      "claim": "원천 자료의 키워드 분포는 학부모 관심의 방향을 보여주지만 모집단 비율은 아니다.",
+      "source_ids": [
+        "S-WEF-2025",
+        "S-HARNESS-EDU-SNAPSHOT-20260718"
+      ],
+      "evidence_grade": "B",
+      "source_type": "internal_evidence_slice",
+      "sample": "edu_consulting raw_signals 34,424건",
+      "calculation": "case-insensitive title+full_content keyword classification; overlapping clusters",
+      "counterpoint": "수집 채널 편향과 중복 가능성",
+      "action": "분포를 시장 점유율로 사용하지 않고 주제 우선순위에만 사용",
+      "status": "reproducible"
+    },
+    {
+      "claim_id": "P06-C01",
+      "claim": "4주 산출물과 수정 로그는 다음 학습 선택을 위한 관찰 자료다.",
+      "source_ids": [
+        "S-OPENAI-LITERACY"
+      ],
+      "evidence_grade": "C",
+      "source_type": "editorial_synthesis",
+      "counterpoint": "한 프로젝트로 진로 적성을 판정할 수 없음",
+      "action": "링크·사진·두 문장 로그 보관",
+      "status": "design_claim"
+    },
+    {
+      "claim_id": "P07-C01",
+      "claim": "장기 결제 전 2주 관찰과 4주 결과물 확인을 두는 것은 비용 확산을 늦추는 운영 규칙이다.",
+      "source_ids": [
+        "S-MOE-TUITION-2024"
+      ],
+      "evidence_grade": "C",
+      "source_type": "pilot_rule",
+      "counterpoint": "실제 비용 절감액은 파일럿 로그 전에는 계산하지 않음",
+      "action": "기록이 없으면 추가 결제 보류",
+      "status": "pilot_hypothesis"
+    },
+    {
+      "claim_id": "P08-C01",
+      "claim": "외부 수치는 원문 표본·정의·발행일을 확인하기 전 확정 주장으로 사용하지 않는다.",
+      "source_ids": [
+        "S-OECD-2025",
+        "S-MOE-TUITION-2024"
+      ],
+      "evidence_grade": "A",
+      "source_type": "editorial_policy",
+      "counterpoint": "독자가 단순 숫자를 원할 수 있음",
+      "action": "모든 수치에 URL·페이지·분모를 함께 표기",
+      "status": "governance_rule"
+    },
+    {
+      "claim_id": "P09-C01",
+      "claim": "부모 맥락과 AI 주제를 동시에 만족하는 후보가 13,210건이며 content_hash dedup 후 계산됐다.",
+      "source_ids": [
+        "S-HARNESS-PARENT-SLICE-20260718"
+      ],
+      "evidence_grade": "B",
+      "source_type": "internal_pipeline_measurement",
+      "sample": "edu_consulting raw_signals; parent+topic regex; excluded adult/B2B/investment terms",
+      "calculation": "scripts/build_parent_evidence_slice.py; unique_items field",
+      "counterpoint": "검색·커뮤니티 편향과 후보 문장의 사실성 미검증",
+      "action": "후보를 claim으로 승격하지 않고 source locator 검토 대기",
+      "status": "reproducible"
+    },
+    {
+      "claim_id": "P10-C01",
+      "claim": "후보 원자료는 source별로 집계할 수 있으나 그 구성은 수집 인벤토리이지 학부모 모집단이 아니다.",
+      "source_ids": [
+        "S-HARNESS-PARENT-SLICE-20260718"
+      ],
+      "evidence_grade": "B",
+      "source_type": "internal_pipeline_measurement",
+      "counterpoint": "채널별 수집량은 노출·수집기 가동률의 영향을 받음",
+      "action": "source mix를 시장 점유율로 사용하지 않음",
+      "status": "reproducible"
+    },
+    {
+      "claim_id": "P11-C01",
+      "claim": "성인·B2B·투자 용어 제외는 고객 범위를 통제하는 필터이지 콘텐츠 품질 보증이 아니다.",
+      "source_ids": [
+        "S-HARNESS-PARENT-SLICE-20260718"
+      ],
+      "evidence_grade": "B",
+      "source_type": "scope_control",
+      "counterpoint": "문맥상 오탐·누락 가능성",
+      "action": "후보 500건은 사람 검토 후 발행",
+      "status": "reproducible"
+    }
+  ],
+  "sources": {
+    "S-OECD-2025": {
+      "title": "OECD Education at a Glance 2025",
+      "url": "https://www.oecd.org/en/publications/education-at-a-glance-2025_9c6d7f1f-en.html",
+      "locator": "publication landing page; no OECD numeric claim is used in v7"
+    },
+    "S-WEF-2025": {
+      "title": "Future of Jobs Report 2025",
+      "url": "https://www.weforum.org/publications/the-future-of-jobs-report-2025/",
+      "locator": "landing page overview, published 2025-01-07; report scope states technology and skills transformation through 2030"
+    },
+    "S-UNESCO-GENAI": {
+      "title": "Guidance for Generative AI in Education and Research",
+      "url": "https://unesdoc.unesco.org/ark:/48223/pf0000386693",
+      "locator": "guidance PDF, human-centred and safe-use sections; page locator still requires PDF text verification"
+    },
+    "S-OPENAI-LITERACY": {
+      "title": "AI literacy resources for teens and parents",
+      "url": "https://openai.com/index/ai-literacy-resources-for-teens-and-parents/",
+      "locator": "web article lines 36-38: errors/double-checking, prompts, data/settings, critical thinking, boundaries"
+    },
+    "S-MOE-TUITION-2024": {
+      "title": "2024 초중고 사교육비 조사",
+      "url": "https://www.moe.go.kr/boardCnts/viewRenew.do?boardID=294&boardSeq=102822&lev=0&m=020402",
+      "locator": "교육부 보도자료 2025-03-14, 첨부 주요 특징 표"
+    },
+    "S-KHANMIGO-PARENTS": {
+      "title": "Khanmigo for Parents",
+      "url": "https://www.khanmigo.ai/parents",
+      "locator": "parent dashboard section"
+    },
+    "S-HARNESS-EDU-SNAPSHOT-20260718": {
+      "title": "Internal evidence snapshot",
+      "path": "docs/reports/evidence/ai_career_parent_pilot_v5_data_snapshot_20260718.json",
+      "locator": "source_counts and keyword_clusters"
+    },
+    "S-HARNESS-PARENT-SLICE-20260718": {
+      "title": "Parent-only evidence slice",
+      "path": "docs/reports/evidence/ai_career_parent_evidence_slice_20260718.json",
+      "locator": "unique_items, source_counts, evidence_patterns; generated by scripts/build_parent_evidence_slice.py"
+    }
+  }
+}

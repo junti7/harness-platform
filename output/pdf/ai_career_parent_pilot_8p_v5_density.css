@@ -1,0 +1,3 @@
+.panel{overflow:hidden}
+.panel:before{display:none!important}
+.dark .panel:before{background:#243552;color:#cbd4e1}

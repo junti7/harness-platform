@@ -1,0 +1,25 @@
+{
+  "artifact": "output/pdf/ai_career_parent_pilot_8p_v2.pdf",
+  "reviewed_artifact_abs_path": "/Users/juntae.park/projects/harness-platform/output/pdf/ai_career_parent_pilot_8p_v2.pdf",
+  "verdict": "red_team_block",
+  "retry_count": 1,
+  "models": [
+    {"name":"Codex", "role":"render, SQL, source-line and claim audit", "output":"pdftotext + local SQL snapshot"},
+    {"name":"Copilot CLI", "role":"independent adversarial review", "status":"unavailable_no_output", "prompt":"/tmp/redteam_prompt.txt"}
+  ],
+  "verification": {
+    "pages": 8,
+    "source_lines": 8,
+    "render": "Chrome headless PDF; 960x540pt; 8 pages",
+    "data_snapshot": "raw_signals 49,345; edu_consulting 34,424; filtered 3,583; refined 597",
+    "calculation": "SELECT COUNT(*) grouped by domain and joined filtered/refined tables"
+  },
+  "scorecard": {"factuality_traceability": 1, "decision_utility": 1, "visual_editorial": 1, "paid_worthiness": 0, "safety_integrity": 1},
+  "blocking_findings": [
+    {"severity":"high","claim_id":"ALL-PAGES","page":"1-8","finding":"외부 독립 Red Team 모델의 실제 output이 없어 cross-LLM clear 조건 미충족","remediation":"Claude + Copilot(또는 GPT reasoning) 독립 결과를 저장하고 충돌 항목을 재검토"},
+    {"severity":"high","claim_id":"P4-MATRIX","page":4,"finding":"선택지 비교의 비용·시간·피드백 값이 미측정/가설이라 유료 의사결정 근거로 부족","remediation":"실제 상품 3개 이상과 공개 가격·시간·산출물 출처를 연결"},
+    {"severity":"medium","claim_id":"P3-CLUSTERS","page":3,"finding":"최근 제목 12건은 대표 표본이 아니며 클러스터 빈도를 주장할 수 없음","remediation":"선정 쿼리, 전체 분모, 중복 제거 규칙, source_id별 count를 evidence ledger로 추가"}
+  ],
+  "residual_risk": ["학부모 5명 이해도/선결제 3가구 검증 미실시", "Legal/QA 사전 게이트 미완료", "내부 운영 데이터는 교육 효과를 입증하지 않음"],
+  "next_gate": "외부 Red Team 2개 모델 output + source ledger + human paid pilot evidence"
+}

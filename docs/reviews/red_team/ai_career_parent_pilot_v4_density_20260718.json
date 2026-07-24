@@ -1,0 +1,18 @@
+{
+  "artifact": "output/pdf/ai_career_parent_pilot_8p_v4.pdf",
+  "criterion": "page whitespace <= 10%",
+  "measurement": "PNG pixel proxy against page background after Chrome render at 960x540",
+  "verdict": "red_team_block",
+  "pages": {
+    "1": {"whitespace_pct": 52.6, "status": "block"},
+    "2": {"whitespace_pct": 40.4, "status": "block"},
+    "3": {"whitespace_pct": 38.5, "status": "block"},
+    "4": {"whitespace_pct": 37.1, "status": "block"},
+    "5": {"whitespace_pct": 36.9, "status": "block"},
+    "6": {"whitespace_pct": 39.1, "status": "block"},
+    "7": {"whitespace_pct": 38.3, "status": "block"},
+    "8": {"whitespace_pct": 38.5, "status": "block"}
+  },
+  "finding": "10% 기준을 엄격히 지키지 못함. 콘텐츠 카드의 배경 면적을 빈 공간 감소로 오인하면 안 되며, 콘텐츠가 실제로 채워져야 한다.",
+  "remediation": "페이지별 원자료 차트·표·분석 문단을 추가하고, 오버레이 박스로 빈 공간을 가리는 방식은 금지한다. 재렌더링 후 동일 측정 재실행."
+}

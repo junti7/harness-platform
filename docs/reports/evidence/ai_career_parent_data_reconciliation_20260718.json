@@ -1,0 +1,10 @@
+{
+  "cutoff": "2026-07-18",
+  "counts": [
+    {"label": "Mac mini UI reported by user", "count": 69905, "status": "unverified_in_this_workspace", "use": "do not use as a factual chart value until export/hash is attached"},
+    {"label": "current local harness_dev raw_signals", "count": 49345, "status": "measured", "command": "select count(*) from raw_signals", "scope": "all domains"},
+    {"label": "current local harness_dev edu_consulting", "count": 34424, "status": "measured", "command": "select count(*) from raw_signals where domain='edu_consulting'", "scope": "education consulting domain"}
+  ],
+  "interpretation": "These are different scopes or snapshots. They must not be added, compared as rates, or presented as one corpus until a Mac mini export with cutoff, query, and hash is attached.",
+  "publication_rule": "Only 34,424 is used for the v7 internal discovery chart; 69,905 is labeled as user-reported and 49,345 as all-domain local count. Neither is a market-size estimate."
+}

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>AI 진로 선택 지도 - Pilot</title>
+<style>
+@page { size: 13.333in 7.5in; margin: 0; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #e9edf3; font-family: "Apple SD Gothic Neo", "AppleGothic", Arial, sans-serif; color: #11162b; }
+.page { width: 1280px; height: 720px; margin: 0 auto; padding: 42px 56px 34px 78px; background: #f7f8fb; position: relative; overflow: hidden; }
+.rail { position:absolute; left:28px; top:35px; bottom:35px; width:2px; background:#11162b; }
+.rail-label { position:absolute; left:8px; top:180px; writing-mode:vertical-rl; transform:rotate(180deg); font-size:11px; letter-spacing:2px; font-weight:700; color:#596277; }
+.meta { font-size:12px; letter-spacing:1.8px; text-transform:uppercase; color:#596277; font-weight:700; }
+h1 { margin:14px 0 8px; max-width:930px; font-size:42px; line-height:1.08; letter-spacing:-1.5px; }
+.dek { margin:0; max-width:870px; font-size:17px; line-height:1.45; color:#46516a; }
+.thesis { position:absolute; right:58px; top:48px; width:218px; padding:16px 17px; border-left:5px solid #6f50e8; background:#ece9ff; font-size:14px; line-height:1.4; font-weight:700; }
+.thesis b { display:block; color:#6245d6; font-size:11px; letter-spacing:1.3px; margin-bottom:7px; }
+.section { margin-top:30px; font-size:12px; font-weight:800; letter-spacing:1.4px; color:#596277; }
+.choices { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:14px; margin-top:10px; }
+.choice { background:white; border:1px solid #d8deea; min-height:105px; padding:14px 16px; position:relative; }
+.choice.active { border:2px solid #6245d6; box-shadow:0 5px 0 #e2dcff; }
+.choice h2 { margin:0 0 6px; font-size:20px; }
+.choice p { margin:0; color:#596277; font-size:13px; line-height:1.35; }
+.tag { position:absolute; right:10px; top:10px; font-size:10px; font-weight:800; color:#6245d6; letter-spacing:.8px; }
+.decision { margin-top:24px; display:grid; grid-template-columns: 0.95fr 1.45fr; gap:28px; align-items:start; }
+.left h3, .right h3 { margin:0 0 8px; font-size:18px; }
+.check { display:flex; gap:10px; align-items:flex-start; margin:9px 0; font-size:14px; line-height:1.3; }
+.num { min-width:23px; height:23px; border-radius:50%; background:#11162b; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; }
+.roadmap { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.month { border-top:4px solid #10a979; background:#edf8f4; padding:10px 11px; min-height:104px; }
+.month:nth-child(2) { border-color:#6f50e8; background:#f0edff; }
+.month:nth-child(3) { border-color:#e39a3b; background:#fff5e6; }
+.month b { display:block; font-size:13px; margin-bottom:6px; }
+.month span { display:block; font-size:12px; line-height:1.35; color:#46516a; }
+.footer { position:absolute; left:78px; right:58px; bottom:20px; display:flex; justify-content:space-between; align-items:end; border-top:1px solid #d8deea; padding-top:8px; color:#69738a; font-size:10px; }
+.footer strong { color:#11162b; }
+</style>
+</head>
+<body>
+<main class="page">
+  <div class="rail"></div><div class="rail-label">AI CAREER DECISION BRIEF</div>
+  <div class="meta">PILOT / PARENT DECISION MAP / 2026.07</div>
+  <h1>중2 자녀의 AI 진로 준비는<br>무엇부터 시작해야 하는가</h1>
+  <p class="dek">학원·캠프·프로젝트를 먼저 고르는 대신, 아이가 6개월 안에 남길 수 있는 <b>관찰 가능한 결과물</b>을 기준으로 순서를 정한다.</p>
+  <aside class="thesis"><b>WORKING THESIS</b>처음부터 더 많은 수업을 사기보다, 작은 프로젝트 하나를 끝내며 다음 선택에 필요한 증거를 만든다.</aside>
+
+  <div class="section">THREE COMMON FIRST MOVES</div>
+  <section class="choices">
+    <article class="choice"><span class="tag">INPUT</span><h2>학원</h2><p>지식과 루틴을 확보하기 좋다.<br>단, 결과물이 남는지 먼저 확인한다.</p></article>
+    <article class="choice"><span class="tag">INTENSIVE</span><h2>캠프</h2><p>짧은 몰입 경험을 준다.<br>후속 활동과 연결되지 않으면 일회성이다.</p></article>
+    <article class="choice active"><span class="tag">EVIDENCE FIRST</span><h2>프로젝트</h2><p>흥미·지속성·문제해결을 관찰한다.<br>작게 시작하고 공개 가능한 결과물을 남긴다.</p></article>
+  </section>
+
+  <section class="decision">
+    <div class="left"><h3>먼저 확인할 3가지</h3>
+      <div class="check"><span class="num">1</span><span>아이가 스스로 고른 질문이 있는가</span></div>
+      <div class="check"><span class="num">2</span><span>4주 안에 작동하는 결과물을 만들 수 있는가</span></div>
+      <div class="check"><span class="num">3</span><span>실패 후 수정한 흔적을 설명할 수 있는가</span></div>
+    </div>
+    <div class="right"><h3>6개월 실행 순서</h3>
+      <div class="roadmap">
+        <div class="month"><b>01-02개월 / 탐색</b><span>관심 질문 1개 선택<br>작은 실험·기초 학습<br>첫 결과물 기록</span></div>
+        <div class="month"><b>03-04개월 / 제작</b><span>프로젝트 범위 확정<br>중간 실패와 수정<br>설명 가능한 데모</span></div>
+        <div class="month"><b>05-06개월 / 증거</b><span>포트폴리오 정리<br>다음 학습 선택<br>필요할 때 학원·캠프 보완</span></div>
+      </div>
+    </div>
+  </section>
+  <footer class="footer"><span><strong>Decision aid, not admissions advice.</strong> 이 페이지는 특정 결과나 합격을 보장하지 않습니다.</span><span>Framework draft / sources and methodology required before sale</span></footer>
+</main>
+</body>
+</html>

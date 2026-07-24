@@ -1,4 +1,4 @@
-// Smartfarm 1구역 프로토타입 - ESP32 센서 노드
+// Smartfarm 센서 노드 - ESP32 / ESP8266 공용
 // 역할: 토양수분/온습도 읽어서 MQTT publish, 펌프 명령 MQTT subscribe.
 // 로컬 안전장치: 허브(라즈베리파이)와 통신이 끊겨도 PUMP_MAX_RUN_MS를 넘기면 무조건 OFF.
 //
@@ -6,9 +6,16 @@
 //   - PubSubClient (Nick O'Leary)
 //   - DHT sensor library (Adafruit) + Adafruit Unified Sensor
 //
-// 구역 추가 시: config.example.h를 새 config.h로 복사 -> ZONE_ID/MQTT_CLIENT_ID만 바꿔서 재플래싱.
+// 구역 추가 시: 보드에 맞는 config.example.esp32.h 또는 config.example.esp8266.h를
+// config.h로 복사 -> ZONE_ID/MQTT_CLIENT_ID만 바꿔서 재플래싱.
 
+#if defined(ESP32)
 #include <WiFi.h>
+#elif defined(ESP8266)
+#include <ESP8266WiFi.h>
+#else
+#error "ESP32 또는 ESP8266 보드 core로만 컴파일 가능"
+#endif
 #include <PubSubClient.h>
 #include <DHT.h>
 #include "config.h"
@@ -53,17 +60,28 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
 }
 
 void connectWifi() {
+  Serial.print("[wifi] connecting to ");
+  Serial.println(WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
+    Serial.print(".");
   }
+  Serial.print("\n[wifi] connected, ip=");
+  Serial.println(WiFi.localIP());
 }
 
 void connectMqtt() {
   while (!mqtt.connected()) {
+    Serial.print("[mqtt] connecting to ");
+    Serial.print(MQTT_BROKER_HOST);
+    Serial.println("...");
     if (mqtt.connect(MQTT_CLIENT_ID)) {
+      Serial.println("[mqtt] connected");
       mqtt.subscribe(topicPumpCmd);
     } else {
+      Serial.print("[mqtt] failed, state=");
+      Serial.println(mqtt.state());
       delay(2000);
     }
   }
@@ -71,6 +89,8 @@ void connectMqtt() {
 
 int readSoilPercent() {
   int raw = analogRead(SOIL_MOISTURE_PIN);
+  Serial.print("[debug] A0 raw=");
+  Serial.println(raw);
   int pct = map(raw, SOIL_DRY_RAW, SOIL_WET_RAW, 0, 100);
   return constrain(pct, 0, 100);
 }

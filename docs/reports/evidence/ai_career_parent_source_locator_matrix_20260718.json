@@ -1,0 +1,11 @@
+{
+  "used_in_v7": {
+    "S-OECD-2025": {"locator": "publication landing page only; v7 uses no OECD numeric claim", "status": "non_numeric_context"},
+    "S-WEF-2025": {"locator": "report landing page overview, published 2025-01-07; scope paragraph describes technology/skills transformation through 2030", "status": "verified_landing_context"},
+    "S-OPENAI-LITERACY": {"locator": "article body paragraphs 3-4 / web lines 36-38: model errors and double-checking, prompts, data/settings, critical thinking and boundaries", "status": "verified_web_text"},
+    "S-MOE-TUITION-2024": {"locator": "교육부 보도자료 boardSeq=102822, 2025-03-14; attached 주요 특징 table", "status": "official_attachment_locator"},
+    "S-KHANMIGO-PARENTS": {"locator": "Khanmigo for Parents page, parent dashboard description", "status": "page_section_locator"}
+  },
+  "not_used_in_v7_claim_footers": ["S-UNESCO-GENAI"],
+  "policy": "Design claims are labeled as design_claim/pilot_rule; source-supported facts are not inferred from a source landing page."
+}
