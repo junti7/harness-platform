@@ -458,7 +458,7 @@ assert.deepEqual(
   await hooks.get("before_tool_call")(
     {
       toolName: "harness_smartfarm_pump_control",
-      params: { zone: "zone2" },
+      params: { zone: "2" },
       runId: "run-pump-continuation",
     },
     pumpContinuationContext,

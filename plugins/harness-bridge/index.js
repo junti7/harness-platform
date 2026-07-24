@@ -449,7 +449,11 @@ function registerHarnessAssistantTools(api) {
       additionalProperties: false,
       required: [],
       properties: {
-        zone: { type: "string", pattern: "^zone[1-9][0-9]{0,2}$" },
+        zone: {
+          type: ["string", "integer"],
+          description:
+            "Canonical zone ID. Map semantic ordinals such as '두 번째 구역' to zone2; a bare positive integer is also accepted and canonicalized server-side.",
+        },
         action: { type: "string", enum: ["on", "off"] },
         durationSeconds: { type: "integer", minimum: 1, maximum: 15, default: 5 },
         dryRun: { type: "boolean", default: false },
@@ -1003,7 +1007,13 @@ export default {
                 "Smartfarm pump control requires a sender identity bound to the current conversation.",
             };
           }
-          const zone = event.params?.zone ?? pumpState.pending?.zone;
+          const rawZone = event.params?.zone ?? pumpState.pending?.zone;
+          const zone =
+            Number.isInteger(rawZone) && rawZone > 0
+              ? `zone${rawZone}`
+              : /^[1-9][0-9]{0,2}$/.test(String(rawZone ?? ""))
+                ? `zone${rawZone}`
+                : rawZone;
           const action = event.params?.action ?? pumpState.pending?.action;
           if (zone && !/^zone[1-9][0-9]{0,2}$/.test(String(zone))) {
             return { block: true, blockReason: "Invalid smartfarm zone." };

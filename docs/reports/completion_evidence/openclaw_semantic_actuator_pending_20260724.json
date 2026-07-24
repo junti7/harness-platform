@@ -18,7 +18,7 @@
       "name": "semantic pending-state plugin regression",
       "target": "OpenClaw plugin service runtime contract",
       "command": "node tests/test_harness_bridge_plugin.mjs",
-      "result": "PASS: LLM-owned semantic instructions, same-user natural-language continuation, cross-user denial, pending merge, shell block, and tool binding assertions passed. The unused phrase-regex intent parser was removed from the production code."
+      "result": "PASS: LLM-owned semantic instructions, same-user natural-language continuation, cross-user denial, pending merge, numeric-to-canonical zone adapter, shell block, and tool binding assertions passed. The unused phrase-regex intent parser was removed from the production code."
     },
     {
       "name": "related Python regression",

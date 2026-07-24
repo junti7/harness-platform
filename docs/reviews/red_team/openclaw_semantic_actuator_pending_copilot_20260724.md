@@ -14,3 +14,8 @@ both passed. Final verdict: `CLEAR`.
 After the review, the unused phrase-regex intent parser was removed so the production
 path cannot silently fall back to rule-based semantic interpretation. Copilot reviewed
 that focused cleanup and again returned `CLEAR`.
+
+Production showed that the LLM semantically emitted `2` for `두 번째 구역`; the adapter
+now canonicalizes structured positive numeric zone values to `zoneN` before strict validation.
+Copilot confirmed this remains a structured adapter boundary rather than user-text parsing
+and returned `CLEAR`.
