@@ -1,0 +1,14 @@
+# 이 파일을 config.yaml로 복사한 뒤 값을 채운다. config.yaml은 git에 커밋하지 않는다.
+mqtt:
+  host: "localhost"   # Mosquitto가 이 라즈베리파이에서 도는 경우 localhost
+  port: 1883
+
+db_path: "smartfarm.db"
+
+# 구역을 늘릴 때는 여기 항목만 추가한다 (허브 코드 변경 불필요).
+zones:
+  zone1:
+    soil_min_pct: 30       # 이 값 밑으로 내려가면 급수 시작
+    soil_target_pct: 60    # 이 값 이상 회복하면 급수 중단 (soil publish 주기마다 재확인)
+    water_duration_s: 10   # 급수 지속 시간 (ESP32측 PUMP_MAX_RUN_MS보다 짧게 설정)
+    cooldown_s: 300         # 급수 종료 후 재판단까지 최소 대기 시간(연속 펌프질 방지)
