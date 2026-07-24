@@ -1,0 +1,53 @@
+{
+  "task": "Route Harness repository size and file-count questions to a fast native OpenClaw tool",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-24T16:00:00+09:00",
+      "summary": "Applied completion evidence, production verification, and CEO authority boundaries."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-24T16:00:00+09:00",
+      "summary": "Applied origin-main selective deployment, Mac mini runtime verification, and secret-safe diagnostics."
+    }
+  ],
+  "root_cause": {
+    "user_request": "mac mini의 harness-project 폴더 내 파일들의 전체 용량은?",
+    "observed_runtime_ms": 130184,
+    "failure": "OpenClaw ignored the known Harness root and issued two home-directory Bash find scans. Both calls waited for approval and were declined after about 120 seconds; the Discord session ended failed without a user-facing answer.",
+    "evidence": "Production Discord session 484228e4-582c-4364-b7e3-5ddd5634dd24 contains the two Bash tool calls, declined results, failed session status, and no final assistant response."
+  },
+  "implementation": [
+    "Added native harness_workspace_stats for allocated disk bytes, logical regular-file bytes, file count, directory count, symlink count, unreadable count, and elapsed time.",
+    "Bound all target paths to the real Harness repository root without following symlink targets.",
+    "Added semantic routing for general Harness repository size, capacity, disk-usage, and file-count requests, including harness-project as an alias for harness-platform.",
+    "Explicitly prohibited Bash, find, du, and home-directory scans for this intent."
+  ],
+  "verification": [
+    {
+      "name": "local plugin regression",
+      "command": "node tests/test_harness_bridge_plugin.mjs",
+      "result": "passed, including exact Korean incident prompt routing and native stats execution"
+    },
+    {
+      "name": "bridge regression",
+      "command": ".venv/bin/pytest -q tests/test_openclaw_bridge.py",
+      "result": "34 passed"
+    },
+    {
+      "name": "local full repository benchmark",
+      "command": "collectHarnessWorkspaceStats('.')",
+      "result": "allocated 5.86 GiB, logical files 5.74 GiB, 49,819 files, 4,787 directories, 42 symlinks, 0 unreadable entries, 385 ms"
+    },
+    {
+      "name": "production Discord failure diagnosis",
+      "result": "Real user entrypoint confirmed a 130.184-second failed run caused by Bash approval waits, not disk traversal time."
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh with only the plugin, skill, test, and completion evidence paths",
+    "result": "pending origin-main push, force-install, gateway restart, and exact Discord-equivalent production proof"
+  }
+}

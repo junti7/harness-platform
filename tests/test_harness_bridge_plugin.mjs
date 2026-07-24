@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import harnessBridge from "../plugins/harness-bridge/index.js";
 import {
+  collectHarnessWorkspaceStats,
   resolveHarnessPath,
   isDirectSajuNotebookQuery,
   isShellTool,
   shouldEnforceSajuBridge,
+  shouldEnforceWorkspaceStats,
   validateWorkspaceCommand,
 } from "../plugins/harness-bridge/index.js";
 
@@ -84,6 +86,11 @@ assert.equal(
 
 assert.equal(isShellTool("terminal_command"), true);
 assert.equal(isShellTool("message"), false);
+assert.equal(
+  shouldEnforceWorkspaceStats("mac mini의 harness-project 폴더 내 파일들의 전체 용량은?"),
+  true,
+);
+assert.equal(shouldEnforceWorkspaceStats("Mac mini 전체 디스크 용량은?"), false);
 assert.throws(() => resolveHarnessPath("../outside"), /path_outside_harness_workspace/);
 assert.deepEqual(validateWorkspaceCommand(["git", "status", "--short"]), [
   "/usr/bin/git",
@@ -131,9 +138,15 @@ assert.deepEqual(
     "harness_workspace_exec",
     "harness_workspace_read",
     "harness_workspace_search",
+    "harness_workspace_stats",
     "harness_workspace_write",
   ],
 );
+const workspaceStats = await collectHarnessWorkspaceStats("plugins/harness-bridge");
+assert.equal(workspaceStats.path, "plugins/harness-bridge");
+assert.ok(workspaceStats.files >= 1);
+assert.ok(workspaceStats.allocatedBytes > 0);
+assert.ok(workspaceStats.durationMs < 30_000);
 const context = { runId: "run-saju-1", sessionKey: "session-saju-1" };
 await hooks.get("before_prompt_build")(
   { prompt: "오늘 사주 운세 알려줘", messages: [], runId: "run-saju-1" },

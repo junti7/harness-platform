@@ -9,6 +9,10 @@ const SAJU_FOLLOWUP_MARKERS =
   /시간대|좋은 시간|피할 시간|계속|이어서|더 자세히|그럼|같은 기준/;
 const SAJU_NOTEBOOK_MARKERS =
   /d3fe3696-ff81-4810-94a8-9584c329c440|사주명리학자료/;
+const WORKSPACE_STATS_INTENT =
+  /(?:전체|폴더|디렉터리|directory|folder|disk).{0,20}(?:용량|크기|파일\s*(?:수|개수)|size|usage|count)|(?:용량|크기|size|usage).{0,20}(?:프로젝트|폴더|디렉터리|project|folder|directory)/i;
+const HARNESS_WORKSPACE_MARKERS =
+  /harness(?:-project|-platform)?|하네스|프로젝트\s*(?:폴더|디렉터리|저장소)|project\s+(?:folder|directory|repository)/i;
 const MAX_TOOL_OUTPUT = 1_000_000;
 const MAX_WRITE_BYTES = 2_000_000;
 const READ_ONLY_GIT_SUBCOMMANDS = new Set([
@@ -22,6 +26,81 @@ const READ_ONLY_GIT_SUBCOMMANDS = new Set([
 
 export function harnessRepoRoot() {
   return path.join(process.env.HOME ?? "", "projects", "harness-platform");
+}
+
+export function shouldEnforceWorkspaceStats(prompt) {
+  const text = String(prompt ?? "");
+  return WORKSPACE_STATS_INTENT.test(text) && HARNESS_WORKSPACE_MARKERS.test(text);
+}
+
+function humanBytes(bytes) {
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let value = Number(bytes) || 0;
+  let index = 0;
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024;
+    index += 1;
+  }
+  return `${value.toFixed(index === 0 ? 0 : 2)} ${units[index]}`;
+}
+
+export async function collectHarnessWorkspaceStats(relativePath = ".") {
+  const startedAt = Date.now();
+  const target = resolveHarnessPath(relativePath, { mustExist: true });
+  const stack = [target];
+  let files = 0;
+  let directories = 0;
+  let symlinks = 0;
+  let logicalBytes = 0;
+  let unreadableEntries = 0;
+  while (stack.length) {
+    const current = stack.pop();
+    let stat;
+    try {
+      stat = fs.lstatSync(current);
+    } catch {
+      unreadableEntries += 1;
+      continue;
+    }
+    if (stat.isSymbolicLink()) {
+      symlinks += 1;
+      continue;
+    }
+    if (stat.isDirectory()) {
+      directories += 1;
+      try {
+        for (const entry of fs.readdirSync(current)) stack.push(path.join(current, entry));
+      } catch {
+        unreadableEntries += 1;
+      }
+      continue;
+    }
+    if (stat.isFile()) {
+      files += 1;
+      logicalBytes += stat.size;
+    }
+  }
+  const du = await runProcess("/usr/bin/du", ["-sk", target], { timeoutMs: 30_000 });
+  if (du.code !== 0) throw new Error(`workspace_du_failed:${du.stderr.slice(0, 200)}`);
+  const allocatedKiB = Number.parseInt(du.stdout.trim().split(/\s+/, 1)[0], 10);
+  if (!Number.isFinite(allocatedKiB)) throw new Error("workspace_du_invalid_output");
+  const allocatedBytes = allocatedKiB * 1024;
+  return {
+    path: path.relative(harnessRepoRoot(), target) || ".",
+    allocatedBytes,
+    allocatedHuman: humanBytes(allocatedBytes),
+    logicalFileBytes: logicalBytes,
+    logicalFileHuman: humanBytes(logicalBytes),
+    files,
+    directories,
+    symlinks,
+    unreadableEntries,
+    durationMs: Date.now() - startedAt,
+    semantics: {
+      allocatedBytes: "Filesystem blocks used, equivalent to du -sk.",
+      logicalFileBytes: "Sum of regular-file byte lengths; symlink targets are not followed.",
+    },
+  };
 }
 
 export function resolveHarnessPath(relativePath = ".", { mustExist = false } = {}) {
@@ -152,6 +231,24 @@ function toolText(value, isError = false) {
 }
 
 function registerHarnessWorkspaceTools(api) {
+  api.registerTool({
+    name: "harness_workspace_stats",
+    description: "Return fast, exact Harness repository disk usage, logical file bytes, and file/directory counts. Use for every Harness folder size, capacity, disk-usage, or file-count question; never search the home directory with shell/find.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        path: { type: "string", default: ".", description: "Path relative to the Harness repository root." },
+      },
+    },
+    async execute(_id, params) {
+      try {
+        return toolText(await collectHarnessWorkspaceStats(params.path ?? "."));
+      } catch (error) {
+        return toolText({ ok: false, error: error.message }, true);
+      }
+    },
+  });
   api.registerTool({
     name: "harness_workspace_read",
     description: "Read a UTF-8 file inside the Harness repository with line numbers.",
@@ -595,6 +692,18 @@ export default {
     api.on(
       "before_prompt_build",
       async (event, context) => {
+        if (shouldEnforceWorkspaceStats(event.prompt)) {
+          return {
+            appendSystemContext: [
+              "[HARNESS WORKSPACE STATS — MANDATORY]",
+              "For Harness repository size, disk usage, file count, or directory count questions,",
+              "call only `harness_workspace_stats` with a repository-relative path.",
+              "Treat harness-project as an alias for the configured harness-platform root.",
+              "Never use bash, find, du, or a home-directory scan for this intent.",
+              "Answer directly from allocatedHuman/logicalFileHuman and counts.",
+            ].join(" "),
+          };
+        }
         if (!shouldEnforceSajuBridge(event.prompt, event.messages)) {
           return;
         }

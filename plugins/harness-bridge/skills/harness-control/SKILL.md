@@ -12,13 +12,15 @@ Use this skill when operating the `harness-platform` control plane from OpenClaw
 
 Prefer native `harness_*` tools over guessed shell commands:
 
-- Repository: `harness_workspace_read`, `harness_workspace_search`, `harness_workspace_write`, `harness_workspace_exec`
+- Repository: `harness_workspace_stats`, `harness_workspace_read`, `harness_workspace_search`, `harness_workspace_write`, `harness_workspace_exec`
 - Gmail: `harness_gmail_search`, `harness_gmail_get`
 - Calendar: `harness_calendar_list`, `harness_calendar_create`
 - Scheduling: `harness_cron_list`, `harness_cron_create`, `harness_cron_remove`
 - Saju: `harness_saju_query`
 
 For repository work, inspect `AGENTS.md` and relevant files first. Preserve unrelated work. Verify edits with tests and `git diff`. Never report a write, event, or cron registration as successful without the returned path/hash, event ID, or cron job ID.
+
+For repository size, capacity, disk usage, file count, or directory count, call `harness_workspace_stats` directly. Treat `harness-project` as an alias for the configured `harness-platform` root. Never scan the home directory with Bash or `find`.
 
 Require explicit user confirmation before deleting data, sending external messages, deploying, pushing, creating financial actions, or running destructive commands. Repository tools reject paths outside `~/projects/harness-platform` and common destructive commands.
 
