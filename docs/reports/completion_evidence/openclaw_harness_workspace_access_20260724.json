@@ -1,6 +1,6 @@
 {
   "task": "Give OpenClaw verified read/write and operational access to the complete Harness repository plus Gmail, Calendar, and recurring assistant tools",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -73,12 +73,17 @@
     {
       "name": "Calendar mutation proof and cleanup",
       "command": "OpenClaw native Calendar create followed by exact-ID cleanup",
-      "result": "The first production mutation created event jr5v61f4p8c8rgvhppo3vscbn0 but exposed a missing argparse output field during result rendering. The temporary event was then deleted successfully and the parser defect was fixed with a regression test; redeployment and a clean create-result proof remain pending."
+      "result": "The first production mutation created event jr5v61f4p8c8rgvhppo3vscbn0 but exposed a missing argparse output field during result rendering. That event was deleted, the defect was fixed and redeployed, and a clean second create returned event ID 8dl0sb0h031gcp2f7g9sv5s518; the second temporary event was also deleted successfully."
+    },
+    {
+      "name": "final Mac mini runtime verification",
+      "command": "node plugin regression; PYTHONPATH=. pytest bridge regression; inspect tools.alsoAllow, gateway status, active tasks, cron list, and probe cleanup",
+      "result": "Node plugin regression passed; 34 Python tests passed; all 12 native tools are allowlisted; gateway 2026.7.1 is reachable; active tasks 0; cron jobs 0; temporary repository probe absent."
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh with only the plugin, skill, tests, review artifacts, and completion evidence paths",
-    "result": "Initial native tools were deployed and exercised. A Calendar result-rendering defect found by the live mutation proof is fixed locally; status remains residual_risk until that fix is pushed, redeployed, and reverified."
+    "result": "All selected paths deployed from origin/main. Plugin force-installed and gateway restarted. Native repository, Gmail, Calendar, and cron tools were exercised through OpenClaw; the Calendar rendering defect found by live mutation was fixed, pushed, redeployed, and reverified; all temporary file, cron, and Calendar proof artifacts were removed."
   },
   "red_team": {
     "models": [
