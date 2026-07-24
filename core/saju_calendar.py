@@ -43,6 +43,16 @@ def normalize_relative_saju_dates(
         raise ValueError("계산형 사주 질문은 오늘/내일/어제 중 대상일 하나만 지원합니다")
     marker = matches[0]
     target = base + timedelta(days=_RELATIVE_DATES[marker])
+    explicit_dates = {
+        date(
+            int(match.group("year")),
+            int(match.group("month")),
+            int(match.group("day")),
+        )
+        for match in _DATE_RE.finditer(question)
+    }
+    if target in explicit_dates:
+        return pattern.sub(f"해당일(Asia/Seoul 기준 {marker})", question)
     resolved = f"{target.year}년 {target.month}월 {target.day}일"
     replacement = f"{resolved}(Asia/Seoul 기준 {marker})"
     return pattern.sub(replacement, question)

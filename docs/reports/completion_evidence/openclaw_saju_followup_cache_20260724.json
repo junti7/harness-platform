@@ -26,13 +26,14 @@
     "Generalized time-window intent using bounded polarity and time-term composition, including Korean negation, instead of one exact user phrase.",
     "Accepted Korean, ISO, slash, and dotted solar dates so model-reconstructed tool arguments do not fail merely because their date notation differs.",
     "Applied one shared semantic matcher to both request classification and answer validation, assigning each concrete time to its nearest positive or caution category.",
-    "Required stable machine-readable headings for requested time categories so variable NotebookLM prose does not cause valid expert answers to be discarded."
+    "Required stable machine-readable headings for requested time categories so variable NotebookLM prose does not cause valid expert answers to be discarded.",
+    "Deduplicated an explicit target date plus an equivalent today/tomorrow/yesterday marker before deterministic date parsing."
   ],
   "verification": [
     {
       "name": "focused regression bundle",
       "command": "node tests/test_harness_bridge_plugin.mjs && .venv/bin/pytest -q tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py tests/test_openclaw_response_quality.py tests/test_openclaw_agent.py",
-      "result": "Node plugin tests passed; final focused Python bundle passed 208 tests with one third-party deprecation warning"
+      "result": "Node plugin tests passed; final focused Python bundle passed 209 tests with one third-party deprecation warning"
     },
     {
       "name": "stateful routing lifecycle",

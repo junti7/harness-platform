@@ -174,6 +174,16 @@ def test_saju_enricher_accepts_machine_friendly_solar_dates(question):
     assert result.facts[1].startswith("대상일 양력 2026-07-24")
 
 
+def test_relative_saju_date_does_not_duplicate_same_explicit_target():
+    normalized = normalize_relative_saju_dates(
+        "1974년 2월 2일생 남자의 2026년 7월 24일 오늘 사주",
+        today=date(2026, 7, 24),
+    )
+    assert normalized.count("2026년 7월 24일") == 1
+    assert "해당일(Asia/Seoul 기준 오늘)" in normalized
+    assert enrich_saju_question(normalized) is not None
+
+
 def test_saju_enricher_fails_closed_for_23_hour_day_boundary():
     with pytest.raises(ValueError, match="23시"):
         enrich_saju_question("양력 1974년 2월 2일 자시 23시생 남자 2026년 7월 24일 운세")
