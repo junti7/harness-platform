@@ -1,6 +1,6 @@
 {
   "task": "OpenClaw Discord smartfarm pump confirmation timeout and unsafe shell path",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -31,11 +31,35 @@
       "target": "smartfarm pump CLI entrypoint",
       "command": "python3 scripts/smartfarm_pump_control.py --zone zone2 --action on --confirmed --duration-seconds 5",
       "result": "PASS: exited 2 immediately with on_blocked_until_independent_hardware_watchdog_is_verified and performed no broker I/O."
+    },
+    {
+      "name": "Mac mini production plugin and focused regression",
+      "target": "Mac mini production OpenClaw gateway",
+      "command": "openclaw plugins doctor; /opt/homebrew/opt/node/bin/node tests/test_harness_bridge_plugin.mjs; PYTHONPATH=. .venv/bin/pytest -q tests/test_smartfarm_pump_control.py",
+      "result": "PASS: no plugin issues, JavaScript assertions passed, and 12 production Python tests passed."
+    },
+    {
+      "name": "Mac mini production first-turn incident replay",
+      "target": "Mac mini production OpenClaw agent service",
+      "command": "openclaw agent --session-id codex-pump-safety-proof-20260724 --message '<original ambiguous on/off command>' --thinking low --timeout 30 --json",
+      "result": "PASS: run 0ed77899-35ae-419f-af70-6447bcfe2b56 completed successfully with a visible ON/OFF question in 7.96 seconds; no shell or actuator tool was called."
+    },
+    {
+      "name": "Mac mini production follow-up safety replay",
+      "target": "Mac mini production OpenClaw agent service",
+      "command": "openclaw agent --session-id codex-pump-safety-proof-20260724 --message 'on으로 켜' --thinking low --timeout 30 --json",
+      "result": "PASS: run 9efed272-70b1-4aae-85b0-fae217ca738d completed with visible safety-block text in 18.85 seconds, called only harness_smartfarm_pump_control, did not enter internal approval, and did not perform broker I/O. The synthetic CLI replay lacks a Discord sender field and therefore correctly failed closed; the production JavaScript regression verifies the same-sender Discord event shape."
+    },
+    {
+      "name": "Mac mini production tool exposure",
+      "target": "Mac mini production OpenClaw configuration",
+      "command": "openclaw config get tools; openclaw plugins doctor",
+      "result": "PASS: harness_smartfarm_pump_control is present in tools.alsoAllow and the loaded plugin reports no issues."
     }
   ],
   "deploy": {
-    "method": "scripts/deploy_to_macmini.sh pending selected paths",
-    "result": "Pending production deployment and live OpenClaw two-turn verification."
+    "method": "scripts/deploy_to_macmini.sh with the seven scoped implementation/test/evidence paths, followed by a five-path manifest follow-up deployment",
+    "result": "All selected paths matched origin/main on Mac mini; plugin force-install and gateway restart succeeded; doctor, production tests, tool exposure, and two production agent turns passed. Backup directories: scratch/pre_deploy_backup_20260724_180923 and scratch/pre_deploy_backup_20260724_181220."
   },
   "red_team": {
     "models": [
