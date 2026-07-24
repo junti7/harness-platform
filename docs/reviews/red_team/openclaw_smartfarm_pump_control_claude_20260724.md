@@ -15,3 +15,9 @@ Claude checked the implementation invariants against the code and confirmed:
 4. Python tests passed during the review; the independent repository run also passed the JavaScript suite.
 
 Claude's final verdict was `CLEAR`.
+
+## Post-deploy manifest follow-up
+
+Production doctor exposed a missing `contracts.tools` declaration. After adding the exact
+`harness_smartfarm_pump_control` name and a manifest regression assertion, Claude re-reviewed
+the focused change and returned `CLEAR`.

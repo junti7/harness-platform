@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import harnessBridge from "../plugins/harness-bridge/index.js";
 import {
   collectHarnessWorkspaceStats,
@@ -15,6 +16,10 @@ import {
 
 const discordPrompt = (text, senderId = "owner-1") =>
   `Conversation info (untrusted metadata):\n{"sender":{"id":"${senderId}"}}\n\n${text}`;
+const pluginManifest = JSON.parse(
+  fs.readFileSync(new URL("../plugins/harness-bridge/openclaw.plugin.json", import.meta.url)),
+);
+assert.ok(pluginManifest.contracts.tools.includes("harness_smartfarm_pump_control"));
 
 assert.equal(shouldEnforceSajuBridge("오늘 사주 운세 알려줘"), true);
 assert.deepEqual(

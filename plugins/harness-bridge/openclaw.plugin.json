@@ -8,6 +8,7 @@
   "contracts": {
     "tools": [
       "harness_saju_query",
+      "harness_smartfarm_pump_control",
       "harness_knowledge_query",
       "harness_alpaca_status",
       "harness_workspace_stats",

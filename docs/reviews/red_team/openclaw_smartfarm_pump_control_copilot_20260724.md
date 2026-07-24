@@ -13,3 +13,9 @@
 4. Pump intent is scoped to the current run ID, model-supplied zone/action values are overwritten, and raw shell MQTT pump commands are blocked.
 
 Copilot's final verdict was `CLEAR`.
+
+## Post-deploy manifest follow-up
+
+Production doctor exposed a missing `contracts.tools` declaration. After adding the exact
+`harness_smartfarm_pump_control` name and a manifest regression assertion, Copilot re-reviewed
+the focused change and returned `CLEAR`.

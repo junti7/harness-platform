@@ -18,7 +18,7 @@
       "name": "local plugin routing and actuator safety regression",
       "target": "OpenClaw plugin service runtime contract",
       "command": "node tests/test_harness_bridge_plugin.mjs",
-      "result": "PASS: ambiguous ON/OFF asks once, same-sender follow-up binds to the native tool, cross-user confirmation fails closed, raw shell pump calls are blocked, and model parameters are overwritten."
+      "result": "PASS: ambiguous ON/OFF asks once, same-sender follow-up binds to the native tool, cross-user confirmation fails closed, raw shell pump calls are blocked, model parameters are overwritten, and the native tool is declared in contracts.tools."
     },
     {
       "name": "local MQTT safety and bridge regression",
