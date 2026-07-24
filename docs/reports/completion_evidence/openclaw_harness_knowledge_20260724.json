@@ -62,9 +62,15 @@
       "name": "skill package validation",
       "command": "skill-creator quick_validate.py plugins/harness-bridge/skills/harness-knowledge",
       "result": "Skill is valid."
+    },
+    {
+      "name": "first production OpenClaw knowledge turn",
+      "target": "Mac mini production OpenClaw agent session",
+      "command": "openclaw agent --agent main --session-id codex-harness-knowledge-proof-20260724 ...",
+      "result": "The session ended successfully and harness_knowledge_query returned real production results, but the model redundantly called it three times. A per-turn runtime guard was added and awaits redeployment verification."
     }
   ],
   "residual_risk": [
-    "Production Mac mini plugin and real OpenClaw user-path verification are pending origin-main deployment."
+    "The production user path worked, but the new one-query-per-turn runtime guard remains pending origin-main deployment and re-verification."
   ]
 }

@@ -674,6 +674,7 @@ export default {
     registerHarnessWorkspaceTools(api);
     registerHarnessAssistantTools(api);
     const activeSajuRuns = new Map();
+    const activeKnowledgeRuns = new Map();
     const runKeys = (event = {}, context = {}) =>
       [event.runId, context.runId, context.sessionKey, context.sessionId]
         .filter(Boolean)
@@ -683,8 +684,14 @@ export default {
       for (const [key, expiresAt] of activeSajuRuns) {
         if (expiresAt <= now) activeSajuRuns.delete(key);
       }
+      for (const [key, state] of activeKnowledgeRuns) {
+        if (state.expiresAt <= now) activeKnowledgeRuns.delete(key);
+      }
       while (activeSajuRuns.size > 1024) {
         activeSajuRuns.delete(activeSajuRuns.keys().next().value);
+      }
+      while (activeKnowledgeRuns.size > 1024) {
+        activeKnowledgeRuns.delete(activeKnowledgeRuns.keys().next().value);
       }
     };
     const markSajuRun = (event, context) => {
@@ -698,6 +705,22 @@ export default {
     };
     const clearSajuRun = (event, context) => {
       for (const key of runKeys(event, context)) activeSajuRuns.delete(key);
+    };
+    const markKnowledgeRun = (event, context) => {
+      pruneRuns();
+      const state = { expiresAt: Date.now() + 10 * 60_000, queryCalls: 0 };
+      for (const key of runKeys(event, context)) activeKnowledgeRuns.set(key, state);
+    };
+    const knowledgeRunState = (event, context) => {
+      pruneRuns();
+      for (const key of runKeys(event, context)) {
+        const state = activeKnowledgeRuns.get(key);
+        if (state) return state;
+      }
+      return undefined;
+    };
+    const clearKnowledgeRun = (event, context) => {
+      for (const key of runKeys(event, context)) activeKnowledgeRuns.delete(key);
     };
     api.registerTool({
       name: "harness_saju_query",
@@ -756,6 +779,7 @@ export default {
           shouldEnforceHarnessKnowledge(event.prompt) &&
           !shouldEnforceSajuBridge(event.prompt, event.messages)
         ) {
+          markKnowledgeRun(event, context);
           return {
             appendSystemContext: [
               "[HARNESS KNOWLEDGE ROUTING — MANDATORY]",
@@ -788,6 +812,19 @@ export default {
     api.on(
       "before_tool_call",
       async (event, context) => {
+        if (event.toolName === "harness_knowledge_query") {
+          const state = knowledgeRunState(event, context);
+          if (state) {
+            if (state.queryCalls >= 1) {
+              return {
+                block: true,
+                blockReason:
+                  "Harness knowledge was already retrieved for this turn; reuse the first compact result and read only a returned file if needed.",
+              };
+            }
+            state.queryCalls += 1;
+          }
+        }
         if (!isDirectSajuNotebookQuery(event.toolName, event.params, isSajuRun(event, context))) {
           return;
         }
@@ -801,6 +838,7 @@ export default {
     );
     api.on("agent_end", async (event, context) => {
       clearSajuRun(event, context);
+      clearKnowledgeRun(event, context);
     });
   },
 };

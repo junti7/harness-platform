@@ -192,3 +192,44 @@ assert.equal(
   ),
   undefined,
 );
+
+const knowledgeContext = {
+  runId: "run-knowledge-1",
+  sessionKey: "session-knowledge-1",
+};
+const knowledgeRouting = await hooks.get("before_prompt_build")(
+  {
+    prompt: "Harness의 교육 사업과 스마트팜 현황 알려줘",
+    messages: [],
+    runId: "run-knowledge-1",
+  },
+  knowledgeContext,
+);
+assert.match(knowledgeRouting.appendSystemContext, /HARNESS KNOWLEDGE ROUTING/);
+assert.equal(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "harness_knowledge_query",
+      params: { question: "교육 사업과 스마트팜 현황" },
+      runId: "run-knowledge-1",
+    },
+    knowledgeContext,
+  ),
+  undefined,
+);
+assert.deepEqual(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "harness_knowledge_query",
+      params: { question: "스마트팜만 다시 검색" },
+      runId: "run-knowledge-1",
+    },
+    knowledgeContext,
+  ),
+  {
+    block: true,
+    blockReason:
+      "Harness knowledge was already retrieved for this turn; reuse the first compact result and read only a returned file if needed.",
+  },
+);
+await hooks.get("agent_end")({ runId: "run-knowledge-1" }, knowledgeContext);
