@@ -1,6 +1,6 @@
 {
   "task": "Give OpenClaw compact, current, source-backed knowledge of every Harness project domain",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -41,8 +41,8 @@
     },
     {
       "requirement": "Work through the production OpenClaw entrypoint",
-      "status": "not_verified",
-      "evidence": "Local implementation and plugin tests pass; origin-main push, selected Mac mini deployment, plugin refresh, and real OpenClaw question tests remain."
+      "status": "pass",
+      "evidence": "Production sessions proved one-call multi-domain answers and one knowledge plus one Alpaca call for live Turtle status, with no broad repository search fallback."
     }
   ],
   "verification": [
@@ -92,9 +92,26 @@
       "target": "Mac mini production OpenClaw agent session",
       "command": "OpenClaw transcript inspection for codex-harness-knowledge-proof-20260724e",
       "result": "One knowledge call, zero extra searches, and a successful 43-second cold-index answer. Education, Turtle, smartfarm, and the materials-import caveat were correct. The answer invented nonexistent .openclaw/workspace Markdown paths, so plain repository-relative citation formatting was added for final verification."
+    },
+    {
+      "name": "final production multi-domain answer",
+      "target": "Mac mini production OpenClaw agent session",
+      "command": "OpenClaw session codex-harness-knowledge-proof-20260724f plus transcript inspection",
+      "result": "Session succeeded in 37 seconds with one harness_knowledge_query call, zero extra searches, current domain evidence, correct materials-import caveat, and plain repository-relative citations."
+    },
+    {
+      "name": "final production Turtle live answer",
+      "target": "Mac mini production OpenClaw plus live Alpaca paper API",
+      "command": "OpenClaw session codex-harness-turtle-live-proof-20260724 plus transcript inspection",
+      "result": "Session succeeded in about 56 seconds with exactly one knowledge call and one harness_alpaca_status call. It separated document state from live account, position, order, signal, and KPI state with timestamps."
     }
   ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh with only knowledge index, Harness bridge plugin/skills, tests, operator documentation, and completion evidence paths; then force-install plugin and restart gateway",
+    "result": "All selected Mac mini paths matched origin/main, backend port 8000 and OpenClaw gateway 2026.7.1 were healthy, harness-knowledge was eligible/model-visible/command-visible, and production agent sessions passed."
+  },
   "residual_risk": [
-    "Production tool count and domain quality passed; corrected repository-relative citation formatting remains pending origin-main deployment and re-verification."
+    "No exact repository evidence confirms a standalone '자료 수입' business; the skill reports this gap and shows only nearby procurement/supply-chain evidence.",
+    "Warm multi-domain answers still spend most of their 37-second end-to-end time in model reasoning; the incremental index itself avoids repeated full reads and completed warm refresh in roughly 0.1-1 second."
   ]
 }
