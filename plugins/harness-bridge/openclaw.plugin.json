@@ -1,6 +1,7 @@
 {
   "id": "harness-bridge",
-  "enabledByDefault": true,
+  "name": "Harness Bridge",
+  "description": "Routes Harness Saju requests through the private expert cache",
   "activation": {
     "onStartup": true
   },
@@ -11,5 +12,9 @@
   },
   "skills": [
     "./skills"
-  ]
+  ],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false
+  }
 }
