@@ -164,6 +164,18 @@ def assess_notebook_answer(plan: NotebookQueryPlan, answer: str) -> tuple[bool, 
     )
     if len(text) < 300 and any(re.search(pattern, lowered) for pattern in refusal_patterns):
         reasons.append("semantic_non_answer")
+    concrete_time = r"(?:(?:[01]?\d|2[0-3])(?::\d{2}|\s*시)|[자축인묘진사오미신유술해]시)"
+
+    def has_labeled_time(markers: tuple[str, ...]) -> bool:
+        labels = "|".join(re.escape(marker) for marker in markers)
+        nearby = r"[^.!?。！？\n]{0,80}"
+        return bool(
+            re.search(
+                rf"(?:(?:{labels}){nearby}{concrete_time}|{concrete_time}{nearby}(?:{labels}))",
+                text,
+            )
+        )
+
     for requirement in plan.requirements:
         if requirement == "근거":
             if not any(marker in text for marker in ("[1", "근거", "출처", "십신", "합", "충", "형")):
@@ -171,6 +183,14 @@ def assess_notebook_answer(plan: NotebookQueryPlan, answer: str) -> tuple[bool, 
         elif requirement == "운세":
             if not any(marker in text for marker in ("운세", "종합운", "전체운", "총평")):
                 reasons.append("missing:운세")
+        elif requirement == "좋은 시간대":
+            if not has_labeled_time(("좋은 시간대", "좋은 시간", "길한 시간", "길한 시각", "길시")):
+                reasons.append("missing:좋은 시간대")
+        elif requirement == "피할 시간대":
+            if not has_labeled_time(
+                ("피할 시간대", "피해야 할 시간", "피해야 할 시각", "주의 시간", "흉한 시간")
+            ):
+                reasons.append("missing:피할 시간대")
         elif requirement not in text:
             reasons.append(f"missing:{requirement}")
     if any(item.provider.startswith("sxtwl-") for item in plan.supplemental_facts):

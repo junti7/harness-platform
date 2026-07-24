@@ -90,6 +90,34 @@ def test_delivery_contract_accepts_complete_answer_with_limitations():
     assert passed, reasons
 
 
+def test_delivery_contract_accepts_semantic_time_window_headings():
+    plan = build_query_plan("길한 시각과 피해야 할 시각")
+    answer = "길한 시각은 경오시입니다. 피해야 할 시각은 신미시입니다."
+    passed, reasons = assess_notebook_answer(plan, answer)
+    assert passed, reasons
+
+
+@pytest.mark.parametrize(
+    "answer",
+    ["좋은 시간 보내세요. 피해야 할 시간은 참고하세요.", "길시와 주의 시간만 참고하세요."],
+)
+def test_delivery_contract_rejects_time_labels_without_concrete_window(answer):
+    plan = build_query_plan("길한 시각과 피해야 할 시각")
+    passed, reasons = assess_notebook_answer(plan, answer)
+    assert not passed
+    assert "missing:좋은 시간대" in reasons
+    assert "missing:피할 시간대" in reasons
+
+
+def test_delivery_contract_requires_concrete_time_for_each_label():
+    plan = build_query_plan("좋은 시간대와 피할 시간대")
+    passed, reasons = assess_notebook_answer(
+        plan, "좋은 시간대는 경오시입니다. 피할 시간대는 주의하세요."
+    )
+    assert not passed
+    assert "missing:피할 시간대" in reasons
+
+
 def test_saju_enricher_fails_closed_for_lunar_input():
     with pytest.raises(ValueError, match="음력"):
         enrich_saju_question("음력 1974년 2월 2일 남자 2026년 7월 24일 운세")
