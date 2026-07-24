@@ -82,6 +82,17 @@ MODEL_CORRECTION_CONTEXT_MARKERS = (
     "보드", "배선", "센서", "스마트팜", "연결", "펌웨어", "핀",
 )
 MODEL_CORRECTION_ROOTS = ("hardware/smartfarm/", "configs/smartfarm/")
+AUXILIARY_EVIDENCE_ROOTS = (
+    "tests/",
+    "docs/reviews/",
+    "docs/reports/llm_outputs/",
+    "docs/reports/completion_evidence/",
+)
+VERIFICATION_QUERY_TERMS = {
+    "audit", "integration", "pytest", "red-team", "red_team", "regression", "review", "spec",
+    "test", "tests", "unit", "감사", "검증", "검토", "단위", "레드팀", "리뷰", "테스트",
+    "통합", "품질", "회귀",
+}
 
 
 def _repo_root(value: str | None) -> Path:
@@ -384,9 +395,32 @@ def _score(record: dict[str, Any], terms: list[str], domains: list[str]) -> int:
     score += sum(min(text.count(term), 5) for term in terms)
     score += 4 * len(set(domains) & set(record["domains"]))
     score += 20 * len(set(domains) & set(record.get("strongDomains", [])))
+    if any(
+        record["path"].startswith(root)
+        for domain in domains
+        for root in DOMAIN_ROOTS.get(domain, ())
+    ):
+        score += 40
     if record["path"] in GOVERNANCE_PATHS:
         score += 2
     return score
+
+
+def _prefer_primary_sources(
+    ranked: list[tuple[int, dict[str, Any]]], terms: list[str]
+) -> list[tuple[int, dict[str, Any]]]:
+    if any(term in VERIFICATION_QUERY_TERMS for term in terms):
+        return ranked
+    primary = [
+        pair
+        for pair in ranked
+        if pair[0] > 0
+        and not pair[1]["path"].startswith(AUXILIARY_EVIDENCE_ROOTS)
+    ]
+    if not primary:
+        return ranked
+    primary_paths = {record["path"] for _, record in primary}
+    return [*primary, *[pair for pair in ranked if pair[1]["path"] not in primary_paths]]
 
 
 def _domain_strength(record: dict[str, Any], domain: str) -> int:
@@ -443,6 +477,7 @@ def query_index(
         ((_score(record, terms, domains), record) for record in payload["files"].values()),
         key=lambda pair: (-pair[0], pair[1]["path"]),
     )
+    ranked = _prefer_primary_sources(ranked, terms)
     selected: list[dict[str, Any]] = []
     selected_paths: set[str] = set()
     for domain in domains:

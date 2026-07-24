@@ -7,6 +7,16 @@ instructions, tests, and completion evidence.
 
 `VERDICT: clear`
 
+## Source-authority ranking follow-up
+
+After production correctly used the native tool but still cited a test fixture, the ranking was
+changed to a two-tier policy: canonical implementation/configuration sources first, auxiliary
+test/review evidence retained as fallback, and original ranking restored for explicit
+test/review/audit questions. Claude verified the fallback, bypass vocabulary, capped root
+boost, and regression tests.
+
+`VERDICT: clear`
+
 ## Findings addressed before release
 
 - Added exact-match, ambiguous-match, repeated-token, and unrelated-context fail-safe tests.

@@ -18,7 +18,7 @@
       "name": "Knowledge index regression suite",
       "target": "local knowledge API and OpenClaw bridge",
       "command": ".venv/bin/pytest -q tests/test_harness_knowledge_index.py tests/test_openclaw_bridge.py; node tests/test_harness_bridge_plugin.mjs",
-      "result": "40 Python tests passed and the Node plugin regression completed successfully."
+      "result": "41 Python tests passed and the Node plugin regression completed successfully."
     },
     {
       "name": "Skill package validation",
@@ -37,6 +37,18 @@
       "target": "OpenClaw plugin prompt and tool hooks",
       "command": "node tests/test_harness_bridge_plugin.mjs",
       "result": "ESP8255 connection prompts trigger mandatory Harness knowledge routing; memory, shell, and workspace-search bypasses are blocked only inside that run; ordinary and Saju behavior remains available."
+    },
+    {
+      "name": "Production OpenClaw replay diagnostics",
+      "target": "Mac mini production OpenClaw agent",
+      "command": "openclaw agent --agent main --session-id codex-esp8255-grounding-20260724b --message 'ESP8255에 연결된 것들 알려줘.' --thinking low --json",
+      "result": "The repaired route used exactly one harness_knowledge_query call with zero failures and completed in 24.1 seconds, down from 59.6 seconds. It exposed a remaining source-authority issue because the Mac mini lacked the new hardware files and the answer cited test evidence."
+    },
+    {
+      "name": "Canonical source ranking regression",
+      "target": "live worktree knowledge API",
+      "command": ".venv/bin/pytest -q tests/test_harness_knowledge_index.py; python3 scripts/harness_knowledge_index.py --question 'ESP8255에 연결된 것들 알려줘.'",
+      "result": "Canonical implementation and configuration sources fill ordinary results first; test and review evidence remains available as fallback or for explicit verification queries."
     }
   ],
   "red_team": {
@@ -55,6 +67,6 @@
     "verdict": "red_team_clear"
   },
   "residual_risk": [
-    "The first production replay found and proved the Skill-selection bypass. The routing repair requires commit, push, plugin reinstall, and a second production replay."
+    "The final canonical-source ranking change requires commit, push, Mac mini deployment, and one final production replay."
   ]
 }

@@ -143,6 +143,11 @@ def test_model_typo_is_normalized_and_connection_evidence_is_ranked(tmp_path: Pa
         + "\n",
         encoding="utf-8",
     )
+    (repo / "tests").mkdir()
+    (repo / "tests" / "test_esp8255_answer.py").write_text(
+        "# ESP8266 wiring\nANSWER = 'soil A0 DHT22 GPIO4 relay GPIO5 WiFi MQTT'\n",
+        encoding="utf-8",
+    )
     subprocess.run(["git", "add", "."], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", "esp8266 fixture"], cwd=repo, check=True)
 
@@ -167,6 +172,12 @@ def test_model_typo_is_normalized_and_connection_evidence_is_ranked(tmp_path: Pa
     assert result["files"][0]["path"] == (
         "hardware/smartfarm/soil_node/config.example.esp8266.h"
     )
+    test_position = next(
+        index
+        for index, item in enumerate(result["files"])
+        if item["path"].startswith("tests/")
+    )
+    assert test_position >= 2
     excerpt = next(
         item["excerpt"]
         for item in result["evidence"]
@@ -253,3 +264,44 @@ def test_model_normalization_is_fail_safe_for_exact_repeated_and_ambiguous_token
     )
     assert non_model == "GPIO8255 핀 연결"
     assert non_model_corrections == []
+
+
+def test_primary_source_preference_preserves_explicit_and_fallback_evidence() -> None:
+    from scripts.harness_knowledge_index import _prefer_primary_sources, _score
+
+    primary = {"path": "hardware/smartfarm/README.md"}
+    test = {"path": "tests/test_smartfarm.py"}
+    review = {"path": "docs/reviews/red_team/smartfarm.md"}
+    ranked = [(100, test), (80, review), (20, primary)]
+
+    ordinary = _prefer_primary_sources(ranked, ["esp8266", "연결"])
+    assert ordinary[0][1]["path"] == "hardware/smartfarm/README.md"
+    assert {record["path"] for _, record in ordinary} == {
+        "hardware/smartfarm/README.md",
+        "tests/test_smartfarm.py",
+        "docs/reviews/red_team/smartfarm.md",
+    }
+
+    explicit = _prefer_primary_sources(ranked, ["esp8266", "회귀", "테스트"])
+    assert explicit == ranked
+    explicit_review = _prefer_primary_sources(ranked, ["esp8266", "review"])
+    assert explicit_review == ranked
+
+    auxiliary_only = _prefer_primary_sources(
+        [(100, test), (80, review)], ["esp8266", "연결"]
+    )
+    assert auxiliary_only == [(100, test), (80, review)]
+
+    canonical_record = {
+        "path": "hardware/smartfarm/README.md",
+        "title": "Smartfarm",
+        "headings": [],
+        "searchText": "",
+        "domains": ["smartfarm"],
+        "strongDomains": ["smartfarm"],
+    }
+    single_domain_score = _score(canonical_record, ["unmatched"], ["smartfarm"])
+    duplicate_domain_score = _score(
+        canonical_record, ["unmatched"], ["smartfarm", "smartfarm"]
+    )
+    assert duplicate_domain_score == single_domain_score

@@ -7,6 +7,15 @@ instructions, tests, and completion evidence.
 
 `VERDICT: clear`
 
+## Source-authority ranking follow-up
+
+Copilot blocked the first fixed-penalty proposal because it could erase the only available
+auxiliary evidence. The implementation was replaced by lossless two-tier ordering. Explicit
+Korean/English verification and review queries preserve original ranking, auxiliary-only
+repositories retain fallback evidence, and domain-root boost is capped. Final re-review:
+
+`VERDICT: clear`
+
 ## Findings addressed before release
 
 - The initial review blocked global correction of arbitrary letter-plus-number identifiers.
