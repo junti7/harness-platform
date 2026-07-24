@@ -261,6 +261,21 @@ class OpenClawBridgeTests(unittest.TestCase):
             openclaw_codex_bridge._saju_cache_key(plan, {"source_count": 26})
         )
 
+    def test_unclassified_saju_followups_do_not_share_cache_key(self):
+        notebook = {"source_count": 26, "source_revision": "revision-1"}
+        first = openclaw_codex_bridge.build_query_plan(
+            "1974년 2월 2일 유시생 남자 2026년 7월 24일 사주 귀인 방향",
+            (openclaw_codex_bridge.enrich_saju_question,),
+        )
+        second = openclaw_codex_bridge.build_query_plan(
+            "1974년 2월 2일 유시생 남자 2026년 7월 24일 사주 어울리는 색",
+            (openclaw_codex_bridge.enrich_saju_question,),
+        )
+        self.assertNotEqual(
+            openclaw_codex_bridge._saju_cache_key(first, notebook),
+            openclaw_codex_bridge._saju_cache_key(second, notebook),
+        )
+
     def test_cache_write_failure_does_not_discard_valid_answer(self):
         answer = {"answer": "격국과 용신 설명", "sources_used": ["source-1"]}
         verified = {

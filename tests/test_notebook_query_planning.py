@@ -2,6 +2,7 @@ from core.notebook_query_planning import (
     SupplementalFacts,
     assess_notebook_answer,
     build_query_plan,
+    infer_requirements,
 )
 from datetime import date
 
@@ -248,3 +249,8 @@ def test_computational_plan_rejects_brief_answer_even_if_it_mentions_fortune():
     )
     assert not passed
     assert "expert_answer_too_short" in issues
+
+
+def test_time_window_followup_has_distinct_cache_requirements():
+    requirements = infer_requirements("오늘 좋은 시간대와 피할 시간대를 뽑아줘")
+    assert requirements == ("좋은 시간대", "피할 시간대")

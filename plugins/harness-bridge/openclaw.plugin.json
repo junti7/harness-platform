@@ -4,6 +4,11 @@
   "activation": {
     "onStartup": true
   },
+  "contracts": {
+    "tools": [
+      "harness_saju_query"
+    ]
+  },
   "skills": [
     "./skills"
   ]

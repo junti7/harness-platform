@@ -1,0 +1,66 @@
+{
+  "task": "Route contextual Saju follow-ups through the expert semantic cache instead of direct NotebookLM",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-24T10:00:00+09:00",
+      "summary": "Applied real entrypoint verification, scoped deployment, privacy, and independent model review requirements."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-24T10:00:00+09:00",
+      "summary": "Applied origin-main deployment, Mac mini runtime verification, and completion-evidence gates."
+    }
+  ],
+  "root_cause": {
+    "cache_state": "working",
+    "evidence": "Equivalent full Saju request returned cache_hit=true in 1.957 seconds.",
+    "followup_failure": "OpenClaw selected the generic nlm-skill and executed nlm notebook query directly, bypassing openclaw_codex_bridge.py; the observed follow-up took about 118 seconds and produced no bridge audit entry."
+  },
+  "implementation": [
+    "Registered harness_saju_query as a dedicated OpenClaw tool.",
+    "Marked Saju turns by bounded OpenClaw run/session identifiers and blocked direct nlm or NotebookLM query tools only during those turns.",
+    "Recognized good-time and avoid-time requests as semantic requirements so reworded equivalents share cache.",
+    "Separated still-unclassified Saju intents by normalized-question hash to prevent incorrect cross-intent cache hits."
+  ],
+  "verification": [
+    {
+      "name": "focused regression bundle",
+      "command": "node tests/test_harness_bridge_plugin.mjs && .venv/bin/pytest -q tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py tests/test_openclaw_response_quality.py tests/test_openclaw_agent.py",
+      "result": "Node plugin tests passed; 187 Python tests passed; one third-party deprecation warning"
+    },
+    {
+      "name": "stateful routing lifecycle",
+      "result": "before_prompt_build marked the Saju run, before_tool_call blocked an obfuscated direct nlm command, and agent_end cleared the marker"
+    },
+    {
+      "name": "independent multi-model review",
+      "result": "Claude clear and Copilot red_team_clear; no blocker or major finding remained"
+    },
+    {
+      "name": "real production user-path diagnosis",
+      "command": "inspect OpenClaw session and bridge audit logs for the user's contextual good-time/avoid-time follow-up",
+      "result": "OpenClaw executed direct nlm notebook query; approximately 118 seconds elapsed; no bridge audit record was created, proving cache bypass rather than cache failure"
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh core/notebook_query_planning.py scripts/openclaw_codex_bridge.py plugins/harness-bridge/index.js plugins/harness-bridge/openclaw.plugin.json plugins/harness-bridge/HOOK.md plugins/harness-bridge/skills/harness-control/SKILL.md tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py tests/test_harness_bridge_plugin.mjs docs/reviews/red_team/openclaw_saju_followup_cache_claude_20260724.md docs/reviews/red_team/openclaw_saju_followup_cache_copilot_20260724.md docs/reports/completion_evidence/openclaw_saju_followup_cache_20260724.json",
+    "result": "Pending production deployment and cache warm/hit timing verification; recorded as residual risk rather than complete."
+  },
+  "red_team": {
+    "models": [
+      "Claude",
+      "Copilot"
+    ],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/openclaw_saju_followup_cache_claude_20260724.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_saju_followup_cache_copilot_20260724.md"
+      }
+    ],
+    "verdict": "red_team_clear"
+  }
+}

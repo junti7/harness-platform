@@ -1,13 +1,17 @@
 # Harness Bridge — Hook Manifest
 
-This plugin registers no automatic event hooks.
-
-All Harness control-plane operations are invoked explicitly via the
-`harness-control` skill or by running bridge commands directly.
+This plugin registers scoped routing and enforcement hooks. Other Harness
+control-plane operations remain operator-triggered through `harness-control`.
 
 ## Registered Hooks
 
-None. Operator-triggered only.
+- `before_prompt_build`: injects the Saju bridge routing invariant only for
+  direct Saju requests and contextual follow-ups.
+- `before_tool_call`: during a Saju turn, blocks shell use of `nlm` and all
+  structured NotebookLM query/chat tools. Outside a Saju turn it blocks only
+  literal `nlm` commands or structured queries that also name the fixed Saju
+  notebook. Run markers are keyed to OpenClaw run/session identifiers, capped,
+  expired after ten minutes, and cleared by `agent_end`.
 
 ## Entry Points
 

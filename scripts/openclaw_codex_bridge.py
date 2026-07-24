@@ -107,6 +107,12 @@ def _saju_cache_key(plan: Any, notebook: dict[str, Any]) -> str | None:
             ],
             "mode": "expert-saju-v1",
         }
+        if not plan.requirements:
+            question_identity["unclassified_intent_sha256"] = hashlib.sha256(
+                re.sub(r"\s+", " ", plan.original_question.strip())
+                .lower()
+                .encode("utf-8")
+            ).hexdigest()
     else:
         question_identity = {"grounded_question": plan.grounded_question}
     material = json.dumps(

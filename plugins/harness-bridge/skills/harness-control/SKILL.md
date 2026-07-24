@@ -229,6 +229,10 @@ Do not claim the notebook is connected when any of these checks fails.
 
 ### 16. Query the Saju NotebookLM notebook (Read-only)
 
+For OpenClaw agent turns, call the registered `harness_saju_query` tool with a
+self-contained question. Do not invoke the shell command below from the agent.
+The command is retained only for human/operator diagnostics.
+
 ```bash
 cd ~/projects/harness-platform
 .venv/bin/python scripts/openclaw_codex_bridge.py saju-notebook-query \

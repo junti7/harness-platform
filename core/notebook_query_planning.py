@@ -55,6 +55,8 @@ def infer_requirements(question: str) -> tuple[str, ...]:
         ("건강운", ("건강운",)),
         ("대인운", ("대인운", "인간관계")),
         ("주의사항", ("주의사항", "주의할")),
+        ("좋은 시간대", ("좋은 시간대", "좋은 시간", "길한 시간")),
+        ("피할 시간대", ("피할 시간대", "피해야 할 시간", "흉한 시간")),
         ("근거", ("근거", "출처", "이유", "해석")),
     )
     return tuple(label for label, needles in mappings if any(n in question for n in needles))
