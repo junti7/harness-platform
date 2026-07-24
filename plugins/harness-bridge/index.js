@@ -23,6 +23,8 @@ const SMARTFARM_PUMP_CONTEXT =
   /farm\/zone[1-9][0-9]{0,2}\/pump\/cmd|펌프|릴레이|\bpump\b/i;
 const SMARTFARM_PUMP_CONFIRMATION_QUESTION =
   /(?:on|켜).{0,40}(?:off|꺼)|(?:off|꺼).{0,40}(?:on|켜)|실제\s*MQTT\s*제어|상태만\s*지정/i;
+const SMARTFARM_ZONE_QUESTION =
+  /존\s*(?:id|아이디)|zone\s*(?:id)?|zone[1-9][0-9]{0,2}\s*(?:처럼|형식)|예[:：]?\s*zone/i;
 const MAX_TOOL_OUTPUT = 1_000_000;
 const MAX_WRITE_BYTES = 2_000_000;
 const READ_ONLY_GIT_SUBCOMMANDS = new Set([
@@ -72,24 +74,45 @@ function lastMessage(messages, role) {
   return undefined;
 }
 
+function parsePumpAction(text) {
+  const asksOn =
+    /(?:-m|--message)\s+on\b|\bon\s*으로\s*켜|(?:펌프|릴레이).{0,20}(?:켜|on\b)|\bturn\s+on\b/i.test(
+      text,
+    );
+  const asksOff =
+    /(?:-m|--message)\s+off\b|\boff\s*로\s*꺼|(?:펌프|릴레이).{0,20}(?:꺼|off\b)|\bturn\s+off\b/i.test(
+      text,
+    );
+  const standaloneActions = new Set(
+    [...text.matchAll(/\b(on|off)\b/gi)].map((match) => match[1].toLowerCase()),
+  );
+  if (asksOn && asksOff) return undefined;
+  if (asksOn !== asksOff) return asksOn ? "on" : "off";
+  return standaloneActions.size === 1 ? [...standaloneActions][0] : undefined;
+}
+
+export function smartfarmPumpSlots(prompt) {
+  const current = String(prompt ?? "");
+  return {
+    zone: current.match(/\bzone([1-9][0-9]{0,2})\b/i)?.[0]?.toLowerCase(),
+    action: parsePumpAction(current),
+    senderId: currentSenderId(current),
+    hasActuatorContext: SMARTFARM_PUMP_CONTEXT.test(current),
+  };
+}
+
 export function smartfarmPumpIntent(prompt, messages = []) {
   const current = String(prompt ?? "");
   const history = serializeMessages(messages);
   const combined = `${history}\n${current}`;
   const currentHasPumpContext = SMARTFARM_PUMP_CONTEXT.test(current);
   const historyHasPumpContext = SMARTFARM_PUMP_CONTEXT.test(history);
-  if (!currentHasPumpContext && !historyHasPumpContext) return undefined;
-  const zone = combined.match(/\bzone([1-9][0-9]{0,2})\b/i)?.[0]?.toLowerCase();
-  const asksOn =
-    /(?:-m|--message)\s+on\b|\bon\s*으로\s*켜|(?:펌프|릴레이).{0,20}(?:켜|on\b)|\bturn\s+on\b/i.test(
-      current,
-    );
-  const asksOff =
-    /(?:-m|--message)\s+off\b|\boff\s*로\s*꺼|(?:펌프|릴레이).{0,20}(?:꺼|off\b)|\bturn\s+off\b/i.test(
-      current,
-    );
-  const action = asksOn === asksOff ? undefined : asksOn ? "on" : "off";
-  const senderId = currentSenderId(current);
+  const slots = smartfarmPumpSlots(current);
+  const currentZone = slots.zone;
+  const zone =
+    currentZone ?? combined.match(/\bzone([1-9][0-9]{0,2})\b/i)?.[0]?.toLowerCase();
+  const currentAction = slots.action;
+  const senderId = slots.senderId;
   const lastAssistant = lastMessage(messages, "assistant");
   const priorPumpUser = [...messages]
     .reverse()
@@ -105,16 +128,41 @@ export function smartfarmPumpIntent(prompt, messages = []) {
     Boolean(senderId) &&
     Boolean(priorPumpUser?.senderId) &&
     String(priorPumpUser.senderId) === senderId;
+  const zoneContinuation =
+    Boolean(currentZone) &&
+    !currentAction &&
+    SMARTFARM_ZONE_QUESTION.test(String(lastAssistant?.content ?? "")) &&
+    sameUserConfirmation;
+  const action =
+    currentAction ??
+    (zoneContinuation ? parsePumpAction(String(priorPumpUser?.content ?? "")) : undefined);
+  if (
+    !currentHasPumpContext &&
+    !historyHasPumpContext &&
+    !(currentZone && currentAction)
+  ) {
+    return undefined;
+  }
   const directPumpTopic = /farm\/zone[1-9][0-9]{0,2}\/pump\/cmd/i.test(current);
   const confirmedFollowup = Boolean(
     action && priorConfirmationQuestion && historyHasPumpContext && sameUserConfirmation,
   );
-  if (!directPumpTopic && !(currentHasPumpContext && action) && !confirmedFollowup) {
+  const completeCurrentCommand = Boolean(currentZone && currentAction && senderId);
+  if (
+    !directPumpTopic &&
+    !(currentHasPumpContext && currentAction) &&
+    !confirmedFollowup &&
+    !zoneContinuation &&
+    !completeCurrentCommand
+  ) {
     return undefined;
   }
   const confirmed =
     Boolean(senderId) &&
-    (action === "off" || (action === "on" && priorConfirmationQuestion && sameUserConfirmation));
+    (action === "off" ||
+      completeCurrentCommand ||
+      zoneContinuation ||
+      (action === "on" && priorConfirmationQuestion && sameUserConfirmation));
   return { zone, action, confirmed, priorConfirmationQuestion, senderId };
 }
 
@@ -510,7 +558,7 @@ function registerHarnessAssistantTools(api) {
     parameters: {
       type: "object",
       additionalProperties: false,
-      required: ["zone", "action"],
+      required: [],
       properties: {
         zone: { type: "string", pattern: "^zone[1-9][0-9]{0,2}$" },
         action: { type: "string", enum: ["on", "off"] },
@@ -526,6 +574,15 @@ function registerHarnessAssistantTools(api) {
       try {
         if (!params.confirmationBound && !params.dryRun) {
           return toolText({ ok: false, error: "confirmation_not_bound_to_user_turn" }, true);
+        }
+        const missingFields = ["zone", "action"].filter((field) => !params[field]);
+        if (missingFields.length) {
+          return toolText({
+            ok: false,
+            pending: true,
+            missingFields,
+            message: `Ask only for: ${missingFields.join(", ")}`,
+          });
         }
         const args = [
           path.join(harnessRepoRoot(), "scripts", "smartfarm_pump_control.py"),
@@ -839,6 +896,7 @@ export default {
     const activeSajuRuns = new Map();
     const activeKnowledgeRuns = new Map();
     const activePumpRuns = new Map();
+    const pendingPumpRequests = new Map();
     const runKeys = (event = {}, context = {}) =>
       [event.runId, context.runId, context.sessionKey, context.sessionId]
         .filter(Boolean)
@@ -854,6 +912,9 @@ export default {
       for (const [key, state] of activePumpRuns) {
         if (state.expiresAt <= now) activePumpRuns.delete(key);
       }
+      for (const [key, state] of pendingPumpRequests) {
+        if (state.expiresAt <= now) pendingPumpRequests.delete(key);
+      }
       while (activeSajuRuns.size > 1024) {
         activeSajuRuns.delete(activeSajuRuns.keys().next().value);
       }
@@ -862,6 +923,9 @@ export default {
       }
       while (activePumpRuns.size > 1024) {
         activePumpRuns.delete(activePumpRuns.keys().next().value);
+      }
+      while (pendingPumpRequests.size > 1024) {
+        pendingPumpRequests.delete(pendingPumpRequests.keys().next().value);
       }
     };
     const markSajuRun = (event, context) => {
@@ -914,6 +978,10 @@ export default {
     const clearPumpRun = (event, context) => {
       for (const key of pumpRunKeys(event, context)) activePumpRuns.delete(key);
     };
+    const pumpConversationKey = (context, senderId) => {
+      const conversation = context?.sessionKey ?? context?.sessionId;
+      return conversation && senderId ? `${conversation}:${senderId}` : undefined;
+    };
     api.registerTool({
       name: "harness_saju_query",
       description:
@@ -955,22 +1023,27 @@ export default {
     api.on(
       "before_prompt_build",
       async (event, context) => {
-        const pumpIntent = smartfarmPumpIntent(event.prompt, event.messages);
-        if (pumpIntent) {
-          markPumpRun(event, context, pumpIntent);
-          const instruction =
-            !pumpIntent.zone
-                ? "Ask the user for exactly one zone id such as zone2. Do not call any control or shell tool."
-              : !pumpIntent.action
-                ? "Ask the user to choose exactly ON or OFF. Do not call any control or shell tool."
-                : pumpIntent.action === "on" && !pumpIntent.confirmed
-                  ? `Ask for explicit confirmation to request ${pumpIntent.zone} ON. State that ON remains fail-closed until the independent hardware watchdog is live-verified. Do not call any control or shell tool yet.`
-                  : `Call only harness_smartfarm_pump_control now with zone=${pumpIntent.zone}, action=${pumpIntent.action}, durationSeconds=5. Never use bash, exec, shell, mosquitto_pub, or another actuator path. Report the broker-acknowledged OFF command without claiming the physical state was verified, or report the explicit ON safety-block reason from the tool result.`;
+        pruneRuns();
+        const senderId = currentSenderId(event.prompt);
+        const pendingKey = pumpConversationKey(context, senderId);
+        const pending = pendingKey ? pendingPumpRequests.get(pendingKey) : undefined;
+        const actuatorConversation =
+          Boolean(senderId) && (SMARTFARM_PUMP_CONTEXT.test(String(event.prompt ?? "")) || pending);
+        if (actuatorConversation) {
+          markPumpRun(event, context, {
+            senderId,
+            pendingKey,
+            pending,
+            confirmed: true,
+          });
           return {
             appendSystemContext: [
               "[SMARTFARM PUMP CONTROL — MANDATORY]",
-              instruction,
-              "A plain user reply is bound by this plugin to the current zone/action; never request or wait for a second OpenClaw internal approval.",
+              "Understand the user's actuator intent semantically from the full conversation; do not match a fixed phrase or require a fixed word order.",
+              `The server-side pending request is ${JSON.stringify(pending ?? {})}.`,
+              "For every actuator request or follow-up, call harness_smartfarm_pump_control exactly once with every zone/action value you can infer confidently; omit fields that are genuinely missing.",
+              "The tool owns missing-field state and user/channel binding. Relay its missingFields question or final safety result.",
+              "Never use bash, exec, shell, mosquitto_pub, or another actuator path. Never wait for a second OpenClaw internal approval.",
             ].join(" "),
           };
         }
@@ -1034,22 +1107,34 @@ export default {
         }
         const pumpState = pumpRunState(event, context);
         if (event.toolName === "harness_smartfarm_pump_control") {
-          if (
-            !pumpState?.senderId ||
-            !pumpState?.zone ||
-            !pumpState?.action ||
-            !pumpState.confirmed
-          ) {
+          if (!pumpState?.senderId || !pumpState?.pendingKey) {
             return {
               block: true,
               blockReason:
-                "Smartfarm pump control requires one zone, one action, and explicit confirmation bound to the current user turn.",
+                "Smartfarm pump control requires a sender identity bound to the current conversation.",
             };
+          }
+          const zone = event.params?.zone ?? pumpState.pending?.zone;
+          const action = event.params?.action ?? pumpState.pending?.action;
+          if (zone && !/^zone[1-9][0-9]{0,2}$/.test(String(zone))) {
+            return { block: true, blockReason: "Invalid smartfarm zone." };
+          }
+          if (action && !["on", "off"].includes(String(action))) {
+            return { block: true, blockReason: "Invalid smartfarm action." };
+          }
+          if (!zone || !action) {
+            pendingPumpRequests.set(pumpState.pendingKey, {
+              zone,
+              action,
+              expiresAt: Date.now() + 3 * 60_000,
+            });
+          } else {
+            pendingPumpRequests.delete(pumpState.pendingKey);
           }
           return {
             params: {
-              zone: pumpState.zone,
-              action: pumpState.action,
+              ...(zone ? { zone: String(zone) } : {}),
+              ...(action ? { action: String(action) } : {}),
               durationSeconds: Math.min(
                 15,
                 Math.max(1, Number(event.params?.durationSeconds ?? 5)),

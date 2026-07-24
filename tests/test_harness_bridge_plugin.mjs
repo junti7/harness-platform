@@ -407,7 +407,7 @@ const pumpChoiceRouting = await hooks.get("before_prompt_build")(
   },
   pumpChoiceContext,
 );
-assert.match(pumpChoiceRouting.appendSystemContext, /choose exactly ON or OFF/);
+assert.match(pumpChoiceRouting.appendSystemContext, /semantically from the full conversation/);
 assert.deepEqual(
   await hooks.get("before_tool_call")(
     {
@@ -444,51 +444,86 @@ assert.deepEqual(
   },
 );
 
-const pumpConfirmedContext = {
-  runId: "run-pump-confirmed",
+const pumpPendingContext = {
+  runId: "run-pump-pending",
   sessionKey: pumpSessionKey,
 };
-const pumpConfirmedRouting = await hooks.get("before_prompt_build")(
+const pumpPendingRouting = await hooks.get("before_prompt_build")(
   {
-    prompt: discordPrompt("on으로 켜"),
-    messages: [
-      {
-        role: "user",
-        senderId: "owner-1",
-        content: "farm/zone2/pump/cmd",
-      },
-      {
-        role: "assistant",
-        content: "실제 MQTT 제어입니다. on으로 켤까요, off로 끌까요? 상태만 지정해주세요.",
-      },
-    ],
-    runId: "run-pump-confirmed",
+    prompt: discordPrompt("릴레이 켜"),
+    messages: [],
+    runId: "run-pump-pending",
   },
-  pumpConfirmedContext,
+  pumpPendingContext,
 );
-assert.match(pumpConfirmedRouting.appendSystemContext, /Call only harness_smartfarm_pump_control/);
+assert.match(pumpPendingRouting.appendSystemContext, /semantically from the full conversation/);
 assert.deepEqual(
   await hooks.get("before_tool_call")(
     {
       toolName: "harness_smartfarm_pump_control",
-      params: { zone: "zone99", action: "off", durationSeconds: 99 },
-      runId: "run-pump-confirmed",
+      params: { action: "on" },
+      runId: "run-pump-pending",
     },
-    pumpConfirmedContext,
+    pumpPendingContext,
+  ),
+  {
+    params: {
+      action: "on",
+      durationSeconds: 5,
+      dryRun: false,
+      confirmationBound: true,
+    },
+  },
+);
+await hooks.get("agent_end")({ runId: "run-pump-pending" }, pumpPendingContext);
+
+assert.equal(
+  await hooks.get("before_prompt_build")(
+    {
+      prompt: discordPrompt("두 번째 구역으로 해줘", "other-user"),
+      messages: [],
+      runId: "run-pump-cross-user",
+    },
+    { runId: "run-pump-cross-user", sessionKey: pumpSessionKey },
+  ),
+  undefined,
+);
+
+const pumpContinuationContext = {
+  runId: "run-pump-continuation",
+  sessionKey: pumpSessionKey,
+};
+const pumpContinuationRouting = await hooks.get("before_prompt_build")(
+  {
+    prompt: discordPrompt("두 번째 구역으로 해줘"),
+    messages: [],
+    runId: "run-pump-continuation",
+  },
+  pumpContinuationContext,
+);
+assert.match(pumpContinuationRouting.appendSystemContext, /"action":"on"/);
+assert.deepEqual(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "harness_smartfarm_pump_control",
+      params: { zone: "zone2" },
+      runId: "run-pump-continuation",
+    },
+    pumpContinuationContext,
   ),
   {
     params: {
       zone: "zone2",
       action: "on",
-      durationSeconds: 15,
+      durationSeconds: 5,
       dryRun: false,
       confirmationBound: true,
     },
   },
 );
 await hooks.get("agent_end")(
-  { runId: "run-pump-confirmed" },
-  pumpConfirmedContext,
+  { runId: "run-pump-continuation" },
+  pumpContinuationContext,
 );
 
 const pumpDryRunResult = await registeredTools
@@ -501,3 +536,10 @@ const pumpDryRunResult = await registeredTools
   });
 assert.match(JSON.stringify(pumpDryRunResult), /"dryRun": true|\\?"dryRun\\?":\s*true/);
 assert.match(JSON.stringify(pumpDryRunResult), /farm\/zone2\/pump\/cmd/);
+const pumpMissingFieldResult = await registeredTools
+  .get("harness_smartfarm_pump_control")
+  .execute("missing-field-test", {
+    action: "on",
+    confirmationBound: true,
+  });
+assert.deepEqual(JSON.parse(pumpMissingFieldResult.content[0].text).missingFields, ["zone"]);

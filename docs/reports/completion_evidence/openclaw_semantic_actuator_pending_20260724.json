@@ -1,0 +1,49 @@
+{
+  "task": "OpenClaw semantic multi-turn smartfarm actuator pending state",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-24T18:08:01+09:00",
+      "summary": "Applied scoped verification, cross-model review, deployment, and exact closeout requirements."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-24T18:08:01+09:00",
+      "summary": "Required production-facing evidence and explicit reporting of unavailable independent reviewers."
+    }
+  ],
+  "verification": [
+    {
+      "name": "semantic pending-state plugin regression",
+      "target": "OpenClaw plugin service runtime contract",
+      "command": "node tests/test_harness_bridge_plugin.mjs",
+      "result": "PASS: LLM-owned semantic instructions, same-user natural-language continuation, cross-user denial, pending merge, shell block, and tool binding assertions passed."
+    },
+    {
+      "name": "related Python regression",
+      "target": "Python runtime",
+      "command": ".venv/bin/pytest -q tests/test_smartfarm_pump_control.py tests/test_harness_knowledge_index.py tests/test_openclaw_bridge.py",
+      "result": "PASS: 53 tests."
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh pending selected paths",
+    "result": "Pending production deployment and semantic two-turn OpenClaw verification."
+  },
+  "red_team": {
+    "models": [
+      "Claude",
+      "Copilot"
+    ],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/openclaw_semantic_actuator_pending_claude_20260724.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_semantic_actuator_pending_copilot_20260724.md"
+      }
+    ],
+    "verdict": "red_team_residual_risk"
+  }
+}
