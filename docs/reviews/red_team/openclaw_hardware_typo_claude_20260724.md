@@ -17,3 +17,13 @@ instructions, tests, and completion evidence.
 
 No blocker was found. Claude recommended avoiding broad hardware roots and protecting
 non-model technical identifiers; both recommendations were incorporated before commit.
+
+## Production routing follow-up
+
+The first production replay exposed that the misspelled model did not trigger the Skill and
+the model bypassed the native knowledge tool through memory and shell searches. The follow-up
+review found no major issue after adding a hardware-model plus connection-intent trigger and
+blocking memory, shell, and workspace-search fallbacks only inside an active knowledge run.
+English intent boundaries and negative compatibility tests were added from the minor findings.
+
+`VERDICT: clear`

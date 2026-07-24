@@ -16,3 +16,10 @@ instructions, tests, and completion evidence.
 - Wiring and network/protocol evidence are covered separately.
 
 No blocker or major issue remained after the constrained implementation was re-reviewed.
+
+## Production routing follow-up
+
+The first production replay exposed a Skill-selection gap. Copilot independently reviewed the
+hardware trigger and scoped fallback block after the repair and returned no finding.
+
+`VERDICT: clear`

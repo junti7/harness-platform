@@ -1,6 +1,6 @@
 ---
 name: harness-knowledge
-description: Answer questions about any Harness project domain, business, program, policy, implementation, current work, or repository artifact with compact source-backed evidence. Use for Turtle Trading, material import and education businesses, EDU/OJT, smartfarm, Physical AI Weekly, subscriptions, market research, sales, governance, OpenClaw automation, product, platform, and newly added Harness domains.
+description: Answer questions about any Harness project domain, business, program, policy, implementation, current work, repository artifact, hardware board, sensor, GPIO/pin wiring, or network connection with compact source-backed evidence. Use for near-match or misspelled hardware model identifiers, Turtle Trading, material import and education businesses, EDU/OJT, smartfarm, Physical AI Weekly, subscriptions, market research, sales, governance, OpenClaw automation, product, platform, and newly added Harness domains.
 ---
 
 # Harness Knowledge

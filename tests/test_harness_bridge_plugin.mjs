@@ -95,6 +95,10 @@ assert.equal(shouldEnforceWorkspaceStats("Mac mini 전체 디스크 용량은?")
 assert.equal(shouldEnforceHarnessKnowledge("현재 Turtle Trading 진행 상태 알려줘"), true);
 assert.equal(shouldEnforceHarnessKnowledge("자료 수입과 교육 사업 현황 알려줘"), true);
 assert.equal(shouldEnforceHarnessKnowledge("스마트팜 센서 구성은?"), true);
+assert.equal(shouldEnforceHarnessKnowledge("ESP8255에 연결된 것들 알려줘."), true);
+assert.equal(shouldEnforceHarnessKnowledge("ESP8266 핀 배선은?"), true);
+assert.equal(shouldEnforceHarnessKnowledge("ESP8266 가격은?"), false);
+assert.equal(shouldEnforceHarnessKnowledge("ESP8266 dashboard 디자인은?"), false);
 assert.equal(shouldEnforceHarnessKnowledge("오늘 날씨 알려줘"), false);
 assert.throws(() => resolveHarnessPath("../outside"), /path_outside_harness_workspace/);
 assert.deepEqual(validateWorkspaceCommand(["git", "status", "--short"]), [
@@ -239,3 +243,80 @@ assert.deepEqual(
   },
 );
 await hooks.get("agent_end")({ runId: "run-knowledge-1" }, knowledgeContext);
+
+const hardwareKnowledgeContext = {
+  runId: "run-hardware-knowledge-1",
+  sessionKey: "session-hardware-knowledge-1",
+};
+const hardwareKnowledgeRouting = await hooks.get("before_prompt_build")(
+  {
+    prompt: "ESP8255에 연결된 것들 알려줘.",
+    messages: [],
+    runId: "run-hardware-knowledge-1",
+  },
+  hardwareKnowledgeContext,
+);
+assert.match(hardwareKnowledgeRouting.appendSystemContext, /HARNESS KNOWLEDGE ROUTING/);
+assert.deepEqual(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "memory_search",
+      params: { query: "ESP8255" },
+      runId: "run-hardware-knowledge-1",
+    },
+    hardwareKnowledgeContext,
+  ),
+  {
+    block: true,
+    blockReason:
+      "Harness knowledge routing is active; call harness_knowledge_query once and answer from its canonical evidence without memory, shell, or workspace-search fallback.",
+  },
+);
+assert.deepEqual(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "bash",
+      params: { command: "rg ESP8255 ." },
+      runId: "run-hardware-knowledge-1",
+    },
+    hardwareKnowledgeContext,
+  ),
+  {
+    block: true,
+    blockReason:
+      "Harness knowledge routing is active; call harness_knowledge_query once and answer from its canonical evidence without memory, shell, or workspace-search fallback.",
+  },
+);
+assert.deepEqual(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "harness_workspace_search",
+      params: { query: "ESP8255" },
+      runId: "run-hardware-knowledge-1",
+    },
+    hardwareKnowledgeContext,
+  ),
+  {
+    block: true,
+    blockReason:
+      "Harness knowledge routing is active; call harness_knowledge_query once and answer from its canonical evidence without memory, shell, or workspace-search fallback.",
+  },
+);
+assert.equal(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "memory_search",
+      params: { query: "weather" },
+      runId: "run-ordinary-1",
+    },
+    {
+      runId: "run-ordinary-1",
+      sessionKey: "session-ordinary-1",
+    },
+  ),
+  undefined,
+);
+await hooks.get("agent_end")(
+  { runId: "run-hardware-knowledge-1" },
+  hardwareKnowledgeContext,
+);

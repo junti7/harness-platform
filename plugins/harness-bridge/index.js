@@ -15,6 +15,10 @@ const HARNESS_WORKSPACE_MARKERS =
   /harness(?:-project|-platform)?|하네스|프로젝트\s*(?:폴더|디렉터리|저장소)|project\s+(?:folder|directory|repository)/i;
 const HARNESS_KNOWLEDGE_MARKERS =
   /harness|하네스|turtle|터틀|trading|트레이딩|alpaca|ibkr|자료\s*수입|교육\s*사업|교육|ojt|스마트팜|smartfarm|physical\s*ai\s*weekly|구독\s*사업|pretotyping|openclaw/i;
+const HARNESS_HARDWARE_MODEL_MARKERS =
+  /\besp\d+\b|\bnodemcu\b|\bdht\d+\b|\braspberry\s*pi\b|라즈베리\s*파이/i;
+const HARNESS_HARDWARE_INTENT_MARKERS =
+  /연결|배선|핀|센서|릴레이|펌프|보드|펌웨어|\b(?:gpio|sensor|relay|pump|board|firmware)\b/i;
 const MAX_TOOL_OUTPUT = 1_000_000;
 const MAX_WRITE_BYTES = 2_000_000;
 const READ_ONLY_GIT_SUBCOMMANDS = new Set([
@@ -36,7 +40,22 @@ export function shouldEnforceWorkspaceStats(prompt) {
 }
 
 export function shouldEnforceHarnessKnowledge(prompt) {
-  return HARNESS_KNOWLEDGE_MARKERS.test(String(prompt ?? ""));
+  const text = String(prompt ?? "");
+  return (
+    HARNESS_KNOWLEDGE_MARKERS.test(text) ||
+    (HARNESS_HARDWARE_MODEL_MARKERS.test(text) && HARNESS_HARDWARE_INTENT_MARKERS.test(text))
+  );
+}
+
+function isKnowledgeBypassTool(toolName) {
+  const name = String(toolName ?? "").toLowerCase();
+  return (
+    isShellTool(name) ||
+    name === "memory_search" ||
+    name === "memory_get" ||
+    name === "harness_workspace_search" ||
+    name === "harness_workspace_read"
+  );
 }
 
 function humanBytes(bytes) {
@@ -852,6 +871,13 @@ export default {
               },
             };
           }
+        }
+        if (knowledgeRunState(event, context) && isKnowledgeBypassTool(event.toolName)) {
+          return {
+            block: true,
+            blockReason:
+              "Harness knowledge routing is active; call harness_knowledge_query once and answer from its canonical evidence without memory, shell, or workspace-search fallback.",
+          };
         }
         if (!isDirectSajuNotebookQuery(event.toolName, event.params, isSajuRun(event, context))) {
           return;

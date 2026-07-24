@@ -31,6 +31,12 @@
       "target": "live Harness worktree knowledge API",
       "command": "python3 scripts/harness_knowledge_index.py --repo . --question 'ESP8255에 연결된 것들 알려줘.'",
       "result": "Normalized ESP8255 to ESP8266, selected smartfarm, ranked the ESP8266 config first, and returned A0, GPIO4/D2, GPIO5/D1, Wi-Fi, and MQTT evidence."
+    },
+    {
+      "name": "Production routing regression",
+      "target": "OpenClaw plugin prompt and tool hooks",
+      "command": "node tests/test_harness_bridge_plugin.mjs",
+      "result": "ESP8255 connection prompts trigger mandatory Harness knowledge routing; memory, shell, and workspace-search bypasses are blocked only inside that run; ordinary and Saju behavior remains available."
     }
   ],
   "red_team": {
@@ -49,6 +55,6 @@
     "verdict": "red_team_clear"
   },
   "residual_risk": [
-    "Mac mini plugin reinstall and production OpenClaw answer verification are pending the required commit and push."
+    "The first production replay found and proved the Skill-selection bypass. The routing repair requires commit, push, plugin reinstall, and a second production replay."
   ]
 }
