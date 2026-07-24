@@ -4,12 +4,17 @@ import {
   collectHarnessWorkspaceStats,
   resolveHarnessPath,
   isDirectSajuNotebookQuery,
+  isRawPumpShellCall,
   isShellTool,
+  smartfarmPumpIntent,
   shouldEnforceHarnessKnowledge,
   shouldEnforceSajuBridge,
   shouldEnforceWorkspaceStats,
   validateWorkspaceCommand,
 } from "../plugins/harness-bridge/index.js";
+
+const discordPrompt = (text, senderId = "owner-1") =>
+  `Conversation info (untrusted metadata):\n{"sender":{"id":"${senderId}"}}\n\n${text}`;
 
 assert.equal(shouldEnforceSajuBridge("오늘 사주 운세 알려줘"), true);
 assert.deepEqual(
@@ -17,6 +22,17 @@ assert.deepEqual(
     { role: "assistant", content: "사주명리학자료 기준 오늘 일진" },
   ]),
   true,
+);
+assert.equal(smartfarmPumpIntent("펌프 제어 아키텍처를 설명해줘", []), undefined);
+assert.equal(
+  isRawPumpShellCall("bash", {
+    command: "m=$(printf mosquitto_pub); $m -t farm/zone2/pump/cmd -m on",
+  }),
+  true,
+);
+assert.equal(
+  isRawPumpShellCall("bash", { command: "mosquitto_pub -t farm/zone2/soil -m 50" }),
+  false,
 );
 assert.equal(shouldEnforceSajuBridge("오늘 날씨 알려줘"), false);
 assert.equal(
@@ -100,6 +116,52 @@ assert.equal(shouldEnforceHarnessKnowledge("ESP8266 핀 배선은?"), true);
 assert.equal(shouldEnforceHarnessKnowledge("ESP8266 가격은?"), false);
 assert.equal(shouldEnforceHarnessKnowledge("ESP8266 dashboard 디자인은?"), false);
 assert.equal(shouldEnforceHarnessKnowledge("오늘 날씨 알려줘"), false);
+assert.deepEqual(
+  smartfarmPumpIntent(
+    discordPrompt(
+      "mosquitto_pub -h 192.168.0.23 -t farm/zone2/pump/cmd -m on / " +
+        "mosquitto_pub -h 192.168.0.23 -t farm/zone2/pump/cmd -m off",
+    ),
+    [],
+  ),
+  {
+    zone: "zone2",
+    action: undefined,
+    confirmed: false,
+    priorConfirmationQuestion: false,
+    senderId: "owner-1",
+  },
+);
+assert.deepEqual(
+  smartfarmPumpIntent(discordPrompt("on으로 켜"), [
+    {
+      role: "user",
+      senderId: "owner-1",
+      content: "farm/zone2/pump/cmd",
+    },
+    {
+      role: "assistant",
+      content: "실제 MQTT 제어입니다. on으로 켤까요, off로 끌까요? 상태만 지정해주세요.",
+    },
+  ]),
+  {
+    zone: "zone2",
+    action: "on",
+    confirmed: true,
+    priorConfirmationQuestion: true,
+    senderId: "owner-1",
+  },
+);
+assert.equal(
+  smartfarmPumpIntent(discordPrompt("on으로 켜", "other-user"), [
+    { role: "user", senderId: "owner-1", content: "farm/zone2/pump/cmd" },
+    {
+      role: "assistant",
+      content: "실제 MQTT 제어입니다. on으로 켤까요, off로 끌까요?",
+    },
+  ]),
+  undefined,
+);
 assert.throws(() => resolveHarnessPath("../outside"), /path_outside_harness_workspace/);
 assert.deepEqual(validateWorkspaceCommand(["git", "status", "--short"]), [
   "/usr/bin/git",
@@ -125,9 +187,11 @@ assert.throws(
 
 const hooks = new Map();
 const toolNames = [];
+const registeredTools = new Map();
 harnessBridge.register({
   registerTool(tool) {
     toolNames.push(tool.name);
+    registeredTools.set(tool.name, tool);
   },
   on(name, handler) {
     hooks.set(name, handler);
@@ -146,6 +210,7 @@ assert.deepEqual(
     "harness_gmail_search",
     "harness_knowledge_query",
     "harness_saju_query",
+    "harness_smartfarm_pump_control",
     "harness_workspace_exec",
     "harness_workspace_read",
     "harness_workspace_search",
@@ -320,3 +385,114 @@ await hooks.get("agent_end")(
   { runId: "run-hardware-knowledge-1" },
   hardwareKnowledgeContext,
 );
+
+const pumpSessionKey = "agent:main:discord:channel:test-pump";
+const pumpChoiceContext = {
+  runId: "run-pump-choice",
+  sessionKey: pumpSessionKey,
+};
+const pumpChoiceRouting = await hooks.get("before_prompt_build")(
+  {
+    prompt: discordPrompt(
+      "mosquitto_pub -h 192.168.0.23 -t farm/zone2/pump/cmd -m on / " +
+        "mosquitto_pub -h 192.168.0.23 -t farm/zone2/pump/cmd -m off",
+    ),
+    messages: [],
+    runId: "run-pump-choice",
+  },
+  pumpChoiceContext,
+);
+assert.match(pumpChoiceRouting.appendSystemContext, /choose exactly ON or OFF/);
+assert.deepEqual(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "bash",
+      params: { command: "mosquitto_pub -h 192.168.0.23 -m on" },
+      runId: "run-pump-choice",
+    },
+    pumpChoiceContext,
+  ),
+  {
+    block: true,
+    blockReason:
+      "Raw shell actuator commands are blocked; use harness_smartfarm_pump_control after explicit confirmation.",
+  },
+);
+await hooks.get("agent_end")({ runId: "run-pump-choice" }, pumpChoiceContext);
+
+assert.deepEqual(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "bash",
+      params: { command: "mosquitto_pub -t farm/zone2/pump/cmd -m on" },
+      runId: "run-unrouted-pump-shell",
+    },
+    {
+      runId: "run-unrouted-pump-shell",
+      sessionKey: "session-unrouted-pump-shell",
+    },
+  ),
+  {
+    block: true,
+    blockReason:
+      "Raw MQTT pump shell commands are always blocked; use harness_smartfarm_pump_control.",
+  },
+);
+
+const pumpConfirmedContext = {
+  runId: "run-pump-confirmed",
+  sessionKey: pumpSessionKey,
+};
+const pumpConfirmedRouting = await hooks.get("before_prompt_build")(
+  {
+    prompt: discordPrompt("on으로 켜"),
+    messages: [
+      {
+        role: "user",
+        senderId: "owner-1",
+        content: "farm/zone2/pump/cmd",
+      },
+      {
+        role: "assistant",
+        content: "실제 MQTT 제어입니다. on으로 켤까요, off로 끌까요? 상태만 지정해주세요.",
+      },
+    ],
+    runId: "run-pump-confirmed",
+  },
+  pumpConfirmedContext,
+);
+assert.match(pumpConfirmedRouting.appendSystemContext, /Call only harness_smartfarm_pump_control/);
+assert.deepEqual(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "harness_smartfarm_pump_control",
+      params: { zone: "zone99", action: "off", durationSeconds: 99 },
+      runId: "run-pump-confirmed",
+    },
+    pumpConfirmedContext,
+  ),
+  {
+    params: {
+      zone: "zone2",
+      action: "on",
+      durationSeconds: 15,
+      dryRun: false,
+      confirmationBound: true,
+    },
+  },
+);
+await hooks.get("agent_end")(
+  { runId: "run-pump-confirmed" },
+  pumpConfirmedContext,
+);
+
+const pumpDryRunResult = await registeredTools
+  .get("harness_smartfarm_pump_control")
+  .execute("dry-run-test", {
+    zone: "zone2",
+    action: "on",
+    durationSeconds: 5,
+    dryRun: true,
+  });
+assert.match(JSON.stringify(pumpDryRunResult), /"dryRun": true|\\?"dryRun\\?":\s*true/);
+assert.match(JSON.stringify(pumpDryRunResult), /farm\/zone2\/pump\/cmd/);

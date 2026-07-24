@@ -1,0 +1,55 @@
+{
+  "task": "OpenClaw Discord smartfarm pump confirmation timeout and unsafe shell path",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-24T18:08:01+09:00",
+      "summary": "Confirmed real verification, scoped changes, cross-model review, deployment, and exact closeout requirements."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-24T18:08:01+09:00",
+      "summary": "Confirmed completion requires production-facing evidence and must not rely on mock-only verification."
+    }
+  ],
+  "verification": [
+    {
+      "name": "local plugin routing and actuator safety regression",
+      "target": "OpenClaw plugin service runtime contract",
+      "command": "node tests/test_harness_bridge_plugin.mjs",
+      "result": "PASS: ambiguous ON/OFF asks once, same-sender follow-up binds to the native tool, cross-user confirmation fails closed, raw shell pump calls are blocked, and model parameters are overwritten."
+    },
+    {
+      "name": "local MQTT safety and bridge regression",
+      "target": "Python runtime",
+      "command": ".venv/bin/pytest -q tests/test_smartfarm_pump_control.py tests/test_harness_knowledge_index.py tests/test_openclaw_bridge.py",
+      "result": "PASS: 53 tests, including ON fail-closed, exact QoS 1 PUBACK, three-attempt OFF retry, and explicit unverified physical state."
+    },
+    {
+      "name": "local real process fail-closed ON check",
+      "target": "smartfarm pump CLI entrypoint",
+      "command": "python3 scripts/smartfarm_pump_control.py --zone zone2 --action on --confirmed --duration-seconds 5",
+      "result": "PASS: exited 2 immediately with on_blocked_until_independent_hardware_watchdog_is_verified and performed no broker I/O."
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh pending selected paths",
+    "result": "Pending production deployment and live OpenClaw two-turn verification."
+  },
+  "red_team": {
+    "models": [
+      "Claude",
+      "Copilot"
+    ],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/openclaw_smartfarm_pump_control_claude_20260724.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_smartfarm_pump_control_copilot_20260724.md"
+      }
+    ],
+    "verdict": "red_team_clear"
+  }
+}

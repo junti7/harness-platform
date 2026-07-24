@@ -19,6 +19,10 @@ const HARNESS_HARDWARE_MODEL_MARKERS =
   /\besp\d+\b|\bnodemcu\b|\bdht\d+\b|\braspberry\s*pi\b|라즈베리\s*파이/i;
 const HARNESS_HARDWARE_INTENT_MARKERS =
   /연결|배선|핀|센서|릴레이|펌프|보드|펌웨어|\b(?:gpio|sensor|relay|pump|board|firmware)\b/i;
+const SMARTFARM_PUMP_CONTEXT =
+  /farm\/zone[1-9][0-9]{0,2}\/pump\/cmd|펌프|릴레이|\bpump\b/i;
+const SMARTFARM_PUMP_CONFIRMATION_QUESTION =
+  /(?:on|켜).{0,40}(?:off|꺼)|(?:off|꺼).{0,40}(?:on|켜)|실제\s*MQTT\s*제어|상태만\s*지정/i;
 const MAX_TOOL_OUTPUT = 1_000_000;
 const MAX_WRITE_BYTES = 2_000_000;
 const READ_ONLY_GIT_SUBCOMMANDS = new Set([
@@ -44,6 +48,91 @@ export function shouldEnforceHarnessKnowledge(prompt) {
   return (
     HARNESS_KNOWLEDGE_MARKERS.test(text) ||
     (HARNESS_HARDWARE_MODEL_MARKERS.test(text) && HARNESS_HARDWARE_INTENT_MARKERS.test(text))
+  );
+}
+
+function serializeMessages(messages = []) {
+  try {
+    return JSON.stringify(messages.map((message) => message?.content ?? ""));
+  } catch {
+    return "";
+  }
+}
+
+function currentSenderId(prompt) {
+  return String(prompt ?? "").match(
+    /"sender"\s*:\s*\{[\s\S]{0,300}?"id"\s*:\s*"([^"]+)"/,
+  )?.[1];
+}
+
+function lastMessage(messages, role) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === role) return messages[index];
+  }
+  return undefined;
+}
+
+export function smartfarmPumpIntent(prompt, messages = []) {
+  const current = String(prompt ?? "");
+  const history = serializeMessages(messages);
+  const combined = `${history}\n${current}`;
+  const currentHasPumpContext = SMARTFARM_PUMP_CONTEXT.test(current);
+  const historyHasPumpContext = SMARTFARM_PUMP_CONTEXT.test(history);
+  if (!currentHasPumpContext && !historyHasPumpContext) return undefined;
+  const zone = combined.match(/\bzone([1-9][0-9]{0,2})\b/i)?.[0]?.toLowerCase();
+  const asksOn =
+    /(?:-m|--message)\s+on\b|\bon\s*으로\s*켜|(?:펌프|릴레이).{0,20}(?:켜|on\b)|\bturn\s+on\b/i.test(
+      current,
+    );
+  const asksOff =
+    /(?:-m|--message)\s+off\b|\boff\s*로\s*꺼|(?:펌프|릴레이).{0,20}(?:꺼|off\b)|\bturn\s+off\b/i.test(
+      current,
+    );
+  const action = asksOn === asksOff ? undefined : asksOn ? "on" : "off";
+  const senderId = currentSenderId(current);
+  const lastAssistant = lastMessage(messages, "assistant");
+  const priorPumpUser = [...messages]
+    .reverse()
+    .find(
+      (message) =>
+        message?.role === "user" &&
+        SMARTFARM_PUMP_CONTEXT.test(String(message?.content ?? "")),
+    );
+  const priorConfirmationQuestion = SMARTFARM_PUMP_CONFIRMATION_QUESTION.test(
+    String(lastAssistant?.content ?? ""),
+  );
+  const sameUserConfirmation =
+    Boolean(senderId) &&
+    Boolean(priorPumpUser?.senderId) &&
+    String(priorPumpUser.senderId) === senderId;
+  const directPumpTopic = /farm\/zone[1-9][0-9]{0,2}\/pump\/cmd/i.test(current);
+  const confirmedFollowup = Boolean(
+    action && priorConfirmationQuestion && historyHasPumpContext && sameUserConfirmation,
+  );
+  if (!directPumpTopic && !(currentHasPumpContext && action) && !confirmedFollowup) {
+    return undefined;
+  }
+  const confirmed =
+    Boolean(senderId) &&
+    (action === "off" || (action === "on" && priorConfirmationQuestion && sameUserConfirmation));
+  return { zone, action, confirmed, priorConfirmationQuestion, senderId };
+}
+
+export function isRawPumpShellCall(toolName, params = {}) {
+  if (!isShellTool(toolName)) return false;
+  let serialized;
+  try {
+    serialized = JSON.stringify(params);
+  } catch {
+    return true;
+  }
+  return (
+    /\/pump\/cmd|farm\/[^\s"'`]*pump|mosquitto_(?:pub|sub)[\s\S]{0,200}(?:pump|relay|펌프|릴레이)/i.test(
+      serialized,
+    ) ||
+    /(?:펌프|릴레이|\bpump\b|\brelay\b)[\s\S]{0,120}(?:\bon\b|\boff\b|\b켜|\b꺼|-m\b)/i.test(
+      serialized,
+    )
   );
 }
 
@@ -415,6 +504,48 @@ function registerHarnessAssistantTools(api) {
       },
     });
   api.registerTool({
+    name: "harness_smartfarm_pump_control",
+    description:
+      "Fail-closed smartfarm pump control. OFF is published with retries. ON returns a clear safety block until an independent hardware watchdog is live-verified.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["zone", "action"],
+      properties: {
+        zone: { type: "string", pattern: "^zone[1-9][0-9]{0,2}$" },
+        action: { type: "string", enum: ["on", "off"] },
+        durationSeconds: { type: "integer", minimum: 1, maximum: 15, default: 5 },
+        dryRun: { type: "boolean", default: false },
+        confirmationBound: {
+          type: "boolean",
+          description: "Internal plugin-owned field. The model must omit it.",
+        },
+      },
+    },
+    async execute(_id, params) {
+      try {
+        if (!params.confirmationBound && !params.dryRun) {
+          return toolText({ ok: false, error: "confirmation_not_bound_to_user_turn" }, true);
+        }
+        const args = [
+          path.join(harnessRepoRoot(), "scripts", "smartfarm_pump_control.py"),
+          "--zone",
+          String(params.zone),
+          "--action",
+          String(params.action),
+          "--duration-seconds",
+          String(params.durationSeconds ?? 5),
+        ];
+        if (params.confirmationBound || params.dryRun) args.push("--confirmed");
+        if (params.dryRun) args.push("--dry-run");
+        const result = await runProcess(python(), args, { timeoutMs: 10_000 });
+        return toolText(result.stdout || result.stderr, result.code !== 0);
+      } catch (error) {
+        return toolText({ ok: false, error: error.message }, true);
+      }
+    },
+  });
+  api.registerTool({
     name: "harness_knowledge_query",
     description:
       "Incrementally index the live Harness worktree and return compact, ranked, line-numbered evidence for any Harness domain or project-status question. Use before broad repository searches.",
@@ -707,6 +838,7 @@ export default {
     registerHarnessAssistantTools(api);
     const activeSajuRuns = new Map();
     const activeKnowledgeRuns = new Map();
+    const activePumpRuns = new Map();
     const runKeys = (event = {}, context = {}) =>
       [event.runId, context.runId, context.sessionKey, context.sessionId]
         .filter(Boolean)
@@ -719,11 +851,17 @@ export default {
       for (const [key, state] of activeKnowledgeRuns) {
         if (state.expiresAt <= now) activeKnowledgeRuns.delete(key);
       }
+      for (const [key, state] of activePumpRuns) {
+        if (state.expiresAt <= now) activePumpRuns.delete(key);
+      }
       while (activeSajuRuns.size > 1024) {
         activeSajuRuns.delete(activeSajuRuns.keys().next().value);
       }
       while (activeKnowledgeRuns.size > 1024) {
         activeKnowledgeRuns.delete(activeKnowledgeRuns.keys().next().value);
+      }
+      while (activePumpRuns.size > 1024) {
+        activePumpRuns.delete(activePumpRuns.keys().next().value);
       }
     };
     const markSajuRun = (event, context) => {
@@ -757,6 +895,24 @@ export default {
     };
     const clearKnowledgeRun = (event, context) => {
       for (const key of runKeys(event, context)) activeKnowledgeRuns.delete(key);
+    };
+    const pumpRunKeys = (event = {}, context = {}) =>
+      [event.runId, context.runId].filter(Boolean).map(String);
+    const markPumpRun = (event, context, intent) => {
+      pruneRuns();
+      const state = { ...intent, expiresAt: Date.now() + 3 * 60_000 };
+      for (const key of pumpRunKeys(event, context)) activePumpRuns.set(key, state);
+    };
+    const pumpRunState = (event, context) => {
+      pruneRuns();
+      for (const key of pumpRunKeys(event, context)) {
+        const state = activePumpRuns.get(key);
+        if (state) return state;
+      }
+      return undefined;
+    };
+    const clearPumpRun = (event, context) => {
+      for (const key of pumpRunKeys(event, context)) activePumpRuns.delete(key);
     };
     api.registerTool({
       name: "harness_saju_query",
@@ -799,6 +955,25 @@ export default {
     api.on(
       "before_prompt_build",
       async (event, context) => {
+        const pumpIntent = smartfarmPumpIntent(event.prompt, event.messages);
+        if (pumpIntent) {
+          markPumpRun(event, context, pumpIntent);
+          const instruction =
+            !pumpIntent.zone
+                ? "Ask the user for exactly one zone id such as zone2. Do not call any control or shell tool."
+              : !pumpIntent.action
+                ? "Ask the user to choose exactly ON or OFF. Do not call any control or shell tool."
+                : pumpIntent.action === "on" && !pumpIntent.confirmed
+                  ? `Ask for explicit confirmation to request ${pumpIntent.zone} ON. State that ON remains fail-closed until the independent hardware watchdog is live-verified. Do not call any control or shell tool yet.`
+                  : `Call only harness_smartfarm_pump_control now with zone=${pumpIntent.zone}, action=${pumpIntent.action}, durationSeconds=5. Never use bash, exec, shell, mosquitto_pub, or another actuator path. Report the broker-acknowledged OFF command without claiming the physical state was verified, or report the explicit ON safety-block reason from the tool result.`;
+          return {
+            appendSystemContext: [
+              "[SMARTFARM PUMP CONTROL — MANDATORY]",
+              instruction,
+              "A plain user reply is bound by this plugin to the current zone/action; never request or wait for a second OpenClaw internal approval.",
+            ].join(" "),
+          };
+        }
         if (shouldEnforceWorkspaceStats(event.prompt)) {
           return {
             appendSystemContext: [
@@ -850,6 +1025,47 @@ export default {
     api.on(
       "before_tool_call",
       async (event, context) => {
+        if (isRawPumpShellCall(event.toolName, event.params)) {
+          return {
+            block: true,
+            blockReason:
+              "Raw MQTT pump shell commands are always blocked; use harness_smartfarm_pump_control.",
+          };
+        }
+        const pumpState = pumpRunState(event, context);
+        if (event.toolName === "harness_smartfarm_pump_control") {
+          if (
+            !pumpState?.senderId ||
+            !pumpState?.zone ||
+            !pumpState?.action ||
+            !pumpState.confirmed
+          ) {
+            return {
+              block: true,
+              blockReason:
+                "Smartfarm pump control requires one zone, one action, and explicit confirmation bound to the current user turn.",
+            };
+          }
+          return {
+            params: {
+              zone: pumpState.zone,
+              action: pumpState.action,
+              durationSeconds: Math.min(
+                15,
+                Math.max(1, Number(event.params?.durationSeconds ?? 5)),
+              ),
+              dryRun: Boolean(event.params?.dryRun),
+              confirmationBound: true,
+            },
+          };
+        }
+        if (pumpState && isShellTool(event.toolName)) {
+          return {
+            block: true,
+            blockReason:
+              "Raw shell actuator commands are blocked; use harness_smartfarm_pump_control after explicit confirmation.",
+          };
+        }
         if (event.toolName === "harness_knowledge_query") {
           const state = knowledgeRunState(event, context);
           if (state) {
@@ -893,6 +1109,7 @@ export default {
     api.on("agent_end", async (event, context) => {
       clearSajuRun(event, context);
       clearKnowledgeRun(event, context);
+      clearPumpRun(event, context);
     });
   },
 };
