@@ -1,4 +1,4 @@
-# Harness Bridge — Hook Manifest
+# Harness Bridge — Routing Hooks
 
 This plugin registers scoped routing and enforcement hooks. Other Harness
 control-plane operations remain operator-triggered through `harness-control`.
