@@ -802,10 +802,11 @@ export default {
               "[HARNESS KNOWLEDGE ROUTING — MANDATORY]",
               "For any Harness business, program, policy, implementation, or status question,",
               "call `harness_knowledge_query` first with the complete user question.",
-              "Use its compact evidence and read only returned files when necessary.",
+              "After its first successful result, answer immediately from `domainEvidence` and `evidence`.",
+              "Do not call `harness_workspace_search`, shell, or the knowledge tool again.",
               "Cite repository-relative paths and lines.",
               "Separate repository knowledge from live runtime/external state.",
-              "For current Turtle/Alpaca state also call `harness_alpaca_status`.",
+              "Call `harness_alpaca_status` only when the user explicitly requests live account, position, order, signal, or KPI state.",
             ].join(" "),
           };
         }

@@ -47,6 +47,8 @@ def test_incremental_index_and_domain_query(tmp_path: Path) -> None:
     assert result["files"][0]["path"] == "docs/trading/TURTLE.md"
     assert result["recommendedLiveTools"] == ["harness_alpaca_status"]
     assert "turtle_gate_clear" in result["evidence"][0]["excerpt"]
+    assert result["readyToAnswer"] is True
+    assert result["domainEvidence"]["turtle-trading"][0]["path"] == "docs/trading/TURTLE.md"
     _, second = refresh_index(repo, cache)
     assert second["cacheHit"] is True
     assert second["filesUpdated"] == 0

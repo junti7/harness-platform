@@ -74,9 +74,15 @@
       "target": "Mac mini production OpenClaw agent session",
       "command": "openclaw sessions tail --session-key agent:main:explicit:codex-harness-knowledge-proof-20260724b",
       "result": "The first knowledge call succeeded; hard-blocking a duplicate caused Bash fallback attempts. The guard was redesigned to force the full original question on the first call and return a tiny successful reuse marker on duplicates; final redeployment verification remains."
+    },
+    {
+      "name": "third production OpenClaw knowledge turn",
+      "target": "Mac mini production OpenClaw agent session",
+      "command": "openclaw sessions tail --session-key agent:main:explicit:codex-harness-knowledge-proof-20260724c",
+      "result": "The duplicate knowledge call returned a tiny successful reuse marker, but the model then issued many narrow workspace searches because evidence was not grouped by domain. domainEvidence and readyToAnswer were added with a strict answer-immediately contract; final verification remains."
     }
   ],
   "residual_risk": [
-    "The production user path worked, but the non-error duplicate reuse behavior remains pending origin-main deployment and re-verification."
+    "The production user path and non-error duplicate reuse worked, but grouped domain evidence and the answer-immediately contract remain pending origin-main deployment and re-verification."
   ]
 }
