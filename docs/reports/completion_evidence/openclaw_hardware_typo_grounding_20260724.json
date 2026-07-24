@@ -1,6 +1,6 @@
 {
   "task": "Make OpenClaw resolve near-match hardware model typos and answer connection questions from canonical repository evidence",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -49,6 +49,12 @@
       "target": "live worktree knowledge API",
       "command": ".venv/bin/pytest -q tests/test_harness_knowledge_index.py; python3 scripts/harness_knowledge_index.py --question 'ESP8255에 연결된 것들 알려줘.'",
       "result": "Canonical implementation and configuration sources fill ordinary results first; test and review evidence remains available as fallback or for explicit verification queries."
+    },
+    {
+      "name": "Final production OpenClaw answer",
+      "target": "Mac mini production OpenClaw agent",
+      "command": "openclaw agent --agent main --session-id codex-esp8255-grounding-20260724c --message 'ESP8255에 연결된 것들 알려줘.' --thinking low --json",
+      "result": "Completed in 27.1 seconds with exactly one harness_knowledge_query call and zero failures. It explicitly assumed ESP8255 meant ESP8266, reported soil A0, DHT22 GPIO4/D2, relay GPIO5/D1, and Wi-Fi/MQTT, and cited only canonical README and ESP8266 config paths."
     }
   ],
   "red_team": {
@@ -66,7 +72,9 @@
     ],
     "verdict": "red_team_clear"
   },
-  "residual_risk": [
-    "The final canonical-source ranking change requires commit, push, Mac mini deployment, and one final production replay."
-  ]
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh with scoped knowledge index, Harness bridge plugin and Skill, regression tests, canonical smartfarm hardware sources, reviews, and completion evidence; then force-install the plugin and restart the gateway",
+    "result": "Every selected Mac mini path matched origin/main, backend port 8000 was healthy, harness-knowledge was Ready and model-visible, plugin doctor reported no issue, and the final production agent replay passed."
+  },
+  "residual_risk": []
 }
