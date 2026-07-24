@@ -13,6 +13,8 @@ const WORKSPACE_STATS_INTENT =
   /(?:전체|폴더|디렉터리|directory|folder|disk).{0,20}(?:용량|크기|파일\s*(?:수|개수)|size|usage|count)|(?:용량|크기|size|usage).{0,20}(?:프로젝트|폴더|디렉터리|project|folder|directory)/i;
 const HARNESS_WORKSPACE_MARKERS =
   /harness(?:-project|-platform)?|하네스|프로젝트\s*(?:폴더|디렉터리|저장소)|project\s+(?:folder|directory|repository)/i;
+const HARNESS_KNOWLEDGE_MARKERS =
+  /harness|하네스|turtle|터틀|trading|트레이딩|alpaca|ibkr|자료\s*수입|교육\s*사업|교육|ojt|스마트팜|smartfarm|physical\s*ai\s*weekly|구독\s*사업|pretotyping|openclaw/i;
 const MAX_TOOL_OUTPUT = 1_000_000;
 const MAX_WRITE_BYTES = 2_000_000;
 const READ_ONLY_GIT_SUBCOMMANDS = new Set([
@@ -31,6 +33,10 @@ export function harnessRepoRoot() {
 export function shouldEnforceWorkspaceStats(prompt) {
   const text = String(prompt ?? "");
   return WORKSPACE_STATS_INTENT.test(text) && HARNESS_WORKSPACE_MARKERS.test(text);
+}
+
+export function shouldEnforceHarnessKnowledge(prompt) {
+  return HARNESS_KNOWLEDGE_MARKERS.test(String(prompt ?? ""));
 }
 
 function humanBytes(bytes) {
@@ -389,6 +395,48 @@ function registerHarnessAssistantTools(api) {
         }
       },
     });
+  api.registerTool({
+    name: "harness_knowledge_query",
+    description:
+      "Incrementally index the live Harness worktree and return compact, ranked, line-numbered evidence for any Harness domain or project-status question. Use before broad repository searches.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["question"],
+      properties: {
+        question: { type: "string", minLength: 1, maxLength: 4000 },
+        maxFiles: { type: "integer", minimum: 1, maximum: 30, default: 12 },
+        maxExcerpts: { type: "integer", minimum: 1, maximum: 20, default: 8 },
+        forceRefresh: { type: "boolean", default: false },
+      },
+    },
+    async execute(_id, params) {
+      try {
+        const args = [
+          path.join(harnessRepoRoot(), "scripts", "harness_knowledge_index.py"),
+          "--repo",
+          harnessRepoRoot(),
+          "--question",
+          params.question,
+          "--max-files",
+          String(params.maxFiles ?? 12),
+          "--max-excerpts",
+          String(params.maxExcerpts ?? 8),
+        ];
+        if (params.forceRefresh) args.push("--force-refresh");
+        const result = await runProcess(python(), args, { timeoutMs: 120_000 });
+        return toolText(result.stdout || result.stderr, result.code !== 0);
+      } catch (error) {
+        return toolText({ ok: false, error: error.message }, true);
+      }
+    },
+  });
+  bridgeTool(
+    "harness_alpaca_status",
+    "Fetch live Alpaca paper-trading account, positions, orders, signals, and KPI state read-only. Use after repository knowledge retrieval for current Turtle status.",
+    () => ["alpaca-status", "--format", "json"],
+    { type: "object", additionalProperties: false, properties: {} },
+  );
   bridgeTool(
     "harness_gmail_search",
     "Search the CEO Gmail inbox read-only. Use before summarizing messages.",
@@ -701,6 +749,22 @@ export default {
               "Treat harness-project as an alias for the configured harness-platform root.",
               "Never use bash, find, du, or a home-directory scan for this intent.",
               "Answer directly from allocatedHuman/logicalFileHuman and counts.",
+            ].join(" "),
+          };
+        }
+        if (
+          shouldEnforceHarnessKnowledge(event.prompt) &&
+          !shouldEnforceSajuBridge(event.prompt, event.messages)
+        ) {
+          return {
+            appendSystemContext: [
+              "[HARNESS KNOWLEDGE ROUTING — MANDATORY]",
+              "For any Harness business, program, policy, implementation, or status question,",
+              "call `harness_knowledge_query` first with the complete user question.",
+              "Use its compact evidence and read only returned files when necessary.",
+              "Cite repository-relative paths and lines.",
+              "Separate repository knowledge from live runtime/external state.",
+              "For current Turtle/Alpaca state also call `harness_alpaca_status`.",
             ].join(" "),
           };
         }

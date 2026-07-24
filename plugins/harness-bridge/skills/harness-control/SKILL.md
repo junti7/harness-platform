@@ -12,13 +12,19 @@ Use this skill when operating the `harness-platform` control plane from OpenClaw
 
 Prefer native `harness_*` tools over guessed shell commands:
 
+- Knowledge: `harness_knowledge_query` (incremental index and compact evidence for every Harness domain)
 - Repository: `harness_workspace_stats`, `harness_workspace_read`, `harness_workspace_search`, `harness_workspace_write`, `harness_workspace_exec`
+- Turtle live state: `harness_alpaca_status` (read-only)
 - Gmail: `harness_gmail_search`, `harness_gmail_get`
 - Calendar: `harness_calendar_list`, `harness_calendar_create`
 - Scheduling: `harness_cron_list`, `harness_cron_create`, `harness_cron_remove`
 - Saju: `harness_saju_query`
 
 For repository work, inspect `AGENTS.md` and relevant files first. Preserve unrelated work. Verify edits with tests and `git diff`. Never report a write, event, or cron registration as successful without the returned path/hash, event ID, or cron job ID.
+
+For any Harness knowledge or project-status question, call `harness_knowledge_query` first. It
+discovers current and future domains from the live worktree, incrementally refreshes a private
+cache outside the repository, and returns only relevant evidence. Do not bulk-read the repository.
 
 For repository size, capacity, disk usage, file count, or directory count, call `harness_workspace_stats` directly. Treat `harness-project` as an alias for the configured `harness-platform` root. Never scan the home directory with Bash or `find`.
 

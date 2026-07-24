@@ -5,6 +5,7 @@ import {
   resolveHarnessPath,
   isDirectSajuNotebookQuery,
   isShellTool,
+  shouldEnforceHarnessKnowledge,
   shouldEnforceSajuBridge,
   shouldEnforceWorkspaceStats,
   validateWorkspaceCommand,
@@ -91,6 +92,10 @@ assert.equal(
   true,
 );
 assert.equal(shouldEnforceWorkspaceStats("Mac mini 전체 디스크 용량은?"), false);
+assert.equal(shouldEnforceHarnessKnowledge("현재 Turtle Trading 진행 상태 알려줘"), true);
+assert.equal(shouldEnforceHarnessKnowledge("자료 수입과 교육 사업 현황 알려줘"), true);
+assert.equal(shouldEnforceHarnessKnowledge("스마트팜 센서 구성은?"), true);
+assert.equal(shouldEnforceHarnessKnowledge("오늘 날씨 알려줘"), false);
 assert.throws(() => resolveHarnessPath("../outside"), /path_outside_harness_workspace/);
 assert.deepEqual(validateWorkspaceCommand(["git", "status", "--short"]), [
   "/usr/bin/git",
@@ -127,6 +132,7 @@ harnessBridge.register({
 assert.deepEqual(
   toolNames.sort(),
   [
+    "harness_alpaca_status",
     "harness_calendar_create",
     "harness_calendar_list",
     "harness_cron_create",
@@ -134,6 +140,7 @@ assert.deepEqual(
     "harness_cron_remove",
     "harness_gmail_get",
     "harness_gmail_search",
+    "harness_knowledge_query",
     "harness_saju_query",
     "harness_workspace_exec",
     "harness_workspace_read",
@@ -148,10 +155,16 @@ assert.ok(workspaceStats.files >= 1);
 assert.ok(workspaceStats.allocatedBytes > 0);
 assert.ok(workspaceStats.durationMs < 30_000);
 const context = { runId: "run-saju-1", sessionKey: "session-saju-1" };
-await hooks.get("before_prompt_build")(
+const sajuRouting = await hooks.get("before_prompt_build")(
   { prompt: "오늘 사주 운세 알려줘", messages: [], runId: "run-saju-1" },
   context,
 );
+assert.match(sajuRouting.appendSystemContext, /HARNESS SAJU ROUTING/);
+const openClawSajuRouting = await hooks.get("before_prompt_build")(
+  { prompt: "OpenClaw에서 오늘 사주 운세 알려줘", messages: [], runId: "run-saju-2" },
+  { runId: "run-saju-2", sessionKey: "session-saju-2" },
+);
+assert.match(openClawSajuRouting.appendSystemContext, /HARNESS SAJU ROUTING/);
 assert.deepEqual(
   await hooks.get("before_tool_call")(
     {

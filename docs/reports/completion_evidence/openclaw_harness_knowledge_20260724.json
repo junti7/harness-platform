@@ -1,0 +1,70 @@
+{
+  "task": "Give OpenClaw compact, current, source-backed knowledge of every Harness project domain",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-24T16:05:00+09:00",
+      "summary": "Applied Harness authority boundaries, source-of-truth rules, Turtle capital gates, and exact completion reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-24T16:05:00+09:00",
+      "summary": "Applied origin-main deployment, Mac mini-only OpenClaw runtime, secret hygiene, and real-entrypoint verification."
+    }
+  ],
+  "requirements": [
+    {
+      "requirement": "Cover all current and future Harness domains rather than one hard-coded topic",
+      "status": "pass",
+      "evidence": "The incremental index catalogs every eligible tracked and non-ignored untracked worktree text file and combines dynamic path/title/heading discovery with semantic domain hints."
+    },
+    {
+      "requirement": "Avoid repeatedly loading the whole repository",
+      "status": "pass",
+      "evidence": "Unchanged records are reused by size and nanosecond mtime; the second 1,031-file query updated zero files and completed index refresh in 116 ms."
+    },
+    {
+      "requirement": "Return expert answers grounded in current evidence",
+      "status": "pass",
+      "evidence": "harness_knowledge_query returns ranked files, compact line-numbered excerpts, Git HEAD, refresh time, scope, and an answer contract requiring citations and live-state separation."
+    },
+    {
+      "requirement": "Keep Turtle live state distinct from repository knowledge",
+      "status": "pass",
+      "evidence": "The general skill recommends and exposes read-only harness_alpaca_status for current account, position, order, signal, and KPI state."
+    },
+    {
+      "requirement": "Preserve security and approval boundaries",
+      "status": "pass",
+      "evidence": "The index excludes runtime/build/cache and common secret files, redacts secret-like cached values, and treats imported content as non-executable evidence."
+    },
+    {
+      "requirement": "Work through the production OpenClaw entrypoint",
+      "status": "not_verified",
+      "evidence": "Local implementation and plugin tests pass; origin-main push, selected Mac mini deployment, plugin refresh, and real OpenClaw question tests remain."
+    }
+  ],
+  "verification": [
+    {
+      "name": "knowledge index and plugin regression",
+      "target": "live repository API and plugin registration",
+      "command": ".venv/bin/pytest -q tests/test_harness_knowledge_index.py tests/test_openclaw_bridge.py && node tests/test_harness_bridge_plugin.mjs",
+      "result": "38 tests passed; native knowledge and Alpaca tools registered; Saju routing priority remained intact."
+    },
+    {
+      "name": "real worktree incremental index",
+      "target": "live Harness worktree",
+      "command": ".venv/bin/python scripts/harness_knowledge_index.py --question '<multi-domain question>'",
+      "result": "Indexed 1,031 eligible files in 534-575 ms; a warm-cache refresh reused all 1,031 files and completed in 116 ms."
+    },
+    {
+      "name": "skill package validation",
+      "command": "skill-creator quick_validate.py plugins/harness-bridge/skills/harness-knowledge",
+      "result": "Skill is valid."
+    }
+  ],
+  "residual_risk": [
+    "Production Mac mini plugin and real OpenClaw user-path verification are pending origin-main deployment."
+  ]
+}
