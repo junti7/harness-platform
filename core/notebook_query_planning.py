@@ -44,6 +44,57 @@ _NON_ANSWER_MARKERS = (
     "not enough information",
 )
 
+_TIME_TERM = r"(?:시간대|시간|시각|시진|길시|몇\s*시)"
+_POSITIVE_TIME_TERM = (
+    r"(?:(?<!안)(?<!안\s)좋(?:은|을|다|다고)|길한|유리한|적합한|"
+    r"추천할|최적(?:의|인)?|베스트)"
+)
+_NEGATIVE_TIME_TERM = (
+    r"(?:안\s*좋(?:은|을)|좋지\s*않은|피할|피해야\s*할|주의(?:할)?|조심할|"
+    r"흉한|불리한|나쁜|위험한|금기인)"
+)
+_TIME_NEAR = r"[^,.;!?，。；！？\n]{0,4}"
+
+
+def _time_intent_matches(text: str) -> dict[str, tuple[re.Match[str], ...]]:
+    positive = list(
+        re.finditer(
+            rf"(?:{_POSITIVE_TIME_TERM}{_TIME_NEAR}{_TIME_TERM}|"
+            rf"{_TIME_TERM}{_TIME_NEAR}{_POSITIVE_TIME_TERM})",
+            text,
+        )
+    )
+    positive.extend(
+        re.finditer(r"(?:좋은|길한|유리한|적합한|추천할|최적인)\s*때", text)
+    )
+    negative = list(
+        re.finditer(
+            rf"(?:{_NEGATIVE_TIME_TERM}{_TIME_NEAR}{_TIME_TERM}|"
+            rf"{_TIME_TERM}{_TIME_NEAR}{_NEGATIVE_TIME_TERM})",
+            text,
+        )
+    )
+    negative.extend(
+        re.finditer(r"(?:피할|피해야\s*할|주의할|조심할|불리한|나쁜|위험한)\s*때", text)
+    )
+    postposed = list(
+        re.finditer(
+            rf"{_POSITIVE_TIME_TERM}\s*{_TIME_TERM}(?:은|는|이|가)?\s*아(?:니|닌)",
+            text,
+        )
+    )
+    if postposed:
+        positive = [
+            match
+            for match in positive
+            if not any(
+                match.start() >= negation.start() and match.end() <= negation.end()
+                for negation in postposed
+            )
+        ]
+        negative.extend(postposed)
+    return {"좋은 시간대": tuple(positive), "피할 시간대": tuple(negative)}
+
 
 def infer_requirements(question: str) -> tuple[str, ...]:
     """Infer user-visible sections without binding logic to one notebook."""
@@ -59,34 +110,10 @@ def infer_requirements(question: str) -> tuple[str, ...]:
     requirements = [
         label for label, needles in mappings if any(needle in question for needle in needles)
     ]
-    time_term = r"(?:시간대|시간|시각|시진|길시|몇\s*시)"
-    positive_term = (
-        r"(?:(?<!안)(?<!안\s)좋(?:은|을|다|다고)|길한|유리한|적합한|"
-        r"추천할|최적(?:의|인)?|베스트)"
-    )
-    negative_term = (
-        r"(?:안\s*좋(?:은|을)|좋지\s*않은|피할|피해야\s*할|주의할|조심할|"
-        r"흉한|불리한|나쁜|위험한|금기인)"
-    )
-    near = r"[^,.;!?，。；！？\n]{0,4}"
-    positive_time = re.search(
-        rf"(?:{positive_term}{near}{time_term}|{time_term}{near}{positive_term})",
-        question,
-    ) or re.search(r"(?:좋은|길한|유리한|적합한|추천할|최적인)\s*때", question)
-    negative_time = re.search(
-        rf"(?:{negative_term}{near}{time_term}|{time_term}{near}{negative_term})",
-        question,
-    ) or re.search(r"(?:피할|피해야\s*할|주의할|조심할|불리한|나쁜|위험한)\s*때", question)
-    postposed_negation = re.search(
-        rf"{positive_term}\s*{time_term}(?:은|는|이|가)?\s*아(?:니|닌)",
-        question,
-    )
-    if postposed_negation:
-        positive_time = None
-        negative_time = postposed_negation
-    if positive_time:
+    time_matches = _time_intent_matches(question)
+    if time_matches["좋은 시간대"]:
         requirements.append("좋은 시간대")
-    if negative_time:
+    if time_matches["피할 시간대"]:
         requirements.append("피할 시간대")
     if any(needle in question for needle in ("근거", "출처", "이유", "해석")):
         requirements.append("근거")
@@ -164,17 +191,28 @@ def assess_notebook_answer(plan: NotebookQueryPlan, answer: str) -> tuple[bool, 
     )
     if len(text) < 300 and any(re.search(pattern, lowered) for pattern in refusal_patterns):
         reasons.append("semantic_non_answer")
-    concrete_time = r"(?:(?:[01]?\d|2[0-3])(?::\d{2}|\s*시)|[자축인묘진사오미신유술해]시)"
-
-    def has_labeled_time(markers: tuple[str, ...]) -> bool:
-        labels = "|".join(re.escape(marker) for marker in markers)
-        nearby = r"[^.!?。！？\n]{0,80}"
-        return bool(
-            re.search(
-                rf"(?:(?:{labels}){nearby}{concrete_time}|{concrete_time}{nearby}(?:{labels}))",
-                text,
-            )
+    answer_time_matches = _time_intent_matches(text)
+    concrete_times = list(
+        re.finditer(
+            r"(?:(?:[01]?\d|2[0-3])(?::\d{2}|\s*시)|[자축인묘진사오미신유술해]시)",
+            text,
         )
+    )
+    assigned_time_categories: set[str] = set()
+    category_matches = [
+        (label, match)
+        for label, matches in answer_time_matches.items()
+        for match in matches
+    ]
+    for concrete in concrete_times:
+        candidates = [
+            (min(abs(concrete.start() - match.end()), abs(match.start() - concrete.end())), label)
+            for label, match in category_matches
+        ]
+        if candidates:
+            distance, label = min(candidates)
+            if distance <= 300:
+                assigned_time_categories.add(label)
 
     for requirement in plan.requirements:
         if requirement == "근거":
@@ -184,12 +222,10 @@ def assess_notebook_answer(plan: NotebookQueryPlan, answer: str) -> tuple[bool, 
             if not any(marker in text for marker in ("운세", "종합운", "전체운", "총평")):
                 reasons.append("missing:운세")
         elif requirement == "좋은 시간대":
-            if not has_labeled_time(("좋은 시간대", "좋은 시간", "길한 시간", "길한 시각", "길시")):
+            if requirement not in assigned_time_categories:
                 reasons.append("missing:좋은 시간대")
         elif requirement == "피할 시간대":
-            if not has_labeled_time(
-                ("피할 시간대", "피해야 할 시간", "피해야 할 시각", "주의 시간", "흉한 시간")
-            ):
+            if requirement not in assigned_time_categories:
                 reasons.append("missing:피할 시간대")
         elif requirement not in text:
             reasons.append(f"missing:{requirement}")

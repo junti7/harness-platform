@@ -97,6 +97,12 @@ def test_delivery_contract_accepts_semantic_time_window_headings():
     assert passed, reasons
 
 
+def test_delivery_contract_accepts_caution_time_heading():
+    plan = build_query_plan("피할 시간대")
+    passed, reasons = assess_notebook_answer(plan, "주의 시간은 14시입니다.")
+    assert passed, reasons
+
+
 @pytest.mark.parametrize(
     "answer",
     ["좋은 시간 보내세요. 피해야 할 시간은 참고하세요.", "길시와 주의 시간만 참고하세요."],
