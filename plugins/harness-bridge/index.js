@@ -21,10 +21,6 @@ const HARNESS_HARDWARE_INTENT_MARKERS =
   /연결|배선|핀|센서|릴레이|펌프|보드|펌웨어|\b(?:gpio|sensor|relay|pump|board|firmware)\b/i;
 const SMARTFARM_PUMP_CONTEXT =
   /farm\/zone[1-9][0-9]{0,2}\/pump\/cmd|펌프|릴레이|\bpump\b/i;
-const SMARTFARM_PUMP_CONFIRMATION_QUESTION =
-  /(?:on|켜).{0,40}(?:off|꺼)|(?:off|꺼).{0,40}(?:on|켜)|실제\s*MQTT\s*제어|상태만\s*지정/i;
-const SMARTFARM_ZONE_QUESTION =
-  /존\s*(?:id|아이디)|zone\s*(?:id)?|zone[1-9][0-9]{0,2}\s*(?:처럼|형식)|예[:：]?\s*zone/i;
 const MAX_TOOL_OUTPUT = 1_000_000;
 const MAX_WRITE_BYTES = 2_000_000;
 const READ_ONLY_GIT_SUBCOMMANDS = new Set([
@@ -53,117 +49,10 @@ export function shouldEnforceHarnessKnowledge(prompt) {
   );
 }
 
-function serializeMessages(messages = []) {
-  try {
-    return JSON.stringify(messages.map((message) => message?.content ?? ""));
-  } catch {
-    return "";
-  }
-}
-
 function currentSenderId(prompt) {
   return String(prompt ?? "").match(
     /"sender"\s*:\s*\{[\s\S]{0,300}?"id"\s*:\s*"([^"]+)"/,
   )?.[1];
-}
-
-function lastMessage(messages, role) {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index]?.role === role) return messages[index];
-  }
-  return undefined;
-}
-
-function parsePumpAction(text) {
-  const asksOn =
-    /(?:-m|--message)\s+on\b|\bon\s*으로\s*켜|(?:펌프|릴레이).{0,20}(?:켜|on\b)|\bturn\s+on\b/i.test(
-      text,
-    );
-  const asksOff =
-    /(?:-m|--message)\s+off\b|\boff\s*로\s*꺼|(?:펌프|릴레이).{0,20}(?:꺼|off\b)|\bturn\s+off\b/i.test(
-      text,
-    );
-  const standaloneActions = new Set(
-    [...text.matchAll(/\b(on|off)\b/gi)].map((match) => match[1].toLowerCase()),
-  );
-  if (asksOn && asksOff) return undefined;
-  if (asksOn !== asksOff) return asksOn ? "on" : "off";
-  return standaloneActions.size === 1 ? [...standaloneActions][0] : undefined;
-}
-
-export function smartfarmPumpSlots(prompt) {
-  const current = String(prompt ?? "");
-  return {
-    zone: current.match(/\bzone([1-9][0-9]{0,2})\b/i)?.[0]?.toLowerCase(),
-    action: parsePumpAction(current),
-    senderId: currentSenderId(current),
-    hasActuatorContext: SMARTFARM_PUMP_CONTEXT.test(current),
-  };
-}
-
-export function smartfarmPumpIntent(prompt, messages = []) {
-  const current = String(prompt ?? "");
-  const history = serializeMessages(messages);
-  const combined = `${history}\n${current}`;
-  const currentHasPumpContext = SMARTFARM_PUMP_CONTEXT.test(current);
-  const historyHasPumpContext = SMARTFARM_PUMP_CONTEXT.test(history);
-  const slots = smartfarmPumpSlots(current);
-  const currentZone = slots.zone;
-  const zone =
-    currentZone ?? combined.match(/\bzone([1-9][0-9]{0,2})\b/i)?.[0]?.toLowerCase();
-  const currentAction = slots.action;
-  const senderId = slots.senderId;
-  const lastAssistant = lastMessage(messages, "assistant");
-  const priorPumpUser = [...messages]
-    .reverse()
-    .find(
-      (message) =>
-        message?.role === "user" &&
-        SMARTFARM_PUMP_CONTEXT.test(String(message?.content ?? "")),
-    );
-  const priorConfirmationQuestion = SMARTFARM_PUMP_CONFIRMATION_QUESTION.test(
-    String(lastAssistant?.content ?? ""),
-  );
-  const sameUserConfirmation =
-    Boolean(senderId) &&
-    Boolean(priorPumpUser?.senderId) &&
-    String(priorPumpUser.senderId) === senderId;
-  const zoneContinuation =
-    Boolean(currentZone) &&
-    !currentAction &&
-    SMARTFARM_ZONE_QUESTION.test(String(lastAssistant?.content ?? "")) &&
-    sameUserConfirmation;
-  const action =
-    currentAction ??
-    (zoneContinuation ? parsePumpAction(String(priorPumpUser?.content ?? "")) : undefined);
-  if (
-    !currentHasPumpContext &&
-    !historyHasPumpContext &&
-    !(currentZone && currentAction)
-  ) {
-    return undefined;
-  }
-  const directPumpTopic = /farm\/zone[1-9][0-9]{0,2}\/pump\/cmd/i.test(current);
-  const confirmedFollowup = Boolean(
-    action && priorConfirmationQuestion && historyHasPumpContext && sameUserConfirmation,
-  );
-  const completeCurrentCommand = Boolean(currentZone && currentAction && senderId);
-  if (
-    !directPumpTopic &&
-    !(currentHasPumpContext && currentAction) &&
-    !confirmedFollowup &&
-    !zoneContinuation &&
-    !completeCurrentCommand
-  ) {
-    return undefined;
-  }
-  const confirmed =
-    Boolean(senderId) &&
-    (action === "off" ||
-      completeCurrentCommand ||
-      zoneContinuation ||
-      (action === "on" && priorConfirmationQuestion && sameUserConfirmation));
-  return { zone, action, confirmed, priorConfirmationQuestion, senderId };
 }
 
 export function isRawPumpShellCall(toolName, params = {}) {

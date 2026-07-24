@@ -7,7 +7,6 @@ import {
   isDirectSajuNotebookQuery,
   isRawPumpShellCall,
   isShellTool,
-  smartfarmPumpIntent,
   shouldEnforceHarnessKnowledge,
   shouldEnforceSajuBridge,
   shouldEnforceWorkspaceStats,
@@ -28,7 +27,6 @@ assert.deepEqual(
   ]),
   true,
 );
-assert.equal(smartfarmPumpIntent("펌프 제어 아키텍처를 설명해줘", []), undefined);
 assert.equal(
   isRawPumpShellCall("bash", {
     command: "m=$(printf mosquitto_pub); $m -t farm/zone2/pump/cmd -m on",
@@ -121,52 +119,6 @@ assert.equal(shouldEnforceHarnessKnowledge("ESP8266 핀 배선은?"), true);
 assert.equal(shouldEnforceHarnessKnowledge("ESP8266 가격은?"), false);
 assert.equal(shouldEnforceHarnessKnowledge("ESP8266 dashboard 디자인은?"), false);
 assert.equal(shouldEnforceHarnessKnowledge("오늘 날씨 알려줘"), false);
-assert.deepEqual(
-  smartfarmPumpIntent(
-    discordPrompt(
-      "mosquitto_pub -h 192.168.0.23 -t farm/zone2/pump/cmd -m on / " +
-        "mosquitto_pub -h 192.168.0.23 -t farm/zone2/pump/cmd -m off",
-    ),
-    [],
-  ),
-  {
-    zone: "zone2",
-    action: undefined,
-    confirmed: false,
-    priorConfirmationQuestion: false,
-    senderId: "owner-1",
-  },
-);
-assert.deepEqual(
-  smartfarmPumpIntent(discordPrompt("on으로 켜"), [
-    {
-      role: "user",
-      senderId: "owner-1",
-      content: "farm/zone2/pump/cmd",
-    },
-    {
-      role: "assistant",
-      content: "실제 MQTT 제어입니다. on으로 켤까요, off로 끌까요? 상태만 지정해주세요.",
-    },
-  ]),
-  {
-    zone: "zone2",
-    action: "on",
-    confirmed: true,
-    priorConfirmationQuestion: true,
-    senderId: "owner-1",
-  },
-);
-assert.equal(
-  smartfarmPumpIntent(discordPrompt("on으로 켜", "other-user"), [
-    { role: "user", senderId: "owner-1", content: "farm/zone2/pump/cmd" },
-    {
-      role: "assistant",
-      content: "실제 MQTT 제어입니다. on으로 켤까요, off로 끌까요?",
-    },
-  ]),
-  undefined,
-);
 assert.throws(() => resolveHarnessPath("../outside"), /path_outside_harness_workspace/);
 assert.deepEqual(validateWorkspaceCommand(["git", "status", "--short"]), [
   "/usr/bin/git",

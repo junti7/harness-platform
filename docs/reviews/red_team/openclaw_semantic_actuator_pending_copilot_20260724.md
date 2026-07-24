@@ -10,3 +10,7 @@ validation, raw shell blocking, and fail-closed ON behavior.
 
 The same-user continuation `두 번째 구역으로 해줘` and the equivalent cross-user denial
 both passed. Final verdict: `CLEAR`.
+
+After the review, the unused phrase-regex intent parser was removed so the production
+path cannot silently fall back to rule-based semantic interpretation. Copilot reviewed
+that focused cleanup and again returned `CLEAR`.
