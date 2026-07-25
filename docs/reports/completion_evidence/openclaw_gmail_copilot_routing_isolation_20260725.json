@@ -31,6 +31,16 @@
       "target": "OpenClaw agent and Copilot snapshot runtime",
       "command": ".venv/bin/python -m pytest -q tests/test_openclaw_agent.py tests/test_copilot_usage_snapshot.py",
       "result": "93 tests passed with one dependency deprecation warning."
+    },
+    {
+      "name": "Mac mini live Gmail cron replay",
+      "target": "macmini production OpenClaw cron and Gmail tools",
+      "command": "openclaw cron run b26f54bb-32b1-42f0-9147-419a03a08efe --wait --expect-final",
+      "result": "Completed status=ok with summary=NO_REPLY in 22.638 seconds; Gmail routing was no longer blocked and no message was delivered because no important new mail existed."
     }
-  ]
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh plugins/harness-bridge/index.js tests/test_harness_bridge_plugin.mjs docs/reports/completion_evidence/openclaw_gmail_copilot_routing_isolation_20260725.json; force-install plugin; restart ai.openclaw.gateway",
+    "result": "Origin diff was zero, plugin doctor reported no issues, harness-bridge loaded, gateway running pid 71953, and live cron replay passed."
+  }
 }
