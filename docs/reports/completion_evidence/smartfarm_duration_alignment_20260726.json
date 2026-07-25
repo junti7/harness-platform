@@ -1,6 +1,6 @@
 {
   "task": "Align Harness OS pump duration with the zone2 Pi hub limit",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -29,7 +29,7 @@
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh with runtime frontend launchd tests and evidence",
-    "result": "Mac mini deployed index-KQKnQMfb.js; production launchd exposes a 3-second maximum and MQTT autostart connected. Live 3-second TEST be817b91 completed OFF. A subsequent ON verification was rejected by the valid 300-second post-actuation cooldown, not by duration."
+    "result": "Mac mini deployed index-DeKpwzW3.js; production launchd exposes a 3-second maximum and MQTT autostart connected. Live zone2 command ab00511a-2b5d-4f85-be34-4e834ca2d856 observed running/on then completed/off. Pi pump_events independently recorded manual_dashboard ON at 08:33:44 KST and timeout OFF at 08:33:47 KST. A normal ON attempt during automatic irrigation cooldown was correctly rejected as active_or_cooldown, not by duration."
   },
   "red_team": {
     "models": [
