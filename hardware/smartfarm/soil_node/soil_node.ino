@@ -277,6 +277,11 @@ void setup() {
   dht.begin();
   connectWifi();
   mqtt.setServer(MQTT_BROKER_HOST, MQTT_BROKER_PORT);
+  // Device heartbeat and diagnostic JSON exceed PubSubClient's 256-byte
+  // default packet limit. Without this, publish() silently returns false while
+  // legacy scalar telemetry keeps working, creating a false "old firmware"
+  // appearance in the dashboard.
+  mqtt.setBufferSize(1024);
   mqtt.setCallback(onMqttMessage);
 }
 

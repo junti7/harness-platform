@@ -68,3 +68,8 @@ def test_expired_or_replayed_manual_command_is_rejected(tmp_path: Path) -> None:
     ack = json.loads(client.published[-1][1])
     assert ack["accepted"] is False
     assert ack["reason"] == "expired"
+
+
+def test_firmware_allocates_buffer_for_heartbeat_and_diagnostic_json() -> None:
+    source = Path("hardware/smartfarm/soil_node/soil_node.ino").read_text()
+    assert "mqtt.setBufferSize(1024)" in source

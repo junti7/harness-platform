@@ -23,3 +23,9 @@
 - Remaining material blockers: none
 - Production verification still must prove broker ingest, Pi hub deployment, actual heartbeat after firmware flash,
   diagnostic result, and OFF observed state. ON remains blocked until these conditions are live-proven.
+
+## Post-deploy delta
+
+Live ESP8266 verification found that legacy scalar telemetry worked while heartbeat JSON did not publish because
+PubSubClient retained its 256-byte default packet buffer. Firmware now calls `mqtt.setBufferSize(1024)`, has a
+source regression assertion, and compiles for both ESP targets. This resolves the false-old-firmware condition.

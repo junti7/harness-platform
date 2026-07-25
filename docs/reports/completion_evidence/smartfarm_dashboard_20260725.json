@@ -33,6 +33,12 @@
       "result": "Both board targets compiled; ESP32 used 69 percent flash and ESP8266 used 24 percent flash."
     },
     {
+      "name": "ESP8266 live flash and packet-size fault detection",
+      "target": "production ESP8266 zone2 serial flash and MQTT",
+      "command": "Mac mini arduino-cli upload on /dev/cu.usbserial-0001 then MQTT heartbeat and telemetry observation",
+      "result": "Flash and hash verification passed and scalar telemetry resumed. Heartbeat initially failed because its JSON exceeded the PubSubClient 256-byte buffer; firmware was corrected to a 1024-byte buffer and both board compiles plus 22 focused tests passed before reflash."
+    },
+    {
       "name": "real Raspberry Pi MQTT and service inspection",
       "target": "Raspberry Pi production broker database and telemetry",
       "command": "mosquitto_sub -h 192.168.0.23 -t farm/# plus read-only SSH service check",
@@ -72,7 +78,7 @@
   },
   "residual_risks": [
     "First Mac mini deployment attempt stopped before remote mutation because the path-wide EDU guard required unavailable MBP PostgreSQL; an audited non-EDU skip flag was added for the retry.",
-    "Existing ESP firmware does not yet emit the new identity heartbeat or diagnostic result.",
+    "ESP8266 needs the corrected 1024-byte MQTT-buffer firmware reflashed; ESP32 still needs the new firmware flashed.",
     "Physical ON remains intentionally disabled until watchdog heartbeat and observed OFF are live-proven.",
     "In-app browser was unavailable, so visual desktop and mobile automation is not yet verified.",
     "Raspberry Pi hub production still needs the committed structured-command handler deployed through scripts/deploy_smartfarm_pi_hub.sh."
