@@ -29,7 +29,7 @@
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh with the changed frontend and audit artifacts",
-    "result": "Pending deployment."
+    "result": "Mac mini deployed production bundle index-D8Sfst4k.js. The served dashboard bundle contains TEST READY and no manual pump ON execution or 300-second manual-ON rejection text."
   },
   "red_team": {
     "models": [
