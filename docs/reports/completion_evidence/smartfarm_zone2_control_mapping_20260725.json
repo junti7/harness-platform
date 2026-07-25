@@ -1,6 +1,6 @@
 {
   "task": "Bind Harness OS pump control to the physical zone2 pump",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -35,7 +35,7 @@
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh with smartfarm runtime frontend launchd and evidence paths",
-    "result": "pending production deployment and post-deploy overview verification"
+    "result": "Mac mini deployed index-DPjbgzol.js; frontend returned HTTP 200 and contains the independent control-zone UI; launchd is running with HARNESS_SMARTFARM_PUMP_CONTROL_ZONES=zone2; operational DB reports zone2 pump OFF."
   },
   "red_team": {
     "models": [
