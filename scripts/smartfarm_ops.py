@@ -51,8 +51,17 @@ def _parse_ts(raw: str) -> datetime:
     return dt
 
 
+KST = timezone(timedelta(hours=9))
+
+
 def _iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    """모든 산출물의 시각 표기는 KST(+09:00)로 통일한다 (2026-07-25 CEO 지시).
+
+    오프셋을 떼지 않는다 — 오프셋 없는 문자열은 _parse_ts가 UTC로 간주해
+    9시간 오차가 조용히 생긴다. DB의 recorded_at도 같은 형식으로 저장한다
+    (hardware/smartfarm/pi_hub/schema.sql).
+    """
+    return dt.astimezone(KST).isoformat(timespec="seconds")
 
 
 def _proposal_id(zone_id: str, kind: str) -> str:

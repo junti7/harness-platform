@@ -17,7 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -76,8 +76,17 @@ def command_extract(args: argparse.Namespace) -> int:
     return 0
 
 
+KST = timezone(timedelta(hours=9))
+
+
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    """산출물 시각은 KST(+09:00)로 통일한다 (2026-07-25 CEO 지시).
+
+    오프셋을 떼지 않는다 — smartfarm_ops._parse_ts가 오프셋 없는 값을 UTC로
+    간주하므로 9시간 오차가 조용히 생긴다. DB의 recorded_at도 같은 형식이다
+    (hardware/smartfarm/pi_hub/schema.sql).
+    """
+    return datetime.now(KST).isoformat(timespec="seconds")
 
 
 def _deliver_to_slack(route: str, text: str) -> dict[str, Any]:
