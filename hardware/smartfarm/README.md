@@ -79,3 +79,34 @@ mosquitto_sub -h <파이IP> -t 'farm/#' -v
 2. 새 노드에 맞는 템플릿(`config.example.esp32.h` 또는 `config.example.esp8266.h`)을 zone2용 `config.h`로 복사 (`ZONE_ID`, `MQTT_CLIENT_ID`만 변경, 캘리브레이션 값은 보드/센서별로 실측).
 3. 새 노드에 재플래싱, 배선.
 4. 허브 재시작 없이도 `farm/zone2/...` 토픽이 자동 구독됨 (와일드카드 구독이라 코드 변경 불필요).
+
+## 6. OpenClaw 연동 (읽기 전용 분석 + 제안, 액추에이터 제어 없음)
+
+`scripts/openclaw_smartfarm_research_bridge.py`가 부품 조달 리서치에 더해 운영 커맨드를 제공한다.
+어떤 커맨드도 MQTT 명령을 보내거나 액추에이터를 직접 건드리지 않는다 — 펌프 제어는 여전히
+`pi_hub/hub.py`의 결정론적 로직 단독 소유다.
+
+```bash
+# 이상탐지 (센서 무응답/고정값/범위이탈, 펌프 단주기 작동)
+python scripts/openclaw_smartfarm_research_bridge.py alerts --db pi_hub/smartfarm.db --config pi_hub/config.yaml
+
+# 존별 상태 리포트 (일간/주간)
+python scripts/openclaw_smartfarm_research_bridge.py report --db pi_hub/smartfarm.db --config pi_hub/config.yaml --period-hours 24
+
+# 데이터 기반 임계값 조정 제안 (제안만, 자동 반영 없음)
+python scripts/openclaw_smartfarm_research_bridge.py threshold-propose --db pi_hub/smartfarm.db --config pi_hub/config.yaml
+
+# CEO 승인/반려 기록 (threshold-propose 결과의 proposal_id 사용)
+python scripts/openclaw_smartfarm_research_bridge.py threshold-decide <proposal_id> approved --note "..."
+
+# 승인된 건만 config.yaml에 반영 (승인 기록 없으면 거부, 코멘트는 그대로 보존)
+python scripts/openclaw_smartfarm_research_bridge.py threshold-apply <proposal_id>
+```
+
+`alerts`/`report`는 `--deliver <route>`로 기존 Slack 라우트에 요약을 보낼 수 있다 (예:
+`--deliver ops_incidents`). 다만 이 라우트들은 실제 회사 공용 채널이라, 스마트팜 알림을
+바로 흘려보낼지는 채널을 지정하기 전에 판단이 필요하다 — 지정 안 하면 JSON 출력만 하고 아무것도
+발송하지 않는다.
+
+`threshold-apply`는 직전에 `threshold-decide`로 기록된 결정이 `approved`인 경우에만 동작하며,
+`config.yaml`의 다른 라인/한글 주석은 건드리지 않고 해당 수치만 치환한다.

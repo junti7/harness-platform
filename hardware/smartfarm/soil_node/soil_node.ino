@@ -125,6 +125,16 @@ void loop() {
     float temp = dht.readTemperature();
     float humidity = dht.readHumidity();
 
+    Serial.print("[debug] DHT22 GPIO");
+    Serial.print(DHT_PIN);
+    Serial.print(" temp=");
+    Serial.print(temp);
+    Serial.print(" humidity=");
+    Serial.println(humidity);
+    if (isnan(temp) || isnan(humidity)) {
+      Serial.println("[error] DHT22 read failed");
+    }
+
     char buf[16];
     snprintf(buf, sizeof(buf), "%d", soilPct);
     mqtt.publish(topicSoil, buf);

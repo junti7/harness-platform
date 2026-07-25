@@ -8,6 +8,8 @@
 
 실행: python hub.py --config config.yaml
 """
+from __future__ import annotations
+
 import argparse
 import sqlite3
 import threading
