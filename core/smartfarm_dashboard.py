@@ -614,8 +614,15 @@ class SmartfarmRuntime:
             ).fetchall()
             pump_rows = conn.execute("SELECT key,value FROM smartfarm_meta WHERE key LIKE 'pump:%'").fetchall()
         devices = []
+        fault_device_ids = {
+            str(row["device_id"])
+            for row in alert_rows
+            if row["severity"] in {"high", "critical"} and row["device_id"]
+        }
         for row in device_rows:
             health, age = self._device_health(row, now)
+            if row["device_id"] in fault_device_ids:
+                health = "fault"
             devices.append(
                 {
                     "device_id": row["device_id"],

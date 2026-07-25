@@ -18,7 +18,7 @@
       "name": "focused smartfarm Python regression",
       "target": "smartfarm runtime database Pi hub and pump safety",
       "command": "PYTHONPATH=. .venv/bin/python -m pytest -q tests/test_smartfarm_dashboard.py tests/test_smartfarm_pi_hub_commands.py tests/test_smartfarm_pump_control.py",
-      "result": "23 passed in 0.28s including concurrent DB access, command ack versus observation, fail-closed ON, hub sequence/expiry, pump safety, MQTT packet sizing, and diagnostic-failure alert promotion."
+      "result": "23 passed in 0.29s including concurrent DB access, command ack versus observation, fail-closed ON, hub sequence/expiry, pump safety, MQTT packet sizing, diagnostic-failure alert promotion, and proof that a fresh heartbeat cannot hide an unresolved high-severity fault."
     },
     {
       "name": "frontend production bundle and scoped lint",

@@ -193,6 +193,12 @@ class SmartfarmRuntimeTests(unittest.TestCase):
         self.assertEqual(overview["devices"][0]["health"], "fault")
         self.assertEqual(overview["summary"]["alerts_open"], 1)
         self.assertEqual(overview["alerts"][0]["code"], "diagnostic_failed")
+        self._heartbeat(state="online", ts=time.time() + 1)
+        self.assertEqual(
+            self.runtime.overview()["devices"][0]["health"],
+            "fault",
+            "fresh heartbeat must not hide an unresolved high-severity diagnostic alert",
+        )
 
 
 if __name__ == "__main__":
