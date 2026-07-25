@@ -54,6 +54,9 @@ sudo systemctl enable --now harness-smartfarm-hub.service
    - **ESP32**: 토양수분 센서 AOUT → GPIO34, DHT22 → GPIO4, 릴레이 IN → GPIO26
    - **ESP8266**: 토양수분 센서 AOUT → A0(유일한 아날로그 핀), DHT22 → GPIO4(D2), 릴레이 IN → GPIO5(D1)
    - (config.h에서 pin 변경 가능. ESP8266은 아날로그 입력이 A0 하나뿐이라 SOIL_MOISTURE_PIN은 항상 A0.)
+   - **센서를 늘릴 때는 `BENCH_WIRING.md`(벤치 배선 표준)를 따른다.** 칩 무관 신호 규격·커넥터·색/라벨 규약과
+     ESP32/ESP8266 핀 매핑, I2C 확장 방법이 정의돼 있다. ESP8266에서 I2C를 쓰려면 위 DHT/릴레이 핀을
+     D7(13)/D5(14)로 옮겨야 한다(D1/D2가 I2C 전용).
 4. 컴파일/업로드 (FQBN은 실제 보드에 맞게, 예: `esp32:esp32:esp32` / `esp8266:esp8266:nodemcuv2`).
    ```bash
    arduino-cli compile --fqbn <FQBN> hardware/smartfarm/soil_node
