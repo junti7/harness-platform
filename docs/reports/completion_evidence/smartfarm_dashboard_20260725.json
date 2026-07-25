@@ -1,0 +1,79 @@
+{
+  "task": "Mac mini Harness OS smartfarm operations dashboard",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-25T17:48:42+09:00",
+      "summary": "Completion requires requirement-to-evidence mapping, mobile-first UI, production entrypoint verification, and exact residual-risk reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-25T17:48:42+09:00",
+      "summary": "Origin main is source of truth; Mac mini deployment uses the selective deploy script; real API DB process and bundle evidence are required."
+    }
+  ],
+  "verification": [
+    {
+      "name": "focused smartfarm Python regression",
+      "target": "smartfarm runtime database Pi hub and pump safety",
+      "command": "PYTHONPATH=. .venv/bin/python -m pytest -q tests/test_smartfarm_dashboard.py tests/test_smartfarm_pi_hub_commands.py tests/test_smartfarm_pump_control.py",
+      "result": "21 passed in 0.27s including concurrent DB access, command ack versus observation, fail-closed ON, hub sequence/expiry, and pump safety."
+    },
+    {
+      "name": "frontend production bundle and scoped lint",
+      "target": "Harness OS smartfarm user interface production dist",
+      "command": "npm run build && npx eslint src/pages/SmartfarmPage.tsx src/components/TopBar.tsx",
+      "result": "Vite production build passed and the changed Smartfarm page/navigation lint passed with zero findings."
+    },
+    {
+      "name": "ESP32 and ESP8266 firmware compile",
+      "target": "physical smartfarm edge firmware",
+      "command": "arduino-cli compile for esp32:esp32:esp32 and esp8266:esp8266:nodemcuv2 using secret-free example configs",
+      "result": "Both board targets compiled; ESP32 used 69 percent flash and ESP8266 used 24 percent flash."
+    },
+    {
+      "name": "real Raspberry Pi MQTT and service inspection",
+      "target": "Raspberry Pi production broker database and telemetry",
+      "command": "mosquitto_sub -h 192.168.0.23 -t farm/# plus read-only SSH service check",
+      "result": "Mosquitto and harness-smartfarm-hub were active; zone2 emitted real soil_raw soil temp humidity and both zone pump states were OFF. Existing firmware had no heartbeat yet."
+    },
+    {
+      "name": "local real FastAPI DB and safety entrypoint",
+      "target": "running Harness OS API and SQLite operational database",
+      "command": "uvicorn on 127.0.0.1:8010 with seeded operational DB, authenticated overview history OFF and ON requests",
+      "result": "Overview returned 3 devices and 2 zones; history returned 30 points; disconnected OFF was truthfully blocked mqtt_not_connected; ON returned 409 actuation_disabled."
+    }
+  ],
+  "red_team": {
+    "models": [
+      "Codex",
+      "Gemini",
+      "Claude"
+    ],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/smartfarm_dashboard_plan_codex_20260725.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/smartfarm_dashboard_plan_gemini_20260725.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/smartfarm_dashboard_implementation_codex_20260725.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/smartfarm_dashboard_implementation_gemini_20260725.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/smartfarm_dashboard_implementation_claude_20260725.md"
+      }
+    ],
+    "verdict": "red_team_residual_risk"
+  },
+  "residual_risks": [
+    "Mac mini deployment has not yet run.",
+    "Existing ESP firmware does not yet emit the new identity heartbeat or diagnostic result.",
+    "Physical ON remains intentionally disabled until watchdog heartbeat and observed OFF are live-proven.",
+    "In-app browser was unavailable, so visual desktop and mobile automation is not yet verified."
+  ]
+}
