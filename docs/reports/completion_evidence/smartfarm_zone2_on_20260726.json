@@ -1,0 +1,53 @@
+{
+  "task": "Enable and verify bounded zone2 pump ON from Harness OS",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-26T00:00:00+09:00",
+      "summary": "Completion requires requirement mapping, production entrypoint verification, and exact residual-risk reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-26T00:00:00+09:00",
+      "summary": "Origin main, selective Mac mini deployment, completion evidence, and real production verification are mandatory."
+    }
+  ],
+  "verification": [
+    {
+      "name": "focused smartfarm regression",
+      "target": "session auth runtime state machine Pi hub and actuator controls",
+      "command": "PYTHONPATH=. .venv/bin/python -m pytest -q tests/test_smartfarm_session_actuation.py tests/test_smartfarm_dashboard.py tests/test_smartfarm_pi_hub_commands.py tests/test_smartfarm_pump_control.py",
+      "result": "33 passed, including ON then OFF completion and OFF-before-ON false-success rejection."
+    },
+    {
+      "name": "frontend and launchd validation",
+      "target": "Harness OS inline ON workflow and production configuration",
+      "command": "Vite production build, scoped ESLint, and plutil lint",
+      "result": "Build, changed-file lint, and plist validation passed. ON result is displayed beside the button and polling scales with requested duration."
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh with runtime frontend launchd tests and evidence",
+    "result": "pending production deployment and live zone2 ON to automatic OFF verification"
+  },
+  "red_team": {
+    "models": [
+      "Codex",
+      "Gemini",
+      "Claude"
+    ],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/smartfarm_zone2_on_gemini_20260726.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/smartfarm_zone2_on_claude_20260726.md"
+      }
+    ],
+    "verdict": "red_team_clear"
+  },
+  "residual_risks": [
+    "A lost MQTT ON observation fails closed as incomplete rather than reporting success."
+  ]
+}

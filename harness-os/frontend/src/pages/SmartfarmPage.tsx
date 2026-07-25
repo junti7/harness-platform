@@ -308,9 +308,10 @@ export function SmartfarmPage({
           ? `펌프 테스트 ${payload.command_id.slice(0, 8)} 시작 · 자동 OFF와 실제 상태 확인 중`
           : `명령 ${payload.command_id.slice(0, 8)} · ${payload.status}. 실제 상태 확인 전 성공 아님.`,
       )
-      if (controlAction === 'test') {
+      if (controlAction === 'test' || controlAction === 'on') {
         let completed = false
-        for (let attempt = 0; attempt < 20; attempt += 1) {
+        const maxAttempts = Math.ceil((duration + 7) * 2)
+        for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
           await new Promise(resolve => window.setTimeout(resolve, 500))
           const commandResponse = await fetch(
             `${apiBase}/api/smartfarm/commands/${encodeURIComponent(payload.command_id)}`,
@@ -319,7 +320,9 @@ export function SmartfarmPage({
           if (!commandResponse.ok) continue
           const command = await commandResponse.json() as Command
           if (command.status === 'completed' && command.observed_state === 'off') {
-            setActionMessage(`펌프 테스트 ${payload.command_id.slice(0, 8)} 완료 · 실제 ON 후 자동 OFF 확인`)
+            setActionMessage(
+              `${controlAction === 'test' ? '펌프 테스트' : '펌프 ON'} ${payload.command_id.slice(0, 8)} 완료 · 실제 ON 후 자동 OFF 확인`,
+            )
             completed = true
             break
           }
@@ -515,8 +518,11 @@ export function SmartfarmPage({
                     ? '안전 조건 검사 중…'
                     : controlAction === 'test'
                       ? `${duration}초 펌프 테스트 실행`
-                      : `${controlAction.toUpperCase()} 명령 검토 후 전송`}
+                      : controlAction === 'on'
+                        ? `${duration}초 펌프 ON 실행`
+                        : '펌프 즉시 OFF'}
                 </button>
+                {actionMessage && <p className="sf-control-result" role="status">{actionMessage}</p>}
               </div>
             )}
           </section>

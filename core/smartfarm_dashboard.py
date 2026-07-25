@@ -495,9 +495,9 @@ class SmartfarmRuntime:
     def _record_pump_observation(self, zone_id: str, state: str, observed_at: float) -> None:
         with self._connect() as conn:
             row = conn.execute(
-                """SELECT command_id,kind FROM smartfarm_commands
+                """SELECT command_id,kind,status,observed_state FROM smartfarm_commands
                    WHERE zone_id=? AND kind IN ('pump_on','pump_off','pump_test')
-                   AND status IN ('published','acknowledged','running','unknown')
+                   AND status IN ('published','acknowledged','running','observed','unknown')
                    ORDER BY issued_at DESC LIMIT 1""",
                 (zone_id,),
             ).fetchone()
@@ -505,6 +505,17 @@ class SmartfarmRuntime:
             if row["kind"] == "pump_test" and state == "on":
                 self._enqueue(
                     """UPDATE smartfarm_commands SET status='running',observed_at=?,observed_state='on'
+                       WHERE command_id=?""",
+                    (observed_at, row["command_id"]),
+                )
+            elif (
+                row["kind"] == "pump_on"
+                and state == "off"
+                and row["status"] == "observed"
+                and row["observed_state"] == "on"
+            ):
+                self._enqueue(
+                    """UPDATE smartfarm_commands SET status='completed',observed_at=?,observed_state='off'
                        WHERE command_id=?""",
                     (observed_at, row["command_id"]),
                 )

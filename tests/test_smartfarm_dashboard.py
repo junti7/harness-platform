@@ -225,6 +225,43 @@ class SmartfarmRuntimeTests(unittest.TestCase):
         self.assertEqual(rejected["status"], "rejected")
         self.assertEqual(rejected["safety_reason"], "active_or_cooldown")
 
+    def test_bounded_pump_on_completes_only_after_observed_auto_off(self):
+        fake = _FakeMqtt()
+        self.runtime.health.connected = True
+        self.runtime._mqtt_client = fake
+        command = self.runtime.create_command(
+            zone_id="zone2",
+            kind="pump_on",
+            actor="ceo",
+            params={"duration_s": 3},
+        )
+        self.runtime.ingest_message("farm/zone2/pump/status", "on")
+        self.runtime.flush()
+        running = self.runtime.command(command["command_id"])
+        self.assertEqual(running["status"], "observed")
+        self.assertEqual(running["observed_state"], "on")
+        self.runtime.ingest_message("farm/zone2/pump/status", "off")
+        self.runtime.flush()
+        completed = self.runtime.command(command["command_id"])
+        self.assertEqual(completed["status"], "completed")
+        self.assertEqual(completed["observed_state"], "off")
+
+    def test_pump_on_does_not_false_complete_from_off_before_on(self):
+        fake = _FakeMqtt()
+        self.runtime.health.connected = True
+        self.runtime._mqtt_client = fake
+        command = self.runtime.create_command(
+            zone_id="zone2",
+            kind="pump_on",
+            actor="ceo",
+            params={"duration_s": 3},
+        )
+        self.runtime.ingest_message("farm/zone2/pump/status", "off")
+        self.runtime.flush()
+        pending = self.runtime.command(command["command_id"])
+        self.assertNotEqual(pending["status"], "completed")
+        self.assertNotEqual(pending["observed_state"], "off")
+
     def test_invasive_diagnostic_requires_observed_off(self):
         clear, reason = self.runtime.diagnostic_safety("zone1", invasive=True)
         self.assertFalse(clear)
