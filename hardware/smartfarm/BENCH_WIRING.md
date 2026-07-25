@@ -197,6 +197,11 @@ ESP32용·ESP8266용 두 종을 같은 커넥터 배치로 만들면 완전한 �
 3. 릴레이/펌프를 분리한 채 노드만 전원 인가 → 부팅 로그(115200 baud) 확인.
 4. 센서를 **한 번에 하나씩** 추가하고 매번 I2C 스캐너로 주소 확인. 주소가 겹치면(ADS1115 등) ADDR 핀으로 분리한다.
 5. `mosquitto_sub -h <파이IP> -t 'farm/#' -v` 로 값이 올라오는지 확인.
+   펌웨어 2.0(`smartfarm-node-2.0`)은 `farm/<zone>/device/status`에 노드 상태를 JSON으로 발행하므로
+   30초 주기의 센서값을 기다리지 않고도 판정된다 — `board`(칩 종류), `ip`, `rssi_dbm`, `uptime_s`,
+   `boot_id`(재부팅 감지), `watchdog_max_run_ms`(노드측 펌프 상한), `sensor_capabilities`,
+   `actuator_capabilities`가 들어 있다. 허브도 `farm/system/pi-hub/status`에 `db_ok`/`config_ok`/`zones`를 낸다.
+   **허브 생존 여부는 이 토픽부터 본다** — 2026-07-25에 이걸 모르고 journalctl과 SQLite를 한참 뒤졌다.
 6. 마지막에 릴레이를 연결한다. 펌프는 **물 없이 공회전 금지** — 튜브를 물통에 담근 상태에서만 켠다.
 7. 배선을 바꿨으면 `config.h`, 이 문서, 사진 세 가지를 함께 갱신한다.
 
