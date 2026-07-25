@@ -30,13 +30,6 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    id: 'physical',
-    label: 'Physical AI',
-    items: [
-      { view: 'smartfarm', label: 'Smartfarm 관제' },
-    ],
-  },
-  {
     id: 'education',
     label: '교육',
     items: [
@@ -183,6 +176,14 @@ export function TopBar({
           onClick={() => onChangeView('news-center')}
         >
           <span>뉴스</span>
+        </button>
+
+        <button
+          type="button"
+          className={`nav-trigger nav-trigger-standalone ${activeView === 'smartfarm' ? 'active' : ''}`}
+          onClick={() => onChangeView('smartfarm')}
+        >
+          <span>스마트팜</span>
         </button>
 
         {NAV_GROUPS.map(group => {
@@ -379,6 +380,9 @@ export function TopBar({
                 </button>
                 <button type="button" className={`mobile-nav-item ${activeView === 'news-center' ? 'active' : ''}`} onClick={() => onChangeView('news-center')}>
                   <span>뉴스</span>
+                </button>
+                <button type="button" className={`mobile-nav-item ${activeView === 'smartfarm' ? 'active' : ''}`} onClick={() => onChangeView('smartfarm')}>
+                  <span>스마트팜</span>
                 </button>
                 <button type="button" className={`mobile-nav-item ${activeView === 'settings' ? 'active' : ''}`} onClick={() => onChangeView('settings')}>
                   <span>설정</span>

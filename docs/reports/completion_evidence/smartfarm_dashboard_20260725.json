@@ -27,6 +27,12 @@
       "result": "Vite production build passed and the changed Smartfarm page/navigation lint passed with zero findings."
     },
     {
+      "name": "top-level Harness OS smartfarm navigation",
+      "target": "desktop header and mobile quick navigation",
+      "command": "remove the Physical AI dropdown entry, add standalone smartfarm navigation, then run Vite production build and scoped ESLint",
+      "result": "Standalone 스마트팜 menu is present in the desktop top bar and mobile quick menu; production build and changed-file lint passed."
+    },
+    {
       "name": "ESP32 and ESP8266 firmware compile",
       "target": "physical smartfarm edge firmware",
       "command": "arduino-cli compile for esp32:esp32:esp32 and esp8266:esp8266:nodemcuv2 using secret-free example configs",
