@@ -1,0 +1,53 @@
+{
+  "task": "Remove the confusing manual ON control from the Harness OS smartfarm dashboard",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-26T08:47:00+09:00",
+      "summary": "Verified completion evidence, production entrypoint, mobile-first, selective deploy, and clean-worktree requirements."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-26T08:47:00+09:00",
+      "summary": "Verified origin/main source of truth, completion guard, CEO-ordered Red Team, and Mac mini production verification requirements."
+    }
+  ],
+  "verification": [
+    {
+      "name": "frontend production build",
+      "target": "Harness OS smartfarm dashboard",
+      "command": "cd harness-os/frontend && npm run build",
+      "result": "Passed; generated index-D4HgZ1Y9.js."
+    },
+    {
+      "name": "changed-file lint and dead-branch scan",
+      "target": "SmartfarmPage.tsx",
+      "command": "npx eslint src/pages/SmartfarmPage.tsx and rg for manual ON branches",
+      "result": "Passed; no manual ON control or ON-specific branch remains."
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh with the changed frontend and audit artifacts",
+    "result": "Pending deployment."
+  },
+  "red_team": {
+    "models": [
+      "Codex",
+      "Gemini",
+      "Claude"
+    ],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/smartfarm_manual_on_removal_gemini_20260726.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/smartfarm_manual_on_removal_claude_20260726.md"
+      }
+    ],
+    "verdict": "red_team_clear"
+  },
+  "residual_risks": [
+    "The backend manual ON contract remains available for non-dashboard integrations; this change removes only the confusing Harness OS button."
+  ]
+}

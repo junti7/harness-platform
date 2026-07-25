@@ -205,7 +205,7 @@ export function SmartfarmPage({
   const [actionBusy, setActionBusy] = useState(false)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [controlOpen, setControlOpen] = useState(false)
-  const [controlAction, setControlAction] = useState<'on' | 'off' | 'test'>('off')
+  const [controlAction, setControlAction] = useState<'off' | 'test'>('off')
   const [duration, setDuration] = useState(3)
   const [confirmation, setConfirmation] = useState('')
 
@@ -281,7 +281,7 @@ export function SmartfarmPage({
     setActionMessage(null)
     try {
       let nonce: string | undefined
-      if (controlAction === 'on' || controlAction === 'test') {
+      if (controlAction === 'test') {
         const tokenResponse = await fetch(`${apiBase}/api/smartfarm/actuation/session-token`, {
           method: 'POST',
           headers: authHeaders(),
@@ -308,9 +308,9 @@ export function SmartfarmPage({
       setActionMessage(
         controlAction === 'test'
           ? `펌프 테스트 ${payload.command_id.slice(0, 8)} 시작 · 자동 OFF와 실제 상태 확인 중`
-          : `명령 ${payload.command_id.slice(0, 8)} · ${payload.status}. 실제 상태 확인 전 성공 아님.`,
+          : `OFF 명령 ${payload.command_id.slice(0, 8)} · ${payload.status}`,
       )
-      if (controlAction === 'test' || controlAction === 'on') {
+      if (controlAction === 'test') {
         let completed = false
         const maxAttempts = Math.ceil((duration + 7) * 2)
         for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -323,18 +323,16 @@ export function SmartfarmPage({
           const command = await commandResponse.json() as Command
           if (command.status === 'completed' && command.observed_state === 'off') {
             setActionMessage(
-              `${controlAction === 'test' ? '펌프 테스트' : '펌프 ON'} ${payload.command_id.slice(0, 8)} 완료 · 실제 ON 후 자동 OFF 확인`,
+              `펌프 테스트 ${payload.command_id.slice(0, 8)} 완료 · 실제 ON 후 자동 OFF 확인`,
             )
             completed = true
             break
           }
           if (command.status === 'rejected' || command.status === 'blocked' || command.status === 'unknown') {
             const reason = command.safety_reason === 'active_or_cooldown'
-              ? controlAction === 'test'
-                ? '펌프 동작 또는 5초 재실행 대기 중'
-                : '펌프 동작 또는 300초 급수 보호시간 중'
+              ? '펌프 동작 또는 5초 재실행 대기 중'
               : command.safety_reason || command.status
-            throw new Error(`${controlAction === 'test' ? '펌프 테스트' : '펌프 ON'} 거부: ${reason}`)
+            throw new Error(`펌프 테스트 거부: ${reason}`)
           }
         }
         if (!completed) throw new Error('펌프 실제 ON/OFF 확인 시간 초과')
@@ -370,10 +368,7 @@ export function SmartfarmPage({
   const selectedZoneData = overview?.zones.find(zone => zone.zone_id === selectedZone)
   const controlZone = selectedControlZone
   const controlZoneData = overview?.zones.find(zone => zone.zone_id === controlZone)
-  const durationLimit = Math.min(
-    controlAction === 'test' ? 3 : 300,
-    overview?.runtime.pump_max_duration_s ?? 3,
-  )
+  const durationLimit = Math.min(3, overview?.runtime.pump_max_duration_s ?? 3)
   const devices = overview?.devices ?? []
   const unhealthy = devices.filter(device => device.health !== 'online').length
 
@@ -474,12 +469,8 @@ export function SmartfarmPage({
           <section className="sf-panel">
             <div className="sf-section-head">
               <div><span>CONTROL</span><h3>{controlZone || '미설정'} 급수 제어</h3></div>
-              <span className={`sf-mode ${overview?.runtime.actuation_enabled ? 'armed' : ''}`}>
-                {overview?.runtime.actuation_enabled
-                  ? 'ARMED'
-                  : overview?.runtime.pump_test_enabled
-                    ? 'TEST ONLY'
-                    : 'SAFE LOCK'}
+              <span className={`sf-mode ${overview?.runtime.pump_test_enabled ? 'armed' : ''}`}>
+                {overview?.runtime.pump_test_enabled ? 'TEST READY' : 'SAFE LOCK'}
               </span>
             </div>
             {(overview?.runtime.pump_control_zones.length ?? 0) > 1 && (
@@ -507,10 +498,6 @@ export function SmartfarmPage({
                     setControlAction('test')
                     setDuration(current => Math.min(current, 3, overview?.runtime.pump_max_duration_s ?? 3))
                   }}>TEST</button>
-                  <button className={controlAction === 'on' ? 'active danger' : ''} onClick={() => {
-                    setControlAction('on')
-                    setDuration(current => Math.min(current, overview?.runtime.pump_max_duration_s ?? 3))
-                  }}>ON</button>
                 </div>
                 <label>최대 동작시간
                   <input
@@ -527,14 +514,12 @@ export function SmartfarmPage({
                 <label>오작동 방지 확인 — <code>{controlZone}</code> 입력
                   <input value={confirmation} onChange={event => setConfirmation(event.target.value)} autoComplete="off" />
                 </label>
-                <button className={`sf-submit ${controlAction === 'on' ? 'danger' : ''}`} disabled={actionBusy || confirmation !== controlZone} onClick={() => void submitPump()}>
+                <button className="sf-submit" disabled={actionBusy || confirmation !== controlZone} onClick={() => void submitPump()}>
                   {actionBusy
                     ? '안전 조건 검사 중…'
                     : controlAction === 'test'
                       ? `${duration}초 펌프 테스트 실행`
-                      : controlAction === 'on'
-                        ? `${duration}초 펌프 ON 실행`
-                        : '펌프 즉시 OFF'}
+                      : '펌프 즉시 OFF'}
                 </button>
                 {actionMessage && <p className="sf-control-result" role="status">{actionMessage}</p>}
               </div>
