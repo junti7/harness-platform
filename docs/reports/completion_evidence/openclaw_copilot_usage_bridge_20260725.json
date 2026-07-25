@@ -36,12 +36,12 @@
       "name": "Mac mini production OpenClaw replay",
       "target": "Mac mini OpenClaw gateway and Discord-equivalent agent path",
       "command": "harness_copilot_usage live tool call and agent replay",
-      "result": "PENDING_DEPLOY_VERIFICATION"
+      "result": "PASS: run 1a7a82ef-5263-4048-9225-94cde805f554 completed; harness_copilot_usage called once with zero failures; answer reported 71 sessions, 274 completed turns, and 72 gpt-5.3-codex auto resolutions while explicitly separating local observations from 324 GitHub billed units."
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh selected paths; force-install harness-bridge; restart gateway; install laptop LaunchAgent",
-    "result": "PENDING_DEPLOY_VERIFICATION"
+    "result": "PASS: selected paths matched origin/main; harness-bridge force-installed; gateway restarted; plugin doctor reported no issues; Mac mini plugin regression passed; laptop LaunchAgent sync produced a fresh valid aggregate snapshot."
   },
   "red_team": {
     "models": [
