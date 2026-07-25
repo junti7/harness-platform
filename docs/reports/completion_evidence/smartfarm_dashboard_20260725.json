@@ -18,7 +18,7 @@
       "name": "focused smartfarm Python regression",
       "target": "smartfarm runtime database Pi hub and pump safety",
       "command": "PYTHONPATH=. .venv/bin/python -m pytest -q tests/test_smartfarm_dashboard.py tests/test_smartfarm_pi_hub_commands.py tests/test_smartfarm_pump_control.py",
-      "result": "23 passed in 0.29s including concurrent DB access, command ack versus observation, fail-closed ON, hub sequence/expiry, pump safety, MQTT packet sizing, diagnostic-failure alert promotion, and proof that a fresh heartbeat cannot hide an unresolved high-severity fault."
+      "result": "25 passed including concurrent DB access, command ack versus observation, fail-closed ON, guarded pump TEST, hub sequence/expiry, pump safety, MQTT packet sizing, diagnostic-failure alert promotion, and proof that a fresh heartbeat cannot hide an unresolved high-severity fault."
     },
     {
       "name": "frontend production bundle and scoped lint",
@@ -37,6 +37,12 @@
       "target": "CEO-only dashboard API Pi hub edge observation and audit state machine",
       "command": "focused Python tests plus Vite build and scoped lint for TEST control",
       "result": "Pump TEST is separated from normal ON, limited to 1 to 3 seconds, requires fresh CEO re-authentication and exact zone confirmation, checks watchdog sensor cooldown and concurrency, and reaches completed only after observed ON followed by automatic OFF. Focused suite passed 25 tests."
+    },
+    {
+      "name": "production pump test safety gate",
+      "target": "deployed Mac mini Harness OS bundle and authenticated production API",
+      "command": "deploy from origin/main, inspect production overview flags, reject TEST without a fresh nonce, reject a 4-second TEST, and confirm both observed pump states",
+      "result": "Production reports MQTT connected, normal actuation disabled, and pump TEST enabled. A TEST without a one-time authorization nonce returned 403; a 4-second TEST returned 400; both pumps remained OFF. The deployed index-CfPSz_UD.js bundle contains the pump TEST workflow."
     },
     {
       "name": "ESP32 and ESP8266 firmware compile",
@@ -89,7 +95,7 @@
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh selected smartfarm backend frontend launchd and firmware source paths; scripts/deploy_smartfarm_pi_hub.sh for the Raspberry Pi owner",
-    "result": "Mac mini backend and atomic frontend bundle deployed; Pi hub deployed with backup; ESP8266 and ESP32 firmware flashed and hash-verified; production API MQTT SQLite heartbeat diagnostic and OFF observation verified."
+    "result": "Mac mini backend and atomic frontend bundle index-CfPSz_UD.js deployed; Pi hub deployed with backup; ESP8266 and ESP32 firmware flashed and hash-verified; production API MQTT SQLite heartbeat diagnostic OFF observation and pump TEST safety rejection verified."
   },
   "red_team": {
     "models": [
