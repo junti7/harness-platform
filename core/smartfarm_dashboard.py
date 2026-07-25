@@ -486,17 +486,25 @@ class SmartfarmRuntime:
         with self._connect() as conn:
             row = conn.execute(
                 """SELECT command_id,kind FROM smartfarm_commands
-                   WHERE zone_id=? AND kind IN ('pump_on','pump_off')
-                   AND status IN ('published','acknowledged','unknown')
+                   WHERE zone_id=? AND kind IN ('pump_on','pump_off','pump_test')
+                   AND status IN ('published','acknowledged','running','unknown')
                    ORDER BY issued_at DESC LIMIT 1""",
                 (zone_id,),
             ).fetchone()
-        if row and row["kind"] == f"pump_{state}":
-            self._enqueue(
-                """UPDATE smartfarm_commands SET status='observed', observed_at=?, observed_state=?
-                   WHERE command_id=?""",
-                (observed_at, state, row["command_id"]),
-            )
+        if row:
+            if row["kind"] == "pump_test" and state == "on":
+                self._enqueue(
+                    """UPDATE smartfarm_commands SET status='running',observed_at=?,observed_state='on'
+                       WHERE command_id=?""",
+                    (observed_at, row["command_id"]),
+                )
+            elif (row["kind"] == "pump_test" and state == "off") or row["kind"] == f"pump_{state}":
+                final_status = "completed" if row["kind"] == "pump_test" else "observed"
+                self._enqueue(
+                    """UPDATE smartfarm_commands SET status=?, observed_at=?, observed_state=?
+                       WHERE command_id=?""",
+                    (final_status, observed_at, state, row["command_id"]),
+                )
         self._enqueue(
             """INSERT OR REPLACE INTO smartfarm_meta(key,value) VALUES(?,?)""",
             (f"pump:{zone_id}", _json({"state": state, "observed_at": observed_at})),
@@ -672,6 +680,7 @@ class SmartfarmRuntime:
                 "db_ok": True,
                 "writer_queue_depth": self._write_queue.qsize(),
                 "actuation_enabled": os.getenv("HARNESS_SMARTFARM_ACTUATION_ENABLED", "false").lower() in {"1", "true", "yes"},
+                "pump_test_enabled": os.getenv("HARNESS_SMARTFARM_PUMP_TEST_ENABLED", "false").lower() in {"1", "true", "yes"},
             },
             "summary": {
                 "devices_total": len(devices),
@@ -727,9 +736,16 @@ class SmartfarmRuntime:
         ]
         return {"zone_id": zone_id, "metric": metric, "points": points, "generated_at": _iso(_now())}
 
-    def pump_safety(self, zone_id: str, duration_s: int) -> tuple[bool, str, str | None]:
-        if not os.getenv("HARNESS_SMARTFARM_ACTUATION_ENABLED", "false").lower() in {"1", "true", "yes"}:
-            return False, "actuation_disabled", None
+    def pump_safety(
+        self, zone_id: str, duration_s: int, *, test_mode: bool = False
+    ) -> tuple[bool, str, str | None]:
+        feature_flag = (
+            "HARNESS_SMARTFARM_PUMP_TEST_ENABLED"
+            if test_mode
+            else "HARNESS_SMARTFARM_ACTUATION_ENABLED"
+        )
+        if not os.getenv(feature_flag, "false").lower() in {"1", "true", "yes"}:
+            return False, "pump_test_disabled" if test_mode else "actuation_disabled", None
         now = _now()
         with self._connect(readonly=True) as conn:
             rows = conn.execute(
@@ -737,8 +753,8 @@ class SmartfarmRuntime:
                 (zone_id,),
             ).fetchall()
             active = conn.execute(
-                """SELECT 1 FROM smartfarm_commands WHERE zone_id=? AND kind='pump_on'
-                   AND status IN ('created','published','acknowledged','observed') LIMIT 1""",
+                """SELECT 1 FROM smartfarm_commands WHERE zone_id=? AND kind IN ('pump_on','pump_test')
+                   AND status IN ('created','published','acknowledged','running','observed') LIMIT 1""",
                 (zone_id,),
             ).fetchone()
             bad_reading = conn.execute(

@@ -248,7 +248,7 @@ class SmartfarmHub:
         if expires_at <= time.time():
             self._publish_command_ack(zone_id, command_id, False, "rejected", "expired")
             return
-        if kind not in {"pump_on", "pump_off"}:
+        if kind not in {"pump_on", "pump_off", "pump_test"}:
             return  # diagnostics are owned directly by the edge node
 
         zone = self.zones[zone_id]

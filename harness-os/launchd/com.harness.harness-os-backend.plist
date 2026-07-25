@@ -41,6 +41,8 @@
     <string>1883</string>
     <key>HARNESS_SMARTFARM_DB_PATH</key>
     <string>__ROOT__/runtime/smartfarm/operations.db</string>
+    <key>HARNESS_SMARTFARM_PUMP_TEST_ENABLED</key>
+    <string>true</string>
   </dict>
 </dict>
 </plist>

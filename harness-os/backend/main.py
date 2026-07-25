@@ -468,7 +468,7 @@ class SmartfarmActuationAuthorizeRequest(BaseModel):
 
 
 class SmartfarmPumpRequest(BaseModel):
-    action: str = Field(pattern="^(on|off)$")
+    action: str = Field(pattern="^(on|off|test)$")
     duration_s: int = Field(default=10, ge=1, le=300)
     confirmation: str = Field(default="", max_length=100)
     actuation_nonce: str | None = Field(default=None, max_length=200)
@@ -3835,8 +3835,14 @@ def smartfarm_pump(
     runtime = get_smartfarm_runtime()
     device_id: str | None = None
     with runtime.control_guard(safe_zone):
-        if req.action == "on":
-            clear, reason, device_id = runtime.pump_safety(safe_zone, req.duration_s)
+        if req.action in {"on", "test"}:
+            if req.action == "test" and req.duration_s > 3:
+                raise HTTPException(status_code=400, detail="Pump test duration must be 1 to 3 seconds")
+            clear, reason, device_id = runtime.pump_safety(
+                safe_zone,
+                req.duration_s,
+                test_mode=req.action == "test",
+            )
             if not clear:
                 raise HTTPException(
                     status_code=409,
@@ -3847,7 +3853,7 @@ def smartfarm_pump(
         return runtime.create_command(
             zone_id=safe_zone,
             device_id=device_id,
-            kind=f"pump_{req.action}",
+            kind="pump_test" if req.action == "test" else f"pump_{req.action}",
             actor=role,
             params={"duration_s": req.duration_s},
         )

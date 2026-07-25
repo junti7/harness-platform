@@ -33,6 +33,12 @@
       "result": "Standalone 스마트팜 menu is present in the desktop top bar and mobile quick menu; production build and changed-file lint passed."
     },
     {
+      "name": "guarded pump test workflow",
+      "target": "CEO-only dashboard API Pi hub edge observation and audit state machine",
+      "command": "focused Python tests plus Vite build and scoped lint for TEST control",
+      "result": "Pump TEST is separated from normal ON, limited to 1 to 3 seconds, requires fresh CEO re-authentication and exact zone confirmation, checks watchdog sensor cooldown and concurrency, and reaches completed only after observed ON followed by automatic OFF. Focused suite passed 25 tests."
+    },
+    {
       "name": "ESP32 and ESP8266 firmware compile",
       "target": "physical smartfarm edge firmware",
       "command": "arduino-cli compile for esp32:esp32:esp32 and esp8266:esp8266:nodemcuv2 using secret-free example configs",

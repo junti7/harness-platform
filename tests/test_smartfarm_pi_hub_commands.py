@@ -70,6 +70,21 @@ def test_expired_or_replayed_manual_command_is_rejected(tmp_path: Path) -> None:
     assert ack["reason"] == "expired"
 
 
+def test_pump_test_uses_bounded_hub_timer(tmp_path: Path) -> None:
+    hub, client = _hub(tmp_path)
+    command = {
+        "command_id": "cmd-test",
+        "kind": "pump_test",
+        "sequence": 1,
+        "expires_at": time.time() + 20,
+        "params": {"duration_s": 2},
+    }
+    hub._handle_manual_command("zone1", json.dumps(command))
+    assert hub.zones["zone1"].pump_on is True
+    assert ("farm/zone1/pump/cmd", "on", 1, False) in client.published
+    hub._stop_pump(hub.zones["zone1"], None, "test_cleanup")
+
+
 def test_firmware_allocates_buffer_for_heartbeat_and_diagnostic_json() -> None:
     source = Path("hardware/smartfarm/soil_node/soil_node.ino").read_text()
     assert "mqtt.setBufferSize(1024)" in source

@@ -55,6 +55,7 @@ type Overview = {
     db_ok: boolean
     writer_queue_depth: number
     actuation_enabled: boolean
+    pump_test_enabled: boolean
   }
   summary: {
     devices_total: number
@@ -150,7 +151,7 @@ export function SmartfarmPage({
   const [actionBusy, setActionBusy] = useState(false)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [controlOpen, setControlOpen] = useState(false)
-  const [controlAction, setControlAction] = useState<'on' | 'off'>('off')
+  const [controlAction, setControlAction] = useState<'on' | 'off' | 'test'>('off')
   const [duration, setDuration] = useState(10)
   const [confirmation, setConfirmation] = useState('')
   const [password, setPassword] = useState('')
@@ -220,7 +221,7 @@ export function SmartfarmPage({
     setActionMessage(null)
     try {
       let nonce: string | undefined
-      if (controlAction === 'on') {
+      if (controlAction === 'on' || controlAction === 'test') {
         const authResponse = await fetch(`${apiBase}/api/smartfarm/actuation/authorize`, {
           method: 'POST',
           headers: { ...authHeaders(), 'Content-Type': 'application/json' },
@@ -245,7 +246,11 @@ export function SmartfarmPage({
         const detail = typeof payload.detail === 'object' ? payload.detail.code || payload.detail.message : payload.detail
         throw new Error(detail || `Pump API ${response.status}`)
       }
-      setActionMessage(`명령 ${payload.command_id.slice(0, 8)} · ${payload.status}. 실제 상태 확인 전 성공 아님.`)
+      setActionMessage(
+        controlAction === 'test'
+          ? `펌프 테스트 ${payload.command_id.slice(0, 8)} 시작 · 자동 OFF와 실제 상태 확인 중`
+          : `명령 ${payload.command_id.slice(0, 8)} · ${payload.status}. 실제 상태 확인 전 성공 아님.`,
+      )
       setPassword('')
       void loadOverview(true)
     } catch (err) {
@@ -377,7 +382,11 @@ export function SmartfarmPage({
             <div className="sf-section-head">
               <div><span>CONTROL</span><h3>급수 제어</h3></div>
               <span className={`sf-mode ${overview?.runtime.actuation_enabled ? 'armed' : ''}`}>
-                {overview?.runtime.actuation_enabled ? 'ARMED' : 'SAFE LOCK'}
+                {overview?.runtime.actuation_enabled
+                  ? 'ARMED'
+                  : overview?.runtime.pump_test_enabled
+                    ? 'TEST ONLY'
+                    : 'SAFE LOCK'}
               </span>
             </div>
             <div className="sf-pump-state">
@@ -394,19 +403,33 @@ export function SmartfarmPage({
               <div className="sf-control-form">
                 <div className="sf-segmented">
                   <button className={controlAction === 'off' ? 'active' : ''} onClick={() => setControlAction('off')}>OFF</button>
+                  <button className={controlAction === 'test' ? 'active test' : ''} onClick={() => {
+                    setControlAction('test')
+                    setDuration(current => Math.min(current, 3))
+                  }}>TEST</button>
                   <button className={controlAction === 'on' ? 'active danger' : ''} onClick={() => setControlAction('on')}>ON</button>
                 </div>
                 <label>최대 동작시간
-                  <input type="number" min={1} max={300} value={duration} onChange={event => setDuration(Number(event.target.value))} />
+                  <input
+                    type="number"
+                    min={1}
+                    max={controlAction === 'test' ? 3 : 300}
+                    value={duration}
+                    onChange={event => setDuration(Number(event.target.value))}
+                  />
                 </label>
                 <label>확인: <code>{selectedZone}</code> 입력
                   <input value={confirmation} onChange={event => setConfirmation(event.target.value)} autoComplete="off" />
                 </label>
-                {controlAction === 'on' && <label>대표 비밀번호 재확인
+                {(controlAction === 'on' || controlAction === 'test') && <label>대표 비밀번호 재확인
                   <input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" />
                 </label>}
                 <button className={`sf-submit ${controlAction === 'on' ? 'danger' : ''}`} disabled={actionBusy || confirmation !== selectedZone} onClick={() => void submitPump()}>
-                  {actionBusy ? '안전 조건 검사 중…' : `${controlAction.toUpperCase()} 명령 검토 후 전송`}
+                  {actionBusy
+                    ? '안전 조건 검사 중…'
+                    : controlAction === 'test'
+                      ? `${duration}초 펌프 테스트 실행`
+                      : `${controlAction.toUpperCase()} 명령 검토 후 전송`}
                 </button>
               </div>
             )}

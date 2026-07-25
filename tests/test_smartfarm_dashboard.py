@@ -127,6 +127,34 @@ class SmartfarmRuntimeTests(unittest.TestCase):
         self.assertEqual(reason, "clear")
         self.assertEqual(device_id, "esp32-zone1")
 
+    def test_pump_test_has_separate_flag_and_completes_only_after_auto_off(self):
+        self._heartbeat(watchdog_max_run_ms=15000)
+        self.runtime.ingest_message("farm/zone1/soil_raw", "1700")
+        self.runtime.flush()
+        with patch.dict(os.environ, {"HARNESS_SMARTFARM_PUMP_TEST_ENABLED": "true"}):
+            clear, reason, device_id = self.runtime.pump_safety("zone1", 3, test_mode=True)
+        self.assertTrue(clear)
+        self.assertEqual(reason, "clear")
+
+        fake = _FakeMqtt()
+        self.runtime.health.connected = True
+        self.runtime._mqtt_client = fake
+        command = self.runtime.create_command(
+            zone_id="zone1",
+            device_id=device_id,
+            kind="pump_test",
+            actor="ceo",
+            params={"duration_s": 3},
+        )
+        self.runtime.ingest_message("farm/zone1/pump/status", "on")
+        self.runtime.flush()
+        self.assertEqual(self.runtime.command(command["command_id"])["status"], "running")
+        self.runtime.ingest_message("farm/zone1/pump/status", "off")
+        self.runtime.flush()
+        completed = self.runtime.command(command["command_id"])
+        self.assertEqual(completed["status"], "completed")
+        self.assertEqual(completed["observed_state"], "off")
+
     def test_invasive_diagnostic_requires_observed_off(self):
         clear, reason = self.runtime.diagnostic_safety("zone1", invasive=True)
         self.assertFalse(clear)

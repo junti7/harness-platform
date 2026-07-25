@@ -82,9 +82,10 @@
 .sf-control-form { display: grid; gap: 11px; margin-top: 13px; padding-top: 13px; border-top: 1px solid var(--color-border); }
 .sf-control-form label { display: grid; gap: 5px; color: var(--color-text-muted); font-size: 11px; }
 .sf-control-form input { width: 100%; padding: 9px 10px; border: 1px solid var(--color-border); border-radius: 9px; color: var(--color-text); background: var(--color-bg); }
-.sf-segmented { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.sf-segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .sf-segmented button { padding: 8px; border: 1px solid var(--color-border); color: var(--color-text); background: var(--color-bg); border-radius: 8px; cursor: pointer; }
 .sf-segmented button.active { color: #fff; background: var(--sf-green-dark); border-color: transparent; }
+.sf-segmented button.active.test { color: #172310; background: var(--sf-amber); }
 .sf-segmented button.active.danger { background: #a83939; }
 
 .sf-runtime-list { display: grid; gap: 10px; }
