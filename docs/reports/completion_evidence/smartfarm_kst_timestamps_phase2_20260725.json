@@ -45,6 +45,12 @@
       "result": "28 passed."
     },
     {
+      "name": "Mac Mini 프로덕션 배포본에서 KST 적용 확인 (프론트 번들 + 백엔드 모듈)",
+      "target": "macmini production dist bundle + deployed module + backend service",
+      "command": "deploy_to_macmini.sh core/smartfarm_dashboard.py harness-os/frontend/src/pages/SmartfarmPage.tsx ; ssh macmini 'grep -c Asia/Seoul harness-os/frontend/dist/assets/index-*.js ; ./.venv/bin/python -c \"from core.smartfarm_dashboard import _iso; import time; print(_iso(time.time()))\" ; curl -o /dev/null -w %{http_code} http://127.0.0.1:8000/api/smartfarm/overview'",
+      "result": "프론트 재빌드 후 신규 번들 index-CMHiE8rK.js 에 'Asia/Seoul' 포함 확인(1건). Mac Mini 에 배포된 core/smartfarm_dashboard.py 가 '2026-07-25T20:25:22.842895+09:00' 로 KST 출력. 백엔드는 launchd 재기동 후 8000 서빙 중(401 = 인증 요구, 서비스 정상). 배포 스크립트의 origin 정합 검증도 각 0 통과."
+    },
+    {
       "name": "동시 편집 중인 타 세션 변경을 커밋에 섞지 않았음을 확인",
       "target": "git index",
       "command": "git diff -- <2 files> | (hunk 필터) | git apply --cached ; git diff --cached",
@@ -53,9 +59,9 @@
   ],
   "residual_risks": [
     {
-      "risk": "프론트 KST 표기를 프로덕션 렌더링 화면에서 아직 확인하지 못했다.",
-      "detail": "본 커밋 시점에는 Mac Mini 배포 전이라 타입체크와 소스 대조까지만 수행했다.",
-      "mitigation": "deploy_to_macmini.sh 로 프론트 빌드 후 실제 화면/API 응답에서 KST 표기를 확인한다."
+      "risk": "브라우저 실제 렌더링 화면은 육안 확인하지 않았다.",
+      "detail": "프로덕션 번들에 'Asia/Seoul' 이 포함된 것과 백엔드 모듈의 KST 출력까지는 확인했으나, 대시보드 인증 시크릿을 사용하지 않아 API 응답 본문과 화면 표기는 직접 보지 않았다.",
+      "mitigation": "CEO 가 Harness OS 스마트팜 화면을 열어 시각 표기가 KST 인지 확인한다."
     },
     {
       "risk": "파이에 하드웨어 RTC 가 없어 재부팅마다 시각이 수 분 역행한다 (phase1 에서 이월).",
