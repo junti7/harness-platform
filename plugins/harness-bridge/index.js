@@ -58,6 +58,10 @@ export function shouldEnforceCopilotUsage(prompt) {
   return COPILOT_USAGE_CONTEXT.test(text) && COPILOT_USAGE_INTENT.test(text);
 }
 
+function isCopilotUsageTool(toolName) {
+  return String(toolName ?? "").toLowerCase().endsWith("harness_copilot_usage");
+}
+
 function currentSenderId(prompt) {
   return String(prompt ?? "").match(
     /"sender"\s*:\s*\{[\s\S]{0,300}?"id"\s*:\s*"([^"]+)"/,
@@ -1129,7 +1133,17 @@ export default {
               "Harness knowledge routing is active; call harness_knowledge_query once and answer from its canonical evidence without memory, shell, or workspace-search fallback.",
           };
         }
-        if (isCopilotUsageRun(event, context) && event.toolName !== "harness_copilot_usage") {
+        if (isCopilotUsageRun(event, context) && isCopilotUsageTool(event.toolName)) {
+          return {
+            params: {
+              maxAgeSeconds: Math.min(
+                3600,
+                Math.max(60, Number(event.params?.maxAgeSeconds ?? 900)),
+              ),
+            },
+          };
+        }
+        if (isCopilotUsageRun(event, context)) {
           return {
             block: true,
             blockReason:

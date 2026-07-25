@@ -224,13 +224,15 @@ assert.deepEqual(
 assert.deepEqual(
   await hooks.get("before_tool_call")(
     {
-      toolName: "harness_copilot_usage",
-      params: {},
+      toolName: "openclawharness_copilot_usage",
+      params: { maxAgeSeconds: 86400 },
       runId: "run-copilot-usage-1",
     },
     copilotUsageContext,
   ),
-  undefined,
+  {
+    params: { maxAgeSeconds: 3600 },
+  },
 );
 await hooks.get("agent_end")({ runId: "run-copilot-usage-1" }, copilotUsageContext);
 assert.deepEqual(
