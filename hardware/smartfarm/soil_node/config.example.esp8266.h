@@ -14,9 +14,11 @@
 
 // ESP8266은 아날로그 입력이 A0 하나뿐이다 (GPIO 번호 지정 불가).
 #define SOIL_MOISTURE_PIN A0
-// GPIO4/GPIO5 (NodeMCU 표기 D2/D1) — 부팅 시 상태 제약이 없는 안전한 핀.
-#define DHT_PIN 4
-#define PUMP_RELAY_PIN 5
+// D1(GPIO5)/D2(GPIO4)는 I2C(SCL/SDA) 표준 핀이므로 센서 확장용으로 비워둔다.
+// DHT/릴레이는 부팅 스트래핑 제약이 없는 D5~D7을 쓴다 (D3/D4/D8은 스트래핑 핀이라 금지).
+// 근거와 전체 매핑: ../BENCH_WIRING.md 3장
+#define DHT_PIN 13        // D7 — 외부 10kΩ 풀업 필요
+#define PUMP_RELAY_PIN 14 // D5
 
 // 토양수분 센서를 아직 배선하지 않았다면 반드시 0으로 둔다.
 // 미배선 ADC 핀은 floating이라 노이즈를 읽고, 그 값이 soil로 발행되면 허브가

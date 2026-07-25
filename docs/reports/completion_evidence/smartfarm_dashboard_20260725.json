@@ -67,6 +67,12 @@
       "target": "physical zone2 ESP8266 and zone1 ESP32 through production dashboard API",
       "command": "arduino-cli verified uploads followed by retained heartbeat and POST device self-test for both devices",
       "result": "Both flashes passed hash verification. Both nodes report online identity boot ID watchdog and correct capabilities. ESP32 connectivity MQTT DHT passed with soil disabled and pump off. ESP8266 connectivity MQTT soil ADC passed with pump off; repeated DHT self-tests failed and the backend now promotes that result to device fault plus a high-severity alert."
+    },
+    {
+      "name": "zone2 ESP8266 DHT and relay pin migration",
+      "target": "physical zone2 ESP8266 DHT22 on GPIO13 D7 and relay1 on GPIO14 D5",
+      "command": "fail-safe OFF, sync ignored zone2 config, arduino-cli compile and verified upload on /dev/cu.usbserial-0001, then production heartbeat and self-test",
+      "result": "Upload hash verified. Heartbeat reports online with 15000 ms watchdog. Self-test passed DHT22 at 30.1 C and 65 percent humidity, soil ADC raw 388, Wi-Fi and MQTT; pump remained OFF. The prior diagnostic alert resolved and zone2 returned online."
     }
   ],
   "deploy": {
@@ -99,7 +105,6 @@
     "verdict": "red_team_residual_risk"
   },
   "residual_risks": [
-    "ESP8266 zone2 DHT22 self-test currently fails even though Wi-Fi, MQTT, soil ADC, pump OFF, and earlier periodic DHT telemetry were observed; wiring or intermittent sensor timing needs follow-up.",
     "Physical ON remains intentionally disabled in production. Heartbeat and OFF are proven, but enabling water flow is a separate CEO safety decision.",
     "In-app browser was unavailable, so visual desktop and mobile automation is not yet verified.",
     "Full repository lint still has unrelated pre-existing findings; changed Smartfarm page and navigation lint are clean."
