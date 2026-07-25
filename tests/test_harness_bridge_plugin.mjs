@@ -193,6 +193,46 @@ const openClawSajuRouting = await hooks.get("before_prompt_build")(
   { runId: "run-saju-2", sessionKey: "session-saju-2" },
 );
 assert.match(openClawSajuRouting.appendSystemContext, /HARNESS SAJU ROUTING/);
+const copilotUsageContext = {
+  runId: "run-copilot-usage-1",
+  sessionKey: "session-copilot-usage-1",
+};
+const copilotUsageRouting = await hooks.get("before_prompt_build")(
+  {
+    prompt: "어제 GitHub Copilot Premium Request 324 units 비용이 왜 발생했는지 확인해줘.",
+    messages: [],
+    runId: "run-copilot-usage-1",
+  },
+  copilotUsageContext,
+);
+assert.match(copilotUsageRouting.appendSystemContext, /COPILOT USAGE ROUTING/);
+assert.deepEqual(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "bash",
+      params: { command: "find ~/.copilot -type f" },
+      runId: "run-copilot-usage-1",
+    },
+    copilotUsageContext,
+  ),
+  {
+    block: true,
+    blockReason:
+      "Copilot usage routing is active; call harness_copilot_usage once and answer from its aggregate snapshot.",
+  },
+);
+assert.deepEqual(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "harness_copilot_usage",
+      params: {},
+      runId: "run-copilot-usage-1",
+    },
+    copilotUsageContext,
+  ),
+  undefined,
+);
+await hooks.get("agent_end")({ runId: "run-copilot-usage-1" }, copilotUsageContext);
 assert.deepEqual(
   await hooks.get("before_tool_call")(
     {

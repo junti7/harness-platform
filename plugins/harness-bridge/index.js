@@ -21,6 +21,10 @@ const HARNESS_HARDWARE_INTENT_MARKERS =
   /연결|배선|핀|센서|릴레이|펌프|보드|펌웨어|\b(?:gpio|sensor|relay|pump|board|firmware)\b/i;
 const SMARTFARM_PUMP_CONTEXT =
   /farm\/zone[1-9][0-9]{0,2}\/pump\/cmd|펌프|릴레이|\bpump\b/i;
+const COPILOT_USAGE_CONTEXT =
+  /(?:github\s*)?copilot|코파일럿/i;
+const COPILOT_USAGE_INTENT =
+  /premium\s*request|billing|budget|charge|cost|usage|request|과금|결제|비용|예산|사용량|요청|세션|모델|원인/i;
 const MAX_TOOL_OUTPUT = 1_000_000;
 const MAX_WRITE_BYTES = 2_000_000;
 const READ_ONLY_GIT_SUBCOMMANDS = new Set([
@@ -47,6 +51,11 @@ export function shouldEnforceHarnessKnowledge(prompt) {
     HARNESS_KNOWLEDGE_MARKERS.test(text) ||
     (HARNESS_HARDWARE_MODEL_MARKERS.test(text) && HARNESS_HARDWARE_INTENT_MARKERS.test(text))
   );
+}
+
+export function shouldEnforceCopilotUsage(prompt) {
+  const text = String(prompt ?? "");
+  return COPILOT_USAGE_CONTEXT.test(text) && COPILOT_USAGE_INTENT.test(text);
 }
 
 function currentSenderId(prompt) {
@@ -797,6 +806,7 @@ export default {
     registerHarnessAssistantTools(api);
     const activeSajuRuns = new Map();
     const activeKnowledgeRuns = new Map();
+    const activeCopilotUsageRuns = new Map();
     const activePumpRuns = new Map();
     const pendingPumpRequests = new Map();
     const runKeys = (event = {}, context = {}) =>
@@ -811,6 +821,9 @@ export default {
       for (const [key, state] of activeKnowledgeRuns) {
         if (state.expiresAt <= now) activeKnowledgeRuns.delete(key);
       }
+      for (const [key, expiresAt] of activeCopilotUsageRuns) {
+        if (expiresAt <= now) activeCopilotUsageRuns.delete(key);
+      }
       for (const [key, state] of activePumpRuns) {
         if (state.expiresAt <= now) activePumpRuns.delete(key);
       }
@@ -822,6 +835,9 @@ export default {
       }
       while (activeKnowledgeRuns.size > 1024) {
         activeKnowledgeRuns.delete(activeKnowledgeRuns.keys().next().value);
+      }
+      while (activeCopilotUsageRuns.size > 1024) {
+        activeCopilotUsageRuns.delete(activeCopilotUsageRuns.keys().next().value);
       }
       while (activePumpRuns.size > 1024) {
         activePumpRuns.delete(activePumpRuns.keys().next().value);
@@ -861,6 +877,18 @@ export default {
     };
     const clearKnowledgeRun = (event, context) => {
       for (const key of runKeys(event, context)) activeKnowledgeRuns.delete(key);
+    };
+    const markCopilotUsageRun = (event, context) => {
+      pruneRuns();
+      const expiresAt = Date.now() + 10 * 60_000;
+      for (const key of runKeys(event, context)) activeCopilotUsageRuns.set(key, expiresAt);
+    };
+    const isCopilotUsageRun = (event, context) => {
+      pruneRuns();
+      return runKeys(event, context).some((key) => activeCopilotUsageRuns.has(key));
+    };
+    const clearCopilotUsageRun = (event, context) => {
+      for (const key of runKeys(event, context)) activeCopilotUsageRuns.delete(key);
     };
     const pumpRunKeys = (event = {}, context = {}) =>
       [event.runId, context.runId].filter(Boolean).map(String);
@@ -958,6 +986,19 @@ export default {
               "Treat harness-project as an alias for the configured harness-platform root.",
               "Never use bash, find, du, or a home-directory scan for this intent.",
               "Answer directly from allocatedHuman/logicalFileHuman and counts.",
+            ].join(" "),
+          };
+        }
+        if (shouldEnforceCopilotUsage(event.prompt)) {
+          markCopilotUsageRun(event, context);
+          return {
+            appendSystemContext: [
+              "[COPILOT USAGE ROUTING — MANDATORY]",
+              "For GitHub Copilot billing, Premium Request, budget, model, session, or usage-cause questions,",
+              "call `harness_copilot_usage` exactly once before answering.",
+              "Answer from its aggregate snapshot and explicitly distinguish observed local activity from GitHub billed units.",
+              "Never use bash, exec, shell, memory, or workspace search for this intent.",
+              "Do not claim the snapshot identifies an individual billed request, prompt, or client.",
             ].join(" "),
           };
         }
@@ -1088,6 +1129,13 @@ export default {
               "Harness knowledge routing is active; call harness_knowledge_query once and answer from its canonical evidence without memory, shell, or workspace-search fallback.",
           };
         }
+        if (isCopilotUsageRun(event, context) && event.toolName !== "harness_copilot_usage") {
+          return {
+            block: true,
+            blockReason:
+              "Copilot usage routing is active; call harness_copilot_usage once and answer from its aggregate snapshot.",
+          };
+        }
         if (!isDirectSajuNotebookQuery(event.toolName, event.params, isSajuRun(event, context))) {
           return;
         }
@@ -1102,6 +1150,7 @@ export default {
     api.on("agent_end", async (event, context) => {
       clearSajuRun(event, context);
       clearKnowledgeRun(event, context);
+      clearCopilotUsageRun(event, context);
       clearPumpRun(event, context);
     });
   },
