@@ -54,7 +54,13 @@ export function shouldEnforceHarnessKnowledge(prompt) {
 }
 
 export function shouldEnforceCopilotUsage(prompt) {
-  const text = String(prompt ?? "");
+  const raw = String(prompt ?? "");
+  const currentRequestMarker = "Current user request:";
+  const markerIndex = raw.lastIndexOf(currentRequestMarker);
+  const text =
+    markerIndex >= 0
+      ? raw.slice(markerIndex + currentRequestMarker.length)
+      : raw.replace(/<conversation_context>[\s\S]*?<\/conversation_context>/gi, "");
   return COPILOT_USAGE_CONTEXT.test(text) && COPILOT_USAGE_INTENT.test(text);
 }
 
@@ -817,6 +823,8 @@ export default {
       [event.runId, context.runId, context.sessionKey, context.sessionId]
         .filter(Boolean)
         .map(String);
+    const copilotRunKeys = (event = {}, context = {}) =>
+      [event.runId, context.runId].filter(Boolean).map(String);
     const pruneRuns = () => {
       const now = Date.now();
       for (const [key, expiresAt] of activeSajuRuns) {
@@ -885,14 +893,14 @@ export default {
     const markCopilotUsageRun = (event, context) => {
       pruneRuns();
       const expiresAt = Date.now() + 10 * 60_000;
-      for (const key of runKeys(event, context)) activeCopilotUsageRuns.set(key, expiresAt);
+      for (const key of copilotRunKeys(event, context)) activeCopilotUsageRuns.set(key, expiresAt);
     };
     const isCopilotUsageRun = (event, context) => {
       pruneRuns();
-      return runKeys(event, context).some((key) => activeCopilotUsageRuns.has(key));
+      return copilotRunKeys(event, context).some((key) => activeCopilotUsageRuns.has(key));
     };
     const clearCopilotUsageRun = (event, context) => {
-      for (const key of runKeys(event, context)) activeCopilotUsageRuns.delete(key);
+      for (const key of copilotRunKeys(event, context)) activeCopilotUsageRuns.delete(key);
     };
     const pumpRunKeys = (event = {}, context = {}) =>
       [event.runId, context.runId].filter(Boolean).map(String);

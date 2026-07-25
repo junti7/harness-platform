@@ -1,0 +1,36 @@
+{
+  "task": "Prevent quoted Copilot history from blocking OpenClaw Gmail cron tools",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-25T15:18:00+09:00",
+      "summary": "Confirmed live Mac mini diagnosis, scoped deployment, and completion evidence requirements."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-25T15:18:00+09:00",
+      "summary": "Confirmed production claims require real logs, narrow tests, and exact runtime verification."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Mac mini failed Gmail cron session diagnosis",
+      "target": "macmini production OpenClaw session log",
+      "command": "Inspect rollout-2026-07-25T15-00-00 session JSONL over SSH",
+      "result": "Observed current Gmail cron request preceded by quoted Copilot billing history; harness_gmail_search was blocked by Copilot usage routing."
+    },
+    {
+      "name": "Harness bridge routing regression",
+      "target": "OpenClaw plugin runtime hooks",
+      "command": "node tests/test_harness_bridge_plugin.mjs",
+      "result": "Passed, including quoted conversation isolation and same-session different-run Gmail allowance."
+    },
+    {
+      "name": "OpenClaw Gmail and Copilot regression suite",
+      "target": "OpenClaw agent and Copilot snapshot runtime",
+      "command": ".venv/bin/python -m pytest -q tests/test_openclaw_agent.py tests/test_copilot_usage_snapshot.py",
+      "result": "93 tests passed with one dependency deprecation warning."
+    }
+  ]
+}

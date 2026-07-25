@@ -8,6 +8,7 @@ import {
   isRawPumpShellCall,
   isShellTool,
   shouldEnforceHarnessKnowledge,
+  shouldEnforceCopilotUsage,
   shouldEnforceSajuBridge,
   shouldEnforceWorkspaceStats,
   validateWorkspaceCommand,
@@ -20,6 +21,21 @@ const pluginManifest = JSON.parse(
 );
 assert.ok(pluginManifest.contracts.tools.includes("harness_smartfarm_pump_control"));
 assert.ok(pluginManifest.contracts.tools.includes("harness_copilot_usage"));
+
+const assembledGmailCronPrompt = `OpenClaw assembled context for this turn:
+<conversation_context>
+[user]
+어제 GitHub Copilot 비용과 usage를 분석해줘.
+</conversation_context>
+Current user request:
+[cron:test] 최근 1시간 Gmail 중요 메일을 조회하고 요약해줘.`;
+assert.equal(shouldEnforceCopilotUsage(assembledGmailCronPrompt), false);
+assert.equal(
+  shouldEnforceCopilotUsage(
+    "Current user request: 어제 GitHub Copilot Premium Request 비용과 usage를 분석해줘.",
+  ),
+  true,
+);
 
 assert.equal(shouldEnforceSajuBridge("오늘 사주 운세 알려줘"), true);
 assert.deepEqual(
@@ -209,6 +225,17 @@ assert.match(copilotUsageRouting.appendSystemContext, /COPILOT USAGE ROUTING/);
 assert.match(copilotUsageRouting.appendSystemContext, /observed_origin/);
 assert.match(copilotUsageRouting.appendSystemContext, /unknown client/);
 assert.match(copilotUsageRouting.appendSystemContext, /partial/);
+assert.equal(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "openclawharness_gmail_search",
+      params: { query: "newer_than:1h" },
+      runId: "run-gmail-after-copilot",
+    },
+    { runId: "run-gmail-after-copilot", sessionKey: "session-copilot-usage-1" },
+  ),
+  undefined,
+);
 assert.deepEqual(
   await hooks.get("before_tool_call")(
     {
