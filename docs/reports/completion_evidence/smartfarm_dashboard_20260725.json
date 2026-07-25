@@ -60,7 +60,7 @@
       "name": "physical pump TEST cooldown and observation",
       "target": "Mac mini command audit Raspberry Pi hub and Harness OS UI",
       "command": "inspect production command ACKs, separate TEST anti-repeat from irrigation cooldown, preserve edge rejection reason, poll until observed ON then automatic OFF, and run focused regression plus Gemini RED TEAM",
-      "result": "Production diagnosis found pump TEST commands rejected as active_or_cooldown because fail-safe OFF started the 300-second irrigation cooldown. TEST now uses a separate 5-second anti-repeat window while normal irrigation keeps 300 seconds. UI reports success only after observed ON and automatic OFF. Focused suite passed 29 tests and Gemini returned red_team_clear."
+      "result": "Production diagnosis found pump TEST commands rejected as active_or_cooldown because fail-safe OFF started the 300-second irrigation cooldown. TEST now uses a separate 5-second anti-repeat window while normal irrigation keeps 300 seconds. Focused suite passed 29 tests and Gemini returned red_team_clear. Live command e77a81ac-57b5-439b-b8b0-846388d22ad2 received accepted on_dispatched ACK, MQTT observed OFF to ON to OFF in about 3.02 seconds, and the operational command reached completed with observed_state off."
     },
     {
       "name": "ESP32 and ESP8266 firmware compile",
