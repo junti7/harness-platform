@@ -1134,14 +1134,7 @@ export default {
           };
         }
         if (isCopilotUsageRun(event, context) && isCopilotUsageTool(event.toolName)) {
-          return {
-            params: {
-              maxAgeSeconds: Math.min(
-                3600,
-                Math.max(60, Number(event.params?.maxAgeSeconds ?? 900)),
-              ),
-            },
-          };
+          return;
         }
         if (isCopilotUsageRun(event, context)) {
           return {

@@ -24,7 +24,7 @@
       "name": "plugin contract regression",
       "target": "OpenClaw harness-bridge",
       "command": "/opt/homebrew/opt/node/bin/node tests/test_harness_bridge_plugin.mjs",
-      "result": "PASS: harness_copilot_usage is registered, declared in contracts.tools, selected for Copilot billing intent, accepts OpenClaw-prefixed hook names, clamps snapshot age, and blocks shell bypass."
+      "result": "PASS: harness_copilot_usage is registered, declared in contracts.tools, selected for Copilot billing intent, accepts OpenClaw-prefixed hook names without rewriting approval parameters, and blocks shell bypass; the bridge validates snapshot age."
     },
     {
       "name": "local real Copilot snapshot",

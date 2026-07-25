@@ -230,9 +230,7 @@ assert.deepEqual(
     },
     copilotUsageContext,
   ),
-  {
-    params: { maxAgeSeconds: 3600 },
-  },
+  undefined,
 );
 await hooks.get("agent_end")({ runId: "run-copilot-usage-1" }, copilotUsageContext);
 assert.deepEqual(
