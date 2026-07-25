@@ -42,13 +42,19 @@
       "name": "guarded pump test workflow",
       "target": "CEO-only dashboard API Pi hub edge observation and audit state machine",
       "command": "focused Python tests plus Vite build and scoped lint for TEST control",
-      "result": "Pump TEST is separated from normal ON, limited to 1 to 3 seconds, requires fresh CEO re-authentication and exact zone confirmation, checks watchdog sensor cooldown and concurrency, and reaches completed only after observed ON followed by automatic OFF. Focused suite passed 25 tests."
+      "result": "Pump TEST is separated from normal ON, limited to 1 to 3 seconds, requires an authenticated CEO session, an automatically issued one-use anti-replay token, and exact zone confirmation; it checks watchdog sensor and concurrency safety and reaches completed only after observed ON followed by automatic OFF."
     },
     {
       "name": "production pump test safety gate",
       "target": "deployed Mac mini Harness OS bundle and authenticated production API",
       "command": "deploy from origin/main, inspect production overview flags, reject TEST without a fresh nonce, reject a 4-second TEST, and confirm both observed pump states",
-      "result": "Production reports MQTT connected, normal actuation disabled, and pump TEST enabled. A TEST without a one-time authorization nonce returned 403; a 4-second TEST returned 400; both pumps remained OFF. The deployed index-CfPSz_UD.js bundle contains the pump TEST workflow."
+      "result": "Production reports MQTT connected, normal actuation disabled, and pump TEST enabled. TEST uses a CEO-session-issued one-use token without password re-entry; a missing or replayed token returns 403 and a 4-second TEST returns 400."
+    },
+    {
+      "name": "passwordless CEO-session pump authorization",
+      "target": "Harness OS CEO session token and pump replay boundary",
+      "command": "pytest session actuation plus smartfarm runtime hub and control suites; independent Gemini RED TEAM block, remediation, and clear",
+      "result": "27 tests passed. Anonymous token issuance returned 401, VP issuance returned 403, CEO issuance returned 200, the first bounded TEST request passed in the mocked API contract, and replaying the same token returned 403. Gemini re-review returned red_team_clear."
     },
     {
       "name": "ESP32 and ESP8266 firmware compile",
@@ -124,6 +130,9 @@
       },
       {
         "artifact": "../../reviews/red_team/smartfarm_dashboard_implementation_claude_20260725.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/smartfarm_dashboard_session_actuation_gemini_20260725.md"
       }
     ],
     "verdict": "red_team_residual_risk"

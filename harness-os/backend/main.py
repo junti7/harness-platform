@@ -3792,6 +3792,19 @@ def smartfarm_actuation_authorize(
     }
 
 
+@app.post("/api/smartfarm/actuation/session-token")
+def smartfarm_actuation_session_token(
+    _: str = Depends(_require_smartfarm_ceo),
+) -> dict[str, Any]:
+    """Issue a one-use anti-replay token from an already authenticated CEO session."""
+    nonce, expires_at = _issue_smartfarm_nonce()
+    return {
+        "ok": True,
+        "actuation_nonce": nonce,
+        "expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+
+
 @app.post("/api/smartfarm/devices/{device_id}/test")
 def smartfarm_device_test(
     device_id: str,

@@ -133,7 +133,7 @@ raw telemetry는 기본 30일, 시간 집계는 1년 보존하며 purge job, DB 
 펌프 ON:
 
 - `HARNESS_SMARTFARM_ACTUATION_ENABLED=true`
-- CEO 인증 + 최근 5분 이내 비밀번호 재확인으로 발급된 1회용 actuation nonce
+- CEO 인증 + 1회용 actuation nonce. 2026-07-25 CEO 지시에 따라 펌프 제어에서는 비밀번호 재입력 없이 로그인된 CEO 세션으로 nonce를 자동 발급한다.
 - 정확한 zone과 최대 duration 재확인
 - device online, heartbeat fresh, boot ID 존재
 - firmware가 watchdog duration을 보고

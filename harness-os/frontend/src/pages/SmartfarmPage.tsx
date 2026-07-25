@@ -199,7 +199,6 @@ export function SmartfarmPage({
   const [controlAction, setControlAction] = useState<'on' | 'off' | 'test'>('off')
   const [duration, setDuration] = useState(10)
   const [confirmation, setConfirmation] = useState('')
-  const [password, setPassword] = useState('')
 
   const loadOverview = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -267,14 +266,13 @@ export function SmartfarmPage({
     try {
       let nonce: string | undefined
       if (controlAction === 'on' || controlAction === 'test') {
-        const authResponse = await fetch(`${apiBase}/api/smartfarm/actuation/authorize`, {
+        const tokenResponse = await fetch(`${apiBase}/api/smartfarm/actuation/session-token`, {
           method: 'POST',
-          headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password }),
+          headers: authHeaders(),
         })
-        const authPayload = await authResponse.json()
-        if (!authResponse.ok) throw new Error(authPayload.detail || '대표 재인증 실패')
-        nonce = authPayload.actuation_nonce
+        const tokenPayload = await tokenResponse.json()
+        if (!tokenResponse.ok) throw new Error(tokenPayload.detail || 'CEO 세션 확인 실패')
+        nonce = tokenPayload.actuation_nonce
       }
       const response = await fetch(`${apiBase}/api/smartfarm/zones/${encodeURIComponent(selectedZone)}/pump`, {
         method: 'POST',
@@ -296,7 +294,6 @@ export function SmartfarmPage({
           ? `펌프 테스트 ${payload.command_id.slice(0, 8)} 시작 · 자동 OFF와 실제 상태 확인 중`
           : `명령 ${payload.command_id.slice(0, 8)} · ${payload.status}. 실제 상태 확인 전 성공 아님.`,
       )
-      setPassword('')
       void loadOverview(true)
     } catch (err) {
       setActionMessage(err instanceof Error ? err.message : '명령 실패')
@@ -463,12 +460,9 @@ export function SmartfarmPage({
                     onChange={event => setDuration(Number(event.target.value))}
                   />
                 </label>
-                <label>확인: <code>{selectedZone}</code> 입력
+                <label>오작동 방지 확인 — <code>{selectedZone}</code> 입력
                   <input value={confirmation} onChange={event => setConfirmation(event.target.value)} autoComplete="off" />
                 </label>
-                {(controlAction === 'on' || controlAction === 'test') && <label>대표 비밀번호 재확인
-                  <input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" />
-                </label>}
                 <button className={`sf-submit ${controlAction === 'on' ? 'danger' : ''}`} disabled={actionBusy || confirmation !== selectedZone} onClick={() => void submitPump()}>
                   {actionBusy
                     ? '안전 조건 검사 중…'
