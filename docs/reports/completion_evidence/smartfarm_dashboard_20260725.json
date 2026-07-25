@@ -49,8 +49,30 @@
       "target": "running Harness OS API and SQLite operational database",
       "command": "uvicorn on 127.0.0.1:8010 with seeded operational DB, authenticated overview history OFF and ON requests",
       "result": "Overview returned 3 devices and 2 zones; history returned 30 points; disconnected OFF was truthfully blocked mqtt_not_connected; ON returned 409 actuation_disabled."
+    },
+    {
+      "name": "Mac mini production dashboard data path",
+      "target": "Mac mini launchd backend production bundle MQTT and operational DB",
+      "command": "scripts/deploy_to_macmini.sh selected backend frontend launchd paths followed by authenticated production API and SQLite inspection",
+      "result": "Frontend atomic bundle index-D11nu3Sh.js contains Smartfarm Control Center; backend is running on 8000; MQTT and DB are connected; real zone1 and zone2 metrics are stored and history returns production points."
+    },
+    {
+      "name": "Raspberry Pi hub and fail-safe OFF end to end",
+      "target": "production Pi hub broker edge node and command audit",
+      "command": "scripts/deploy_smartfarm_pi_hub.sh then production POST pump OFF and command polling",
+      "result": "Pi backup pre-dashboard-20260725_181010 was created, service restarted active, Pi heartbeat is online, and zone2 OFF transitioned published to ack to observed off with command 17b008ac-cd21-4ce7-807b-33a66af091ed."
+    },
+    {
+      "name": "ESP8266 and ESP32 heartbeat and self-test",
+      "target": "physical zone2 ESP8266 and zone1 ESP32 through production dashboard API",
+      "command": "arduino-cli verified uploads followed by retained heartbeat and POST device self-test for both devices",
+      "result": "Both flashes passed hash verification. Both nodes report online identity boot ID watchdog and correct capabilities. ESP32 connectivity MQTT DHT passed with soil disabled and pump off. ESP8266 connectivity MQTT soil ADC passed with pump off; DHT self-test failed and remains an explicit device fault."
     }
   ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh selected smartfarm backend frontend launchd and firmware source paths; scripts/deploy_smartfarm_pi_hub.sh for the Raspberry Pi owner",
+    "result": "Mac mini backend and atomic frontend bundle deployed; Pi hub deployed with backup; ESP8266 and ESP32 firmware flashed and hash-verified; production API MQTT SQLite heartbeat diagnostic and OFF observation verified."
+  },
   "red_team": {
     "models": [
       "Codex",
@@ -77,10 +99,9 @@
     "verdict": "red_team_residual_risk"
   },
   "residual_risks": [
-    "First Mac mini deployment attempt stopped before remote mutation because the path-wide EDU guard required unavailable MBP PostgreSQL; an audited non-EDU skip flag was added for the retry.",
-    "ESP8266 needs the corrected 1024-byte MQTT-buffer firmware reflashed; ESP32 still needs the new firmware flashed.",
-    "Physical ON remains intentionally disabled until watchdog heartbeat and observed OFF are live-proven.",
+    "ESP8266 zone2 DHT22 self-test currently fails even though Wi-Fi, MQTT, soil ADC, pump OFF, and earlier periodic DHT telemetry were observed; wiring or intermittent sensor timing needs follow-up.",
+    "Physical ON remains intentionally disabled in production. Heartbeat and OFF are proven, but enabling water flow is a separate CEO safety decision.",
     "In-app browser was unavailable, so visual desktop and mobile automation is not yet verified.",
-    "Raspberry Pi hub production still needs the committed structured-command handler deployed through scripts/deploy_smartfarm_pi_hub.sh."
+    "Full repository lint still has unrelated pre-existing findings; changed Smartfarm page and navigation lint are clean."
   ]
 }
