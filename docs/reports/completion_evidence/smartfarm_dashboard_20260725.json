@@ -27,6 +27,12 @@
       "result": "Vite production build passed and the changed Smartfarm page/navigation lint passed with zero findings."
     },
     {
+      "name": "telemetry date and time axis",
+      "target": "Harness OS smartfarm history chart",
+      "command": "render five responsive axis ticks from recorded_at timestamps, then run Vite production build and scoped ESLint",
+      "result": "The trend line now uses actual recorded_at spacing and displays date plus 24-hour time for ranges of 6 hours or longer; short ranges display 24-hour time. Mobile keeps first, middle, and last labels to prevent overlap. Build and changed-file lint passed."
+    },
+    {
       "name": "top-level Harness OS smartfarm navigation",
       "target": "desktop header and mobile quick navigation",
       "command": "remove the Physical AI dropdown entry, add standalone smartfarm navigation, then run Vite production build and scoped ESLint",

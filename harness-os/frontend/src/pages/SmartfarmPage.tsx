@@ -100,33 +100,78 @@ function metricValue(metric: string, value?: Metric) {
   return `${value.value.toFixed(spec?.decimals ?? 1)}${spec?.unit ?? ''}`
 }
 
-function MiniChart({ points }: { points: HistoryPoint[] }) {
-  const line = useMemo(() => {
-    if (points.length < 2) return ''
-    const values = points.map(point => point.value)
+function chartTimeLabel(timestamp: number, rangeSeconds: number) {
+  const date = new Date(timestamp)
+  const datePart = new Intl.DateTimeFormat('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date).replace(/\s/g, '')
+  const timePart = new Intl.DateTimeFormat('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(date)
+  return rangeSeconds >= 21600 ? `${datePart} ${timePart}` : timePart
+}
+
+function MiniChart({ points, rangeSeconds }: { points: HistoryPoint[]; rangeSeconds: number }) {
+  const chart = useMemo(() => {
+    if (points.length < 2) return { line: '', ticks: [] as { x: number; label: string }[] }
+    const timedPoints = points
+      .map((point, index) => ({
+        ...point,
+        timestamp: Date.parse(point.recorded_at),
+        fallbackTimestamp: index,
+      }))
+      .sort((a, b) => (Number.isFinite(a.timestamp) ? a.timestamp : a.fallbackTimestamp)
+        - (Number.isFinite(b.timestamp) ? b.timestamp : b.fallbackTimestamp))
+    const timestamps = timedPoints.map(point => Number.isFinite(point.timestamp) ? point.timestamp : point.fallbackTimestamp)
+    const start = timestamps[0]
+    const end = timestamps[timestamps.length - 1]
+    const timeSpan = Math.max(end - start, 1)
+    const values = timedPoints.map(point => point.value)
     const min = Math.min(...values)
     const max = Math.max(...values)
     const span = Math.max(max - min, 1)
-    return points.map((point, index) => {
-      const x = (index / (points.length - 1)) * 100
+    const line = timedPoints.map((point, index) => {
+      const x = ((timestamps[index] - start) / timeSpan) * 100
       const y = 36 - ((point.value - min) / span) * 32
       return `${x.toFixed(2)},${y.toFixed(2)}`
     }).join(' ')
-  }, [points])
+    const tickCount = 5
+    const ticks = Array.from({ length: tickCount }, (_, index) => {
+      const ratio = index / (tickCount - 1)
+      const timestamp = start + timeSpan * ratio
+      return {
+        x: ratio * 100,
+        label: chartTimeLabel(timestamp, rangeSeconds),
+      }
+    })
+    return { line, ticks }
+  }, [points, rangeSeconds])
   return (
-    <div className="sf-chart" aria-label={`추세 데이터 ${points.length}개`}>
-      {line ? (
-        <svg viewBox="0 0 100 40" preserveAspectRatio="none" role="img">
-          <defs>
-            <linearGradient id="sf-chart-fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--sf-green)" stopOpacity=".3" />
-              <stop offset="100%" stopColor="var(--sf-green)" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <polygon points={`0,40 ${line} 100,40`} fill="url(#sf-chart-fill)" />
-          <polyline points={line} fill="none" stroke="var(--sf-green)" strokeWidth="1.8" vectorEffect="non-scaling-stroke" />
-        </svg>
-      ) : <span>추세 데이터 대기 중</span>}
+    <div className="sf-chart-frame">
+      <div className="sf-chart" aria-label={`추세 데이터 ${points.length}개`}>
+        {chart.line ? (
+          <svg viewBox="0 0 100 40" preserveAspectRatio="none" role="img">
+            <defs>
+              <linearGradient id="sf-chart-fill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--sf-green)" stopOpacity=".3" />
+                <stop offset="100%" stopColor="var(--sf-green)" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <polygon points={`0,40 ${chart.line} 100,40`} fill="url(#sf-chart-fill)" />
+            <polyline points={chart.line} fill="none" stroke="var(--sf-green)" strokeWidth="1.8" vectorEffect="non-scaling-stroke" />
+          </svg>
+        ) : <span>추세 데이터 대기 중</span>}
+      </div>
+      {chart.ticks.length > 0 && (
+        <div className="sf-chart-axis" aria-label="날짜 및 시간 축">
+          {chart.ticks.map(tick => (
+            <time key={`${tick.x}-${tick.label}`} style={{ left: `${tick.x}%` }}>{tick.label}</time>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -372,7 +417,7 @@ export function SmartfarmPage({
                 <strong>{metricValue(selectedMetric, selectedZoneData?.metrics[selectedMetric])}</strong>
                 <small>{history.length} samples · 보간 없음</small>
               </div>
-              <MiniChart points={history} />
+              <MiniChart points={history} rangeSeconds={historyRange} />
             </div>
           </section>
         </section>
