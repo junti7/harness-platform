@@ -277,7 +277,15 @@ class SmartfarmHub:
             if fault is not None:
                 self._publish_command_ack(zone_id, command_id, False, "rejected", "sensor_fault")
                 return
-            cooldown_ok = (time.time() - zone.last_off_time) > zone.cfg["cooldown_s"]
+            # A bounded bench TEST must not inherit the irrigation cooldown
+            # (currently five minutes), otherwise an earlier fail-safe OFF makes
+            # hardware verification impossible. Keep a short anti-repeat window.
+            required_cooldown_s = (
+                min(float(zone.cfg["cooldown_s"]), 5.0)
+                if kind == "pump_test"
+                else float(zone.cfg["cooldown_s"])
+            )
+            cooldown_ok = (time.time() - zone.last_off_time) > required_cooldown_s
             if zone.pump_on or not cooldown_ok:
                 self._publish_command_ack(zone_id, command_id, False, "rejected", "active_or_cooldown")
                 return

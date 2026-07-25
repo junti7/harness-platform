@@ -432,10 +432,11 @@ class SmartfarmRuntime:
         accepted = bool(data.get("accepted", True))
         phase = str(data.get("phase") or ("completed" if diagnostic else "acknowledged"))
         status = "rejected" if not accepted else ("completed" if phase in {"completed", "result"} else "acknowledged")
+        safety_reason = str(data.get("reason") or "") if not accepted else None
         self._enqueue(
-            """UPDATE smartfarm_commands SET status=?, ack_at=?, detail_json=?
+            """UPDATE smartfarm_commands SET status=?, safety_reason=?, ack_at=?, detail_json=?
                WHERE command_id=? AND zone_id=?""",
-            (status, _now(), _json(data), command_id, zone_id),
+            (status, safety_reason, _now(), _json(data), command_id, zone_id),
         )
         if diagnostic and accepted and phase in {"completed", "result"}:
             self._apply_diagnostic_health(command_id, zone_id, data)

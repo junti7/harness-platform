@@ -85,6 +85,23 @@ def test_pump_test_uses_bounded_hub_timer(tmp_path: Path) -> None:
     hub._stop_pump(hub.zones["zone1"], None, "test_cleanup")
 
 
+def test_pump_test_uses_short_anti_repeat_window_not_irrigation_cooldown(tmp_path: Path) -> None:
+    hub, client = _hub(tmp_path)
+    hub.zones["zone1"].cfg["cooldown_s"] = 300
+    hub.zones["zone1"].last_off_time = time.time() - 6
+    command = {
+        "command_id": "cmd-test-after-off",
+        "kind": "pump_test",
+        "sequence": 1,
+        "expires_at": time.time() + 20,
+        "params": {"duration_s": 2},
+    }
+    hub._handle_manual_command("zone1", json.dumps(command))
+    assert hub.zones["zone1"].pump_on is True
+    assert ("farm/zone1/pump/cmd", "on", 1, False) in client.published
+    hub._stop_pump(hub.zones["zone1"], None, "test_cleanup")
+
+
 def test_firmware_allocates_buffer_for_heartbeat_and_diagnostic_json() -> None:
     source = Path("hardware/smartfarm/soil_node/soil_node.ino").read_text()
     assert "mqtt.setBufferSize(1024)" in source

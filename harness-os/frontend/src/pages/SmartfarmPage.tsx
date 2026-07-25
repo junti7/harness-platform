@@ -294,6 +294,30 @@ export function SmartfarmPage({
           ? `펌프 테스트 ${payload.command_id.slice(0, 8)} 시작 · 자동 OFF와 실제 상태 확인 중`
           : `명령 ${payload.command_id.slice(0, 8)} · ${payload.status}. 실제 상태 확인 전 성공 아님.`,
       )
+      if (controlAction === 'test') {
+        let completed = false
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          await new Promise(resolve => window.setTimeout(resolve, 500))
+          const commandResponse = await fetch(
+            `${apiBase}/api/smartfarm/commands/${encodeURIComponent(payload.command_id)}`,
+            { headers: authHeaders() },
+          )
+          if (!commandResponse.ok) continue
+          const command = await commandResponse.json() as Command
+          if (command.status === 'completed' && command.observed_state === 'off') {
+            setActionMessage(`펌프 테스트 ${payload.command_id.slice(0, 8)} 완료 · 실제 ON 후 자동 OFF 확인`)
+            completed = true
+            break
+          }
+          if (command.status === 'rejected' || command.status === 'blocked' || command.status === 'unknown') {
+            const reason = command.safety_reason === 'active_or_cooldown'
+              ? '펌프 동작 또는 5초 재실행 대기 중'
+              : command.safety_reason || command.status
+            throw new Error(`펌프 테스트 거부: ${reason}`)
+          }
+        }
+        if (!completed) throw new Error('펌프 실제 ON/OFF 확인 시간 초과')
+      }
       void loadOverview(true)
     } catch (err) {
       setActionMessage(err instanceof Error ? err.message : '명령 실패')

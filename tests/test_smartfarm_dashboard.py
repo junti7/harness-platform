@@ -155,6 +155,32 @@ class SmartfarmRuntimeTests(unittest.TestCase):
         self.assertEqual(completed["status"], "completed")
         self.assertEqual(completed["observed_state"], "off")
 
+    def test_rejected_command_preserves_edge_safety_reason(self):
+        fake = _FakeMqtt()
+        self.runtime.health.connected = True
+        self.runtime._mqtt_client = fake
+        command = self.runtime.create_command(
+            zone_id="zone1",
+            kind="pump_test",
+            actor="ceo",
+            params={"duration_s": 3},
+        )
+        self.runtime.ingest_message(
+            "farm/zone1/command/ack",
+            json.dumps(
+                {
+                    "command_id": command["command_id"],
+                    "accepted": False,
+                    "phase": "rejected",
+                    "reason": "active_or_cooldown",
+                }
+            ),
+        )
+        self.runtime.flush()
+        rejected = self.runtime.command(command["command_id"])
+        self.assertEqual(rejected["status"], "rejected")
+        self.assertEqual(rejected["safety_reason"], "active_or_cooldown")
+
     def test_invasive_diagnostic_requires_observed_off(self):
         clear, reason = self.runtime.diagnostic_safety("zone1", invasive=True)
         self.assertFalse(clear)
