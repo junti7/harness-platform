@@ -1,6 +1,6 @@
 {
   "task": "Enable and verify bounded zone2 pump ON from Harness OS",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -35,7 +35,7 @@
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh with runtime frontend launchd tests and evidence",
-    "result": "pending production deployment and live zone2 ON to automatic OFF verification"
+    "result": "Mac mini deployed index-Br5Eeso5.js and backend autostart connected MQTT within 16 seconds. Live zone2 command 48dfdb0e-ab79-43eb-84a8-b3f190bc0097 passed safety, received accepted on_dispatched ACK, transitioned observed ON to completed OFF, and MQTT recorded OFF to ON to OFF in about 2.99 seconds."
   },
   "red_team": {
     "models": [
