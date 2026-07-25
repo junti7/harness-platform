@@ -108,6 +108,20 @@ int soilPercentFromRaw(int raw) {
 
 void setup() {
   Serial.begin(115200);
+
+  // 펌프 핀을 출력으로 잡기 전에, 이 핀이 어떤 상태로 떠 있었는지 먼저 읽어 남긴다.
+  // setup()이 실행되기까지 수십~수백 ms 동안은 펌웨어가 핀을 제어하지 못하는데,
+  // 그 사이 릴레이가 물리면 부팅할 때마다 펌프가 잠깐씩 돈다. 새 구역을 배선한 뒤
+  // 이 로그가 HIGH면(= active-HIGH 릴레이 기준) 펌프를 연결하기 전에
+  // GPIO-GND 사이 풀다운 저항(10k)으로 잡아야 한다.
+  // 주의: 이건 부팅 직후의 '안정 상태'를 보는 것이라, 더 짧은 순간의 글리치까지
+  // 잡아내지는 못한다. 릴레이를 눈으로 확인하는 절차를 대체하지 않는다.
+  pinMode(PUMP_RELAY_PIN, INPUT);
+  Serial.print("\n[boot] pump pin GPIO");
+  Serial.print(PUMP_RELAY_PIN);
+  Serial.print(" resting state = ");
+  Serial.println(digitalRead(PUMP_RELAY_PIN) ? "HIGH (relay may engage at boot)" : "LOW (safe)");
+
   pinMode(PUMP_RELAY_PIN, OUTPUT);
   digitalWrite(PUMP_RELAY_PIN, LOW);
 
