@@ -25,6 +25,12 @@
       "target": "Harness OS inline ON workflow and production configuration",
       "command": "Vite production build, scoped ESLint, and plutil lint",
       "result": "Build, changed-file lint, and plist validation passed. ON result is displayed beside the button and polling scales with requested duration."
+    },
+    {
+      "name": "backend-boot MQTT observation",
+      "target": "Mac mini FastAPI lifecycle and SmartfarmRuntime cleanup",
+      "command": "production-only autostart flag, single-worker launchd, explicit MQTT disconnect and DB writer shutdown, focused regression and Gemini plus Claude review",
+      "result": "Autostart defaults off outside production, launchd explicitly enables it, shutdown is bounded and idempotent, and both reviewers returned red_team_clear after remediation."
     }
   ],
   "deploy": {

@@ -14,3 +14,8 @@ Full-context verification:
 - Production actuation is limited to zone2.
 
 Material findings after full-context review: none.
+
+Final startup review:
+
+- Production-only MQTT autostart and graceful shutdown were reviewed with the full ON safety path.
+- Verdict remained `red_team_clear`; independent Pi watchdog remains the fail-safe if backend shutdown occurs during ON.

@@ -39,6 +39,8 @@
     <string>192.168.0.23</string>
     <key>HARNESS_SMARTFARM_MQTT_PORT</key>
     <string>1883</string>
+    <key>HARNESS_SMARTFARM_AUTOSTART</key>
+    <string>true</string>
     <key>HARNESS_SMARTFARM_DB_PATH</key>
     <string>__ROOT__/runtime/smartfarm/operations.db</string>
     <key>HARNESS_SMARTFARM_PUMP_TEST_ENABLED</key>

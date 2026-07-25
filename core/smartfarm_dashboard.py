@@ -232,6 +232,7 @@ class SmartfarmRuntime:
         while True:
             item = self._write_queue.get()
             if item is None:
+                self._write_queue.task_done()
                 return
             statement, params = item
             try:
@@ -254,6 +255,24 @@ class SmartfarmRuntime:
         while self._write_queue.unfinished_tasks and time.monotonic() < deadline:
             time.sleep(0.01)
         return self._write_queue.unfinished_tasks == 0
+
+    def stop(self) -> None:
+        if not self._started:
+            return
+        if self._mqtt_client is not None:
+            try:
+                self._mqtt_client.disconnect()
+                self._mqtt_client.loop_stop()
+            except Exception:  # noqa: BLE001 - shutdown remains best effort
+                pass
+            self._mqtt_client = None
+        self.flush()
+        if self._writer_thread is not None and self._writer_thread.is_alive():
+            self._write_queue.put(None)
+            self._writer_thread.join(timeout=3)
+        self._writer_thread = None
+        self._started = False
+        self.health.connected = False
 
     def _runtime_event(self, event_type: str, detail: dict[str, Any]) -> None:
         self._enqueue(

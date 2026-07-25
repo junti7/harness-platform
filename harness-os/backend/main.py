@@ -3792,6 +3792,19 @@ def smartfarm_actuation_authorize(
     }
 
 
+@app.on_event("startup")
+def start_smartfarm_runtime_on_backend_boot() -> None:
+    """Keep MQTT observation active even when no dashboard browser is open."""
+    if os.getenv("HARNESS_SMARTFARM_AUTOSTART", "false").lower() in {"1", "true", "yes"}:
+        get_smartfarm_runtime()
+
+
+@app.on_event("shutdown")
+def stop_smartfarm_runtime_on_backend_shutdown() -> None:
+    if os.getenv("HARNESS_SMARTFARM_AUTOSTART", "false").lower() in {"1", "true", "yes"}:
+        get_smartfarm_runtime().stop()
+
+
 @app.post("/api/smartfarm/actuation/session-token")
 def smartfarm_actuation_session_token(
     _: str = Depends(_require_smartfarm_ceo),

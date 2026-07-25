@@ -33,6 +33,7 @@ class SmartfarmRuntimeTests(unittest.TestCase):
 
     def tearDown(self):
         self.runtime.flush()
+        self.runtime.stop()
         self.temp_dir.cleanup()
 
     def _heartbeat(self, **overrides):

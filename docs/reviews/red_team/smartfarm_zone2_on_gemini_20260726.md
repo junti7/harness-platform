@@ -19,3 +19,8 @@ Remediation verified:
 Residual risk:
 
 - Lost MQTT ON observation leaves the command incomplete instead of reporting false success.
+
+Final startup review:
+
+- Initial autostart implementation was blocked for test contamination and duplicate-worker risk.
+- Production-only `HARNESS_SMARTFARM_AUTOSTART`, single-worker launchd, and explicit MQTT/writer shutdown remediation received `red_team_clear`.
