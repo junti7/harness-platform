@@ -74,6 +74,7 @@
     "First Mac mini deployment attempt stopped before remote mutation because the path-wide EDU guard required unavailable MBP PostgreSQL; an audited non-EDU skip flag was added for the retry.",
     "Existing ESP firmware does not yet emit the new identity heartbeat or diagnostic result.",
     "Physical ON remains intentionally disabled until watchdog heartbeat and observed OFF are live-proven.",
-    "In-app browser was unavailable, so visual desktop and mobile automation is not yet verified."
+    "In-app browser was unavailable, so visual desktop and mobile automation is not yet verified.",
+    "Raspberry Pi hub production still needs the committed structured-command handler deployed through scripts/deploy_smartfarm_pi_hub.sh."
   ]
 }
