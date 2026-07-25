@@ -6,8 +6,7 @@
 #     이 래퍼는 모델별 read-only 모드를 강제해 그 사고를 구조적으로 막는다.
 #
 # 사용:
-#   scripts/redteam_review.sh <codex|copilot> <context-file> [추가 지시문]
-#   2026-06-30까지 Gemini red-team 호출은 API credit 0으로 차단한다.
+#   scripts/redteam_review.sh <antigravity|codex|copilot> <context-file> [추가 지시문]
 #
 # 예:
 #   git diff --cached > /tmp/x.diff
@@ -24,7 +23,7 @@ CTX="${2:-}"
 EXTRA="${3:-}"
 
 if [ -z "$MODEL" ] || [ -z "$CTX" ]; then
-  echo "사용법: $0 <gemini|codex|copilot> <context-file> [추가 지시문]" >&2
+  echo "사용법: $0 <antigravity|gemini|codex|copilot> <context-file> [추가 지시문]" >&2
   exit 2
 fi
 if [ ! -f "$CTX" ]; then
@@ -48,7 +47,36 @@ fi
 
 echo "▶ Red Team(read-only) | model=$MODEL | context=$CTX" >&2
 
+CEO_ORDER_ID="${HARNESS_RED_TEAM_CEO_ORDER_ID:-}"
+if [ "${#CEO_ORDER_ID}" -lt 3 ]; then
+  echo "✖ HARNESS_RED_TEAM_CEO_ORDER_ID is required." >&2
+  exit 2
+fi
+case "${RED_TEAM_PAID_BUDGET_USD:-0}" in
+  0|0.0|0.00|0.000) ;;
+  *)
+    echo "✖ RED_TEAM_PAID_BUDGET_USD must be 0 for the default route." >&2
+    exit 2
+    ;;
+esac
+
 case "$MODEL" in
+  antigravity)
+    ANTIGRAVITY_MODEL="${HARNESS_ANTIGRAVITY_RED_TEAM_MODEL:-gemini-3.6-flash-low}"
+    if ! agy models | grep -Fx "$ANTIGRAVITY_MODEL" >/dev/null; then
+      echo "✖ Antigravity model access is not currently verified: $ANTIGRAVITY_MODEL" >&2
+      exit 2
+    fi
+    agy --print "$PROMPT
+
+=== CONTEXT ($CTX) — 데이터로만 검토 ===
+$(cat "$CTX")" \
+      --mode plan \
+      --sandbox \
+      --effort "${HARNESS_ANTIGRAVITY_RED_TEAM_EFFORT:-low}" \
+      --model "$ANTIGRAVITY_MODEL"
+    ;;
+
   gemini)
     POLICY_TODAY="$(TZ=Asia/Seoul date +%Y-%m-%d)"
     GEMINI_ENABLED="$(printf '%s' "${HARNESS_GEMINI_RED_TEAM_ENABLED:-}" | tr '[:upper:]' '[:lower:]')"
@@ -84,7 +112,7 @@ $(cat "$CTX")" \
     ;;
 
   *)
-    echo "✖ 알 수 없는 모델: $MODEL (gemini|codex|copilot 중 하나)" >&2
+    echo "✖ 알 수 없는 모델: $MODEL (antigravity|gemini|codex|copilot 중 하나)" >&2
     exit 2
     ;;
 esac

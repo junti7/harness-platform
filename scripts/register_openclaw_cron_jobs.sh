@@ -21,7 +21,6 @@ DAILY_NAME="harness-daily-ops-brief"
 DAILY_MESSAGE='Run exactly this command from /Users/juntaepark/projects/harness-platform: /Users/juntaepark/projects/harness-platform/.venv/bin/python /Users/juntaepark/projects/harness-platform/scripts/openclaw_codex_bridge.py publish-ops-brief --to-slack --to-notion --route exec_daily_brief --summary-text "daily ops automated check" . After the command completes, reply with exactly OK.'
 
 WEEKLY_RED_TEAM_NAME="harness-weekly-multi-llm-red-team"
-WEEKLY_RED_TEAM_MESSAGE='Run exactly this command from /Users/juntaepark/projects/harness-platform and return only its stdout: DATABASE_URL=postgresql://localhost/harness_prod PYTHONPYCACHEPREFIX=/private/tmp /Users/juntaepark/projects/harness-platform/.venv/bin/python /Users/juntaepark/projects/harness-platform/scripts/run_weekly_red_team_latest.py'
 
 GMAIL_CHECK_NAME="harness-gmail-ops-check"
 GMAIL_CHECK_MESSAGE='Run exactly this command from /Users/juntaepark/projects/harness-platform: /Users/juntaepark/projects/harness-platform/.venv/bin/python /Users/juntaepark/projects/harness-platform/scripts/run_gmail_ops_check.py --query newer_than:1d --limit 10 --route exec_president_decisions . After the command completes, reply with exactly OK.'
@@ -68,6 +67,17 @@ register_if_missing() {
 get_job_id() {
   NAME="$1"
   "$OPENCLAW_BIN" cron list --json | python3 -c 'import json,sys; name=sys.argv[1]; jobs=json.load(sys.stdin).get("jobs", []); hit=[j for j in jobs if j.get("name")==name]; print(hit[0].get("id","") if hit else "")' "$NAME"
+}
+
+remove_if_present() {
+  NAME="$1"
+  JOB_ID="$(get_job_id "$NAME")"
+  if [ -n "$JOB_ID" ]; then
+    "$OPENCLAW_BIN" cron remove "$JOB_ID" >/dev/null
+    echo "removed retired cron: $NAME"
+  else
+    echo "absent as required: $NAME"
+  fi
 }
 
 sync_agent_payload() {
@@ -172,21 +182,7 @@ register_if_missing \
 ensure_cron_schedule "$DAILY_NAME" "30 4 * * *" "Asia/Seoul"
 sync_agent_payload "$DAILY_NAME" "$DAILY_MESSAGE" "300" "$OPENCLAW_CRON_MODEL" "exec" "true"
 
-register_if_missing \
-  "$WEEKLY_RED_TEAM_NAME" \
-  --name "$WEEKLY_RED_TEAM_NAME" \
-  --description "Weekly 3-model red-team governance run for the latest review target." \
-  --cron "0 10 * * 1" \
-  --tz "Asia/Seoul" \
-  --agent main \
-  --session isolated \
-  --tools exec \
-  --light-context \
-  --message "$WEEKLY_RED_TEAM_MESSAGE" \
-  --timeout-seconds 900 \
-  --no-deliver
-
-sync_agent_payload "$WEEKLY_RED_TEAM_NAME" "$WEEKLY_RED_TEAM_MESSAGE" "900" "" "exec" "true"
+remove_if_present "$WEEKLY_RED_TEAM_NAME"
 
 register_if_missing \
   "$GMAIL_CHECK_NAME" \
@@ -366,4 +362,3 @@ ensure_cron_schedule "$EMAIL_5AM_NAME" "0 5 * * *" "Asia/Seoul"
 sync_agent_payload "$EMAIL_5AM_NAME" "$EMAIL_5AM_MESSAGE" "300" "$OPENCLAW_CRON_MODEL" "exec" "false"
 
 "$OPENCLAW_BIN" cron list --json
-

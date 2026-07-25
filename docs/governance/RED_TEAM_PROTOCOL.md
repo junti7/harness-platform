@@ -1,6 +1,6 @@
 # Red Team Protocol
-# Version: 1.1
-# Date: 2026-05-14 (2026-06-20 갱신)
+# Version: 1.2
+# Date: 2026-07-25
 # Owner: Chief of Staff / Red Team
 
 ---
@@ -14,7 +14,7 @@
 
 ## 1. Purpose
 
-이 문서는 Harness의 정례 Multi-LLM Red Team 운영 규약이다.
+이 문서는 Harness의 CEO 주문형 Multi-LLM Red Team 운영 규약이다.
 
 목표는 다음 둘이다.
 
@@ -25,24 +25,16 @@ Harness에서 Red Team은 선택적 리뷰가 아니라 **다음 단계 진입 �
 
 ---
 
-## 2. Weekly Cadence
+## 2. Invocation And Cost Boundary
 
-### Weekly Multi-LLM Red Team
-
-- cadence: **매주 1회 정례**
-- time: **매주 월요일 10:00 KST**
-- owner: Chief of Staff
-- participants:
-  - Claude
-  - Gemini
-  - Codex
-
-정례 red-team의 기본 리뷰 범위:
-
-1. 대표용 핵심 artifact 1건
-2. 현재 발행 직전인 고객-facing 산출물 1건
-3. 지난주 수정된 운영 규약/전략 문서
-4. 운영 취약성 및 미해결 gate 항목
+- 자동·정례·주간 Red Team은 폐지한다.
+- `--ceo-order-id` 없는 호출은 실패해야 한다.
+- 기본 조합은 서로 다른 두 모델 `Codex + Antigravity Gemini Flash Low`다.
+- artifact hash와 모델 조합이 같으면 저장된 결과를 재사용한다.
+- 대표가 재검증을 명시하면 `--force-revalidate`로 캐시를 우회하며, 자동 재시도는 하지 않는다.
+- 기본 paid API budget은 `$0`; quota 불명 시 유료 fallback하지 않는다.
+- 세 번째 모델은 두 reviewer 충돌 또는 non-negotiable finding이 있을 때 대표가 별도 주문한다.
+- Copilot은 기본 Red Team 경로에서 제외하고 개발 보조로만 사용한다.
 
 ---
 
@@ -52,10 +44,8 @@ Harness에서 Red Team은 선택적 리뷰가 아니라 **다음 단계 진입 �
 
 다음 단계로 넘어가기 위한 기본 조건:
 
-- **Claude, Gemini, Codex 세 모델 중 최소 2개 모델이 approve/clear**
-- 기본 verdict 산정은 2-of-3 majority rule을 따른다.
-
-즉, 세 모델 중 한 모델이 material issue를 남겨도 나머지 두 모델이 approve/clear이면 기본값은 **proceed**다.
+- 서로 다른 두 모델이 모두 clear해야 `red_team_clear`다.
+- 충돌하면 자동으로 세 번째 모델을 호출하지 않고 대표에게 escalate한다.
 
 다만 아래 항목은 단순 다수결로 넘기지 않는다.
 
@@ -85,18 +75,18 @@ Harness에서 Red Team은 선택적 리뷰가 아니라 **다음 단계 진입 �
 
 즉, 원칙은:
 
-- **2-of-3 clear -> proceed**
-- **2개 이상 block -> block**
+- **2-of-2 clear -> proceed**
+- **1개 이상 material block -> block 또는 대표 escalation**
 - **non-negotiable finding 존재 -> fix or President confirm**
-- **2-of-3 미달 but President confirm -> conditional proceed**
+- **모델 충돌 but President confirm -> conditional proceed**
 
 ---
 
 ## 4. Required Output
 
-정례 red-team이 끝나면 아래 산출물을 남긴다.
+주문형 red-team이 끝나면 아래 산출물을 남긴다.
 
-1. `weekly_red_team_memo`
+1. `red_team_memo`
 2. model-by-model findings table
 3. unresolved issues list
 4. clear / block / conditional proceed verdict
@@ -105,12 +95,12 @@ Harness에서 Red Team은 선택적 리뷰가 아니라 **다음 단계 진입 �
 권장 섹션:
 
 ```markdown
-# Weekly Red Team Memo
+# Red Team Memo
 
 - Week:
 - Artifact(s) reviewed:
-- Model set: Claude / Gemini / Codex
-- Approval rule: 2-of-3 clear unless non-negotiable finding exists
+- Model set: Codex / Antigravity Gemini Flash Low
+- Approval rule: 2-of-2 clear unless non-negotiable finding exists
 - Overall verdict: clear | block | conditional_proceed
 
 ## Findings by Model
@@ -162,7 +152,7 @@ clear는 단순히 "문제가 적다"가 아니다.
 - 투자 권유성 표현
 - 독립 검증이 없는 self-report를 사실처럼 단정한 경우
 
-이런 항목은 기본적으로 수정 후 재검토가 원칙이다. 다수결 승인(2-of-3)이 있어도 그대로 자동 통과시키지 않는다.
+이런 항목은 기본적으로 수정 후 재검토가 원칙이다. 두 reviewer가 clear여도 그대로 자동 통과시키지 않는다.
 
 ---
 
@@ -186,9 +176,11 @@ Red Team은 QA와 다르다.
 
 ## 8. Non-Negotiables
 
-- 주간 정례 red-team은 생략하지 않는다.
-- Claude, Gemini, Codex 세 모델을 기본 조합으로 사용한다.
+- 주간 정례 red-team을 실행하지 않는다.
+- CEO 주문 ID 없는 red-team을 실행하지 않는다.
+- 기본 reviewer 수는 2개로 제한한다.
+- 기본 paid API budget은 `$0`이다.
 - 모델 하나만 통과해서는 `clear`로 쓰지 않는다.
 - 최소 2개 모델의 approve/clear가 있어야 기본 통과다.
-- non-negotiable finding은 2-of-3 승인만으로 자동 무시하지 않는다.
+- non-negotiable finding은 두 reviewer 승인만으로 자동 무시하지 않는다.
 - 대표 중재가 발생하면 반드시 `왜 override했는지`를 남긴다.

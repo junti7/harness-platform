@@ -32,6 +32,7 @@ harness-os/backend/passwords.json
 
 # Local workspace temporary files
 .antigravitycli/
+docs/reviews/red_team/.cache/
 scratch/
 data/edu_research/evidence_index.json
 *.swp

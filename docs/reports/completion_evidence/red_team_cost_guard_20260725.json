@@ -1,0 +1,54 @@
+{
+  "task": "Implement zero-cash Red Team routing with Antigravity and retire automatic weekly reviews",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-25T14:45:00+09:00",
+      "summary": "Confirmed CEO-order-only Red Team policy, deployment source of truth, and evidence requirements."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-25T14:45:00+09:00",
+      "summary": "Confirmed no automatic Red Team, real runtime verification, and fail-closed cost controls."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Red Team cost guard regression suite",
+      "target": "local CLI and cache runtime",
+      "command": ".venv/bin/python -m pytest -q tests/test_red_team_cost_guard.py tests/test_agent_completion_guard.py tests/test_atomic_io.py",
+      "result": "21 tests passed, covering provider selection, CEO order, zero budget, cache, retirement, and atomic IO."
+    },
+    {
+      "name": "Antigravity live model access probe",
+      "target": "live llm dispatch CLI",
+      "command": "agy models | rg -x gemini-3.6-flash-low",
+      "result": "The configured zero-cash default model was listed by the authenticated Antigravity CLI."
+    },
+    {
+      "name": "Retired weekly runtime entrypoints",
+      "target": "production-compatible CLI entrypoint",
+      "command": "python3 scripts/run_weekly_red_team_latest.py; python3 scripts/run_weekly_red_team.py",
+      "result": "Both returned the retired payload and non-zero exit code 3."
+    },
+    {
+      "name": "CEO order fail-closed wrapper check",
+      "target": "llm dispatch CLI",
+      "command": "RED_TEAM_PAID_BUDGET_USD=0 scripts/redteam_review.sh codex docs/governance/RED_TEAM_PROTOCOL.md",
+      "result": "Exited 2 before model execution because HARNESS_RED_TEAM_CEO_ORDER_ID was absent."
+    }
+  ],
+  "red_team": {
+    "models": ["Claude", "Gemini"],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/red_team_cost_guard_antigravity_20260725.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/red_team_cost_guard_claude_20260725.md"
+      }
+    ],
+    "verdict": "red_team_block"
+  }
+}
