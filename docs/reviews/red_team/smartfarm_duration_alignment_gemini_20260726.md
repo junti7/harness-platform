@@ -19,3 +19,11 @@ Remediation verified:
 - Production maximum is 3 seconds, matching the Pi hub.
 
 Final verdict: `red_team_clear`.
+
+## UI rejection-message follow-up
+
+- Reviewer: Antigravity Gemini 3.6 Flash Low
+- Verdict: `red_team_clear`
+- Verified the exact follow-up diff: TEST retains the 5-second anti-repeat message,
+  while ON reports the 300-second irrigation cooldown and uses an ON-specific
+  rejection prefix.

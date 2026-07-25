@@ -29,7 +29,7 @@
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh with runtime frontend launchd tests and evidence",
-    "result": "pending deployment and production verification"
+    "result": "Mac mini deployed index-KQKnQMfb.js; production launchd exposes a 3-second maximum and MQTT autostart connected. Live 3-second TEST be817b91 completed OFF. A subsequent ON verification was rejected by the valid 300-second post-actuation cooldown, not by duration."
   },
   "red_team": {
     "models": [

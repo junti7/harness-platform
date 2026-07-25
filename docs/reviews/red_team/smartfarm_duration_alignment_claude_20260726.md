@@ -13,3 +13,12 @@ Verified:
 Low residual note:
 
 - A runtime environment change reaches the backend immediately and the UI on its next overview poll; backend enforcement remains authoritative.
+
+## UI rejection-message follow-up
+
+- Reviewer: Claude Sonnet 4.6
+- Verdict: `red_team_clear`
+- Verified the TEST/ON branch and action-specific rejection labels.
+- Requested confirmation that the displayed 300 seconds matches enforcement.
+  `hardware/smartfarm/BENCH_WIRING.md` and the Pi hub `cooldown_s` contract confirm
+  the production setting is 300 seconds.

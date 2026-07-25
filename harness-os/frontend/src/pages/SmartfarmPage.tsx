@@ -330,9 +330,11 @@ export function SmartfarmPage({
           }
           if (command.status === 'rejected' || command.status === 'blocked' || command.status === 'unknown') {
             const reason = command.safety_reason === 'active_or_cooldown'
-              ? '펌프 동작 또는 5초 재실행 대기 중'
+              ? controlAction === 'test'
+                ? '펌프 동작 또는 5초 재실행 대기 중'
+                : '펌프 동작 또는 300초 급수 보호시간 중'
               : command.safety_reason || command.status
-            throw new Error(`펌프 테스트 거부: ${reason}`)
+            throw new Error(`${controlAction === 'test' ? '펌프 테스트' : '펌프 ON'} 거부: ${reason}`)
           }
         }
         if (!completed) throw new Error('펌프 실제 ON/OFF 확인 시간 초과')
