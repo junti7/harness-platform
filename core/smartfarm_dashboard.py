@@ -691,6 +691,11 @@ class SmartfarmRuntime:
                 "writer_queue_depth": self._write_queue.qsize(),
                 "actuation_enabled": os.getenv("HARNESS_SMARTFARM_ACTUATION_ENABLED", "false").lower() in {"1", "true", "yes"},
                 "pump_test_enabled": os.getenv("HARNESS_SMARTFARM_PUMP_TEST_ENABLED", "false").lower() in {"1", "true", "yes"},
+                "pump_control_zones": [
+                    zone.strip()
+                    for zone in os.getenv("HARNESS_SMARTFARM_PUMP_CONTROL_ZONES", "").split(",")
+                    if zone.strip()
+                ],
             },
             "summary": {
                 "devices_total": len(devices),
@@ -756,6 +761,15 @@ class SmartfarmRuntime:
         )
         if not os.getenv(feature_flag, "false").lower() in {"1", "true", "yes"}:
             return False, "pump_test_disabled" if test_mode else "actuation_disabled", None
+        configured_zones = {
+            zone.strip()
+            for zone in os.getenv("HARNESS_SMARTFARM_PUMP_CONTROL_ZONES", "").split(",")
+            if zone.strip()
+        }
+        if not configured_zones:
+            return False, "pump_control_zones_not_configured", None
+        if zone_id not in configured_zones:
+            return False, "pump_control_zone_disabled", None
         now = _now()
         with self._connect(readonly=True) as conn:
             rows = conn.execute(

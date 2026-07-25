@@ -43,6 +43,8 @@
     <string>__ROOT__/runtime/smartfarm/operations.db</string>
     <key>HARNESS_SMARTFARM_PUMP_TEST_ENABLED</key>
     <string>true</string>
+    <key>HARNESS_SMARTFARM_PUMP_CONTROL_ZONES</key>
+    <string>zone2</string>
   </dict>
 </dict>
 </plist>

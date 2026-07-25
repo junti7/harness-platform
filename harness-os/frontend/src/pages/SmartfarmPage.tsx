@@ -60,6 +60,7 @@ type Overview = {
     writer_queue_depth: number
     actuation_enabled: boolean
     pump_test_enabled: boolean
+    pump_control_zones: string[]
   }
   summary: {
     devices_total: number
@@ -196,6 +197,7 @@ export function SmartfarmPage({
   const [loading, setLoading] = useState(true)
   const [lastSuccess, setLastSuccess] = useState<Date | null>(null)
   const [selectedZone, setSelectedZone] = useState('')
+  const [selectedControlZone, setSelectedControlZone] = useState('')
   const [selectedMetric, setSelectedMetric] = useState('soil_pct')
   const [history, setHistory] = useState<HistoryPoint[]>([])
   const [historyRange, setHistoryRange] = useState(86400)
@@ -214,6 +216,11 @@ export function SmartfarmPage({
       const payload = await response.json() as Overview
       setOverview(payload)
       setSelectedZone(current => current || payload.zones[0]?.zone_id || payload.devices.find(item => item.zone_id)?.zone_id || '')
+      setSelectedControlZone(current => (
+        payload.runtime.pump_control_zones.includes(current)
+          ? current
+          : payload.runtime.pump_control_zones[0] || ''
+      ))
       setError(null)
       setLastSuccess(new Date())
     } catch (err) {
@@ -263,7 +270,8 @@ export function SmartfarmPage({
   }, [apiBase, authHeaders, historyRange, selectedMetric, selectedZone])
 
   const submitPump = async () => {
-    if (!selectedZone || confirmation !== selectedZone) {
+    const controlZone = selectedControlZone
+    if (!controlZone || confirmation !== controlZone) {
       setActionMessage('zone ID를 정확히 입력하세요.')
       return
     }
@@ -280,7 +288,7 @@ export function SmartfarmPage({
         if (!tokenResponse.ok) throw new Error(tokenPayload.detail || 'CEO 세션 확인 실패')
         nonce = tokenPayload.actuation_nonce
       }
-      const response = await fetch(`${apiBase}/api/smartfarm/zones/${encodeURIComponent(selectedZone)}/pump`, {
+      const response = await fetch(`${apiBase}/api/smartfarm/zones/${encodeURIComponent(controlZone)}/pump`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -353,6 +361,8 @@ export function SmartfarmPage({
   }
 
   const selectedZoneData = overview?.zones.find(zone => zone.zone_id === selectedZone)
+  const controlZone = selectedControlZone
+  const controlZoneData = overview?.zones.find(zone => zone.zone_id === controlZone)
   const devices = overview?.devices ?? []
   const unhealthy = devices.filter(device => device.health !== 'online').length
 
@@ -452,7 +462,7 @@ export function SmartfarmPage({
         <aside className="sf-side-column">
           <section className="sf-panel">
             <div className="sf-section-head">
-              <div><span>CONTROL</span><h3>급수 제어</h3></div>
+              <div><span>CONTROL</span><h3>{controlZone || '미설정'} 급수 제어</h3></div>
               <span className={`sf-mode ${overview?.runtime.actuation_enabled ? 'armed' : ''}`}>
                 {overview?.runtime.actuation_enabled
                   ? 'ARMED'
@@ -461,13 +471,20 @@ export function SmartfarmPage({
                     : 'SAFE LOCK'}
               </span>
             </div>
+            {(overview?.runtime.pump_control_zones.length ?? 0) > 1 && (
+              <label className="sf-note">펌프 구역
+                <select value={controlZone} onChange={event => setSelectedControlZone(event.target.value)}>
+                  {overview?.runtime.pump_control_zones.map(zone => <option key={zone}>{zone}</option>)}
+                </select>
+              </label>
+            )}
             <div className="sf-pump-state">
               <span>관측 상태</span>
-              <strong>{selectedZoneData?.pump.state?.toUpperCase() ?? 'UNKNOWN'}</strong>
+              <strong>{controlZoneData?.pump.state?.toUpperCase() ?? 'UNKNOWN'}</strong>
               <small>명령 발행과 실제 상태는 별도 추적</small>
             </div>
             {viewRole === 'ceo' ? (
-              <button className="sf-primary" disabled={!selectedZone} onClick={() => setControlOpen(open => !open)}>
+              <button className="sf-primary" disabled={!controlZone} onClick={() => setControlOpen(open => !open)}>
                 {controlOpen ? '제어 패널 닫기' : '안전 제어 열기'}
               </button>
             ) : <p className="sf-note">부대표 계정은 모니터링과 read-only 진단만 가능합니다.</p>}
@@ -490,10 +507,10 @@ export function SmartfarmPage({
                     onChange={event => setDuration(Number(event.target.value))}
                   />
                 </label>
-                <label>오작동 방지 확인 — <code>{selectedZone}</code> 입력
+                <label>오작동 방지 확인 — <code>{controlZone}</code> 입력
                   <input value={confirmation} onChange={event => setConfirmation(event.target.value)} autoComplete="off" />
                 </label>
-                <button className={`sf-submit ${controlAction === 'on' ? 'danger' : ''}`} disabled={actionBusy || confirmation !== selectedZone} onClick={() => void submitPump()}>
+                <button className={`sf-submit ${controlAction === 'on' ? 'danger' : ''}`} disabled={actionBusy || confirmation !== controlZone} onClick={() => void submitPump()}>
                   {actionBusy
                     ? '안전 조건 검사 중…'
                     : controlAction === 'test'

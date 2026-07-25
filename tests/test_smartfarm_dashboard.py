@@ -121,7 +121,13 @@ class SmartfarmRuntimeTests(unittest.TestCase):
         self.assertFalse(clear)
         self.assertEqual(reason, "actuation_disabled")
 
-        with patch.dict(os.environ, {"HARNESS_SMARTFARM_ACTUATION_ENABLED": "true"}):
+        with patch.dict(
+            os.environ,
+            {
+                "HARNESS_SMARTFARM_ACTUATION_ENABLED": "true",
+                "HARNESS_SMARTFARM_PUMP_CONTROL_ZONES": "zone1",
+            },
+        ):
             clear, reason, device_id = self.runtime.pump_safety("zone1", 10)
         self.assertTrue(clear)
         self.assertEqual(reason, "clear")
@@ -131,7 +137,13 @@ class SmartfarmRuntimeTests(unittest.TestCase):
         self._heartbeat(watchdog_max_run_ms=15000)
         self.runtime.ingest_message("farm/zone1/soil_raw", "1700")
         self.runtime.flush()
-        with patch.dict(os.environ, {"HARNESS_SMARTFARM_PUMP_TEST_ENABLED": "true"}):
+        with patch.dict(
+            os.environ,
+            {
+                "HARNESS_SMARTFARM_PUMP_TEST_ENABLED": "true",
+                "HARNESS_SMARTFARM_PUMP_CONTROL_ZONES": "zone1",
+            },
+        ):
             clear, reason, device_id = self.runtime.pump_safety("zone1", 3, test_mode=True)
         self.assertTrue(clear)
         self.assertEqual(reason, "clear")
@@ -154,6 +166,38 @@ class SmartfarmRuntimeTests(unittest.TestCase):
         completed = self.runtime.command(command["command_id"])
         self.assertEqual(completed["status"], "completed")
         self.assertEqual(completed["observed_state"], "off")
+
+    def test_configured_pump_zone_blocks_wrong_physical_zone(self):
+        self._heartbeat()
+        self.runtime.ingest_message("farm/zone1/soil_raw", "1700")
+        self.runtime.flush()
+        with patch.dict(
+            os.environ,
+            {
+                "HARNESS_SMARTFARM_PUMP_TEST_ENABLED": "true",
+                "HARNESS_SMARTFARM_PUMP_CONTROL_ZONES": "zone2",
+            },
+        ):
+            clear, reason, device_id = self.runtime.pump_safety("zone1", 3, test_mode=True)
+            overview = self.runtime.overview()
+        self.assertFalse(clear)
+        self.assertEqual(reason, "pump_control_zone_disabled")
+        self.assertIsNone(device_id)
+        self.assertEqual(overview["runtime"]["pump_control_zones"], ["zone2"])
+
+    def test_missing_pump_zone_configuration_fails_closed(self):
+        self._heartbeat()
+        with patch.dict(
+            os.environ,
+            {
+                "HARNESS_SMARTFARM_PUMP_TEST_ENABLED": "true",
+                "HARNESS_SMARTFARM_PUMP_CONTROL_ZONES": "",
+            },
+        ):
+            clear, reason, device_id = self.runtime.pump_safety("zone1", 3, test_mode=True)
+        self.assertFalse(clear)
+        self.assertEqual(reason, "pump_control_zones_not_configured")
+        self.assertIsNone(device_id)
 
     def test_rejected_command_preserves_edge_safety_reason(self):
         fake = _FakeMqtt()

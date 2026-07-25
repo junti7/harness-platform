@@ -1,0 +1,59 @@
+{
+  "task": "Bind Harness OS pump control to the physical zone2 pump",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-25T20:30:00+09:00",
+      "summary": "Completion requires requirement-to-evidence mapping, production entrypoint verification, and exact residual-risk reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-25T20:30:00+09:00",
+      "summary": "Origin main and selective Mac mini deploy are mandatory; production API bundle and service evidence are required."
+    }
+  ],
+  "verification": [
+    {
+      "name": "focused smartfarm regression",
+      "target": "runtime API session Pi hub and pump controls",
+      "command": "PYTHONPATH=. .venv/bin/python -m pytest -q tests/test_smartfarm_session_actuation.py tests/test_smartfarm_dashboard.py tests/test_smartfarm_pi_hub_commands.py tests/test_smartfarm_pump_control.py",
+      "result": "31 passed, including fail-closed missing configuration and rejection of zone1 when only zone2 is configured."
+    },
+    {
+      "name": "frontend build and lint",
+      "target": "Smartfarm control panel",
+      "command": "npm run build and eslint SmartfarmPage.tsx",
+      "result": "Build and changed-file lint passed. Monitoring and physical control zone state are independent."
+    },
+    {
+      "name": "launchd configuration",
+      "target": "Mac mini Harness OS backend",
+      "command": "plutil -lint harness-os/launchd/com.harness.harness-os-backend.plist",
+      "result": "Valid plist explicitly maps pump control to zone2."
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh with smartfarm runtime frontend launchd and evidence paths",
+    "result": "pending production deployment and post-deploy overview verification"
+  },
+  "red_team": {
+    "models": [
+      "Codex",
+      "Gemini",
+      "Claude"
+    ],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/smartfarm_zone2_control_mapping_gemini_20260725.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/smartfarm_zone2_control_mapping_claude_20260725.md"
+      }
+    ],
+    "verdict": "red_team_clear"
+  },
+  "residual_risks": [
+    "Zone IDs are case-sensitive and must remain canonical lowercase values."
+  ]
+}
