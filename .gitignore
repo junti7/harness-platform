@@ -102,5 +102,8 @@ docs/trading/universe.json
 
 # Smartfarm 프로토타입 - 로컬 secret/설정 및 런타임 DB
 hardware/smartfarm/soil_node/config.h
+# 구역별 실설정 보관본 (WiFi 비밀번호 포함). 빌드 직전 config.h로 복사해 쓴다.
+# config.example.*.h(플레이스홀더 템플릿)는 이 패턴에 걸리지 않으므로 계속 추적된다.
+hardware/smartfarm/soil_node/config.zone*.h
 hardware/smartfarm/pi_hub/config.yaml
 hardware/smartfarm/pi_hub/smartfarm.db

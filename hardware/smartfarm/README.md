@@ -96,6 +96,16 @@ mosquitto_sub -h <파이IP> -t 'farm/#' -v
 
 구역마다 ESP32/ESP8266을 섞어 써도 무방하다 (허브는 칩 종류를 모르고 MQTT 토픽만 본다).
 
+한 대의 PC로 여러 구역을 관리할 때는 구역별 실설정을 `config.zone<N>.<칩>.h`로 보관하고
+빌드 직전에 `config.h`로 복사한다 (스케치는 항상 `config.h`만 읽는다). 이 이름들은
+`.gitignore`에 걸려 있어 WiFi 비밀번호가 커밋될 위험이 없다.
+
+```bash
+cp config.zone2.esp8266.h config.h
+arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 .
+arduino-cli upload -p /dev/cu.usbserial-0001 --fqbn esp8266:esp8266:nodemcuv2 .
+```
+
 1. `pi_hub/config.yaml`의 `zones`에 `zone2` 항목 추가 (임계값은 zone1과 다르게 설정 가능).
 2. 새 노드에 맞는 템플릿(`config.example.esp32.h` 또는 `config.example.esp8266.h`)을 zone2용 `config.h`로 복사 (`ZONE_ID`, `MQTT_CLIENT_ID`만 변경, 캘리브레이션 값은 보드/센서별로 실측).
 3. 새 노드에 재플래싱, 배선.
