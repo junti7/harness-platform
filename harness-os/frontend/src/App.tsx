@@ -25,6 +25,7 @@ import { EduVpTrainingPage } from './pages/EduVpTrainingPage'
 import { EduPatternPage } from './pages/EduPatternPage'
 import { EduDbInspectorPage } from './pages/EduDbInspectorPage'
 import { RecommercePage } from './pages/RecommercePage'
+import { SmartfarmPage } from './pages/SmartfarmPage'
 
 const SESSION_KEY = 'harness-session'
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000 // 30분
@@ -151,7 +152,7 @@ function App() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   })
   const [viewRole, setViewRole] = useState<'ceo' | 'vp'>(() => session?.role ?? 'ceo')
-  const [activeView, setActiveView] = useState<'dashboard' | 'approvals' | 'conference' | 'ars' | 'meetings' | 'costs' | 'tokens' | 'settings' | 'pipeline' | 'trading-diary' | 'openclaw' | 'news-center' | 'edu-pilot' | 'edu-patterns' | 'edu-db-inspector' | 'recommerce'>('dashboard')
+  const [activeView, setActiveView] = useState<'dashboard' | 'approvals' | 'conference' | 'ars' | 'meetings' | 'costs' | 'tokens' | 'settings' | 'pipeline' | 'trading-diary' | 'openclaw' | 'news-center' | 'edu-pilot' | 'edu-patterns' | 'edu-db-inspector' | 'recommerce' | 'smartfarm'>('dashboard')
   const [selectedPlatform, setSelectedPlatform] = useState('all')
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null)
   const [loading, setLoading] = useState(true)
@@ -799,6 +800,10 @@ function App() {
 
         {activeView === 'recommerce' && (
           <RecommercePage apiBase={API_BASE} authHeaders={authHeaders} viewRole={viewRole} />
+        )}
+
+        {activeView === 'smartfarm' && (
+          <SmartfarmPage apiBase={API_BASE} authHeaders={authHeaders} viewRole={viewRole} />
         )}
 
       {activeView === 'settings' && (

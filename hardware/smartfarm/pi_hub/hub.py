@@ -17,7 +17,11 @@ config.yaml 파일 내용만 바꿀 뿐, MQTT 명령을 직접 보내지 않는�
 from __future__ import annotations
 
 import argparse
+import json
+import os
+import platform
 import sqlite3
+import socket
 import threading
 import time
 from pathlib import Path
@@ -114,6 +118,7 @@ class SmartfarmHub:
             zone_id: ZoneState(zone_id, zone_cfg)
             for zone_id, zone_cfg in config["zones"].items()
         }
+        self.last_manual_sequence = {zone_id: 0 for zone_id in self.zones}
         self._init_db()
 
         self.client = mqtt.Client()
@@ -135,6 +140,31 @@ class SmartfarmHub:
         client.subscribe("farm/+/temp")
         client.subscribe("farm/+/humidity")
         client.subscribe("farm/+/pump/status")
+        client.subscribe("farm/+/command/request")
+        self._publish_hub_status("online")
+
+    def _publish_hub_status(self, state: str):
+        payload = {
+            "device_id": os.getenv("SMARTFARM_HUB_DEVICE_ID", "pi-hub"),
+            "kind": "raspberry_pi",
+            "board": platform.machine(),
+            "firmware": "smartfarm-pi-hub-2.0",
+            "boot_id": self._boot_id,
+            "host": socket.gethostname(),
+            "ip": socket.gethostbyname(socket.gethostname()),
+            "uptime_s": int(time.monotonic()),
+            "db_ok": self.db_path.exists(),
+            "config_ok": True,
+            "zones": sorted(self.zones),
+            "state": state,
+            "ts": time.time(),
+        }
+        self.client.publish(
+            "farm/system/pi-hub/status",
+            json.dumps(payload, separators=(",", ":")),
+            qos=1,
+            retain=True,
+        )
 
     def _on_message(self, client, userdata, msg):
         parts = msg.topic.split("/")
@@ -146,7 +176,9 @@ class SmartfarmHub:
 
         payload = msg.payload.decode(errors="ignore").strip()
 
-        if parts[2] == "soil":
+        if parts[2] == "command" and len(parts) > 3 and parts[3] == "request":
+            self._handle_manual_command(zone_id, payload)
+        elif parts[2] == "soil":
             self._log_reading(zone_id, "soil_pct", payload)
             self._evaluate_irrigation(zone_id, payload)
         elif parts[2] == "soil_raw":
@@ -156,7 +188,101 @@ class SmartfarmHub:
         elif parts[2] == "humidity":
             self._log_reading(zone_id, "humidity_pct", payload)
         elif parts[2] == "pump" and len(parts) > 3 and parts[3] == "status":
-            pass  # 노드 측 실제 상태 확인용 echo. 별도 처리 불필요 (허브가 상태 소유)
+            # 실제 edge echo가 최종 관측 상태다. hub가 재시작했거나 watchdog가
+            # 독립적으로 OFF한 경우에도 in-memory state를 현실과 다시 맞춘다.
+            state = payload.lower()
+            if state in {"on", "off"}:
+                zone = self.zones[zone_id]
+                with zone.lock:
+                    observed_on = state == "on"
+                    if zone.pump_on and not observed_on:
+                        if zone.off_timer is not None:
+                            zone.off_timer.cancel()
+                            zone.off_timer = None
+                        zone.last_off_time = time.time()
+                    zone.pump_on = observed_on
+
+    def _publish_command_ack(
+        self, zone_id: str, command_id: str, accepted: bool, phase: str, reason: str
+    ):
+        if not command_id:
+            return
+        payload = {
+            "command_id": command_id,
+            "accepted": accepted,
+            "phase": phase,
+            "reason": reason,
+            "ts": time.time(),
+        }
+        self.client.publish(
+            f"farm/{zone_id}/command/ack",
+            json.dumps(payload, separators=(",", ":")),
+            qos=1,
+            retain=False,
+        )
+
+    def _handle_manual_command(self, zone_id: str, payload: str):
+        """Manual control still flows through the deterministic Pi owner.
+
+        Harness OS never talks around the hub to the relay. The hub rejects
+        retained/replayed/expired intent, updates its ZoneState, and only then
+        emits the legacy edge command understood by deployed firmware.
+        """
+        try:
+            command = json.loads(payload)
+        except (TypeError, ValueError):
+            return
+        if not isinstance(command, dict):
+            return
+        command_id = str(command.get("command_id") or "")
+        kind = str(command.get("kind") or "")
+        try:
+            sequence = int(command.get("sequence") or 0)
+            expires_at = float(command.get("expires_at") or 0)
+        except (TypeError, ValueError):
+            self._publish_command_ack(zone_id, command_id, False, "rejected", "invalid_sequence_or_expiry")
+            return
+        if sequence <= self.last_manual_sequence.get(zone_id, 0):
+            self._publish_command_ack(zone_id, command_id, False, "rejected", "stale_sequence")
+            return
+        if expires_at <= time.time():
+            self._publish_command_ack(zone_id, command_id, False, "rejected", "expired")
+            return
+        if kind not in {"pump_on", "pump_off"}:
+            return  # diagnostics are owned directly by the edge node
+
+        zone = self.zones[zone_id]
+        params = command.get("params") if isinstance(command.get("params"), dict) else {}
+        try:
+            duration_s = int(params.get("duration_s") or 0)
+        except (TypeError, ValueError):
+            duration_s = 0
+        with zone.lock:
+            self.last_manual_sequence[zone_id] = sequence
+            if kind == "pump_off":
+                if zone.pump_on:
+                    self._stop_pump(zone, soil_pct=None, reason="manual_dashboard")
+                else:
+                    # Always send OFF even if hub already believes it is off.
+                    self.client.publish(f"farm/{zone_id}/pump/cmd", "off", qos=1, retain=False)
+                self._publish_command_ack(zone_id, command_id, True, "acknowledged", "off_dispatched")
+                return
+
+            if duration_s <= 0 or duration_s > int(zone.cfg["water_duration_s"]):
+                self._publish_command_ack(
+                    zone_id, command_id, False, "rejected", "duration_exceeds_hub_limit"
+                )
+                return
+            fault = self._soil_fault_reason(zone)
+            if fault is not None:
+                self._publish_command_ack(zone_id, command_id, False, "rejected", "sensor_fault")
+                return
+            cooldown_ok = (time.time() - zone.last_off_time) > zone.cfg["cooldown_s"]
+            if zone.pump_on or not cooldown_ok:
+                self._publish_command_ack(zone_id, command_id, False, "rejected", "active_or_cooldown")
+                return
+            self._start_pump(zone, soil_pct=None, reason="manual_dashboard", duration_s=duration_s)
+            self._publish_command_ack(zone_id, command_id, True, "acknowledged", "on_dispatched")
 
     def _log_reading(self, zone_id: str, metric: str, raw_value: str):
         try:
@@ -266,12 +392,18 @@ class SmartfarmHub:
     def _followers_of(self, zone_id: str) -> list[ZoneState]:
         return [z for z in self.zones.values() if z.cfg.get("follows_pump") == zone_id]
 
-    def _start_pump(self, zone: ZoneState, soil_pct: float, reason: str):
+    def _start_pump(
+        self,
+        zone: ZoneState,
+        soil_pct: float | None,
+        reason: str,
+        duration_s: int | None = None,
+    ):
         zone.pump_on = True
-        self.client.publish(f"farm/{zone.zone_id}/pump/cmd", "on")
+        self.client.publish(f"farm/{zone.zone_id}/pump/cmd", "on", qos=1, retain=False)
         self._log_pump_event(zone.zone_id, "on", reason, soil_pct)
 
-        duration = zone.cfg["water_duration_s"]
+        duration = duration_s if duration_s is not None else zone.cfg["water_duration_s"]
         zone.off_timer = threading.Timer(
             duration, self._timeout_stop_pump, args=(zone,)
         )
@@ -293,7 +425,7 @@ class SmartfarmHub:
             zone.off_timer = None
         zone.pump_on = False
         zone.last_off_time = time.time()
-        self.client.publish(f"farm/{zone.zone_id}/pump/cmd", "off")
+        self.client.publish(f"farm/{zone.zone_id}/pump/cmd", "off", qos=1, retain=False)
         self._log_pump_event(zone.zone_id, "off", reason, soil_pct)
 
         for follower in self._followers_of(zone.zone_id):
@@ -347,13 +479,28 @@ class SmartfarmHub:
                 self.zones[zone_id] = ZoneState(zone_id, new_cfg)
 
     def run(self):
+        self._boot_id = f"{socket.gethostname()}-{int(time.time())}"
+        offline_payload = json.dumps(
+            {
+                "device_id": os.getenv("SMARTFARM_HUB_DEVICE_ID", "pi-hub"),
+                "kind": "raspberry_pi",
+                "state": "offline",
+                "boot_id": self._boot_id,
+                "ts": time.time(),
+            },
+            separators=(",", ":"),
+        )
+        self.client.will_set("farm/system/pi-hub/status", offline_payload, qos=1, retain=True)
         self.client.connect(self.config["mqtt"]["host"], self.config["mqtt"]["port"])
         self.client.loop_start()
         try:
             while True:
                 time.sleep(CONFIG_RELOAD_INTERVAL_S)
                 self._reload_config_if_changed()
+                self._publish_hub_status("online")
         finally:
+            if self.client.is_connected():
+                self._publish_hub_status("offline")
             self.client.loop_stop()
 
 

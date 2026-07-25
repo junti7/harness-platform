@@ -74,6 +74,7 @@ from core.recommerce_workspace import (
     mutate_workspace as mutate_recommerce_workspace,
 )
 from core.recommerce_market_research import load_market_research, run_market_research
+from core.smartfarm_dashboard import VALID_METRICS, get_smartfarm_runtime
 
 TARGET_FREE_SUBSCRIBERS = 50
 TARGET_PAID_SUBSCRIBERS = 1
@@ -462,6 +463,23 @@ class AuthChangePasswordRequest(BaseModel):
     new_password: str
 
 
+class SmartfarmActuationAuthorizeRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=256)
+
+
+class SmartfarmPumpRequest(BaseModel):
+    action: str = Field(pattern="^(on|off)$")
+    duration_s: int = Field(default=10, ge=1, le=300)
+    confirmation: str = Field(default="", max_length=100)
+    actuation_nonce: str | None = Field(default=None, max_length=200)
+
+
+class SmartfarmDiagnosticRequest(BaseModel):
+    checks: list[str] = Field(default_factory=lambda: ["connectivity", "sensors"], min_length=1, max_length=8)
+    invasive: bool = False
+    actuation_nonce: str | None = Field(default=None, max_length=200)
+
+
 class RecommerceWorkspaceRequest(BaseModel):
     expected_version: int = Field(ge=0)
     action: str = Field(min_length=1, max_length=50)
@@ -482,6 +500,46 @@ def _require_harness_ceo(request: Request, _: None = Depends(_require_recommerce
     if role != "ceo":
         raise HTTPException(status_code=403, detail="CEO role required for recommerce workspace writes")
     return role
+
+
+def _require_smartfarm_role(request: Request, _: None = Depends(_require_secret)) -> str:
+    role = _request_harness_role(request)
+    if not role:
+        raise HTTPException(status_code=401, detail="Valid Harness role token required")
+    return role
+
+
+def _require_smartfarm_ceo(request: Request, _: None = Depends(_require_secret)) -> str:
+    role = _request_harness_role(request)
+    if not role:
+        raise HTTPException(status_code=401, detail="Valid Harness role token required")
+    if role != "ceo":
+        raise HTTPException(status_code=403, detail="CEO role required for smartfarm control")
+    return role
+
+
+_SMARTFARM_NONCES: dict[str, float] = {}
+_SMARTFARM_NONCE_LOCK = threading.Lock()
+
+
+def _issue_smartfarm_nonce() -> tuple[str, float]:
+    token = secrets.token_urlsafe(32)
+    expires_at = time.time() + 5 * 60
+    with _SMARTFARM_NONCE_LOCK:
+        now = time.time()
+        for key, expiry in list(_SMARTFARM_NONCES.items()):
+            if expiry <= now:
+                _SMARTFARM_NONCES.pop(key, None)
+        _SMARTFARM_NONCES[token] = expires_at
+    return token, expires_at
+
+
+def _consume_smartfarm_nonce(token: str | None) -> bool:
+    if not token:
+        return False
+    with _SMARTFARM_NONCE_LOCK:
+        expiry = _SMARTFARM_NONCES.pop(token, None)
+    return bool(expiry and expiry > time.time())
 
 
 @app.post("/api/auth/login")
@@ -3677,6 +3735,130 @@ def get_advanced_dashboard(force_refresh: bool = False, _: None = Depends(_requi
             _CACHE["advanced_dashboard"] = CacheEntry(value=value, expires_at=time.time() + CACHE_TTL_SECONDS)
         return value
     return _cached("advanced_dashboard", _advanced_dashboard_payload)
+
+
+def _smartfarm_zone_id(value: str) -> str:
+    zone_id = str(value or "").strip()
+    if not zone_id or len(zone_id) > 64 or not re.fullmatch(r"[A-Za-z0-9_-]+", zone_id):
+        raise HTTPException(status_code=400, detail="Invalid smartfarm zone id")
+    return zone_id
+
+
+@app.get("/api/smartfarm/overview")
+def smartfarm_overview(_: str = Depends(_require_smartfarm_role)) -> dict[str, Any]:
+    runtime = get_smartfarm_runtime()
+    runtime.flush(timeout_s=0.25)
+    return runtime.overview()
+
+
+@app.get("/api/smartfarm/history")
+def smartfarm_history(
+    zone_id: str,
+    metric: str,
+    since_s: int = 86400,
+    limit: int = 600,
+    _: str = Depends(_require_smartfarm_role),
+) -> dict[str, Any]:
+    safe_zone = _smartfarm_zone_id(zone_id)
+    if metric not in VALID_METRICS:
+        raise HTTPException(status_code=400, detail="Unsupported smartfarm metric")
+    return get_smartfarm_runtime().history(safe_zone, metric, since_s, limit)
+
+
+@app.get("/api/smartfarm/devices/{device_id}")
+def smartfarm_device(device_id: str, _: str = Depends(_require_smartfarm_role)) -> dict[str, Any]:
+    if not device_id or len(device_id) > 128:
+        raise HTTPException(status_code=400, detail="Invalid device id")
+    overview = get_smartfarm_runtime().overview()
+    device = next((item for item in overview["devices"] if item["device_id"] == device_id), None)
+    if not device:
+        raise HTTPException(status_code=404, detail="Smartfarm device not found")
+    device_commands = [item for item in overview["commands"] if item["device_id"] == device_id]
+    return {"device": device, "commands": device_commands, "generated_at": overview["generated_at"]}
+
+
+@app.post("/api/smartfarm/actuation/authorize")
+def smartfarm_actuation_authorize(
+    req: SmartfarmActuationAuthorizeRequest,
+    _: str = Depends(_require_smartfarm_ceo),
+) -> dict[str, Any]:
+    if not hmac.compare_digest(_hash_pw(req.password), _PASSWORDS.get("ceo", "")):
+        raise HTTPException(status_code=401, detail="CEO password confirmation failed")
+    nonce, expires_at = _issue_smartfarm_nonce()
+    return {
+        "ok": True,
+        "actuation_nonce": nonce,
+        "expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+
+
+@app.post("/api/smartfarm/devices/{device_id}/test")
+def smartfarm_device_test(
+    device_id: str,
+    req: SmartfarmDiagnosticRequest,
+    role: str = Depends(_require_smartfarm_role),
+) -> dict[str, Any]:
+    overview = get_smartfarm_runtime().overview()
+    device = next((item for item in overview["devices"] if item["device_id"] == device_id), None)
+    if not device or not device.get("zone_id"):
+        raise HTTPException(status_code=404, detail="Controllable smartfarm device not found")
+    allowed = {"connectivity", "sensors", "i2c", "adc", "gpio", "relay"}
+    if any(check not in allowed for check in req.checks):
+        raise HTTPException(status_code=400, detail="Unsupported diagnostic check")
+    if req.invasive or any(check in {"gpio", "relay"} for check in req.checks):
+        if role != "ceo":
+            raise HTTPException(status_code=403, detail="CEO role required for invasive diagnostics")
+        if not _consume_smartfarm_nonce(req.actuation_nonce):
+            raise HTTPException(status_code=403, detail="Fresh one-time actuation authorization required")
+    runtime = get_smartfarm_runtime()
+    clear, reason = runtime.diagnostic_safety(str(device["zone_id"]), req.invasive)
+    if not clear:
+        raise HTTPException(status_code=409, detail={"code": reason, "message": "Diagnostic safety lockout"})
+    return runtime.create_command(
+        zone_id=str(device["zone_id"]),
+        device_id=device_id,
+        kind="diagnostic",
+        actor=role,
+        params={"checks": req.checks, "invasive": req.invasive},
+    )
+
+
+@app.post("/api/smartfarm/zones/{zone_id}/pump")
+def smartfarm_pump(
+    zone_id: str,
+    req: SmartfarmPumpRequest,
+    role: str = Depends(_require_smartfarm_ceo),
+) -> dict[str, Any]:
+    safe_zone = _smartfarm_zone_id(zone_id)
+    if req.confirmation != safe_zone:
+        raise HTTPException(status_code=400, detail="Type the exact zone id to confirm pump control")
+    runtime = get_smartfarm_runtime()
+    device_id: str | None = None
+    with runtime.control_guard(safe_zone):
+        if req.action == "on":
+            clear, reason, device_id = runtime.pump_safety(safe_zone, req.duration_s)
+            if not clear:
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": reason, "message": "Pump ON safety gate blocked the command"},
+                )
+            if not _consume_smartfarm_nonce(req.actuation_nonce):
+                raise HTTPException(status_code=403, detail="Fresh one-time actuation authorization required")
+        return runtime.create_command(
+            zone_id=safe_zone,
+            device_id=device_id,
+            kind=f"pump_{req.action}",
+            actor=role,
+            params={"duration_s": req.duration_s},
+        )
+
+
+@app.get("/api/smartfarm/commands/{command_id}")
+def smartfarm_command(command_id: str, _: str = Depends(_require_smartfarm_role)) -> dict[str, Any]:
+    try:
+        return get_smartfarm_runtime().command(command_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Smartfarm command not found") from exc
 
 
 @app.get("/api/recommerce/workspace")

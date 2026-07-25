@@ -35,6 +35,12 @@
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>EMBEDDING_PROVIDER_MODE</key>
     <string>ollama</string>
+    <key>HARNESS_SMARTFARM_MQTT_HOST</key>
+    <string>192.168.0.23</string>
+    <key>HARNESS_SMARTFARM_MQTT_PORT</key>
+    <string>1883</string>
+    <key>HARNESS_SMARTFARM_DB_PATH</key>
+    <string>__ROOT__/runtime/smartfarm/operations.db</string>
   </dict>
 </dict>
 </plist>

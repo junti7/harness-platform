@@ -36,6 +36,9 @@ DHT dht(DHT_PIN, DHT22);
 bool pumpOn = false;
 unsigned long pumpStartedAt = 0;
 unsigned long lastSensorRead = 0;
+unsigned long lastHeartbeat = 0;
+unsigned long lastCommandSequence = 0;
+String bootId;
 
 char topicSoil[64];
 char topicSoilRaw[64];
@@ -43,6 +46,11 @@ char topicTemp[64];
 char topicHumidity[64];
 char topicPumpCmd[64];
 char topicPumpStatus[64];
+char topicDeviceStatus[80];
+char topicCommandRequest[80];
+char topicCommandAck[80];
+char topicDiagnosticRequest[80];
+char topicDiagnosticResult[80];
 
 void buildTopics() {
   snprintf(topicSoil, sizeof(topicSoil), "farm/%s/soil", ZONE_ID);
@@ -51,6 +59,11 @@ void buildTopics() {
   snprintf(topicHumidity, sizeof(topicHumidity), "farm/%s/humidity", ZONE_ID);
   snprintf(topicPumpCmd, sizeof(topicPumpCmd), "farm/%s/pump/cmd", ZONE_ID);
   snprintf(topicPumpStatus, sizeof(topicPumpStatus), "farm/%s/pump/status", ZONE_ID);
+  snprintf(topicDeviceStatus, sizeof(topicDeviceStatus), "farm/%s/device/status", ZONE_ID);
+  snprintf(topicCommandRequest, sizeof(topicCommandRequest), "farm/%s/command/request", ZONE_ID);
+  snprintf(topicCommandAck, sizeof(topicCommandAck), "farm/%s/command/ack", ZONE_ID);
+  snprintf(topicDiagnosticRequest, sizeof(topicDiagnosticRequest), "farm/%s/diagnostic/request", ZONE_ID);
+  snprintf(topicDiagnosticResult, sizeof(topicDiagnosticResult), "farm/%s/diagnostic/result", ZONE_ID);
 }
 
 void setPump(bool on) {
@@ -60,13 +73,133 @@ void setPump(bool on) {
   mqtt.publish(topicPumpStatus, on ? "on" : "off", true);
 }
 
+String jsonStringValue(const String& json, const char* key) {
+  String marker = "\"" + String(key) + "\"";
+  int keyAt = json.indexOf(marker);
+  if (keyAt < 0) return "";
+  int colon = json.indexOf(':', keyAt + marker.length());
+  int quote = json.indexOf('"', colon + 1);
+  if (colon < 0 || quote < 0) return "";
+  int end = json.indexOf('"', quote + 1);
+  if (end < 0) return "";
+  return json.substring(quote + 1, end);
+}
+
+unsigned long jsonUnsignedValue(const String& json, const char* key, unsigned long fallback) {
+  String marker = "\"" + String(key) + "\"";
+  int keyAt = json.indexOf(marker);
+  if (keyAt < 0) return fallback;
+  int colon = json.indexOf(':', keyAt + marker.length());
+  if (colon < 0) return fallback;
+  int start = colon + 1;
+  while (start < (int)json.length() && (json[start] == ' ' || json[start] == '\"')) start++;
+  int end = start;
+  while (end < (int)json.length() && isDigit(json[end])) end++;
+  if (end == start) return fallback;
+  return (unsigned long)json.substring(start, end).toInt();
+}
+
+void publishAck(const String& commandId, bool accepted, const char* phase, const char* reason) {
+  if (commandId.length() == 0 || commandId.length() > 64) return;
+  String payload = "{\"command_id\":\"" + commandId + "\",\"accepted\":";
+  payload += accepted ? "true" : "false";
+  payload += ",\"phase\":\"" + String(phase) + "\",\"reason\":\"" + String(reason);
+  payload += "\",\"observed_state\":\"" + String(pumpOn ? "on" : "off") + "\",\"ts\":";
+  payload += String((unsigned long)(millis() / 1000));
+  payload += "}";
+  mqtt.publish(topicCommandAck, payload.c_str(), false);
+}
+
+void publishHeartbeat(const char* state) {
+#if defined(ESP32)
+  String board = "ESP32";
+  uint64_t chip = ESP.getEfuseMac();
+  char chipBuf[20];
+  snprintf(chipBuf, sizeof(chipBuf), "%04X%08X", (uint16_t)(chip >> 32), (uint32_t)chip);
+#else
+  String board = "ESP8266";
+  char chipBuf[20];
+  snprintf(chipBuf, sizeof(chipBuf), "%06X", ESP.getChipId());
+#endif
+  String payload = "{\"device_id\":\"" + String(MQTT_CLIENT_ID) + "\",\"kind\":\"";
+#if defined(ESP32)
+  payload += "esp32";
+#else
+  payload += "esp8266";
+#endif
+  payload += "\",\"board\":\"" + board + "\",\"firmware\":\"smartfarm-node-2.0\"";
+  payload += ",\"boot_id\":\"" + bootId + "\",\"ip\":\"" + WiFi.localIP().toString() + "\"";
+  payload += ",\"rssi_dbm\":" + String(WiFi.RSSI()) + ",\"uptime_s\":" + String(millis() / 1000);
+  payload += ",\"watchdog_max_run_ms\":" + String(PUMP_MAX_RUN_MS);
+  payload += ",\"sensor_capabilities\":[\"dht22\"";
+#if SOIL_SENSOR_ENABLED
+  payload += ",\"soil_adc\"";
+#endif
+  payload += "],\"actuator_capabilities\":[\"pump_relay\"],\"state\":\"" + String(state);
+  payload += "\",\"ts\":" + String(millis() / 1000) + "}";
+  mqtt.publish(topicDeviceStatus, payload.c_str(), true);
+}
+
+void handleStructuredCommand(const String& msg) {
+  String commandId = jsonStringValue(msg, "command_id");
+  String kind = jsonStringValue(msg, "kind");
+  unsigned long sequence = jsonUnsignedValue(msg, "sequence", 0);
+  if (commandId.length() == 0 || sequence == 0 || sequence <= lastCommandSequence) {
+    publishAck(commandId, false, "rejected", "missing_or_stale_sequence");
+    return;
+  }
+  // Record sequence before actuation so QoS1 duplicates cannot execute twice.
+  lastCommandSequence = sequence;
+  if (kind == "pump_off") {
+    setPump(false);
+    publishAck(commandId, true, "completed", "observed_off");
+    return;
+  }
+  if (kind == "pump_on") {
+    unsigned long durationS = jsonUnsignedValue(msg, "duration_s", 0);
+    if (durationS == 0 || durationS * 1000UL >= PUMP_MAX_RUN_MS) {
+      publishAck(commandId, false, "rejected", "duration_exceeds_watchdog");
+      return;
+    }
+    setPump(true);
+    publishAck(commandId, true, "completed", "watchdog_armed");
+    return;
+  }
+  publishAck(commandId, false, "rejected", "unsupported_command");
+}
+
+void handleDiagnostic(const String& msg) {
+  String commandId = jsonStringValue(msg, "command_id");
+  if (commandId.length() == 0) return;
+  float temp = dht.readTemperature();
+  float humidity = dht.readHumidity();
+  String payload = "{\"command_id\":\"" + commandId + "\",\"accepted\":true,\"phase\":\"result\"";
+  payload += ",\"connectivity\":{\"wifi\":true,\"mqtt\":true,\"rssi_dbm\":" + String(WiFi.RSSI()) + "}";
+  payload += ",\"dht22\":{\"pass\":" + String((!isnan(temp) && !isnan(humidity)) ? "true" : "false");
+  if (!isnan(temp)) payload += ",\"temp_c\":" + String(temp, 1);
+  if (!isnan(humidity)) payload += ",\"humidity_pct\":" + String(humidity, 1);
+  payload += "}";
+#if SOIL_SENSOR_ENABLED
+  payload += ",\"soil_adc\":{\"pass\":true,\"raw\":" + String(analogRead(SOIL_MOISTURE_PIN)) + "}";
+#else
+  payload += ",\"soil_adc\":{\"pass\":false,\"reason\":\"disabled\"}";
+#endif
+  payload += ",\"pump_state\":\"" + String(pumpOn ? "on" : "off") + "\",\"ts\":" + String(millis() / 1000) + "}";
+  mqtt.publish(topicDiagnosticResult, payload.c_str(), false);
+}
+
 void onMqttMessage(char* topic, byte* payload, unsigned int length) {
+  if (length > 2048) return;
   String msg;
   for (unsigned int i = 0; i < length; i++) msg += (char)payload[i];
 
   if (strcmp(topic, topicPumpCmd) == 0) {
     if (msg == "on") setPump(true);
     else if (msg == "off") setPump(false);
+  } else if (strcmp(topic, topicCommandRequest) == 0) {
+    handleStructuredCommand(msg);
+  } else if (strcmp(topic, topicDiagnosticRequest) == 0) {
+    handleDiagnostic(msg);
   }
 }
 
@@ -87,9 +220,19 @@ void connectMqtt() {
     Serial.print("[mqtt] connecting to ");
     Serial.print(MQTT_BROKER_HOST);
     Serial.println("...");
-    if (mqtt.connect(MQTT_CLIENT_ID)) {
+    String willPayload = "{\"device_id\":\"" + String(MQTT_CLIENT_ID) + "\",\"state\":\"offline\",\"boot_id\":\"" + bootId + "\"}";
+    if (mqtt.connect(MQTT_CLIENT_ID, topicDeviceStatus, 1, true, willPayload.c_str())) {
       Serial.println("[mqtt] connected");
-      mqtt.subscribe(topicPumpCmd);
+      // Clear accidental retained control requests before subscribing. Commands are
+      // never intentionally retained; an empty retained publish deletes broker state.
+      mqtt.publish(topicCommandRequest, "", true);
+      mqtt.publish(topicDiagnosticRequest, "", true);
+      delay(25);
+      mqtt.subscribe(topicPumpCmd, 1);
+      // Structured pump intent is consumed only by the Raspberry Pi hub so
+      // its cooldown/sensor-fault/ZoneState rules cannot be bypassed.
+      mqtt.subscribe(topicDiagnosticRequest, 1);
+      publishHeartbeat("online");
     } else {
       Serial.print("[mqtt] failed, state=");
       Serial.println(mqtt.state());
@@ -126,6 +269,11 @@ void setup() {
   digitalWrite(PUMP_RELAY_PIN, LOW);
 
   buildTopics();
+#if defined(ESP32)
+  bootId = String((uint32_t)(ESP.getEfuseMac() & 0xFFFFFFFF), HEX) + "-" + String(micros(), HEX);
+#else
+  bootId = String(ESP.getChipId(), HEX) + "-" + String(micros(), HEX);
+#endif
   dht.begin();
   connectWifi();
   mqtt.setServer(MQTT_BROKER_HOST, MQTT_BROKER_PORT);
@@ -143,6 +291,10 @@ void loop() {
   }
 
   unsigned long now = millis();
+  if (now - lastHeartbeat >= 30000UL) {
+    lastHeartbeat = now;
+    publishHeartbeat("online");
+  }
   if (now - lastSensorRead >= SENSOR_READ_INTERVAL_MS) {
     lastSensorRead = now;
 

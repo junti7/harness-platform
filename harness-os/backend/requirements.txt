@@ -3,3 +3,4 @@ uvicorn
 python-dotenv
 requests
 alpaca-py
+paho-mqtt>=2.1,<3

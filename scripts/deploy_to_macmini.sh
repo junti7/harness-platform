@@ -64,6 +64,7 @@ REBUILD_TRADING="no"
 REBUILD_FRONTEND="no"
 RELOAD_FE_PLIST="no"
 RELOAD_BACKEND="no"
+INSTALL_BACKEND_DEPS="no"
 RUN_EDU_COACH_GUARD="no"
 for p in "${PATHS[@]}"; do
   case "$p" in core/trading_universe.py|configs/trading/*|scripts/build_trading_universe.py) REBUILD_TRADING="yes";; esac
@@ -74,6 +75,7 @@ for p in "${PATHS[@]}"; do
   # reload 전엔 옛 코드로 동작한다(2026-06-21 사고: HARNESS_MIN_SCORE 변경이 백엔드에 미반영).
   # 백엔드가 core/·scripts/ 에서 광범위하게 import 하므로, 이 둘이 바뀌면 백엔드도 reload 한다.
   case "$p" in harness-os/backend/*|harness-os/launchd/com.harness.harness-os-backend.plist|core/*|scripts/*) RELOAD_BACKEND="yes";; esac
+  case "$p" in harness-os/backend/requirements.txt) INSTALL_BACKEND_DEPS="yes";; esac
   case "$p" in harness-os/backend/main.py|configs/education/edu_coach_*|scripts/edu_coach_*|scripts/check_edu_coach_simulation_regression.py) RUN_EDU_COACH_GUARD="yes";; esac
 done
 
@@ -83,7 +85,7 @@ if [ "$RUN_EDU_COACH_GUARD" = "yes" ]; then
   tail -40 /tmp/harness_edu_coach_guard.log
 fi
 
-ssh -o ConnectTimeout=20 "$SSH_HOST" "REPO='$REMOTE_REPO' PATHS='$PATHS_STR' REBUILD='$REBUILD_TRADING' REBUILD_FE='$REBUILD_FRONTEND' RELOAD_FE='$RELOAD_FE_PLIST' RELOAD_BE='$RELOAD_BACKEND' bash -s" <<'REMOTE'
+ssh -o ConnectTimeout=20 "$SSH_HOST" "REPO='$REMOTE_REPO' PATHS='$PATHS_STR' REBUILD='$REBUILD_TRADING' REBUILD_FE='$REBUILD_FRONTEND' RELOAD_FE='$RELOAD_FE_PLIST' RELOAD_BE='$RELOAD_BACKEND' INSTALL_BE_DEPS='$INSTALL_BACKEND_DEPS' bash -s" <<'REMOTE'
 set -euo pipefail
 cd "$REPO"
 read -r -a PATH_ARR <<< "$PATHS"
@@ -162,6 +164,14 @@ if [ "${RELOAD_FE:-no}" = "yes" ]; then
 fi
 
 if [ "${RELOAD_BE:-no}" = "yes" ]; then
+  if [ "${INSTALL_BE_DEPS:-no}" = "yes" ]; then
+    echo "  [4c] 백엔드 Python 의존성 동기화"
+    .venv/bin/python -m pip install -r harness-os/backend/requirements.txt >/tmp/harness_backend_pip.log 2>&1 || {
+      echo "      ✖ backend dependency install 실패"
+      tail -20 /tmp/harness_backend_pip.log
+      exit 1
+    }
+  fi
   echo "  [4d] 백엔드 launchd reload"
   AGENT="$HOME/Library/LaunchAgents/com.harness.harness-os-backend.plist"
   sed "s|__ROOT__|$REPO|g" harness-os/launchd/com.harness.harness-os-backend.plist > "$AGENT"
