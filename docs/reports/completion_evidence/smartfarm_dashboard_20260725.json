@@ -18,7 +18,7 @@
       "name": "focused smartfarm Python regression",
       "target": "smartfarm runtime database Pi hub and pump safety",
       "command": "PYTHONPATH=. .venv/bin/python -m pytest -q tests/test_smartfarm_dashboard.py tests/test_smartfarm_pi_hub_commands.py tests/test_smartfarm_pump_control.py",
-      "result": "21 passed in 0.27s including concurrent DB access, command ack versus observation, fail-closed ON, hub sequence/expiry, and pump safety."
+      "result": "23 passed in 0.28s including concurrent DB access, command ack versus observation, fail-closed ON, hub sequence/expiry, pump safety, MQTT packet sizing, and diagnostic-failure alert promotion."
     },
     {
       "name": "frontend production bundle and scoped lint",
@@ -66,7 +66,7 @@
       "name": "ESP8266 and ESP32 heartbeat and self-test",
       "target": "physical zone2 ESP8266 and zone1 ESP32 through production dashboard API",
       "command": "arduino-cli verified uploads followed by retained heartbeat and POST device self-test for both devices",
-      "result": "Both flashes passed hash verification. Both nodes report online identity boot ID watchdog and correct capabilities. ESP32 connectivity MQTT DHT passed with soil disabled and pump off. ESP8266 connectivity MQTT soil ADC passed with pump off; DHT self-test failed and remains an explicit device fault."
+      "result": "Both flashes passed hash verification. Both nodes report online identity boot ID watchdog and correct capabilities. ESP32 connectivity MQTT DHT passed with soil disabled and pump off. ESP8266 connectivity MQTT soil ADC passed with pump off; repeated DHT self-tests failed and the backend now promotes that result to device fault plus a high-severity alert."
     }
   ],
   "deploy": {

@@ -437,6 +437,50 @@ class SmartfarmRuntime:
                WHERE command_id=? AND zone_id=?""",
             (status, _now(), _json(data), command_id, zone_id),
         )
+        if diagnostic and accepted and phase in {"completed", "result"}:
+            self._apply_diagnostic_health(command_id, zone_id, data)
+
+    def _apply_diagnostic_health(
+        self, command_id: str, zone_id: str, data: dict[str, Any]
+    ) -> None:
+        with self._connect(readonly=True) as conn:
+            row = conn.execute(
+                "SELECT device_id FROM smartfarm_commands WHERE command_id=? AND zone_id=?",
+                (command_id, zone_id),
+            ).fetchone()
+        device_id = str(row["device_id"] or "") if row else ""
+        if not device_id:
+            return
+        failures = [
+            name
+            for name, result in data.items()
+            if isinstance(result, dict) and result.get("pass") is False
+        ]
+        now = _now()
+        if failures:
+            message = f"Self-test failed: {', '.join(sorted(failures))}"
+            self._enqueue(
+                "UPDATE smartfarm_devices SET state='fault' WHERE device_id=?",
+                (device_id,),
+            )
+            self._enqueue(
+                """INSERT INTO smartfarm_alerts
+                   (code,severity,device_id,zone_id,status,message,evidence_json,opened_at,updated_at)
+                   VALUES('diagnostic_failed','high',?,?,'open',?,?,?,?)
+                   ON CONFLICT(code,device_id,zone_id,status) DO UPDATE SET
+                    message=excluded.message,evidence_json=excluded.evidence_json,updated_at=excluded.updated_at""",
+                (device_id, zone_id, message, _json({"command_id": command_id, "failures": failures}), now, now),
+            )
+        else:
+            self._enqueue(
+                """UPDATE smartfarm_alerts SET status='resolved',updated_at=?
+                   WHERE code='diagnostic_failed' AND device_id=? AND zone_id=? AND status='open'""",
+                (now, device_id, zone_id),
+            )
+            self._enqueue(
+                "UPDATE smartfarm_devices SET state='online' WHERE device_id=? AND state='fault'",
+                (device_id,),
+            )
 
     def _record_pump_observation(self, zone_id: str, state: str, observed_at: float) -> None:
         with self._connect() as conn:

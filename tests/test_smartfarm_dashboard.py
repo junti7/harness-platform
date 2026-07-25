@@ -164,6 +164,36 @@ class SmartfarmRuntimeTests(unittest.TestCase):
         self.runtime.flush()
         self.assertEqual(errors, [])
 
+    def test_failed_diagnostic_marks_device_fault_and_opens_alert(self):
+        self._heartbeat()
+        fake = _FakeMqtt()
+        self.runtime.health.connected = True
+        self.runtime._mqtt_client = fake
+        command = self.runtime.create_command(
+            zone_id="zone1",
+            device_id="esp32-zone1",
+            kind="diagnostic",
+            actor="ceo",
+            params={"checks": ["sensors"], "invasive": False},
+        )
+        self.runtime.ingest_message(
+            "farm/zone1/diagnostic/result",
+            json.dumps(
+                {
+                    "command_id": command["command_id"],
+                    "accepted": True,
+                    "phase": "result",
+                    "dht22": {"pass": False},
+                    "soil_adc": {"pass": True},
+                }
+            ),
+        )
+        self.runtime.flush()
+        overview = self.runtime.overview()
+        self.assertEqual(overview["devices"][0]["health"], "fault")
+        self.assertEqual(overview["summary"]["alerts_open"], 1)
+        self.assertEqual(overview["alerts"][0]["code"], "diagnostic_failed")
+
 
 if __name__ == "__main__":
     unittest.main()

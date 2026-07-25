@@ -29,3 +29,7 @@
 Live ESP8266 verification found that legacy scalar telemetry worked while heartbeat JSON did not publish because
 PubSubClient retained its 256-byte default packet buffer. Firmware now calls `mqtt.setBufferSize(1024)`, has a
 source regression assertion, and compiles for both ESP targets. This resolves the false-old-firmware condition.
+
+Live zone2 diagnostics then proved a persistent DHT22 failure. The operational reducer now promotes any failed
+diagnostic module to device `fault` plus a high-severity active alert and resolves it only after a later passing
+self-test. A focused regression test covers this false-green prevention.
