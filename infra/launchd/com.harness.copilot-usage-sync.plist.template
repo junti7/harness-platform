@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.harness.copilot-usage-sync</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PYTHON__</string>
+    <string>__ROOT__/scripts/export_copilot_usage_snapshot.py</string>
+    <string>--output</string>
+    <string>__ROOT__/runtime/copilot_usage/latest.json</string>
+    <string>--sync-target</string>
+    <string>juntaepark@192.168.0.203:/Users/juntaepark/projects/harness-platform/runtime/copilot_usage/latest.json</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__ROOT__</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>300</integer>
+  <key>StandardOutPath</key>
+  <string>__ROOT__/logs/copilot-usage-sync.log</string>
+  <key>StandardErrorPath</key>
+  <string>__ROOT__/logs/copilot-usage-sync.error.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+</dict>
+</plist>

@@ -551,6 +551,15 @@ function registerHarnessAssistantTools(api) {
     { type: "object", additionalProperties: false, properties: {} },
   );
   bridgeTool(
+    "harness_copilot_usage",
+    "Read the sanitized laptop Copilot CLI usage snapshot. Use for Copilot billing, model, session, or usage-cause questions before giving estimates.",
+    (p) => ["copilot-usage", "--max-age-seconds", String(p.maxAgeSeconds ?? 900)],
+    {
+      type: "object", additionalProperties: false,
+      properties: { maxAgeSeconds: { type: "integer", minimum: 60, maximum: 3600, default: 900 } },
+    },
+  );
+  bridgeTool(
     "harness_gmail_search",
     "Search the CEO Gmail inbox read-only. Use before summarizing messages.",
     (p) => ["gmail-search", p.query, "--limit", String(p.limit ?? 10)],

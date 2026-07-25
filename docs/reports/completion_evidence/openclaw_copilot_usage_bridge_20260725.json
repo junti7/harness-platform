@@ -1,0 +1,61 @@
+{
+  "task": "Connect sanitized laptop Copilot CLI usage data to Mac mini OpenClaw",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-25T12:36:00+09:00",
+      "summary": "Confirmed production verification, scoped source-of-truth deployment, and exact completion evidence requirements."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-25T12:36:00+09:00",
+      "summary": "Confirmed origin/main deployment, secret minimization, and live-entrypoint verification requirements."
+    }
+  ],
+  "verification": [
+    {
+      "name": "aggregate privacy and timezone regression",
+      "target": "Copilot local event exporter",
+      "command": "PYTHONPATH=. .venv/bin/pytest -q tests/test_copilot_usage_snapshot.py tests/test_openclaw_bridge.py",
+      "result": "PASS: 35 tests; exported data excludes prompt and response content."
+    },
+    {
+      "name": "plugin contract regression",
+      "target": "OpenClaw harness-bridge",
+      "command": "/opt/homebrew/opt/node/bin/node tests/test_harness_bridge_plugin.mjs",
+      "result": "PASS: harness_copilot_usage is registered and declared in contracts.tools."
+    },
+    {
+      "name": "local real Copilot snapshot",
+      "target": "Laptop Copilot CLI session event store",
+      "command": ".venv/bin/python scripts/export_copilot_usage_snapshot.py --day 2026-07-24 --output runtime/copilot_usage/latest.json; .venv/bin/python scripts/openclaw_codex_bridge.py copilot-usage",
+      "result": "PASS: aggregate-only snapshot returned 71 sessions, 274 completed turns, 72 gpt-5.3-codex auto resolutions, valid checksum, and no prompt or response content."
+    },
+    {
+      "name": "Mac mini production OpenClaw replay",
+      "target": "Mac mini OpenClaw gateway and Discord-equivalent agent path",
+      "command": "harness_copilot_usage live tool call and agent replay",
+      "result": "PENDING_DEPLOY_VERIFICATION"
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh selected paths; force-install harness-bridge; restart gateway; install laptop LaunchAgent",
+    "result": "PENDING_DEPLOY_VERIFICATION"
+  },
+  "red_team": {
+    "models": [
+      "Claude",
+      "Copilot"
+    ],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/openclaw_copilot_usage_bridge_claude_20260725.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_copilot_usage_bridge_copilot_20260725.md"
+      }
+    ],
+    "verdict": "red_team_clear"
+  }
+}

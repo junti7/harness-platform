@@ -1,6 +1,7 @@
 import argparse
 import fcntl
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -13,7 +14,7 @@ import time
 import uuid
 from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -2125,6 +2126,92 @@ def command_gmail_search(args: argparse.Namespace) -> None:
     _write_output(rendered, args.output)
 
 
+def command_copilot_usage(args: argparse.Namespace) -> None:
+    snapshot_path = Path(
+        os.getenv(
+            "HARNESS_COPILOT_USAGE_SNAPSHOT",
+            str(
+                Path(__file__).resolve().parent.parent
+                / "runtime"
+                / "copilot_usage"
+                / "latest.json"
+            ),
+        )
+    )
+    try:
+        raw_payload = None
+        for attempt in range(2):
+            try:
+                raw_payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+                break
+            except json.JSONDecodeError:
+                if attempt == 0:
+                    time.sleep(0.05)
+                    continue
+                raise
+        if not isinstance(raw_payload, dict):
+            raise ValueError("invalid snapshot payload")
+        if raw_payload.get("schema") != "harness.copilot_usage_snapshot.v1":
+            raise ValueError("unsupported snapshot schema")
+        snapshot_sha256 = str(raw_payload.get("snapshot_sha256") or "")
+        unsigned_payload = dict(raw_payload)
+        unsigned_payload.pop("snapshot_sha256", None)
+        canonical = json.dumps(
+            unsigned_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        if not hmac.compare_digest(
+            snapshot_sha256, hashlib.sha256(canonical).hexdigest()
+        ):
+            raise ValueError("snapshot checksum mismatch")
+        generated_at = datetime.fromisoformat(
+            str(raw_payload["generated_at"]).replace("Z", "+00:00")
+        )
+        if generated_at.tzinfo is None:
+            raise ValueError("snapshot timestamp missing timezone")
+        age_seconds = max(
+            0, int((datetime.now(timezone.utc) - generated_at).total_seconds())
+        )
+        models = raw_payload.get("models")
+        if not isinstance(models, dict) or any(
+            not isinstance(key, str)
+            or not isinstance(value, int)
+            or isinstance(value, bool)
+            or value < 0
+            for key, value in models.items()
+        ):
+            raise ValueError("invalid model counts")
+        count_fields = {
+            key: int(raw_payload.get(key) or 0)
+            for key in (
+                "sessions",
+                "turns_started",
+                "turns_completed",
+                "auto_model_resolutions",
+            )
+        }
+        if any(value < 0 for value in count_fields.values()):
+            raise ValueError("negative usage count")
+        if count_fields["turns_completed"] > count_fields["turns_started"]:
+            raise ValueError("completed turns exceed started turns")
+        max_age_seconds = max(60, min(int(args.max_age_seconds), 3600))
+        payload = {
+            "ok": True,
+            "schema": "harness.copilot_usage_snapshot.v1",
+            "generated_at": raw_payload["generated_at"],
+            "day": str(raw_payload.get("day") or ""),
+            "timezone": str(raw_payload.get("timezone") or ""),
+            "source": "copilot_cli_local_session_events",
+            "privacy": "aggregate_only_no_prompts_no_responses",
+            **count_fields,
+            "models": dict(sorted(models.items())),
+            "age_seconds": age_seconds,
+            "stale": age_seconds > max_age_seconds,
+        }
+    except Exception:
+        payload = {"ok": False, "error": "copilot usage snapshot unavailable"}
+    _write_output(_json_dump(payload), args.output)
+
+
 def command_calendar_list(args: argparse.Namespace) -> None:
     try:
         payload = _calendar_events_runtime(args.from_time, args.to_time, args.limit)
@@ -3316,6 +3403,13 @@ def build_parser() -> argparse.ArgumentParser:
     gmail_get.add_argument("--format", choices=["json", "text"], default="json")
     gmail_get.add_argument("--output")
     gmail_get.set_defaults(func=command_gmail_get)
+
+    copilot_usage = subparsers.add_parser(
+        "copilot-usage", help="Read the sanitized laptop Copilot CLI usage snapshot."
+    )
+    copilot_usage.add_argument("--max-age-seconds", type=int, default=900)
+    copilot_usage.add_argument("--output")
+    copilot_usage.set_defaults(func=command_copilot_usage)
 
     saju_status_parser = subparsers.add_parser(
         "saju-notebook-status",

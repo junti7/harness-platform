@@ -19,6 +19,7 @@ const pluginManifest = JSON.parse(
   fs.readFileSync(new URL("../plugins/harness-bridge/openclaw.plugin.json", import.meta.url)),
 );
 assert.ok(pluginManifest.contracts.tools.includes("harness_smartfarm_pump_control"));
+assert.ok(pluginManifest.contracts.tools.includes("harness_copilot_usage"));
 
 assert.equal(shouldEnforceSajuBridge("오늘 사주 운세 알려줘"), true);
 assert.deepEqual(
@@ -160,6 +161,7 @@ assert.deepEqual(
     "harness_alpaca_status",
     "harness_calendar_create",
     "harness_calendar_list",
+    "harness_copilot_usage",
     "harness_cron_create",
     "harness_cron_list",
     "harness_cron_remove",

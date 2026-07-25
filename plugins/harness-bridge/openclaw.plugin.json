@@ -16,6 +16,7 @@
       "harness_workspace_search",
       "harness_workspace_write",
       "harness_workspace_exec",
+      "harness_copilot_usage",
       "harness_gmail_search",
       "harness_gmail_get",
       "harness_calendar_list",

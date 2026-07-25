@@ -15,6 +15,7 @@ Prefer native `harness_*` tools over guessed shell commands:
 - Knowledge: `harness_knowledge_query` (incremental index and compact evidence for every Harness domain)
 - Repository: `harness_workspace_stats`, `harness_workspace_read`, `harness_workspace_search`, `harness_workspace_write`, `harness_workspace_exec`
 - Turtle live state: `harness_alpaca_status` (read-only)
+- Copilot usage: `harness_copilot_usage` (sanitized laptop CLI aggregates)
 - Gmail: `harness_gmail_search`, `harness_gmail_get`
 - Calendar: `harness_calendar_list`, `harness_calendar_create`
 - Scheduling: `harness_cron_list`, `harness_cron_create`, `harness_cron_remove`
@@ -27,6 +28,10 @@ discovers current and future domains from the live worktree, incrementally refre
 cache outside the repository, and returns only relevant evidence. Do not bulk-read the repository.
 
 For repository size, capacity, disk usage, file count, or directory count, call `harness_workspace_stats` directly. Treat `harness-project` as an alias for the configured `harness-platform` root. Never scan the home directory with Bash or `find`.
+
+For Copilot billing, premium request, model multiplier, or usage-cause questions, call
+`harness_copilot_usage` before estimating. The snapshot contains aggregate session/model counts
+only; it never contains prompts, responses, or source content. Report stale snapshots explicitly.
 
 Require explicit user confirmation before deleting data, sending external messages, deploying, pushing, creating financial actions, or running destructive commands. Repository tools reject paths outside `~/projects/harness-platform` and common destructive commands.
 
