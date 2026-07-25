@@ -16,6 +16,11 @@
 #define DHT_PIN 4
 #define PUMP_RELAY_PIN 26
 
+// 토양수분 센서를 아직 배선하지 않았다면 반드시 0으로 둔다.
+// 미배선 ADC 핀은 floating이라 노이즈를 읽고, 그 값이 soil로 발행되면 허브가
+// 진짜 건조 신호로 믿고 급수를 트리거한다 (2026-07-25 zone1에서 실제 발생).
+#define SOIL_SENSOR_ENABLED 1
+
 // 토양 수분 ADC 원시값 캘리브레이션 (센서/토양마다 실측 후 조정)
 #define SOIL_DRY_RAW 3000       // 완전 건조 상태 raw 값
 #define SOIL_WET_RAW 1200       // 물에 담갔을 때 raw 값

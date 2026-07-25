@@ -75,6 +75,11 @@ mosquitto_sub -h <파이IP> -t 'farm/#' -v
 - **노드 로컬**: `PUMP_MAX_RUN_MS` (config.h) — 허브와 통신이 끊겨도 이 시간이 지나면 노드가 스스로 펌프를 끈다.
 - **허브**: `water_duration_s` (config.yaml) — 노드측 최대값보다 짧게 설정해서 정상 상황에서는 허브가 먼저 끈다.
 - 두 안전장치 다 값이 겹치지 않게 반드시 `water_duration_s < PUMP_MAX_RUN_MS`로 유지한다.
+- **토양수분 센서 미배선 구역은 `SOIL_SENSOR_ENABLED 0`으로 둔다** (config.h). ESP32의 ADC 핀(GPIO34 등)은
+  내부 풀업/풀다운이 없어 미배선 시 floating 노이즈를 읽고, 그 값이 `soil`로 발행되면 허브가 진짜 건조 신호로
+  믿고 급수를 트리거한다. 2026-07-25 zone1에서 실제로 `soil_pct=0` 오판 → `pump on`이 발행됐다
+  (당시 릴레이 미배선이라 물리적 피해는 없었음). `0`으로 두면 노드가 soil을 아예 발행하지 않아
+  해당 구역의 급수 로직이 동작하지 않는다 — 센서 배선 후 `1`로 바꾸고 캘리브레이션 값을 실측해 넣는다.
 - **급수 임계값(`soil_min_pct`/`soil_target_pct`)은 고정값이 아니다.** `hub.py`는 `CONFIG_RELOAD_INTERVAL_S`(기본 30초)마다
   `config.yaml`을 다시 읽어 반영하므로, 아래 6번의 `threshold-apply`로 승인된 변경이 허브 재시작 없이 자동 적용된다.
   펌프를 켜고 끄는 결정은 여전히 `hub.py` 단독 소유이며, 새 값은 `0 ≤ soil_min_pct < soil_target_pct ≤ 100` 및

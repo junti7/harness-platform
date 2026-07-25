@@ -20,6 +20,15 @@
 #include <DHT.h>
 #include "config.h"
 
+// 토양수분 센서가 아직 배선되지 않은 구역을 위한 스위치.
+// 미배선 ADC 핀은 floating이라 노이즈를 읽는데, 그 값이 soil로 publish되면
+// 허브가 이를 진짜 건조 신호로 믿고 급수를 트리거한다 (2026-07-25 zone1 실제 발생:
+// floating GPIO34 -> soil_pct=0 -> pump on). 센서 없는 구역은 아예 publish하지 않는다.
+// 기존 config.h 호환을 위해 미정의 시 1(센서 있음)로 간주한다.
+#ifndef SOIL_SENSOR_ENABLED
+#define SOIL_SENSOR_ENABLED 1
+#endif
+
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
 DHT dht(DHT_PIN, DHT22);
@@ -121,7 +130,6 @@ void loop() {
   if (now - lastSensorRead >= SENSOR_READ_INTERVAL_MS) {
     lastSensorRead = now;
 
-    int soilPct = readSoilPercent();
     float temp = dht.readTemperature();
     float humidity = dht.readHumidity();
 
@@ -136,8 +144,13 @@ void loop() {
     }
 
     char buf[16];
+#if SOIL_SENSOR_ENABLED
+    int soilPct = readSoilPercent();
     snprintf(buf, sizeof(buf), "%d", soilPct);
     mqtt.publish(topicSoil, buf);
+#else
+    Serial.println("[info] SOIL_SENSOR_ENABLED=0 — soil 미발행 (허브 급수 트리거 없음)");
+#endif
 
     if (!isnan(temp)) {
       dtostrf(temp, 4, 1, buf);
