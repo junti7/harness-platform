@@ -1,0 +1,65 @@
+{
+  "task": "smartfarm_kst_timestamps",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-25T20:10:00+09:00",
+      "summary": "Must/Never, 배포 SoT(commit->push->origin/main, deploy_to_macmini.sh 전용, scp 금지), 강제 배포-청결 규칙, 완료 환각 방지(항목별 증거 매핑), red-team 은 CEO 주문 시에만 확인."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-25T20:11:00+09:00",
+      "summary": "§1 git/배포 불변식(SoT=origin/main, SSH remote, force-push 금지, 양쪽 청결), §2.8 완료 증거 guard 요건(최소 1개는 사용자 경험 진입점의 실검증, mock-only 불가), §2.9 완료 환각 방지 절차를 읽고 적용."
+    }
+  ],
+  "verification": [
+    {
+      "name": "라즈베리파이 프로덕션 DB 마이그레이션 (실제 장비, 실제 데이터)",
+      "target": "raspberry pi 192.168.0.23 sqlite production db",
+      "command": "ssh pi@192.168.0.23 'systemctl stop harness-smartfarm-hub; cp smartfarm.db smartfarm.db.bak_kst_20260725_200328; sqlite3 smartfarm.db < /tmp/kst_migration.sql'",
+      "result": "MIGRATION_OK. sensor_readings 8450행 / pump_events 509행 재작성 완료. 마지막 pump_events recorded_at 이 '2026-07-25T10:57:50.460Z' -> '2026-07-25T20:03:20.465+09:00' 로 변환됨(+9h 정확). 백업 smartfarm.db.bak_kst_20260725_200328 (983040 bytes) 존재."
+    },
+    {
+      "name": "허브 재시작 후 신규 행이 KST 기본값으로 적재되는지 (실제 서비스 런타임)",
+      "target": "raspberry pi harness-smartfarm-hub systemd service + live db",
+      "command": "ssh pi@192.168.0.23 'systemctl start harness-smartfarm-hub; sleep 40; systemctl is-active ...; sqlite3 smartfarm.db \"select recorded_at,zone_id,metric,value from sensor_readings order by id desc limit 4\"'",
+      "result": "is-active=active. 재시작 40초 뒤 물리 노드에서 올라온 신규 행이 '2026-07-25T20:04:23.911+09:00'(zone1 humidity_pct 61.8) 등 KST+오프셋으로 적재됨. 합성 데이터가 아니라 ESP32/ESP8266 실측값."
+    },
+    {
+      "name": "혼재 포맷 파싱 동치성 (UTC 'Z' 행 vs KST '+09:00' 행)",
+      "target": "scripts/smartfarm_ops.py _parse_ts",
+      "command": ".venv/bin/python -c \"from smartfarm_ops import _parse_ts; print(_parse_ts('2026-07-25T10:57:50.460Z') == _parse_ts('2026-07-25T19:57:50.460+09:00'))\"",
+      "result": "True. 마이그레이션이 안 된 행이 남아도 시각 비교가 정확하다는 것을 실측 확인. 오프셋 접미사를 반드시 남겨야 하는 이유(_parse_ts 는 tz 없는 값을 UTC 로 간주)도 코드에서 확인."
+    },
+    {
+      "name": "bridge CLI 3개 커맨드가 실제 프로덕션 DB 스냅샷에서 KST 출력",
+      "target": "cli + live pi db copy",
+      "command": ".venv/bin/python scripts/openclaw_smartfarm_research_bridge.py {report --period-hours 24, alerts, threshold-propose} --db <pi live snapshot> --config <pi live config.yaml>",
+      "result": "세 커맨드 모두 generated_at='2026-07-25T20:06:29+09:00' / '2026-07-25T20:07:25+09:00' 로 KST 출력. report 집계도 정상(zone1 temp_c 1150건 = 30초 주기 24h 와 일치). alerts 는 zone2 sensor_stuck(최근 6판독 2.0 고정) 및 pump_short_cycling(24h 197회) 을 실제로 검출."
+    },
+    {
+      "name": "회귀 테스트",
+      "target": "pytest",
+      "command": ".venv/bin/python -m pytest tests/test_smartfarm_pump_control.py -q",
+      "result": "12 passed. (tests/test_smartfarm_market_research.py 의 test_dedicated_openclaw_parser_exposes_only_read_only_commands 는 실패하지만, git stash 로 본 변경을 제거한 HEAD 상태에서도 동일하게 실패하는 기존 결함이며 본 변경과 무관함을 확인했다 — build_read_only_parser ImportError.)"
+    }
+  ],
+  "residual_risks": [
+    {
+      "risk": "라즈베리파이 로컬 ~/harness-smartfarm-pi-hub/schema.sql 은 여전히 UTC DEFAULT 다.",
+      "detail": "저장소의 schema.sql 만 KST 로 고쳤다. 파이는 deploy_to_macmini.sh 의 배포 대상이 아니고 별도 배포 경로가 정의돼 있지 않아 손대지 않았다. 현재 테이블은 이미 마이그레이션돼 있고 hub.py 는 CREATE TABLE IF NOT EXISTS 라 실동작에는 영향이 없지만, DB 를 새로 만들면 UTC 로 되돌아간다.",
+      "mitigation": "파이 배포 경로를 정의하거나, DB 재생성 전에 schema.sql 을 수동 갱신한다."
+    },
+    {
+      "risk": "core/smartfarm_dashboard.py 와 harness-os 프론트의 시각 표기는 통일하지 않았다.",
+      "detail": "두 파일 모두 다른 세션이 동시 편집 중이라(작업트리 dirty) 건드리면 충돌한다. 대시보드는 자체 테이블(smartfarm_runtime_events.recorded_at REAL epoch)과 자체 _iso 를 쓴다.",
+      "mitigation": "다른 세션 작업이 정리된 뒤 동일 규칙(KST+오프셋)으로 맞춘다."
+    },
+    {
+      "risk": "파이에 하드웨어 RTC 가 없어 재부팅마다 시각이 수 분 역행한다.",
+      "detail": "timedatectl 상 NTP 동기화는 정상이나 RTC time: n/a. 2026-07-25 14:30 KST 재부팅에서 약 7분 뒤로 교정되어 pump_events 의 id 순서와 recorded_at 순서가 어긋난 구간이 있다. KST 전환과 무관한 별개 결함이며 그대로 남아 있다.",
+      "mitigation": "DS3231 RTC 모듈(약 3,000원) 추가, 또는 분석 측에서 시간 역행 구간 제외."
+    }
+  ]
+}
