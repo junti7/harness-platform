@@ -31,7 +31,12 @@ For repository size, capacity, disk usage, file count, or directory count, call 
 
 For Copilot billing, premium request, model multiplier, or usage-cause questions, call
 `harness_copilot_usage` before estimating. The snapshot contains aggregate session/model counts
-only; it never contains prompts, responses, or source content. Report stale snapshots explicitly.
+only; it never contains prompts, responses, or source content. Report `observed_origin` and
+`session_attribution` directly when `observed_origin.confidence` is `high`. For `partial`, report
+only supported breakdowns and limits. Keep the caveat narrow: high-confidence local attribution
+is unanimous within locally recorded Copilot CLI sessions, while IDE, web, other machines, and
+GitHub's request-by-request billing join remain outside that evidence. Report stale snapshots
+explicitly.
 
 Require explicit user confirmation before deleting data, sending external messages, deploying, pushing, creating financial actions, or running destructive commands. Repository tools reject paths outside `~/projects/harness-platform` and common destructive commands.
 

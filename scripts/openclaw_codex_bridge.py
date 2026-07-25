@@ -2184,6 +2184,7 @@ def command_copilot_usage(args: argparse.Namespace) -> None:
             key: int(raw_payload.get(key) or 0)
             for key in (
                 "sessions",
+                "sessions_with_activity",
                 "turns_started",
                 "turns_completed",
                 "auto_model_resolutions",
@@ -2193,7 +2194,144 @@ def command_copilot_usage(args: argparse.Namespace) -> None:
             raise ValueError("negative usage count")
         if count_fields["turns_completed"] > count_fields["turns_started"]:
             raise ValueError("completed turns exceed started turns")
+        observed_origin = raw_payload.get("observed_origin")
+        session_attribution = raw_payload.get("session_attribution")
+        if observed_origin is None or session_attribution is None:
+            observed_origin = {
+                "client": "unknown",
+                "producer": "unknown",
+                "repository": "unknown",
+                "repository_host": "unknown",
+                "confidence": "partial",
+            }
+            session_attribution = {
+                "producers": {},
+                "repositories": {},
+                "repository_hosts": {},
+                "copilot_versions": {},
+            }
+        if not isinstance(observed_origin, dict):
+            raise ValueError("invalid observed origin")
+        allowed_origin_keys = {
+            "client",
+            "producer",
+            "repository",
+            "repository_host",
+            "confidence",
+        }
+        if set(observed_origin) != allowed_origin_keys or any(
+            not isinstance(value, str) or not value or len(value) > 200
+            for value in observed_origin.values()
+        ):
+            raise ValueError("invalid observed origin")
+        if observed_origin["confidence"] not in {"high", "partial"}:
+            raise ValueError("invalid attribution confidence")
+        if observed_origin["client"] not in {
+            "GitHub Copilot CLI",
+            "mixed",
+            "unknown",
+        }:
+            raise ValueError("invalid attribution client")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+|mixed|unknown", observed_origin["producer"]):
+            raise ValueError("invalid attribution producer")
+        if not re.fullmatch(
+            r"(?:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)|mixed|unknown",
+            observed_origin["repository"],
+        ):
+            raise ValueError("invalid attribution repository")
+        if not re.fullmatch(
+            r"[A-Za-z0-9.-]+|mixed|unknown",
+            observed_origin["repository_host"],
+        ):
+            raise ValueError("invalid attribution repository host")
+        if not isinstance(session_attribution, dict) or set(session_attribution) != {
+            "producers",
+            "repositories",
+            "repository_hosts",
+            "copilot_versions",
+        }:
+            raise ValueError("invalid session attribution")
+        for breakdown in session_attribution.values():
+            if (
+                not isinstance(breakdown, dict)
+                or len(breakdown) > 100
+                or any(
+                not isinstance(key, str)
+                or not key
+                or len(key) > 200
+                or not isinstance(value, int)
+                or isinstance(value, bool)
+                or value < 0
+                for key, value in breakdown.items()
+                )
+            ):
+                raise ValueError("invalid attribution counts")
+        attribution_key_patterns = {
+            "producers": r"[A-Za-z0-9_.-]+|unknown",
+            "repositories": r"(?:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)|unknown",
+            "repository_hosts": r"[A-Za-z0-9.-]+|unknown",
+            "copilot_versions": r"[A-Za-z0-9_.+-]+|unknown",
+        }
+        for name, pattern in attribution_key_patterns.items():
+            if any(
+                not re.fullmatch(pattern, key)
+                for key in session_attribution[name]
+            ):
+                raise ValueError("invalid attribution key")
+        if observed_origin["confidence"] == "high":
+            expected_breakdowns = {
+                "producer": "producers",
+                "repository": "repositories",
+                "repository_host": "repository_hosts",
+            }
+            for origin_key, breakdown_key in expected_breakdowns.items():
+                keys = list(session_attribution[breakdown_key])
+                if (
+                    len(keys) != 1
+                    or keys[0] == "unknown"
+                    or observed_origin[origin_key] != keys[0]
+                ):
+                    raise ValueError("inconsistent high-confidence attribution")
+            expected_client = (
+                "GitHub Copilot CLI"
+                if observed_origin["producer"] == "copilot-agent"
+                else "unknown"
+            )
+            if observed_origin["client"] != expected_client:
+                raise ValueError("inconsistent attribution client")
+        attribution_basis = str(
+            raw_payload.get("attribution_basis")
+            or "legacy_snapshot_without_attribution"
+        )
+        if attribution_basis not in {
+            "session_start_metadata_for_in_window_usage",
+            "legacy_snapshot_without_attribution",
+        }:
+            raise ValueError("invalid attribution basis")
+        attribution_scope = str(
+            raw_payload.get("attribution_scope")
+            or "legacy_snapshot_without_attribution"
+        )
+        if attribution_scope not in {
+            "locally_recorded_copilot_cli_sessions_only",
+            "legacy_snapshot_without_attribution",
+        }:
+            raise ValueError("invalid attribution scope")
+        attribution_breakdown_truncated = raw_payload.get(
+            "attribution_breakdown_truncated", False
+        )
+        if not isinstance(attribution_breakdown_truncated, bool):
+            raise ValueError("invalid attribution truncation flag")
         max_age_seconds = max(60, min(int(args.max_age_seconds), 3600))
+        privacy = str(
+            raw_payload.get("privacy")
+            or "aggregate_only_no_prompts_no_responses"
+        )
+        if privacy not in {
+            "aggregate_only_no_prompts_no_responses",
+            "aggregate_attribution_no_prompts_no_responses_no_paths",
+        }:
+            raise ValueError("invalid privacy declaration")
         payload = {
             "ok": True,
             "schema": "harness.copilot_usage_snapshot.v1",
@@ -2201,9 +2339,17 @@ def command_copilot_usage(args: argparse.Namespace) -> None:
             "day": str(raw_payload.get("day") or ""),
             "timezone": str(raw_payload.get("timezone") or ""),
             "source": "copilot_cli_local_session_events",
-            "privacy": "aggregate_only_no_prompts_no_responses",
+            "privacy": privacy,
             **count_fields,
             "models": dict(sorted(models.items())),
+            "observed_origin": observed_origin,
+            "attribution_basis": attribution_basis,
+            "attribution_scope": attribution_scope,
+            "attribution_breakdown_truncated": attribution_breakdown_truncated,
+            "session_attribution": {
+                key: dict(sorted(value.items()))
+                for key, value in session_attribution.items()
+            },
             "age_seconds": age_seconds,
             "stale": age_seconds > max_age_seconds,
         }

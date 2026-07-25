@@ -17,6 +17,10 @@ from zoneinfo import ZoneInfo
 KST = ZoneInfo("Asia/Seoul")
 
 
+def _bounded_counts(counter: Counter[str]) -> dict[str, int]:
+    return dict(sorted(counter.most_common(100)))
+
+
 def _parse_time(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
@@ -26,20 +30,49 @@ def build_snapshot(state_dir: Path, day: str) -> dict:
     end = start + timedelta(days=1)
     models: Counter[str] = Counter()
     sessions: set[str] = set()
+    active_sessions: set[str] = set()
     turns = 0
     completed_turns = 0
     auto_resolutions = 0
+    producers: Counter[str] = Counter()
+    repositories: Counter[str] = Counter()
+    repository_hosts: Counter[str] = Counter()
+    copilot_versions: Counter[str] = Counter()
 
     for path in state_dir.glob("*/events.jsonl"):
         try:
             lines = path.read_text(encoding="utf-8").splitlines()
         except OSError:
             continue
+        events = []
         for line in lines:
+            if not line.strip():
+                continue
             try:
                 event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict):
+                events.append(event)
+        session_start = next(
+            (event for event in events if event.get("type") == "session.start"),
+            {},
+        )
+        start_data = (
+            session_start.get("data")
+            if isinstance(session_start.get("data"), dict)
+            else {}
+        )
+        context = (
+            start_data.get("context")
+            if isinstance(start_data.get("context"), dict)
+            else {}
+        )
+        session_had_usage = False
+        for event in events:
+            try:
                 timestamp = _parse_time(str(event["timestamp"])).astimezone(KST)
-            except (KeyError, ValueError, TypeError, json.JSONDecodeError):
+            except (KeyError, ValueError, TypeError):
                 continue
             if not start <= timestamp < end:
                 continue
@@ -47,14 +80,62 @@ def build_snapshot(state_dir: Path, day: str) -> dict:
             data = event.get("data") if isinstance(event.get("data"), dict) else {}
             if event_type == "session.start":
                 sessions.add(str(data.get("sessionId") or path.parent.name))
+                session_had_usage = True
             elif event_type == "session.auto_mode_resolved":
                 model = str(data.get("chosenModel") or "unknown")
                 models[model] += 1
                 auto_resolutions += 1
+                session_had_usage = True
             elif event_type == "assistant.turn_start":
                 turns += 1
+                session_had_usage = True
             elif event_type == "assistant.turn_end":
                 completed_turns += 1
+                session_had_usage = True
+        if session_had_usage:
+            active_sessions.add(str(start_data.get("sessionId") or path.parent.name))
+            producers[str(start_data.get("producer") or "unknown")] += 1
+            repositories[str(context.get("repository") or "unknown")] += 1
+            repository_hosts[str(context.get("repositoryHost") or "unknown")] += 1
+            copilot_versions[str(start_data.get("copilotVersion") or "unknown")] += 1
+
+    known_producers = [key for key in producers if key != "unknown"]
+    known_repositories = [key for key in repositories if key != "unknown"]
+    known_hosts = [key for key in repository_hosts if key != "unknown"]
+    fully_attributed = (
+        len(known_producers) == len(known_repositories) == len(known_hosts) == 1
+        and "unknown" not in producers
+        and "unknown" not in repositories
+        and "unknown" not in repository_hosts
+        and max(
+            len(producers),
+            len(repositories),
+            len(repository_hosts),
+            len(copilot_versions),
+        )
+        <= 100
+        and sum(producers.values()) == len(active_sessions)
+        and sum(repositories.values()) == len(active_sessions)
+        and sum(repository_hosts.values()) == len(active_sessions)
+    )
+    producer = (
+        known_producers[0]
+        if len(known_producers) == 1
+        else "mixed" if len(known_producers) > 1 else "unknown"
+    )
+    observed_origin = {
+        "client": "GitHub Copilot CLI"
+        if producer == "copilot-agent"
+        else "mixed" if producer == "mixed" else "unknown",
+        "producer": producer,
+        "repository": known_repositories[0]
+        if len(known_repositories) == 1
+        else "mixed" if len(known_repositories) > 1 else "unknown",
+        "repository_host": known_hosts[0]
+        if len(known_hosts) == 1
+        else "mixed" if len(known_hosts) > 1 else "unknown",
+        "confidence": "high" if fully_attributed else "partial",
+    }
 
     generated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     snapshot = {
@@ -63,12 +144,29 @@ def build_snapshot(state_dir: Path, day: str) -> dict:
         "day": day,
         "timezone": "Asia/Seoul",
         "source": "copilot_cli_local_session_events",
-        "privacy": "aggregate_only_no_prompts_no_responses",
+        "privacy": "aggregate_attribution_no_prompts_no_responses_no_paths",
         "sessions": len(sessions),
+        "sessions_with_activity": len(active_sessions),
         "turns_started": turns,
         "turns_completed": completed_turns,
         "auto_model_resolutions": auto_resolutions,
         "models": dict(sorted(models.items())),
+        "observed_origin": observed_origin,
+        "attribution_basis": "session_start_metadata_for_in_window_usage",
+        "attribution_scope": "locally_recorded_copilot_cli_sessions_only",
+        "attribution_breakdown_truncated": max(
+            len(producers),
+            len(repositories),
+            len(repository_hosts),
+            len(copilot_versions),
+        )
+        > 100,
+        "session_attribution": {
+            "producers": _bounded_counts(producers),
+            "repositories": _bounded_counts(repositories),
+            "repository_hosts": _bounded_counts(repository_hosts),
+            "copilot_versions": _bounded_counts(copilot_versions),
+        },
     }
     canonical = json.dumps(
         snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")

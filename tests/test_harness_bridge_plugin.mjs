@@ -206,6 +206,9 @@ const copilotUsageRouting = await hooks.get("before_prompt_build")(
   copilotUsageContext,
 );
 assert.match(copilotUsageRouting.appendSystemContext, /COPILOT USAGE ROUTING/);
+assert.match(copilotUsageRouting.appendSystemContext, /observed_origin/);
+assert.match(copilotUsageRouting.appendSystemContext, /unknown client/);
+assert.match(copilotUsageRouting.appendSystemContext, /partial/);
 assert.deepEqual(
   await hooks.get("before_tool_call")(
     {

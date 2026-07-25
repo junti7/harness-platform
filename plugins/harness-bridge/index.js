@@ -1000,9 +1000,11 @@ export default {
               "[COPILOT USAGE ROUTING — MANDATORY]",
               "For GitHub Copilot billing, Premium Request, budget, model, session, or usage-cause questions,",
               "call `harness_copilot_usage` exactly once before answering.",
-              "Answer from its aggregate snapshot and explicitly distinguish observed local activity from GitHub billed units.",
+              "Answer from its aggregate snapshot. If `observed_origin.confidence` is `high`, state the observed client, producer, and repository directly; if it is `partial`, state only the supported breakdown and its limits.",
+              "When confidence is high, do not weaken the known local attribution into 'unknown client'. Scope it precisely to locally recorded Copilot CLI sessions; it does not observe IDE, web, or another machine.",
+              "Always distinguish local attribution from GitHub billed-unit identity.",
               "Never use bash, exec, shell, memory, or workspace search for this intent.",
-              "Do not claim the snapshot identifies an individual billed request, prompt, or client.",
+              "Do not claim the snapshot maps an individual GitHub billed request to an individual prompt.",
             ].join(" "),
           };
         }

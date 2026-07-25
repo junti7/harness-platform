@@ -18,7 +18,7 @@
       "name": "aggregate privacy and timezone regression",
       "target": "Copilot local event exporter",
       "command": "PYTHONPATH=. .venv/bin/pytest -q tests/test_copilot_usage_snapshot.py tests/test_openclaw_bridge.py",
-      "result": "PASS: 35 tests; exported data excludes prompt and response content."
+      "result": "PASS: 36 tests; exported data excludes prompts, responses, and filesystem paths while adding validated local client/repository attribution."
     },
     {
       "name": "plugin contract regression",
@@ -30,18 +30,18 @@
       "name": "local real Copilot snapshot",
       "target": "Laptop Copilot CLI session event store",
       "command": ".venv/bin/python scripts/export_copilot_usage_snapshot.py --day 2026-07-24 --output runtime/copilot_usage/latest.json; .venv/bin/python scripts/openclaw_codex_bridge.py copilot-usage",
-      "result": "PASS: aggregate-only snapshot returned 71 sessions, 274 completed turns, 72 gpt-5.3-codex auto resolutions, valid checksum, and no prompt or response content."
+      "result": "PASS: snapshot returned 71 sessions, 274 completed turns, 72 gpt-5.3-codex auto resolutions, and high-confidence unanimous attribution to GitHub Copilot CLI / copilot-agent / junti7/harness-platform; no prompts, responses, or filesystem paths."
     },
     {
       "name": "Mac mini production OpenClaw replay",
       "target": "Mac mini OpenClaw gateway and Discord-equivalent agent path",
       "command": "harness_copilot_usage live tool call and agent replay",
-      "result": "PASS: run 1a7a82ef-5263-4048-9225-94cde805f554 completed; harness_copilot_usage called once with zero failures; answer reported 71 sessions, 274 completed turns, and 72 gpt-5.3-codex auto resolutions while explicitly separating local observations from 324 GitHub billed units."
+      "result": "PENDING: attribution-aware production replay after deployment."
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh selected paths; force-install harness-bridge; restart gateway; install laptop LaunchAgent",
-    "result": "PASS: selected paths matched origin/main; harness-bridge force-installed; gateway restarted; plugin doctor reported no issues; Mac mini plugin regression passed; laptop LaunchAgent sync produced a fresh valid aggregate snapshot."
+    "result": "PENDING: attribution extension deployment and live replay."
   },
   "red_team": {
     "models": [
