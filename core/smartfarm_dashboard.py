@@ -142,6 +142,14 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
+def _pump_max_duration_s() -> int:
+    try:
+        configured = int(os.getenv("HARNESS_SMARTFARM_PUMP_MAX_DURATION_S", "3"))
+    except (TypeError, ValueError):
+        configured = 3
+    return max(1, min(configured, 300))
+
+
 def _safe_json(raw: str | None, fallback: Any) -> Any:
     try:
         return json.loads(raw or "")
@@ -726,6 +734,7 @@ class SmartfarmRuntime:
                     for zone in os.getenv("HARNESS_SMARTFARM_PUMP_CONTROL_ZONES", "").split(",")
                     if zone.strip()
                 ],
+                "pump_max_duration_s": _pump_max_duration_s(),
             },
             "summary": {
                 "devices_total": len(devices),
@@ -800,6 +809,9 @@ class SmartfarmRuntime:
             return False, "pump_control_zones_not_configured", None
         if zone_id not in configured_zones:
             return False, "pump_control_zone_disabled", None
+        max_duration_s = _pump_max_duration_s()
+        if type(duration_s) is not int or duration_s < 1 or duration_s > max_duration_s:
+            return False, "duration_exceeds_configured_limit", None
         now = _now()
         with self._connect(readonly=True) as conn:
             rows = conn.execute(

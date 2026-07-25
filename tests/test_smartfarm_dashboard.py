@@ -127,6 +127,7 @@ class SmartfarmRuntimeTests(unittest.TestCase):
             {
                 "HARNESS_SMARTFARM_ACTUATION_ENABLED": "true",
                 "HARNESS_SMARTFARM_PUMP_CONTROL_ZONES": "zone1",
+                "HARNESS_SMARTFARM_PUMP_MAX_DURATION_S": "10",
             },
         ):
             clear, reason, device_id = self.runtime.pump_safety("zone1", 10)
@@ -199,6 +200,43 @@ class SmartfarmRuntimeTests(unittest.TestCase):
         self.assertFalse(clear)
         self.assertEqual(reason, "pump_control_zones_not_configured")
         self.assertIsNone(device_id)
+
+    def test_dashboard_duration_limit_matches_edge_limit(self):
+        self._heartbeat()
+        with patch.dict(
+            os.environ,
+            {
+                "HARNESS_SMARTFARM_ACTUATION_ENABLED": "true",
+                "HARNESS_SMARTFARM_PUMP_CONTROL_ZONES": "zone1",
+                "HARNESS_SMARTFARM_PUMP_MAX_DURATION_S": "3",
+            },
+        ):
+            clear, reason, device_id = self.runtime.pump_safety("zone1", 10)
+            overview = self.runtime.overview()
+        self.assertFalse(clear)
+        self.assertEqual(reason, "duration_exceeds_configured_limit")
+        self.assertIsNone(device_id)
+        self.assertEqual(overview["runtime"]["pump_max_duration_s"], 3)
+
+    def test_invalid_duration_configuration_and_values_fail_safely(self):
+        self._heartbeat()
+        with patch.dict(
+            os.environ,
+            {
+                "HARNESS_SMARTFARM_ACTUATION_ENABLED": "true",
+                "HARNESS_SMARTFARM_PUMP_CONTROL_ZONES": "zone1",
+                "HARNESS_SMARTFARM_PUMP_MAX_DURATION_S": "invalid",
+            },
+        ):
+            self.assertEqual(self.runtime.overview()["runtime"]["pump_max_duration_s"], 3)
+            self.assertEqual(
+                self.runtime.pump_safety("zone1", 0)[1],
+                "duration_exceeds_configured_limit",
+            )
+            self.assertEqual(
+                self.runtime.pump_safety("zone1", 4)[1],
+                "duration_exceeds_configured_limit",
+            )
 
     def test_rejected_command_preserves_edge_safety_reason(self):
         fake = _FakeMqtt()

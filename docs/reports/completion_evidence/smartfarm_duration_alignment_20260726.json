@@ -1,0 +1,53 @@
+{
+  "task": "Align Harness OS pump duration with the zone2 Pi hub limit",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-26T08:20:00+09:00",
+      "summary": "Completion requires production entrypoint verification and requirement-to-evidence mapping."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-26T08:20:00+09:00",
+      "summary": "Origin main, selective Mac mini deployment, completion evidence, and live verification are mandatory."
+    }
+  ],
+  "verification": [
+    {
+      "name": "focused smartfarm regression",
+      "target": "duration configuration runtime session and Pi hub controls",
+      "command": "PYTHONPATH=. .venv/bin/python -m pytest -q tests/test_smartfarm_session_actuation.py tests/test_smartfarm_dashboard.py tests/test_smartfarm_pi_hub_commands.py tests/test_smartfarm_pump_control.py",
+      "result": "35 passed, including invalid environment fallback, zero rejection, configured limit rejection, and overview limit exposure."
+    },
+    {
+      "name": "frontend and plist validation",
+      "target": "Harness OS duration input and production configuration",
+      "command": "Vite production build, scoped ESLint, and plutil lint",
+      "result": "Build, changed-file lint, and plist validation passed. UI defaults and clamps to 3 seconds."
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh with runtime frontend launchd tests and evidence",
+    "result": "pending deployment and production verification"
+  },
+  "red_team": {
+    "models": [
+      "Codex",
+      "Gemini",
+      "Claude"
+    ],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/smartfarm_duration_alignment_gemini_20260726.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/smartfarm_duration_alignment_claude_20260726.md"
+      }
+    ],
+    "verdict": "red_team_clear"
+  },
+  "residual_risks": [
+    "Backend enforcement is immediate; an open UI reflects a changed limit on the next overview poll."
+  ]
+}

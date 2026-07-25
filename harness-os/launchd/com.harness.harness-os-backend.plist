@@ -49,6 +49,8 @@
     <string>true</string>
     <key>HARNESS_SMARTFARM_PUMP_CONTROL_ZONES</key>
     <string>zone2</string>
+    <key>HARNESS_SMARTFARM_PUMP_MAX_DURATION_S</key>
+    <string>3</string>
   </dict>
 </dict>
 </plist>

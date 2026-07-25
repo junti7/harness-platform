@@ -61,6 +61,7 @@ type Overview = {
     actuation_enabled: boolean
     pump_test_enabled: boolean
     pump_control_zones: string[]
+    pump_max_duration_s: number
   }
   summary: {
     devices_total: number
@@ -205,7 +206,7 @@ export function SmartfarmPage({
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [controlOpen, setControlOpen] = useState(false)
   const [controlAction, setControlAction] = useState<'on' | 'off' | 'test'>('off')
-  const [duration, setDuration] = useState(10)
+  const [duration, setDuration] = useState(3)
   const [confirmation, setConfirmation] = useState('')
 
   const loadOverview = useCallback(async (silent = false) => {
@@ -221,6 +222,7 @@ export function SmartfarmPage({
           ? current
           : payload.runtime.pump_control_zones[0] || ''
       ))
+      setDuration(current => Math.min(current, payload.runtime.pump_max_duration_s))
       setError(null)
       setLastSuccess(new Date())
     } catch (err) {
@@ -366,6 +368,10 @@ export function SmartfarmPage({
   const selectedZoneData = overview?.zones.find(zone => zone.zone_id === selectedZone)
   const controlZone = selectedControlZone
   const controlZoneData = overview?.zones.find(zone => zone.zone_id === controlZone)
+  const durationLimit = Math.min(
+    controlAction === 'test' ? 3 : 300,
+    overview?.runtime.pump_max_duration_s ?? 3,
+  )
   const devices = overview?.devices ?? []
   const unhealthy = devices.filter(device => device.health !== 'online').length
 
@@ -497,17 +503,23 @@ export function SmartfarmPage({
                   <button className={controlAction === 'off' ? 'active' : ''} onClick={() => setControlAction('off')}>OFF</button>
                   <button className={controlAction === 'test' ? 'active test' : ''} onClick={() => {
                     setControlAction('test')
-                    setDuration(current => Math.min(current, 3))
+                    setDuration(current => Math.min(current, 3, overview?.runtime.pump_max_duration_s ?? 3))
                   }}>TEST</button>
-                  <button className={controlAction === 'on' ? 'active danger' : ''} onClick={() => setControlAction('on')}>ON</button>
+                  <button className={controlAction === 'on' ? 'active danger' : ''} onClick={() => {
+                    setControlAction('on')
+                    setDuration(current => Math.min(current, overview?.runtime.pump_max_duration_s ?? 3))
+                  }}>ON</button>
                 </div>
                 <label>최대 동작시간
                   <input
                     type="number"
                     min={1}
-                    max={controlAction === 'test' ? 3 : 300}
+                    max={durationLimit}
                     value={duration}
-                    onChange={event => setDuration(Number(event.target.value))}
+                    onChange={event => {
+                      const parsed = Number.parseInt(event.target.value, 10)
+                      setDuration(Number.isFinite(parsed) ? Math.max(1, Math.min(parsed, durationLimit)) : 1)
+                    }}
                   />
                 </label>
                 <label>오작동 방지 확인 — <code>{controlZone}</code> 입력
