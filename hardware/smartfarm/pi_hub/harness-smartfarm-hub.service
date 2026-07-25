@@ -1,0 +1,22 @@
+# /etc/systemd/system/harness-smartfarm-hub.service 로 설치.
+# 설치: sudo cp harness-smartfarm-hub.service /etc/systemd/system/ && sudo systemctl daemon-reload
+#       && sudo systemctl enable --now harness-smartfarm-hub.service
+#
+# PYTHONUNBUFFERED=1 필수: 이게 없으면 hub.py의 print() 로그(리로드/에러 등)가
+# systemd 아래에서 버퍼링되어 journalctl에 사실상 영원히 안 뜬다 (2026-07-25 확인된 실사고).
+[Unit]
+Description=Harness Smartfarm Pi Hub (MQTT -> SQLite + irrigation logic)
+After=network.target mosquitto.service
+Requires=mosquitto.service
+
+[Service]
+Environment=PYTHONUNBUFFERED=1
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/harness-smartfarm-pi-hub
+ExecStart=/home/pi/harness-smartfarm-pi-hub/.venv/bin/python hub.py --config config.yaml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -26,6 +26,11 @@ pip install -r requirements.txt
 
 cp config.example.yaml config.yaml   # 값 채우기 (mqtt host는 보통 localhost)
 python hub.py --config config.yaml
+
+# 재부팅에도 살아남는 상시 서비스로 등록하려면:
+sudo cp harness-smartfarm-hub.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now harness-smartfarm-hub.service
 ```
 
 ## 2. 센서 노드 준비 (ESP32 / ESP8266)
