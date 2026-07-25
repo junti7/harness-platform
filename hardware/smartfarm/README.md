@@ -70,6 +70,11 @@ mosquitto_sub -h <파이IP> -t 'farm/#' -v
 - **노드 로컬**: `PUMP_MAX_RUN_MS` (config.h) — 허브와 통신이 끊겨도 이 시간이 지나면 노드가 스스로 펌프를 끈다.
 - **허브**: `water_duration_s` (config.yaml) — 노드측 최대값보다 짧게 설정해서 정상 상황에서는 허브가 먼저 끈다.
 - 두 안전장치 다 값이 겹치지 않게 반드시 `water_duration_s < PUMP_MAX_RUN_MS`로 유지한다.
+- **급수 임계값(`soil_min_pct`/`soil_target_pct`)은 고정값이 아니다.** `hub.py`는 `CONFIG_RELOAD_INTERVAL_S`(기본 30초)마다
+  `config.yaml`을 다시 읽어 반영하므로, 아래 6번의 `threshold-apply`로 승인된 변경이 허브 재시작 없이 자동 적용된다.
+  펌프를 켜고 끄는 결정은 여전히 `hub.py` 단독 소유이며, 새 값은 `0 ≤ soil_min_pct < soil_target_pct ≤ 100` 및
+  `water_duration_s > 0`, `cooldown_s ≥ 0`을 만족하지 못하면 리로드 시점에 거부되고 이전 값이 유지된다
+  (거부/적용 로그는 `journalctl -u harness-smartfarm-hub`에서 확인).
 
 ## 5. 구역 추가 절차
 
@@ -109,4 +114,5 @@ python scripts/openclaw_smartfarm_research_bridge.py threshold-apply <proposal_i
 발송하지 않는다.
 
 `threshold-apply`는 직전에 `threshold-decide`로 기록된 결정이 `approved`인 경우에만 동작하며,
-`config.yaml`의 다른 라인/한글 주석은 건드리지 않고 해당 수치만 치환한다.
+`config.yaml`의 다른 라인/한글 주석은 건드리지 않고 해당 수치만 치환한다. 적용된 값은 `hub.py`가
+`CONFIG_RELOAD_INTERVAL_S` 주기로 스스로 다시 읽어가므로 허브를 재시작할 필요가 없다 (4번 참고).

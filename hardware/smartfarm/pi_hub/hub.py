@@ -6,6 +6,12 @@
 구역을 늘릴 때 이 파일은 수정하지 않는다. config.yaml의 zones 항목만 추가하면
 새 구역의 토픽(farm/<zone_id>/...)이 자동으로 구독/제어된다.
 
+임계값(soil_min_pct/soil_target_pct 등)은 고정값이 아니다. config.yaml을 CONFIG_RELOAD_INTERVAL_S
+주기로 다시 읽어 반영하므로, scripts/smartfarm_ops.py의 threshold-propose(데이터 기반 제안)
+-> threshold-decide(CEO 승인) -> threshold-apply(config.yaml 패치)를 거친 값이 이 허브 재시작
+없이도 자동 반영된다. 이 파일은 여전히 펌프를 켜고 끄는 유일한 주체다 — OpenClaw/LLM은
+config.yaml 파일 내용만 바꿀 뿐, MQTT 명령을 직접 보내지 않는다.
+
 실행: python hub.py --config config.yaml
 """
 from __future__ import annotations
@@ -20,6 +26,25 @@ import paho.mqtt.client as mqtt
 import yaml
 
 HERE = Path(__file__).parent
+CONFIG_RELOAD_INTERVAL_S = 30
+
+
+def _invalid_zone_cfg_reason(zone_id: str, cfg: dict) -> str | None:
+    """Sanity-check a zone's threshold values before they're allowed to replace
+    the live ones. Guards against a bad manual edit or a bug upstream silently
+    turning the pump into an always-on/always-off state."""
+    required = ("soil_min_pct", "soil_target_pct", "water_duration_s", "cooldown_s")
+    missing = [k for k in required if k not in cfg]
+    if missing:
+        return f"missing key(s): {missing}"
+    if not (0 <= cfg["soil_min_pct"] < cfg["soil_target_pct"] <= 100):
+        return (
+            f"soil_min_pct={cfg['soil_min_pct']} must be < soil_target_pct="
+            f"{cfg['soil_target_pct']}, both within [0, 100]"
+        )
+    if cfg["water_duration_s"] <= 0 or cfg["cooldown_s"] < 0:
+        return "water_duration_s must be > 0 and cooldown_s must be >= 0"
+    return None
 
 
 class ZoneState:
@@ -33,8 +58,10 @@ class ZoneState:
 
 
 class SmartfarmHub:
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, config_path: Path):
         self.config = config
+        self.config_path = config_path
+        self._config_mtime = config_path.stat().st_mtime
         self.db_path = HERE / config["db_path"]
         self.zones = {
             zone_id: ZoneState(zone_id, zone_cfg)
@@ -147,9 +174,49 @@ class SmartfarmHub:
             if zone.pump_on:
                 self._stop_pump(zone, soil_pct=None, reason="timeout")
 
+    def _reload_config_if_changed(self):
+        """Pick up config.yaml edits (manual, or via scripts/smartfarm_ops.py's
+        approved threshold-apply) without restarting the process. Only known
+        zones' threshold dicts are replaced; a newly-appeared zone_id is added
+        so it starts being controlled without a restart too. Invalid values
+        are rejected and the previous thresholds keep running."""
+        try:
+            mtime = self.config_path.stat().st_mtime
+        except OSError:
+            return
+        if mtime == self._config_mtime:
+            return
+        self._config_mtime = mtime
+
+        try:
+            new_config = yaml.safe_load(self.config_path.read_text())
+        except Exception as exc:  # noqa: BLE001 - malformed file must not crash the hub
+            print(f"[reload] failed to parse {self.config_path}: {exc}; keeping previous thresholds")
+            return
+
+        for zone_id, new_cfg in (new_config.get("zones") or {}).items():
+            reason = _invalid_zone_cfg_reason(zone_id, new_cfg)
+            if reason:
+                print(f"[reload] rejected zone '{zone_id}' update ({reason}); keeping previous thresholds")
+                continue
+            if zone_id in self.zones:
+                zone = self.zones[zone_id]
+                if zone.cfg != new_cfg:
+                    print(f"[reload] zone '{zone_id}' thresholds updated: {zone.cfg} -> {new_cfg}")
+                zone.cfg = new_cfg
+            else:
+                print(f"[reload] new zone '{zone_id}' detected in config.yaml, adding")
+                self.zones[zone_id] = ZoneState(zone_id, new_cfg)
+
     def run(self):
         self.client.connect(self.config["mqtt"]["host"], self.config["mqtt"]["port"])
-        self.client.loop_forever()
+        self.client.loop_start()
+        try:
+            while True:
+                time.sleep(CONFIG_RELOAD_INTERVAL_S)
+                self._reload_config_if_changed()
+        finally:
+            self.client.loop_stop()
 
 
 def main():
@@ -157,8 +224,9 @@ def main():
     parser.add_argument("--config", default=str(HERE / "config.yaml"))
     args = parser.parse_args()
 
-    config = yaml.safe_load(Path(args.config).read_text())
-    SmartfarmHub(config).run()
+    config_path = Path(args.config)
+    config = yaml.safe_load(config_path.read_text())
+    SmartfarmHub(config, config_path).run()
 
 
 if __name__ == "__main__":
