@@ -36,12 +36,12 @@
       "name": "Mac mini production OpenClaw replay",
       "target": "Mac mini OpenClaw gateway and Discord-equivalent agent path",
       "command": "harness_copilot_usage live tool call and agent replay",
-      "result": "PENDING: attribution-aware production replay after deployment."
+      "result": "PASS: run 56e2fb10-597d-4c0a-b00a-6de12da4a322 called harness_copilot_usage once with zero failures, reported GitHub Copilot CLI / copilot-agent / junti7/harness-platform at high local confidence, preserved the billed-unit boundary, and delivered successfully to Discord."
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh selected paths; force-install harness-bridge; restart gateway; install laptop LaunchAgent",
-    "result": "PENDING: attribution extension deployment and live replay."
+    "result": "PASS: nine selected paths matched origin/main; fresh attribution snapshot synced; harness-bridge force-installed; gateway restarted; plugin doctor clean; Mac mini 36 Python tests and Node plugin regression passed; Discord delivery succeeded."
   },
   "red_team": {
     "models": [
