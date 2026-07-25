@@ -57,6 +57,32 @@ def _invalid_zone_cfg_reason(zone_id: str, cfg: dict) -> str | None:
         return (
             f"soil_raw_min={cfg['soil_raw_min']} must be < soil_raw_max={cfg['soil_raw_max']}"
         )
+
+    follows = cfg.get("follows_pump")
+    if follows is not None:
+        if not isinstance(follows, str):
+            return "follows_pump must be a zone id string"
+        if follows == zone_id:
+            return "follows_pump cannot point at its own zone"
+    return None
+
+
+def _invalid_follow_graph_reason(zones: dict) -> str | None:
+    """follows_pump 참조가 전체적으로 성립하는지 본다. 개별 구역만 봐서는
+    존재하지 않는 구역을 가리키거나 사슬이 생기는 걸 알 수 없다."""
+    for zone_id, cfg in zones.items():
+        target = cfg.get("follows_pump")
+        if target is None:
+            continue
+        if target not in zones:
+            return f"'{zone_id}'의 follows_pump='{target}'는 존재하지 않는 구역이다"
+        # 사슬(A->B->C)은 허용하지 않는다. 정지 전파 순서와 락 순서가 복잡해지고,
+        # 실무상 필요한 건 '한 센서가 여러 밸브를 연다'는 1단 구조뿐이다.
+        if zones[target].get("follows_pump") is not None:
+            return (
+                f"'{zone_id}'가 따라가는 '{target}'도 다른 구역을 따라간다 "
+                "(follows_pump 사슬은 허용하지 않음)"
+            )
     return None
 
 
@@ -81,6 +107,9 @@ class SmartfarmHub:
         self.config_path = config_path
         self._config_mtime = config_path.stat().st_mtime
         self.db_path = HERE / config["db_path"]
+        graph_reason = _invalid_follow_graph_reason(config["zones"])
+        if graph_reason:
+            raise ValueError(f"config.yaml follows_pump 설정 오류: {graph_reason}")
         self.zones = {
             zone_id: ZoneState(zone_id, zone_cfg)
             for zone_id, zone_cfg in config["zones"].items()
@@ -196,6 +225,12 @@ class SmartfarmHub:
         zone = self.zones[zone_id]
         cfg = zone.cfg
 
+        # 다른 구역을 따라가는 구역은 스스로 판단하지 않는다. 자체 판단과 미러링이
+        # 겹치면 서로 껐다 켰다 하며 상태가 어긋난다. 센서값은 계속 적재되므로
+        # 나중에 follows_pump를 떼면 그대로 독립 판단으로 돌아간다.
+        if cfg.get("follows_pump") is not None:
+            return
+
         with zone.lock:
             fault = self._soil_fault_reason(zone)
             if fault is not None:
@@ -228,6 +263,9 @@ class SmartfarmHub:
                 if soil_pct >= cfg["soil_target_pct"]:
                     self._stop_pump(zone, soil_pct, reason="target_reached")
 
+    def _followers_of(self, zone_id: str) -> list[ZoneState]:
+        return [z for z in self.zones.values() if z.cfg.get("follows_pump") == zone_id]
+
     def _start_pump(self, zone: ZoneState, soil_pct: float, reason: str):
         zone.pump_on = True
         self.client.publish(f"farm/{zone.zone_id}/pump/cmd", "on")
@@ -240,6 +278,15 @@ class SmartfarmHub:
         zone.off_timer.daemon = True
         zone.off_timer.start()
 
+        # 이 구역을 따라가는 밸브들도 같이 연다. 따라가는 구역은 스스로 판단하지 않으므로
+        # (_evaluate_irrigation에서 조기 반환) 여기서만 켜진다. 각자 자기 water_duration_s로
+        # 타이머를 걸어두므로, 선행 구역의 정지 전파가 실패해도 혼자 무한정 열려 있지 않는다.
+        # 사슬은 설정 단계에서 막으므로 이 재귀는 1단에서 끝난다.
+        for follower in self._followers_of(zone.zone_id):
+            with follower.lock:
+                if not follower.pump_on:
+                    self._start_pump(follower, soil_pct, reason=f"follows:{zone.zone_id}")
+
     def _stop_pump(self, zone: ZoneState, soil_pct: float | None, reason: str):
         if zone.off_timer is not None:
             zone.off_timer.cancel()
@@ -248,6 +295,11 @@ class SmartfarmHub:
         zone.last_off_time = time.time()
         self.client.publish(f"farm/{zone.zone_id}/pump/cmd", "off")
         self._log_pump_event(zone.zone_id, "off", reason, soil_pct)
+
+        for follower in self._followers_of(zone.zone_id):
+            with follower.lock:
+                if follower.pump_on:
+                    self._stop_pump(follower, soil_pct, reason=f"follows:{zone.zone_id}")
 
     def _timeout_stop_pump(self, zone: ZoneState):
         with zone.lock:
@@ -274,7 +326,13 @@ class SmartfarmHub:
             print(f"[reload] failed to parse {self.config_path}: {exc}; keeping previous thresholds")
             return
 
-        for zone_id, new_cfg in (new_config.get("zones") or {}).items():
+        new_zones = new_config.get("zones") or {}
+        graph_reason = _invalid_follow_graph_reason(new_zones)
+        if graph_reason:
+            print(f"[reload] rejected: {graph_reason}; keeping previous config")
+            return
+
+        for zone_id, new_cfg in new_zones.items():
             reason = _invalid_zone_cfg_reason(zone_id, new_cfg)
             if reason:
                 print(f"[reload] rejected zone '{zone_id}' update ({reason}); keeping previous thresholds")
