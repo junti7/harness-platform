@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS sensor_readings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     zone_id TEXT NOT NULL,
-    metric TEXT NOT NULL,       -- 'soil_pct' | 'temp_c' | 'humidity_pct'
+    metric TEXT NOT NULL,       -- 'soil_pct' | 'soil_raw' | 'temp_c' | 'humidity_pct'
     value REAL NOT NULL,
     recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS pump_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     zone_id TEXT NOT NULL,
     action TEXT NOT NULL,       -- 'on' | 'off'
-    reason TEXT NOT NULL,       -- 'threshold' | 'target_reached' | 'timeout' | 'manual'
+    reason TEXT NOT NULL,       -- 'threshold' | 'target_reached' | 'timeout' | 'sensor_fault' | 'manual'
     soil_pct_at_event REAL,
     recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );

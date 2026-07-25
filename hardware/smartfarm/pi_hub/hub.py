@@ -28,6 +28,10 @@ import yaml
 HERE = Path(__file__).parent
 CONFIG_RELOAD_INTERVAL_S = 30
 
+# soil_raw가 이보다 오래됐으면 없는 것으로 본다. 노드는 SENSOR_READ_INTERVAL_MS(30초)마다
+# 발행하므로 3주기를 못 채우면 raw 경로가 끊긴 것이다.
+SOIL_RAW_MAX_AGE_S = 90
+
 
 def _invalid_zone_cfg_reason(zone_id: str, cfg: dict) -> str | None:
     """Sanity-check a zone's threshold values before they're allowed to replace
@@ -44,6 +48,15 @@ def _invalid_zone_cfg_reason(zone_id: str, cfg: dict) -> str | None:
         )
     if cfg["water_duration_s"] <= 0 or cfg["cooldown_s"] < 0:
         return "water_duration_s must be > 0 and cooldown_s must be >= 0"
+
+    has_min = "soil_raw_min" in cfg
+    has_max = "soil_raw_max" in cfg
+    if has_min != has_max:
+        return "soil_raw_min and soil_raw_max must be set together (or both omitted)"
+    if has_min and not (cfg["soil_raw_min"] < cfg["soil_raw_max"]):
+        return (
+            f"soil_raw_min={cfg['soil_raw_min']} must be < soil_raw_max={cfg['soil_raw_max']}"
+        )
     return None
 
 
@@ -55,6 +68,11 @@ class ZoneState:
         self.last_off_time = 0.0
         self.off_timer: threading.Timer | None = None
         self.lock = threading.Lock()
+        # 같은 측정 주기의 raw ADC 값. 노드가 soil보다 먼저 발행하므로 soil 처리 시점에
+        # 채워져 있다. 고장 판정에 쓰이며, 없거나 낡으면 급수를 막는다.
+        self.last_soil_raw: float | None = None
+        self.last_soil_raw_time = 0.0
+        self.fault_logged = False  # 같은 고장으로 로그를 도배하지 않기 위한 플래그
 
 
 class SmartfarmHub:
@@ -84,6 +102,7 @@ class SmartfarmHub:
 
     def _on_connect(self, client, userdata, flags, rc):
         client.subscribe("farm/+/soil")
+        client.subscribe("farm/+/soil_raw")
         client.subscribe("farm/+/temp")
         client.subscribe("farm/+/humidity")
         client.subscribe("farm/+/pump/status")
@@ -101,6 +120,8 @@ class SmartfarmHub:
         if parts[2] == "soil":
             self._log_reading(zone_id, "soil_pct", payload)
             self._evaluate_irrigation(zone_id, payload)
+        elif parts[2] == "soil_raw":
+            self._record_soil_raw(zone_id, payload)
         elif parts[2] == "temp":
             self._log_reading(zone_id, "temp_c", payload)
         elif parts[2] == "humidity":
@@ -130,6 +151,42 @@ class SmartfarmHub:
         conn.commit()
         conn.close()
 
+    def _record_soil_raw(self, zone_id: str, payload: str):
+        try:
+            value = float(payload)
+        except ValueError:
+            return
+        zone = self.zones[zone_id]
+        zone.last_soil_raw = value
+        zone.last_soil_raw_time = time.time()
+        self._log_reading(zone_id, "soil_raw", payload)
+
+    def _soil_fault_reason(self, zone: ZoneState) -> str | None:
+        """4-20mA 전류루프의 live zero를 소프트웨어로 흉내낸다.
+
+        퍼센트 값만으로는 고장을 알 수 없다. 노드가 map()+constrain()으로 눌러버리기
+        때문에, 배선이 끊긴 floating 핀도 '0%'(바싹 마름)라는 그럴듯한 값이 된다.
+        2026-07-25 zone1에서 이 때문에 실제로 유령 급수가 발생했다. 그래서 판정은
+        가공 전 raw ADC 값으로 한다 — 정상 센서라면 절대 나올 수 없는 raw는 곧 고장이다.
+
+        soil_raw_min/max가 설정되지 않은 구역은 검증하지 않는다(구버전 펌웨어 호환).
+        """
+        cfg = zone.cfg
+        if "soil_raw_min" not in cfg:
+            return None  # 이 구역은 raw 검증을 켜지 않았다
+
+        if zone.last_soil_raw is None:
+            return "soil_raw를 한 번도 받지 못했다 (노드 펌웨어가 구버전일 수 있음)"
+        age = time.time() - zone.last_soil_raw_time
+        if age > SOIL_RAW_MAX_AGE_S:
+            return f"soil_raw가 {age:.0f}초 전 값이라 신뢰할 수 없다"
+        if not (cfg["soil_raw_min"] <= zone.last_soil_raw <= cfg["soil_raw_max"]):
+            return (
+                f"soil_raw={zone.last_soil_raw:.0f}이 정상 범위"
+                f"[{cfg['soil_raw_min']}, {cfg['soil_raw_max']}] 밖 — 센서 단선/고장 의심"
+            )
+        return None
+
     def _evaluate_irrigation(self, zone_id: str, raw_soil: str):
         try:
             soil_pct = float(raw_soil)
@@ -140,6 +197,29 @@ class SmartfarmHub:
         cfg = zone.cfg
 
         with zone.lock:
+            fault = self._soil_fault_reason(zone)
+            if fault is not None:
+                # 고장이 의심되면 급수하지 않는다. 물을 안 주는 쪽이 안전한 실패 방향이다.
+                # 이미 켜져 있었다면 즉시 끈다 — 켜진 근거 자체를 믿을 수 없기 때문이다.
+                if zone.pump_on:
+                    print(f"[fault] {zone_id}: {fault} -> 급수 중단")
+                    self._stop_pump(zone, soil_pct=None, reason="sensor_fault")
+                elif not zone.fault_logged:
+                    print(f"[fault] {zone_id}: {fault} -> 급수 보류")
+                zone.fault_logged = True
+                return
+
+            if zone.fault_logged:
+                # last_soil_raw는 None일 수 있다: 고장 상태에서 soil_raw_min/max 설정이
+                # 제거되면 검증이 꺼지면서 raw 없이 이 경로로 들어온다.
+                raw_note = (
+                    f"soil_raw={zone.last_soil_raw:.0f}"
+                    if zone.last_soil_raw is not None
+                    else "raw 검증 비활성화됨"
+                )
+                print(f"[fault] {zone_id}: 센서 정상 복귀 ({raw_note})")
+                zone.fault_logged = False
+
             if not zone.pump_on:
                 cooldown_ok = (time.time() - zone.last_off_time) > cfg["cooldown_s"]
                 if soil_pct < cfg["soil_min_pct"] and cooldown_ok:

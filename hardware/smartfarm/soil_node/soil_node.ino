@@ -38,6 +38,7 @@ unsigned long pumpStartedAt = 0;
 unsigned long lastSensorRead = 0;
 
 char topicSoil[64];
+char topicSoilRaw[64];
 char topicTemp[64];
 char topicHumidity[64];
 char topicPumpCmd[64];
@@ -45,6 +46,7 @@ char topicPumpStatus[64];
 
 void buildTopics() {
   snprintf(topicSoil, sizeof(topicSoil), "farm/%s/soil", ZONE_ID);
+  snprintf(topicSoilRaw, sizeof(topicSoilRaw), "farm/%s/soil_raw", ZONE_ID);
   snprintf(topicTemp, sizeof(topicTemp), "farm/%s/temp", ZONE_ID);
   snprintf(topicHumidity, sizeof(topicHumidity), "farm/%s/humidity", ZONE_ID);
   snprintf(topicPumpCmd, sizeof(topicPumpCmd), "farm/%s/pump/cmd", ZONE_ID);
@@ -96,10 +98,10 @@ void connectMqtt() {
   }
 }
 
-int readSoilPercent() {
-  int raw = analogRead(SOIL_MOISTURE_PIN);
-  Serial.print("[debug] A0 raw=");
-  Serial.println(raw);
+// raw를 퍼센트로 변환한다. constrain 때문에 고장난 센서의 극단값도 0 또는 100이라는
+// "정상으로 보이는" 값이 되므로, 고장 판정은 퍼센트가 아니라 raw로 해야 한다.
+// 그래서 허브가 검증할 수 있도록 raw를 별도 토픽으로 함께 발행한다.
+int soilPercentFromRaw(int raw) {
   int pct = map(raw, SOIL_DRY_RAW, SOIL_WET_RAW, 0, 100);
   return constrain(pct, 0, 100);
 }
@@ -145,8 +147,17 @@ void loop() {
 
     char buf[16];
 #if SOIL_SENSOR_ENABLED
-    int soilPct = readSoilPercent();
-    snprintf(buf, sizeof(buf), "%d", soilPct);
+    int soilRaw = analogRead(SOIL_MOISTURE_PIN);
+    Serial.print("[debug] soil raw=");
+    Serial.println(soilRaw);
+
+    // raw를 soil보다 먼저 발행한다. MQTT는 하나의 연결 안에서 발행 순서를 보존하므로,
+    // 허브가 soil(급수 판단을 트리거하는 토픽)을 처리하는 시점에는 같은 주기의 raw가
+    // 이미 도착해 있다. 순서가 바뀌면 허브가 직전 주기의 낡은 raw로 검증하게 된다.
+    snprintf(buf, sizeof(buf), "%d", soilRaw);
+    mqtt.publish(topicSoilRaw, buf);
+
+    snprintf(buf, sizeof(buf), "%d", soilPercentFromRaw(soilRaw));
     mqtt.publish(topicSoil, buf);
 #else
     Serial.println("[info] SOIL_SENSOR_ENABLED=0 — soil 미발행 (허브 급수 트리거 없음)");
