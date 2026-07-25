@@ -1,0 +1,71 @@
+{
+  "task": "smartfarm_kst_timestamps_phase2",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-25T20:10:00+09:00",
+      "summary": "배포 SoT(commit->push->origin/main, deploy_to_macmini.sh 전용), 강제 배포-청결 규칙, 완료 환각 방지(항목별 증거), 기존 로직·안전장치 무단 삭제 금지 확인."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-25T20:11:00+09:00",
+      "summary": "§1 git/배포 불변식, §2.8 완료 증거 guard(최소 1개는 사용자 경험 진입점 실검증), §2.9 완료 환각 방지 절차 확인."
+    }
+  ],
+  "verification": [
+    {
+      "name": "라즈베리파이 프로덕션 schema.sql 을 KST 기본값으로 갱신 (실제 장비)",
+      "target": "raspberry pi 192.168.0.23 filesystem",
+      "command": "ssh pi@192.168.0.23 'cp schema.sql schema.sql.bak_<ts>; cat > schema.sql' < hardware/smartfarm/pi_hub/schema.sql ; grep DEFAULT schema.sql",
+      "result": "두 테이블 DEFAULT 모두 (strftime('%Y-%m-%dT%H:%M:%f','now','+9 hours') || '+09:00') 로 확인. phase1 의 잔여 리스크 1번(파이 로컬 schema.sql 미갱신)이 해소됨. 백업 schema.sql.bak_<ts> 보관."
+    },
+    {
+      "name": "schema.sql 교체 후 파이 허브 서비스와 프로덕션 DB 가 정상인지 (실제 런타임)",
+      "target": "raspberry pi harness-smartfarm-hub systemd service + production db",
+      "command": "ssh pi@192.168.0.23 'systemctl is-active harness-smartfarm-hub; sqlite3 smartfarm.db \"select recorded_at,zone_id,metric,value from sensor_readings order by id desc limit 3\"; journalctl -u harness-smartfarm-hub -n 5'",
+      "result": "is-active=active. 물리 노드의 신규 실측값이 '2026-07-25T20:22:17.508+09:00'(zone2 humidity_pct 54.2) 등 KST 로 계속 적재됨. journalctl 에 schema.sql 교체 이후 오류/재시작 없음. schema.sql 교체가 가동 중인 서비스를 깨지 않았음을 확인."
+    },
+    {
+      "name": "대시보드 _iso 가 KST 오프셋 포함으로 출력",
+      "target": "core/smartfarm_dashboard.py",
+      "command": ".venv/bin/python -c \"from core.smartfarm_dashboard import _iso; import time; print(_iso(time.time())); print(_iso(None))\"",
+      "result": "'2026-07-25T20:19:07.905310+09:00' 및 None. 이전에는 UTC 'Z' 였다. 프론트가 new Date() 로 파싱하므로 오프셋을 유지했다."
+    },
+    {
+      "name": "프론트 시각 렌더링 4곳 KST 고정 + 타입체크",
+      "target": "harness-os/frontend",
+      "command": "npx tsc --noEmit -p tsconfig.json",
+      "result": "TypeScript: No errors found. toLocaleTimeString/toLocaleString 3곳과 차트 축 라벨 Intl.DateTimeFormat 2곳에 timeZone:'Asia/Seoul' 을 적용했다. 기존에는 브라우저 로케일에 의존해 해외 접속 시 다른 시각이 보일 수 있었다."
+    },
+    {
+      "name": "스마트팜 회귀 테스트",
+      "target": "pytest",
+      "command": ".venv/bin/python -m pytest tests/test_smartfarm_dashboard.py tests/test_smartfarm_pi_hub_commands.py tests/test_smartfarm_session_actuation.py tests/test_smartfarm_pump_control.py -q",
+      "result": "28 passed."
+    },
+    {
+      "name": "동시 편집 중인 타 세션 변경을 커밋에 섞지 않았음을 확인",
+      "target": "git index",
+      "command": "git diff -- <2 files> | (hunk 필터) | git apply --cached ; git diff --cached",
+      "result": "core/smartfarm_dashboard.py 의 safety_reason 배선 hunk 와 SmartfarmPage.tsx 의 펌프 테스트 폴링 hunk 는 타 세션 작업이라 스테이징에서 제외했다. staged diff 가 KST 관련 변경만 포함함을 육안 대조로 확인."
+    }
+  ],
+  "residual_risks": [
+    {
+      "risk": "프론트 KST 표기를 프로덕션 렌더링 화면에서 아직 확인하지 못했다.",
+      "detail": "본 커밋 시점에는 Mac Mini 배포 전이라 타입체크와 소스 대조까지만 수행했다.",
+      "mitigation": "deploy_to_macmini.sh 로 프론트 빌드 후 실제 화면/API 응답에서 KST 표기를 확인한다."
+    },
+    {
+      "risk": "파이에 하드웨어 RTC 가 없어 재부팅마다 시각이 수 분 역행한다 (phase1 에서 이월).",
+      "detail": "소프트웨어 대안(systemd-time-wait-sync 활성화 + 서비스에 After=time-sync.target)을 검토했으나 채택하지 않았다. 파이의 systemd-time-wait-sync 는 현재 disabled/inactive 이며, 이를 켜면 NTP 도달 전까지 허브가 기동하지 않는다. MQTT 브로커가 로컬이라 지금은 인터넷 없이도 급수가 동작하는데, 그 가용성을 잃는 거래는 농장 운용상 불리하다고 판단했다.",
+      "mitigation": "DS3231 RTC 모듈(약 3,000원)을 다음 발주에 포함한다."
+    },
+    {
+      "risk": "tests/test_smartfarm_market_research.py 의 read-only 파서 테스트가 main 에서 실패 중이다.",
+      "detail": "build_read_only_parser ImportError. git stash 로 본 변경을 제거한 HEAD 에서도 동일하게 실패하므로 본 작업과 무관한 기존 결함이며, 타 세션이 진행 중인 영역이라 수정하지 않았다.",
+      "mitigation": "해당 작업 주체가 파서 리팩터링을 마무리한다."
+    }
+  ]
+}

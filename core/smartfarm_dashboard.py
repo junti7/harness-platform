@@ -15,7 +15,7 @@ import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -123,10 +123,19 @@ def _now() -> float:
     return time.time()
 
 
+KST = timezone(timedelta(hours=9))
+
+
 def _iso(value: float | None) -> str | None:
+    """대시보드가 내보내는 시각도 KST(+09:00)로 통일한다 (2026-07-25 CEO 지시).
+
+    오프셋을 떼지 않는다 — 프론트가 `new Date(...)`로 파싱하므로 오프셋이 없으면
+    브라우저 로케일에 따라 해석이 갈린다. 저장 계층(smartfarm.db recorded_at)과
+    같은 형식이다: hardware/smartfarm/pi_hub/schema.sql
+    """
     if value is None:
         return None
-    return datetime.fromtimestamp(value, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.fromtimestamp(value, tz=KST).isoformat()
 
 
 def _json(value: Any) -> str:

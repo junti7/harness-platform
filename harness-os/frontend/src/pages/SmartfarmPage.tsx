@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import './SmartfarmPage.css'
 
+// 시각 표기는 KST 고정 (2026-07-25 CEO 지시). 브라우저 로케일에 맡기면 해외에서
+// 접속하거나 기기 시간대가 틀어졌을 때 같은 화면이 다른 시각을 보여준다.
+const KST: Intl.DateTimeFormatOptions = { timeZone: 'Asia/Seoul' }
+
 type HeadersFactory = () => Record<string, string>
 
 type Metric = {
@@ -103,10 +107,12 @@ function metricValue(metric: string, value?: Metric) {
 function chartTimeLabel(timestamp: number, rangeSeconds: number) {
   const date = new Date(timestamp)
   const datePart = new Intl.DateTimeFormat('ko-KR', {
+    ...KST,
     month: '2-digit',
     day: '2-digit',
   }).format(date).replace(/\s/g, '')
   const timePart = new Intl.DateTimeFormat('ko-KR', {
+    ...KST,
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
@@ -366,7 +372,7 @@ export function SmartfarmPage({
           <span className={`sf-live-dot ${overview?.runtime.mqtt_connected ? 'online' : 'offline'}`} />
           <div>
             <strong>{overview?.runtime.mqtt_connected ? 'LIVE MQTT' : 'MQTT DISCONNECTED'}</strong>
-            <span>{lastSuccess ? `${lastSuccess.toLocaleTimeString('ko-KR')} 화면 갱신` : '연결 대기'}</span>
+            <span>{lastSuccess ? `${lastSuccess.toLocaleTimeString('ko-KR', KST)} 화면 갱신` : '연결 대기'}</span>
           </div>
         </div>
       </header>
@@ -503,7 +509,7 @@ export function SmartfarmPage({
             <dl className="sf-runtime-list">
               <div><dt>MQTT broker</dt><dd className={overview?.runtime.mqtt_connected ? 'ok' : 'bad'}>{overview?.runtime.mqtt_connected ? 'connected' : 'disconnected'}</dd></div>
               <div><dt>Operational DB</dt><dd className="ok">connected</dd></div>
-              <div><dt>Last message</dt><dd>{overview?.runtime.last_message_at ? new Date(overview.runtime.last_message_at).toLocaleTimeString('ko-KR') : 'none'}</dd></div>
+              <div><dt>Last message</dt><dd>{overview?.runtime.last_message_at ? new Date(overview.runtime.last_message_at).toLocaleTimeString('ko-KR', KST) : 'none'}</dd></div>
               <div><dt>Actuation</dt><dd>{overview?.runtime.actuation_enabled ? 'enabled' : 'blocked'}</dd></div>
             </dl>
             {overview?.runtime.error && <p className="sf-runtime-error">{overview.runtime.error}</p>}
@@ -543,7 +549,7 @@ export function SmartfarmPage({
             <article key={command.command_id}>
               <span className={`sf-command-status ${command.status}`}>{command.status}</span>
               <div><strong>{command.kind.replace('_', ' ').toUpperCase()} · {command.zone_id}</strong><small>{command.command_id} · {command.actor}</small></div>
-              <time>{new Date(command.issued_at).toLocaleString('ko-KR')}</time>
+              <time>{new Date(command.issued_at).toLocaleString('ko-KR', KST)}</time>
               <span>{command.observed_state ? `observed ${command.observed_state}` : command.safety_reason || 'observation pending'}</span>
             </article>
           ))}
