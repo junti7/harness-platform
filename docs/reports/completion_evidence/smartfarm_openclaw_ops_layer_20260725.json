@@ -1,0 +1,65 @@
+{
+  "task": "smartfarm_openclaw_ops_layer",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-25T09:20:00+09:00",
+      "summary": "Read Must/Never, approval semantics, red-team-CEO-triggered-only basic rule, completion-evidence requirement before code push."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-25T09:20:00+09:00",
+      "summary": "Read git/deploy invariants (SoT=origin/main, SSH-only remote, no force-push) and gate invariants before pushing scripts/ changes."
+    }
+  ],
+  "verification": [
+    {
+      "name": "harness-smartfarm-hub systemd service running on real Raspberry Pi",
+      "target": "raspberry pi service",
+      "command": "ssh pi@192.168.0.23 'systemctl status harness-smartfarm-hub.service'",
+      "result": "active (running), enabled for boot; confirmed after deploying hub.py fix and starting the unit."
+    },
+    {
+      "name": "hub.py Python 3.9 PEP-604 crash fix verified on real device runtime",
+      "target": "raspberry pi python3.9",
+      "command": "ssh pi@192.168.0.23 timeout smoke test of hub.py after adding `from __future__ import annotations`",
+      "result": "hub.py previously crashed on every real run (Python 3.9.2 rejects `X | None` syntax); after the fix it started cleanly and stayed up under systemd with no exception."
+    },
+    {
+      "name": "real zone2 sensor readings logged into live smartfarm.db",
+      "target": "raspberry pi db",
+      "command": "scp pi@192.168.0.23:/home/pi/harness-smartfarm-pi-hub/smartfarm.db . ; python3 -c \"import sqlite3; ...\" to inspect rows",
+      "result": "32 real soil_pct rows logged over the last hour from the physical ESP8266 node, not synthetic data."
+    },
+    {
+      "name": "openclaw_smartfarm_research_bridge.py alerts command against live Pi snapshot",
+      "target": "cli db",
+      "command": "python3 scripts/openclaw_smartfarm_research_bridge.py alerts --db pi_live/smartfarm.db --config pi_live/config.yaml --lookback-hours 1",
+      "result": "correctly reported no_data_ever for zone1 (ESP32 not deployed) and zone2 temp_c/humidity_pct (DHT22 not yet reporting), plus real sensor_stuck + pump_short_cycling alerts for zone2 soil_pct."
+    },
+    {
+      "name": "openclaw_smartfarm_research_bridge.py report + threshold-propose against live Pi snapshot",
+      "target": "cli db",
+      "command": "python3 scripts/openclaw_smartfarm_research_bridge.py report --db pi_live/smartfarm.db --config pi_live/config.yaml --period-hours 1 ; threshold-propose --lookback-hours 1",
+      "result": "report matched live db aggregates (count/min/max/avg); threshold-propose correctly refused a numeric suggestion (kind=investigate_before_adjusting) because the soil sensor looked stuck, instead of tuning against a broken signal."
+    },
+    {
+      "name": "threshold propose->decide->apply approval gate, real file writes",
+      "target": "sqlite db + config.yaml file patch",
+      "command": "propose -> threshold-decide rejected/approved -> threshold-apply, run as separate CLI processes against a real sqlite db and config.yaml copy",
+      "result": "apply before any decision -> PermissionError; apply after rejection -> PermissionError; apply after approval -> succeeded and patched only the targeted zone/keys while preserving all other lines/Korean comments verbatim."
+    },
+    {
+      "name": "Slack --deliver route delivery",
+      "target": "n/a",
+      "command": "adapters.content.slack_router.send_slack_route via --deliver flag",
+      "result": "NOT executed. MBP project .venv is missing PyYAML and httpx, so adapters.content.slack_router cannot be imported here. Implemented from a direct source read (route_label/send_slack_route signatures, ROUTES dict), not verified by running it. This is the residual risk for this closeout."
+    }
+  ],
+  "residual_risks": [
+    "Slack --deliver path is implemented but has never actually been executed/verified end-to-end (missing PyYAML/httpx in MBP venv).",
+    "zone2 DHT22 has logged zero temp_c/humidity_pct readings as of this push; likely a wiring/pin issue to check on next hardware session, not a code defect in this change.",
+    "This is a personal side-project scoped ops layer explicitly kept separate from the company's core.approval/ceo_decision.py system; no red-team was requested by CEO for this change (not required per BASIC RULE)."
+  ]
+}
