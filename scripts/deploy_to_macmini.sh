@@ -80,9 +80,14 @@ for p in "${PATHS[@]}"; do
 done
 
 if [ "$RUN_EDU_COACH_GUARD" = "yes" ]; then
-  echo "▶ [0b] EDU coach max regression guard"
-  .venv/bin/python scripts/check_edu_coach_simulation_regression.py >/tmp/harness_edu_coach_guard.log
-  tail -40 /tmp/harness_edu_coach_guard.log
+  if [ "${DEPLOY_SKIP_EDU_COACH_GUARD:-no}" = "yes" ]; then
+    echo "▶ [0b] EDU coach guard 명시적 skip"
+    echo "      사유: ${DEPLOY_SKIP_EDU_COACH_GUARD_REASON:-사유 미기재}"
+  else
+    echo "▶ [0b] EDU coach max regression guard"
+    .venv/bin/python scripts/check_edu_coach_simulation_regression.py >/tmp/harness_edu_coach_guard.log
+    tail -40 /tmp/harness_edu_coach_guard.log
+  fi
 fi
 
 ssh -o ConnectTimeout=20 "$SSH_HOST" "REPO='$REMOTE_REPO' PATHS='$PATHS_STR' REBUILD='$REBUILD_TRADING' REBUILD_FE='$REBUILD_FRONTEND' RELOAD_FE='$RELOAD_FE_PLIST' RELOAD_BE='$RELOAD_BACKEND' INSTALL_BE_DEPS='$INSTALL_BACKEND_DEPS' bash -s" <<'REMOTE'
