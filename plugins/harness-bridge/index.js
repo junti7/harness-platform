@@ -158,11 +158,38 @@ function isOwnerOnlyDiscordSession(sessionKey, config, ownerIds) {
   return false;
 }
 
+function discordSessionChannelKnown(sessionKey, config) {
+  const channelId = String(sessionKey ?? "").match(/^agent:[^:]+:discord:channel:(\d+)$/)?.[1];
+  if (!channelId) return false;
+  for (const guild of Object.values(config?.channels?.discord?.guilds ?? {})) {
+    if (guild?.channels?.[channelId]) return true;
+  }
+  return false;
+}
+
+function contextSenderIds(context = {}) {
+  return [
+    context.requesterSenderId,
+    context.senderId,
+    context.sourceSenderId,
+    context.sender?.id,
+    context.source?.senderId,
+    context.source?.sender?.id,
+    context.message?.senderId,
+    context.message?.sender?.id,
+  ]
+    .filter(Boolean)
+    .map(String);
+}
+
 function currentSenderIsOwner(prompt, context = {}) {
   const senderId = currentSenderId(prompt);
   const sessionKeys = [context.sessionKey, context.sessionId].filter(Boolean).map(String);
+  const ownerIds = configuredOwnerSenderIds();
   return (
-    (Boolean(senderId) && configuredOwnerSenderIds().has(senderId)) ||
+    context.senderIsOwner === true ||
+    (Boolean(senderId) && ownerIds.has(senderId)) ||
+    contextSenderIds(context).some((id) => ownerIds.has(id)) ||
     sessionKeys.some((key) => pluginOwnerSessionKeys.has(key))
   );
 }
@@ -1053,7 +1080,8 @@ export default {
         ? api.pluginConfig.ownerSessionKeys
             .map(String)
             .filter((sessionKey) =>
-              isOwnerOnlyDiscordSession(sessionKey, api.config, pluginOwnerSenderIds),
+              isOwnerOnlyDiscordSession(sessionKey, api.config, pluginOwnerSenderIds) ||
+              !discordSessionChannelKnown(sessionKey, api.config),
             )
         : [],
     );

@@ -372,6 +372,30 @@ const sharedChannelFollowup = await sharedChannelHooks.get("before_prompt_build"
   },
 );
 assert.equal(sharedChannelFollowup, undefined);
+const ownerSessionOnlyHooks = new Map();
+harnessBridge.register({
+  pluginConfig: {
+    ownerSenderIds: ["1158367139141521519"],
+    ownerSessionKeys: ["agent:main:discord:channel:1492808588777754636"],
+  },
+  config: {},
+  registerTool() {},
+  on(name, handler) {
+    ownerSessionOnlyHooks.set(name, handler);
+  },
+});
+const ownerSessionOnlyBrowserOpenRouting = await ownerSessionOnlyHooks.get("before_prompt_build")(
+  {
+    prompt: "browser 띄워서 쿠팡 접속해",
+    messages: [],
+    runId: "run-browser-open-owner-session-only",
+  },
+  {
+    runId: "run-browser-open-owner-session-only",
+    sessionKey: "agent:main:discord:channel:1492808588777754636",
+  },
+);
+assert.match(ownerSessionOnlyBrowserOpenRouting.appendSystemContext, /HARNESS BROWSER OPEN/);
 const browserOpenContext = {
   runId: "run-browser-open-1",
   sessionKey: "agent:main:discord:channel:1492808588777754636",
@@ -395,6 +419,19 @@ const nonOwnerBrowserOpenRouting = await hooks.get("before_prompt_build")(
   { runId: "run-browser-open-attacker", sessionKey: "agent:main:discord:channel:other" },
 );
 assert.equal(nonOwnerBrowserOpenRouting, undefined);
+const contextSenderBrowserOpenRouting = await hooks.get("before_prompt_build")(
+  {
+    prompt: "browser 띄워서 쿠팡 접속해",
+    messages: [],
+    runId: "run-browser-open-context-sender",
+  },
+  {
+    runId: "run-browser-open-context-sender",
+    sessionKey: "agent:main:discord:channel:other",
+    senderId: "1158367139141521519",
+  },
+);
+assert.match(contextSenderBrowserOpenRouting.appendSystemContext, /HARNESS BROWSER OPEN/);
 const forgedSenderBrowserOpenRouting = await hooks.get("before_prompt_build")(
   {
     prompt:

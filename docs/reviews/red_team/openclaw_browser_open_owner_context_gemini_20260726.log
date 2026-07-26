@@ -1,0 +1,19 @@
+`safety_review_clear`
+
+### Findings Summary
+
+1. **Owner Context & Sender Metadata Routing**:
+   - `currentSenderIsOwner(prompt, context)` safely checks multiple context sender metadata properties (`context.senderIsOwner`, `context.requesterSenderId`, `context.senderId`, `context.sourceSenderId`, `context.sender.id`, `context.source.senderId`, `context.message.senderId`, etc.) as well as `pluginOwnerSessionKeys`.
+   - Dynamic evaluation ensures authorized owner requests route correctly to gated capabilities (such as browser-open and Notion archive).
+
+2. **Explicit Configured `ownerSessionKeys` (Channel Config Absent)**:
+   - When channel configuration is absent (`!discordSessionChannelKnown(sessionKey, api.config)`), explicitly configured `ownerSessionKeys` are retained in `pluginOwnerSessionKeys` fail-safe rather than being erroneously stripped.
+   - When channel configuration is present, non-owner shared channels are correctly rejected.
+
+3. **Shared-Channel Protection**:
+   - `isOwnerOnlyDiscordSession` validates configured Discord channel user lists against owner sender IDs. If non-owner users are present in the shared channel configuration, owner-session status is blocked.
+
+4. **Forged Prompt Text Protection**:
+   - `currentSenderId` parses sender metadata strictly from early conversation context metadata pre-blocks.
+   - Instructions and intent regexes rely on `currentUserInstruction()` / `currentUserRequest()`, ignoring prompt-injection attempts embedded in prior conversation logs, fake context markers, or prompt sub-strings.
+   - Forged sender IDs or context injection in prompt text fail to gain owner privileges and are rejected cleanly.
