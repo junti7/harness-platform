@@ -1,0 +1,18 @@
+Based on a thorough review of the current `no-params-rewrite` patch and unit tests following the `runId`-only authorization fix in `plugins/harness-bridge/index.js` and `tests/test_harness_bridge_plugin.mjs`:
+
+`safety_review_clear`
+
+### Findings Summary
+
+1. **`before_tool_call` Parameter Integrity**:
+   - `before_tool_call` returns `undefined` (allowing execution without modifying tool call parameters) when validating the authorized browser open request.
+2. **Phishing & Invalid URL Defense**:
+   - Call parameters requesting unauthorized/phishing URLs (e.g. `https://phishing.example/`) are blocked inside `before_tool_call` with a explicit block reason, preventing tool execution.
+3. **Execution Token Storage & Auth Scope**:
+   - Token authorization (`browserOpenExecutionTokens`) is populated inside `before_tool_call` and keyed strictly by `executionKeys` (`[event.runId, context.runId]`), ensuring internal execution state is tied exclusively to `runId`.
+4. **Direct / Fake Pre & Post Authorization Failures**:
+   - Direct execution attempts or fake parameters (e.g., passing a forged `routingToken`) without a valid `runId`-keyed token return error responses (`browser_open_not_bound_to_routed_owner_request`).
+5. **Replay & Repeat Prevention**:
+   - The token is deleted immediately upon consumption in `execute` (`browserOpenExecutionTokens.delete`), and `browserOpenState.called = true` blocks any subsequent tool call attempts within the turn.
+6. **Unsafe Shell & Browser Commands**:
+   - Raw shell executions (`bash` command bypasses) or high-impact browser actions continue to be intercepted and blocked by `isHighImpactBrowserShellCall` and `before_tool_call` checks.

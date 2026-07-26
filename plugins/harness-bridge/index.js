@@ -111,6 +111,12 @@ function isBrowserOpenTool(toolName) {
   return String(toolName ?? "").toLowerCase().endsWith("harness_browser_open");
 }
 
+function browserOpenExecutionKeys(event = {}, context = {}) {
+  return [event.runId, context.runId]
+    .filter(Boolean)
+    .map(String);
+}
+
 function currentSenderId(prompt) {
   const raw = String(prompt ?? "");
   const marker = "Current user request:";
@@ -783,7 +789,7 @@ function registerHarnessAssistantTools(api) {
       },
     },
   );
-  api.registerTool({
+  api.registerTool((toolContext = {}) => ({
     name: "harness_browser_open",
     description:
       "Open a URL in the Mac GUI browser only. Use for owner requests like 'browser 띄워서 쿠팡 접속해'. It does not log in, add to cart, buy, pay, submit forms, or scrape private data.",
@@ -798,21 +804,19 @@ function registerHarnessAssistantTools(api) {
           maxLength: 2000,
           description: "HTTP/HTTPS URL to open. Use https://www.coupang.com/ for Coupang homepage.",
         },
-        routingToken: {
-          type: "string",
-          description: "Internal plugin-owned field. The model must omit it.",
-        },
       },
     },
     async execute(_id, params) {
       try {
-        const routingToken = String(params.routingToken ?? "");
-        const tokenState = routingToken ? browserOpenExecutionTokens.get(routingToken) : undefined;
+        const executionKeys = browserOpenExecutionKeys({}, toolContext);
+        const tokenState = executionKeys
+          .map((key) => browserOpenExecutionTokens.get(key))
+          .find((state) => state && state.expiresAt > Date.now());
         if (!tokenState || tokenState.expiresAt <= Date.now()) {
-          if (routingToken) browserOpenExecutionTokens.delete(routingToken);
+          for (const key of executionKeys) browserOpenExecutionTokens.delete(key);
           return toolText({ ok: false, error: "browser_open_not_bound_to_routed_owner_request" }, true);
         }
-        browserOpenExecutionTokens.delete(routingToken);
+        for (const key of tokenState.keys ?? executionKeys) browserOpenExecutionTokens.delete(key);
         const url = tokenState.url;
         const result = await runProcess("/usr/bin/open", ["-a", "Google Chrome", url], {
           timeoutMs: 10_000,
@@ -835,7 +839,7 @@ function registerHarnessAssistantTools(api) {
         return toolText({ ok: false, error: error.message }, true);
       }
     },
-  });
+  }));
   api.registerTool((toolContext = {}) => ({
     name: "harness_notion_archive_create",
     description:
@@ -1509,19 +1513,30 @@ export default {
               blockReason: "Browser-open routing could not determine a safe URL from the user request.",
             };
           }
+          let requestedUrl;
+          try {
+            requestedUrl = normalizeBrowserUrl(event.params?.url);
+          } catch {
+            return {
+              block: true,
+              blockReason: "Browser-open routing requires an HTTP/HTTPS URL.",
+            };
+          }
+          if (requestedUrl !== browserOpenState.expectedUrl) {
+            return {
+              block: true,
+              blockReason: `Browser-open routing requires url ${browserOpenState.expectedUrl}.`,
+            };
+          }
           browserOpenState.called = true;
-          const routingToken = crypto.randomUUID();
-          browserOpenExecutionTokens.set(routingToken, {
+          const executionKeys = browserOpenExecutionKeys(event, context);
+          const tokenState = {
             url: browserOpenState.expectedUrl,
             expiresAt: Math.min(browserOpenState.expiresAt, Date.now() + 60_000),
-          });
-          return {
-            params: {
-              ...event.params,
-              url: browserOpenState.expectedUrl,
-              routingToken,
-            },
+            keys: executionKeys,
           };
+          for (const key of executionKeys) browserOpenExecutionTokens.set(key, tokenState);
+          return;
         }
         if (browserOpenState) {
           return {

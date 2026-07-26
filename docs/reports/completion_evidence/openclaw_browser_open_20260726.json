@@ -75,6 +75,24 @@
       "target": "OpenClaw browser-open owner metadata route",
       "artifact": "../../reviews/red_team/openclaw_browser_open_owner_context_gemini_20260726.log",
       "result": "safety_review_clear"
+    },
+    {
+      "name": "no params rewrite local regression",
+      "target": "OpenClaw browser-open no-approval-rewrite route",
+      "command": "node tests/test_harness_bridge_plugin.mjs; .venv/bin/python -m pytest -q tests/test_openclaw_bridge.py; node --check plugins/harness-bridge/index.js && git diff --check",
+      "result": "PASS: before_tool_call no longer rewrites harness_browser_open params; phishing URL blocks; exact Coupang URL authorizes by runId; direct/fake calls before and after authorization without runId fail; repeated call blocks."
+    },
+    {
+      "name": "Codex Red Team no params rewrite patch",
+      "target": "OpenClaw browser-open no-approval-rewrite route",
+      "artifact": "../../reviews/red_team/openclaw_browser_open_no_rewrite_codex_20260726.md",
+      "result": "red_team_clear"
+    },
+    {
+      "name": "Antigravity Gemini Flash Low no params rewrite safety review",
+      "target": "OpenClaw browser-open no-approval-rewrite route",
+      "artifact": "../../reviews/red_team/openclaw_browser_open_no_rewrite_gemini_20260726.log",
+      "result": "safety_review_clear"
     }
   ],
   "governance_bootstrap": [
@@ -114,6 +132,14 @@
       },
       {
         "artifact": "../../reviews/red_team/openclaw_browser_open_owner_context_gemini_20260726.log",
+        "verdict": "safety_review_clear"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_browser_open_no_rewrite_codex_20260726.md",
+        "verdict": "red_team_clear"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_browser_open_no_rewrite_gemini_20260726.log",
         "verdict": "safety_review_clear"
       }
     ],

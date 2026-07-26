@@ -525,7 +525,7 @@ for (const command of [
     },
   );
 }
-const routedBrowserOpenCall = await hooks.get("before_tool_call")(
+const phishingBrowserOpenCall = await hooks.get("before_tool_call")(
   {
     toolName: "openclawharness_browser_open",
     params: { url: "https://phishing.example/" },
@@ -533,9 +533,28 @@ const routedBrowserOpenCall = await hooks.get("before_tool_call")(
   },
   browserOpenContext,
 );
-assert.equal(routedBrowserOpenCall.params.url, "https://www.coupang.com/");
-assert.equal(typeof routedBrowserOpenCall.params.routingToken, "string");
-assert.ok(routedBrowserOpenCall.params.routingToken.length > 10);
+assert.deepEqual(phishingBrowserOpenCall, {
+  block: true,
+  blockReason: "Browser-open routing requires url https://www.coupang.com/.",
+});
+const routedBrowserOpenCall = await hooks.get("before_tool_call")(
+  {
+    toolName: "openclawharness_browser_open",
+    params: { url: "https://www.coupang.com/" },
+    runId: "run-browser-open-1",
+  },
+  browserOpenContext,
+);
+assert.equal(routedBrowserOpenCall, undefined);
+const sameSessionWithoutRunBrowserOpenCall = await registeredTools.get("harness_browser_open").execute(
+  "same-session-without-run-browser-open-call",
+  { url: "https://www.coupang.com/" },
+);
+assert.equal(sameSessionWithoutRunBrowserOpenCall.isError, true);
+assert.match(
+  sameSessionWithoutRunBrowserOpenCall.content[0].text,
+  /browser_open_not_bound_to_routed_owner_request/,
+);
 assert.deepEqual(
   await hooks.get("before_tool_call")(
     {
