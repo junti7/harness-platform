@@ -27,8 +27,15 @@ const COPILOT_USAGE_INTENT =
   /premium\s*request|billing|budget|charge|cost|usage|request|과금|결제|비용|예산|사용량|요청|세션|모델|원인/i;
 const NOTION_ARCHIVE_REQUEST =
   /(?:notion|노션)(?:에|으로|에다가|\s){0,6}.{0,40}(?:기록|저장|등록|아카이브|다시\s*실행|재실행|archive|save|record|create|retry|run\s+again)/i;
+const BROWSER_OPEN_REQUEST =
+  /(?:(?:browser|브라우저|chrome|크롬).{0,40}(?:띄워|열어|켜|접속|open|launch|go\s*to)|(?:쿠팡|coupang).{0,40}(?:접속|열어|띄워|open|launch))/i;
+const HIGH_IMPACT_BROWSER_ACTION =
+  /구매|결제|주문|장바구니|로그인|buy|pay|order|cart|checkout|login/i;
+const HIGH_IMPACT_BROWSER_BRIDGE_COMMAND =
+  /\b(?:browser-fill|coupang-setup|coupang-cart|coupang-pay-approve)\b/i;
 let pluginOwnerSenderIds = new Set();
 let pluginOwnerSessionKeys = new Set();
+const browserOpenExecutionTokens = new Map();
 const MAX_TOOL_OUTPUT = 1_000_000;
 const MAX_WRITE_BYTES = 2_000_000;
 const READ_ONLY_GIT_SUBCOMMANDS = new Set([
@@ -68,12 +75,59 @@ export function shouldEnforceCopilotUsage(prompt) {
   return COPILOT_USAGE_CONTEXT.test(text) && COPILOT_USAGE_INTENT.test(text);
 }
 
+export function shouldEnforceBrowserOpen(prompt) {
+  const text = currentUserInstruction(prompt);
+  return BROWSER_OPEN_REQUEST.test(text) && !HIGH_IMPACT_BROWSER_ACTION.test(text);
+}
+
+function browserOpenTargetFromPrompt(prompt) {
+  const text = currentUserInstruction(prompt);
+  if (/(?:쿠팡|coupang)/i.test(text)) return "https://www.coupang.com/";
+  const explicitUrl = text.match(/\bhttps?:\/\/[^\s<>"')]+/i)?.[0];
+  if (explicitUrl) return normalizeBrowserUrl(explicitUrl);
+  return undefined;
+}
+
+function normalizeBrowserUrl(value) {
+  const raw = String(value ?? "").trim();
+  const target = raw || "https://www.coupang.com/";
+  const urlText = /^(?:https?:)?\/\//i.test(target)
+    ? target
+    : /^(?:쿠팡|coupang)$/i.test(target)
+      ? "https://www.coupang.com/"
+      : `https://${target}`;
+  const parsed = new URL(urlText);
+  if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("unsupported_url_protocol");
+  parsed.username = "";
+  parsed.password = "";
+  return parsed.toString();
+}
+
 function isCopilotUsageTool(toolName) {
   return String(toolName ?? "").toLowerCase().endsWith("harness_copilot_usage");
 }
 
+function isBrowserOpenTool(toolName) {
+  return String(toolName ?? "").toLowerCase().endsWith("harness_browser_open");
+}
+
 function currentSenderId(prompt) {
-  return String(prompt ?? "").match(
+  const raw = String(prompt ?? "");
+  const marker = "Current user request:";
+  const markerIndex = raw.indexOf(marker);
+  const beforeCurrentRequest = markerIndex >= 0 ? raw.slice(0, markerIndex) : raw;
+  const metadata = beforeCurrentRequest.split(/\n\n/, 1)[0];
+  const contextMatch = metadata.match(/^<conversation_context>\s*(\{[\s\S]*?\})\s*<\/conversation_context>/i);
+  if (contextMatch) {
+    try {
+      const context = JSON.parse(contextMatch[1]);
+      return context?.sender?.id ? String(context.sender.id) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  if (!/^Conversation info\b/i.test(metadata)) return undefined;
+  return metadata.match(
     /"sender"\s*:\s*\{[\s\S]{0,300}?"id"\s*:\s*"([^"]+)"/,
   )?.[1];
 }
@@ -142,6 +196,29 @@ export function isRawPumpShellCall(toolName, params = {}) {
       serialized,
     )
   );
+}
+
+export function isHighImpactBrowserShellCall(toolName, params = {}) {
+  if (!isShellTool(toolName)) return false;
+  try {
+    const serialized = JSON.stringify(params);
+    const compact = serialized.toLowerCase().replace(/[^a-z가-힣]/g, "");
+    return (
+      HIGH_IMPACT_BROWSER_BRIDGE_COMMAND.test(serialized) ||
+      (/openclaw_codex_bridge\.py/i.test(serialized) &&
+        /(?:browserfill|coupangsetup|coupangcart|coupangpayapprove|coupangpay|coupangcheckout)/i.test(
+          compact,
+        )) ||
+      (/openclaw_codex_bridge\.py/i.test(serialized) &&
+        /(?:browser|coupang|cou[\s\S]*pang|pang[\s\S]*cou)/i.test(compact) &&
+        /(?:fill|setup|cart|pay|approve|checkout)/i.test(compact)) ||
+      (/openclaw_codex_bridge\.py/i.test(serialized) &&
+        /browser|coupang/i.test(serialized) &&
+        /fill|setup|cart|pay|approve/i.test(serialized))
+    );
+  } catch {
+    return true;
+  }
 }
 
 function isKnowledgeBypassTool(toolName) {
@@ -679,6 +756,59 @@ function registerHarnessAssistantTools(api) {
       },
     },
   );
+  api.registerTool({
+    name: "harness_browser_open",
+    description:
+      "Open a URL in the Mac GUI browser only. Use for owner requests like 'browser 띄워서 쿠팡 접속해'. It does not log in, add to cart, buy, pay, submit forms, or scrape private data.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["url"],
+      properties: {
+        url: {
+          type: "string",
+          minLength: 1,
+          maxLength: 2000,
+          description: "HTTP/HTTPS URL to open. Use https://www.coupang.com/ for Coupang homepage.",
+        },
+        routingToken: {
+          type: "string",
+          description: "Internal plugin-owned field. The model must omit it.",
+        },
+      },
+    },
+    async execute(_id, params) {
+      try {
+        const routingToken = String(params.routingToken ?? "");
+        const tokenState = routingToken ? browserOpenExecutionTokens.get(routingToken) : undefined;
+        if (!tokenState || tokenState.expiresAt <= Date.now()) {
+          if (routingToken) browserOpenExecutionTokens.delete(routingToken);
+          return toolText({ ok: false, error: "browser_open_not_bound_to_routed_owner_request" }, true);
+        }
+        browserOpenExecutionTokens.delete(routingToken);
+        const url = tokenState.url;
+        const result = await runProcess("/usr/bin/open", ["-a", "Google Chrome", url], {
+          timeoutMs: 10_000,
+        });
+        if (result.code !== 0) {
+          const fallback = await runProcess("/usr/bin/open", [url], { timeoutMs: 10_000 });
+          return toolText(
+            {
+              ok: fallback.code === 0,
+              url,
+              browser: "default",
+              stdout: fallback.stdout,
+              stderr: fallback.stderr,
+            },
+            fallback.code !== 0,
+          );
+        }
+        return toolText({ ok: true, url, browser: "Google Chrome" });
+      } catch (error) {
+        return toolText({ ok: false, error: error.message }, true);
+      }
+    },
+  });
   api.registerTool((toolContext = {}) => ({
     name: "harness_notion_archive_create",
     description:
@@ -932,6 +1062,7 @@ export default {
     const activeSajuRuns = new Map();
     const activeKnowledgeRuns = new Map();
     const activeCopilotUsageRuns = new Map();
+    const activeBrowserOpenRuns = new Map();
     const activePumpRuns = new Map();
     const pendingPumpRequests = new Map();
     const runKeys = (event = {}, context = {}) =>
@@ -951,6 +1082,12 @@ export default {
       for (const [key, expiresAt] of activeCopilotUsageRuns) {
         if (expiresAt <= now) activeCopilotUsageRuns.delete(key);
       }
+      for (const [key, state] of activeBrowserOpenRuns) {
+        if (state.expiresAt <= now) activeBrowserOpenRuns.delete(key);
+      }
+      for (const [key, state] of browserOpenExecutionTokens) {
+        if (state.expiresAt <= now) browserOpenExecutionTokens.delete(key);
+      }
       for (const [key, state] of activePumpRuns) {
         if (state.expiresAt <= now) activePumpRuns.delete(key);
       }
@@ -965,6 +1102,12 @@ export default {
       }
       while (activeCopilotUsageRuns.size > 1024) {
         activeCopilotUsageRuns.delete(activeCopilotUsageRuns.keys().next().value);
+      }
+      while (activeBrowserOpenRuns.size > 1024) {
+        activeBrowserOpenRuns.delete(activeBrowserOpenRuns.keys().next().value);
+      }
+      while (browserOpenExecutionTokens.size > 1024) {
+        browserOpenExecutionTokens.delete(browserOpenExecutionTokens.keys().next().value);
       }
       while (activePumpRuns.size > 1024) {
         activePumpRuns.delete(activePumpRuns.keys().next().value);
@@ -1016,6 +1159,28 @@ export default {
     };
     const clearCopilotUsageRun = (event, context) => {
       for (const key of copilotRunKeys(event, context)) activeCopilotUsageRuns.delete(key);
+    };
+    const browserRunKeys = (event = {}, context = {}) =>
+      [event.runId, context.runId].filter(Boolean).map(String);
+    const markBrowserOpenRun = (event, context) => {
+      pruneRuns();
+      const state = {
+        expiresAt: Date.now() + 3 * 60_000,
+        expectedUrl: browserOpenTargetFromPrompt(event.prompt),
+        called: false,
+      };
+      for (const key of browserRunKeys(event, context)) activeBrowserOpenRuns.set(key, state);
+    };
+    const browserOpenRunState = (event, context) => {
+      pruneRuns();
+      for (const key of browserRunKeys(event, context)) {
+        const state = activeBrowserOpenRuns.get(key);
+        if (state) return state;
+      }
+      return undefined;
+    };
+    const clearBrowserOpenRun = (event, context) => {
+      for (const key of browserRunKeys(event, context)) activeBrowserOpenRuns.delete(key);
     };
     const pumpRunKeys = (event = {}, context = {}) =>
       [event.runId, context.runId].filter(Boolean).map(String);
@@ -1119,6 +1284,18 @@ export default {
             ].join(" "),
           };
         }
+        if (currentSenderIsOwner(event.prompt, context) && shouldEnforceBrowserOpen(event.prompt)) {
+          markBrowserOpenRun(event, context);
+          return {
+            appendSystemContext: [
+              "[HARNESS BROWSER OPEN — MANDATORY]",
+              "The user asked to open a browser page in the Mac GUI.",
+              "Call `harness_browser_open` exactly once. For Coupang use `https://www.coupang.com/`.",
+              "Do not use shell, Playwright, Browser MCP, browser-fill, coupang-cart, login, checkout, payment, or any form action for this request.",
+              "Report success only from the tool result.",
+            ].join(" "),
+          };
+        }
         if (shouldEnforceWorkspaceStats(event.prompt)) {
           return {
             appendSystemContext: [
@@ -1190,6 +1367,13 @@ export default {
             block: true,
             blockReason:
               "Raw MQTT pump shell commands are always blocked; use harness_smartfarm_pump_control.",
+          };
+        }
+        if (isHighImpactBrowserShellCall(event.toolName, event.params)) {
+          return {
+            block: true,
+            blockReason:
+              "High-impact browser shell commands are blocked; require a dedicated owner-gated tool and approval flow.",
           };
         }
         const pumpState = pumpRunState(event, context);
@@ -1283,6 +1467,41 @@ export default {
               "Copilot usage routing is active; call harness_copilot_usage once and answer from its aggregate snapshot.",
           };
         }
+        const browserOpenState = browserOpenRunState(event, context);
+        if (browserOpenState && isBrowserOpenTool(event.toolName)) {
+          if (browserOpenState.called) {
+            return {
+              block: true,
+              blockReason: "Browser-open routing already used its one allowed tool call.",
+            };
+          }
+          if (!browserOpenState.expectedUrl) {
+            return {
+              block: true,
+              blockReason: "Browser-open routing could not determine a safe URL from the user request.",
+            };
+          }
+          browserOpenState.called = true;
+          const routingToken = crypto.randomUUID();
+          browserOpenExecutionTokens.set(routingToken, {
+            url: browserOpenState.expectedUrl,
+            expiresAt: Math.min(browserOpenState.expiresAt, Date.now() + 60_000),
+          });
+          return {
+            params: {
+              ...event.params,
+              url: browserOpenState.expectedUrl,
+              routingToken,
+            },
+          };
+        }
+        if (browserOpenState) {
+          return {
+            block: true,
+            blockReason:
+              "Browser-open routing is active; call only harness_browser_open once.",
+          };
+        }
         if (!isDirectSajuNotebookQuery(event.toolName, event.params, isSajuRun(event, context))) {
           return;
         }
@@ -1298,6 +1517,7 @@ export default {
       clearSajuRun(event, context);
       clearKnowledgeRun(event, context);
       clearCopilotUsageRun(event, context);
+      clearBrowserOpenRun(event, context);
       clearPumpRun(event, context);
     });
   },

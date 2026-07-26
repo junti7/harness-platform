@@ -1,0 +1,91 @@
+I'll read all four files in parallel to perform the safety review.
+The file doesn't exist at that path. Let me search for the plugin directory.
+The `/Users/juntae.park/.gemini/antigravity-cli/plugins` path is under a hardcoded system protection boundary. Let me search more broadly for these files.
+Found the files. The main repo is at `/Users/juntae.park/projects/harness-platform/plugins/harness-bridge`. Let me read all four target files.
+Now let me read the remaining three files:
+I have now read all four files in their entirety. Let me produce the safety review.
+
+---
+
+## **safety_review_clear**
+
+### Summary of Findings
+
+All five safety dimensions pass. Below is the detailed evidence for each.
+
+---
+
+#### 1. Owner request `"browser 띄워서 쿠팡 접속해"` → one GUI open-only tool call ✅
+
+| Check | Evidence |
+|-------|----------|
+| Intent detection | `shouldEnforceBrowserOpen` ([L78-81](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L78-L81)) matches `BROWSER_OPEN_REQUEST` and rejects `HIGH_IMPACT_BROWSER_ACTION` (buy/pay/cart/login/checkout) |
+| Owner gate | `before_prompt_build` ([L1287](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L1287)) checks `currentSenderIsOwner(event.prompt, context)` before routing |
+| URL pinning | `browserOpenTargetFromPrompt` ([L83-89](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L83-L89)) derives `https://www.coupang.com/` from the request; `before_tool_call` overwrites the model-supplied URL ([L1493](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L1493): `url: browserOpenState.expectedUrl`) |
+| Single-call cap | `browserOpenState.called` is set `true` after the first call ([L1484](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L1484)); a second call is blocked ([L1472-1476](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L1472-L1476)) |
+| Non-browser-open tools blocked | Any other tool during an active browser-open run hits the catch-all block ([L1498-1504](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L1498-L1504)) |
+| Execution uses `/usr/bin/open` | The `execute` handler opens Chrome via `/usr/bin/open -a "Google Chrome"` ([L790](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L790)) — no shell, no Playwright, no form actions |
+| Test verified | [L96](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L96): `shouldEnforceBrowserOpen("browser 띄워서 쿠팡 접속해")` → `true`; [L379-388](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L379-L388): full routing test; [L499](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L499): URL pinned to `https://www.coupang.com/` |
+| Quoted prompt rejection | [L98-101](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L98-L101): text after `---` is treated as quoted content, not the user instruction — returns `false` |
+
+---
+
+#### 2. Non-owner / forged sender metadata rejection ✅
+
+| Attack Vector | Defense | Test |
+|---|---|---|
+| Non-owner sender ID | `currentSenderIsOwner` checks `configuredOwnerSenderIds()` ([L161-168](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L161-L168)); `"attacker"` is not in the set | [L389-397](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L389-L397): `nonOwnerBrowserOpenRouting` → `undefined` |
+| Forged sender in `Current user request:` body | `currentSenderId` parses only metadata **before** `"Current user request:"` marker ([L117-118](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L117-L118)); sender JSON inside the user text is ignored | [L398-407](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L398-L407): `forgedSenderBrowserOpenRouting` → `undefined` |
+| Forged context in `<conversation_context>` with free-form text | The JSON parser ([L120-127](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L120-L127)) requires structured `sender.id` in valid JSON at the start of conversation_context; free text like `"attacker said: ..."` won't parse as valid JSON → `undefined` | [L408-420](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L408-L420): `forgedPriorContextBrowserOpenRouting` → `undefined` |
+| Injected `"senderIsOwner":true` in prompt body | `currentSenderIsOwner` never reads `senderIsOwner` from the prompt; it only checks `sender.id` against the configured allow-list | [L293-302](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L293-L302): `injectedOwnerNotionRouting` → `undefined` |
+| Shared channel session key | `isOwnerOnlyDiscordSession` requires **all** channel users to be owners ([L156](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L156)); a channel with `["1158367139141521519", "attacker"]` is rejected | [L338-374](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L338-L374): `sharedChannelFollowup` → `undefined` |
+
+---
+
+#### 3. Direct / fake routing-token calls rejection ✅
+
+| Attack | Defense | Test |
+|---|---|---|
+| Direct call without routing token | `execute` checks `browserOpenExecutionTokens.get(routingToken)` — missing/empty token → `"browser_open_not_bound_to_routed_owner_request"` error ([L782-786](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L782-L786)) | [L421-426](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L421-L426) |
+| Forged/guessed token | A fake UUID isn't in `browserOpenExecutionTokens` → same error | [L427-432](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L427-L432): `routingToken: "fake-token"` → `isError: true` |
+| Token is single-use | Token deleted immediately upon consumption ([L788](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L788)) |
+| Token is short-lived | Expires at `min(browserOpenState.expiresAt, now + 60s)` ([L1488](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L1488)) |
+| Token uses `crypto.randomUUID()` | Cryptographically random; unguessable ([L1485](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L1485)) |
+| URL pinned at token creation | Token stores `browserOpenState.expectedUrl` — the `execute` handler reads URL from the token, **not** from `params.url` ([L789](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L789)) |
+
+---
+
+#### 4. OpenClaw-prefixed `harness_browser_open` names ✅
+
+`isBrowserOpenTool` uses `.endsWith("harness_browser_open")` ([L110-112](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L110-L112)), which matches both `harness_browser_open` and `openclawharness_browser_open` (the platform-prefixed form).
+
+Test: [L491-501](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L491-L501) — `toolName: "openclawharness_browser_open"` is correctly routed and gets the token.
+
+---
+
+#### 5. Legacy shell command blocking for `browser-fill`, `coupang-setup`, `coupang-cart`, `coupang-pay-approve` including split construction ✅
+
+| Mechanism | Coverage |
+|---|---|
+| `HIGH_IMPACT_BROWSER_BRIDGE_COMMAND` regex ([L34-35](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L34-L35)) | Direct substrings `browser-fill`, `coupang-setup`, `coupang-cart`, `coupang-pay-approve` |
+| `isHighImpactBrowserShellCall` compact-form check ([L205-217](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L205-L217)) | Strips all non-alpha/hangul chars to detect split constructions (`${cmd}${suffix}`, `${a}${b}${c}`) — catches `browserfill`, `coupangsetup`, `coupangcart`, `coupangpayapprove`, `coupangpay`, `coupangcheckout` even after variable expansion obfuscation |
+| Two-regex conjunction fallback ([L212-217](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L212-L217)) | Catches `cou...pang` + `fill/setup/cart/pay/approve` combinations on the original serialized params |
+| Always-block in `before_tool_call` ([L1372-1378](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L1372-L1378)) | Runs on **every** tool call regardless of routing state |
+| SKILL.md documentation | Sections 22-23 ([L368-397](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/skills/harness-control/SKILL.md#L368-L397)) explicitly state "Do not run this from OpenClaw shell" for all four commands |
+
+Tests verified:
+- [L63-67](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L63-L67): `coupang-cart` → blocked
+- [L74-80](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L74-L80): split `cmd=coupang; suffix=-cart` → blocked
+- [L81-87](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L81-L87): triple-split `a=cou; b=pang; c=-setup` → blocked
+- [L88-94](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L88-L94): split `a=browser; b=-fill` → blocked
+- [L447-467](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L447-L467): `coupang-pay-approve` in before_tool_call → blocked
+- [L468-490](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L468-L490): `browser-fill` and `coupang-setup` → blocked
+
+---
+
+### Additional observations (no safety issues)
+
+- **Map size capping**: All run-tracking maps are capped at 1024 entries with time-based expiry ([L1097-1117](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L1097-L1117)) — no unbounded memory growth.
+- **URL normalization**: `normalizeBrowserUrl` validates protocol is `http:` or `https:`, strips credentials ([L99-103](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L99-L103)).
+- **Plugin manifest**: `harness_browser_open` is declared in `contracts.tools` ([L24](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/openclaw.plugin.json#L24)).
+- **`browser-open` via shell is not blocked by `isHighImpactBrowserShellCall`** ([L68-73](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L68-L73)) — correctly returns `false` since `browser-open` is the safe read-only command, not a high-impact action. However, during an active browser-open routing run, all shell calls are blocked by the catch-all ([L1498-1504](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L1498-L1504)).

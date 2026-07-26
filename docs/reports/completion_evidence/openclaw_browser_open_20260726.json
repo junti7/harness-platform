@@ -1,0 +1,106 @@
+{
+  "task": "OpenClaw owner-gated Mac GUI browser open for Coupang",
+  "status": "residual_risk",
+  "created_at": "2026-07-26T12:44:37Z",
+  "problem": "OpenClaw timed out on the owner request 'browser 띄워서 쿠팡 접속해' because browser opening was only available through brittle shell/browser automation paths, not a native owner-gated GUI-open tool.",
+  "implementation": [
+    {
+      "path": "plugins/harness-bridge/index.js",
+      "summary": "Added native harness_browser_open, owner-only browser-open routing, one-shot routingToken binding, deterministic Coupang URL derivation, prefixed tool-name support, and global blocking for high-impact legacy browser shell commands."
+    },
+    {
+      "path": "plugins/harness-bridge/openclaw.plugin.json",
+      "summary": "Exposed harness_browser_open in contracts.tools."
+    },
+    {
+      "path": "plugins/harness-bridge/skills/harness-control/SKILL.md",
+      "summary": "Documented native open-only browser route and removed shell guidance for browser-fill, coupang-setup, coupang-cart, and coupang-pay-approve."
+    },
+    {
+      "path": "tests/test_harness_bridge_plugin.mjs",
+      "summary": "Added regression coverage for owner/non-owner routing, forged sender rejection, direct/fake token rejection, prefixed tool names, one-shot routing, URL overwrite, Browser MCP/shell blocks, and split command-name shell bypasses."
+    }
+  ],
+  "verification": [
+    {
+      "name": "local OpenClaw plugin regression",
+      "target": "native Mac GUI browser-open plugin route",
+      "command": "node tests/test_harness_bridge_plugin.mjs",
+      "result": "PASS"
+    },
+    {
+      "name": "local Python bridge regression",
+      "target": "OpenClaw bridge API/runtime regression",
+      "command": ".venv/bin/python -m pytest -q tests/test_openclaw_bridge.py",
+      "result": "PASS: 34 passed"
+    },
+    {
+      "name": "syntax and whitespace checks",
+      "target": "OpenClaw plugin JavaScript source",
+      "command": "node --check plugins/harness-bridge/index.js && git diff --check",
+      "result": "PASS"
+    },
+    {
+      "name": "Codex Red Team",
+      "target": "OpenClaw browser-open safety route",
+      "artifact": "../../reviews/red_team/openclaw_browser_open_codex_20260726.md",
+      "result": "red_team_clear"
+    },
+    {
+      "name": "Antigravity Gemini Flash Low safety review",
+      "target": "OpenClaw browser-open safety route",
+      "artifact": "../../reviews/red_team/openclaw_browser_open_gemini_20260726.log",
+      "result": "safety_review_clear after Gemini refused the literal red-team wording"
+    },
+    {
+      "name": "Antigravity Claude Opus safety review",
+      "target": "OpenClaw browser-open safety route",
+      "artifact": "../../reviews/red_team/openclaw_browser_open_claude_20260726.log",
+      "result": "safety_review_clear"
+    }
+  ],
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-26T21:45:00+09:00",
+      "summary": "Confirmed completion reporting requires evidence mapped to actual entrypoints and completion guard validation."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-26T21:45:00+09:00",
+      "summary": "Confirmed origin/main source of truth, deploy_to_macmini-only deployment, and real runtime verification requirements."
+    }
+  ],
+  "red_team": {
+    "models": [
+      "Codex",
+      "Gemini",
+      "Claude"
+    ],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/openclaw_browser_open_codex_20260726.md",
+        "verdict": "red_team_clear"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_browser_open_gemini_20260726.log",
+        "verdict": "safety_review_clear"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_browser_open_claude_20260726.log",
+        "verdict": "safety_review_clear"
+      }
+    ],
+    "verdict": "red_team_clear",
+    "note": "Gemini refused literal red-team wording, then performed the same scoped safety-correctness review and returned safety_review_clear. Claude also returned safety_review_clear."
+  },
+  "deploy": {
+    "status": "pending",
+    "method": "scripts/deploy_to_macmini.sh pending scoped deployment after commit/push",
+    "result": "PENDING: commit and Mac mini deployment not yet run for this evidence revision."
+  },
+  "production_replay": {
+    "status": "pending",
+    "result": null
+  }
+}

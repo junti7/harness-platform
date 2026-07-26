@@ -319,17 +319,16 @@ Use the separate `smartfarm-market-research` skill. Its dedicated bridge is
 read-only and intentionally excludes form-fill, cart, order, payment, GPIO, and
 actuator commands.
 
-### 18. 웹 페이지 열기 (browser-open)
+### 18. 웹 페이지 GUI 열기 (harness_browser_open)
 
-```bash
-cd ~/projects/harness-platform
-.venv/bin/python scripts/openclaw_codex_bridge.py browser-open "<url>"
-```
+Use the native `harness_browser_open` tool for owner requests such as
+`browser 띄워서 쿠팡 접속해`.
 
-Use for:
-- 특정 URL을 열고 페이지 제목과 텍스트 내용을 읽을 때
-- `--no-text`: 텍스트 추출 없이 제목만 가져올 때
-- `--format json`: JSON 형식 출력
+Rules:
+- Open-only. Do not log in, fill forms, add to cart, checkout, pay, or scrape private data.
+- The plugin derives the target URL from the current owner request and overwrites model-supplied URLs.
+- Do not use shell, Playwright, Browser MCP, `browser-fill`, or `coupang-cart` for this open-only request.
+- If the request asks for login, cart, checkout, payment, order, or purchase, do not route it here.
 
 ### 19. 웹 검색 (browser-search)
 
@@ -368,33 +367,13 @@ Use for:
 
 ### 22. 웹 폼 자동화 (browser-fill)
 
-```bash
-cd ~/projects/harness-platform
-.venv/bin/python scripts/openclaw_codex_bridge.py browser-fill "<url>" '<actions_json>'
-```
-
-Use for:
-- 폼 입력, 버튼 클릭, 페이지 이동 등 웹 자동화 작업
-- actions_json 예시:
-  ```json
-  [
-    {"type": "fill", "selector": "input[name=q]", "value": "검색어"},
-    {"type": "click", "selector": "button[type=submit]"},
-    {"type": "wait", "selector": ".results"}
-  ]
-  ```
-- action type: `fill` (입력), `click` (클릭), `wait` (요소 대기), `goto` (URL 이동)
+Do not run this from OpenClaw shell. Form fill/click navigation is blocked unless a
+separate owner-gated tool and approval flow exists for the specific task.
 
 ### 22. 쿠팡 1회성 로그인 설정 (coupang-setup)
 
-```bash
-cd ~/projects/harness-platform
-.venv/bin/python scripts/openclaw_codex_bridge.py coupang-setup
-```
-
-Use for:
-- 쿠팡 자동 제어용 전용 Chrome 프로필 세션 등록 및 1회성 GUI 로그인 설정.
-- 대표님의 Mac Mini 화면에 Chrome 브라우저가 오픈되며, 최초 1회 로그인 완료 후 터미널에서 엔터를 쳐 세션을 최종 인증 및 영구 저장합니다.
+Do not run this from OpenClaw shell. Login/session setup is blocked unless a
+separate owner-gated tool and explicit setup approval flow exists.
 
 ### 23. 쿠팡 로그인 세션 상태 조회 (coupang-status)
 
@@ -409,21 +388,10 @@ Use for:
 
 ### 22. 쿠팡 상품 장바구니/주문서 자동 대기 진입 (coupang-cart)
 
-```bash
-cd ~/projects/harness-platform
-.venv/bin/python scripts/openclaw_codex_bridge.py coupang-cart "<상품_URL>" --qty <수량>
-```
-
-Use for:
-- 특정 쿠팡 상품 URL과 수량을 입력받아 장바구니에 담고, 배송지/최종 금액이 표기되는 결제 대기 단계(Checkout)로 이동합니다.
-- 최종 금액을 캡처하고 스크린샷(`docs/browser_screenshots/checkout_page_loaded.png`)을 저장하여 대표님께 Capital Action 승인 요청 카드를 발송할 준비를 마칩니다.
+Do not run this from OpenClaw shell. Cart/checkout preparation is high impact and
+blocked unless a separate owner-gated tool, capital-action card, and approval flow exist.
 
 ### 23. 쿠팡 최종 결제 대기 승인 처리 (coupang-pay-approve)
 
-```bash
-cd ~/projects/harness-platform
-.venv/bin/python scripts/openclaw_codex_bridge.py coupang-pay-approve
-```
-
-Use for:
-- 대표님께서 모바일 Slack을 통해 결제 승인 요청을 인가(Approve)하신 경우, 최종 결제하기 버튼 클릭을 자동 날려 실물 주문을 체결합니다.
+Do not run this from OpenClaw shell. Final payment is blocked unless a dedicated
+capital-action approval tool exists and has a fresh explicit owner approval.

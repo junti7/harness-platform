@@ -1,0 +1,9 @@
+`safety_review_clear`
+
+### Findings Summary:
+1. **Safe One-Tool Routing**: Owner requests matching `browser 띄워서 쿠팡 접속해` are detected in `before_prompt_build` and bound via `markBrowserOpenRun`. In `before_tool_call`, only one tool call to `harness_browser_open` (or OpenClaw-prefixed `openclawharness_browser_open`) is permitted; subsequent tool calls or non-browser tools are strictly blocked.
+2. **Sender Identity & Untrusted Metadata Protection**: Owner detection relies on `currentSenderId()` which strictly extracts sender metadata from valid `<conversation_context>` headers and ignores forged/injected sender strings inside user instruction text. Non-owners or forged metadata fail `currentSenderIsOwner()`, preventing browser-open routing.
+3. **Routing Token Validation**: `harness_browser_open.execute` checks an ephemeral single-use `routingToken` generated server-side in `before_tool_call`. Direct or fake routing token calls return an error without executing `/usr/bin/open`.
+4. **Tool Name Prefix Compatibility**: `isBrowserOpenTool()` checks whether `toolName.toLowerCase().endsWith("harness_browser_open")`, correctly supporting `harness_browser_open` and `openclawharness_browser_open`.
+5. **Legacy Shell & Split Command Construction Blocking**: High-impact actions (`browser-fill`, `coupang-setup`, `coupang-cart`, `coupang-pay-approve`) are blocked in `before_tool_call` by `isHighImpactBrowserShellCall()`. The function normalizes and checks concatenated strings (`compact`), safely intercepting split command-name constructions (e.g. `cmd=coupang; suffix=-cart` or `a=browser; b=-fill`).
+The background search task (`task-10`) has finished. All findings and safety review conclusions remain unchanged (`safety_review_clear`).
