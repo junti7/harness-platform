@@ -27,8 +27,6 @@ const COPILOT_USAGE_INTENT =
   /premium\s*request|billing|budget|charge|cost|usage|request|과금|결제|비용|예산|사용량|요청|세션|모델|원인/i;
 const NOTION_ARCHIVE_REQUEST =
   /(?:notion|노션)(?:에|으로|에다가|\s){0,6}.{0,40}(?:기록|저장|등록|아카이브|다시\s*실행|재실행|archive|save|record|create|retry|run\s+again)/i;
-const NOTION_AUTH_TTL_MS = 3 * 60_000;
-const notionAuthorizationTokens = new Map();
 let pluginOwnerSenderIds = new Set();
 let pluginOwnerSessionKeys = new Set();
 const MAX_TOOL_OUTPUT = 1_000_000;
@@ -681,7 +679,7 @@ function registerHarnessAssistantTools(api) {
       },
     },
   );
-  api.registerTool({
+  api.registerTool((toolContext = {}) => ({
     name: "harness_notion_archive_create",
     description:
       "Create one internal Harness operating record in the configured Notion archive. Use when the owner explicitly asks to record, save, register, or archive content in Notion. Return the real page ID and URL; never use ChatGPT plugin installation state for this path.",
@@ -704,32 +702,32 @@ function registerHarnessAssistantTools(api) {
         actionItems: { type: "string", maxLength: 1900 },
         historicalValue: { type: "string", default: "high" },
         tags: { type: "array", maxItems: 10, items: { type: "string" } },
-        authorizationToken: {
-          type: "string",
-          description: "Internal plugin-owned field. The model must omit it.",
-        },
       },
     },
     async execute(_id, params) {
       try {
-        const expiresAt = notionAuthorizationTokens.get(params.authorizationToken);
-        notionAuthorizationTokens.delete(params.authorizationToken);
-        if (!expiresAt || expiresAt <= Date.now()) {
+        const trustedOwner =
+          toolContext.senderIsOwner === true ||
+          (toolContext.requesterSenderId &&
+            configuredOwnerSenderIds().has(String(toolContext.requesterSenderId))) ||
+          [toolContext.sessionKey, toolContext.sessionId]
+            .filter(Boolean)
+            .map(String)
+            .some((key) => pluginOwnerSessionKeys.has(key));
+        if (!trustedOwner) {
           return toolText({ ok: false, error: "notion_write_not_bound_to_owner_request" }, true);
         }
-        const payload = { ...params };
-        delete payload.authorizationToken;
         const result = await runProcess(
           python(),
           [path.join(harnessRepoRoot(), "scripts", "openclaw_notion_archive.py")],
-          { timeoutMs: 60_000, stdin: JSON.stringify(payload) },
+          { timeoutMs: 60_000, stdin: JSON.stringify(params) },
         );
         return toolText(result.stdout || result.stderr, result.code !== 0);
       } catch (error) {
         return toolText({ ok: false, error: error.message }, true);
       }
     },
-  });
+  }), { name: "harness_notion_archive_create" });
   api.registerTool({
     name: "harness_cron_list",
     description: "List the real OpenClaw cron jobs and their IDs.",
@@ -1037,9 +1035,6 @@ export default {
     const clearPumpRun = (event, context) => {
       for (const key of pumpRunKeys(event, context)) activePumpRuns.delete(key);
     };
-    const notionRunKeys = (event = {}, context = {}) =>
-      [event.runId, context.runId].filter(Boolean).map(String);
-    const activeNotionRuns = new Map();
     const pumpConversationKey = (context, senderId) => {
       const conversation = context?.sessionKey ?? context?.sessionId;
       return conversation && senderId ? `${conversation}:${senderId}` : undefined;
@@ -1114,12 +1109,6 @@ export default {
           currentSenderIsOwner(event.prompt, context) &&
           NOTION_ARCHIVE_REQUEST.test(requestText);
         if (notionArchiveRequest) {
-          const authorizationToken = crypto.randomUUID();
-          const expiresAt = Date.now() + NOTION_AUTH_TTL_MS;
-          notionAuthorizationTokens.set(authorizationToken, expiresAt);
-          for (const key of notionRunKeys(event, context)) {
-            activeNotionRuns.set(key, { authorizationToken, expiresAt });
-          }
           return {
             appendSystemContext: [
               "[HARNESS NOTION ARCHIVE — MANDATORY]",
@@ -1196,21 +1185,6 @@ export default {
     api.on(
       "before_tool_call",
       async (event, context) => {
-        if (
-          String(event.toolName ?? "").toLowerCase().endsWith("harness_notion_archive_create") &&
-          notionRunKeys(event, context).some((key) => activeNotionRuns.has(key))
-        ) {
-          const state = notionRunKeys(event, context)
-            .map((key) => activeNotionRuns.get(key))
-            .find((candidate) => candidate?.expiresAt > Date.now());
-          if (!state) return;
-          return {
-            params: {
-              ...(event.params ?? {}),
-              authorizationToken: state.authorizationToken,
-            },
-          };
-        }
         if (isRawPumpShellCall(event.toolName, event.params)) {
           return {
             block: true,
@@ -1325,11 +1299,6 @@ export default {
       clearKnowledgeRun(event, context);
       clearCopilotUsageRun(event, context);
       clearPumpRun(event, context);
-      for (const key of notionRunKeys(event, context)) {
-        const state = activeNotionRuns.get(key);
-        if (state) notionAuthorizationTokens.delete(state.authorizationToken);
-        activeNotionRuns.delete(key);
-      }
     });
   },
 };

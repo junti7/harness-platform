@@ -164,6 +164,7 @@ assert.throws(
 const hooks = new Map();
 const toolNames = [];
 const registeredTools = new Map();
+const registeredToolFactories = new Map();
 harnessBridge.register({
   pluginConfig: {
     ownerSenderIds: ["1158367139141521519"],
@@ -184,8 +185,19 @@ harnessBridge.register({
     },
   },
   registerTool(tool) {
-    toolNames.push(tool.name);
-    registeredTools.set(tool.name, tool);
+    if (typeof tool === "function") {
+      registeredToolFactories.set("harness_notion_archive_create", tool);
+    }
+    const resolved =
+      typeof tool === "function"
+        ? tool({
+            sessionKey: "agent:main:discord:channel:1492808588777754636",
+            senderIsOwner: true,
+            requesterSenderId: "1158367139141521519",
+          })
+        : tool;
+    toolNames.push(resolved.name);
+    registeredTools.set(resolved.name, resolved);
   },
   on(name, handler) {
     hooks.set(name, handler);
@@ -225,16 +237,6 @@ const notionRouting = await hooks.get("before_prompt_build")(
 );
 assert.match(notionRouting.appendSystemContext, /HARNESS NOTION ARCHIVE/);
 assert.match(notionRouting.appendSystemContext, /harness_notion_archive_create/);
-const notionAuthorizedCall = await hooks.get("before_tool_call")(
-    {
-      toolName: "harness_notion_archive_create",
-      params: { title: "진단", body: "본문" },
-      runId: "run-notion-1",
-    },
-    { runId: "run-notion-1" },
-  );
-assert.equal(notionAuthorizedCall.params.title, "진단");
-assert.match(notionAuthorizedCall.params.authorizationToken, /^[0-9a-f-]{36}$/);
 const nonOwnerNotionRouting = await hooks.get("before_prompt_build")(
   {
     prompt:
@@ -327,9 +329,14 @@ const sharedChannelFollowup = await sharedChannelHooks.get("before_prompt_build"
   },
 );
 assert.equal(sharedChannelFollowup, undefined);
-const forgedNotionCall = await registeredTools.get("harness_notion_archive_create").execute(
+const untrustedNotionTool = registeredToolFactories.get("harness_notion_archive_create")({
+  sessionKey: "agent:main:discord:channel:other",
+  senderIsOwner: false,
+  requesterSenderId: "attacker",
+});
+const forgedNotionCall = await untrustedNotionTool.execute(
   "forged-notion-call",
-  { title: "진단", body: "본문", authorizationToken: "forged" },
+  { title: "진단", body: "본문" },
 );
 assert.equal(forgedNotionCall.isError, true);
 assert.match(forgedNotionCall.content[0].text, /notion_write_not_bound_to_owner_request/);
