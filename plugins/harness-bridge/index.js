@@ -29,6 +29,7 @@ const NOTION_ARCHIVE_REQUEST =
   /(?:notion|노션)(?:에|으로|에다가|\s){0,6}.{0,24}(?:기록|저장|등록|아카이브|archive|save|record|create)/i;
 const NOTION_AUTH_TTL_MS = 3 * 60_000;
 const notionAuthorizationTokens = new Map();
+let pluginOwnerSenderIds = new Set();
 const MAX_TOOL_OUTPUT = 1_000_000;
 const MAX_WRITE_BYTES = 2_000_000;
 const READ_ONLY_GIT_SUBCOMMANDS = new Set([
@@ -79,12 +80,13 @@ function currentSenderId(prompt) {
 }
 
 function configuredOwnerSenderIds() {
-  return new Set(
-    String(process.env.OPENCLAW_OWNER_SENDER_IDS ?? "")
+  return new Set([
+    ...pluginOwnerSenderIds,
+    ...String(process.env.OPENCLAW_OWNER_SENDER_IDS ?? "")
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean),
-  );
+  ]);
 }
 
 function currentSenderIsOwner(prompt) {
@@ -892,6 +894,11 @@ export default {
   name: "Harness Bridge",
   description: "Harness OpenClaw command bundle for the Codex bridge",
   register(api) {
+    pluginOwnerSenderIds = new Set(
+      Array.isArray(api.pluginConfig?.ownerSenderIds)
+        ? api.pluginConfig.ownerSenderIds.map(String).filter(Boolean)
+        : [],
+    );
     registerHarnessWorkspaceTools(api);
     registerHarnessAssistantTools(api);
     const activeSajuRuns = new Map();
