@@ -112,7 +112,18 @@ function isBrowserOpenTool(toolName) {
 }
 
 function browserOpenExecutionKeys(event = {}, context = {}) {
-  return [event.runId, context.runId]
+  return [
+    event.runId,
+    context.runId,
+    event.toolCallId,
+    context.toolCallId,
+    event.toolUseId,
+    context.toolUseId,
+    event.itemId,
+    context.itemId,
+    event.id,
+    context.id,
+  ]
     .filter(Boolean)
     .map(String);
 }
@@ -806,9 +817,9 @@ function registerHarnessAssistantTools(api) {
         },
       },
     },
-    async execute(_id, params) {
+    async execute(toolCallId, params) {
       try {
-        const executionKeys = browserOpenExecutionKeys({}, toolContext);
+        const executionKeys = browserOpenExecutionKeys({ toolCallId, id: toolCallId }, toolContext);
         const tokenState = executionKeys
           .map((key) => browserOpenExecutionTokens.get(key))
           .find((state) => state && state.expiresAt > Date.now());

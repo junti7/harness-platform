@@ -559,6 +559,21 @@ assert.equal(
   ),
   undefined,
 );
+assert.deepEqual(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "openclawharness_browser_open",
+      toolCallId: "call-browser-open-2",
+      params: { url: "https://www.coupang.com/" },
+      runId: "run-browser-open-1",
+    },
+    browserOpenContext,
+  ),
+  {
+    block: true,
+    blockReason: "Browser-open routing already used its one allowed tool call.",
+  },
+);
 const sameSessionWithoutRunBrowserOpenCall = await registeredTools.get("harness_browser_open").execute(
   "same-session-without-run-browser-open-call",
   { url: "https://www.coupang.com/" },

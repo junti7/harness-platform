@@ -111,6 +111,24 @@
       "target": "OpenClaw browser-open duplicate pretool route",
       "artifact": "../../reviews/red_team/openclaw_browser_open_idempotent_toolcall_gemini_20260726.log",
       "result": "safety_review_clear"
+    },
+    {
+      "name": "execute binding local regression",
+      "target": "OpenClaw browser-open execute binding route",
+      "command": "node tests/test_harness_bridge_plugin.mjs; .venv/bin/python -m pytest -q tests/test_openclaw_bridge.py; node --check plugins/harness-bridge/index.js && git diff --check",
+      "result": "PASS: execute now resolves the prevalidated browser-open token by toolCallId/id in addition to runId; different or missing repeat toolCallId remains blocked; 34 bridge tests pass."
+    },
+    {
+      "name": "Codex Red Team execute binding patch",
+      "target": "OpenClaw browser-open execute binding route",
+      "artifact": "../../reviews/red_team/openclaw_browser_open_execute_binding_codex_20260726.md",
+      "result": "red_team_clear"
+    },
+    {
+      "name": "Antigravity Gemini Flash Low execute binding safety review",
+      "target": "OpenClaw browser-open execute binding route",
+      "artifact": "../../reviews/red_team/openclaw_browser_open_execute_binding_gemini_20260726.log",
+      "result": "safety_review_clear"
     }
   ],
   "governance_bootstrap": [
@@ -166,6 +184,14 @@
       },
       {
         "artifact": "../../reviews/red_team/openclaw_browser_open_idempotent_toolcall_gemini_20260726.log",
+        "verdict": "safety_review_clear"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_browser_open_execute_binding_codex_20260726.md",
+        "verdict": "red_team_clear"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_browser_open_execute_binding_gemini_20260726.log",
         "verdict": "safety_review_clear"
       }
     ],

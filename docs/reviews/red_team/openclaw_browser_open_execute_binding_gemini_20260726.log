@@ -1,0 +1,6 @@
+`safety_review_clear`
+
+### Concise Findings:
+1. **Preserves Owner-Gated One-Call Safety**: The execution token state consumes and invalidates (`browserOpenExecutionTokens.delete(...)`) all linked execution keys (`tokenState.keys`) upon the first valid call. Any subsequent tool calls in `before_tool_call` are blocked by `browserOpenState.called = true`, guaranteeing strict one-call owner gating.
+2. **Avoids Params Rewrite**: The target URL is bound strictly from `tokenState.url` validated during `before_tool_call`, ignoring arbitrary input parameters passed to `execute`.
+3. **Fixes Execute Binding Failure**: Changing `execute(_id, params)` to `execute(toolCallId, params)` and expanding `browserOpenExecutionKeys` to include `toolCallId`, `toolUseId`, `itemId`, and `id` allows tool call invocation keys passed across OpenClaw/MC bridge variants to correctly resolve token states without binding failures.
