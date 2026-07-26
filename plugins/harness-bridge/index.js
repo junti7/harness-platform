@@ -26,10 +26,11 @@ const COPILOT_USAGE_CONTEXT =
 const COPILOT_USAGE_INTENT =
   /premium\s*request|billing|budget|charge|cost|usage|request|과금|결제|비용|예산|사용량|요청|세션|모델|원인/i;
 const NOTION_ARCHIVE_REQUEST =
-  /(?:notion|노션)(?:에|으로|에다가|\s){0,6}.{0,24}(?:기록|저장|등록|아카이브|archive|save|record|create)/i;
+  /(?:notion|노션)(?:에|으로|에다가|\s){0,6}.{0,40}(?:기록|저장|등록|아카이브|다시\s*실행|재실행|archive|save|record|create|retry|run\s+again)/i;
 const NOTION_AUTH_TTL_MS = 3 * 60_000;
 const notionAuthorizationTokens = new Map();
 let pluginOwnerSenderIds = new Set();
+let pluginOwnerSessionKeys = new Set();
 const MAX_TOOL_OUTPUT = 1_000_000;
 const MAX_WRITE_BYTES = 2_000_000;
 const READ_ONLY_GIT_SUBCOMMANDS = new Set([
@@ -89,9 +90,29 @@ function configuredOwnerSenderIds() {
   ]);
 }
 
-function currentSenderIsOwner(prompt) {
+function isOwnerOnlyDiscordSession(sessionKey, config, ownerIds) {
+  const channelId = String(sessionKey ?? "").match(/^agent:[^:]+:discord:channel:(\d+)$/)?.[1];
+  if (!channelId || ownerIds.size === 0) return false;
+  for (const guild of Object.values(config?.channels?.discord?.guilds ?? {})) {
+    const channel = guild?.channels?.[channelId];
+    if (!channel) continue;
+    const allowed = Array.isArray(channel.users)
+      ? channel.users.map(String)
+      : Array.isArray(guild?.users)
+        ? guild.users.map(String)
+        : [];
+    return allowed.length > 0 && allowed.every((senderId) => ownerIds.has(senderId));
+  }
+  return false;
+}
+
+function currentSenderIsOwner(prompt, context = {}) {
   const senderId = currentSenderId(prompt);
-  return Boolean(senderId) && configuredOwnerSenderIds().has(senderId);
+  const sessionKeys = [context.sessionKey, context.sessionId].filter(Boolean).map(String);
+  return (
+    (Boolean(senderId) && configuredOwnerSenderIds().has(senderId)) ||
+    sessionKeys.some((key) => pluginOwnerSessionKeys.has(key))
+  );
 }
 
 function currentUserRequest(prompt) {
@@ -899,6 +920,15 @@ export default {
         ? api.pluginConfig.ownerSenderIds.map(String).filter(Boolean)
         : [],
     );
+    pluginOwnerSessionKeys = new Set(
+      Array.isArray(api.pluginConfig?.ownerSessionKeys)
+        ? api.pluginConfig.ownerSessionKeys
+            .map(String)
+            .filter((sessionKey) =>
+              isOwnerOnlyDiscordSession(sessionKey, api.config, pluginOwnerSenderIds),
+            )
+        : [],
+    );
     registerHarnessWorkspaceTools(api);
     registerHarnessAssistantTools(api);
     const activeSajuRuns = new Map();
@@ -1081,8 +1111,7 @@ export default {
         }
         const requestText = currentUserInstruction(event.prompt);
         const notionArchiveRequest =
-          Boolean(senderId) &&
-          currentSenderIsOwner(event.prompt) &&
+          currentSenderIsOwner(event.prompt, context) &&
           NOTION_ARCHIVE_REQUEST.test(requestText);
         if (notionArchiveRequest) {
           const authorizationToken = crypto.randomUUID();

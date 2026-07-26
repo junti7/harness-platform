@@ -43,6 +43,12 @@
       "target": "Notion production API and archive database",
       "command": "PYTHONPATH=. .venv/bin/python scripts/openclaw_notion_archive.py; GET /v1/pages/3a9d4bdf-f0d5-81f3-837f-d44d85e89f0a",
       "result": "PASS: created page 3a9d4bdf-f0d5-81f3-837f-d44d85e89f0a, read-back returned archived=false and the expected Turtle Trading clean-window reassessment title."
+    },
+    {
+      "name": "Notion permission follow-up routing regression",
+      "target": "OpenClaw plugin service contract",
+      "command": "node tests/test_harness_bridge_plugin.mjs",
+      "result": "PASS: the exact follow-up 'notion 권한 허용했는데 다시 실행해봐' routes from the configured owner-only Discord session; other sessions and shared channels fail closed."
     }
   ],
   "deploy": {

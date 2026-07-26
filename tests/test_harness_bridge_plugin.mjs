@@ -165,6 +165,24 @@ const hooks = new Map();
 const toolNames = [];
 const registeredTools = new Map();
 harnessBridge.register({
+  pluginConfig: {
+    ownerSenderIds: ["1158367139141521519"],
+    ownerSessionKeys: ["agent:main:discord:channel:1492808588777754636"],
+  },
+  config: {
+    channels: {
+      discord: {
+        guilds: {
+          guild1: {
+            users: ["1158367139141521519"],
+            channels: {
+              "1492808588777754636": { enabled: true },
+            },
+          },
+        },
+      },
+    },
+  },
   registerTool(tool) {
     toolNames.push(tool.name);
     registeredTools.set(tool.name, tool);
@@ -247,6 +265,68 @@ const quotedNotionRouting = await hooks.get("before_prompt_build")(
   { runId: "run-notion-quoted" },
 );
 assert.equal(quotedNotionRouting, undefined);
+const notionFollowupRouting = await hooks.get("before_prompt_build")(
+  {
+    prompt:
+      "<conversation_context>[user]\n이 내용을 노션에 기록해.\n</conversation_context>\nCurrent user request:\nnotion 권한 허용했는데 다시 실행해봐.",
+    messages: [],
+    runId: "run-notion-followup",
+  },
+  {
+    runId: "run-notion-followup",
+    sessionKey: "agent:main:discord:channel:1492808588777754636",
+  },
+);
+assert.match(notionFollowupRouting.appendSystemContext, /HARNESS NOTION ARCHIVE/);
+const unauthorizedSessionFollowup = await hooks.get("before_prompt_build")(
+  {
+    prompt: "Current user request:\nnotion 권한 허용했는데 다시 실행해봐.",
+    messages: [],
+    runId: "run-notion-other-session",
+  },
+  {
+    runId: "run-notion-other-session",
+    sessionKey: "agent:main:discord:channel:other",
+  },
+);
+assert.equal(unauthorizedSessionFollowup, undefined);
+const sharedChannelHooks = new Map();
+harnessBridge.register({
+  pluginConfig: {
+    ownerSenderIds: ["1158367139141521519"],
+    ownerSessionKeys: ["agent:main:discord:channel:1492808588777754636"],
+  },
+  config: {
+    channels: {
+      discord: {
+        guilds: {
+          guild1: {
+            users: ["1158367139141521519", "attacker"],
+            channels: {
+              "1492808588777754636": { enabled: true },
+            },
+          },
+        },
+      },
+    },
+  },
+  registerTool() {},
+  on(name, handler) {
+    sharedChannelHooks.set(name, handler);
+  },
+});
+const sharedChannelFollowup = await sharedChannelHooks.get("before_prompt_build")(
+  {
+    prompt: "Current user request:\nnotion 권한 허용했는데 다시 실행해봐.",
+    messages: [],
+    runId: "run-notion-shared-channel",
+  },
+  {
+    runId: "run-notion-shared-channel",
+    sessionKey: "agent:main:discord:channel:1492808588777754636",
+  },
+);
+assert.equal(sharedChannelFollowup, undefined);
 const forgedNotionCall = await registeredTools.get("harness_notion_archive_create").execute(
   "forged-notion-call",
   { title: "진단", body: "본문", authorizationToken: "forged" },
