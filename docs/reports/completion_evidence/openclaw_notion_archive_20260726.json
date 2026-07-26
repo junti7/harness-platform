@@ -55,6 +55,12 @@
       "target": "OpenClaw plugin service Python subprocess",
       "command": "runProcess(.venv/bin/python, -m scripts.openclaw_notion_archive, cwd=harnessRepoRoot())",
       "result": "PASS: module execution from the trusted Harness repository root resolves the scripts package independently of the OpenClaw workspace cwd and reaches payload validation."
+    },
+    {
+      "name": "Notion archive taxonomy normalization",
+      "target": "Notion production writer input boundary",
+      "command": ".venv/bin/python -m pytest -q tests/test_openclaw_notion_archive.py",
+      "result": "PASS: unsupported model values operating_record and Jarvis normalize to canonical ops_brief and Chief of Staff while strict validation remains enabled."
     }
   ],
   "deploy": {

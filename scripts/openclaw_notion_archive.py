@@ -8,6 +8,7 @@ import json
 import sys
 
 from scripts.notion_archive_entry import create_archive_page
+from scripts.notion_canonical import VALID_ARTIFACT_TYPES, VALID_TEAMS
 
 
 def main() -> int:
@@ -19,12 +20,17 @@ def main() -> int:
     if len(title) > 200 or len(body) > 20_000:
         raise ValueError("Notion archive input exceeds the bounded size")
     content_hash = hashlib.sha256((title + "\n" + body).encode()).hexdigest()[:16]
+    artifact_type = str(payload.get("artifactType") or "ops_brief")
+    if artifact_type not in VALID_ARTIFACT_TYPES:
+        artifact_type = "ops_brief"
+    teams = [str(item) for item in (payload.get("teams") or ["Chief of Staff"])][:5]
+    teams = [team for team in teams if team in VALID_TEAMS] or ["Chief of Staff"]
 
     page = create_archive_page(
         title=title,
         body_markdown=body,
-        artifact_type=str(payload.get("artifactType") or "ops_brief"),
-        teams=[str(item) for item in (payload.get("teams") or ["Chief of Staff"])][:5],
+        artifact_type=artifact_type,
+        teams=teams,
         project=str(payload.get("project") or "Harness Platform"),
         source_channel=str(payload.get("sourceChannel") or "Discord"),
         event_date=str(payload.get("eventDate") or "") or None,
