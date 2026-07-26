@@ -1,6 +1,6 @@
 {
   "task": "OpenClaw owner-gated Mac GUI browser open for Coupang",
-  "status": "residual_risk",
+  "status": "complete",
   "created_at": "2026-07-26T12:44:37Z",
   "problem": "OpenClaw timed out on the owner request 'browser 띄워서 쿠팡 접속해' because browser opening was only available through brittle shell/browser automation paths, not a native owner-gated GUI-open tool.",
   "implementation": [
@@ -199,12 +199,12 @@
     "note": "Gemini refused literal red-team wording, then performed the same scoped safety-correctness review and returned safety_review_clear. Claude also returned safety_review_clear."
   },
   "deploy": {
-    "status": "pending",
-    "method": "scripts/deploy_to_macmini.sh pending scoped deployment after commit/push",
-    "result": "PENDING: commit and Mac mini deployment not yet run for this evidence revision."
+    "status": "complete",
+    "method": "scripts/deploy_to_macmini.sh scoped file deployment, followed by openclaw plugins install --force and gateway restart --safe on Mac mini",
+    "result": "PASS: commits 417db3c, 2bdf6cc, eb634ab, f97b2dd, and 1461993 pushed to origin/main; Mac mini scoped deployments passed with backups scratch/pre_deploy_backup_20260726_221158 and scratch/pre_deploy_backup_20260726_221444; openclaw plugins install --force succeeded; gateway restart --safe requested; openclaw plugins doctor reported no plugin issues; Mac mini JS plugin test and 34 Python bridge tests passed."
   },
   "production_replay": {
-    "status": "pending",
-    "result": null
+    "status": "complete",
+    "result": "PASS: live OpenClaw Discord-channel replay runId=16962641-3bab-4461-9eb6-432b72611ad1 sessionId=c6a9dc6f-21ec-4e6f-a060-fda25e112b18 returned status ok, deliverySucceeded true, toolSummary calls=1 failures=0. Trajectory line 5 shows harness_browser_open tool.result success=true with content {\"ok\":true,\"url\":\"https://www.coupang.com/\",\"browser\":\"Google Chrome\"}. Previous residual failures were fixed: runId d3868dc4-6f18-4a81-8c89-31aff0f29e0c failed with browser_open_not_bound_to_routed_owner_request before execute binding; runId 59e83814-1646-4d06-963f-035beb6c9133 failed with duplicate pretool one-call block before idempotent toolCallId handling."
   }
 }
