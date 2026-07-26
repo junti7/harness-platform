@@ -21,6 +21,7 @@
       "harness_gmail_get",
       "harness_calendar_list",
       "harness_calendar_create",
+      "harness_notion_archive_create",
       "harness_cron_list",
       "harness_cron_create",
       "harness_cron_remove"
