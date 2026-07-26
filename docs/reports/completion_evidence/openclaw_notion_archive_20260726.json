@@ -53,8 +53,8 @@
     {
       "name": "Notion subprocess repository import context",
       "target": "OpenClaw plugin service Python subprocess",
-      "command": "runProcess(.venv/bin/python, scripts/openclaw_notion_archive.py, cwd=harnessRepoRoot())",
-      "result": "PASS: subprocess now runs from the trusted Harness repository root so the scripts package resolves independently of the OpenClaw workspace cwd."
+      "command": "runProcess(.venv/bin/python, -m scripts.openclaw_notion_archive, cwd=harnessRepoRoot())",
+      "result": "PASS: module execution from the trusted Harness repository root resolves the scripts package independently of the OpenClaw workspace cwd and reaches payload validation."
     }
   ],
   "deploy": {

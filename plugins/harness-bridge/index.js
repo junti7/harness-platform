@@ -719,7 +719,7 @@ function registerHarnessAssistantTools(api) {
         }
         const result = await runProcess(
           python(),
-          [path.join(harnessRepoRoot(), "scripts", "openclaw_notion_archive.py")],
+          ["-m", "scripts.openclaw_notion_archive"],
           { cwd: harnessRepoRoot(), timeoutMs: 60_000, stdin: JSON.stringify(params) },
         );
         return toolText(result.stdout || result.stderr, result.code !== 0);
