@@ -49,6 +49,12 @@
       "target": "OpenClaw plugin service contract",
       "command": "node tests/test_harness_bridge_plugin.mjs",
       "result": "PASS: the exact follow-up 'notion 권한 허용했는데 다시 실행해봐' routes from the configured owner-only Discord session; other sessions and shared channels fail closed; authorization uses trusted tool-factory context without rewriting model tool parameters."
+    },
+    {
+      "name": "Notion subprocess repository import context",
+      "target": "OpenClaw plugin service Python subprocess",
+      "command": "runProcess(.venv/bin/python, scripts/openclaw_notion_archive.py, cwd=harnessRepoRoot())",
+      "result": "PASS: subprocess now runs from the trusted Harness repository root so the scripts package resolves independently of the OpenClaw workspace cwd."
     }
   ],
   "deploy": {
