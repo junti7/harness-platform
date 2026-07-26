@@ -1501,7 +1501,13 @@ export default {
         }
         const browserOpenState = browserOpenRunState(event, context);
         if (browserOpenState && isBrowserOpenTool(event.toolName)) {
+          const browserToolCallId = String(
+            event.toolCallId ?? event.toolUseId ?? event.itemId ?? event.id ?? "",
+          );
           if (browserOpenState.called) {
+            if (browserOpenState.toolCallId && browserOpenState.toolCallId === browserToolCallId) {
+              return;
+            }
             return {
               block: true,
               blockReason: "Browser-open routing already used its one allowed tool call.",
@@ -1529,6 +1535,7 @@ export default {
             };
           }
           browserOpenState.called = true;
+          browserOpenState.toolCallId = browserToolCallId || undefined;
           const executionKeys = browserOpenExecutionKeys(event, context);
           const tokenState = {
             url: browserOpenState.expectedUrl,

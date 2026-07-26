@@ -540,12 +540,25 @@ assert.deepEqual(phishingBrowserOpenCall, {
 const routedBrowserOpenCall = await hooks.get("before_tool_call")(
   {
     toolName: "openclawharness_browser_open",
+    toolCallId: "call-browser-open-1",
     params: { url: "https://www.coupang.com/" },
     runId: "run-browser-open-1",
   },
   browserOpenContext,
 );
 assert.equal(routedBrowserOpenCall, undefined);
+assert.equal(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "openclawharness_browser_open",
+      toolCallId: "call-browser-open-1",
+      params: { url: "https://www.coupang.com/" },
+      runId: "run-browser-open-1",
+    },
+    browserOpenContext,
+  ),
+  undefined,
+);
 const sameSessionWithoutRunBrowserOpenCall = await registeredTools.get("harness_browser_open").execute(
   "same-session-without-run-browser-open-call",
   { url: "https://www.coupang.com/" },

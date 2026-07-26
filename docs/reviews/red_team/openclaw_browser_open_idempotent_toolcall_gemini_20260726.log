@@ -1,0 +1,24 @@
+The safety-correctness review for the idempotent `same toolCallId` fix in `plugins/harness-bridge/index.js` and `tests/test_harness_bridge_plugin.mjs` is complete.
+
+`safety_review_clear`
+
+### Concise Findings & Verification
+
+1. **Repeated `before_tool_call` for Same `toolCallId` Allowed**:
+   - In [index.js](file:///Users/juntae.park/projects/harness-platform/plugins/harness-bridge/index.js#L1507-L1510), when `browserOpenState.called` is `true`, `before_tool_call` checks `browserOpenState.toolCallId === browserToolCallId`. If matching, it passes without blocking (`return;`).
+   - Verified via unit test assertion in [test_harness_bridge_plugin.mjs](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L550-L561).
+
+2. **Different/No `toolCallId` Repeated Calls Blocked**:
+   - If `browserOpenState.called` is `true` and the subsequent call has a different or missing `toolCallId`, it returns `{ block: true, blockReason: "Browser-open routing already used its one allowed tool call." }`.
+   - Verified via unit test assertion in [test_harness_bridge_plugin.mjs](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L571-L584).
+
+3. **Run ID Execution Token Scope Prevents Direct Unrouted Execute**:
+   - `browserOpenExecutionKeys` maps `runId` from `event` or `context`. Direct execute calls lacking active run token state fail-closed with `browser_open_not_bound_to_routed_owner_request`.
+   - Verified in [test_harness_bridge_plugin.mjs](file:///Users/juntae.park/projects/harness-platform/tests/test_harness_bridge_plugin.mjs#L458-L469,L562-L570).
+
+4. **Parameters & Shell Controls Intact**:
+   - No parameter rewriting occurs during `before_tool_call` for `harness_browser_open`. URL target match checks and normalization rules remain strictly enforced.
+   - Unsafe shell execution attempts (`bash`/`exec`) while `browserOpenState` is active continue to be blocked (`Browser-open routing is active; call only harness_browser_open once.`).
+
+5. **Test Suite Verification**:
+   - `node tests/test_harness_bridge_plugin.mjs` ran cleanly with exit code 0.
