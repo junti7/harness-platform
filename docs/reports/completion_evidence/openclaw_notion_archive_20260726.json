@@ -1,0 +1,36 @@
+{
+  "task": "OpenClaw direct Notion archive routing and missed Turtle reassessment record recovery",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-26T20:45:00+09:00",
+      "summary": "Confirmed exact closeout, production entrypoint verification, scoped commit and deployment requirements."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-26T20:45:00+09:00",
+      "summary": "Confirmed origin main deployment source of truth and real Notion or Mac mini verification requirement."
+    }
+  ],
+  "verification": [
+    {
+      "name": "local OpenClaw plugin regression",
+      "target": "OpenClaw plugin service contract",
+      "command": "node tests/test_harness_bridge_plugin.mjs",
+      "result": "PASS: owner routing, non-owner rejection, prompt injection rejection, quoted-content rejection, and forged authorization-token rejection."
+    },
+    {
+      "name": "local bridge regression and Python compile",
+      "target": "Python bridge runtime",
+      "command": ".venv/bin/python -m pytest -q tests/test_openclaw_bridge.py; .venv/bin/python -m py_compile scripts/openclaw_notion_archive.py",
+      "result": "PASS: 34 bridge tests and Python compilation."
+    },
+    {
+      "name": "Mac mini live Notion and gateway preflight",
+      "target": "Mac mini production service and Notion API configuration",
+      "command": "ssh macmini 'openclaw skills info notion; openclaw plugins doctor; inspect configured NOTION_API_KEY and NOTION_DATABASE_ID presence'",
+      "result": "PASS: bundled Notion skill is Ready and model-visible, plugin doctor reports no issues, and Harness Notion API key/database ID are configured. Deployment and real page creation remain pending."
+    }
+  ]
+}
