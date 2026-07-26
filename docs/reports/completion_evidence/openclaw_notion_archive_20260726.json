@@ -61,6 +61,12 @@
       "target": "Notion production writer input boundary",
       "command": ".venv/bin/python -m pytest -q tests/test_openclaw_notion_archive.py",
       "result": "PASS: unsupported model values operating_record and Jarvis normalize to canonical ops_brief and Chief of Staff while strict validation remains enabled."
+    },
+    {
+      "name": "live Discord Notion retry replay and read-back",
+      "target": "Mac mini production OpenClaw Discord session and Notion API",
+      "command": "openclaw agent --session-key agent:main:discord:channel:1492808588777754636 --message 'notion 권한 허용했는데 다시 실행해봐.' --deliver; GET /v1/pages/3a9d4bdf-f0d5-81dd-8098-fe8588663c0c",
+      "result": "PASS: run b2cdc43c-1594-4dd6-b0c3-f0c2eabd25fe called harness_notion_archive_create, Discord delivery succeeded, and Notion read-back returned archived=false with title Turtle Trading 재개 진단 및 후속 일정."
     }
   ],
   "deploy": {
