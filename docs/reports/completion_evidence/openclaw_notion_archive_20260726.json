@@ -1,6 +1,6 @@
 {
   "task": "OpenClaw direct Notion archive routing and missed Turtle reassessment record recovery",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -30,7 +30,23 @@
       "name": "Mac mini live Notion and gateway preflight",
       "target": "Mac mini production service and Notion API configuration",
       "command": "ssh macmini 'openclaw skills info notion; openclaw plugins doctor; inspect configured NOTION_API_KEY and NOTION_DATABASE_ID presence'",
-      "result": "PASS: bundled Notion skill is Ready and model-visible, plugin doctor reports no issues, and Harness Notion API key/database ID are configured. Deployment and real page creation remain pending."
+      "result": "PASS: bundled Notion skill is Ready and model-visible, plugin doctor reports no issues, and Harness Notion API key/database ID are configured."
+    },
+    {
+      "name": "Mac mini production plugin and authorization verification",
+      "target": "Mac mini production OpenClaw gateway service",
+      "command": "openclaw plugins doctor; openclaw config get tools.alsoAllow; openclaw config get plugins.entries.harness-bridge.config.ownerSenderIds; production focused tests",
+      "result": "PASS: no plugin issues, harness_notion_archive_create is allowed, one persistent owner ID is configured, plugin regression passes, and 34 bridge tests pass."
+    },
+    {
+      "name": "real Notion page creation and read-back",
+      "target": "Notion production API and archive database",
+      "command": "PYTHONPATH=. .venv/bin/python scripts/openclaw_notion_archive.py; GET /v1/pages/3a9d4bdf-f0d5-81f3-837f-d44d85e89f0a",
+      "result": "PASS: created page 3a9d4bdf-f0d5-81f3-837f-d44d85e89f0a, read-back returned archived=false and the expected Turtle Trading clean-window reassessment title."
     }
-  ]
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh with the seven scoped implementation, test, review, and evidence paths; follow-up deployment of the two persistent owner-config paths",
+    "result": "All selected paths matched origin/main on Mac mini; plugin force-install, persistent plugin owner config, tools.alsoAllow update, gateway restart, plugin doctor, production tests, and real Notion API create/read-back passed. Backups: scratch/pre_deploy_backup_20260726_203128 and scratch/pre_deploy_backup_20260726_203509."
+  }
 }
