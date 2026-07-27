@@ -432,7 +432,7 @@ function productCardCandidatesFromOcr(ocr, question, { targetWindow } = {}) {
       normalized: normalizeProductText(line?.text),
       geometry: ocrLineGeometry(line),
     }))
-    .filter((line) => line.text && line.geometry)
+    .filter((line) => line.text && line.geometry && line.geometry.top >= 0.14)
     .sort((left, right) => left.geometry.top - right.geometry.top || left.geometry.left - right.geometry.left);
   const cards = [];
   const seen = new Set();
@@ -465,6 +465,7 @@ function productCardCandidatesFromOcr(ocr, question, { targetWindow } = {}) {
         }
       }
     }
+    if (priceCandidates.length === 0) continue;
     const titleAnchor =
       sameColumn.find((line) => normalizedTerms.some((term) => line.normalized.includes(term))) ?? anchor;
     const bounds = targetWindow?.bounds ?? {};
