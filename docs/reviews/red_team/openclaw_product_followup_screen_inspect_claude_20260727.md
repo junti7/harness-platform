@@ -25,3 +25,9 @@ Findings:
 Conclusion:
 
 `red_team_clear`; no blocking safety regression found.
+
+Incremental v2 review:
+
+- Change: apply the static Coupang/Chrome context prefix to any already-routed product/detail follow-up, not only trajectory-routed follow-ups.
+- Verdict: `red_team_clear`.
+- Reason: `markScreenInspectRun` is reached only after `shouldEnforceScreenInspect` has already passed; the static prefix adds no prompt-injection surface, high-impact browser action leakage, network call, file I/O, or privilege escalation.

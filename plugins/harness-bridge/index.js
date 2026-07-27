@@ -1790,8 +1790,7 @@ export default {
       pruneRuns();
       const question = currentUserInstruction(event.prompt);
       const contextualQuestion =
-        SCREEN_INSPECT_DETAIL_FOLLOWUP_REQUEST.test(question) &&
-        hasRecentScreenInspectTrajectory(context)
+        SCREEN_INSPECT_DETAIL_FOLLOWUP_REQUEST.test(question)
           ? `직전 화면판독 문맥의 쿠팡/Chrome 화면에서 ${question}`
           : question;
       const state = {

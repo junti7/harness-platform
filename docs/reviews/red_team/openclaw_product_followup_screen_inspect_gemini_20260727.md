@@ -25,3 +25,9 @@ Findings:
 Conclusion:
 
 `red_team_clear`; no owner-gating bypass, high-impact browser action leakage, prompt-injection path, or unsafe fallback expansion found.
+
+Incremental v2 review:
+
+- Change: apply the static Coupang/Chrome context prefix to any already-routed product/detail follow-up, not only trajectory-routed follow-ups.
+- Verdict: `red_team_clear`.
+- Reason: prefix is hardcoded static text; routing and high-impact action guards remain unchanged; no browser mutation or new privilege path is introduced.
