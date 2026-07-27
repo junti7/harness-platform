@@ -34,6 +34,8 @@ const SCREEN_INSPECT_REQUEST =
   /(?:(?:지금|현재|떠\s*있는|열려\s*있는|보이는).{0,50}(?:화면|창|브라우저|browser|chrome|크롬|쿠팡|coupang).{0,50}(?:보여|보이는|뭐|무엇|어떤|확인|읽어|describe|see|visible)|(?:화면|창|screen|window).{0,50}(?:보여|보이는|뭐|무엇|어떤|확인|읽어|describe|see|visible))/i;
 const SCREEN_INSPECT_FOLLOWUP_REQUEST =
   /^(?:다시\s*)?(?:확인|재확인|봐줘|읽어줘|해봐|retry|again)(?:해|해줘|해봐|해줘요|요)?[.!?\s]*$/i;
+const SCREEN_INSPECT_DETAIL_FOLLOWUP_REQUEST =
+  /(?:(?:어떤|무슨|뭐|무엇).{0,20}(?:제품|상품|메뉴|배너|목록|item|product).{0,20}(?:보여|보이는|있어|나와|읽어|확인|visible|see)|(?:제품|상품|메뉴|배너|목록|item|product).{0,30}(?:보여|보이는|읽어|확인|visible|see))/i;
 const SCREEN_INSPECT_CONTEXT_MARKERS =
   /harness_screen_inspect|peekaboo_permissions_not_granted|peekaboo_bridge_socket_missing|peekaboo_bridge_not_ready|Screen Recording|Accessibility|화면\s*(?:판독|검사|내용\s*읽기|브리지|읽)/i;
 const HIGH_IMPACT_BROWSER_ACTION =
@@ -92,6 +94,11 @@ export function shouldEnforceScreenInspect(prompt, messages = [], context = {}) 
   const text = currentUserInstruction(prompt);
   if (SCREEN_INSPECT_REQUEST.test(text) && !HIGH_IMPACT_BROWSER_ACTION.test(text)) {
     return true;
+  }
+  if (SCREEN_INSPECT_DETAIL_FOLLOWUP_REQUEST.test(text) && !HIGH_IMPACT_BROWSER_ACTION.test(text)) {
+    return trustedScreenInspectContext(prompt, messages).some((contextText) =>
+      SCREEN_INSPECT_CONTEXT_MARKERS.test(contextText),
+    ) || hasRecentScreenInspectTrajectory(context);
   }
   if (!SCREEN_INSPECT_FOLLOWUP_REQUEST.test(text) || HIGH_IMPACT_BROWSER_ACTION.test(text)) {
     return false;
@@ -208,9 +215,26 @@ function screenInspectTrajectoryResultMatches(data = {}) {
   });
 }
 
-export function selectBestPeekabooWindow(windows = []) {
-  return [...windows]
-    .filter((window) => window && window.is_on_screen !== false && Number(window.window_id) > 0)
+export function selectBestPeekabooWindow(windows = [], preferredPattern) {
+  const validWindows = [...windows].filter(
+    (window) => window && window.is_on_screen !== false && Number(window.window_id) > 0,
+  );
+  const preferredWindows = preferredPattern
+    ? validWindows.filter((window) =>
+        preferredPattern.test(
+          [
+            window.window_title,
+            window.title,
+            window.url,
+            window.app,
+            window.application_name,
+          ]
+            .filter(Boolean)
+            .join(" "),
+        ),
+      )
+    : [];
+  return (preferredWindows.length ? preferredWindows : validWindows)
     .sort((left, right) => {
       const leftBounds = left.bounds ?? {};
       const rightBounds = right.bounds ?? {};
@@ -873,7 +897,13 @@ async function inspectMacScreen(params = {}) {
       } catch {
         parsedWindowList = undefined;
       }
-      const bestWindow = selectBestPeekabooWindow(parsedWindowList?.data?.windows ?? []);
+      const preferredWindowPattern = /(?:쿠팡|coupang)/i.test(question)
+        ? /(?:쿠팡|coupang)/i
+        : undefined;
+      const bestWindow = selectBestPeekabooWindow(
+        parsedWindowList?.data?.windows ?? [],
+        preferredWindowPattern,
+      );
       if (bestWindow?.window_id) {
         let fallbackSee;
         try {
@@ -1758,9 +1788,15 @@ export default {
     };
     const markScreenInspectRun = (event, context) => {
       pruneRuns();
+      const question = currentUserInstruction(event.prompt);
+      const contextualQuestion =
+        SCREEN_INSPECT_DETAIL_FOLLOWUP_REQUEST.test(question) &&
+        hasRecentScreenInspectTrajectory(context)
+          ? `직전 화면판독 문맥의 쿠팡/Chrome 화면에서 ${question}`
+          : question;
       const state = {
         expiresAt: Date.now() + 3 * 60_000,
-        question: currentUserInstruction(event.prompt),
+        question: contextualQuestion,
         called: false,
       };
       for (const key of browserRunKeys(event, context)) activeScreenInspectRuns.set(key, state);

@@ -115,7 +115,19 @@ assert.equal(
   ]).window_id,
   3,
 );
+assert.equal(
+  selectBestPeekabooWindow(
+    [
+      { window_id: 10, is_on_screen: true, window_title: "YouTube - Chrome", bounds: { width: 2000, height: 1000 } },
+      { window_id: 11, is_on_screen: true, window_title: "로켓배송으로 빠르게 | 쿠팡 - Chrome", bounds: { width: 1000, height: 1000 } },
+    ],
+    /(?:쿠팡|coupang)/i,
+  ).window_id,
+  11,
+);
 assert.equal(shouldEnforceScreenInspect("지금 떠 있는 쿠팡 화면에 어떤 것들이 보여?"), true);
+assert.equal(shouldEnforceScreenInspect("Current user request:\n어떤 제품들이 보여?"), false);
+assert.equal(shouldEnforceScreenInspect("쿠팡 장바구니에 어떤 제품 담아줘"), false);
 assert.equal(
   shouldEnforceScreenInspect(
     "브라우저로 쿠팡 사이트 띄워서 어떤 내용들이 보이는지 알려줘. 그리고 쿠팡 화면이 보인다면 로그인이 되어 있는지도 확인해.",
@@ -206,6 +218,12 @@ fs.writeFileSync(
 );
 assert.equal(
   shouldEnforceScreenInspect("Current user request:\n다시 확인해", [], {
+    sessionId: followupSessionId,
+  }),
+  true,
+);
+assert.equal(
+  shouldEnforceScreenInspect("Current user request:\n어떤 제품들이 보여?", [], {
     sessionId: followupSessionId,
   }),
   true,
