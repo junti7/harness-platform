@@ -1777,6 +1777,25 @@ async function openCoupangProductDetail(params = {}) {
       });
     }
   }
+  if (!match && terms.length >= 2) {
+    const searchUrl = new URL("https://www.coupang.com/np/search");
+    searchUrl.searchParams.set("q", terms.join(" "));
+    const openSearch = await runProcess("/usr/bin/open", ["-a", "Google Chrome", searchUrl.toString()], {
+      timeoutMs: 10_000,
+    });
+    if (openSearch.code === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      inspected = await inspectMacScreen({
+        question: `쿠팡에서 ${terms.join(" ")} 검색 결과 중 ${params.price ?? ""} 상품 상세 진입`,
+      });
+      if (!inspected.ok) return inspected;
+      matches = inspected.result?.smart_collection?.merged?.strict_product_matches ?? [];
+      match = selectProductMatchForDetail(matches, {
+        price: params.price,
+        terms,
+      });
+    }
+  }
   if (!match?.click_point) {
     return {
       ok: false,
