@@ -842,11 +842,11 @@ async function inspectMacScreen(params = {}) {
       { timeoutMs: 15_000, env },
     );
   } catch (error) {
-    return {
-      ok: false,
-      error: "peekaboo_screen_inspect_timeout_or_error",
-      socketPath,
-      detail: error.message,
+    see = {
+      code: 124,
+      stdout: "",
+      stderr: error.message,
+      timedOut: true,
     };
   }
   if (see.code !== 0) {
@@ -875,19 +875,29 @@ async function inspectMacScreen(params = {}) {
       }
       const bestWindow = selectBestPeekabooWindow(parsedWindowList?.data?.windows ?? []);
       if (bestWindow?.window_id) {
-        const fallbackSee = await runProcess(
-          peekaboo,
-          [
-            "see",
-            "--no-remote",
-            "--window-id",
-            String(bestWindow.window_id),
-            "--capture-engine",
-            "cg",
-            "--json",
-          ],
-          { timeoutMs: 20_000, env },
-        );
+        let fallbackSee;
+        try {
+          fallbackSee = await runProcess(
+            peekaboo,
+            [
+              "see",
+              "--no-remote",
+              "--window-id",
+              String(bestWindow.window_id),
+              "--capture-engine",
+              "cg",
+              "--json",
+            ],
+            { timeoutMs: 20_000, env },
+          );
+        } catch (error) {
+          fallbackSee = {
+            code: 124,
+            stdout: "",
+            stderr: error.message,
+            timedOut: true,
+          };
+        }
         if (fallbackSee.code === 0) {
           let fallbackParsed;
           try {
