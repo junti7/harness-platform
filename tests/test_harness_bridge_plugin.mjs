@@ -105,6 +105,7 @@ assert.equal(
   ),
   true,
 );
+assert.equal(shouldEnforceBrowserOpen("쿠팡에서 생수 검색해서 상품 보여줘"), true);
 assert.equal(shouldEnforceBrowserOpen("쿠팡 장바구니에 담아줘"), false);
 assert.equal(shouldEnforceBrowserOpen("쿠팡 로그인해줘"), false);
 assert.equal(
@@ -126,6 +127,7 @@ assert.equal(
   11,
 );
 assert.equal(shouldEnforceScreenInspect("지금 떠 있는 쿠팡 화면에 어떤 것들이 보여?"), true);
+assert.equal(shouldEnforceScreenInspect("쿠팡에서 생수 검색해서 상품 보여줘"), true);
 assert.equal(shouldEnforceScreenInspect("Current user request:\n어떤 제품들이 보여?"), false);
 assert.equal(shouldEnforceScreenInspect("쿠팡 장바구니에 어떤 제품 담아줘"), false);
 assert.equal(
@@ -589,6 +591,26 @@ const combinedBrowserInspectRouting = await hooks.get("before_prompt_build")(
   combinedBrowserInspectContext,
 );
 assert.match(combinedBrowserInspectRouting.appendSystemContext, /BROWSER OPEN \+ SCREEN INSPECT/);
+const coupangSearchRouting = await hooks.get("before_prompt_build")(
+  {
+    prompt: discordPrompt("Current user request:\n쿠팡에서 생수 검색해서 상품 보여줘", "1158367139141521519"),
+    messages: [],
+    runId: "run-coupang-search-screen-inspect-1",
+  },
+  {
+    runId: "run-coupang-search-screen-inspect-1",
+    sessionKey: "agent:main:discord:channel:1492808588777754636",
+  },
+);
+assert.match(coupangSearchRouting.appendSystemContext, /BROWSER OPEN \+ SCREEN INSPECT/);
+assert.match(coupangSearchRouting.appendSystemContext, /https:\/\/www\.coupang\.com\/np\/search\?q=/);
+await hooks.get("agent_end")(
+  { runId: "run-coupang-search-screen-inspect-1" },
+  {
+    runId: "run-coupang-search-screen-inspect-1",
+    sessionKey: "agent:main:discord:channel:1492808588777754636",
+  },
+);
 assert.deepEqual(
   await hooks.get("before_tool_call")(
     {

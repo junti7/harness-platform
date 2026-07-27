@@ -30,6 +30,8 @@ const NOTION_ARCHIVE_REQUEST =
   /(?:notion|노션)(?:에|으로|에다가|\s){0,6}.{0,40}(?:기록|저장|등록|아카이브|다시\s*실행|재실행|archive|save|record|create|retry|run\s+again)/i;
 const BROWSER_OPEN_REQUEST =
   /(?:(?:browser|브라우저|chrome|크롬).{0,40}(?:띄워|열어|켜|접속|open|launch|go\s*to)|(?:쿠팡|coupang).{0,40}(?:접속|열어|띄워|open|launch))/i;
+const COUPANG_SEARCH_REQUEST =
+  /(?:쿠팡|coupang).{0,40}(?:검색|찾아|찾기|search).{0,80}(?:상품|제품|결과|보여|알려|수집|collect|product|item)|(?:쿠팡|coupang).{0,20}(?:에서|에)?\s*.{1,60}(?:검색|찾아|찾기|search)/i;
 const SCREEN_INSPECT_REQUEST =
   /(?:(?:지금|현재|떠\s*있는|열려\s*있는|보이는).{0,50}(?:화면|창|브라우저|browser|chrome|크롬|쿠팡|coupang).{0,50}(?:보여|보이는|뭐|무엇|어떤|확인|읽어|describe|see|visible)|(?:화면|창|screen|window).{0,50}(?:보여|보이는|뭐|무엇|어떤|확인|읽어|describe|see|visible))/i;
 const SCREEN_INSPECT_FOLLOWUP_REQUEST =
@@ -87,11 +89,14 @@ export function shouldEnforceCopilotUsage(prompt) {
 
 export function shouldEnforceBrowserOpen(prompt) {
   const text = currentUserInstruction(prompt);
-  return BROWSER_OPEN_REQUEST.test(text) && !HIGH_IMPACT_BROWSER_ACTION.test(text);
+  return (BROWSER_OPEN_REQUEST.test(text) || COUPANG_SEARCH_REQUEST.test(text)) && !HIGH_IMPACT_BROWSER_ACTION.test(text);
 }
 
 export function shouldEnforceScreenInspect(prompt, messages = [], context = {}) {
   const text = currentUserInstruction(prompt);
+  if (COUPANG_SEARCH_REQUEST.test(text) && !HIGH_IMPACT_BROWSER_ACTION.test(text)) {
+    return true;
+  }
   if (SCREEN_INSPECT_REQUEST.test(text) && !HIGH_IMPACT_BROWSER_ACTION.test(text)) {
     return true;
   }
@@ -271,11 +276,313 @@ function compactPeekabooSeeResult(parsed) {
   };
 }
 
+async function runMacVisionOcr(imagePath) {
+  const resolved = path.resolve(String(imagePath ?? ""));
+  if (!resolved || !fs.existsSync(resolved)) {
+    return { ok: false, error: "ocr_image_missing" };
+  }
+  const allowedImageRoots = [
+    path.resolve(os.tmpdir()),
+    path.resolve(path.join(os.homedir(), "Desktop")),
+    path.resolve(path.join(os.homedir(), ".peekaboo")),
+  ];
+  if (!allowedImageRoots.some((root) => resolved === root || resolved.startsWith(`${root}${path.sep}`))) {
+    return { ok: false, error: "ocr_image_path_not_allowed" };
+  }
+  const scriptPath = path.join(harnessRepoRoot(), "scripts", "macos_vision_ocr.swift");
+  if (!fs.existsSync(scriptPath)) {
+    return { ok: false, error: "ocr_script_missing" };
+  }
+  const binaryPath = path.join(harnessRepoRoot(), "scratch", "macos_vision_ocr");
+  try {
+    fs.mkdirSync(path.dirname(binaryPath), { recursive: true });
+    const scriptStat = fs.statSync(scriptPath);
+    const binaryStat = fs.existsSync(binaryPath) ? fs.statSync(binaryPath) : undefined;
+    if (!binaryStat || binaryStat.mtimeMs < scriptStat.mtimeMs) {
+      const compile = await runProcess("/usr/bin/swiftc", [scriptPath, "-O", "-o", binaryPath], {
+        timeoutMs: 90_000,
+      });
+      if (compile.code !== 0) {
+        return {
+          ok: false,
+          error: "ocr_compile_failed",
+          detail: summarizePeekabooFailure(compile),
+        };
+      }
+    }
+  } catch (error) {
+    return { ok: false, error: "ocr_compile_exception", detail: error.message };
+  }
+  try {
+    const result = await runProcess(binaryPath, [resolved], { timeoutMs: 20_000 });
+    if (result.code !== 0) {
+      return {
+        ok: false,
+        error: "ocr_failed",
+        detail: summarizePeekabooFailure(result),
+      };
+    }
+    const parsed = JSON.parse(result.stdout);
+    const lines = Array.isArray(parsed.lines) ? parsed.lines : [];
+    const text = String(parsed.text ?? "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 120)
+      .join("\n")
+      .slice(0, 12_000);
+    return {
+      ok: parsed.ok === true,
+      line_count: lines.length,
+      lines: lines.slice(0, 120).map((line) => ({
+        text: String(line.text ?? "").slice(0, 300),
+        confidence: Number(line.confidence ?? 0),
+      })),
+      text,
+      error: parsed.error,
+    };
+  } catch (error) {
+    return { ok: false, error: "ocr_exception", detail: error.message };
+  }
+}
+
+function buildScreenInformationSummary({ compactResult, ocr, targetWindow }) {
+  const ocrLines = Array.isArray(ocr?.lines)
+    ? ocr.lines.map((line) => String(line?.text ?? "").trim()).filter(Boolean)
+    : [];
+  const browserUiNoise =
+    /^(?:Harness OS|Harness|Gemini에게|모든 북마크|즐겨찾기|카테고리|전체|찾고 싶은 상품|쿠팡플레이|로켓배송|로켓프레시|다시 구매|쿠팡비즈|로켓직구|입점신청|고객센터|판매자 가입|장바구니|마이쿠팡|닫기|새 탭|Chrome|뒤로|앞으로|새로고침|주소창|탭 검색|로그아웃)$/i;
+  const productOrOfferLines = [];
+  const priceLines = [];
+  const loginClues = [];
+  for (const line of ocrLines) {
+    if (/(?:로그아웃|마이쿠팡|님\b|고객센터|사용자|프로필)/.test(line)) {
+      loginClues.push(line);
+    }
+    if (/(?:₩|원\b|[0-9]{1,3}(?:,[0-9]{3})+|%|할인|특가)/.test(line)) {
+      priceLines.push(line);
+    }
+    if (
+      line.length >= 2 &&
+      !browserUiNoise.test(line) &&
+      !/^[+•°=<>♡☆\s0-9.,:-]+$/.test(line) &&
+      !/^(?:광고|더 알아보기|판매자|혜택|쿠팡|coupang)$/i.test(line)
+    ) {
+      productOrOfferLines.push(line);
+    }
+  }
+  return {
+    page: {
+      application_name: compactResult?.application_name,
+      window_title: compactResult?.window_title ?? targetWindow?.window_title,
+      target_window_title: targetWindow?.window_title,
+    },
+    counts: {
+      ax_elements: compactResult?.element_count,
+      ocr_lines: ocrLines.length,
+      product_or_offer_candidates: productOrOfferLines.length,
+      price_candidates: priceLines.length,
+      login_clues: loginClues.length,
+    },
+    product_or_offer_candidates: productOrOfferLines.slice(0, 80),
+    price_candidates: priceLines.slice(0, 40),
+    login_clues: [...new Set(loginClues)].slice(0, 20),
+  };
+}
+
+function shouldCollectScrolledScreenInfo(question) {
+  return /(?:쿠팡|coupang|상품|제품|product|item|정보\s*수집|수집기|스크롤|scroll|보이는\s*내용)/i.test(
+    String(question ?? ""),
+  );
+}
+
+function mergeScreenInformation(pages = []) {
+  const merged = {
+    pages: [],
+    product_or_offer_candidates: [],
+    price_candidates: [],
+    login_clues: [],
+  };
+  const pushUnique = (target, values) => {
+    const seen = new Set(target);
+    for (const value of values ?? []) {
+      const text = String(value ?? "").trim();
+      if (!text || seen.has(text)) continue;
+      seen.add(text);
+      target.push(text);
+    }
+  };
+  for (const page of pages) {
+    const info = page?.screen_information;
+    if (!info) continue;
+    merged.pages.push({
+      page_index: page.page_index,
+      screenshot_raw: page.screenshot_raw,
+      scroll: page.scroll,
+      counts: info.counts,
+    });
+    pushUnique(merged.product_or_offer_candidates, info.product_or_offer_candidates);
+    pushUnique(merged.price_candidates, info.price_candidates);
+    pushUnique(merged.login_clues, info.login_clues);
+  }
+  return {
+    collected_page_count: merged.pages.length,
+    pages: merged.pages,
+    product_or_offer_candidates: merged.product_or_offer_candidates.slice(0, 160),
+    price_candidates: merged.price_candidates.slice(0, 80),
+    login_clues: merged.login_clues.slice(0, 30),
+  };
+}
+
+async function collectScrolledWindowInformation({ peekaboo, env, windowId, question, targetWindow, firstPage }) {
+  const pages = [firstPage].filter(Boolean);
+  if (!shouldCollectScrolledScreenInfo(question)) {
+    return pages;
+  }
+  const scrollAmount = 8;
+  let completedScrolls = 0;
+  for (let index = 1; index <= 2; index += 1) {
+    let scrollResult;
+    try {
+      scrollResult = await runProcess(
+        peekaboo,
+        [
+          "scroll",
+          "--no-remote",
+          "--window-id",
+          String(windowId),
+          "--direction",
+          "down",
+          "--amount",
+          String(scrollAmount),
+          "--json",
+        ],
+        { timeoutMs: 8_000, env },
+      );
+    } catch (error) {
+      pages.push({
+        page_index: index,
+        scroll: { ok: false, error: error.message },
+      });
+      break;
+    }
+    if (scrollResult.code !== 0) {
+      pages.push({
+        page_index: index,
+        scroll: { ok: false, error: summarizePeekabooFailure(scrollResult) },
+      });
+      break;
+    }
+    completedScrolls += 1;
+    let see;
+    try {
+      see = await runProcess(
+        peekaboo,
+        [
+          "see",
+          "--no-remote",
+          "--window-id",
+          String(windowId),
+          "--capture-engine",
+          "cg",
+          "--json",
+        ],
+        { timeoutMs: 20_000, env },
+      );
+    } catch (error) {
+      pages.push({
+        page_index: index,
+        scroll: { ok: true, direction: "down", amount: scrollAmount },
+        capture: { ok: false, error: error.message },
+      });
+      break;
+    }
+    if (see.code !== 0) {
+      pages.push({
+        page_index: index,
+        scroll: { ok: true, direction: "down", amount: scrollAmount },
+        capture: { ok: false, error: summarizePeekabooFailure(see) },
+      });
+      break;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(see.stdout);
+    } catch {
+      parsed = { text: see.stdout.trim() };
+    }
+    const compactResult = compactPeekabooSeeResult(parsed);
+    const ocr = compactResult.screenshot_raw
+      ? await runMacVisionOcr(compactResult.screenshot_raw)
+      : undefined;
+    const screenInformation = ocr
+      ? buildScreenInformationSummary({
+          compactResult,
+          ocr,
+          targetWindow,
+        })
+      : undefined;
+    pages.push({
+      page_index: index,
+      screenshot_raw: compactResult.screenshot_raw,
+      scroll: { ok: true, direction: "down", amount: scrollAmount },
+      result: compactResult,
+      ...(ocr ? { ocr } : {}),
+      ...(screenInformation ? { screen_information: screenInformation } : {}),
+    });
+  }
+  if (completedScrolls > 0) {
+    try {
+      await runProcess(
+        peekaboo,
+        [
+          "scroll",
+          "--no-remote",
+          "--window-id",
+          String(windowId),
+          "--direction",
+          "up",
+          "--amount",
+          String(scrollAmount * completedScrolls),
+          "--json",
+        ],
+        { timeoutMs: 8_000, env },
+      );
+    } catch {}
+  }
+  return pages;
+}
+
 function browserOpenTargetFromPrompt(prompt) {
   const text = currentUserInstruction(prompt);
+  const coupangQuery = coupangSearchQueryFromPrompt(text);
+  if (coupangQuery) {
+    const url = new URL("https://www.coupang.com/np/search");
+    url.searchParams.set("q", coupangQuery);
+    return url.toString();
+  }
   if (/(?:쿠팡|coupang)/i.test(text)) return "https://www.coupang.com/";
   const explicitUrl = text.match(/\bhttps?:\/\/[^\s<>"')]+/i)?.[0];
   if (explicitUrl) return normalizeBrowserUrl(explicitUrl);
+  return undefined;
+}
+
+function coupangSearchQueryFromPrompt(text) {
+  const raw = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (!/(?:쿠팡|coupang)/i.test(raw) || !/(?:검색|찾아|찾기|search)/i.test(raw)) {
+    return undefined;
+  }
+  const patterns = [
+    /(?:쿠팡|coupang)(?:에서|에)?\s+(.{1,80}?)(?:을|를)?\s*(?:검색|찾아|찾기|search)/i,
+    /(?:검색|찾아|찾기|search)(?:어|어로|할|해|해서|하고)?\s+(.{1,80}?)(?:\s*(?:상품|제품|결과|보여|알려|수집|collect|product|item)|[.!?。]|$)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = raw.match(pattern);
+    const query = match?.[1]
+      ?.replace(/(?:상품|제품|결과|목록|보여줘|알려줘|수집해|검색해|찾아줘|검색|찾아|찾기|search)$/i, "")
+      .trim();
+    if (query && !/(?:쿠팡|coupang)$/i.test(query)) return query.slice(0, 80);
+  }
   return undefined;
 }
 
@@ -935,6 +1242,34 @@ async function inspectMacScreen(params = {}) {
           } catch {
             fallbackParsed = { text: fallbackSee.stdout.trim() };
           }
+          const compactResult = compactPeekabooSeeResult(fallbackParsed);
+          const ocr =
+            compactResult.screenshot_raw && /(?:쿠팡|coupang|상품|제품|product|item)/i.test(question)
+              ? await runMacVisionOcr(compactResult.screenshot_raw)
+              : undefined;
+          const screenInformation = ocr
+            ? buildScreenInformationSummary({
+                compactResult,
+                ocr,
+                targetWindow: bestWindow,
+              })
+            : undefined;
+          const firstCollectedPage = {
+            page_index: 0,
+            screenshot_raw: compactResult.screenshot_raw,
+            scroll: { ok: true, direction: "initial", amount: 0 },
+            result: compactResult,
+            ...(ocr ? { ocr } : {}),
+            ...(screenInformation ? { screen_information: screenInformation } : {}),
+          };
+          const collectedPages = await collectScrolledWindowInformation({
+            peekaboo,
+            env,
+            windowId: bestWindow.window_id,
+            question,
+            targetWindow: bestWindow,
+            firstPage: firstCollectedPage,
+          });
           return {
             ok: true,
             socketPath,
@@ -947,7 +1282,29 @@ async function inspectMacScreen(params = {}) {
               window_title: bestWindow.window_title,
               bounds: bestWindow.bounds,
             },
-            result: compactPeekabooSeeResult(fallbackParsed),
+            result: {
+              ...compactResult,
+              ...(ocr ? { ocr } : {}),
+              ...(screenInformation ? { screen_information: screenInformation } : {}),
+              smart_collection: {
+                strategy: "window-id-cg-ocr-scroll",
+                scroll_enabled: shouldCollectScrolledScreenInfo(question),
+                pages: collectedPages.map((page) => ({
+                  page_index: page.page_index,
+                  screenshot_raw: page.screenshot_raw,
+                  scroll: page.scroll,
+                  ocr: page.ocr
+                    ? {
+                        ok: page.ocr.ok,
+                        line_count: page.ocr.line_count,
+                        text: String(page.ocr.text ?? "").slice(0, 6000),
+                      }
+                    : undefined,
+                  screen_information: page.screen_information,
+                })),
+                merged: mergeScreenInformation(collectedPages),
+              },
+            },
           };
         }
         return {
@@ -1920,11 +2277,12 @@ export default {
         if (browserOpenRequest && screenInspectRequest) {
           markBrowserOpenRun(event, context);
           markScreenInspectRun(event, context);
+          const targetUrl = browserOpenTargetFromPrompt(event.prompt) ?? "https://www.coupang.com/";
           return {
             appendSystemContext: [
               "[HARNESS BROWSER OPEN + SCREEN INSPECT — MANDATORY]",
               "The owner asked to open a Mac GUI browser page and then report what is visible.",
-              "First call `harness_browser_open` exactly once. For Coupang use `https://www.coupang.com/`.",
+              `First call \`harness_browser_open\` exactly once with url ${targetUrl}.`,
               "Then call `harness_screen_inspect` exactly once with the current user question, including any read-only login-status question.",
               "Do not use shell, Peekaboo CLI, Playwright, Browser MCP, screenshots, web_fetch, browser-fill, coupang-cart, login, checkout, payment, or any form action for this request.",
               "Report success only from the two Harness tool results. If screen inspection reports missing bridge socket or macOS permissions, answer with that exact operational blocker.",
@@ -1933,11 +2291,12 @@ export default {
         }
         if (browserOpenRequest) {
           markBrowserOpenRun(event, context);
+          const targetUrl = browserOpenTargetFromPrompt(event.prompt) ?? "https://www.coupang.com/";
           return {
             appendSystemContext: [
               "[HARNESS BROWSER OPEN — MANDATORY]",
               "The user asked to open a browser page in the Mac GUI.",
-              "Call `harness_browser_open` exactly once. For Coupang use `https://www.coupang.com/`.",
+              `Call \`harness_browser_open\` exactly once with url ${targetUrl}.`,
               "Do not use shell, Playwright, Browser MCP, browser-fill, coupang-cart, login, checkout, payment, or any form action for this request.",
               "Report success only from the tool result.",
             ].join(" "),
