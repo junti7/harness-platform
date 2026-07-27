@@ -339,7 +339,21 @@ Rules:
 - Inspect-only. Do not click, type, log in, fill forms, add to cart, checkout, pay, or submit anything.
 - Do not run `peekaboo` through shell. The plugin owns the bounded Peekaboo bridge checks.
 - The tool must fail fast when the OpenClaw GUI bridge socket is missing or Screen Recording/Accessibility is not granted.
+- For Coupang product search/price questions, use `smart_collection.merged.strict_product_matches` when present. A strict match means all meaningful query terms appear in the same OCR card neighborhood. Do not attach global `price_candidates` to a product from a different card.
 - If the tool returns `peekaboo_bridge_socket_missing`, `peekaboo_bridge_not_ready`, or `peekaboo_permissions_not_granted`, report that operational blocker directly instead of guessing what is on screen.
+
+### 18B. 쿠팡 검색 결과 상품 상세 진입 (harness_coupang_product_detail_open)
+
+Use `harness_coupang_product_detail_open` only for owner requests that ask to
+open a visible Coupang search-result product detail page, such as
+`70,000원짜리 상품에 들어가서 상세 정보 알려줘`.
+
+Rules:
+- Navigation-only. The tool may click one OCR-matched visible product card.
+- It must not log in, fill forms, add to cart, checkout, pay, order, or submit anything.
+- Pass all known product-name terms from the current or immediately previous context, plus the referenced price when present.
+- After it succeeds, call `harness_screen_inspect` to read the opened detail page.
+- If the exact product card cannot be matched, report the blocker and do not click a different item.
 
 ### 19. 웹 검색 (browser-search)
 

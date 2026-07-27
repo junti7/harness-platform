@@ -5,6 +5,8 @@ import path from "node:path";
 import harnessBridge from "../plugins/harness-bridge/index.js";
 import {
   collectHarnessWorkspaceStats,
+  productCardCandidatesFromOcr,
+  productSearchTermsFromQuestion,
   resolveHarnessPath,
   isDirectSajuNotebookQuery,
   isHighImpactBrowserShellCall,
@@ -31,6 +33,7 @@ assert.ok(pluginManifest.contracts.tools.includes("harness_smartfarm_pump_contro
 assert.ok(pluginManifest.contracts.tools.includes("harness_copilot_usage"));
 assert.ok(pluginManifest.contracts.tools.includes("harness_browser_open"));
 assert.ok(pluginManifest.contracts.tools.includes("harness_screen_inspect"));
+assert.ok(pluginManifest.contracts.tools.includes("harness_coupang_product_detail_open"));
 
 const assembledGmailCronPrompt = `OpenClaw assembled context for this turn:
 <conversation_context>
@@ -106,6 +109,34 @@ assert.equal(
   true,
 );
 assert.equal(shouldEnforceBrowserOpen("쿠팡에서 생수 검색해서 상품 보여줘"), true);
+assert.deepEqual(productSearchTermsFromQuestion("쿠팡에서 푸른친구들 효소력 제품 검색해서 현재 가격 알려줘"), [
+  "푸른친구들",
+  "효소력",
+]);
+assert.deepEqual(
+  productCardCandidatesFromOcr(
+    {
+      lines: [
+        { text: "푸른친구들 낫도효소력 45포 1박스", bounding_box: [0.18, 0.62, 0.18, 0.02] },
+        { text: "70,000원", bounding_box: [0.18, 0.58, 0.08, 0.02] },
+        { text: "다른 브랜드 효소력 1박스", bounding_box: [0.55, 0.62, 0.18, 0.02] },
+        { text: "61,000원", bounding_box: [0.55, 0.58, 0.08, 0.02] },
+        { text: "59,000원", bounding_box: [0.55, 0.55, 0.08, 0.02] },
+      ],
+    },
+    "쿠팡에서 푸른친구들 효소력 제품 검색해서 현재 가격 알려줘",
+    { targetWindow: { bounds: { x: 0, y: 0, width: 1000, height: 1000 } } },
+  ).map((match) => ({
+    title: match.title_candidates[0],
+    current: match.current_price_candidates,
+  })),
+  [
+    {
+      title: "푸른친구들 낫도효소력 45포 1박스",
+      current: ["70,000원"],
+    },
+  ],
+);
 assert.equal(shouldEnforceBrowserOpen("쿠팡 장바구니에 담아줘"), false);
 assert.equal(shouldEnforceBrowserOpen("쿠팡 로그인해줘"), false);
 assert.equal(
@@ -414,6 +445,7 @@ assert.deepEqual(
     "harness_calendar_create",
     "harness_calendar_list",
     "harness_copilot_usage",
+    "harness_coupang_product_detail_open",
     "harness_cron_create",
     "harness_cron_list",
     "harness_cron_remove",
@@ -764,6 +796,83 @@ await hooks.get("agent_end")(
     sessionKey: "agent:main:discord:channel:1492808588777754636",
   },
 );
+const detailTrajectoryDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-coupang-detail-"));
+const priorDetailTrajectoryDir = process.env.OPENCLAW_TRAJECTORY_DIR;
+process.env.OPENCLAW_TRAJECTORY_DIR = detailTrajectoryDir;
+const detailSessionId = "22222222-2222-4222-8222-222222222222";
+fs.writeFileSync(
+  path.join(detailTrajectoryDir, `${detailSessionId}.trajectory.jsonl`),
+  [
+    JSON.stringify({ type: "tool.call", data: { name: "harness_screen_inspect" } }),
+    JSON.stringify({
+      type: "tool.result",
+      data: {
+        name: "harness_screen_inspect",
+        contentItems: [{ text: '{"ok":true,"result":{"smart_collection":{"merged":{"strict_product_matches":[]}}}}' }],
+      },
+    }),
+  ].join("\n"),
+);
+const detailOpenContext = {
+  runId: "run-coupang-detail-open-1",
+  sessionId: detailSessionId,
+  sessionKey: "agent:main:discord:channel:1492808588777754636",
+};
+const detailOpenRouting = await hooks.get("before_prompt_build")(
+  {
+    prompt: discordPrompt("Current user request:\n70,000원짜리 상품에 들어가서 상세 정보 알려줘.", "1158367139141521519"),
+    messages: [],
+    runId: "run-coupang-detail-open-1",
+  },
+  detailOpenContext,
+);
+assert.match(detailOpenRouting.appendSystemContext, /COUPANG PRODUCT DETAIL OPEN \+ SCREEN INSPECT/);
+assert.deepEqual(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "openclawharness_screen_inspect",
+      toolCallId: "call-detail-screen-too-early",
+      params: { question: "상세 화면 읽기" },
+      runId: "run-coupang-detail-open-1",
+    },
+    detailOpenContext,
+  ),
+  {
+    block: true,
+    blockReason:
+      "Coupang detail-open plus screen-inspect routing is active; call harness_coupang_product_detail_open before harness_screen_inspect.",
+  },
+);
+assert.equal(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "openclawharness_coupang_product_detail_open",
+      toolCallId: "call-detail-open",
+      params: { productNameTerms: ["푸른친구들", "효소력"], price: "70,000원" },
+      runId: "run-coupang-detail-open-1",
+    },
+    detailOpenContext,
+  ),
+  undefined,
+);
+assert.equal(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "openclawharness_screen_inspect",
+      toolCallId: "call-detail-screen",
+      params: { question: "상세 화면 읽기" },
+      runId: "run-coupang-detail-open-1",
+    },
+    detailOpenContext,
+  ),
+  undefined,
+);
+await hooks.get("agent_end")({ runId: "run-coupang-detail-open-1" }, detailOpenContext);
+if (priorDetailTrajectoryDir === undefined) {
+  delete process.env.OPENCLAW_TRAJECTORY_DIR;
+} else {
+  process.env.OPENCLAW_TRAJECTORY_DIR = priorDetailTrajectoryDir;
+}
 const nonOwnerScreenInspectRouting = await hooks.get("before_prompt_build")(
   {
     prompt: discordPrompt(

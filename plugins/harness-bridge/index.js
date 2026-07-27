@@ -32,6 +32,8 @@ const BROWSER_OPEN_REQUEST =
   /(?:(?:browser|브라우저|chrome|크롬).{0,40}(?:띄워|열어|켜|접속|open|launch|go\s*to)|(?:쿠팡|coupang).{0,40}(?:접속|열어|띄워|open|launch))/i;
 const COUPANG_SEARCH_REQUEST =
   /(?:쿠팡|coupang).{0,40}(?:검색|찾아|찾기|search).{0,80}(?:상품|제품|결과|보여|알려|수집|collect|product|item)|(?:쿠팡|coupang).{0,20}(?:에서|에)?\s*.{1,60}(?:검색|찾아|찾기|search)/i;
+const COUPANG_DETAIL_OPEN_REQUEST =
+  /(?:(?:쿠팡|coupang).{0,80})?(?:(?:상품|제품).{0,30}(?:들어가|열어|상세)|(?:들어가|열어).{0,30}(?:상품|제품|상세)|[0-9]{1,3}(?:,[0-9]{3})+\s*원\s*짜리.{0,40}(?:들어가|열어|상세))/i;
 const SCREEN_INSPECT_REQUEST =
   /(?:(?:지금|현재|떠\s*있는|열려\s*있는|보이는).{0,50}(?:화면|창|브라우저|browser|chrome|크롬|쿠팡|coupang).{0,50}(?:보여|보이는|뭐|무엇|어떤|확인|읽어|describe|see|visible)|(?:화면|창|screen|window).{0,50}(?:보여|보이는|뭐|무엇|어떤|확인|읽어|describe|see|visible))/i;
 const SCREEN_INSPECT_FOLLOWUP_REQUEST =
@@ -48,6 +50,7 @@ let pluginOwnerSenderIds = new Set();
 let pluginOwnerSessionKeys = new Set();
 const browserOpenExecutionTokens = new Map();
 const screenInspectExecutionTokens = new Map();
+const coupangDetailOpenExecutionTokens = new Map();
 const MAX_TOOL_OUTPUT = 1_000_000;
 const MAX_WRITE_BYTES = 2_000_000;
 const READ_ONLY_GIT_SUBCOMMANDS = new Set([
@@ -249,6 +252,12 @@ export function selectBestPeekabooWindow(windows = [], preferredPattern) {
     })[0];
 }
 
+export {
+  normalizeProductText,
+  productSearchTermsFromQuestion,
+  productCardCandidatesFromOcr,
+};
+
 function compactPeekabooSeeResult(parsed) {
   const data = parsed?.data ?? parsed;
   const elements = Array.isArray(data?.ui_elements) ? data.ui_elements : [];
@@ -337,6 +346,9 @@ async function runMacVisionOcr(imagePath) {
       lines: lines.slice(0, 80).map((line) => ({
         text: sanitizeCollectedText(line.text).slice(0, 200),
         confidence: Number(line.confidence ?? 0),
+        bounding_box: Array.isArray(line.boundingBox)
+          ? line.boundingBox.slice(0, 4).map((value) => Number(value))
+          : undefined,
       })),
       text,
       error: parsed.error,
@@ -353,6 +365,150 @@ function sanitizeCollectedText(value) {
     .trim();
 }
 
+function normalizeProductText(value) {
+  return sanitizeCollectedText(value)
+    .toLowerCase()
+    .replace(/[\s"'`‘’“”()[\]{}<>·ㆍ•|/\\.,:;!?~_\-+*=]/g, "");
+}
+
+function productSearchTermsFromQuestion(question) {
+  const text = currentUserInstruction(question);
+  const query = coupangSearchQueryFromPrompt(text) ?? text;
+  const cleaned = sanitizeCollectedText(query)
+    .replace(/(?:쿠팡|coupang|에서|현재|가격|최저가|검색|찾아|찾기|search|제품|상품|결과|보여줘|알려줘|알려|수집|상세|정보|들어가서|들어가|짜리|원)/gi, " ")
+    .replace(/(?:진입|열어|열기)/gi, " ")
+    .replace(/[0-9]{1,3}(?:,[0-9]{3})+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return [
+    ...new Set(
+      cleaned
+        .split(/\s+/)
+        .map((term) => term.trim())
+        .filter((term) => term.length >= 2)
+        .filter((term) => !/^(?:을|를|이|가|은|는|좀|해줘|해|줘)$/.test(term)),
+    ),
+  ].slice(0, 6);
+}
+
+function priceStringsFromText(text) {
+  const values = [];
+  const pattern = /(?:₩\s*)?([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,})\s*원/g;
+  let match;
+  while ((match = pattern.exec(String(text ?? "")))) {
+    values.push(`${match[1]}원`);
+  }
+  return values;
+}
+
+function firstPriceString(text) {
+  return priceStringsFromText(text)[0];
+}
+
+function ocrLineGeometry(line) {
+  const box = Array.isArray(line?.bounding_box) ? line.bounding_box : [];
+  if (box.length !== 4 || box.some((value) => !Number.isFinite(value))) return undefined;
+  const [x, y, width, height] = box;
+  const top = 1 - y - height;
+  return {
+    left: x,
+    top,
+    width,
+    height,
+    centerX: x + width / 2,
+    centerY: top + height / 2,
+  };
+}
+
+function productCardCandidatesFromOcr(ocr, question, { targetWindow } = {}) {
+  const terms = productSearchTermsFromQuestion(question);
+  if (terms.length === 0 || !Array.isArray(ocr?.lines)) return [];
+  const normalizedTerms = terms.map(normalizeProductText).filter(Boolean);
+  if (normalizedTerms.length === 0) return [];
+  const lines = ocr.lines
+    .map((line, index) => ({
+      index,
+      text: sanitizeCollectedText(line?.text),
+      normalized: normalizeProductText(line?.text),
+      geometry: ocrLineGeometry(line),
+    }))
+    .filter((line) => line.text && line.geometry)
+    .sort((left, right) => left.geometry.top - right.geometry.top || left.geometry.left - right.geometry.left);
+  const cards = [];
+  const seen = new Set();
+  for (const anchor of lines) {
+    if (!normalizedTerms.some((term) => anchor.normalized.includes(term))) continue;
+    const sameColumn = lines.filter((line) => {
+      const dx = Math.abs(line.geometry.centerX - anchor.geometry.centerX);
+      const dy = line.geometry.top - anchor.geometry.top;
+      return dx <= 0.13 && dy >= -0.04 && dy <= 0.14;
+    });
+    const combinedNormalized = normalizeProductText(sameColumn.map((line) => line.text).join(" "));
+    if (!normalizedTerms.every((term) => combinedNormalized.includes(term))) continue;
+    const key = sameColumn.map((line) => line.index).join(",");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const titleLines = sameColumn
+      .filter((line) => !priceStringsFromText(line.text).length)
+      .map((line) => line.text)
+      .filter((line) => !/^(?:광고|로켓배송|무료배송|내일|도착|와우할인|쿠폰|할인|별점|리뷰|\d+%?)$/i.test(line))
+      .slice(0, 8);
+    const priceCandidates = [];
+    const likelyCurrentPriceCandidates = [];
+    for (const line of sameColumn) {
+      const prices = priceStringsFromText(line.text);
+      if (prices.length === 0) continue;
+      for (const price of prices) {
+        if (!priceCandidates.includes(price)) priceCandidates.push(price);
+        if (!/(?:당|100ml|10ml|1개|개당|g당|kg당|ml당)/i.test(line.text) && !likelyCurrentPriceCandidates.includes(price)) {
+          likelyCurrentPriceCandidates.push(price);
+        }
+      }
+    }
+    const titleAnchor =
+      sameColumn.find((line) => normalizedTerms.some((term) => line.normalized.includes(term))) ?? anchor;
+    const bounds = targetWindow?.bounds ?? {};
+    const clickPoint =
+      Number.isFinite(Number(bounds.x)) &&
+      Number.isFinite(Number(bounds.y)) &&
+      Number.isFinite(Number(bounds.width)) &&
+      Number.isFinite(Number(bounds.height))
+        ? {
+            x: Math.round(Number(bounds.x) + titleAnchor.geometry.centerX * Number(bounds.width)),
+            y: Math.round(Number(bounds.y) + titleAnchor.geometry.centerY * Number(bounds.height)),
+          }
+        : undefined;
+    cards.push({
+      matched_terms: terms,
+      title_candidates: [...new Set(titleLines)],
+      price_candidates: priceCandidates.slice(0, 8),
+      current_price_candidates: likelyCurrentPriceCandidates.slice(0, 4),
+      lines: sameColumn.map((line) => line.text).slice(0, 14),
+      click_point: clickPoint,
+    });
+  }
+  return cards.slice(0, 10);
+}
+
+function selectProductMatchForDetail(matches = [], { price, terms = [] } = {}) {
+  const normalizedTerms = terms.map(normalizeProductText).filter(Boolean);
+  const normalizedPrice = normalizeProductText(price);
+  const candidates = matches.filter((match) => {
+    const text = normalizeProductText(
+      [
+        ...(match.title_candidates ?? []),
+        ...(match.lines ?? []),
+        ...(match.price_candidates ?? []),
+        ...(match.current_price_candidates ?? []),
+      ].join(" "),
+    );
+    const termOk = normalizedTerms.length === 0 || normalizedTerms.every((term) => text.includes(term));
+    const priceOk = !normalizedPrice || text.includes(normalizedPrice);
+    return termOk && priceOk && match.click_point;
+  });
+  return candidates[0];
+}
+
 function compactOcrForOutput(ocr, maxChars = 2500) {
   if (!ocr) return undefined;
   return {
@@ -363,7 +519,7 @@ function compactOcrForOutput(ocr, maxChars = 2500) {
   };
 }
 
-function buildScreenInformationSummary({ compactResult, ocr, targetWindow }) {
+function buildScreenInformationSummary({ compactResult, ocr, targetWindow, question = "" }) {
   const ocrLines = Array.isArray(ocr?.lines)
     ? ocr.lines.map((line) => sanitizeCollectedText(line?.text)).filter(Boolean)
     : [];
@@ -403,6 +559,7 @@ function buildScreenInformationSummary({ compactResult, ocr, targetWindow }) {
     },
     product_or_offer_candidates: productOrOfferLines.slice(0, 60),
     price_candidates: priceLines.slice(0, 30),
+    strict_product_matches: productCardCandidatesFromOcr(ocr, question, { targetWindow }),
     login_clues: [...new Set(loginClues)].slice(0, 20),
   };
 }
@@ -418,6 +575,7 @@ function mergeScreenInformation(pages = []) {
     pages: [],
     product_or_offer_candidates: [],
     price_candidates: [],
+    strict_product_matches: [],
     login_clues: [],
   };
   const pushUnique = (target, values) => {
@@ -440,6 +598,32 @@ function mergeScreenInformation(pages = []) {
     });
     pushUnique(merged.product_or_offer_candidates, info.product_or_offer_candidates);
     pushUnique(merged.price_candidates, info.price_candidates);
+    for (const match of info.strict_product_matches ?? []) {
+      const key = normalizeProductText(
+        [
+          ...(match.title_candidates ?? []),
+          ...(match.current_price_candidates ?? []),
+          ...(match.price_candidates ?? []),
+        ].join(" "),
+      );
+      if (!key) continue;
+      const exists = merged.strict_product_matches.some(
+        (candidate) =>
+          normalizeProductText(
+            [
+              ...(candidate.title_candidates ?? []),
+              ...(candidate.current_price_candidates ?? []),
+              ...(candidate.price_candidates ?? []),
+            ].join(" "),
+          ) === key,
+      );
+      if (!exists) {
+        merged.strict_product_matches.push({
+          page_index: page.page_index,
+          ...match,
+        });
+      }
+    }
     pushUnique(merged.login_clues, info.login_clues);
   }
   return {
@@ -447,6 +631,7 @@ function mergeScreenInformation(pages = []) {
     pages: merged.pages,
     product_or_offer_candidates: merged.product_or_offer_candidates.slice(0, 60),
     price_candidates: merged.price_candidates.slice(0, 30),
+    strict_product_matches: merged.strict_product_matches.slice(0, 10),
     login_clues: merged.login_clues.slice(0, 20),
   };
 }
@@ -537,6 +722,7 @@ async function collectScrolledWindowInformation({ peekaboo, env, windowId, quest
           compactResult,
           ocr,
           targetWindow,
+          question,
         })
       : undefined;
     pages.push({
@@ -630,6 +816,10 @@ function isScreenInspectTool(toolName) {
   return String(toolName ?? "").toLowerCase().endsWith("harness_screen_inspect");
 }
 
+function isCoupangDetailOpenTool(toolName) {
+  return String(toolName ?? "").toLowerCase().endsWith("harness_coupang_product_detail_open");
+}
+
 function browserOpenExecutionKeys(event = {}, context = {}) {
   return [
     event.runId,
@@ -662,6 +852,10 @@ function screenInspectExecutionKeys(event = {}, context = {}) {
   ]
     .filter(Boolean)
     .map(String);
+}
+
+function coupangDetailOpenExecutionKeys(event = {}, context = {}) {
+  return screenInspectExecutionKeys(event, context);
 }
 
 function currentSenderId(prompt) {
@@ -1269,6 +1463,7 @@ async function inspectMacScreen(params = {}) {
                 compactResult,
                 ocr,
                 targetWindow: bestWindow,
+                question,
               })
             : undefined;
           const firstCollectedPage = {
@@ -1354,6 +1549,77 @@ async function inspectMacScreen(params = {}) {
     ok: true,
     socketPath,
     result: parsed,
+  };
+}
+
+async function openCoupangProductDetail(params = {}) {
+  const productTermsText = Array.isArray(params.productNameTerms)
+    ? params.productNameTerms.join(" ")
+    : params.productNameTerms;
+  const question = [
+    "쿠팡 검색 결과에서 상품 상세 진입",
+    productTermsText,
+    params.price,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const inspected = await inspectMacScreen({ question });
+  if (!inspected.ok) return inspected;
+  const matches = inspected.result?.smart_collection?.merged?.strict_product_matches ?? [];
+  const terms = Array.isArray(params.productNameTerms)
+    ? params.productNameTerms
+    : sanitizeCollectedText(params.productNameTerms)
+        .split(/\s+/)
+        .filter(Boolean);
+  const match = selectProductMatchForDetail(matches, {
+    price: params.price,
+    terms,
+  });
+  if (!match?.click_point) {
+    return {
+      ok: false,
+      error: "coupang_product_detail_target_not_found",
+      inspected,
+      hint: "No exact product card with all requested terms and price was found on the current Coupang screen.",
+    };
+  }
+  const peekaboo = findPeekabooBinary();
+  if (!peekaboo) {
+    return { ok: false, error: "peekaboo_not_installed" };
+  }
+  const selectedBridge = await selectPeekabooBridge(peekaboo);
+  if (!selectedBridge.socketPath) {
+    return { ok: false, error: "peekaboo_bridge_not_ready", attempted: selectedBridge.attempted };
+  }
+  const windowId = inspected.targetWindow?.window_id;
+  const clickArgs = [
+    "click",
+    "--no-remote",
+    "--coords",
+    `${match.click_point.x},${match.click_point.y}`,
+    "--json",
+  ];
+  if (windowId) clickArgs.splice(2, 0, "--window-id", String(windowId));
+  const click = await runProcess(peekaboo, clickArgs, {
+    timeoutMs: 10_000,
+    env: selectedBridge.env,
+  });
+  if (click.code !== 0) {
+    return {
+      ok: false,
+      error: "coupang_product_detail_click_failed",
+      target: match,
+      detail: summarizePeekabooFailure(click),
+    };
+  }
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  return {
+    ok: true,
+    action: "opened_coupang_product_detail_candidate",
+    target: match,
+    click: {
+      point: match.click_point,
+    },
   };
 }
 
@@ -1771,6 +2037,50 @@ function registerHarnessAssistantTools(api) {
     },
   }));
   api.registerTool((toolContext = {}) => ({
+    name: "harness_coupang_product_detail_open",
+    description:
+      "Open exactly one visible Coupang search-result product detail page by clicking the OCR-matched product card. Owner-gated. It never logs in, adds to cart, buys, pays, or submits forms.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        productNameTerms: {
+          type: "array",
+          items: { type: "string", minLength: 1, maxLength: 80 },
+          maxItems: 6,
+          default: [],
+          description: "Required product-name terms that must all appear in the same visible product card.",
+        },
+        price: {
+          type: "string",
+          maxLength: 40,
+          default: "",
+          description: "Optional visible product price such as 70,000원.",
+        },
+      },
+    },
+    async execute(toolCallId, params) {
+      try {
+        const executionKeys = coupangDetailOpenExecutionKeys({ toolCallId, id: toolCallId }, toolContext);
+        const tokenState = executionKeys
+          .map((key) => coupangDetailOpenExecutionTokens.get(key))
+          .find((state) => state && state.expiresAt > Date.now());
+        if (!tokenState || tokenState.expiresAt <= Date.now()) {
+          for (const key of executionKeys) coupangDetailOpenExecutionTokens.delete(key);
+          return toolText({ ok: false, error: "coupang_detail_open_not_bound_to_routed_owner_request" }, true);
+        }
+        for (const key of tokenState.keys ?? executionKeys) coupangDetailOpenExecutionTokens.delete(key);
+        const result = await openCoupangProductDetail({
+          productNameTerms: params?.productNameTerms ?? tokenState.productNameTerms,
+          price: params?.price ?? tokenState.price,
+        });
+        return toolText(result, !result.ok);
+      } catch (error) {
+        return toolText({ ok: false, error: error.message }, true);
+      }
+    },
+  }));
+  api.registerTool((toolContext = {}) => ({
     name: "harness_notion_archive_create",
     description:
       "Create one internal Harness operating record in the configured Notion archive. Use when the owner explicitly asks to record, save, register, or archive content in Notion. Return the real page ID and URL; never use ChatGPT plugin installation state for this path.",
@@ -2026,6 +2336,7 @@ export default {
     const activeCopilotUsageRuns = new Map();
     const activeBrowserOpenRuns = new Map();
     const activeScreenInspectRuns = new Map();
+    const activeCoupangDetailOpenRuns = new Map();
     const activePumpRuns = new Map();
     const pendingPumpRequests = new Map();
     const runKeys = (event = {}, context = {}) =>
@@ -2050,6 +2361,9 @@ export default {
       }
       for (const [key, state] of activeScreenInspectRuns) {
         if (state.expiresAt <= now) activeScreenInspectRuns.delete(key);
+      }
+      for (const [key, state] of activeCoupangDetailOpenRuns) {
+        if (state.expiresAt <= now) activeCoupangDetailOpenRuns.delete(key);
       }
       for (const [key, state] of browserOpenExecutionTokens) {
         if (state.expiresAt <= now) browserOpenExecutionTokens.delete(key);
@@ -2083,6 +2397,12 @@ export default {
       }
       while (screenInspectExecutionTokens.size > 1024) {
         screenInspectExecutionTokens.delete(screenInspectExecutionTokens.keys().next().value);
+      }
+      while (coupangDetailOpenExecutionTokens.size > 1024) {
+        coupangDetailOpenExecutionTokens.delete(coupangDetailOpenExecutionTokens.keys().next().value);
+      }
+      while (activeCoupangDetailOpenRuns.size > 1024) {
+        activeCoupangDetailOpenRuns.delete(activeCoupangDetailOpenRuns.keys().next().value);
       }
       while (activePumpRuns.size > 1024) {
         activePumpRuns.delete(activePumpRuns.keys().next().value);
@@ -2181,6 +2501,28 @@ export default {
     };
     const clearScreenInspectRun = (event, context) => {
       for (const key of browserRunKeys(event, context)) activeScreenInspectRuns.delete(key);
+    };
+    const markCoupangDetailOpenRun = (event, context) => {
+      pruneRuns();
+      const question = currentUserInstruction(event.prompt);
+      const state = {
+        expiresAt: Date.now() + 3 * 60_000,
+        productNameTerms: productSearchTermsFromQuestion(question),
+        price: firstPriceString(question) ?? "",
+        called: false,
+      };
+      for (const key of browserRunKeys(event, context)) activeCoupangDetailOpenRuns.set(key, state);
+    };
+    const coupangDetailOpenRunState = (event, context) => {
+      pruneRuns();
+      for (const key of browserRunKeys(event, context)) {
+        const state = activeCoupangDetailOpenRuns.get(key);
+        if (state) return state;
+      }
+      return undefined;
+    };
+    const clearCoupangDetailOpenRun = (event, context) => {
+      for (const key of browserRunKeys(event, context)) activeCoupangDetailOpenRuns.delete(key);
     };
     const pumpRunKeys = (event = {}, context = {}) =>
       [event.runId, context.runId].filter(Boolean).map(String);
@@ -2288,16 +2630,43 @@ export default {
         const browserOpenRequest = ownerRequest && shouldEnforceBrowserOpen(event.prompt);
         const screenInspectRequest =
           ownerRequest && shouldEnforceScreenInspect(event.prompt, event.messages, context);
+        const coupangDetailOpenRequest =
+          ownerRequest &&
+          COUPANG_DETAIL_OPEN_REQUEST.test(requestText) &&
+          !HIGH_IMPACT_BROWSER_ACTION.test(requestText) &&
+          hasRecentScreenInspectTrajectory(context);
+        if (coupangDetailOpenRequest) {
+          markCoupangDetailOpenRun(event, context);
+          markScreenInspectRun(event, context);
+          return {
+            appendSystemContext: [
+              "[HARNESS COUPANG PRODUCT DETAIL OPEN + SCREEN INSPECT — MANDATORY]",
+              "The owner asked to open a visible Coupang product detail page and report details.",
+              "First call `harness_coupang_product_detail_open` exactly once. Pass every product-name term known from the current or immediately previous user/product answer context, and pass the referenced price if present.",
+              "Then call `harness_screen_inspect` exactly once to read the opened detail page.",
+              "Do not use shell, Peekaboo CLI, Playwright, Browser MCP, web_fetch, browser-fill, login, cart, checkout, payment, purchase, or form actions.",
+              "If the detail-open tool cannot find an exact visible product card, report that exact blocker; do not click another product or guess.",
+            ].join(" "),
+          };
+        }
         if (browserOpenRequest && screenInspectRequest) {
           markBrowserOpenRun(event, context);
           markScreenInspectRun(event, context);
           const targetUrl = browserOpenTargetFromPrompt(event.prompt) ?? "https://www.coupang.com/";
+          const isCoupangSearch = COUPANG_SEARCH_REQUEST.test(requestText);
           return {
             appendSystemContext: [
               "[HARNESS BROWSER OPEN + SCREEN INSPECT — MANDATORY]",
               "The owner asked to open a Mac GUI browser page and then report what is visible.",
               `First call \`harness_browser_open\` exactly once with url ${targetUrl}.`,
               "Then call `harness_screen_inspect` exactly once with the current user question, including any read-only login-status question.",
+              ...(isCoupangSearch
+                ? [
+                    "For Coupang product search or price questions, answer from `result.smart_collection.merged.strict_product_matches` when it is non-empty.",
+                    "A strict product match means every meaningful search term appears inside the same OCR card neighborhood. Do not combine `price_candidates` from a different item with a product name.",
+                    "If strict_product_matches is empty, say that no exact all-term product match was confirmed instead of guessing from loose OCR candidates.",
+                  ]
+                : []),
               "Do not use shell, Peekaboo CLI, Playwright, Browser MCP, screenshots, web_fetch, browser-fill, coupang-cart, login, checkout, payment, or any form action for this request.",
               "Report success only from the two Harness tool results. If screen inspection reports missing bridge socket or macOS permissions, answer with that exact operational blocker.",
             ].join(" "),
@@ -2501,6 +2870,46 @@ export default {
         }
         const browserOpenState = browserOpenRunState(event, context);
         const screenInspectState = screenInspectRunState(event, context);
+        const coupangDetailOpenState = coupangDetailOpenRunState(event, context);
+        if (coupangDetailOpenState && isCoupangDetailOpenTool(event.toolName)) {
+          const detailToolCallId = String(
+            event.toolCallId ?? event.toolUseId ?? event.itemId ?? event.id ?? "",
+          );
+          if (coupangDetailOpenState.called) {
+            if (coupangDetailOpenState.toolCallId && coupangDetailOpenState.toolCallId === detailToolCallId) {
+              return;
+            }
+            return {
+              block: true,
+              blockReason: "Coupang detail-open routing already used its one allowed tool call.",
+            };
+          }
+          coupangDetailOpenState.called = true;
+          coupangDetailOpenState.toolCallId = detailToolCallId || undefined;
+          const executionKeys = coupangDetailOpenExecutionKeys(event, context);
+          const tokenState = {
+            productNameTerms: coupangDetailOpenState.productNameTerms,
+            price: coupangDetailOpenState.price,
+            expiresAt: Math.min(coupangDetailOpenState.expiresAt, Date.now() + 60_000),
+            keys: executionKeys,
+          };
+          for (const key of executionKeys) coupangDetailOpenExecutionTokens.set(key, tokenState);
+          return;
+        }
+        if (coupangDetailOpenState && screenInspectState && isScreenInspectTool(event.toolName) && !coupangDetailOpenState.called) {
+          return {
+            block: true,
+            blockReason:
+              "Coupang detail-open plus screen-inspect routing is active; call harness_coupang_product_detail_open before harness_screen_inspect.",
+          };
+        }
+        if (coupangDetailOpenState && !(screenInspectState && isScreenInspectTool(event.toolName))) {
+          return {
+            block: true,
+            blockReason:
+              "Coupang detail-open routing is active; call only harness_coupang_product_detail_open then harness_screen_inspect.",
+          };
+        }
         if (browserOpenState && isBrowserOpenTool(event.toolName)) {
           const browserToolCallId = String(
             event.toolCallId ?? event.toolUseId ?? event.itemId ?? event.id ?? "",
@@ -2617,6 +3026,7 @@ export default {
       clearCopilotUsageRun(event, context);
       clearBrowserOpenRun(event, context);
       clearScreenInspectRun(event, context);
+      clearCoupangDetailOpenRun(event, context);
       clearPumpRun(event, context);
     });
   },

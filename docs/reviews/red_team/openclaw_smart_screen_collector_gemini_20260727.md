@@ -45,3 +45,10 @@ Final compaction review:
 - Verdict: `red_team_clear`.
 - Reviewed diff reducing per-page payload for scrolled OCR collection to page index, screenshot path, scroll status, and counts while preserving merged product/price/login candidates.
 - Reviewer found the change preserves extraction targets and materially reduces tool result size below the OpenClaw truncation threshold risk.
+
+Exact product-card matching and detail navigation review:
+
+- Verdict: `red_team_clear`.
+- Initial review blocked the first grouping window because a wide vertical OCR neighborhood could mix prices from adjacent product cards.
+- After tightening the OCR card neighborhood and showing full routing/tool context, reviewer cleared the change.
+- Reviewer verified `strict_product_matches` collects product terms and prices only inside the same OCR card neighborhood, and `harness_coupang_product_detail_open` is owner-gated, token-bound, navigation-only, and still excludes login, cart, checkout, payment, purchase, form, shell, Playwright, Browser MCP, and web_fetch paths.

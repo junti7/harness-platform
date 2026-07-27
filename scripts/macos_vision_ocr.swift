@@ -5,6 +5,7 @@ import ImageIO
 struct OcrLine: Codable {
     let text: String
     let confidence: Float
+    let boundingBox: [Double]
 }
 
 struct OcrOutput: Codable {
@@ -42,7 +43,13 @@ guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
 var recognizedLines: [OcrLine] = []
 let request = VNRecognizeTextRequest { request, error in
     if let error = error {
-        recognizedLines = [OcrLine(text: "ocr_request_failed: \(error.localizedDescription)", confidence: 0)]
+        recognizedLines = [
+            OcrLine(
+                text: "ocr_request_failed: \(error.localizedDescription)",
+                confidence: 0,
+                boundingBox: []
+            )
+        ]
         return
     }
     let observations = (request.results as? [VNRecognizedTextObservation]) ?? []
@@ -50,11 +57,21 @@ let request = VNRecognizeTextRequest { request, error in
         guard let candidate = observation.topCandidates(1).first else { return nil }
         let text = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
-        return OcrLine(text: text, confidence: candidate.confidence)
+        let box = observation.boundingBox
+        return OcrLine(
+            text: text,
+            confidence: candidate.confidence,
+            boundingBox: [
+                Double(box.origin.x),
+                Double(box.origin.y),
+                Double(box.size.width),
+                Double(box.size.height)
+            ]
+        )
     }
 }
 
-request.recognitionLevel = .accurate
+request.recognitionLevel = VNRequestTextRecognitionLevel.accurate
 request.usesLanguageCorrection = true
 request.recognitionLanguages = ["ko-KR", "en-US"]
 
