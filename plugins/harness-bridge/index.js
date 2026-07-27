@@ -1344,6 +1344,160 @@ async function selectPeekabooBridge(peekaboo) {
   return { attempted };
 }
 
+async function inspectPreferredChromeWindow({ peekaboo, env, socketPath, question, directFailure = "screen_mode_skipped" }) {
+  let windowList;
+  try {
+    windowList = await runProcess(peekaboo, ["window", "list", "--no-remote", "--app", "Google Chrome", "--json"], {
+      timeoutMs: 8_000,
+      env,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: "peekaboo_screen_inspect_failed",
+      socketPath,
+      detail: directFailure,
+      fallback_error: error.message,
+    };
+  }
+  if (windowList.code !== 0) {
+    return {
+      ok: false,
+      error: "peekaboo_screen_inspect_failed",
+      socketPath,
+      detail: directFailure,
+      fallback_error: summarizePeekabooFailure(windowList),
+    };
+  }
+  let parsedWindowList;
+  try {
+    parsedWindowList = JSON.parse(windowList.stdout);
+  } catch {
+    parsedWindowList = undefined;
+  }
+  const preferredWindowPattern = /(?:쿠팡|coupang)/i.test(question)
+    ? /(?:쿠팡|coupang)/i
+    : undefined;
+  const bestWindow = selectBestPeekabooWindow(
+    parsedWindowList?.data?.windows ?? [],
+    preferredWindowPattern,
+  );
+  if (!bestWindow?.window_id) {
+    return {
+      ok: false,
+      error: "peekaboo_screen_inspect_failed",
+      socketPath,
+      detail: directFailure,
+      fallback_error: "chrome_window_not_found",
+    };
+  }
+  let fallbackSee;
+  try {
+    fallbackSee = await runProcess(
+      peekaboo,
+      [
+        "see",
+        "--no-remote",
+        "--window-id",
+        String(bestWindow.window_id),
+        "--capture-engine",
+        "cg",
+        "--json",
+      ],
+      { timeoutMs: 20_000, env },
+    );
+  } catch (error) {
+    fallbackSee = {
+      code: 124,
+      stdout: "",
+      stderr: error.message,
+      timedOut: true,
+    };
+  }
+  if (fallbackSee.code !== 0) {
+    return {
+      ok: false,
+      error: "peekaboo_screen_inspect_failed",
+      socketPath,
+      detail: directFailure,
+      fallback_error: summarizePeekabooFailure(fallbackSee),
+      targetWindow: {
+        window_id: bestWindow.window_id,
+        window_title: bestWindow.window_title,
+        bounds: bestWindow.bounds,
+      },
+    };
+  }
+  let fallbackParsed;
+  try {
+    fallbackParsed = JSON.parse(fallbackSee.stdout);
+  } catch {
+    fallbackParsed = { text: fallbackSee.stdout.trim() };
+  }
+  const compactResult = compactPeekabooSeeResult(fallbackParsed);
+  const ocr =
+    compactResult.screenshot_raw && /(?:쿠팡|coupang|상품|제품|product|item)/i.test(question)
+      ? await runMacVisionOcr(compactResult.screenshot_raw)
+      : undefined;
+  const screenInformation = ocr
+    ? buildScreenInformationSummary({
+        compactResult,
+        ocr,
+        targetWindow: bestWindow,
+        question,
+      })
+    : undefined;
+  const firstCollectedPage = {
+    page_index: 0,
+    screenshot_raw: compactResult.screenshot_raw,
+    scroll: { ok: true, direction: "initial", amount: 0 },
+    result: compactResult,
+    ...(ocr ? { ocr: compactOcrForOutput(ocr, 1800) } : {}),
+    ...(screenInformation ? { screen_information: screenInformation } : {}),
+  };
+  const collectedPages = await collectScrolledWindowInformation({
+    peekaboo,
+    env,
+    windowId: bestWindow.window_id,
+    question,
+    targetWindow: bestWindow,
+    firstPage: firstCollectedPage,
+  });
+  return {
+    ok: true,
+    socketPath,
+    method: "window-id-cg-fallback",
+    directFailure,
+    targetWindow: {
+      app: parsedWindowList?.data?.target_application_info?.app_name,
+      bundle_id: parsedWindowList?.data?.target_application_info?.bundle_id,
+      window_id: bestWindow.window_id,
+      window_title: bestWindow.window_title,
+      bounds: bestWindow.bounds,
+    },
+    result: {
+      ...compactResult,
+      ...(!shouldCollectScrolledScreenInfo(question) && ocr
+        ? { ocr: compactOcrForOutput(ocr, 1600) }
+        : {}),
+      ...(!shouldCollectScrolledScreenInfo(question) && screenInformation
+        ? { screen_information: screenInformation }
+        : {}),
+      smart_collection: {
+        strategy: "window-id-cg-ocr-scroll",
+        scroll_enabled: shouldCollectScrolledScreenInfo(question),
+        pages: collectedPages.map((page) => ({
+          page_index: page.page_index,
+          screenshot_raw: page.screenshot_raw,
+          scroll: page.scroll,
+          counts: page.screen_information?.counts,
+        })),
+        merged: mergeScreenInformation(collectedPages),
+      },
+    },
+  };
+}
+
 async function inspectMacScreen(params = {}) {
   const peekaboo = findPeekabooBinary();
   if (!peekaboo) {
@@ -1390,6 +1544,16 @@ async function inspectMacScreen(params = {}) {
   }
 
   const question = String(params.question ?? "").trim() || "Describe the currently visible screen briefly.";
+  if (/(?:쿠팡|coupang)/i.test(question)) {
+    const preferredChromeResult = await inspectPreferredChromeWindow({
+      peekaboo,
+      env,
+      socketPath,
+      question,
+      directFailure: "screen_mode_skipped_for_coupang_window_preference",
+    });
+    if (preferredChromeResult.ok) return preferredChromeResult;
+  }
   let see;
   try {
     see = await runProcess(
