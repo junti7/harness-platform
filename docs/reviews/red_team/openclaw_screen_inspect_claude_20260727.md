@@ -64,3 +64,27 @@ Reviewer output excerpt:
 >
 > Now requires `item.type === "toolCall"` structurally; the `type:"text"` test
 > case explicitly asserts `false`.
+
+## Incremental trajectory fallback review
+
+The first live replay after the structured-message follow-up patch still
+returned `screen_inspect_not_bound_to_routed_owner_request` because the
+`before_prompt_build` hook did not receive historical `messages[]` for that
+OpenClaw route. A trajectory fallback was added and reviewed.
+
+Fix criteria reviewed:
+- No raw prompt or raw JSONL regex should establish trust.
+- Session ID and resolved path must prevent traversal.
+- File reads must be bounded and fail closed.
+- Follow-up trust must require structured trajectory `tool.call` plus
+  `tool.result` records for `harness_screen_inspect`.
+- Assistant text that merely quotes matching strings must remain false.
+
+Follow-up verdict: `red_team_clear`
+
+Reviewer output excerpt:
+> `red_team_clear`
+>
+> Only `type === "tool.call"` and `type === "tool.result"` events with
+> `data.name === "harness_screen_inspect"` are accepted. `model.completed` /
+> `assistant` texts are never consulted.

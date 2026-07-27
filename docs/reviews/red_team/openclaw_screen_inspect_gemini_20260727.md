@@ -67,3 +67,35 @@ Reviewer output excerpt:
 >
 > Strict Message Schema Checks: It only pushes trust markers if role/toolName or
 > structured assistant toolCall exactly names `harness_screen_inspect`.
+
+## Incremental trajectory fallback review
+
+The first live replay after the structured-message follow-up patch still
+returned `screen_inspect_not_bound_to_routed_owner_request` because the
+`before_prompt_build` hook did not receive historical `messages[]` for that
+OpenClaw route. A trajectory fallback was added and reviewed.
+
+Initial findings:
+- Raw regex over trajectory JSONL could match quoted assistant/user text.
+- Session IDs needed strict path confinement.
+- Stale/large trajectory state needed a bounded recent-event window.
+
+Fix applied:
+- Validate UUID-shaped `sessionId`.
+- Resolve the trajectory path under the configured session directory.
+- Read only a 1 MB tail through an opened file descriptor and `fstat`.
+- Parse JSONL events and inspect only the last 80 structured events.
+- Require both `type: "tool.call"` and `type: "tool.result"` with
+  `data.name === "harness_screen_inspect"`.
+- Accept only parsed tool result JSON with `ok === true` or explicit Peekaboo
+  blocker errors.
+
+Follow-up verdict: `red_team_clear`
+
+Reviewer output excerpt:
+> `red_team_clear`
+>
+> Avoids unsafe regex matching over unparsed prompt text / raw trajectory logs.
+>
+> Requires explicit `type: "tool.call"` with
+> `data.name === "harness_screen_inspect"`.

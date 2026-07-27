@@ -2,6 +2,7 @@
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 const SAJU_MARKERS = /사주|명리|일진|운세|십신|원국/;
@@ -87,7 +88,7 @@ export function shouldEnforceBrowserOpen(prompt) {
   return BROWSER_OPEN_REQUEST.test(text) && !HIGH_IMPACT_BROWSER_ACTION.test(text);
 }
 
-export function shouldEnforceScreenInspect(prompt, messages = []) {
+export function shouldEnforceScreenInspect(prompt, messages = [], context = {}) {
   const text = currentUserInstruction(prompt);
   if (SCREEN_INSPECT_REQUEST.test(text) && !HIGH_IMPACT_BROWSER_ACTION.test(text)) {
     return true;
@@ -97,7 +98,7 @@ export function shouldEnforceScreenInspect(prompt, messages = []) {
   }
   return trustedScreenInspectContext(prompt, messages).some((contextText) =>
     SCREEN_INSPECT_CONTEXT_MARKERS.test(contextText),
-  );
+  ) || hasRecentScreenInspectTrajectory(context);
 }
 
 function trustedScreenInspectContext(prompt, messages = []) {
@@ -125,6 +126,86 @@ function trustedScreenInspectContext(prompt, messages = []) {
     }
   }
   return trusted;
+}
+
+function hasRecentScreenInspectTrajectory(context = {}) {
+  const sessionId = String(context.sessionId ?? "");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) {
+    return false;
+  }
+  const baseDir =
+    process.env.OPENCLAW_TRAJECTORY_DIR ||
+    path.join(os.homedir(), ".openclaw", "agents", "main", "sessions");
+  const resolvedBaseDir = path.resolve(baseDir);
+  const trajectoryPath = path.resolve(resolvedBaseDir, `${sessionId}.trajectory.jsonl`);
+  if (!trajectoryPath.startsWith(`${resolvedBaseDir}${path.sep}`)) return false;
+  let fd;
+  try {
+    fd = fs.openSync(trajectoryPath, "r");
+    const stats = fs.fstatSync(fd);
+    const maxBytes = 1_000_000;
+    const start = Math.max(0, stats.size - maxBytes);
+    const buffer = Buffer.alloc(stats.size - start);
+    const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, start);
+    if (bytesRead !== buffer.length) return false;
+    let text = buffer.toString("utf8");
+    if (start > 0) {
+      const firstNewline = text.indexOf("\n");
+      if (firstNewline < 0) return false;
+      text = text.slice(firstNewline + 1);
+    }
+    const events = text
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .slice(-80)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return undefined;
+        }
+      })
+      .filter(Boolean);
+    const sawToolCall = events.some(
+      (event) => event?.type === "tool.call" && event?.data?.name === "harness_screen_inspect",
+    );
+    const sawToolResult = events.some(
+      (event) =>
+        event?.type === "tool.result" &&
+        event?.data?.name === "harness_screen_inspect" &&
+        screenInspectTrajectoryResultMatches(event.data),
+    );
+    return sawToolCall && sawToolResult;
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch {}
+    }
+  }
+}
+
+function screenInspectTrajectoryResultMatches(data = {}) {
+  const items = Array.isArray(data.contentItems) ? data.contentItems : [];
+  return items.some((item) => {
+    if (!item || typeof item !== "object") return false;
+    const text = String(item.text ?? item.content ?? "");
+    try {
+      const parsed = JSON.parse(text);
+      return (
+        parsed?.ok === true ||
+        [
+          "peekaboo_permissions_not_granted",
+          "peekaboo_bridge_socket_missing",
+          "peekaboo_bridge_not_ready",
+        ].includes(String(parsed?.error ?? ""))
+      );
+    } catch {
+      return false;
+    }
+  });
 }
 
 function browserOpenTargetFromPrompt(prompt) {
@@ -1684,7 +1765,10 @@ export default {
             ].join(" "),
           };
         }
-        if (currentSenderIsOwner(event.prompt, context) && shouldEnforceScreenInspect(event.prompt, event.messages)) {
+        if (
+          currentSenderIsOwner(event.prompt, context) &&
+          shouldEnforceScreenInspect(event.prompt, event.messages, context)
+        ) {
           markScreenInspectRun(event, context);
           return {
             appendSystemContext: [
