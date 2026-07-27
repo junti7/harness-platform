@@ -57,3 +57,11 @@ Exact product-card matching and detail navigation review:
 - Price-only detail fallback was initially blocked because arbitrary browser window titles are page-controlled. After restricting title-derived terms to the exact Coupang recommendation title pattern, rejecting URLs/brackets, stripping generic words, requiring at least two terms, and retaining same-card price/click matching, reviewer returned `red_team_clear`.
 - Follow-up review cleared preferring Coupang Chrome window-id capture before generic screen analysis for Coupang questions, preventing another frontmost Chrome window such as YouTube from being used as the product-detail source.
 - Follow-up review cleared reopening a safe Coupang search URL when a detail target is not found but at least two validated product terms are known, followed by reinspection and the same same-card price/term/click match before one navigation click.
+
+Multi-match Coupang card-cluster hardening review:
+
+- Verdict: `red_team_clear`.
+- Initial review blocked the first screenshot-derived fix because fixed Coupang grid math, duplicate title filtering, wide card neighborhoods, and weak current-price ordering could still miss valid cards or mix adjacent prices.
+- Follow-up reviews blocked remaining geometry gaps around header leakage, multiline title truncation, overly wide horizontal clustering, and discount layouts without `%` on the current price line.
+- Final revision switched the primary detector to `price_anchor_card_cluster`, requires price anchors below the header zone, tightens horizontal grouping, excludes sidebar/header/shipping/reward current-price contamination, prefers all-term title lines, keeps grid clustering only as fallback, and adds regression coverage for the owner-marked four-card screenshot, adjacent-card bleed, header promo exclusion, and no-percent sale-price ordering.
+- Reviewer returned `red_team_clear` for detecting all same-card `푸른친구들` + `효소력` matches and enumerating multiple strict matches without combining prices across product cards.

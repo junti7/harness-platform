@@ -152,6 +152,97 @@ assert.deepEqual(
     },
   ],
 );
+const markedCoupangGridMatches = productCardCandidatesFromOcr(
+  {
+    lines: [
+      { text: "'푸른친구들 효소력'에 대한 검색결과", bounding_box: [0.0173, 0.9709, 0.171, 0.0134] },
+      { text: "연관검색어: 푸른친구들하루콩력 하루콩력효소력", bounding_box: [0.0173, 0.9504, 0.1813, 0.0089] },
+      { text: "낫도 효소력 ½", bounding_box: [0.0484, 0.8298, 0.0898, 0.022] },
+      { text: "푸른친구들 낫도효소력 45포, 1박스,", bounding_box: [0.038, 0.7412, 0.1451, 0.0102] },
+      { text: "70,000원 (100g당 51,852원)", bounding_box: [0.0363, 0.7092, 0.1347, 0.0132] },
+      { text: "그레인온 골드 카무트 브랜드밀 효소,", bounding_box: [0.24, 0.7412, 0.16, 0.0102] },
+      { text: "63% 77,420원", bounding_box: [0.24, 0.7092, 0.09, 0.0132] },
+      { text: "효소7", bounding_box: [0.4663, 0.8342, 0.0639, 0.0277] },
+      { text: "푸른친구들 효소력 건강분말 45개입,", bounding_box: [0.4404, 0.72965, 0.1485, 0.0087] },
+      { text: "52,200원 (10g당 3,867원)", bounding_box: [0.4387, 0.696, 0.1244, 0.0151] },
+      { text: "효소)", bounding_box: [0.6546, 0.8372, 0.0674, 0.0233] },
+      { text: "푸른친구들 효소력 프리미엄(3.5g x 45", bounding_box: [0.6425, 0.7412, 0.1606, 0.0102] },
+      { text: "68,000원", bounding_box: [0.6425, 0.724, 0.05, 0.0102] },
+      { text: "11% 59,850원 (10g당 171,000원)", bounding_box: [0.6408, 0.702, 0.1503, 0.0116] },
+      { text: "차전자피 효소력 (3.5g x 45포) 1박스", bounding_box: [0.038, 0.439, 0.16, 0.0116] },
+      { text: "59,000원", bounding_box: [0.038, 0.4183, 0.0691, 0.0163] },
+      { text: "[푸른친구들] 건강체중프로그램, 1세트", bounding_box: [0.639, 0.439, 0.1589, 0.0116] },
+      { text: "187,000원", bounding_box: [0.639, 0.4183, 0.0691, 0.0163] },
+      { text: "낫도효소력/", bounding_box: [0.0518, 0.2311, 0.0864, 0.0189] },
+      { text: "푸른 친구들 낫도 효소력, 45개, 3g", bounding_box: [0.038, 0.13945, 0.1416, 0.0103] },
+      { text: "70,000원", bounding_box: [0.0345, 0.1192, 0.0639, 0.0134] },
+    ],
+  },
+  "쿠팡에서 푸른친구들 효소력 제품 검색해서 현재 가격 알려줘",
+  { targetWindow: { bounds: { x: 0, y: 0, width: 1370, height: 1600 } } },
+);
+assert.deepEqual(
+  markedCoupangGridMatches.map((match) => ({
+    mode: match.detection_mode,
+    title: match.title_candidates[0],
+    current: match.current_price_candidates[0],
+  })),
+  [
+    { mode: "price_anchor_card_cluster", title: "푸른친구들 낫도효소력 45포, 1박스,", current: "70,000원" },
+    { mode: "price_anchor_card_cluster", title: "푸른친구들 효소력 건강분말 45개입,", current: "52,200원" },
+    { mode: "price_anchor_card_cluster", title: "푸른친구들 효소력 프리미엄(3.5g x 45", current: "59,850원" },
+    { mode: "price_anchor_card_cluster", title: "푸른 친구들 낫도 효소력, 45개, 3g", current: "70,000원" },
+  ],
+);
+assert.deepEqual(
+  productCardCandidatesFromOcr(
+    {
+      lines: [
+        { text: "푸른친구들 효소력 멀티라인", bounding_box: [0.05, 0.71, 0.14, 0.01] },
+        { text: "45포 1박스", bounding_box: [0.05, 0.69, 0.08, 0.01] },
+        { text: "70,000원", bounding_box: [0.05, 0.62, 0.06, 0.01] },
+        { text: "옆카드 효소력", bounding_box: [0.25, 0.71, 0.12, 0.01] },
+        { text: "59,000원", bounding_box: [0.25, 0.62, 0.06, 0.01] },
+      ],
+    },
+    "쿠팡에서 푸른친구들 효소력 제품 검색해서 현재 가격 알려줘",
+    { targetWindow: { bounds: { x: 0, y: 0, width: 1000, height: 1000 } } },
+  ).map((match) => ({
+    title: match.title_candidates[0],
+    current: match.current_price_candidates[0],
+    prices: match.price_candidates,
+  })),
+  [{ title: "푸른친구들 효소력 멀티라인", current: "70,000원", prices: ["70,000원"] }],
+);
+assert.deepEqual(
+  productCardCandidatesFromOcr(
+    {
+      lines: [
+        { text: "푸른친구들 효소력 상단 프로모션", bounding_box: [0.05, 0.835, 0.18, 0.01] },
+        { text: "99,000원", bounding_box: [0.05, 0.80, 0.06, 0.01] },
+        { text: "일반 상품명 효소", bounding_box: [0.05, 0.75, 0.12, 0.01] },
+        { text: "20,000원", bounding_box: [0.05, 0.70, 0.06, 0.01] },
+      ],
+    },
+    "쿠팡에서 푸른친구들 효소력 제품 검색해서 현재 가격 알려줘",
+    { targetWindow: { bounds: { x: 0, y: 0, width: 1000, height: 1000 } } },
+  ),
+  [],
+);
+assert.deepEqual(
+  productCardCandidatesFromOcr(
+    {
+      lines: [
+        { text: "푸른친구들 효소력 쿠폰가 상품", bounding_box: [0.05, 0.71, 0.15, 0.01] },
+        { text: "68,000원", bounding_box: [0.05, 0.65, 0.06, 0.01] },
+        { text: "59,850원", bounding_box: [0.05, 0.62, 0.06, 0.01] },
+      ],
+    },
+    "쿠팡에서 푸른친구들 효소력 제품 검색해서 현재 가격 알려줘",
+    { targetWindow: { bounds: { x: 0, y: 0, width: 1000, height: 1000 } } },
+  )[0].current_price_candidates[0],
+  "59,850원",
+);
 assert.equal(shouldEnforceBrowserOpen("쿠팡 장바구니에 담아줘"), false);
 assert.equal(shouldEnforceBrowserOpen("쿠팡 로그인해줘"), false);
 assert.equal(

@@ -419,6 +419,7 @@ function firstPriceString(text) {
 }
 
 function currentPriceStringsFromLine(text) {
+  if (/(?:배송비|적립|캐시|쿠폰|혜택|포인트)/i.test(String(text ?? ""))) return [];
   const prices = priceStringsFromText(text);
   if (prices.length === 0) return [];
   if (/(?:당|100ml|10ml|100g|1개|개당|g당|kg당|ml당)/i.test(String(text ?? ""))) {
@@ -442,20 +443,191 @@ function ocrLineGeometry(line) {
   };
 }
 
-function productCardCandidatesFromOcr(ocr, question, { targetWindow } = {}) {
-  const terms = productSearchTermsFromQuestion(question);
-  if (terms.length === 0 || !Array.isArray(ocr?.lines)) return [];
-  const normalizedTerms = terms.map(normalizeProductText).filter(Boolean);
-  if (normalizedTerms.length === 0) return [];
-  const lines = ocr.lines
-    .map((line, index) => ({
-      index,
-      text: sanitizeCollectedText(line?.text),
-      normalized: normalizeProductText(line?.text),
-      geometry: ocrLineGeometry(line),
-    }))
-    .filter((line) => line.text && line.geometry && line.geometry.top >= 0.14)
-    .sort((left, right) => left.geometry.top - right.geometry.top || left.geometry.left - right.geometry.left);
+function coupangGridCellForLine(line) {
+  const geometry = line.geometry;
+  if (!geometry) return undefined;
+  if (geometry.top < 0.12 || geometry.left >= 0.84) return undefined;
+  const col = Math.max(0, Math.min(4, Math.round((geometry.centerX - 0.11) / 0.202)));
+  const row = Math.max(0, Math.floor((geometry.top - 0.12) / 0.31));
+  return { row, col, key: `${row}:${col}`, rowTop: 0.12 + row * 0.31 };
+}
+
+function titleCandidateLinesFromCardLines(lines, { rowTop } = {}) {
+  const firstPriceIndex = lines.findIndex((line) => priceStringsFromText(line.text).length > 0);
+  return lines
+    .filter((line, index) => firstPriceIndex < 0 || index < firstPriceIndex)
+    .filter((line) => !priceStringsFromText(line.text).length)
+    .filter((line) => (Number.isFinite(rowTop) ? line.geometry.top >= rowTop + 0.095 : true))
+    .map((line) => line.text)
+    .filter((line) => !/^(?:광고|쿠팡추천|로켓배송|무료배송|무료반품|판매자로켓|내일|도착|오늘출발|와우할인|쿠폰|할인|별점|리뷰|\d+%?)$/i.test(line))
+    .filter((line) => !/(?:최대\s*[0-9,]+원\s*적립|도착\s*예정|오늘출발|새벽\s*도착|무료배송|무료반품)/i.test(line))
+    .slice(0, 8);
+}
+
+function buildProductCardCandidate({ cardLines, terms, normalizedTerms, targetWindow, cardKey, row, col, rowTop, titleLinesOverride }) {
+  const titleLines = titleLinesOverride ?? titleCandidateLinesFromCardLines(cardLines, { rowTop });
+  const titleNormalized = normalizeProductText(titleLines.join(" "));
+  if (!normalizedTerms.every((term) => titleNormalized.includes(term))) return undefined;
+  const priceCandidates = [];
+  const likelyCurrentPriceCandidates = [];
+  const discountedPriceCandidates = [];
+  const currentPriceRecords = [];
+  for (const line of cardLines) {
+    const prices = priceStringsFromText(line.text);
+    if (prices.length === 0) continue;
+    for (const price of prices) {
+      if (!priceCandidates.includes(price)) priceCandidates.push(price);
+    }
+    if (/%/.test(line.text)) {
+      for (const price of currentPriceStringsFromLine(line.text)) {
+        if (!discountedPriceCandidates.includes(price)) discountedPriceCandidates.push(price);
+      }
+    }
+    for (const price of currentPriceStringsFromLine(line.text)) {
+      if (!likelyCurrentPriceCandidates.includes(price)) likelyCurrentPriceCandidates.push(price);
+      currentPriceRecords.push({ price, top: line.geometry.top, discounted: /%/.test(line.text) });
+    }
+  }
+  if (priceCandidates.length === 0) return undefined;
+  const verticalCurrentPriceCandidates =
+    discountedPriceCandidates.length > 0
+      ? discountedPriceCandidates
+      : currentPriceRecords
+          .sort((left, right) => right.top - left.top)
+          .map((record) => record.price);
+  const titleAnchor =
+    cardLines.find((line) => normalizedTerms.some((term) => line.normalized.includes(term)) && line.geometry.top >= rowTop + 0.095) ??
+    cardLines.find((line) => normalizedTerms.some((term) => line.normalized.includes(term))) ??
+    cardLines[0];
+  const bounds = targetWindow?.bounds ?? {};
+  const clickPoint =
+    Number.isFinite(Number(bounds.x)) &&
+    Number.isFinite(Number(bounds.y)) &&
+    Number.isFinite(Number(bounds.width)) &&
+    Number.isFinite(Number(bounds.height)) &&
+    titleAnchor
+      ? {
+          x: Math.round(Number(bounds.x) + titleAnchor.geometry.centerX * Number(bounds.width)),
+          y: Math.round(Number(bounds.y) + titleAnchor.geometry.centerY * Number(bounds.height)),
+        }
+      : undefined;
+  return {
+    detection_mode: "grid_card_cluster",
+    card_key: cardKey,
+    row,
+    col,
+    matched_terms: terms,
+    title_candidates: [...new Set(titleLines)],
+    price_candidates: priceCandidates.slice(0, 8),
+    current_price_candidates: [...new Set([...verticalCurrentPriceCandidates, ...likelyCurrentPriceCandidates])].slice(0, 4),
+    lines: cardLines.map((line) => line.text).slice(0, 18),
+    click_point: clickPoint,
+  };
+}
+
+function gridProductCardCandidatesFromOcr(lines, terms, normalizedTerms, { targetWindow } = {}) {
+  const groups = new Map();
+  for (const line of lines) {
+    const cell = coupangGridCellForLine(line);
+    if (!cell) continue;
+    const existing = groups.get(cell.key) ?? { ...cell, lines: [] };
+    existing.lines.push(line);
+    groups.set(cell.key, existing);
+  }
+  const cards = [];
+  for (const group of [...groups.values()].sort((left, right) => left.row - right.row || left.col - right.col)) {
+    const cardLines = group.lines.sort(
+      (left, right) => left.geometry.top - right.geometry.top || left.geometry.left - right.geometry.left,
+    );
+    const candidate = buildProductCardCandidate({
+      cardLines,
+      terms,
+      normalizedTerms,
+      targetWindow,
+      cardKey: group.key,
+      row: group.row,
+      col: group.col,
+      rowTop: group.rowTop,
+    });
+    if (candidate) cards.push(candidate);
+  }
+  return cards;
+}
+
+function badgeOrNonProductLine(text) {
+  return (
+    /^(?:광고|쿠팡추천|로켓배송|무료배송|무료반품|판매자로켓|내일|도착|오늘출발|와우할인|쿠폰|할인|별점|리뷰|\d+%?)$/i.test(text) ||
+    /(?:최대\s*[0-9,]+원\s*적립|도착\s*예정|오늘출발|새벽\s*도착|무료배송|무료반품|배송비)/i.test(text)
+  );
+}
+
+function priceAnchoredProductCardCandidatesFromOcr(lines, terms, normalizedTerms, { targetWindow } = {}) {
+  const candidateByKey = new Map();
+  const priceLines = lines.filter(
+    (line) =>
+      line.geometry.left < 0.84 &&
+      line.geometry.top >= 0.18 &&
+      priceStringsFromText(line.text).length > 0 &&
+      !/(?:적립|배송비|캐시|포인트)/i.test(line.text),
+  );
+  for (const priceLine of priceLines) {
+    const cardLines = lines.filter((line) => {
+      if (line.geometry.left >= 0.84) return false;
+      if (line.geometry.top < 0.18) return false;
+      const dx = Math.abs(line.geometry.centerX - priceLine.geometry.centerX);
+      const dy = line.geometry.top - priceLine.geometry.top;
+      return dx <= 0.105 && dy >= -0.135 && dy <= 0.09;
+    });
+    const titleLines = cardLines
+      .filter((line) => !priceStringsFromText(line.text).length)
+      .filter((line) => {
+        const dy = line.geometry.top - priceLine.geometry.top;
+        return dy >= -0.125 && dy <= 0.035;
+      })
+      .sort((left, right) => {
+        const leftAllTerms = normalizedTerms.every((term) => left.normalized.includes(term)) ? 0 : 1;
+        const rightAllTerms = normalizedTerms.every((term) => right.normalized.includes(term)) ? 0 : 1;
+        return leftAllTerms - rightAllTerms || left.geometry.top - right.geometry.top || left.geometry.left - right.geometry.left;
+      })
+      .map((line) => line.text)
+      .filter((line) => !badgeOrNonProductLine(line))
+      .slice(0, 8);
+    const titleNormalized = normalizeProductText(titleLines.join(" "));
+    if (!normalizedTerms.every((term) => titleNormalized.includes(term))) continue;
+    const row = Math.round(priceLine.geometry.top * 100);
+    const col = Math.round(priceLine.geometry.centerX * 20);
+    const candidate = buildProductCardCandidate({
+      cardLines,
+      terms,
+      normalizedTerms,
+      targetWindow,
+      cardKey: `price:${row}:${col}`,
+      row,
+      col,
+      rowTop: Math.max(0.0, priceLine.geometry.top - 0.14),
+      titleLinesOverride: titleLines,
+    });
+    if (!candidate) continue;
+    candidate.detection_mode = "price_anchor_card_cluster";
+    candidate.title_candidates = [...new Set(titleLines)];
+    candidate.sort_row = Math.round(priceLine.geometry.top * 3);
+    candidate.sort_x = priceLine.geometry.centerX;
+    const key = `${titleNormalized}:${candidate.sort_row}:${Math.round(priceLine.geometry.centerX * 10)}`;
+    const existing = candidateByKey.get(key);
+    if (!existing) {
+      candidateByKey.set(key, candidate);
+      continue;
+    }
+    existing.price_candidates = [...new Set([...existing.price_candidates, ...candidate.price_candidates])].slice(0, 8);
+    existing.current_price_candidates = [...new Set([...existing.current_price_candidates, ...candidate.current_price_candidates])].slice(0, 4);
+    existing.lines = [...new Set([...existing.lines, ...candidate.lines])].slice(0, 18);
+  }
+  return [...candidateByKey.values()].sort((left, right) => {
+    return (left.sort_row ?? 0) - (right.sort_row ?? 0) || (left.sort_x ?? 0) - (right.sort_x ?? 0);
+  });
+}
+
+function anchorProductCardCandidatesFromOcr(lines, terms, normalizedTerms, { targetWindow } = {}) {
   const cards = [];
   const seen = new Set();
   for (const anchor of lines) {
@@ -470,47 +642,44 @@ function productCardCandidatesFromOcr(ocr, question, { targetWindow } = {}) {
     const key = sameColumn.map((line) => line.index).join(",");
     if (seen.has(key)) continue;
     seen.add(key);
-    const titleLines = sameColumn
-      .filter((line) => !priceStringsFromText(line.text).length)
-      .map((line) => line.text)
-      .filter((line) => !/^(?:광고|로켓배송|무료배송|내일|도착|와우할인|쿠폰|할인|별점|리뷰|\d+%?)$/i.test(line))
-      .slice(0, 8);
-    const priceCandidates = [];
-    const likelyCurrentPriceCandidates = [];
-    for (const line of sameColumn) {
-      const prices = priceStringsFromText(line.text);
-      if (prices.length === 0) continue;
-      for (const price of prices) {
-        if (!priceCandidates.includes(price)) priceCandidates.push(price);
-      }
-      for (const price of currentPriceStringsFromLine(line.text)) {
-        if (!likelyCurrentPriceCandidates.includes(price)) likelyCurrentPriceCandidates.push(price);
-      }
-    }
-    if (priceCandidates.length === 0) continue;
-    const titleAnchor =
-      sameColumn.find((line) => normalizedTerms.some((term) => line.normalized.includes(term))) ?? anchor;
-    const bounds = targetWindow?.bounds ?? {};
-    const clickPoint =
-      Number.isFinite(Number(bounds.x)) &&
-      Number.isFinite(Number(bounds.y)) &&
-      Number.isFinite(Number(bounds.width)) &&
-      Number.isFinite(Number(bounds.height))
-        ? {
-            x: Math.round(Number(bounds.x) + titleAnchor.geometry.centerX * Number(bounds.width)),
-            y: Math.round(Number(bounds.y) + titleAnchor.geometry.centerY * Number(bounds.height)),
-          }
-        : undefined;
-    cards.push({
-      matched_terms: terms,
-      title_candidates: [...new Set(titleLines)],
-      price_candidates: priceCandidates.slice(0, 8),
-      current_price_candidates: likelyCurrentPriceCandidates.slice(0, 4),
-      lines: sameColumn.map((line) => line.text).slice(0, 14),
-      click_point: clickPoint,
+    const rowTop = Math.max(0.12, Math.min(...sameColumn.map((line) => line.geometry.top)));
+    const candidate = buildProductCardCandidate({
+      cardLines: sameColumn,
+      terms,
+      normalizedTerms,
+      targetWindow,
+      cardKey: `anchor:${key}`,
+      row: undefined,
+      col: undefined,
+      rowTop,
     });
+    if (candidate) {
+      candidate.detection_mode = "anchor_neighborhood_fallback";
+      cards.push(candidate);
+    }
   }
-  return cards.slice(0, 10);
+  return cards;
+}
+
+function productCardCandidatesFromOcr(ocr, question, { targetWindow } = {}) {
+  const terms = productSearchTermsFromQuestion(question);
+  if (terms.length === 0 || !Array.isArray(ocr?.lines)) return [];
+  const normalizedTerms = terms.map(normalizeProductText).filter(Boolean);
+  if (normalizedTerms.length === 0) return [];
+  const lines = ocr.lines
+    .map((line, index) => ({
+      index,
+      text: sanitizeCollectedText(line?.text),
+      normalized: normalizeProductText(line?.text),
+      geometry: ocrLineGeometry(line),
+    }))
+    .filter((line) => line.text && line.geometry && line.geometry.top >= 0.14)
+    .sort((left, right) => left.geometry.top - right.geometry.top || left.geometry.left - right.geometry.left);
+  const priceAnchoredCards = priceAnchoredProductCardCandidatesFromOcr(lines, terms, normalizedTerms, { targetWindow });
+  if (priceAnchoredCards.length > 0) return priceAnchoredCards.slice(0, 10);
+  const gridCards = gridProductCardCandidatesFromOcr(lines, terms, normalizedTerms, { targetWindow });
+  if (gridCards.length > 0) return gridCards.slice(0, 10);
+  return anchorProductCardCandidatesFromOcr(lines, terms, normalizedTerms, { targetWindow }).slice(0, 10);
 }
 
 function selectProductMatchForDetail(matches = [], { price, terms = [] } = {}) {
@@ -2884,7 +3053,8 @@ export default {
               ...(isCoupangSearch
                 ? [
                     "For Coupang product search or price questions, answer from `result.smart_collection.merged.strict_product_matches` when it is non-empty.",
-                    "A strict product match means every meaningful search term appears inside the same OCR card neighborhood. Do not combine `price_candidates` from a different item with a product name.",
+                    "A strict product match means every meaningful search term appears inside the same OCR product-card cluster. Do not combine `price_candidates` from a different item with a product name.",
+                    "If multiple strict_product_matches are present, enumerate every match unless the owner explicitly asks for only the cheapest, first, or one selected product.",
                     "If strict_product_matches is empty, say that no exact all-term product match was confirmed instead of guessing from loose OCR candidates.",
                   ]
                 : []),
