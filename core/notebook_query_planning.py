@@ -151,6 +151,17 @@ def build_query_plan(question: str, enrichers: Iterable[Enricher] = ()) -> Noteb
             "각 항목은 결론만 나열하지 말고 근거와 현실적인 발현 가능성을 설명하라. "
             "출생지·절입시각 등 입력이 부족하면 대운이나 용신을 확정하지 말라.",
         ]
+        section_requirements = [
+            requirement
+            for requirement in requirements
+            if requirement
+            in ("전체운", "재물운", "건강운", "대인운", "주의사항")
+        ]
+        if section_requirements:
+            expert_contract.append(
+                "사용자가 요청한 아래 라벨은 표제나 문장 안에 그대로 포함하라: "
+                + ", ".join(section_requirements)
+            )
         time_requirements = {
             requirement
             for requirement in requirements
@@ -244,6 +255,18 @@ def assess_notebook_answer(plan: NotebookQueryPlan, answer: str) -> tuple[bool, 
         elif requirement == "피할 시간대":
             if requirement not in assigned_time_categories:
                 reasons.append("missing:피할 시간대")
+        elif requirement == "재물운":
+            if not any(marker in text for marker in ("재물운", "금전운", "재물")):
+                reasons.append("missing:재물운")
+        elif requirement == "건강운":
+            if not any(marker in text for marker in ("건강운", "건강")):
+                reasons.append("missing:건강운")
+        elif requirement == "대인운":
+            if not any(marker in text for marker in ("대인운", "대인관계", "인간관계")):
+                reasons.append("missing:대인운")
+        elif requirement == "주의사항":
+            if not any(marker in text for marker in ("주의사항", "주의점", "주의할 점", "주의할")):
+                reasons.append("missing:주의사항")
         elif requirement not in text:
             reasons.append(f"missing:{requirement}")
     if any(item.provider.startswith("sxtwl-") for item in plan.supplemental_facts):

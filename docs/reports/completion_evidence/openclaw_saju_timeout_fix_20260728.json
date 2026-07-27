@@ -25,6 +25,11 @@
     "plugins/harness-bridge/index.js: give JS wrapper a 30s margin over the Python query budget.",
     "plugins/harness-bridge/index.js: return sanitized reason codes instead of raw system error details.",
     "tests/test_openclaw_saju_bridge_timeout.py: add regression coverage for lock contention, OSError cleanup, budget exhaustion, and lock release."
+    ,
+    "core/saju_calendar.py: when OpenClaw sends a stale explicit target date plus Korean relative today, treat today as the authoritative KST target date instead of creating a third date.",
+    "core/saju_calendar.py: accept unambiguous 오전/오후/AM/PM birth-hour expressions while still rejecting ambiguous 밤 N시.",
+    "core/notebook_query_planning.py: preserve requested canonical Saju section labels in the expert prompt and accept safe section aliases in delivery checks.",
+    "tests/test_notebook_query_planning.py: add stale-date override, 12-hour birth time, section-label, and section-alias regression tests."
   ],
   "verification": [
     {
@@ -52,6 +57,24 @@
       "result": "73 passed"
     },
     {
+      "name": "Follow-up saju planning and timeout regression tests",
+      "target": "tests",
+      "command": ".venv/bin/python -m pytest tests/test_notebook_query_planning.py tests/test_openclaw_saju_bridge_timeout.py",
+      "result": "78 passed"
+    },
+    {
+      "name": "Exact OpenClaw-generated failed saju query replay",
+      "target": "runtime api cli",
+      "command": "printf '<redacted OpenClaw-generated stale-date 오전 query>' | .venv/bin/python scripts/openclaw_codex_bridge.py saju-notebook-query --question-stdin --format json --timeout 300",
+      "result": "ok true; cache hit false; cache status ready; latency 183211ms"
+    },
+    {
+      "name": "Exact OpenClaw-generated saju JS wrapper replay",
+      "target": "runtime api node tool wrapper",
+      "command": "node --input-type=module -e 'import { runSajuBridge } from \"./plugins/harness-bridge/index.js\"; ...'",
+      "result": "ok true; delivery_policy relay_delivery_text_verbatim; delivery_text length 6923"
+    },
+    {
       "name": "JS sanitized error-code branch test",
       "target": "tests node",
       "command": "node --input-type=module -e 'import { sajuBridgeErrorCode } from \"./plugins/harness-bridge/index.js\"; ...'",
@@ -75,6 +98,12 @@
       },
       {
         "artifact": "../llm_outputs/gemini_openclaw_saju_timeout_fix_final_review_20260728.md"
+      },
+      {
+        "artifact": "../llm_outputs/claude_openclaw_saju_query_contract_followup_20260728.md"
+      },
+      {
+        "artifact": "../llm_outputs/gemini_openclaw_saju_query_contract_followup_20260728.md"
       }
     ],
     "verdict": "red_team_clear",

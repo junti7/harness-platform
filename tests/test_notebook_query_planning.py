@@ -99,6 +99,32 @@ def test_delivery_contract_accepts_complete_answer_with_limitations():
     assert passed, reasons
 
 
+def test_delivery_contract_accepts_saju_domain_section_aliases():
+    plan = build_query_plan("재물운, 건강운, 인간관계운, 주의할 점과 근거")
+    answer = (
+        "종합운: 오늘 운세는 신중함이 필요합니다 [1]. "
+        "재물: 계약과 지출은 보수적으로 봅니다 [2]. "
+        "건강: 무리하지 않고 휴식을 둡니다 [3]. "
+        "대인관계: 말투를 낮추고 충돌을 피합니다 [4]. "
+        "주의점: 중요한 결정은 재확인합니다 [5]. "
+        "원국 일간과 세운 월운 일진의 천간 지지 작용을 근거로 본 추정이며, "
+        "해석 한계를 고려해 실제 사건을 단정하지 않습니다."
+    )
+    passed, reasons = assess_notebook_answer(plan, answer)
+    assert passed, reasons
+
+
+def test_saju_expert_prompt_preserves_requested_section_labels():
+    plan = build_query_plan(
+        "1990년 1월 1일 10시생 남자 2026년 7월 28일 재물운, 건강운, 인간관계운, 주의할 점",
+        (enrich_saju_question,),
+    )
+    assert "재물운" in plan.grounded_question
+    assert "건강운" in plan.grounded_question
+    assert "대인운" in plan.grounded_question
+    assert "주의사항" in plan.grounded_question
+
+
 def test_delivery_contract_accepts_semantic_time_window_headings():
     plan = build_query_plan("길한 시각과 피해야 할 시각")
     answer = "길한 시각은 경오시입니다. 피해야 할 시각은 신미시입니다."
@@ -184,6 +210,17 @@ def test_relative_saju_date_does_not_duplicate_same_explicit_target():
     assert enrich_saju_question(normalized) is not None
 
 
+def test_relative_saju_date_overrides_stale_explicit_target():
+    normalized = normalize_relative_saju_dates(
+        "1990년 1월 1일 10시 출생 남성의 2026년 7월 27일 오늘 운세",
+        today=date(2026, 7, 28),
+    )
+    assert "2026년 7월 27일" not in normalized
+    assert normalized.count("2026년 7월 28일") == 1
+    assert "해당일(Asia/Seoul 기준 오늘)" in normalized
+    assert enrich_saju_question(normalized) is not None
+
+
 def test_saju_enricher_fails_closed_for_23_hour_day_boundary():
     with pytest.raises(ValueError, match="23시"):
         enrich_saju_question("양력 1974년 2월 2일 자시 23시생 남자 2026년 7월 24일 운세")
@@ -194,12 +231,26 @@ def test_saju_enricher_fails_closed_for_adjacent_23_hour_token():
         enrich_saju_question("양력 1974년 2월 2일 자시23시생 남자 2026년 7월 24일 운세")
 
 
-@pytest.mark.parametrize("marker", ["오후", "PM", "p.m."])
-def test_saju_enricher_rejects_twelve_hour_clock(marker):
+@pytest.mark.parametrize(
+    "time_text",
+    [
+        "오전 10시",
+        "오후 3시",
+        "PM 3시",
+        "p.m. 12시",
+    ],
+)
+def test_saju_enricher_accepts_unambiguous_twelve_hour_clock(time_text):
+    result = enrich_saju_question(
+        f"양력 1974년 2월 2일 {time_text}생 남자 2026년 7월 24일 운세"
+    )
+    assert result is not None
+    assert result.facts[0].startswith("출생 양력 1974-02-02")
+
+
+def test_saju_enricher_rejects_ambiguous_night_hour():
     with pytest.raises(ValueError, match="24시간제"):
-        enrich_saju_question(
-            f"양력 1974년 2월 2일 {marker} 3시생 남자 2026년 7월 24일 운세"
-        )
+        enrich_saju_question("양력 1974년 2월 2일 밤 3시생 남자 2026년 7월 24일 운세")
 
 
 def test_saju_enricher_does_not_treat_duration_as_birth_hour():

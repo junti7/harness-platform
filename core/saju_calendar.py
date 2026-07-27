@@ -53,6 +53,17 @@ def normalize_relative_saju_dates(
     }
     if target in explicit_dates:
         return pattern.sub(f"해당일(Asia/Seoul 기준 {marker})", question)
+    explicit_matches = list(_DATE_RE.finditer(question))
+    if len(explicit_matches) >= 2:
+        latest = max(
+            explicit_matches,
+            key=lambda match: tuple(
+                int(match.group(part)) for part in ("year", "month", "day")
+            ),
+        )
+        resolved = f"{target.year}년 {target.month}월 {target.day}일"
+        corrected = f"{question[:latest.start()]}{resolved}{question[latest.end():]}"
+        return pattern.sub(f"해당일(Asia/Seoul 기준 {marker})", corrected)
     resolved = f"{target.year}년 {target.month}월 {target.day}일"
     replacement = f"{resolved}(Asia/Seoul 기준 {marker})"
     return pattern.sub(replacement, question)
@@ -129,13 +140,8 @@ def enrich_saju_question(question: str) -> SupplementalFacts | None:
         r"(?<!\d)(?:00|0)\s*시", birth_context
     ):
         raise ValueError("자시는 00시 출생만 지원하며 23시는 야자시 경계로 지원하지 않습니다")
-    twelve_hour_marker = re.search(
-        r"(?:오전|오후|밤|a\.?m\.?|p\.?m\.?)",
-        birth_context,
-        flags=re.IGNORECASE,
-    )
-    if twelve_hour_marker and re.search(r"\d{1,2}\s*시", birth_context):
-        raise ValueError("오전/오후 시간은 24시간제 출생 시각으로 명시해야 합니다")
+    if re.search(r"밤\s*\d{1,2}\s*시\s*(?:생|출생)", birth_context):
+        raise ValueError("밤 시간 표현은 24시간제 출생 시각으로 명시해야 합니다")
     if re.search(r"23\s*시", birth_context):
         raise ValueError("23시는 야자시 일주 경계 규칙이 필요하므로 현재 지원하지 않습니다")
     branch_matches = [
@@ -146,11 +152,33 @@ def enrich_saju_question(question: str) -> SupplementalFacts | None:
     if len(branch_matches) > 1:
         raise ValueError("출생 시지 표현이 둘 이상이라 모호합니다")
     hour = branch_matches[0][1] if branch_matches else None
-    any_numeric_birth_hour = re.search(r"\d{1,2}\s*시\s*(?:생|출생)", birth_context)
-    explicit_hour = re.search(
-        r"(?<!\d)(?P<hour>[01]?\d|2[0-3])\s*시\s*(?:생|출생)", birth_context
+    twelve_hour = re.search(
+        r"(?P<marker>오전|오후|a\.?m\.?|p\.?m\.?)\s*"
+        r"(?P<hour>\d{1,2})\s*시\s*(?:생|출생)",
+        birth_context,
+        flags=re.IGNORECASE,
     )
-    if any_numeric_birth_hour and not explicit_hour:
+    if twelve_hour:
+        if hour is not None:
+            raise ValueError("출생 시지와 숫자 시각이 중복되어 모호합니다")
+        twelve_value = int(twelve_hour.group("hour"))
+        if not 1 <= twelve_value <= 12:
+            raise ValueError("오전/오후 출생 시각은 1시부터 12시 사이로 입력해야 합니다")
+        marker = twelve_hour.group("marker").lower()
+        if marker in {"오전", "am", "a.m."}:
+            hour = 0 if twelve_value == 12 else twelve_value
+        else:
+            hour = 12 if twelve_value == 12 else twelve_value + 12
+    any_numeric_birth_hour = re.search(r"\d{1,2}\s*시\s*(?:생|출생)", birth_context)
+    explicit_hour = (
+        None
+        if twelve_hour
+        else re.search(
+            r"(?<!\d)(?P<hour>[01]?\d|2[0-3])\s*시\s*(?:생|출생)",
+            birth_context,
+        )
+    )
+    if any_numeric_birth_hour and not (explicit_hour or twelve_hour):
         raise ValueError("출생 시각은 00시부터 23시 사이 24시간제로 입력해야 합니다")
     if explicit_hour:
         if hour is not None:
