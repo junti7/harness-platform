@@ -22,6 +22,7 @@
       "harness_calendar_list",
       "harness_calendar_create",
       "harness_browser_open",
+      "harness_screen_inspect",
       "harness_notion_archive_create",
       "harness_cron_list",
       "harness_cron_create",

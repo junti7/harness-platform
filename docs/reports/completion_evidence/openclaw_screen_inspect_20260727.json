@@ -1,0 +1,113 @@
+{
+  "task": "OpenClaw owner-gated Mac GUI screen inspection fail-fast",
+  "status": "residual_risk",
+  "created_at": "2026-07-27T10:27:47Z",
+  "problem": "The owner request '지금 떠 있는 쿠팡 화면에 어떤 것들이 보여?' timed out because OpenClaw routed screen reading through raw Peekaboo shell commands. The OpenClaw GUI bridge socket was missing and the local Peekaboo runtime lacked Screen Recording/Accessibility permissions, so three Peekaboo shell calls waited until the user interrupted them after about 122 seconds.",
+  "implementation": [
+    {
+      "path": "plugins/harness-bridge/index.js",
+      "summary": "Added owner-gated harness_screen_inspect routing, one-shot execution-token binding, direct-call rejection, Peekaboo shell blocking during routed screen-inspection turns, and bounded fail-fast Peekaboo bridge/permission/screen checks."
+    },
+    {
+      "path": "plugins/harness-bridge/openclaw.plugin.json",
+      "summary": "Exposed harness_screen_inspect in contracts.tools."
+    },
+    {
+      "path": "plugins/harness-bridge/skills/harness-control/SKILL.md",
+      "summary": "Documented the native inspect-only screen route and explicit bridge/permission blocker reporting."
+    },
+    {
+      "path": "tests/test_harness_bridge_plugin.mjs",
+      "summary": "Added regression coverage for screen-inspection intent detection, quoted-context isolation, owner/non-owner routing, direct-call rejection, Peekaboo shell blocking, one-shot tool-call binding, and duplicate toolCallId idempotence."
+    }
+  ],
+  "verification": [
+    {
+      "name": "local OpenClaw plugin regression",
+      "target": "native Mac GUI screen-inspection plugin route",
+      "command": "node tests/test_harness_bridge_plugin.mjs",
+      "result": "PASS"
+    },
+    {
+      "name": "local Python bridge regression",
+      "target": "OpenClaw bridge API/runtime regression",
+      "command": ".venv/bin/python -m pytest -q tests/test_openclaw_bridge.py",
+      "result": "PASS: 34 passed"
+    },
+    {
+      "name": "syntax and whitespace checks",
+      "target": "OpenClaw plugin JavaScript source",
+      "command": "node --check plugins/harness-bridge/index.js && git diff --check",
+      "result": "PASS"
+    },
+    {
+      "name": "local fail-fast smoke",
+      "target": "harness_screen_inspect direct routed execute path",
+      "command": "node inline smoke registering harness_screen_inspect, routing owner screen request, and executing the bound tool",
+      "result": "PASS: elapsedMs=5, returned ok=false error=peekaboo_not_installed instead of hanging; local MBP does not have Peekaboo installed."
+    },
+    {
+      "name": "Codex Red Team",
+      "target": "OpenClaw screen-inspection safety route",
+      "artifact": "../../reviews/red_team/openclaw_screen_inspect_codex_20260727.md",
+      "result": "red_team_clear"
+    },
+    {
+      "name": "Antigravity Gemini Flash Low safety review",
+      "target": "OpenClaw screen-inspection safety route",
+      "artifact": "../../reviews/red_team/openclaw_screen_inspect_gemini_20260727.md",
+      "result": "safety_review_clear"
+    },
+    {
+      "name": "Antigravity Claude Sonnet safety review",
+      "target": "OpenClaw screen-inspection safety route",
+      "artifact": "../../reviews/red_team/openclaw_screen_inspect_claude_20260727.md",
+      "result": "red_team_clear"
+    }
+  ],
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-27T19:27:00+09:00",
+      "summary": "Confirmed completion reporting requires requirement-to-evidence mapping and real runtime verification before complete."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-27T19:27:00+09:00",
+      "summary": "Confirmed origin/main source of truth, deploy_to_macmini deployment, and real runtime entrypoint verification requirements."
+    }
+  ],
+  "red_team": {
+    "models": [
+      "Codex",
+      "Gemini",
+      "Claude"
+    ],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/openclaw_screen_inspect_codex_20260727.md",
+        "verdict": "red_team_clear"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_screen_inspect_gemini_20260727.md",
+        "verdict": "safety_review_clear"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_screen_inspect_claude_20260727.md",
+        "verdict": "red_team_clear"
+      }
+    ],
+    "verdict": "red_team_clear",
+    "note": "Claude CLI hung without output and was interrupted; Claude Sonnet through agy returned red_team_clear. Gemini Flash Low returned safety_review_clear."
+  },
+  "deploy": {
+    "status": "pending",
+    "method": "scripts/deploy_to_macmini.sh scoped file deployment, followed by openclaw plugins install --force, gateway restart --safe, plugins doctor, and live Discord replay",
+    "result": "PENDING"
+  },
+  "production_replay": {
+    "status": "pending",
+    "result": "PENDING"
+  },
+  "residual_risk": "Actual screen contents can only be returned after the OpenClaw GUI bridge socket exists and macOS Screen Recording/Accessibility permissions are granted. The implemented fix prevents the prior 122-second hang and returns that blocker explicitly."
+}

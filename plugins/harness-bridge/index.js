@@ -29,6 +29,8 @@ const NOTION_ARCHIVE_REQUEST =
   /(?:notion|노션)(?:에|으로|에다가|\s){0,6}.{0,40}(?:기록|저장|등록|아카이브|다시\s*실행|재실행|archive|save|record|create|retry|run\s+again)/i;
 const BROWSER_OPEN_REQUEST =
   /(?:(?:browser|브라우저|chrome|크롬).{0,40}(?:띄워|열어|켜|접속|open|launch|go\s*to)|(?:쿠팡|coupang).{0,40}(?:접속|열어|띄워|open|launch))/i;
+const SCREEN_INSPECT_REQUEST =
+  /(?:(?:지금|현재|떠\s*있는|열려\s*있는|보이는).{0,50}(?:화면|창|브라우저|browser|chrome|크롬|쿠팡|coupang).{0,50}(?:보여|보이는|뭐|무엇|어떤|확인|읽어|describe|see|visible)|(?:화면|창|screen|window).{0,50}(?:보여|보이는|뭐|무엇|어떤|확인|읽어|describe|see|visible))/i;
 const HIGH_IMPACT_BROWSER_ACTION =
   /구매|결제|주문|장바구니|로그인|buy|pay|order|cart|checkout|login/i;
 const HIGH_IMPACT_BROWSER_BRIDGE_COMMAND =
@@ -36,6 +38,7 @@ const HIGH_IMPACT_BROWSER_BRIDGE_COMMAND =
 let pluginOwnerSenderIds = new Set();
 let pluginOwnerSessionKeys = new Set();
 const browserOpenExecutionTokens = new Map();
+const screenInspectExecutionTokens = new Map();
 const MAX_TOOL_OUTPUT = 1_000_000;
 const MAX_WRITE_BYTES = 2_000_000;
 const READ_ONLY_GIT_SUBCOMMANDS = new Set([
@@ -80,6 +83,11 @@ export function shouldEnforceBrowserOpen(prompt) {
   return BROWSER_OPEN_REQUEST.test(text) && !HIGH_IMPACT_BROWSER_ACTION.test(text);
 }
 
+export function shouldEnforceScreenInspect(prompt) {
+  const text = currentUserInstruction(prompt);
+  return SCREEN_INSPECT_REQUEST.test(text) && !HIGH_IMPACT_BROWSER_ACTION.test(text);
+}
+
 function browserOpenTargetFromPrompt(prompt) {
   const text = currentUserInstruction(prompt);
   if (/(?:쿠팡|coupang)/i.test(text)) return "https://www.coupang.com/";
@@ -111,7 +119,28 @@ function isBrowserOpenTool(toolName) {
   return String(toolName ?? "").toLowerCase().endsWith("harness_browser_open");
 }
 
+function isScreenInspectTool(toolName) {
+  return String(toolName ?? "").toLowerCase().endsWith("harness_screen_inspect");
+}
+
 function browserOpenExecutionKeys(event = {}, context = {}) {
+  return [
+    event.runId,
+    context.runId,
+    event.toolCallId,
+    context.toolCallId,
+    event.toolUseId,
+    context.toolUseId,
+    event.itemId,
+    context.itemId,
+    event.id,
+    context.id,
+  ]
+    .filter(Boolean)
+    .map(String);
+}
+
+function screenInspectExecutionKeys(event = {}, context = {}) {
   return [
     event.runId,
     context.runId,
@@ -260,6 +289,16 @@ export function isHighImpactBrowserShellCall(toolName, params = {}) {
         /browser|coupang/i.test(serialized) &&
         /fill|setup|cart|pay|approve/i.test(serialized))
     );
+  } catch {
+    return true;
+  }
+}
+
+export function isPeekabooShellCall(toolName, params = {}) {
+  if (!isShellTool(toolName)) return false;
+  try {
+    const serialized = JSON.stringify(params);
+    return /\bpeekaboo\b|PEEKABOO_BRIDGE_SOCKET|OpenClaw\/bridge\.sock/i.test(serialized);
   } catch {
     return true;
   }
@@ -430,7 +469,7 @@ export function runProcess(executable, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, {
       cwd: options.cwd ?? harnessRepoRoot(),
-      env: process.env,
+      env: { ...process.env, ...(options.env ?? {}) },
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
@@ -470,6 +509,184 @@ function toolText(value, isError = false) {
   return {
     content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }],
     ...(isError ? { isError: true } : {}),
+  };
+}
+
+function findPeekabooBinary() {
+  const candidates = [
+    process.env.PEEKABOO_BIN,
+    "/opt/homebrew/bin/peekaboo",
+    "/usr/local/bin/peekaboo",
+    "/opt/homebrew/Cellar/peekaboo/3.2.0/bin/peekaboo",
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return undefined;
+}
+
+function peekabooBridgeSocketPath() {
+  return (
+    process.env.PEEKABOO_BRIDGE_SOCKET ||
+    path.join(process.env.HOME ?? "", "Library", "Application Support", "OpenClaw", "bridge.sock")
+  );
+}
+
+function objectContainsValue(value, predicate) {
+  if (predicate(value)) return true;
+  if (Array.isArray(value)) return value.some((entry) => objectContainsValue(entry, predicate));
+  if (value && typeof value === "object") {
+    return Object.values(value).some((entry) => objectContainsValue(entry, predicate));
+  }
+  return false;
+}
+
+function summarizePeekabooFailure(result) {
+  const combined = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.trim();
+  return combined.slice(0, 2000);
+}
+
+async function inspectMacScreen(params = {}) {
+  const peekaboo = findPeekabooBinary();
+  if (!peekaboo) {
+    return {
+      ok: false,
+      error: "peekaboo_not_installed",
+      action: "Install Peekaboo or set PEEKABOO_BIN to the CLI path.",
+    };
+  }
+  const socketPath = peekabooBridgeSocketPath();
+  const env = { PEEKABOO_BRIDGE_SOCKET: socketPath };
+  if (!fs.existsSync(socketPath)) {
+    return {
+      ok: false,
+      error: "peekaboo_bridge_socket_missing",
+      socketPath,
+      action:
+        "Start the OpenClaw GUI bridge and confirm the bridge socket exists before asking for screen inspection.",
+    };
+  }
+
+  let status;
+  try {
+    status = await runProcess(peekaboo, ["bridge", "status", "--json"], {
+      timeoutMs: 3_000,
+      env,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: "peekaboo_bridge_status_timeout_or_error",
+      socketPath,
+      detail: error.message,
+    };
+  }
+  if (status.code !== 0) {
+    return {
+      ok: false,
+      error: "peekaboo_bridge_status_failed",
+      socketPath,
+      detail: summarizePeekabooFailure(status),
+    };
+  }
+  let statusJson;
+  try {
+    statusJson = JSON.parse(status.stdout);
+  } catch {
+    return {
+      ok: false,
+      error: "peekaboo_bridge_status_invalid_json",
+      socketPath,
+      detail: summarizePeekabooFailure(status),
+    };
+  }
+  const routedToGui = objectContainsValue(
+    statusJson,
+    (value) => typeof value === "string" && value.toLowerCase() === "gui",
+  );
+  const hasBridgeFailure = objectContainsValue(
+    statusJson,
+    (value) => typeof value === "string" && /failure|no such file|permission/i.test(value),
+  );
+  if (!routedToGui || hasBridgeFailure) {
+    return {
+      ok: false,
+      error: "peekaboo_bridge_not_ready",
+      socketPath,
+      action: "Restart/Open the OpenClaw GUI bridge; status must route to hostKind=gui.",
+      status: statusJson.data ?? statusJson,
+    };
+  }
+
+  let permissions;
+  try {
+    permissions = await runProcess(peekaboo, ["permissions"], { timeoutMs: 3_000, env });
+  } catch (error) {
+    return {
+      ok: false,
+      error: "peekaboo_permissions_timeout_or_error",
+      socketPath,
+      detail: error.message,
+    };
+  }
+  if (permissions.code !== 0 || /Not Granted/i.test(permissions.stdout)) {
+    return {
+      ok: false,
+      error: "peekaboo_permissions_not_granted",
+      socketPath,
+      permissions: permissions.stdout.trim(),
+      action:
+        "Grant Screen Recording and Accessibility to OpenClaw/Peekaboo in macOS Privacy & Security.",
+    };
+  }
+
+  const question = String(params.question ?? "").trim() || "Describe the currently visible screen briefly.";
+  let see;
+  try {
+    see = await runProcess(
+      peekaboo,
+      [
+        "see",
+        "--mode",
+        "screen",
+        "--screen-index",
+        "0",
+        "--analyze",
+        question.slice(0, 500),
+        "--json",
+      ],
+      { timeoutMs: 15_000, env },
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      error: "peekaboo_screen_inspect_timeout_or_error",
+      socketPath,
+      detail: error.message,
+    };
+  }
+  if (see.code !== 0) {
+    return {
+      ok: false,
+      error: "peekaboo_screen_inspect_failed",
+      socketPath,
+      detail: summarizePeekabooFailure(see),
+    };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(see.stdout);
+  } catch {
+    parsed = { text: see.stdout.trim() };
+  }
+  return {
+    ok: true,
+    socketPath,
+    result: parsed,
   };
 }
 
@@ -852,6 +1069,41 @@ function registerHarnessAssistantTools(api) {
     },
   }));
   api.registerTool((toolContext = {}) => ({
+    name: "harness_screen_inspect",
+    description:
+      "Inspect the currently visible Mac GUI screen through the OpenClaw Peekaboo bridge. Use for owner requests asking what is visible on the current screen or browser window. Fails fast when the GUI bridge socket or macOS Screen Recording/Accessibility permissions are missing.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        question: {
+          type: "string",
+          maxLength: 500,
+          default: "Describe the currently visible screen briefly.",
+        },
+      },
+    },
+    async execute(toolCallId, params) {
+      try {
+        const executionKeys = screenInspectExecutionKeys({ toolCallId, id: toolCallId }, toolContext);
+        const tokenState = executionKeys
+          .map((key) => screenInspectExecutionTokens.get(key))
+          .find((state) => state && state.expiresAt > Date.now());
+        if (!tokenState || tokenState.expiresAt <= Date.now()) {
+          for (const key of executionKeys) screenInspectExecutionTokens.delete(key);
+          return toolText({ ok: false, error: "screen_inspect_not_bound_to_routed_owner_request" }, true);
+        }
+        for (const key of tokenState.keys ?? executionKeys) screenInspectExecutionTokens.delete(key);
+        const result = await inspectMacScreen({
+          question: tokenState.question || params?.question,
+        });
+        return toolText(result, !result.ok);
+      } catch (error) {
+        return toolText({ ok: false, error: error.message }, true);
+      }
+    },
+  }));
+  api.registerTool((toolContext = {}) => ({
     name: "harness_notion_archive_create",
     description:
       "Create one internal Harness operating record in the configured Notion archive. Use when the owner explicitly asks to record, save, register, or archive content in Notion. Return the real page ID and URL; never use ChatGPT plugin installation state for this path.",
@@ -1106,6 +1358,7 @@ export default {
     const activeKnowledgeRuns = new Map();
     const activeCopilotUsageRuns = new Map();
     const activeBrowserOpenRuns = new Map();
+    const activeScreenInspectRuns = new Map();
     const activePumpRuns = new Map();
     const pendingPumpRequests = new Map();
     const runKeys = (event = {}, context = {}) =>
@@ -1128,8 +1381,14 @@ export default {
       for (const [key, state] of activeBrowserOpenRuns) {
         if (state.expiresAt <= now) activeBrowserOpenRuns.delete(key);
       }
+      for (const [key, state] of activeScreenInspectRuns) {
+        if (state.expiresAt <= now) activeScreenInspectRuns.delete(key);
+      }
       for (const [key, state] of browserOpenExecutionTokens) {
         if (state.expiresAt <= now) browserOpenExecutionTokens.delete(key);
+      }
+      for (const [key, state] of screenInspectExecutionTokens) {
+        if (state.expiresAt <= now) screenInspectExecutionTokens.delete(key);
       }
       for (const [key, state] of activePumpRuns) {
         if (state.expiresAt <= now) activePumpRuns.delete(key);
@@ -1149,8 +1408,14 @@ export default {
       while (activeBrowserOpenRuns.size > 1024) {
         activeBrowserOpenRuns.delete(activeBrowserOpenRuns.keys().next().value);
       }
+      while (activeScreenInspectRuns.size > 1024) {
+        activeScreenInspectRuns.delete(activeScreenInspectRuns.keys().next().value);
+      }
       while (browserOpenExecutionTokens.size > 1024) {
         browserOpenExecutionTokens.delete(browserOpenExecutionTokens.keys().next().value);
+      }
+      while (screenInspectExecutionTokens.size > 1024) {
+        screenInspectExecutionTokens.delete(screenInspectExecutionTokens.keys().next().value);
       }
       while (activePumpRuns.size > 1024) {
         activePumpRuns.delete(activePumpRuns.keys().next().value);
@@ -1224,6 +1489,26 @@ export default {
     };
     const clearBrowserOpenRun = (event, context) => {
       for (const key of browserRunKeys(event, context)) activeBrowserOpenRuns.delete(key);
+    };
+    const markScreenInspectRun = (event, context) => {
+      pruneRuns();
+      const state = {
+        expiresAt: Date.now() + 3 * 60_000,
+        question: currentUserInstruction(event.prompt),
+        called: false,
+      };
+      for (const key of browserRunKeys(event, context)) activeScreenInspectRuns.set(key, state);
+    };
+    const screenInspectRunState = (event, context) => {
+      pruneRuns();
+      for (const key of browserRunKeys(event, context)) {
+        const state = activeScreenInspectRuns.get(key);
+        if (state) return state;
+      }
+      return undefined;
+    };
+    const clearScreenInspectRun = (event, context) => {
+      for (const key of browserRunKeys(event, context)) activeScreenInspectRuns.delete(key);
     };
     const pumpRunKeys = (event = {}, context = {}) =>
       [event.runId, context.runId].filter(Boolean).map(String);
@@ -1336,6 +1621,18 @@ export default {
               "Call `harness_browser_open` exactly once. For Coupang use `https://www.coupang.com/`.",
               "Do not use shell, Playwright, Browser MCP, browser-fill, coupang-cart, login, checkout, payment, or any form action for this request.",
               "Report success only from the tool result.",
+            ].join(" "),
+          };
+        }
+        if (currentSenderIsOwner(event.prompt, context) && shouldEnforceScreenInspect(event.prompt)) {
+          markScreenInspectRun(event, context);
+          return {
+            appendSystemContext: [
+              "[HARNESS SCREEN INSPECT — MANDATORY]",
+              "The user asked what is currently visible on the Mac GUI screen or browser window.",
+              "Call `harness_screen_inspect` exactly once with the current user question.",
+              "Do not use shell, Peekaboo CLI, Playwright, Browser MCP, screenshots, or browser automation directly for this request.",
+              "If the tool reports missing bridge socket or macOS permissions, answer with that exact operational blocker instead of waiting or guessing.",
             ].join(" "),
           };
         }
@@ -1563,6 +1860,45 @@ export default {
               "Browser-open routing is active; call only harness_browser_open once.",
           };
         }
+        const screenInspectState = screenInspectRunState(event, context);
+        if (screenInspectState && isScreenInspectTool(event.toolName)) {
+          const screenToolCallId = String(
+            event.toolCallId ?? event.toolUseId ?? event.itemId ?? event.id ?? "",
+          );
+          if (screenInspectState.called) {
+            if (screenInspectState.toolCallId && screenInspectState.toolCallId === screenToolCallId) {
+              return;
+            }
+            return {
+              block: true,
+              blockReason: "Screen-inspect routing already used its one allowed tool call.",
+            };
+          }
+          screenInspectState.called = true;
+          screenInspectState.toolCallId = screenToolCallId || undefined;
+          const executionKeys = screenInspectExecutionKeys(event, context);
+          const tokenState = {
+            question: screenInspectState.question,
+            expiresAt: Math.min(screenInspectState.expiresAt, Date.now() + 60_000),
+            keys: executionKeys,
+          };
+          for (const key of executionKeys) screenInspectExecutionTokens.set(key, tokenState);
+          return;
+        }
+        if (screenInspectState && (isShellTool(event.toolName) || isPeekabooShellCall(event.toolName, event.params))) {
+          return {
+            block: true,
+            blockReason:
+              "Screen-inspect routing is active; call only harness_screen_inspect once. Do not run Peekaboo through shell.",
+          };
+        }
+        if (screenInspectState) {
+          return {
+            block: true,
+            blockReason:
+              "Screen-inspect routing is active; call only harness_screen_inspect once.",
+          };
+        }
         if (!isDirectSajuNotebookQuery(event.toolName, event.params, isSajuRun(event, context))) {
           return;
         }
@@ -1579,6 +1915,7 @@ export default {
       clearKnowledgeRun(event, context);
       clearCopilotUsageRun(event, context);
       clearBrowserOpenRun(event, context);
+      clearScreenInspectRun(event, context);
       clearPumpRun(event, context);
     });
   },

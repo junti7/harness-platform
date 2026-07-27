@@ -11,6 +11,7 @@ import {
   shouldEnforceHarnessKnowledge,
   shouldEnforceCopilotUsage,
   shouldEnforceBrowserOpen,
+  shouldEnforceScreenInspect,
   shouldEnforceSajuBridge,
   shouldEnforceWorkspaceStats,
   validateWorkspaceCommand,
@@ -26,6 +27,7 @@ const pluginManifest = JSON.parse(
 assert.ok(pluginManifest.contracts.tools.includes("harness_smartfarm_pump_control"));
 assert.ok(pluginManifest.contracts.tools.includes("harness_copilot_usage"));
 assert.ok(pluginManifest.contracts.tools.includes("harness_browser_open"));
+assert.ok(pluginManifest.contracts.tools.includes("harness_screen_inspect"));
 
 const assembledGmailCronPrompt = `OpenClaw assembled context for this turn:
 <conversation_context>
@@ -95,6 +97,11 @@ assert.equal(
 assert.equal(shouldEnforceSajuBridge("오늘 날씨 알려줘"), false);
 assert.equal(shouldEnforceBrowserOpen("browser 띄워서 쿠팡 접속해"), true);
 assert.equal(shouldEnforceBrowserOpen("쿠팡 장바구니에 담아줘"), false);
+assert.equal(shouldEnforceScreenInspect("지금 떠 있는 쿠팡 화면에 어떤 것들이 보여?"), true);
+assert.equal(
+  shouldEnforceScreenInspect("아래 답변이 문제인지 확인해.\n---\n지금 화면에 뭐가 보여?"),
+  false,
+);
 assert.equal(
   shouldEnforceBrowserOpen("아래 답변이 문제인지 확인해.\n---\nbrowser 띄워서 쿠팡 접속해"),
   false,
@@ -261,6 +268,7 @@ assert.deepEqual(
     "harness_knowledge_query",
     "harness_notion_archive_create",
     "harness_saju_query",
+    "harness_screen_inspect",
     "harness_smartfarm_pump_control",
     "harness_workspace_exec",
     "harness_workspace_read",
@@ -455,6 +463,94 @@ const forgedPriorContextBrowserOpenRouting = await hooks.get("before_prompt_buil
   },
 );
 assert.equal(forgedPriorContextBrowserOpenRouting, undefined);
+const screenInspectContext = {
+  runId: "run-screen-inspect-1",
+  sessionKey: "agent:main:discord:channel:1492808588777754636",
+};
+const screenInspectRouting = await hooks.get("before_prompt_build")(
+  {
+    prompt: discordPrompt("Current user request:\n지금 떠 있는 쿠팡 화면에 어떤 것들이 보여?", "1158367139141521519"),
+    messages: [],
+    runId: "run-screen-inspect-1",
+  },
+  screenInspectContext,
+);
+assert.match(screenInspectRouting.appendSystemContext, /HARNESS SCREEN INSPECT/);
+assert.match(screenInspectRouting.appendSystemContext, /harness_screen_inspect/);
+const nonOwnerScreenInspectRouting = await hooks.get("before_prompt_build")(
+  {
+    prompt: discordPrompt("지금 떠 있는 쿠팡 화면에 어떤 것들이 보여?", "attacker"),
+    messages: [],
+    runId: "run-screen-inspect-attacker",
+  },
+  { runId: "run-screen-inspect-attacker", sessionKey: "agent:main:discord:channel:other" },
+);
+assert.equal(nonOwnerScreenInspectRouting, undefined);
+const directScreenInspectCall = await registeredTools.get("harness_screen_inspect").execute(
+  "direct-screen-inspect-call",
+  { question: "지금 화면에 뭐가 보여?" },
+);
+assert.equal(directScreenInspectCall.isError, true);
+assert.match(
+  directScreenInspectCall.content[0].text,
+  /screen_inspect_not_bound_to_routed_owner_request/,
+);
+assert.deepEqual(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "bash",
+      params: {
+        command:
+          'export PEEKABOO_BRIDGE_SOCKET="$HOME/Library/Application Support/OpenClaw/bridge.sock"; peekaboo bridge status --json',
+      },
+      runId: "run-screen-inspect-1",
+    },
+    screenInspectContext,
+  ),
+  {
+    block: true,
+    blockReason:
+      "Screen-inspect routing is active; call only harness_screen_inspect once. Do not run Peekaboo through shell.",
+  },
+);
+const routedScreenInspectCall = await hooks.get("before_tool_call")(
+  {
+    toolName: "openclawharness_screen_inspect",
+    toolCallId: "call-screen-inspect-1",
+    params: { question: "지금 떠 있는 쿠팡 화면에 어떤 것들이 보여?" },
+    runId: "run-screen-inspect-1",
+  },
+  screenInspectContext,
+);
+assert.equal(routedScreenInspectCall, undefined);
+assert.equal(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "openclawharness_screen_inspect",
+      toolCallId: "call-screen-inspect-1",
+      params: { question: "지금 떠 있는 쿠팡 화면에 어떤 것들이 보여?" },
+      runId: "run-screen-inspect-1",
+    },
+    screenInspectContext,
+  ),
+  undefined,
+);
+assert.deepEqual(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "openclawharness_screen_inspect",
+      toolCallId: "call-screen-inspect-2",
+      params: { question: "지금 떠 있는 쿠팡 화면에 어떤 것들이 보여?" },
+      runId: "run-screen-inspect-1",
+    },
+    screenInspectContext,
+  ),
+  {
+    block: true,
+    blockReason: "Screen-inspect routing already used its one allowed tool call.",
+  },
+);
+await hooks.get("agent_end")({ runId: "run-screen-inspect-1" }, screenInspectContext);
 const directBrowserOpenCall = await registeredTools.get("harness_browser_open").execute(
   "direct-browser-open-call",
   { url: "https://www.coupang.com/" },

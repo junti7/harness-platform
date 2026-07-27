@@ -330,6 +330,17 @@ Rules:
 - Do not use shell, Playwright, Browser MCP, `browser-fill`, or `coupang-cart` for this open-only request.
 - If the request asks for login, cart, checkout, payment, order, or purchase, do not route it here.
 
+### 18A. 현재 Mac GUI 화면 확인 (harness_screen_inspect)
+
+Use the native `harness_screen_inspect` tool for owner requests such as
+`지금 떠 있는 쿠팡 화면에 어떤 것들이 보여?`.
+
+Rules:
+- Inspect-only. Do not click, type, log in, fill forms, add to cart, checkout, pay, or submit anything.
+- Do not run `peekaboo` through shell. The plugin owns the bounded Peekaboo bridge checks.
+- The tool must fail fast when the OpenClaw GUI bridge socket is missing or Screen Recording/Accessibility is not granted.
+- If the tool returns `peekaboo_bridge_socket_missing`, `peekaboo_bridge_not_ready`, or `peekaboo_permissions_not_granted`, report that operational blocker directly instead of guessing what is on screen.
+
 ### 19. 웹 검색 (browser-search)
 
 ```bash
