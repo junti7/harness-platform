@@ -6,7 +6,7 @@
   "implementation": [
     {
       "path": "plugins/harness-bridge/index.js",
-      "summary": "Added owner-gated harness_screen_inspect routing, one-shot execution-token binding, direct-call rejection, Peekaboo shell blocking during routed screen-inspection turns, bounded fail-fast Peekaboo bridge/permission/screen checks, hardened bridge selection across OpenClaw and Peekaboo sockets, structured follow-up routing for '다시 확인해' after a prior harness_screen_inspect tool call/result, and a parsed trajectory fallback for OpenClaw routes that omit historical messages in before_prompt_build."
+      "summary": "Added owner-gated harness_screen_inspect routing, one-shot execution-token binding, direct-call rejection, Peekaboo shell blocking during routed screen-inspection turns, bounded fail-fast Peekaboo bridge/permission/screen checks, hardened bridge selection across OpenClaw and Peekaboo sockets, structured follow-up routing for '다시 확인해' after a prior harness_screen_inspect tool call/result, a parsed trajectory fallback for OpenClaw routes that omit historical messages in before_prompt_build, and a Chrome window-id/cg fallback when Peekaboo screen/analyze mode fails."
     },
     {
       "path": "plugins/harness-bridge/openclaw.plugin.json",
@@ -18,7 +18,7 @@
     },
     {
       "path": "tests/test_harness_bridge_plugin.mjs",
-      "summary": "Added regression coverage for screen-inspection intent detection, quoted-context isolation, owner/non-owner routing, direct-call rejection, Peekaboo shell blocking, one-shot tool-call binding, duplicate toolCallId idempotence, fail-closed follow-up routing when prior context is only user-controlled text, and trajectory fallback that parses structured tool.call/tool.result events instead of trusting quoted text."
+      "summary": "Added regression coverage for screen-inspection intent detection, quoted-context isolation, owner/non-owner routing, direct-call rejection, Peekaboo shell blocking, one-shot tool-call binding, duplicate toolCallId idempotence, fail-closed follow-up routing when prior context is only user-controlled text, trajectory fallback that parses structured tool.call/tool.result events instead of trusting quoted text, and largest on-screen Peekaboo window selection."
     }
   ],
   "verification": [
@@ -87,6 +87,12 @@
       "target": "OpenClaw Discord session 0af9a822-adf9-42ac-8466-c198e563b8db",
       "command": "openclaw agent --session-id 0af9a822-adf9-42ac-8466-c198e563b8db --session-key agent:main:discord:channel:1492808588777754636 --message '다시 확인해' --thinking low --timeout 120 --json",
       "result": "PASS: final no-deliver replay runId=084ef033-6dca-4556-9941-f89ee8abb218 returned status ok with toolSummary calls=1 tool=harness_screen_inspect failures=0; trajectory seq 4 tool.call harness_screen_inspect and seq 5 tool.result ok=false error=peekaboo_permissions_not_granted, socketPath=/Users/juntaepark/Library/Application Support/Peekaboo/bridge.sock, Screen Recording Not Granted, Accessibility Granted, Event Synthesizing Granted; no screen_inspect_not_bound_to_routed_owner_request"
+    },
+    {
+      "name": "Mac mini permission and window-id capture probe",
+      "target": "Peekaboo Chrome capture after Screen Recording reset and re-authorization",
+      "command": "peekaboo permissions status --json; peekaboo window list --no-remote --app 'Google Chrome' --json; peekaboo image --no-remote --window-id 265 --capture-engine cg --path /tmp/openclaw_chrome_265_cg.png --json; peekaboo see --no-remote --window-id 265 --capture-engine cg --json",
+      "result": "PASS for permissions and window-id capture: Screen Recording, Accessibility, and Event Synthesizing all Granted; Chrome window list returned window_id=265 title='새 탭 - Chrome'; window-id image capture succeeded and produced /tmp/openclaw_chrome_265_cg.png; window-id see without AI analyze succeeded with application_name='Google Chrome', window_title='새 탭 - Chrome', element_count=46, screenshot_raw path, and UI elements. Direct screen/app analyze path still fails because Peekaboo AI analyze requires OPENAI_API_KEY or times out on SCShareableContent, so plugin now falls back to the same read-only --no-remote window-id/cg UI map path that passed manually."
     }
   ],
   "governance_bootstrap": [
@@ -133,5 +139,5 @@
     "status": "residual_risk",
     "result": "PASS for timeout fix and routing: live Discord replay runId=e8e80195-534f-4483-a317-9216f861ecd5 sessionId=0af9a822-adf9-42ac-8466-c198e563b8db called harness_screen_inspect exactly once and delivered a response. Follow-up no-deliver replay runId=084ef033-6dca-4556-9941-f89ee8abb218 also called harness_screen_inspect exactly once. Trajectory seq 4 shows tool.call harness_screen_inspect; seq 5 shows tool.result content {\"ok\":false,\"error\":\"peekaboo_permissions_not_granted\",\"socketPath\":\"/Users/juntaepark/Library/Application Support/Peekaboo/bridge.sock\",...} with Screen Recording Not Granted and Accessibility Granted. The previous screen_inspect_not_bound_to_routed_owner_request is resolved. The remaining blocker is macOS Screen Recording permission, not OpenClaw routing or timeout."
   },
-  "residual_risk": "Actual screen contents can only be returned after macOS Screen Recording permission is granted to the selected Peekaboo/OpenClaw bridge host. Accessibility is currently granted. The implemented fix prevents the prior 122-second hang, blocks raw Peekaboo shell fallback, exposes a native owner-gated tool, routes vague follow-ups from verified prior screen-inspection trajectory, and returns the permission blocker explicitly."
+  "residual_risk": "Actual screen contents depend on the currently visible Chrome window. Screen Recording, Accessibility, and Event Synthesizing are now granted after adding node, peekaboo, and sshd-keygen-wrapper to Screen Recording. The implemented fix prevents the prior 122-second hang, blocks raw Peekaboo shell fallback, exposes a native owner-gated tool, routes vague follow-ups from verified prior screen-inspection trajectory, and falls back to a read-only Chrome window-id/cg UI map when screen/analyze capture fails."
 }
