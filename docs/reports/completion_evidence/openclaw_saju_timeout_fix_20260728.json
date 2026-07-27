@@ -1,0 +1,83 @@
+{
+  "task": "openclaw_saju_timeout_fix_20260728",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-28T07:45:00+09:00",
+      "summary": "Completion reporting requires real verification evidence, completion guard evidence, and exact file/test/deploy state."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-28T07:45:00+09:00",
+      "summary": "Origin/main is the source of truth; production changes require commit, push, deploy_to_macmini, and real entrypoint verification."
+    }
+  ],
+  "codex_cli_rule": "Codex CLI uses caveman ultra by default unless explicitly disabled; code change summaries must keep changed files, verification, commit, and deploy state exact.",
+  "problem": "OpenClaw reported two harness_saju_query timeout failures and could not return today's Saju fortune.",
+  "root_cause": [
+    "The JS harness_saju_query wrapper had the same 300s wall-clock timeout as the Python bridge request timeout, while the Python path can spend time on status/source verification, cache lock waiting, and nlm helper timeout margins.",
+    "The Python query timeout was applied mainly to the nlm call, not to the whole cache-lock plus query budget.",
+    "OpenClaw tool error output hid the actionable timeout reason."
+  ],
+  "changes": [
+    "scripts/openclaw_codex_bridge.py: bound cache lock waiting and nlm query timeout to the overall query budget.",
+    "plugins/harness-bridge/index.js: give JS wrapper a 30s margin over the Python query budget.",
+    "plugins/harness-bridge/index.js: return sanitized reason codes instead of raw system error details.",
+    "tests/test_openclaw_saju_bridge_timeout.py: add regression coverage for lock contention, OSError cleanup, budget exhaustion, and lock release."
+  ],
+  "verification": [
+    {
+      "name": "NotebookLM saju status runtime check",
+      "target": "runtime api cli",
+      "command": ".venv/bin/python scripts/openclaw_codex_bridge.py saju-notebook-status --format json",
+      "result": "ok true; notebook d3fe3696-ff81-4810-94a8-9584c329c440; title 사주명리학자료; source_count 26; latency 2885ms"
+    },
+    {
+      "name": "Direct saju query fresh runtime check",
+      "target": "runtime api cli",
+      "command": "printf '<redacted deterministic test question>' | .venv/bin/python scripts/openclaw_codex_bridge.py saju-notebook-query --question-stdin --format json --timeout 300",
+      "result": "ok true; cache hit false; cache status ready; latency 80813ms; delivery contract passed"
+    },
+    {
+      "name": "OpenClaw JS bridge runtime entrypoint check",
+      "target": "runtime api node tool wrapper",
+      "command": "node --input-type=module -e 'import { runSajuBridge } from \"./plugins/harness-bridge/index.js\"; ...'",
+      "result": "ok true; delivery_policy relay_delivery_text_verbatim; delivery_text length 6216"
+    },
+    {
+      "name": "Python saju planning and timeout regression tests",
+      "target": "tests",
+      "command": ".venv/bin/python -m pytest tests/test_notebook_query_planning.py tests/test_openclaw_saju_bridge_timeout.py",
+      "result": "73 passed"
+    },
+    {
+      "name": "JS sanitized error-code branch test",
+      "target": "tests node",
+      "command": "node --input-type=module -e 'import { sajuBridgeErrorCode } from \"./plugins/harness-bridge/index.js\"; ...'",
+      "result": "returned bridge_timeout, bridge_unavailable, output_limit_exceeded, bridge_execution_failed"
+    },
+    {
+      "name": "Static checks",
+      "target": "tests",
+      "command": ".venv/bin/python -m py_compile scripts/openclaw_codex_bridge.py core/saju_calendar.py core/notebook_query_planning.py && node --check plugins/harness-bridge/index.js && git diff --check",
+      "result": "passed"
+    }
+  ],
+  "red_team": {
+    "models": [
+      "Claude",
+      "Gemini"
+    ],
+    "artifacts": [
+      {
+        "artifact": "../llm_outputs/claude_openclaw_saju_timeout_fix_20260728.md"
+      },
+      {
+        "artifact": "../llm_outputs/gemini_openclaw_saju_timeout_fix_final_review_20260728.md"
+      }
+    ],
+    "verdict": "red_team_clear",
+    "result": "Final reviews returned APPROVE after exact snippets and verification were provided."
+  }
+}

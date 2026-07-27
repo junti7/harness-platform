@@ -2627,7 +2627,18 @@ export function isShellTool(toolName) {
   return /bash|exec|shell|terminal|command/i.test(String(toolName));
 }
 
-export function runSajuBridge(question, timeoutMs = 300_000) {
+const SAJU_QUERY_TIMEOUT_SECONDS = 300;
+const SAJU_BRIDGE_TIMEOUT_MS = (SAJU_QUERY_TIMEOUT_SECONDS + 30) * 1000;
+
+export function sajuBridgeErrorCode(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/timed out/i.test(message)) return "bridge_timeout";
+  if (/not found|trustedRepo|repository root/i.test(message)) return "bridge_unavailable";
+  if (/output exceeded/i.test(message)) return "output_limit_exceeded";
+  return "bridge_execution_failed";
+}
+
+export function runSajuBridge(question, timeoutMs = SAJU_BRIDGE_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const repo = path.join(process.env.HOME ?? "", "projects", "harness-platform");
     const trustedRepo =
@@ -2650,7 +2661,7 @@ export function runSajuBridge(question, timeoutMs = 300_000) {
         "--format",
         "relay",
         "--timeout",
-        "300",
+        String(SAJU_QUERY_TIMEOUT_SECONDS),
       ],
       {
         cwd: repo,
@@ -2670,7 +2681,7 @@ export function runSajuBridge(question, timeoutMs = 300_000) {
     const timer = setTimeout(() => {
       child.kill("SIGTERM");
       setTimeout(() => child.kill("SIGKILL"), 2_000).unref();
-      finish(() => reject(new Error("Saju bridge timed out")));
+      finish(() => reject(new Error(`Saju bridge timed out after ${timeoutMs}ms`)));
     }, timeoutMs);
     child.stdout.on("data", (chunk) => {
       stdout += String(chunk);
@@ -2966,6 +2977,7 @@ export default {
                 text: JSON.stringify({
                   ok: false,
                   error: "saju_bridge_failed",
+                  reason: sajuBridgeErrorCode(error),
                 }),
               },
             ],

@@ -165,16 +165,21 @@ def _prune_expired_notebooklm_cache() -> bool:
         return False
 
 
-def _acquire_notebooklm_cache_lock(cache_key: str | None) -> tuple[int | None, str]:
+def _acquire_notebooklm_cache_lock(
+    cache_key: str | None, *, wait_s: int | None = None
+) -> tuple[int | None, str]:
     """Bounded single-flight: wait for one producer, then degrade safely."""
     if cache_key is None:
         return None, "disabled_missing_notebook_revision"
+    fd: int | None = None
     try:
         NOTEBOOKLM_CACHE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(NOTEBOOKLM_CACHE_DIR, 0o700)
         lock_path = NOTEBOOKLM_CACHE_DIR / f"{cache_key}.lock"
         fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
-        deadline = time.monotonic() + NOTEBOOKLM_CACHE_LOCK_WAIT_S
+        deadline = time.monotonic() + (
+            NOTEBOOKLM_CACHE_LOCK_WAIT_S if wait_s is None else max(0, wait_s)
+        )
         while True:
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -185,6 +190,11 @@ def _acquire_notebooklm_cache_lock(cache_key: str | None) -> tuple[int | None, s
                     return None, "degraded_lock_timeout"
                 time.sleep(0.1)
     except OSError:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
         return None, "degraded_cache_io"
 
 
@@ -474,6 +484,7 @@ def query_saju_notebook(question: str, *, timeout_s: int = 180) -> dict[str, Any
         )
     bounded_timeout = max(10, min(int(timeout_s), 300))
     started = time.monotonic()
+    deadline = started + bounded_timeout
     observed_at = _now()
     query_id = str(uuid.uuid4())
     audit_error = _safe_append_notebooklm_audit(
@@ -507,7 +518,11 @@ def query_saju_notebook(question: str, *, timeout_s: int = 180) -> dict[str, Any
         verified = _verified_saju_notebook()
         cache_prune_ok = _prune_expired_notebooklm_cache()
         cache_key = _saju_cache_key(plan, verified["notebook"])
-        cache_lock_fd, cache_status = _acquire_notebooklm_cache_lock(cache_key)
+        remaining_s = max(1, int(deadline - time.monotonic()))
+        cache_lock_wait_s = min(NOTEBOOKLM_CACHE_LOCK_WAIT_S, max(0, remaining_s - 15))
+        cache_lock_fd, cache_status = _acquire_notebooklm_cache_lock(
+            cache_key, wait_s=cache_lock_wait_s
+        )
         if (
             cache_status == "disabled_missing_notebook_revision"
             and verified["notebook"].get("source_revision_status")
@@ -523,10 +538,16 @@ def query_saju_notebook(question: str, *, timeout_s: int = 180) -> dict[str, Any
             if cache_hit:
                 result = {"binary": verified["binary"], "payload": answer}
             else:
+                remaining_s = max(0, int(deadline - time.monotonic()))
+                if remaining_s < 20:
+                    raise RuntimeError(
+                        f"nlm total budget exhausted before query after cache status {cache_status}"
+                    )
+                nlm_timeout_s = min(remaining_s - 10, bounded_timeout)
                 result = _run_nlm_private_query(
                     SAJU_NOTEBOOK_ID,
                     plan.grounded_question,
-                    timeout_s=bounded_timeout,
+                    timeout_s=nlm_timeout_s,
                 )
                 answer = result["payload"]
             if not isinstance(answer, dict) or not str(answer.get("answer") or "").strip():
