@@ -105,6 +105,12 @@
       "target": "OpenClaw browser-open/screen-inspect owner-gated routing patch",
       "command": "agy run --model gemini-3.6-flash-low; agy run --model claude-sonnet-4-6",
       "result": "PASS: Gemini and Claude both returned red_team_clear; no owner-gating bypass, high-impact browser action leakage, shell/web_fetch bypass, or scope expansion found."
+    },
+    {
+      "name": "production combined browser-open plus screen-inspect replay",
+      "target": "OpenClaw Discord session 0af9a822-adf9-42ac-8466-c198e563b8db",
+      "command": "openclaw agent --session-id 0af9a822-adf9-42ac-8466-c198e563b8db --session-key agent:main:discord:channel:1492808588777754636 --message '브라우저로 쿠팡 사이트 띄워서 어떤 내용들이 보이는지 알려줘. 그리고 쿠팡 화면이 보인다면 로그인이 되어 있는지도 확인해.' --thinking low --timeout 120 --json",
+      "result": "PASS: runId=26445d85-8612-4f48-a4ad-6180b516eb7f called harness_browser_open then harness_screen_inspect. browser_open returned ok=true url=https://www.coupang.com/ browser=Google Chrome. screen_inspect returned ok=true socketPath=/Users/juntaepark/Library/Application Support/Peekaboo/bridge.sock method=window-id-cg-fallback, targetWindow.window_title='로켓배송으로 빠르게, 로켓와우 멤버십으로 할인과 무료 반품까지 | 쿠팡 - Chrome', element_count=49. Final answer reported Coupang visible and login status not confirmed because no 로그인/마이쿠팡/user profile indicator appeared in the captured UI elements."
     }
   ],
   "governance_bootstrap": [
@@ -153,11 +159,11 @@
   "deploy": {
     "status": "complete",
     "method": "scripts/deploy_to_macmini.sh scoped file deployment, followed by openclaw plugins install --force, gateway restart --safe, plugins doctor, tools.alsoAllow config update, and live Discord replay",
-    "result": "PASS: commits 2e74452 and 8e4b131 pushed to origin/main; Mac mini scoped deployments passed with backups scratch/pre_deploy_backup_20260727_193206 and scratch/pre_deploy_backup_20260727_193943; plugin install --force succeeded; gateway restart --safe requested; plugins doctor reported no plugin issues; Mac mini JS plugin test and 34 Python bridge tests passed; tools.alsoAllow includes harness_screen_inspect."
+    "result": "PASS: commits 2e74452, 8e4b131, 7d35f7c and related follow-up commits pushed to origin/main; Mac mini scoped deployments passed including backup scratch/pre_deploy_backup_20260727_205120; plugin install --force succeeded; gateway restart --safe requested; plugins doctor reported no plugin issues; Mac mini JS plugin test and 34 Python bridge tests passed; tools.alsoAllow includes harness_screen_inspect."
   },
   "production_replay": {
-    "status": "residual_risk",
-    "result": "PASS for timeout fix and routing: live Discord replay runId=e8e80195-534f-4483-a317-9216f861ecd5 sessionId=0af9a822-adf9-42ac-8466-c198e563b8db called harness_screen_inspect exactly once and delivered a response. Follow-up no-deliver replay runId=084ef033-6dca-4556-9941-f89ee8abb218 also called harness_screen_inspect exactly once. Trajectory seq 4 shows tool.call harness_screen_inspect; seq 5 shows tool.result content {\"ok\":false,\"error\":\"peekaboo_permissions_not_granted\",\"socketPath\":\"/Users/juntaepark/Library/Application Support/Peekaboo/bridge.sock\",...} with Screen Recording Not Granted and Accessibility Granted. The previous screen_inspect_not_bound_to_routed_owner_request is resolved. The remaining blocker is macOS Screen Recording permission, not OpenClaw routing or timeout."
+    "status": "complete",
+    "result": "PASS for timeout, screen routing, follow-up routing, and combined browser-open plus screen-inspect routing. Latest replay runId=26445d85-8612-4f48-a4ad-6180b516eb7f called harness_browser_open then harness_screen_inspect with no routing bind errors. Peekaboo bridge socket and permissions were present after daemon start. screen_inspect returned ok=true using window-id-cg-fallback against Google Chrome window_id=396 title='로켓배송으로 빠르게, 로켓와우 멤버십으로 할인과 무료 반품까지 | 쿠팡 - Chrome'."
   },
   "residual_risk": "Actual screen contents depend on the currently visible Chrome window. Screen Recording, Accessibility, and Event Synthesizing are now granted after adding node, peekaboo, and sshd-keygen-wrapper to Screen Recording. The implemented fix prevents the prior 122-second hang, blocks raw Peekaboo shell fallback, exposes a native owner-gated tool, routes vague follow-ups from verified prior screen-inspection trajectory, and falls back to a read-only Chrome window-id/cg UI map when screen/analyze capture fails."
 }
