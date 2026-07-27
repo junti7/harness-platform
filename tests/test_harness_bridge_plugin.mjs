@@ -10,6 +10,7 @@ import {
   isHighImpactBrowserShellCall,
   isRawPumpShellCall,
   isShellTool,
+  selectBestPeekabooWindow,
   shouldEnforceHarnessKnowledge,
   shouldEnforceCopilotUsage,
   shouldEnforceBrowserOpen,
@@ -99,6 +100,14 @@ assert.equal(
 assert.equal(shouldEnforceSajuBridge("오늘 날씨 알려줘"), false);
 assert.equal(shouldEnforceBrowserOpen("browser 띄워서 쿠팡 접속해"), true);
 assert.equal(shouldEnforceBrowserOpen("쿠팡 장바구니에 담아줘"), false);
+assert.equal(
+  selectBestPeekabooWindow([
+    { window_id: 1, is_on_screen: true, bounds: { width: 100, height: 100 } },
+    { window_id: 2, is_on_screen: false, bounds: { width: 1000, height: 1000 } },
+    { window_id: 3, is_on_screen: true, bounds: { width: 500, height: 500 } },
+  ]).window_id,
+  3,
+);
 assert.equal(shouldEnforceScreenInspect("지금 떠 있는 쿠팡 화면에 어떤 것들이 보여?"), true);
 assert.equal(
   shouldEnforceScreenInspect(

@@ -208,6 +208,45 @@ function screenInspectTrajectoryResultMatches(data = {}) {
   });
 }
 
+export function selectBestPeekabooWindow(windows = []) {
+  return [...windows]
+    .filter((window) => window && window.is_on_screen !== false && Number(window.window_id) > 0)
+    .sort((left, right) => {
+      const leftBounds = left.bounds ?? {};
+      const rightBounds = right.bounds ?? {};
+      const leftArea = Number(leftBounds.width ?? 0) * Number(leftBounds.height ?? 0);
+      const rightArea = Number(rightBounds.width ?? 0) * Number(rightBounds.height ?? 0);
+      return rightArea - leftArea;
+    })[0];
+}
+
+function compactPeekabooSeeResult(parsed) {
+  const data = parsed?.data ?? parsed;
+  const elements = Array.isArray(data?.ui_elements) ? data.ui_elements : [];
+  return {
+    success: Boolean(parsed?.success ?? data?.success),
+    application_name: data?.application_name,
+    window_title: data?.window_title,
+    capture_mode: data?.capture_mode,
+    element_count: data?.element_count,
+    screenshot_raw: data?.screenshot_raw,
+    ui_map: data?.ui_map,
+    visible_elements: elements
+      .filter((element) => {
+        const text = String(element?.label ?? element?.title ?? element?.description ?? "").trim();
+        return text && text !== "그룹";
+      })
+      .slice(0, 40)
+      .map((element) => ({
+        role: element.role_description ?? element.role,
+        label: element.label,
+        title: element.title,
+        description: element.description,
+        actionable: Boolean(element.is_actionable),
+      })),
+  };
+}
+
 function browserOpenTargetFromPrompt(prompt) {
   const text = currentUserInstruction(prompt);
   if (/(?:쿠팡|coupang)/i.test(text)) return "https://www.coupang.com/";
@@ -811,11 +850,86 @@ async function inspectMacScreen(params = {}) {
     };
   }
   if (see.code !== 0) {
+    const directFailure = summarizePeekabooFailure(see);
+    let windowList;
+    try {
+      windowList = await runProcess(peekaboo, ["window", "list", "--app", "Google Chrome", "--json"], {
+        timeoutMs: 8_000,
+        env,
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        error: "peekaboo_screen_inspect_failed",
+        socketPath,
+        detail: directFailure,
+        fallback_error: error.message,
+      };
+    }
+    if (windowList.code === 0) {
+      let parsedWindowList;
+      try {
+        parsedWindowList = JSON.parse(windowList.stdout);
+      } catch {
+        parsedWindowList = undefined;
+      }
+      const bestWindow = selectBestPeekabooWindow(parsedWindowList?.data?.windows ?? []);
+      if (bestWindow?.window_id) {
+        const fallbackSee = await runProcess(
+          peekaboo,
+          [
+            "see",
+            "--window-id",
+            String(bestWindow.window_id),
+            "--capture-engine",
+            "cg",
+            "--json",
+          ],
+          { timeoutMs: 20_000, env },
+        );
+        if (fallbackSee.code === 0) {
+          let fallbackParsed;
+          try {
+            fallbackParsed = JSON.parse(fallbackSee.stdout);
+          } catch {
+            fallbackParsed = { text: fallbackSee.stdout.trim() };
+          }
+          return {
+            ok: true,
+            socketPath,
+            method: "window-id-cg-fallback",
+            directFailure,
+            targetWindow: {
+              app: parsedWindowList?.data?.target_application_info?.app_name,
+              bundle_id: parsedWindowList?.data?.target_application_info?.bundle_id,
+              window_id: bestWindow.window_id,
+              window_title: bestWindow.window_title,
+              bounds: bestWindow.bounds,
+            },
+            result: compactPeekabooSeeResult(fallbackParsed),
+          };
+        }
+        return {
+          ok: false,
+          error: "peekaboo_screen_inspect_failed",
+          socketPath,
+          detail: directFailure,
+          fallback_error: summarizePeekabooFailure(fallbackSee),
+          targetWindow: {
+            window_id: bestWindow.window_id,
+            window_title: bestWindow.window_title,
+            bounds: bestWindow.bounds,
+          },
+        };
+      }
+    }
     return {
       ok: false,
       error: "peekaboo_screen_inspect_failed",
       socketPath,
-      detail: summarizePeekabooFailure(see),
+      detail: directFailure,
+      fallback_error:
+        windowList.code === 0 ? "chrome_window_not_found" : summarizePeekabooFailure(windowList),
     };
   }
   let parsed;
