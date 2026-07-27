@@ -20,3 +20,20 @@ Reviewer output excerpt:
 
 Non-blocking note:
 - Real screen inspection still requires the OpenClaw GUI bridge socket and macOS Screen Recording/Accessibility permissions to be present at runtime.
+
+## Incremental bridge-selection review
+
+After adding fallback selection for the Peekaboo bridge socket, Claude initially returned `red_team_block` because a simple `success` key check weakened the prior GUI-readiness assertion.
+
+Fix applied:
+- Validate exactly one candidate for the selected socket.
+- Reject any `result.failure`.
+- Require `result.success._0`.
+- Require `hostKind` to be `gui` or `onDemand`.
+- Require `supportedOperations` to include `captureScreen`.
+- Require `permissionTags.captureScreen` to include `screenRecording`.
+
+Follow-up verdict: `red_team_clear`
+
+Reviewer output excerpt:
+> All stated validation criteria are correctly and defensively implemented. No bypass vectors or logic gaps found in the incremental diff.

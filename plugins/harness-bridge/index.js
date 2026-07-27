@@ -529,25 +529,95 @@ function findPeekabooBinary() {
   return undefined;
 }
 
-function peekabooBridgeSocketPath() {
-  return (
-    process.env.PEEKABOO_BRIDGE_SOCKET ||
-    path.join(process.env.HOME ?? "", "Library", "Application Support", "OpenClaw", "bridge.sock")
-  );
-}
-
-function objectContainsValue(value, predicate) {
-  if (predicate(value)) return true;
-  if (Array.isArray(value)) return value.some((entry) => objectContainsValue(entry, predicate));
-  if (value && typeof value === "object") {
-    return Object.values(value).some((entry) => objectContainsValue(entry, predicate));
-  }
-  return false;
+function peekabooBridgeSocketCandidates() {
+  const home = process.env.HOME ?? "";
+  return [
+    process.env.PEEKABOO_BRIDGE_SOCKET,
+    path.join(home, "Library", "Application Support", "OpenClaw", "bridge.sock"),
+    path.join(home, "Library", "Application Support", "Peekaboo", "bridge.sock"),
+  ]
+    .filter(Boolean)
+    .filter((value, index, values) => values.indexOf(value) === index);
 }
 
 function summarizePeekabooFailure(result) {
   const combined = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.trim();
   return combined.slice(0, 2000);
+}
+
+function bridgeSuccessPayload(statusJson) {
+  const candidates = statusJson?.data?.candidates;
+  if (!Array.isArray(candidates) || candidates.length !== 1) return undefined;
+  const result = candidates[0]?.result;
+  if (!result || typeof result !== "object" || result.failure) return undefined;
+  const success = result.success?._0;
+  if (!success || typeof success !== "object") return undefined;
+  const hostKind = String(success.hostKind ?? "").toLowerCase();
+  if (!["gui", "ondemand"].includes(hostKind)) return undefined;
+  const supported = Array.isArray(success.supportedOperations)
+    ? success.supportedOperations.map(String)
+    : [];
+  const captureTags = Array.isArray(success.permissionTags?.captureScreen)
+    ? success.permissionTags.captureScreen.map(String)
+    : [];
+  if (!supported.includes("captureScreen") || !captureTags.includes("screenRecording")) {
+    return undefined;
+  }
+  return success;
+}
+
+async function selectPeekabooBridge(peekaboo) {
+  const candidates = peekabooBridgeSocketCandidates();
+  const attempted = [];
+  for (const socketPath of candidates) {
+    if (!fs.existsSync(socketPath)) {
+      attempted.push({ socketPath, exists: false });
+      continue;
+    }
+    const env = { PEEKABOO_BRIDGE_SOCKET: socketPath };
+    let status;
+    try {
+      status = await runProcess(peekaboo, ["bridge", "status", "--json"], {
+        timeoutMs: 3_000,
+        env,
+      });
+    } catch (error) {
+      attempted.push({ socketPath, exists: true, error: error.message });
+      continue;
+    }
+    if (status.code !== 0) {
+      attempted.push({
+        socketPath,
+        exists: true,
+        error: "peekaboo_bridge_status_failed",
+        detail: summarizePeekabooFailure(status),
+      });
+      continue;
+    }
+    let statusJson;
+    try {
+      statusJson = JSON.parse(status.stdout);
+    } catch {
+      attempted.push({
+        socketPath,
+        exists: true,
+        error: "peekaboo_bridge_status_invalid_json",
+        detail: summarizePeekabooFailure(status),
+      });
+      continue;
+    }
+    const success = bridgeSuccessPayload(statusJson);
+    if (success) {
+      return { socketPath, env, status: statusJson, bridge: success };
+    }
+    attempted.push({
+      socketPath,
+      exists: true,
+      error: "peekaboo_bridge_not_ready",
+      status: statusJson.data ?? statusJson,
+    });
+  }
+  return { attempted };
 }
 
 async function inspectMacScreen(params = {}) {
@@ -559,68 +629,19 @@ async function inspectMacScreen(params = {}) {
       action: "Install Peekaboo or set PEEKABOO_BIN to the CLI path.",
     };
   }
-  const socketPath = peekabooBridgeSocketPath();
-  const env = { PEEKABOO_BRIDGE_SOCKET: socketPath };
-  if (!fs.existsSync(socketPath)) {
+  const selectedBridge = await selectPeekabooBridge(peekaboo);
+  if (!selectedBridge.socketPath) {
     return {
       ok: false,
-      error: "peekaboo_bridge_socket_missing",
-      socketPath,
+      error: selectedBridge.attempted?.some((entry) => entry.exists)
+        ? "peekaboo_bridge_not_ready"
+        : "peekaboo_bridge_socket_missing",
+      attempted: selectedBridge.attempted,
       action:
-        "Start the OpenClaw GUI bridge and confirm the bridge socket exists before asking for screen inspection.",
+        "Start the OpenClaw or Peekaboo GUI bridge and confirm a bridge socket exists before asking for screen inspection.",
     };
   }
-
-  let status;
-  try {
-    status = await runProcess(peekaboo, ["bridge", "status", "--json"], {
-      timeoutMs: 3_000,
-      env,
-    });
-  } catch (error) {
-    return {
-      ok: false,
-      error: "peekaboo_bridge_status_timeout_or_error",
-      socketPath,
-      detail: error.message,
-    };
-  }
-  if (status.code !== 0) {
-    return {
-      ok: false,
-      error: "peekaboo_bridge_status_failed",
-      socketPath,
-      detail: summarizePeekabooFailure(status),
-    };
-  }
-  let statusJson;
-  try {
-    statusJson = JSON.parse(status.stdout);
-  } catch {
-    return {
-      ok: false,
-      error: "peekaboo_bridge_status_invalid_json",
-      socketPath,
-      detail: summarizePeekabooFailure(status),
-    };
-  }
-  const routedToGui = objectContainsValue(
-    statusJson,
-    (value) => typeof value === "string" && value.toLowerCase() === "gui",
-  );
-  const hasBridgeFailure = objectContainsValue(
-    statusJson,
-    (value) => typeof value === "string" && /failure|no such file|permission/i.test(value),
-  );
-  if (!routedToGui || hasBridgeFailure) {
-    return {
-      ok: false,
-      error: "peekaboo_bridge_not_ready",
-      socketPath,
-      action: "Restart/Open the OpenClaw GUI bridge; status must route to hostKind=gui.",
-      status: statusJson.data ?? statusJson,
-    };
-  }
+  const { socketPath, env } = selectedBridge;
 
   let permissions;
   try {

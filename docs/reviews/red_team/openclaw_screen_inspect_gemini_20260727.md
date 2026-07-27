@@ -21,3 +21,17 @@ Reviewer output excerpt:
 > Peekaboo Shell Blocking: When screen-inspect routing is active, any attempt to invoke shell tools or explicit Peekaboo shell invocations is intercepted and blocked.
 >
 > Timeout and Fail-Fast Behavior: Status check uses `timeoutMs: 3_000`, permissions check uses `timeoutMs: 3_000`, and inspection uses `timeoutMs: 15_000`.
+
+## Incremental bridge-selection review
+
+After adding fallback selection for the Peekaboo bridge socket, Gemini reviewed the strengthened readiness gate.
+
+Fix criteria reviewed:
+- Exactly one selected bridge candidate.
+- Reject `result.failure`.
+- Require `result.success._0`.
+- Require `hostKind` of `gui` or `onDemand`.
+- Require `supportedOperations.captureScreen`.
+- Require `permissionTags.captureScreen` to include `screenRecording`.
+
+Follow-up verdict: `safety_review_clear`
