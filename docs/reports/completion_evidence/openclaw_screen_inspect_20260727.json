@@ -6,7 +6,7 @@
   "implementation": [
     {
       "path": "plugins/harness-bridge/index.js",
-      "summary": "Added owner-gated harness_screen_inspect routing, one-shot execution-token binding, direct-call rejection, Peekaboo shell blocking during routed screen-inspection turns, bounded fail-fast Peekaboo bridge/permission/screen checks, and hardened bridge selection across OpenClaw and Peekaboo sockets."
+      "summary": "Added owner-gated harness_screen_inspect routing, one-shot execution-token binding, direct-call rejection, Peekaboo shell blocking during routed screen-inspection turns, bounded fail-fast Peekaboo bridge/permission/screen checks, hardened bridge selection across OpenClaw and Peekaboo sockets, and structured follow-up routing for '다시 확인해' after a prior harness_screen_inspect tool call/result."
     },
     {
       "path": "plugins/harness-bridge/openclaw.plugin.json",
@@ -18,7 +18,7 @@
     },
     {
       "path": "tests/test_harness_bridge_plugin.mjs",
-      "summary": "Added regression coverage for screen-inspection intent detection, quoted-context isolation, owner/non-owner routing, direct-call rejection, Peekaboo shell blocking, one-shot tool-call binding, and duplicate toolCallId idempotence."
+      "summary": "Added regression coverage for screen-inspection intent detection, quoted-context isolation, owner/non-owner routing, direct-call rejection, Peekaboo shell blocking, one-shot tool-call binding, duplicate toolCallId idempotence, and fail-closed follow-up routing when prior context is only user-controlled text."
     }
   ],
   "verification": [
@@ -56,13 +56,13 @@
       "name": "Antigravity Gemini Flash Low safety review",
       "target": "OpenClaw screen-inspection safety route",
       "artifact": "../../reviews/red_team/openclaw_screen_inspect_gemini_20260727.md",
-      "result": "safety_review_clear; follow-up bridge-selection review also safety_review_clear after hardened readiness checks"
+      "result": "safety_review_clear; follow-up bridge-selection review also safety_review_clear after hardened readiness checks; follow-up routing review initially blocked raw prompt/string matching and then returned red_team_clear after restricting trust to structured harness_screen_inspect toolCall/toolResult records"
     },
     {
       "name": "Antigravity Claude Sonnet safety review",
       "target": "OpenClaw screen-inspection safety route",
       "artifact": "../../reviews/red_team/openclaw_screen_inspect_claude_20260727.md",
-      "result": "red_team_clear; incremental bridge-selection review initially blocked weak success-key readiness, then returned red_team_clear after enforcing hostKind and captureScreen readiness checks"
+      "result": "red_team_clear; incremental bridge-selection review initially blocked weak success-key readiness, then returned red_team_clear after enforcing hostKind and captureScreen readiness checks; follow-up routing review returned red_team_clear"
     },
     {
       "name": "Mac mini deployed plugin regression",
@@ -116,7 +116,7 @@
       }
     ],
     "verdict": "red_team_clear",
-    "note": "Claude CLI hung without output and was interrupted; Claude Sonnet through agy returned red_team_clear. Gemini Flash Low returned safety_review_clear."
+    "note": "Claude CLI hung without output and was interrupted; Claude Sonnet through agy returned red_team_clear. Gemini Flash Low returned safety_review_clear. Follow-up routing was reviewed incrementally; Gemini blocked unsafe raw prompt/string matching twice before the final structured toolCall/toolResult-only patch returned red_team_clear from both Gemini and Claude."
   },
   "deploy": {
     "status": "complete",

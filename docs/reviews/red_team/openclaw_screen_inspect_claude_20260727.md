@@ -37,3 +37,30 @@ Follow-up verdict: `red_team_clear`
 
 Reviewer output excerpt:
 > All stated validation criteria are correctly and defensively implemented. No bypass vectors or logic gaps found in the incremental diff.
+
+## Incremental follow-up routing review
+
+After the Discord request `다시 확인해` was blocked with
+`screen_inspect_not_bound_to_routed_owner_request`, Claude reviewed the final
+follow-up intent routing patch.
+
+Fix criteria reviewed:
+- Raw prompt role spoofing must not create trusted screen-inspection context.
+- Follow-up routing must fail closed when there is no prior structured
+  `harness_screen_inspect` tool call/result.
+- Assistant text that merely quotes `{"name":"harness_screen_inspect"}` must not
+  be treated as a tool call.
+- Stringify or malformed content must not grant routing.
+
+Follow-up verdict: `red_team_clear`
+
+Reviewer output excerpt:
+> `red_team_clear`
+>
+> All three previously raised concerns are addressed.
+>
+> `trustedScreenInspectContext` now ignores `prompt` entirely and only walks the
+> structured `messages[]` array.
+>
+> Now requires `item.type === "toolCall"` structurally; the `type:"text"` test
+> case explicitly asserts `false`.

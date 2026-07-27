@@ -35,3 +35,35 @@ Fix criteria reviewed:
 - Require `permissionTags.captureScreen` to include `screenRecording`.
 
 Follow-up verdict: `safety_review_clear`
+
+## Incremental follow-up routing review
+
+After the Discord request `다시 확인해` was blocked with
+`screen_inspect_not_bound_to_routed_owner_request`, Gemini reviewed the follow-up
+intent routing patch.
+
+Initial findings:
+- Raw prompt/context scanning could trust user-controlled `[assistant]` spoofing.
+- Stringifying assistant content could trust quoted JSON text that only looked
+  like a tool call.
+- Fail-open stringify behavior was unsafe.
+
+Fix applied:
+- Do not parse raw `<conversation_context>` for follow-up trust.
+- Trust only structured assistant `content[].type === "toolCall"` records whose
+  `name` or `toolName` is exactly `harness_screen_inspect`.
+- Trust only structured `toolResult` messages whose `toolName` is exactly
+  `harness_screen_inspect`.
+- Bare follow-ups and user-role marker injection fail closed.
+
+Follow-up verdict: `red_team_clear`
+
+Reviewer output excerpt:
+> `red_team_clear`
+>
+> Eliminated Raw Prompt/String Spoofing: `trustedScreenInspectContext` completely
+> ignores prompt text / stringified prompt blocks and strictly iterates over
+> structured `messages` objects.
+>
+> Strict Message Schema Checks: It only pushes trust markers if role/toolName or
+> structured assistant toolCall exactly names `harness_screen_inspect`.

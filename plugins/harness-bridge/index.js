@@ -31,6 +31,10 @@ const BROWSER_OPEN_REQUEST =
   /(?:(?:browser|브라우저|chrome|크롬).{0,40}(?:띄워|열어|켜|접속|open|launch|go\s*to)|(?:쿠팡|coupang).{0,40}(?:접속|열어|띄워|open|launch))/i;
 const SCREEN_INSPECT_REQUEST =
   /(?:(?:지금|현재|떠\s*있는|열려\s*있는|보이는).{0,50}(?:화면|창|브라우저|browser|chrome|크롬|쿠팡|coupang).{0,50}(?:보여|보이는|뭐|무엇|어떤|확인|읽어|describe|see|visible)|(?:화면|창|screen|window).{0,50}(?:보여|보이는|뭐|무엇|어떤|확인|읽어|describe|see|visible))/i;
+const SCREEN_INSPECT_FOLLOWUP_REQUEST =
+  /^(?:다시\s*)?(?:확인|재확인|봐줘|읽어줘|해봐|retry|again)(?:해|해줘|해봐|해줘요|요)?[.!?\s]*$/i;
+const SCREEN_INSPECT_CONTEXT_MARKERS =
+  /harness_screen_inspect|peekaboo_permissions_not_granted|peekaboo_bridge_socket_missing|peekaboo_bridge_not_ready|Screen Recording|Accessibility|화면\s*(?:판독|검사|내용\s*읽기|브리지|읽)/i;
 const HIGH_IMPACT_BROWSER_ACTION =
   /구매|결제|주문|장바구니|로그인|buy|pay|order|cart|checkout|login/i;
 const HIGH_IMPACT_BROWSER_BRIDGE_COMMAND =
@@ -83,9 +87,44 @@ export function shouldEnforceBrowserOpen(prompt) {
   return BROWSER_OPEN_REQUEST.test(text) && !HIGH_IMPACT_BROWSER_ACTION.test(text);
 }
 
-export function shouldEnforceScreenInspect(prompt) {
+export function shouldEnforceScreenInspect(prompt, messages = []) {
   const text = currentUserInstruction(prompt);
-  return SCREEN_INSPECT_REQUEST.test(text) && !HIGH_IMPACT_BROWSER_ACTION.test(text);
+  if (SCREEN_INSPECT_REQUEST.test(text) && !HIGH_IMPACT_BROWSER_ACTION.test(text)) {
+    return true;
+  }
+  if (!SCREEN_INSPECT_FOLLOWUP_REQUEST.test(text) || HIGH_IMPACT_BROWSER_ACTION.test(text)) {
+    return false;
+  }
+  return trustedScreenInspectContext(prompt, messages).some((contextText) =>
+    SCREEN_INSPECT_CONTEXT_MARKERS.test(contextText),
+  );
+}
+
+function trustedScreenInspectContext(prompt, messages = []) {
+  const trusted = [];
+  void prompt;
+  for (const message of messages) {
+    const role = String(message?.role ?? "").toLowerCase();
+    const toolName = String(message?.toolName ?? message?.name ?? "");
+    if (role === "toolresult" && toolName === "harness_screen_inspect") {
+      trusted.push(toolName);
+      continue;
+    }
+    if (role !== "assistant") continue;
+    const contentItems = Array.isArray(message?.content) ? message.content : [];
+    if (
+      contentItems.some(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          String(item.type ?? "") === "toolCall" &&
+          String(item.name ?? item.toolName ?? "") === "harness_screen_inspect",
+      )
+    ) {
+      trusted.push("harness_screen_inspect");
+    }
+  }
+  return trusted;
 }
 
 function browserOpenTargetFromPrompt(prompt) {
@@ -250,7 +289,7 @@ function currentUserRequest(prompt) {
 }
 
 function currentUserInstruction(prompt) {
-  return currentUserRequest(prompt).split(/^---\s*$/m, 1)[0];
+  return currentUserRequest(prompt).split(/^---\s*$/m, 1)[0].trim();
 }
 
 export function isRawPumpShellCall(toolName, params = {}) {
@@ -1645,7 +1684,7 @@ export default {
             ].join(" "),
           };
         }
-        if (currentSenderIsOwner(event.prompt, context) && shouldEnforceScreenInspect(event.prompt)) {
+        if (currentSenderIsOwner(event.prompt, context) && shouldEnforceScreenInspect(event.prompt, event.messages)) {
           markScreenInspectRun(event, context);
           return {
             appendSystemContext: [
