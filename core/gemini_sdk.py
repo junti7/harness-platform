@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 from google import genai
+from core.kimi_shadow import submit_kimi_shadow_eval
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / ".env", override=False)
@@ -119,6 +120,17 @@ def _generate_text_via_ollama(
             response.raise_for_status()
             text = (((response.json() or {}).get("message") or {}).get("content") or "").strip()
             if text:
+                submit_kimi_shadow_eval(
+                    source="gemini_local_fallback",
+                    prompt=user_prompt,
+                    baseline_provider="ollama",
+                    baseline_model=model,
+                    baseline_response=text,
+                    system_instruction=system_instruction,
+                    max_output_tokens=ollama_max_tokens,
+                    response_mime_type=response_mime_type,
+                    metadata={"host": host},
+                )
                 return text, {"prompt_token_count": 0, "candidates_token_count": 0}
             raise RuntimeError("empty_ollama_response")
         except Exception as exc:

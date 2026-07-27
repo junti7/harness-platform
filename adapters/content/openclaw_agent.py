@@ -51,6 +51,7 @@ import anthropic
 import httpx
 from dotenv import load_dotenv
 from core.logger import HarnessLogger
+from core.kimi_shadow import submit_kimi_shadow_eval
 from adapters.content.substack_publisher import fetch_draft_as_text
 from adapters.content.outbound_delivery import OutboundEnvelope, post_slack_token
 from adapters.content.runtime_host import is_macmini_host, should_use_remote_ollama
@@ -2765,6 +2766,16 @@ def _ollama_chat(
         content = resp.json().get("message", {}).get("content", "")
         if content:
             logger.info(f"[router] {label}({OLLAMA_CHAT_MODEL}) 응답 완료")
+            submit_kimi_shadow_eval(
+                source="openclaw_ollama_chat",
+                prompt=normalized_user_message,
+                baseline_provider="ollama",
+                baseline_model=OLLAMA_CHAT_MODEL,
+                baseline_response=content,
+                system_instruction=_build_chat_system_prompt(user_message),
+                max_output_tokens=OPENCLAW_CHAT_MAX_TOKENS,
+                metadata={"host_label": label},
+            )
             return content
         return None
     except Exception as e:

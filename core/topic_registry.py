@@ -13,6 +13,7 @@ import httpx
 
 from core.domain_config import load_default_sources, load_keyword_list
 from core.gemini_sdk import generate_text, gemini_model_name
+from core.kimi_shadow import submit_kimi_shadow_eval
 from scripts.llm_fallback_manager import _is_provider_available
 
 try:
@@ -288,6 +289,15 @@ def _ollama_topic_candidates(domain: str, current_topics: list[str], recent_titl
                     }
                 )
             if out:
+                submit_kimi_shadow_eval(
+                    source="topic_registry",
+                    prompt=prompt,
+                    baseline_provider="ollama",
+                    baseline_model=TOPIC_OLLAMA_MODEL,
+                    baseline_response=json.dumps({"topics": out[:limit]}, ensure_ascii=False),
+                    response_mime_type="application/json",
+                    metadata={"domain": domain, "host_label": label},
+                )
                 return out[:limit]
         except Exception:
             continue

@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from dotenv import load_dotenv
 from core.database import execute_query
 from core.gemini_sdk import generate_text
+from core.kimi_shadow import submit_kimi_shadow_eval
 from core.lane_router import log_lane_a_escalation, validate_lane_a_json
 from core.logger import HarnessLogger
 from core.topic_registry import load_active_topics
@@ -136,6 +137,15 @@ def extract_facts(model_name: str, text: str, logger: HarnessLogger) -> dict:
                 result = _ollama_call(OLLAMA_REMOTE_HOST, text)
                 # Lane A 검증 게이트: Ollama 출력도 schema 검증
                 if isinstance(result, dict) and all(k in result for k in _FACT_REQUIRED_KEYS):
+                    submit_kimi_shadow_eval(
+                        source="tier2_fact_extraction",
+                        prompt=FACT_EXTRACTION_PROMPT + text[:4000],
+                        baseline_provider="ollama",
+                        baseline_model=TIER2_FACT_OLLAMA_MODEL,
+                        baseline_response=json.dumps(result, ensure_ascii=False),
+                        response_mime_type="application/json",
+                        metadata={"host": OLLAMA_REMOTE_HOST},
+                    )
                     return result
                 log_lane_a_escalation("extract_facts", "ollama_schema_fail")
                 logger.warning("Ollama 팩트 schema 검증 실패 — Gemini 재실행")

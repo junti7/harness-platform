@@ -1,0 +1,53 @@
+{
+  "task": "Kimi K3 shadow evaluation integration",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-27T06:35:46Z",
+      "summary": "Confirmed local Ollama remains first for low-cost work, paid API use needs explicit budget, and completion requires real verification evidence."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-27T06:35:46Z",
+      "summary": "Confirmed completion evidence guard, real entrypoint verification, and residual-risk reporting for unverified deployment or runtime gaps."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Kimi shadow eval targeted regression suite",
+      "target": "local CLI and provider fallback runtime",
+      "command": ".venv/bin/python -m pytest tests/test_kimi_shadow.py tests/test_kimi_shadow_summary.py tests/test_gemini_sdk.py tests/test_topic_registry.py tests/test_openclaw_agent.py -q",
+      "result": "passed: 99 tests, covering disabled-by-default shadow submit, privacy-safe JSONL metrics, summary aggregation, Gemini local fallback, topic registry, and OpenClaw Ollama routing."
+    },
+    {
+      "name": "Kimi shadow synthetic smoke",
+      "target": "local CLI runtime",
+      "command": ".venv/bin/python scripts/run_kimi_shadow_eval.py --output /private/tmp/kimi_shadow_smoke.jsonl",
+      "result": "passed: script produced 3 JSONL records; Kimi calls safely recorded kimi_api_key_missing because no KIMI_API_KEY is configured."
+    },
+    {
+      "name": "Kimi shadow summary smoke",
+      "target": "local CLI runtime",
+      "command": ".venv/bin/python scripts/summarize_kimi_shadow_eval.py --input /private/tmp/kimi_shadow_smoke.jsonl",
+      "result": "passed: summary reported total=3, ok=0, estimated_cost_usd=0.0, and RuntimeError=3 for missing Kimi API key."
+    },
+    {
+      "name": "Pre-push OpenClaw quality gate",
+      "target": "pre-push git hook",
+      "command": "git push origin main",
+      "result": "runtime tests passed before completion-evidence block: contract_safety_pass 240 cases, additional quality pass 10 cases, pytest 145 passed; push blocked only because this completion evidence JSON was not present yet."
+    },
+    {
+      "name": "Whitespace and bytecode checks",
+      "target": "local CLI runtime",
+      "command": "git diff --check; .venv/bin/python -m py_compile core/kimi_shadow.py scripts/run_kimi_shadow_eval.py scripts/summarize_kimi_shadow_eval.py",
+      "result": "passed: no whitespace errors; new Python modules compiled."
+    }
+  ],
+  "residual_risk": [
+    "Kimi K3 API is not active because KIMI_API_KEY is not configured; production behavior remains existing Ollama/qwen/gemma fallback.",
+    "KIMI_SHADOW_EVAL_ENABLED defaults to false, so Mac Mini will not emit Kimi shadow records until the API key and flag are set intentionally.",
+    "One-week promotion decision remains pending until runtime records exist and are summarized with scripts/summarize_kimi_shadow_eval.py."
+  ]
+}
