@@ -167,6 +167,12 @@
       "result": "PASS: replaced primary strict product detection with price_anchor_card_cluster and retained grid/anchor grouping only as fallback. The owner-marked screenshot OCR replay returned exactly four same-card matches: 푸른친구들 낫도효소력 45포 1박스 70,000원, 푸른친구들 효소력 건강분말 45개입 52,200원, 푸른친구들 효소력 프리미엄 59,850원, and 푸른 친구들 낫도 효소력 45개 3g 70,000원. Added regression tests for the four-card screenshot fixture, adjacent-card price bleed, header promo exclusion, and no-percent sale-price ordering. Local tests passed and Gemini returned red_team_clear after blocking fixed-grid brittleness, title geometry mismatch, wide horizontal clustering, header leakage, multiline-title truncation, and current-price edge cases. Codex CLI usage rule: caveman ultra for Codex CLI replies and handoffs, while code-change summaries and verification remain exact."
     },
     {
+      "name": "production multi-match Coupang exact-card replay",
+      "target": "OpenClaw Discord session 0af9a822-adf9-42ac-8466-c198e563b8db message requiring all same-card '푸른친구들' + '효소력' matches",
+      "command": "openclaw agent --session-id 0af9a822-adf9-42ac-8466-c198e563b8db --session-key agent:main:discord:channel:1492808588777754636 --message '쿠팡에서 푸른친구들 효소력 제품 검색해서 현재 가격 알려줘. 푸른친구들/효소력이 같은 상품 카드에 모두 들어간 항목은 전부 빠짐없이 나열해.' --thinking low --timeout 180 --json; parse trajectory harness_screen_inspect tool.result",
+      "result": "PASS: runId=598d44a6-ce8f-46ff-a13b-a188cba22623 returned status ok, called harness_browser_open and harness_screen_inspect, failures=0, final answer enumerated visible exact matches instead of reporting a single item. Trajectory parsed as JSON: ok=true, text_len=7514, page_count=3, strict_count=3, detection_mode=price_anchor_card_cluster. The live Coupang result set at replay time exposed three strict matches, all 70,000원 variants/duplicates; the owner-provided static screenshot replay remains the four-card proof for 70,000원, 52,200원, 59,850원, and 70,000원."
+    },
+    {
       "name": "production exact Coupang price replay",
       "target": "OpenClaw Discord session 0af9a822-adf9-42ac-8466-c198e563b8db message '쿠팡에서 푸른친구들 효소력 제품 검색해서 현재 가격 알려줘.'",
       "command": "openclaw agent --session-id 0af9a822-adf9-42ac-8466-c198e563b8db --session-key agent:main:discord:channel:1492808588777754636 --message '쿠팡에서 푸른친구들 효소력 제품 검색해서 현재 가격 알려줘.' --thinking low --timeout 180 --json; parse trajectory harness_screen_inspect tool.result",
