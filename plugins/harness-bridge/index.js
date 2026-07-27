@@ -405,6 +405,15 @@ function firstPriceString(text) {
   return priceStringsFromText(text)[0];
 }
 
+function currentPriceStringsFromLine(text) {
+  const prices = priceStringsFromText(text);
+  if (prices.length === 0) return [];
+  if (/(?:당|100ml|10ml|100g|1개|개당|g당|kg당|ml당)/i.test(String(text ?? ""))) {
+    return prices.slice(0, 1);
+  }
+  return prices;
+}
+
 function ocrLineGeometry(line) {
   const box = Array.isArray(line?.bounding_box) ? line.bounding_box : [];
   if (box.length !== 4 || box.some((value) => !Number.isFinite(value))) return undefined;
@@ -460,9 +469,9 @@ function productCardCandidatesFromOcr(ocr, question, { targetWindow } = {}) {
       if (prices.length === 0) continue;
       for (const price of prices) {
         if (!priceCandidates.includes(price)) priceCandidates.push(price);
-        if (!/(?:당|100ml|10ml|1개|개당|g당|kg당|ml당)/i.test(line.text) && !likelyCurrentPriceCandidates.includes(price)) {
-          likelyCurrentPriceCandidates.push(price);
-        }
+      }
+      for (const price of currentPriceStringsFromLine(line.text)) {
+        if (!likelyCurrentPriceCandidates.includes(price)) likelyCurrentPriceCandidates.push(price);
       }
     }
     if (priceCandidates.length === 0) continue;

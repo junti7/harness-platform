@@ -53,3 +53,4 @@ Exact product-card matching and detail navigation review:
 - After tightening the OCR card neighborhood and showing full routing/tool context, reviewer cleared the change.
 - Reviewer verified `strict_product_matches` collects product terms and prices only inside the same OCR card neighborhood, and `harness_coupang_product_detail_open` is owner-gated, token-bound, navigation-only, and still excludes login, cart, checkout, payment, purchase, form, shell, Playwright, Browser MCP, and web_fetch paths.
 - Follow-up review cleared filtering out top browser/header OCR lines and requiring at least one same-card price before emitting a strict product match, preventing page title or address bar text from becoming clickable product matches.
+- Follow-up review cleared current-price extraction for lines containing both total price and unit price, keeping the first price as `current_price_candidates` while retaining all prices in `price_candidates`.

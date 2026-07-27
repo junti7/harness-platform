@@ -120,7 +120,7 @@ assert.deepEqual(
         { text: "쿠팡이 추천하는 푸른친구들 효소력", bounding_box: [0.20, 0.94, 0.30, 0.02] },
         { text: "coupang.com/np/search?q=푸른친구들+효소력", bounding_box: [0.20, 0.90, 0.30, 0.02] },
         { text: "푸른친구들 낫도효소력 45포 1박스", bounding_box: [0.18, 0.62, 0.18, 0.02] },
-        { text: "70,000원", bounding_box: [0.18, 0.58, 0.08, 0.02] },
+        { text: "70,000원 (100g당 51,852원)", bounding_box: [0.18, 0.58, 0.12, 0.02] },
         { text: "다른 브랜드 효소력 1박스", bounding_box: [0.55, 0.62, 0.18, 0.02] },
         { text: "61,000원", bounding_box: [0.55, 0.58, 0.08, 0.02] },
         { text: "59,000원", bounding_box: [0.55, 0.55, 0.08, 0.02] },
