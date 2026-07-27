@@ -324,18 +324,18 @@ async function runMacVisionOcr(imagePath) {
     }
     const parsed = JSON.parse(result.stdout);
     const lines = Array.isArray(parsed.lines) ? parsed.lines : [];
-    const text = String(parsed.text ?? "")
+    const text = sanitizeCollectedText(parsed.text)
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean)
-      .slice(0, 120)
+      .slice(0, 80)
       .join("\n")
-      .slice(0, 12_000);
+      .slice(0, 6_000);
     return {
       ok: parsed.ok === true,
       line_count: lines.length,
-      lines: lines.slice(0, 120).map((line) => ({
-        text: String(line.text ?? "").slice(0, 300),
+      lines: lines.slice(0, 80).map((line) => ({
+        text: sanitizeCollectedText(line.text).slice(0, 200),
         confidence: Number(line.confidence ?? 0),
       })),
       text,
@@ -346,9 +346,26 @@ async function runMacVisionOcr(imagePath) {
   }
 }
 
+function sanitizeCollectedText(value) {
+  return String(value ?? "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compactOcrForOutput(ocr, maxChars = 2500) {
+  if (!ocr) return undefined;
+  return {
+    ok: ocr.ok === true,
+    line_count: Number(ocr.line_count ?? 0),
+    text: sanitizeCollectedText(ocr.text).slice(0, maxChars),
+    error: ocr.error,
+  };
+}
+
 function buildScreenInformationSummary({ compactResult, ocr, targetWindow }) {
   const ocrLines = Array.isArray(ocr?.lines)
-    ? ocr.lines.map((line) => String(line?.text ?? "").trim()).filter(Boolean)
+    ? ocr.lines.map((line) => sanitizeCollectedText(line?.text)).filter(Boolean)
     : [];
   const browserUiNoise =
     /^(?:Harness OS|Harness|Gemini에게|모든 북마크|즐겨찾기|카테고리|전체|찾고 싶은 상품|쿠팡플레이|로켓배송|로켓프레시|다시 구매|쿠팡비즈|로켓직구|입점신청|고객센터|판매자 가입|장바구니|마이쿠팡|닫기|새 탭|Chrome|뒤로|앞으로|새로고침|주소창|탭 검색|로그아웃)$/i;
@@ -384,8 +401,8 @@ function buildScreenInformationSummary({ compactResult, ocr, targetWindow }) {
       price_candidates: priceLines.length,
       login_clues: loginClues.length,
     },
-    product_or_offer_candidates: productOrOfferLines.slice(0, 80),
-    price_candidates: priceLines.slice(0, 40),
+    product_or_offer_candidates: productOrOfferLines.slice(0, 60),
+    price_candidates: priceLines.slice(0, 30),
     login_clues: [...new Set(loginClues)].slice(0, 20),
   };
 }
@@ -406,7 +423,7 @@ function mergeScreenInformation(pages = []) {
   const pushUnique = (target, values) => {
     const seen = new Set(target);
     for (const value of values ?? []) {
-      const text = String(value ?? "").trim();
+      const text = sanitizeCollectedText(value);
       if (!text || seen.has(text)) continue;
       seen.add(text);
       target.push(text);
@@ -428,8 +445,8 @@ function mergeScreenInformation(pages = []) {
   return {
     collected_page_count: merged.pages.length,
     pages: merged.pages,
-    product_or_offer_candidates: merged.product_or_offer_candidates.slice(0, 160),
-    price_candidates: merged.price_candidates.slice(0, 80),
+    product_or_offer_candidates: merged.product_or_offer_candidates.slice(0, 80),
+    price_candidates: merged.price_candidates.slice(0, 40),
     login_clues: merged.login_clues.slice(0, 30),
   };
 }
@@ -527,7 +544,7 @@ async function collectScrolledWindowInformation({ peekaboo, env, windowId, quest
       screenshot_raw: compactResult.screenshot_raw,
       scroll: { ok: true, direction: "down", amount: scrollAmount },
       result: compactResult,
-      ...(ocr ? { ocr } : {}),
+      ...(ocr ? { ocr: compactOcrForOutput(ocr, 1200) } : {}),
       ...(screenInformation ? { screen_information: screenInformation } : {}),
     });
   }
@@ -1259,7 +1276,7 @@ async function inspectMacScreen(params = {}) {
             screenshot_raw: compactResult.screenshot_raw,
             scroll: { ok: true, direction: "initial", amount: 0 },
             result: compactResult,
-            ...(ocr ? { ocr } : {}),
+            ...(ocr ? { ocr: compactOcrForOutput(ocr, 1800) } : {}),
             ...(screenInformation ? { screen_information: screenInformation } : {}),
           };
           const collectedPages = await collectScrolledWindowInformation({
@@ -1284,7 +1301,7 @@ async function inspectMacScreen(params = {}) {
             },
             result: {
               ...compactResult,
-              ...(ocr ? { ocr } : {}),
+              ...(ocr ? { ocr: compactOcrForOutput(ocr, 2500) } : {}),
               ...(screenInformation ? { screen_information: screenInformation } : {}),
               smart_collection: {
                 strategy: "window-id-cg-ocr-scroll",
@@ -1293,14 +1310,15 @@ async function inspectMacScreen(params = {}) {
                   page_index: page.page_index,
                   screenshot_raw: page.screenshot_raw,
                   scroll: page.scroll,
-                  ocr: page.ocr
+                  ocr: page.ocr ? compactOcrForOutput(page.ocr, 900) : undefined,
+                  screen_information: page.screen_information
                     ? {
-                        ok: page.ocr.ok,
-                        line_count: page.ocr.line_count,
-                        text: String(page.ocr.text ?? "").slice(0, 6000),
+                        counts: page.screen_information.counts,
+                        product_or_offer_candidates: page.screen_information.product_or_offer_candidates?.slice(0, 20),
+                        price_candidates: page.screen_information.price_candidates?.slice(0, 10),
+                        login_clues: page.screen_information.login_clues?.slice(0, 8),
                       }
                     : undefined,
-                  screen_information: page.screen_information,
                 })),
                 merged: mergeScreenInformation(collectedPages),
               },
