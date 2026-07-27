@@ -93,6 +93,18 @@
       "target": "Peekaboo Chrome capture after Screen Recording reset and re-authorization",
       "command": "peekaboo permissions status --json; peekaboo window list --no-remote --app 'Google Chrome' --json; peekaboo image --no-remote --window-id 265 --capture-engine cg --path /tmp/openclaw_chrome_265_cg.png --json; peekaboo see --no-remote --window-id 265 --capture-engine cg --json",
       "result": "PASS for permissions and window-id capture: Screen Recording, Accessibility, and Event Synthesizing all Granted; Chrome window list returned window_id=265 title='새 탭 - Chrome'; window-id image capture succeeded and produced /tmp/openclaw_chrome_265_cg.png; window-id see without AI analyze succeeded with application_name='Google Chrome', window_title='새 탭 - Chrome', element_count=46, screenshot_raw path, and UI elements. Direct screen/app analyze path still fails because Peekaboo AI analyze requires OPENAI_API_KEY or times out on SCShareableContent, so plugin now falls back to the same read-only --no-remote window-id/cg UI map path that passed manually."
+    },
+    {
+      "name": "combined browser-open plus screen-inspect routing regression",
+      "target": "Owner request: open Coupang, report visible page contents, and check read-only login-status clues",
+      "command": "node --check plugins/harness-bridge/index.js; node tests/test_harness_bridge_plugin.mjs; .venv/bin/python -m pytest -q tests/test_openclaw_bridge.py",
+      "result": "PASS: combined prompt now routes to HARNESS BROWSER OPEN + SCREEN INSPECT; harness_screen_inspect before harness_browser_open is blocked; web_fetch fallback is blocked; harness_browser_open then harness_screen_inspect is allowed; read-only login-status checks are allowed while imperative login and add-to-cart actions remain blocked; Python bridge regression 34 passed."
+    },
+    {
+      "name": "combined routing Red Team",
+      "target": "OpenClaw browser-open/screen-inspect owner-gated routing patch",
+      "command": "agy run --model gemini-3.6-flash-low; agy run --model claude-sonnet-4-6",
+      "result": "PASS: Gemini and Claude both returned red_team_clear; no owner-gating bypass, high-impact browser action leakage, shell/web_fetch bypass, or scope expansion found."
     }
   ],
   "governance_bootstrap": [
@@ -124,6 +136,14 @@
       },
       {
         "artifact": "../../reviews/red_team/openclaw_screen_inspect_claude_20260727.md",
+        "verdict": "red_team_clear"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_combined_browser_screen_gemini_20260727.md",
+        "verdict": "red_team_clear"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_combined_browser_screen_claude_20260727.md",
         "verdict": "red_team_clear"
       }
     ],

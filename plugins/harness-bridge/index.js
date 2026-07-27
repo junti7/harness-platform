@@ -37,7 +37,7 @@ const SCREEN_INSPECT_FOLLOWUP_REQUEST =
 const SCREEN_INSPECT_CONTEXT_MARKERS =
   /harness_screen_inspect|peekaboo_permissions_not_granted|peekaboo_bridge_socket_missing|peekaboo_bridge_not_ready|Screen Recording|Accessibility|화면\s*(?:판독|검사|내용\s*읽기|브리지|읽)/i;
 const HIGH_IMPACT_BROWSER_ACTION =
-  /구매|결제|주문|장바구니|로그인|buy|pay|order|cart|checkout|login/i;
+  /구매|결제|주문|checkout|buy|pay|order|(?:장바구니|cart).{0,20}(?:담아|넣어|추가|add)|(?:담아|넣어|추가|add).{0,20}(?:장바구니|cart)|로그인(?:을|를)?\s*(?:해|해줘|하라|진행|시도)|(?:login|log\s*in)\s*(?:do|attempt|submit|now)/i;
 const HIGH_IMPACT_BROWSER_BRIDGE_COMMAND =
   /\b(?:browser-fill|coupang-setup|coupang-cart|coupang-pay-approve)\b/i;
 let pluginOwnerSenderIds = new Set();
@@ -1868,7 +1868,25 @@ export default {
             ].join(" "),
           };
         }
-        if (currentSenderIsOwner(event.prompt, context) && shouldEnforceBrowserOpen(event.prompt)) {
+        const ownerRequest = currentSenderIsOwner(event.prompt, context);
+        const browserOpenRequest = ownerRequest && shouldEnforceBrowserOpen(event.prompt);
+        const screenInspectRequest =
+          ownerRequest && shouldEnforceScreenInspect(event.prompt, event.messages, context);
+        if (browserOpenRequest && screenInspectRequest) {
+          markBrowserOpenRun(event, context);
+          markScreenInspectRun(event, context);
+          return {
+            appendSystemContext: [
+              "[HARNESS BROWSER OPEN + SCREEN INSPECT — MANDATORY]",
+              "The owner asked to open a Mac GUI browser page and then report what is visible.",
+              "First call `harness_browser_open` exactly once. For Coupang use `https://www.coupang.com/`.",
+              "Then call `harness_screen_inspect` exactly once with the current user question, including any read-only login-status question.",
+              "Do not use shell, Peekaboo CLI, Playwright, Browser MCP, screenshots, web_fetch, browser-fill, coupang-cart, login, checkout, payment, or any form action for this request.",
+              "Report success only from the two Harness tool results. If screen inspection reports missing bridge socket or macOS permissions, answer with that exact operational blocker.",
+            ].join(" "),
+          };
+        }
+        if (browserOpenRequest) {
           markBrowserOpenRun(event, context);
           return {
             appendSystemContext: [
@@ -1880,10 +1898,7 @@ export default {
             ].join(" "),
           };
         }
-        if (
-          currentSenderIsOwner(event.prompt, context) &&
-          shouldEnforceScreenInspect(event.prompt, event.messages, context)
-        ) {
+        if (screenInspectRequest) {
           markScreenInspectRun(event, context);
           return {
             appendSystemContext: [
@@ -2067,6 +2082,7 @@ export default {
           };
         }
         const browserOpenState = browserOpenRunState(event, context);
+        const screenInspectState = screenInspectRunState(event, context);
         if (browserOpenState && isBrowserOpenTool(event.toolName)) {
           const browserToolCallId = String(
             event.toolCallId ?? event.toolUseId ?? event.itemId ?? event.id ?? "",
@@ -2112,14 +2128,22 @@ export default {
           for (const key of executionKeys) browserOpenExecutionTokens.set(key, tokenState);
           return;
         }
-        if (browserOpenState) {
+        if (browserOpenState && screenInspectState && isScreenInspectTool(event.toolName) && !browserOpenState.called) {
           return {
             block: true,
             blockReason:
-              "Browser-open routing is active; call only harness_browser_open once.",
+              "Browser-open plus screen-inspect routing is active; call harness_browser_open before harness_screen_inspect.",
           };
         }
-        const screenInspectState = screenInspectRunState(event, context);
+        if (browserOpenState && !(screenInspectState && isScreenInspectTool(event.toolName))) {
+          return {
+            block: true,
+            blockReason:
+              screenInspectState
+                ? "Browser-open plus screen-inspect routing is active; call only harness_browser_open then harness_screen_inspect."
+                : "Browser-open routing is active; call only harness_browser_open once.",
+          };
+        }
         if (screenInspectState && isScreenInspectTool(event.toolName)) {
           const screenToolCallId = String(
             event.toolCallId ?? event.toolUseId ?? event.itemId ?? event.id ?? "",

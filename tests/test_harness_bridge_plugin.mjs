@@ -99,7 +99,14 @@ assert.equal(
 );
 assert.equal(shouldEnforceSajuBridge("오늘 날씨 알려줘"), false);
 assert.equal(shouldEnforceBrowserOpen("browser 띄워서 쿠팡 접속해"), true);
+assert.equal(
+  shouldEnforceBrowserOpen(
+    "브라우저로 쿠팡 사이트 띄워서 어떤 내용들이 보이는지 알려줘. 그리고 쿠팡 화면이 보인다면 로그인이 되어 있는지도 확인해.",
+  ),
+  true,
+);
 assert.equal(shouldEnforceBrowserOpen("쿠팡 장바구니에 담아줘"), false);
+assert.equal(shouldEnforceBrowserOpen("쿠팡 로그인해줘"), false);
 assert.equal(
   selectBestPeekabooWindow([
     { window_id: 1, is_on_screen: true, bounds: { width: 100, height: 100 } },
@@ -109,6 +116,13 @@ assert.equal(
   3,
 );
 assert.equal(shouldEnforceScreenInspect("지금 떠 있는 쿠팡 화면에 어떤 것들이 보여?"), true);
+assert.equal(
+  shouldEnforceScreenInspect(
+    "브라우저로 쿠팡 사이트 띄워서 어떤 내용들이 보이는지 알려줘. 그리고 쿠팡 화면이 보인다면 로그인이 되어 있는지도 확인해.",
+  ),
+  true,
+);
+assert.equal(shouldEnforceScreenInspect("쿠팡 화면에 로그인 상태가 보이는지 확인해"), true);
 assert.equal(
   shouldEnforceScreenInspect(
     [
@@ -538,6 +552,85 @@ const browserOpenRouting = await hooks.get("before_prompt_build")(
 );
 assert.match(browserOpenRouting.appendSystemContext, /HARNESS BROWSER OPEN/);
 assert.match(browserOpenRouting.appendSystemContext, /harness_browser_open/);
+const combinedBrowserInspectContext = {
+  runId: "run-browser-open-screen-inspect-1",
+  sessionKey: "agent:main:discord:channel:1492808588777754636",
+};
+const combinedBrowserInspectRouting = await hooks.get("before_prompt_build")(
+  {
+    prompt: discordPrompt(
+      [
+        "Current user request:",
+        "브라우저로 쿠팡 사이트 띄워서 어떤 내용들이 보이는지 알려줘. 그리고 쿠팡 화면이 보인다면 로그인이 되어 있는지도 확인해.",
+      ].join("\n"),
+      "1158367139141521519",
+    ),
+    messages: [],
+    runId: "run-browser-open-screen-inspect-1",
+  },
+  combinedBrowserInspectContext,
+);
+assert.match(combinedBrowserInspectRouting.appendSystemContext, /BROWSER OPEN \+ SCREEN INSPECT/);
+assert.deepEqual(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "openclawharness_screen_inspect",
+      toolCallId: "call-combined-screen-too-early",
+      params: { question: "쿠팡 화면과 로그인 여부 확인" },
+      runId: "run-browser-open-screen-inspect-1",
+    },
+    combinedBrowserInspectContext,
+  ),
+  {
+    block: true,
+    blockReason:
+      "Browser-open plus screen-inspect routing is active; call harness_browser_open before harness_screen_inspect.",
+  },
+);
+assert.equal(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "openclawharness_browser_open",
+      toolCallId: "call-combined-browser-open",
+      params: { url: "https://www.coupang.com/" },
+      runId: "run-browser-open-screen-inspect-1",
+    },
+    combinedBrowserInspectContext,
+  ),
+  undefined,
+);
+assert.deepEqual(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "web_fetch",
+      toolCallId: "call-combined-web-fetch",
+      params: { url: "https://www.coupang.com/" },
+      runId: "run-browser-open-screen-inspect-1",
+    },
+    combinedBrowserInspectContext,
+  ),
+  {
+    block: true,
+    blockReason:
+      "Browser-open plus screen-inspect routing is active; call only harness_browser_open then harness_screen_inspect.",
+  },
+);
+assert.equal(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "openclawharness_screen_inspect",
+      toolCallId: "call-combined-screen-inspect",
+      params: { question: "쿠팡 화면과 로그인 여부 확인" },
+      runId: "run-browser-open-screen-inspect-1",
+    },
+    combinedBrowserInspectContext,
+  ),
+  undefined,
+);
+await hooks.get("agent_end")(
+  { runId: "run-browser-open-screen-inspect-1" },
+  combinedBrowserInspectContext,
+);
 const nonOwnerBrowserOpenRouting = await hooks.get("before_prompt_build")(
   {
     prompt: discordPrompt("browser 띄워서 쿠팡 접속해", "attacker"),
