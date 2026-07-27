@@ -153,6 +153,12 @@
       "target": "OpenClaw Discord session 0af9a822-adf9-42ac-8466-c198e563b8db message '쿠팡에서 생수 검색해서 보이는 제품들을 스크롤까지 해서 수집해줘'",
       "command": "openclaw agent --session-id 0af9a822-adf9-42ac-8466-c198e563b8db --session-key agent:main:discord:channel:1492808588777754636 --message '쿠팡에서 생수 검색해서 보이는 제품들을 스크롤까지 해서 수집해줘' --thinking low --timeout 180 --json; parse trajectory tool.result JSON",
       "result": "PASS: runId=a4697fc2-5238-494c-9cd9-44f560a50a52 returned status ok, called harness_browser_open and harness_screen_inspect, failures=0, final answer listed 15 visible water products with prices. Trajectory harness_screen_inspect tool.result parsed as JSON without truncation: text_len=6372, ok=true, method=window-id-cg-fallback, scroll_enabled=true, page_count=3, product_count=60, price_count=23, login_clue_count=0."
+    },
+    {
+      "name": "exact Coupang product-card matching and detail routing local verification",
+      "target": "OpenClaw harness_screen_inspect strict_product_matches and harness_coupang_product_detail_open",
+      "command": "git diff --check; node --check plugins/harness-bridge/index.js; node tests/test_harness_bridge_plugin.mjs; .venv/bin/python -m pytest -q tests/test_openclaw_bridge.py; /usr/bin/swiftc scripts/macos_vision_ocr.swift -o /tmp/macos_vision_ocr_check; agy --model gemini-3.6-flash-low --effort low --print review",
+      "result": "PASS: added OCR bounding boxes, strict_product_matches requiring all meaningful query terms inside the same tightened OCR card neighborhood, unit coverage for not mixing a different 효소력 product's 61,000원/59,000원 with 푸른친구들 낫도효소력 70,000원, owner-gated harness_coupang_product_detail_open routing, and navigation-only detail-open guard before follow-up screen inspection. Tests passed, Swift OCR compiled, and Gemini returned red_team_clear after an initial block on overly wide card grouping was fixed."
     }
   ],
   "governance_bootstrap": [
