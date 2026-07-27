@@ -39,3 +39,9 @@ Final payload hardening review:
 - Verdict: `red_team_clear`.
 - Added OCR output sanitization, control-character removal, and tighter text/candidate caps.
 - Reviewer found no arbitrary code execution, network exfiltration, filesystem abuse, prompt/tool injection, or output-bloat regression.
+
+Final compaction review:
+
+- Verdict: `red_team_clear`.
+- Reviewed diff reducing per-page payload for scrolled OCR collection to page index, screenshot path, scroll status, and counts while preserving merged product/price/login candidates.
+- Reviewer found the change preserves extraction targets and materially reduces tool result size below the OpenClaw truncation threshold risk.

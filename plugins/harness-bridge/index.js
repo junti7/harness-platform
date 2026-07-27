@@ -265,7 +265,7 @@ function compactPeekabooSeeResult(parsed) {
         const text = String(element?.label ?? element?.title ?? element?.description ?? "").trim();
         return text && text !== "그룹";
       })
-      .slice(0, 40)
+      .slice(0, 25)
       .map((element) => ({
         role: element.role_description ?? element.role,
         label: element.label,
@@ -445,9 +445,9 @@ function mergeScreenInformation(pages = []) {
   return {
     collected_page_count: merged.pages.length,
     pages: merged.pages,
-    product_or_offer_candidates: merged.product_or_offer_candidates.slice(0, 80),
-    price_candidates: merged.price_candidates.slice(0, 40),
-    login_clues: merged.login_clues.slice(0, 30),
+    product_or_offer_candidates: merged.product_or_offer_candidates.slice(0, 60),
+    price_candidates: merged.price_candidates.slice(0, 30),
+    login_clues: merged.login_clues.slice(0, 20),
   };
 }
 
@@ -1049,7 +1049,7 @@ function peekabooBridgeSocketCandidates() {
 
 function summarizePeekabooFailure(result) {
   const combined = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.trim();
-  return combined.slice(0, 2000);
+  return combined.slice(0, 600);
 }
 
 function bridgeSuccessPayload(statusJson) {
@@ -1301,8 +1301,12 @@ async function inspectMacScreen(params = {}) {
             },
             result: {
               ...compactResult,
-              ...(ocr ? { ocr: compactOcrForOutput(ocr, 2500) } : {}),
-              ...(screenInformation ? { screen_information: screenInformation } : {}),
+              ...(!shouldCollectScrolledScreenInfo(question) && ocr
+                ? { ocr: compactOcrForOutput(ocr, 1600) }
+                : {}),
+              ...(!shouldCollectScrolledScreenInfo(question) && screenInformation
+                ? { screen_information: screenInformation }
+                : {}),
               smart_collection: {
                 strategy: "window-id-cg-ocr-scroll",
                 scroll_enabled: shouldCollectScrolledScreenInfo(question),
@@ -1310,15 +1314,7 @@ async function inspectMacScreen(params = {}) {
                   page_index: page.page_index,
                   screenshot_raw: page.screenshot_raw,
                   scroll: page.scroll,
-                  ocr: page.ocr ? compactOcrForOutput(page.ocr, 900) : undefined,
-                  screen_information: page.screen_information
-                    ? {
-                        counts: page.screen_information.counts,
-                        product_or_offer_candidates: page.screen_information.product_or_offer_candidates?.slice(0, 20),
-                        price_candidates: page.screen_information.price_candidates?.slice(0, 10),
-                        login_clues: page.screen_information.login_clues?.slice(0, 8),
-                      }
-                    : undefined,
+                  counts: page.screen_information?.counts,
                 })),
                 merged: mergeScreenInformation(collectedPages),
               },
