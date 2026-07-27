@@ -255,6 +255,7 @@ export function selectBestPeekabooWindow(windows = [], preferredPattern) {
 export {
   normalizeProductText,
   productSearchTermsFromQuestion,
+  productSearchTermsFromCoupangWindowTitle,
   productCardCandidatesFromOcr,
 };
 
@@ -389,6 +390,18 @@ function productSearchTermsFromQuestion(question) {
         .filter((term) => !/^(?:을|를|이|가|은|는|좀|해줘|해|줘)$/.test(term)),
     ),
   ].slice(0, 6);
+}
+
+function productSearchTermsFromCoupangWindowTitle(title) {
+  const text = sanitizeCollectedText(title);
+  const match = text.match(/^쿠팡이\s*추천하는\s+(.{2,80}?)\s+관련\s*혜택과\s*특가(?:\s*-\s*Chrome)?$/i);
+  if (!match) return [];
+  const candidate = sanitizeCollectedText(match[1]);
+  if (!candidate || /(?:https?:\/\/|www\.|coupang\.com|[<>{}[\]\\])/i.test(candidate)) return [];
+  const terms = productSearchTermsFromQuestion(`쿠팡에서 ${candidate} 검색`).filter(
+    (term) => !/^(?:추천|추천하는|관련|혜택|특가|쿠팡|chrome)$/i.test(term),
+  );
+  return terms.length >= 2 ? terms.slice(0, 4) : [];
 }
 
 function priceStringsFromText(text) {
@@ -1573,18 +1586,33 @@ async function openCoupangProductDetail(params = {}) {
   ]
     .filter(Boolean)
     .join(" ");
-  const inspected = await inspectMacScreen({ question });
+  let inspected = await inspectMacScreen({ question });
   if (!inspected.ok) return inspected;
-  const matches = inspected.result?.smart_collection?.merged?.strict_product_matches ?? [];
-  const terms = Array.isArray(params.productNameTerms)
+  let matches = inspected.result?.smart_collection?.merged?.strict_product_matches ?? [];
+  let terms = Array.isArray(params.productNameTerms)
     ? params.productNameTerms
     : sanitizeCollectedText(params.productNameTerms)
         .split(/\s+/)
         .filter(Boolean);
-  const match = selectProductMatchForDetail(matches, {
+  let match = selectProductMatchForDetail(matches, {
     price: params.price,
     terms,
   });
+  if (!match && terms.length === 0) {
+    const fallbackTerms = productSearchTermsFromCoupangWindowTitle(inspected.targetWindow?.window_title);
+    if (fallbackTerms.length >= 2) {
+      terms = fallbackTerms;
+      inspected = await inspectMacScreen({
+        question: `쿠팡에서 ${terms.join(" ")} 검색 결과 중 ${params.price ?? ""} 상품 상세 진입`,
+      });
+      if (!inspected.ok) return inspected;
+      matches = inspected.result?.smart_collection?.merged?.strict_product_matches ?? [];
+      match = selectProductMatchForDetail(matches, {
+        price: params.price,
+        terms,
+      });
+    }
+  }
   if (!match?.click_point) {
     return {
       ok: false,

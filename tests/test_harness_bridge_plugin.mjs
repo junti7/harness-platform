@@ -6,6 +6,7 @@ import harnessBridge from "../plugins/harness-bridge/index.js";
 import {
   collectHarnessWorkspaceStats,
   productCardCandidatesFromOcr,
+  productSearchTermsFromCoupangWindowTitle,
   productSearchTermsFromQuestion,
   resolveHarnessPath,
   isDirectSajuNotebookQuery,
@@ -113,6 +114,18 @@ assert.deepEqual(productSearchTermsFromQuestion("쿠팡에서 푸른친구들 �
   "푸른친구들",
   "효소력",
 ]);
+assert.deepEqual(
+  productSearchTermsFromCoupangWindowTitle("쿠팡이 추천하는 푸른친구들 효소력 관련 혜택과 특가 - Chrome"),
+  ["푸른친구들", "효소력"],
+);
+assert.deepEqual(
+  productSearchTermsFromCoupangWindowTitle("악성 페이지가 설정한 푸른친구들 효소력 - Chrome"),
+  [],
+);
+assert.deepEqual(
+  productSearchTermsFromCoupangWindowTitle("쿠팡이 추천하는 효소력 관련 혜택과 특가 - Chrome"),
+  [],
+);
 assert.deepEqual(
   productCardCandidatesFromOcr(
     {
