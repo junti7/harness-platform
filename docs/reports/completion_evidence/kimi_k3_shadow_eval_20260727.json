@@ -43,11 +43,40 @@
       "target": "local CLI runtime",
       "command": "git diff --check; .venv/bin/python -m py_compile core/kimi_shadow.py scripts/run_kimi_shadow_eval.py scripts/summarize_kimi_shadow_eval.py",
       "result": "passed: no whitespace errors; new Python modules compiled."
+    },
+    {
+      "name": "Mac Mini selected-path deployment",
+      "target": "macmini production deployment",
+      "command": "scripts/deploy_to_macmini.sh .env.example adapters/content/filter.py adapters/content/openclaw_agent.py core/gemini_sdk.py core/topic_registry.py core/kimi_shadow.py scripts/run_kimi_shadow_eval.py scripts/summarize_kimi_shadow_eval.py tests/test_kimi_shadow.py tests/test_kimi_shadow_summary.py docs/reports/completion_evidence/kimi_k3_shadow_eval_20260727.json",
+      "result": "passed: backup scratch/pre_deploy_backup_20260727_153913; backend reloaded on port 8000; all 11 selected paths had git diff --quiet origin/main exit code 0 on Mac Mini."
+    },
+    {
+      "name": "Mac Mini Kimi adjacent regression suite",
+      "target": "macmini runtime pytest",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && .venv/bin/python -m pytest tests/test_kimi_shadow.py tests/test_kimi_shadow_summary.py tests/test_gemini_sdk.py tests/test_topic_registry.py -q'",
+      "result": "passed: 8 tests, covering Kimi JSONL metrics, summary aggregation, Gemini local fallback, and topic registry on Mac Mini."
+    },
+    {
+      "name": "Mac Mini Kimi smoke without API key",
+      "target": "macmini CLI runtime",
+      "command": "ssh macmini 'cd /Users/juntaepark/projects/harness-platform && .venv/bin/python scripts/run_kimi_shadow_eval.py --output /tmp/kimi_shadow_smoke.jsonl && .venv/bin/python scripts/summarize_kimi_shadow_eval.py --input /tmp/kimi_shadow_smoke.jsonl'",
+      "result": "passed: 3 synthetic records, kimi_ok=0, estimated_cost_usd=0.0, RuntimeError=3 for kimi_api_key_missing."
+    },
+    {
+      "name": "Mac Mini Slack listener restart",
+      "target": "macmini production launchd service",
+      "command": "launchctl kickstart -k gui/$(id -u)/com.harness.slack-listener; launchctl print gui/$(id -u)/com.harness.slack-listener",
+      "result": "passed: Slack listener state=running, pid=48525, new Socket Mode session established, local Ollama prewarm completed."
     }
   ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh with 11 scoped Kimi shadow implementation, script, test, and evidence paths",
+    "result": "passed: selected deployed files matched origin/main on Mac Mini; backend reloaded; Slack listener restarted separately."
+  },
   "residual_risk": [
     "Kimi K3 API is not active because KIMI_API_KEY is not configured; production behavior remains existing Ollama/qwen/gemma fallback.",
     "KIMI_SHADOW_EVAL_ENABLED defaults to false, so Mac Mini will not emit Kimi shadow records until the API key and flag are set intentionally.",
-    "One-week promotion decision remains pending until runtime records exist and are summarized with scripts/summarize_kimi_shadow_eval.py."
+    "One-week promotion decision remains pending until runtime records exist and are summarized with scripts/summarize_kimi_shadow_eval.py.",
+    "Mac Mini default OpenClaw full test suite still fails under the pre-existing OPENCLAW_VERIFIED_DELIVERY_ENABLED=true runtime gate with the expected 'shadow verification pending' response; Kimi-specific and adjacent tests pass."
   ]
 }
