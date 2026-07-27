@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-05-24T21:00:00",
-  "updated_at": "2026-06-15T21:45:44",
+  "updated_at": "2026-07-27T09:01:59",
   "items": [
     {
       "id": "APR-20260524-001",
@@ -89,6 +89,23 @@
       "decided_at": "2026-06-15T21:45:44",
       "decided_by_display": "대표(CEO)",
       "decision_note": null
+    },
+    {
+      "id": "APR-UNIV-852972d9a3",
+      "title": "[투자결정] universe 신규 후보: OpenAI (티커 확인 필요)",
+      "submitter": "universe_miner",
+      "submitter_display": "Universe Miner (자동발굴)",
+      "approver_role": "ceo",
+      "body": "[자동 발굴 제안] 신규 투자 후보 (seed 미보유). 소스 다양성 3 · 언급 3회.\n추정 티커/거래소/지역: ? / ? / US\n근거 제목: OpenAI data center in Sydney, Australia, abandons plans for recycled water cooling system - report - Data Center Dynamics; OpenAI launches usage analytics, spend controls for ChatGPT Enterprise - ETEnterpriseai.com; When Shippers Become Algorithms: Candidate Exposure, Information Design, and the Con\n처리: 비서실장 1차 선별/티커·거래소 정합 확인 후 CEO 확정. 승인 의미=opportunity_approve(seed 편입 후보 채택). **실거래 아님** — 편입 후에도 turtle_gate + legal_review + capital_action_approve 별도.",
+      "status": "pending",
+      "submitted_at": "2026-07-27T00:01:01+00:00",
+      "approval_type": "opportunity_approve",
+      "target_type": "business_opportunity",
+      "target_id": "openai",
+      "correlation_id": "universe-candidate-openai",
+      "openclaw_route": "agent_openclaw_routing",
+      "openclaw_command": null,
+      "source_intake_key": "universe-candidate-openai"
     }
   ]
 }
