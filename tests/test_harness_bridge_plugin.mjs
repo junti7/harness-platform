@@ -19,6 +19,8 @@ import {
   shouldEnforceBrowserOpen,
   shouldEnforceScreenInspect,
   shouldEnforceSajuBridge,
+  shouldEnforceSajuNotebookStatus,
+  sajuNotebookStatusSearchTerm,
   shouldEnforceWorkspaceStats,
   validateWorkspaceCommand,
 } from "../plugins/harness-bridge/index.js";
@@ -30,6 +32,8 @@ const discordPrompt = (text, senderId = "owner-1") =>
 const pluginManifest = JSON.parse(
   fs.readFileSync(new URL("../plugins/harness-bridge/openclaw.plugin.json", import.meta.url)),
 );
+assert.ok(pluginManifest.contracts.tools.includes("harness_saju_query"));
+assert.ok(pluginManifest.contracts.tools.includes("harness_saju_notebook_status"));
 assert.ok(pluginManifest.contracts.tools.includes("harness_smartfarm_pump_control"));
 assert.ok(pluginManifest.contracts.tools.includes("harness_copilot_usage"));
 assert.ok(pluginManifest.contracts.tools.includes("harness_browser_open"));
@@ -52,6 +56,27 @@ assert.equal(
 );
 
 assert.equal(shouldEnforceSajuBridge("오늘 사주 운세 알려줘"), true);
+assert.equal(
+  shouldEnforceSajuNotebookStatus(
+    "사주명리학 노트북에 10년 대운에 대한 리서치 자료를 추가했는데 잘 추가가 되었는지 확인해.",
+  ),
+  true,
+);
+assert.equal(shouldEnforceSajuNotebookStatus("오늘 사주 운세 알려줘"), false);
+assert.equal(
+  shouldEnforceSajuNotebookStatus("사주 노트북 자료를 바탕으로 올해 총운 알려줘"),
+  false,
+);
+assert.equal(
+  sajuNotebookStatusSearchTerm(
+    "사주명리학 노트북에 10년 대운에 대한 리서치 자료를 추가했는데 잘 추가가 되었는지 확인해.",
+  ),
+  "대운",
+);
+assert.equal(
+  sajuNotebookStatusSearchTerm("사주명리학 노트북에 용신 자료가 들어갔는지 확인해"),
+  "용신",
+);
 assert.deepEqual(
   shouldEnforceSajuBridge("그럼 시간대는?", [
     { role: "assistant", content: "사주명리학자료 기준 오늘 일진" },
@@ -559,6 +584,7 @@ assert.deepEqual(
     "harness_gmail_search",
     "harness_knowledge_query",
     "harness_notion_archive_create",
+    "harness_saju_notebook_status",
     "harness_saju_query",
     "harness_screen_inspect",
     "harness_smartfarm_pump_control",

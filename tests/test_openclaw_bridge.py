@@ -119,6 +119,72 @@ class OpenClawBridgeTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assertIn("title mismatch", payload["detail"])
 
+    def test_saju_notebook_sources_filters_by_search_term(self):
+        notebook = {
+            "id": openclaw_codex_bridge.SAJU_NOTEBOOK_ID,
+            "title": openclaw_codex_bridge.SAJU_NOTEBOOK_TITLE,
+        }
+        sources = [
+            {
+                "id": "s1",
+                "title": "대운(大運) 연구",
+                "type": "web_page",
+                "url": "https://example.com/daewoon",
+                "status": 2,
+            },
+            {
+                "id": "s2",
+                "title": "격국 연구",
+                "type": "pdf",
+                "status": 2,
+            },
+        ]
+        with patch.object(
+            openclaw_codex_bridge,
+            "_run_nlm",
+            side_effect=[
+                {"binary": "/mock/nlm", "payload": [notebook]},
+                {"binary": "/mock/nlm", "payload": sources},
+                {"binary": "/mock/nlm", "payload": sources},
+            ],
+        ), patch.object(openclaw_codex_bridge, "_append_notebooklm_audit") as audit:
+            payload = openclaw_codex_bridge.list_saju_notebook_sources("대운")
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["source_count"], 2)
+        self.assertEqual(payload["match_count"], 1)
+        self.assertEqual(payload["matches"][0]["id"], "s1")
+        audit_payload = audit.call_args.args[0]
+        self.assertEqual(audit_payload["action"], "sources")
+        self.assertIn("search_sha256", audit_payload)
+        self.assertNotIn("대운", json.dumps(audit_payload, ensure_ascii=False))
+
+    def test_saju_notebook_sources_preserves_results_when_audit_fails(self):
+        notebook = {
+            "id": openclaw_codex_bridge.SAJU_NOTEBOOK_ID,
+            "title": openclaw_codex_bridge.SAJU_NOTEBOOK_TITLE,
+        }
+        sources = [{"id": "s1", "title": "대운 자료", "type": "pdf", "status": 2}]
+        with patch.object(
+            openclaw_codex_bridge,
+            "_run_nlm",
+            side_effect=[
+                {"binary": "/mock/nlm", "payload": [notebook]},
+                {"binary": "/mock/nlm", "payload": sources},
+                {"binary": "/mock/nlm", "payload": sources},
+            ],
+        ), patch.object(
+            openclaw_codex_bridge,
+            "_safe_append_notebooklm_audit",
+            return_value="permission denied",
+        ):
+            payload = openclaw_codex_bridge.list_saju_notebook_sources("대운")
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["source_count"], 1)
+        self.assertEqual(payload["match_count"], 1)
+        self.assertEqual(payload["audit_error"], "permission denied")
+
     def test_query_saju_notebook_uses_fixed_uuid_and_preserves_citations(self):
         answer = {
             "answer": "격국과 용신 설명",
@@ -519,6 +585,28 @@ class OpenClawBridgeTests(unittest.TestCase):
 
         self.assertNotIn("ya29.secret", str(raised.exception))
         self.assertNotIn("access_token", str(raised.exception))
+
+    def test_run_nlm_failure_redacts_refresh_tokens_and_jwts(self):
+        completed = subprocess.CompletedProcess(
+            args=["nlm"],
+            returncode=1,
+            stdout="",
+            stderr='refresh_token=1//refresh.secret id_token="eyJabc.def.ghi"',
+        )
+        with patch.object(
+            openclaw_codex_bridge,
+            "_detect_nlm",
+            return_value={"available": True, "path": "/mock/nlm"},
+        ), patch.object(
+            openclaw_codex_bridge.subprocess, "run", return_value=completed
+        ):
+            with self.assertRaisesRegex(RuntimeError, "exit code 1") as raised:
+                openclaw_codex_bridge._run_nlm(["notebook", "list"], timeout_s=10)
+
+        detail = str(raised.exception)
+        self.assertNotIn("refresh.secret", detail)
+        self.assertNotIn("eyJabc.def.ghi", detail)
+        self.assertIn("[REDACTED]", detail)
 
     def test_run_nlm_uses_minimal_environment(self):
         completed = subprocess.CompletedProcess(

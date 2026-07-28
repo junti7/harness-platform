@@ -11,6 +11,7 @@ import socket
 import subprocess
 import sys
 import time
+import unicodedata
 import uuid
 from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
@@ -274,6 +275,32 @@ def _detect_nlm() -> dict[str, Any]:
     return {"available": False, "path": None}
 
 
+def _sanitize_process_detail(text: str) -> str:
+    sanitized = re.sub(
+        r"(?i)(authorization:\s*bearer\s+)[^\s\"']+",
+        r"\1[REDACTED]",
+        text,
+    )
+    sanitized = re.sub(
+        r"(?i)\"(access_token|refresh_token|id_token|token|api_key|secret)\"\s*:\s*\"[^\"]+\"",
+        '"credential":"[REDACTED]"',
+        sanitized,
+    )
+    sanitized = re.sub(
+        r"(?i)\b(access_token|refresh_token|id_token|api_key|secret|token)=([^\s&\"']+)",
+        lambda match: f"{match.group(1)}=[REDACTED]",
+        sanitized,
+    )
+    sanitized = re.sub(r"\bya29\.[A-Za-z0-9._-]+", "ya29.[REDACTED]", sanitized)
+    sanitized = re.sub(r"\b1//[A-Za-z0-9._-]+", "1//[REDACTED]", sanitized)
+    sanitized = re.sub(
+        r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b",
+        "jwt.[REDACTED]",
+        sanitized,
+    )
+    return re.sub(r"\s+", " ", sanitized).strip()[:500]
+
+
 def _append_notebooklm_audit(payload: dict[str, Any]) -> None:
     NOTEBOOKLM_AUDIT_PATH.parent.mkdir(parents=True, exist_ok=True)
     line = json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n"
@@ -318,6 +345,11 @@ def _run_nlm(args: list[str], *, timeout_s: int) -> dict[str, Any]:
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"nlm timed out after {timeout_s} seconds") from exc
     if result.returncode != 0:
+        detail = _sanitize_process_detail(result.stderr or result.stdout or "")
+        if detail:
+            raise RuntimeError(
+                f"nlm command failed with exit code {result.returncode}: {detail}"
+            )
         raise RuntimeError(f"nlm command failed with exit code {result.returncode}")
     try:
         payload = json.loads(result.stdout)
@@ -471,6 +503,79 @@ def saju_notebook_status() -> dict[str, Any]:
             "detail": audit_error,
             "latency_ms": payload["latency_ms"],
         }
+    return payload
+
+
+def list_saju_notebook_sources(search: str = "") -> dict[str, Any]:
+    started = time.monotonic()
+    observed_at = _now()
+    try:
+        verified = _verified_saju_notebook()
+        sources_result = _run_nlm(
+            ["source", "list", SAJU_NOTEBOOK_ID, "--json"], timeout_s=30
+        )
+        sources = sources_result["payload"]
+        if not isinstance(sources, list):
+            raise RuntimeError("nlm source list did not return a list")
+        normalized_search = unicodedata.normalize("NFC", search.strip()).casefold()
+        matches = []
+        for item in sources:
+            if not isinstance(item, dict):
+                continue
+            title = unicodedata.normalize("NFC", str(item.get("title") or ""))
+            url = item.get("url")
+            haystack = f"{title} {url or ''}".casefold()
+            if normalized_search and normalized_search not in haystack:
+                continue
+            matches.append(
+                {
+                    "id": item.get("id"),
+                    "title": title,
+                    "type": item.get("type"),
+                    "url": url,
+                    "status": item.get("status"),
+                }
+            )
+        payload = {
+            "ok": True,
+            "observed_at": observed_at,
+            "notebook": verified["notebook"],
+            "source_count": len(sources),
+            "search": search,
+            "match_count": len(matches),
+            "matches": matches,
+            "binary": sources_result["binary"],
+            "latency_ms": round((time.monotonic() - started) * 1000),
+        }
+    except (RuntimeError, subprocess.TimeoutExpired, OSError) as exc:
+        payload = {
+            "ok": False,
+            "observed_at": observed_at,
+            "notebook": {"id": SAJU_NOTEBOOK_ID, "title": SAJU_NOTEBOOK_TITLE},
+            "source_count": 0,
+            "search": search,
+            "match_count": 0,
+            "matches": [],
+            "error": type(exc).__name__,
+            "detail": str(exc)[:1000],
+            "latency_ms": round((time.monotonic() - started) * 1000),
+        }
+    audit_error = _safe_append_notebooklm_audit(
+        {
+            "ts": observed_at,
+            "action": "sources",
+            "ok": payload["ok"],
+            "notebook_id": SAJU_NOTEBOOK_ID,
+            "source_count": payload["source_count"],
+            "search_sha256": hashlib.sha256(search.encode("utf-8")).hexdigest()
+            if search
+            else "",
+            "match_count": payload["match_count"],
+            "latency_ms": payload["latency_ms"],
+        }
+    )
+    if audit_error:
+        payload["audit_error"] = audit_error
     return payload
 
 
@@ -782,6 +887,7 @@ def status_snapshot() -> dict[str, Any]:
         "minutes-reupload",
             "gmail-search",
             "saju-notebook-status",
+            "saju-notebook-sources",
             "saju-notebook-query",
             "ibkr-etf-check",
             "ibkr-etf-approve",
@@ -2028,6 +2134,35 @@ def command_saju_notebook_status(args: argparse.Namespace) -> int:
         )
     else:
         rendered = f"NotebookLM: unavailable\nReason: {payload.get('detail', payload.get('error'))}"
+    _write_output(rendered, args.output)
+    return 0 if payload["ok"] else 2
+
+
+def command_saju_notebook_sources(args: argparse.Namespace) -> int:
+    payload = list_saju_notebook_sources(args.search or "")
+    if args.format == "json":
+        rendered = _json_dump(payload)
+    elif payload["ok"]:
+        notebook = payload["notebook"]
+        lines = [
+            "NotebookLM sources: ready",
+            f"Notebook: {notebook['title']}",
+            f"UUID: {notebook['id']}",
+            f"Sources: {payload['source_count']}",
+            f"Matches: {payload['match_count']}",
+        ]
+        for item in payload["matches"][:20]:
+            suffix = f" | {item['url']}" if item.get("url") else ""
+            lines.append(
+                f"- {item.get('title', 'untitled')} [{item.get('type', 'unknown')}; status={item.get('status')}]"
+                f"{suffix}"
+            )
+        rendered = "\n".join(lines)
+    else:
+        rendered = (
+            "NotebookLM sources: unavailable\n"
+            f"Reason: {payload.get('detail', payload.get('error'))}"
+        )
     _write_output(rendered, args.output)
     return 0 if payload["ok"] else 2
 
@@ -3585,6 +3720,15 @@ def build_parser() -> argparse.ArgumentParser:
     saju_status_parser.add_argument("--format", choices=["json", "text"], default="json")
     saju_status_parser.add_argument("--output")
     saju_status_parser.set_defaults(func=command_saju_notebook_status)
+
+    saju_sources_parser = subparsers.add_parser(
+        "saju-notebook-sources",
+        help="List and optionally search fixed Saju NotebookLM sources (read-only).",
+    )
+    saju_sources_parser.add_argument("--search", default="")
+    saju_sources_parser.add_argument("--format", choices=["json", "text"], default="json")
+    saju_sources_parser.add_argument("--output")
+    saju_sources_parser.set_defaults(func=command_saju_notebook_sources)
 
     saju_query_parser = subparsers.add_parser(
         "saju-notebook-query",

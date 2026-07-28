@@ -10,6 +10,24 @@ const SAJU_FOLLOWUP_MARKERS =
   /시간대|좋은 시간|피할 시간|계속|이어서|더 자세히|그럼|같은 기준/;
 const SAJU_NOTEBOOK_MARKERS =
   /d3fe3696-ff81-4810-94a8-9584c329c440|사주명리학자료/;
+const SAJU_NOTEBOOK_STATUS_INTENT =
+  /(?:(?:노트북|notebook|NotebookLM).{0,80}(?:소스|source|추가|등록|업로드|목록|확인|잘\s*추가|들어갔|들어갔는지)|(?:자료|소스|source|리서치).{0,40}(?:추가|등록|업로드|목록|확인|잘\s*추가|들어갔|들어갔는지))/i;
+const SAJU_NOTEBOOK_STATUS_EXCLUDED_INTENT =
+  /(?:바탕으로|기준으로|참고해서|근거로).{0,40}(?:운세|총운|일진|해석|분석|알려|풀이)|(?:운세|총운|일진|해석|분석|풀이).{0,40}(?:알려|해줘|봐줘|해석|분석)/i;
+const SAJU_NOTEBOOK_SEARCH_TERMS = [
+  "대운",
+  "월운",
+  "세운",
+  "일진",
+  "격국",
+  "용신",
+  "상신",
+  "십신",
+  "신살",
+  "원국",
+  "사주명리학",
+  "명리학",
+];
 const WORKSPACE_STATS_INTENT =
   /(?:전체|폴더|디렉터리|directory|folder|disk).{0,20}(?:용량|크기|파일\s*(?:수|개수)|size|usage|count)|(?:용량|크기|size|usage).{0,20}(?:프로젝트|폴더|디렉터리|project|folder|directory)/i;
 const HARNESS_WORKSPACE_MARKERS =
@@ -2602,6 +2620,20 @@ export function shouldEnforceSajuBridge(prompt, messages = []) {
   });
 }
 
+export function shouldEnforceSajuNotebookStatus(prompt) {
+  const text = String(prompt ?? "");
+  return (
+    SAJU_MARKERS.test(text) &&
+    SAJU_NOTEBOOK_STATUS_INTENT.test(text) &&
+    !SAJU_NOTEBOOK_STATUS_EXCLUDED_INTENT.test(text)
+  );
+}
+
+export function sajuNotebookStatusSearchTerm(prompt) {
+  const text = String(prompt ?? "");
+  return SAJU_NOTEBOOK_SEARCH_TERMS.find((term) => text.includes(term)) ?? "";
+}
+
 export function isDirectSajuNotebookQuery(toolName, params = {}, activeSajuRun = false) {
   let serialized;
   try {
@@ -2708,6 +2740,33 @@ export function runSajuBridge(question, timeoutMs = SAJU_BRIDGE_TIMEOUT_MS) {
     });
     child.stdin.end(String(question));
   });
+}
+
+export async function runSajuNotebookStatus(search = "") {
+  const repo = path.join(process.env.HOME ?? "", "projects", "harness-platform");
+  const trustedRepo =
+    [
+      ".git",
+      ".venv/bin/python",
+      "scripts/openclaw_codex_bridge.py",
+    ].every((required) => fs.existsSync(path.join(repo, required)));
+  if (!trustedRepo) throw new Error("Harness repository root was not found");
+  const args = [
+    path.join(repo, "scripts", "openclaw_codex_bridge.py"),
+    "saju-notebook-sources",
+    "--format",
+    "json",
+  ];
+  const query = String(search ?? "").trim();
+  if (query) args.push("--search", query);
+  const result = await runProcess(path.join(repo, ".venv", "bin", "python"), args, {
+    cwd: repo,
+    timeoutMs: 45_000,
+  });
+  if (result.code !== 0) {
+    throw new Error(`Saju notebook status failed with exit code ${result.code}: ${result.stderr.slice(0, 300)}`);
+  }
+  return result.stdout;
 }
 
 export default {
@@ -2948,9 +3007,46 @@ export default {
       return conversation && senderId ? `${conversation}:${senderId}` : undefined;
     };
     api.registerTool({
+      name: "harness_saju_notebook_status",
+      description:
+        "Verify the fixed Saju NotebookLM source list and search recently added source titles. Use for source/addition/status checks, not fortune interpretation.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: [],
+        properties: {
+          search: {
+            type: "string",
+            description: "Optional source-title or URL keyword to match, e.g. 대운.",
+            maxLength: 200,
+          },
+        },
+      },
+      async execute(_toolCallId, params) {
+        try {
+          const output = await runSajuNotebookStatus(params.search || "");
+          return { content: [{ type: "text", text: output }] };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  ok: false,
+                  error: "saju_notebook_status_failed",
+                  reason: sajuBridgeErrorCode(error),
+                }),
+              },
+            ],
+            isError: true,
+          };
+        }
+      },
+    });
+    api.registerTool({
       name: "harness_saju_query",
       description:
-        "Query the fixed Saju NotebookLM through deterministic dates, expert validation, private cache, and compact relay. Use for every Saju request and follow-up.",
+        "Query the fixed Saju NotebookLM through deterministic dates, expert validation, private cache, and compact relay. Also returns source status for Saju NotebookLM material-addition checks.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -2967,6 +3063,11 @@ export default {
       },
       async execute(_toolCallId, params) {
         try {
+          if (shouldEnforceSajuNotebookStatus(params.question)) {
+            const search = sajuNotebookStatusSearchTerm(params.question);
+            const output = await runSajuNotebookStatus(search);
+            return { content: [{ type: "text", text: output }] };
+          }
           const output = await runSajuBridge(params.question);
           return { content: [{ type: "text", text: output }] };
         } catch (error) {
@@ -3148,6 +3249,18 @@ export default {
         }
         if (!shouldEnforceSajuBridge(event.prompt, event.messages)) {
           return;
+        }
+        if (shouldEnforceSajuNotebookStatus(event.prompt)) {
+          return {
+            appendSystemContext: [
+              "[HARNESS SAJU NOTEBOOK STATUS — MANDATORY]",
+              "The user asked whether sources or research material were added to the fixed Saju NotebookLM.",
+              "Call `harness_saju_notebook_status` exactly once. Use `search` for the requested topic if present, for example `대운`.",
+              "If `harness_saju_notebook_status` is not visible in the current tool list, call `harness_saju_query` exactly once with the original status-check question; the bridge will return source status instead of running a fortune query.",
+              "Answer only from the returned source_count, updated_at, match_count, and matches.",
+              "Do not call NotebookLM query/chat, nlm directly, shell, or workspace search for this status check.",
+            ].join(" "),
+          };
         }
         markSajuRun(event, context);
         return {

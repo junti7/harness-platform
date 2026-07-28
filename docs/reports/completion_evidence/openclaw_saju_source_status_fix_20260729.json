@@ -1,0 +1,80 @@
+{
+  "task": "openclaw_saju_source_status_fix_20260729",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-29T08:40:00+09:00",
+      "summary": "Harness is an operating system, not a summarizer; completion reporting must preserve human decision boundaries and exact verification."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-29T08:40:00+09:00",
+      "summary": "Completion requires real user-facing/runtime verification evidence; Mac Mini production paths must be verified before complete reporting."
+    }
+  ],
+  "codex_cli_rule": "Codex CLI uses caveman ultra by default unless explicitly disabled; code change summaries must keep changed files, verification, commit, and deploy state exact.",
+  "problem": "OpenClaw timed out or failed when asked to check whether 10-year daewoon research material was added to the fixed Saju NotebookLM notebook.",
+  "root_cause": [
+    "The request was a NotebookLM source/status check, but the exposed Saju tool path treated it as a fortune/query request and enforced birth-date and target-date requirements.",
+    "The NotebookLM CLI error path only reported exit code details and could hide the useful connection failure while risking raw stderr exposure.",
+    "OpenClaw did not expose the newly added optional status tool in the live dynamic tool list, so the existing harness_saju_query path needed a source-status fallback."
+  ],
+  "changes": [
+    "scripts/openclaw_codex_bridge.py: added saju-notebook-sources read-only command with source_count, updated_at, source_revision, search matches, and privacy-safe audit hashing.",
+    "scripts/openclaw_codex_bridge.py: redacts bearer tokens, OAuth token fields, refresh-token shaped values, and JWT-shaped values from nlm failure details.",
+    "plugins/harness-bridge/index.js: added source-status intent detection, keyword extraction, and source-status fallback inside harness_saju_query for live OpenClaw compatibility.",
+    "plugins/harness-bridge/openclaw.plugin.json: declared harness_saju_notebook_status in the plugin contract.",
+    "tests/test_harness_bridge_plugin.mjs and tests/test_openclaw_bridge.py: added routing, source search, audit failure, and redaction regression coverage."
+  ],
+  "verification": [
+    {
+      "name": "Local Python and Node regression tests",
+      "target": "tests",
+      "command": "node --check plugins/harness-bridge/index.js && node tests/test_harness_bridge_plugin.mjs && .venv/bin/python -m pytest -q tests/test_openclaw_bridge.py tests/test_openclaw_saju_bridge_timeout.py",
+      "result": "node checks passed; pytest 40 passed"
+    },
+    {
+      "name": "Mac Mini Python and Node regression tests",
+      "target": "macmini tests",
+      "command": "ssh juntaepark@192.168.0.203 'cd ~/projects/harness-platform && /opt/homebrew/opt/node/bin/node tests/test_harness_bridge_plugin.mjs && .venv/bin/python -m pytest -q tests/test_openclaw_bridge.py tests/test_openclaw_saju_bridge_timeout.py'",
+      "result": "node checks passed; pytest 40 passed"
+    },
+    {
+      "name": "Mac Mini NotebookLM source-status entrypoint",
+      "target": "macmini runtime api cli",
+      "command": "ssh juntaepark@192.168.0.203 'cd ~/projects/harness-platform && .venv/bin/python scripts/openclaw_codex_bridge.py saju-notebook-sources --search 대운 --format json'",
+      "result": "ok true; notebook title 사주명리학자료; source_count 36; match_count 1; matched 대운(大運)·월운(月運)의 길흉은 지지신(地支神) 취용(取用)해야 적중 - 시사포커스"
+    },
+    {
+      "name": "Mac Mini OpenClaw plugin health",
+      "target": "macmini production launchd service",
+      "command": "ssh juntaepark@192.168.0.203 '/opt/homebrew/bin/openclaw plugins doctor'",
+      "result": "No plugin issues detected after plugin install --force and openclaw daemon restart"
+    },
+    {
+      "name": "Mac Mini OpenClaw agent replay",
+      "target": "macmini production agent",
+      "command": "ssh juntaepark@192.168.0.203 '/opt/homebrew/bin/openclaw agent --agent main --session-key diag-saju-source-check-20260729-v4 --json --timeout 180 --message ...'",
+      "result": "status ok; completed in 22295ms; toolSummary calls 1, tools harness_saju_query, failures 0; final answer reported source_count 36 and 대운 match_count 1"
+    },
+    {
+      "name": "Independent Gemini review",
+      "target": "llm dispatch",
+      "command": "agy --model gemini-3.6-flash-low --effort low --print-timeout 5m --print '<review prompt>'",
+      "result": "initial review returned red_team_block; after fixes follow-up returned red_team_clear"
+    },
+    {
+      "name": "Push hook verification",
+      "target": "pre-push git hook",
+      "command": "git push",
+      "result": "pre-push response-quality hard gate ran: contract_safety_pass cases 240 failures 0; route tests pass cases 10 failures 0; pytest 148 passed before completion evidence guard blocked missing evidence"
+    },
+    {
+      "name": "Static and secret checks",
+      "target": "tests",
+      "command": "git diff --check and rg token-pattern scan over touched files",
+      "result": "diff check passed; token-pattern hits were test fixtures or redaction regex strings only"
+    }
+  ]
+}
