@@ -595,6 +595,9 @@ assert.deepEqual(
     "harness_workspace_write",
   ],
 );
+const sajuQueryTool = registeredTools.get("harness_saju_query");
+assert.deepEqual(sajuQueryTool.parameters.required, ["question", "timeoutSeconds"]);
+assert.equal(sajuQueryTool.parameters.properties.timeoutSeconds.const, 300);
 const notionRouting = await hooks.get("before_prompt_build")(
   {
     prompt:

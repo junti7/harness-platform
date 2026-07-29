@@ -3050,7 +3050,7 @@ export default {
       parameters: {
         type: "object",
         additionalProperties: false,
-        required: ["question"],
+        required: ["question", "timeoutSeconds"],
         properties: {
           question: {
             type: "string",
@@ -3058,6 +3058,11 @@ export default {
               "Self-contained question with explicit birth date/time and target date reconstructed from conversation.",
             minLength: 1,
             maxLength: 4000,
+          },
+          timeoutSeconds: {
+            type: "integer",
+            const: SAJU_QUERY_TIMEOUT_SECONDS,
+            description: "Required OpenClaw dynamic-tool timeout override. Always pass 300.",
           },
         },
       },
