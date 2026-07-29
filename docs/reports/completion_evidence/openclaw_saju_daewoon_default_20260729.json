@@ -43,7 +43,17 @@
       "target": "macmini OpenClaw agent main",
       "command": "ssh juntaepark@192.168.0.203 '/opt/homebrew/bin/openclaw agent --agent main --session-key diag-saju-daewoon-default-20260729 --json --timeout 260 --message \"1974년 2월 2일 유시생 남자 2026년 7월 29일 오늘 운세를 10년 대운까지 고려해서 다시 뽑아줘.\"'",
       "result": "status=ok, toolSummary.failures=0, toolSummary included harness_saju_query, final answer included 10년 대운 and 대운 확정 한계; durationMs=180384."
+    },
+    {
+      "name": "macmini post-deploy OpenClaw replay delivers daewoon via fallback",
+      "target": "macmini OpenClaw gateway and embedded fallback",
+      "command": "ssh juntaepark@192.168.0.203 '/opt/homebrew/bin/openclaw agent --agent main --session-key diag-saju-daewoon-default-postdeploy-20260729 --json --timeout 120 --message \"1974년 2월 2일 유시생 남자 2026년 7월 29일 오늘 운세를 10년 대운까지 고려해서 다시 뽑아줘.\"'",
+      "result": "Gateway timed out after 150000ms, embedded fallback completed with toolSummary.failures=0, harness_saju_query called once, final answer included 10년 대운 and 대운 확정 한계; durationMs=159173."
     }
   ],
-  "operational_note": "Mac mini was updated by targeted rsync plus openclaw plugin force-install/restart for urgent runtime verification; the standard deploy field is intentionally omitted because scripts/deploy_to_macmini.sh was not used."
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh core/notebook_query_planning.py plugins/harness-bridge/index.js tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py docs/reports/completion_evidence/openclaw_saju_daewoon_default_20260729.json",
+    "result": "Mac mini selected-path deploy passed with origin diff 0 for all five paths; backend reloaded and served on port 8000. OpenClaw plugin was force-installed again and gateway restart plus plugins doctor reported no plugin issues detected."
+  },
+  "operational_note": "Initial urgent verification used targeted rsync plus OpenClaw plugin force-install/restart. After commit and push, the same paths were redeployed through scripts/deploy_to_macmini.sh and the plugin was reinstalled/restarted. Residual latency risk remains for long NotebookLM-backed Saju answers: gateway can timeout at 150s, but embedded fallback delivered the verified answer."
 }
