@@ -230,7 +230,8 @@ class OpenClawBridgeTests(unittest.TestCase):
 
     def test_computational_saju_query_is_enriched_and_contract_checked(self):
         expert_answer = (
-            "원국과 일간 계산 기준을 설명합니다. 세운과 월운 및 일진의 십신을 분석합니다. "
+            "원국과 일간 계산 기준을 설명합니다. 10년 대운을 장기 배경으로 고려하고 "
+            "세운과 월운 및 일진의 십신을 분석합니다. "
             "천간의 합극과 지지의 합충형파해를 구분합니다. 재물, 대인, 건강 영역의 "
             "현실적 발현과 행동 지침을 제시합니다. 출생지 보정이 없어 해석에는 한계와 "
             "추정이 있으며 참고용입니다. "
@@ -279,7 +280,7 @@ class OpenClawBridgeTests(unittest.TestCase):
 
     def test_computational_saju_query_reuses_private_cache(self):
         answer_text = (
-            "원국 일간과 세운 월운 일진 운세를 설명합니다. 천간과 지지 작용, 재물 대인 건강, "
+            "원국 일간과 10년 대운, 세운 월운 일진 운세를 설명합니다. 천간과 지지 작용, 재물 대인 건강, "
             "해석 한계와 참고 사항을 근거와 함께 분석합니다. "
         ) * 20
         answer = {"answer": answer_text, "sources_used": ["source-1"]}

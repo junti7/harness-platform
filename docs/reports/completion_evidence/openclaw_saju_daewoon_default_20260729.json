@@ -1,0 +1,49 @@
+{
+  "task": "OpenClaw Saju queries require 10-year daewoon context by default",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-29T09:06:39+09:00",
+      "summary": "CEO remains decision owner; complete work requires exact verification and runtime evidence before reporting."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-29T09:06:39+09:00",
+      "summary": "Code and customer-facing answer changes require real entrypoint verification and completion evidence guard."
+    }
+  ],
+  "verification": [
+    {
+      "name": "local saju planning and bridge regression tests",
+      "target": "local pytest and node entrypoints",
+      "command": ".venv/bin/python -m pytest -q tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py tests/test_openclaw_saju_bridge_timeout.py; node --check plugins/harness-bridge/index.js && node tests/test_harness_bridge_plugin.mjs",
+      "result": "116 pytest tests passed; bridge plugin JavaScript syntax and plugin tests passed."
+    },
+    {
+      "name": "macmini saju planning and bridge regression tests",
+      "target": "macmini runtime checkout",
+      "command": "ssh juntaepark@192.168.0.203 'cd ~/projects/harness-platform && /opt/homebrew/opt/node/bin/node --check plugins/harness-bridge/index.js && /opt/homebrew/opt/node/bin/node tests/test_harness_bridge_plugin.mjs && .venv/bin/python -m pytest -q tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py tests/test_openclaw_saju_bridge_timeout.py'",
+      "result": "116 pytest tests passed on Mac mini after targeted file sync; bridge plugin syntax and plugin tests passed."
+    },
+    {
+      "name": "macmini openclaw plugin doctor",
+      "target": "macmini OpenClaw gateway",
+      "command": "ssh juntaepark@192.168.0.203 'cd ~/projects/harness-platform && /opt/homebrew/bin/openclaw plugins install ~/projects/harness-platform/plugins/harness-bridge --force && /opt/homebrew/bin/openclaw daemon restart && /opt/homebrew/bin/openclaw plugins doctor'",
+      "result": "Plugin force-installed, gateway restarted, and doctor reported no plugin issues detected."
+    },
+    {
+      "name": "macmini direct NotebookLM bridge query includes daewoon",
+      "target": "macmini saju-notebook-query runtime",
+      "command": "ssh juntaepark@192.168.0.203 'cd ~/projects/harness-platform && printf %s \"1974년 2월 2일 유시생 남자 2026년 7월 29일 운세와 일진을 10년 대운까지 고려해서 알려줘\" | .venv/bin/python scripts/openclaw_codex_bridge.py saju-notebook-query --question-stdin --format json --timeout 300'",
+      "result": "ok=true, source_count=36, delivery_contract_passed=true, latency_ms=161238, answer included a 10년 대운 section and 대운 확정 한계."
+    },
+    {
+      "name": "macmini OpenClaw agent replay delivers daewoon answer",
+      "target": "macmini OpenClaw agent main",
+      "command": "ssh juntaepark@192.168.0.203 '/opt/homebrew/bin/openclaw agent --agent main --session-key diag-saju-daewoon-default-20260729 --json --timeout 260 --message \"1974년 2월 2일 유시생 남자 2026년 7월 29일 오늘 운세를 10년 대운까지 고려해서 다시 뽑아줘.\"'",
+      "result": "status=ok, toolSummary.failures=0, toolSummary included harness_saju_query, final answer included 10년 대운 and 대운 확정 한계; durationMs=180384."
+    }
+  ],
+  "operational_note": "Mac mini was updated by targeted rsync plus openclaw plugin force-install/restart for urgent runtime verification; the standard deploy field is intentionally omitted because scripts/deploy_to_macmini.sh was not used."
+}

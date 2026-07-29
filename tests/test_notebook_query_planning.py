@@ -376,6 +376,7 @@ def test_computational_plan_requests_expert_sections():
     )
     assert "[전문가형 명리 분석 형식]" in plan.grounded_question
     assert "세운·월운·일진" in plan.grounded_question
+    assert "10년 대운" in plan.grounded_question
     assert "종합운·일/사업·재물·대인관계·건강·실행 조언" in plan.grounded_question
 
 
@@ -389,6 +390,21 @@ def test_computational_plan_rejects_brief_answer_even_if_it_mentions_fortune():
     )
     assert not passed
     assert "expert_answer_too_short" in issues
+
+
+def test_computational_plan_rejects_answer_without_daewoon():
+    plan = build_query_plan(
+        "1974년 2월 2일 유시생 남자 2026년 7월 24일 운세와 일진",
+        (enrich_saju_question,),
+    )
+    answer = (
+        "원국과 일간 기준으로 봅니다. 세운, 월운, 일진의 십신을 나누고 "
+        "천간과 지지의 합충형파해를 검토합니다. 재물, 대인, 건강 영역은 "
+        "현실적 조언으로만 참고해야 하며 해석 한계와 추정 가능성을 밝힙니다. "
+    ) * 8
+    passed, issues = assess_notebook_answer(plan, answer)
+    assert not passed
+    assert "missing:대운" in issues
 
 
 def test_time_window_followup_has_distinct_cache_requirements():

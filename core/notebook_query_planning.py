@@ -145,11 +145,14 @@ def build_query_plan(question: str, enrichers: Iterable[Enricher] = ()) -> Noteb
             "짧은 요약으로 축약하지 말고 다음을 각각 명시하라:",
             "1. 계산 기준과 원국 4주, 일간",
             "2. 대상일의 세운·월운·일진 및 일간 기준 십신",
-            "3. 천간의 합·충·극과 지지의 합·충·형·파·해 중 실제 성립하는 작용",
-            "4. 종합운·일/사업·재물·대인관계·건강·실행 조언",
-            "5. 노트북 근거와 해석상 추론의 구분, 계산 및 해석 한계",
+            "3. 10년 대운을 장기 배경으로 먼저 고려하고, 세운·월운·일진은 그 위의 단기 층위로 해석",
+            "4. 천간의 합·충·극과 지지의 합·충·형·파·해 중 실제 성립하는 작용",
+            "5. 종합운·일/사업·재물·대인관계·건강·실행 조언",
+            "6. 노트북 근거와 해석상 추론의 구분, 계산 및 해석 한계",
             "각 항목은 결론만 나열하지 말고 근거와 현실적인 발현 가능성을 설명하라. "
-            "출생지·절입시각 등 입력이 부족하면 대운이나 용신을 확정하지 말라.",
+            "출생지·절입시각 등 입력이 부족하면 대운 시작시점이나 용신을 확정하지 말라. "
+            "그 경우에도 대운을 생략하지 말고 '대운 확정 한계'를 명시한 뒤 일반 대운 이론 기준의 "
+            "장기 배경 해석과 세운·월운·일진의 단기 해석을 구분하라.",
         ]
         section_requirements = [
             requirement
@@ -274,7 +277,7 @@ def assess_notebook_answer(plan: NotebookQueryPlan, answer: str) -> tuple[bool, 
             reasons.append("expert_answer_too_short")
         expert_groups = {
             "calculation_basis": ("원국", "일간"),
-            "time_layers": ("세운", "월운", "일진"),
+            "time_layers": ("대운", "세운", "월운", "일진"),
             "stem_branch_interactions": ("천간", "지지"),
             "practical_domains": ("재물", "대인", "건강"),
             "limitations": ("한계", "추정", "참고"),
@@ -284,4 +287,6 @@ def assess_notebook_answer(plan: NotebookQueryPlan, answer: str) -> tuple[bool, 
         )
         if covered < 4:
             reasons.append(f"insufficient_expert_coverage:{covered}/5")
+        if "대운" not in text:
+            reasons.append("missing:대운")
     return not reasons, tuple(reasons)

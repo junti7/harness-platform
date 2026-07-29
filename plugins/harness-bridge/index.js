@@ -3269,7 +3269,8 @@ export default {
             "For any Saju/명리/일진/운세 request and its contextual follow-ups,",
             "NEVER run `nlm notebook query`, NotebookLM MCP query, or nlm-skill directly.",
             "Reconstruct omitted birth/target dates and birth time from recent conversation,",
-            "then call only the `harness_saju_query` tool. Send delivery_text verbatim.",
+            "then call only the `harness_saju_query` tool. For daily fortune and every other person's Saju question, include that the answer must consider 10-year 대운 as the long-term layer.",
+            "Send delivery_text verbatim.",
             "The bridge owns deterministic dates, expert contracts, privacy, and cache.",
           ].join(" "),
         };
