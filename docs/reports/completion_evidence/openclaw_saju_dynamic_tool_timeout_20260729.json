@@ -1,0 +1,47 @@
+{
+  "task": "openclaw_saju_dynamic_tool_timeout_20260729",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-29T09:30:00+09:00",
+      "summary": "Completion requires exact test, push, deployment, and runtime verification state."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-29T09:30:00+09:00",
+      "summary": "Origin/main is deployment source of truth and production claims require real entrypoint evidence."
+    }
+  ],
+  "codex_cli_rule": "Codex CLI uses caveman ultra by default unless explicitly disabled; code change summaries must keep changed files, verification, commit, and deploy state exact.",
+  "problem": "A fresh OpenClaw Saju query failed and reused an older answer instead of returning the newly calculated daewoon-aware result.",
+  "root_cause": [
+    "The live OpenClaw trajectory recorded codex_dynamic_tool_rpc timeoutMs=90000 for harness_saju_query.",
+    "The Saju bridge permits up to 300 seconds and fresh NotebookLM calls can exceed 90 seconds, so the outer dynamic-tool watchdog terminated valid work first."
+  ],
+  "changes": [
+    "plugins/harness-bridge/index.js: require timeoutSeconds=300 in harness_saju_query arguments so OpenClaw applies its documented 30-second grace and a 330-second dynamic-tool watchdog.",
+    "tests/test_harness_bridge_plugin.mjs: assert the required fixed timeout contract."
+  ],
+  "verification": [
+    {
+      "name": "Mac Mini live failure trajectory",
+      "target": "macmini production OpenClaw log",
+      "command": "grep codex_dynamic_tool_rpc /tmp/openclaw/openclaw-2026-07-29.log",
+      "result": "Observed harness_saju_query timeoutMs=90000 and timeoutKind=codex_dynamic_tool_rpc."
+    },
+    {
+      "name": "Local plugin and Saju regressions",
+      "target": "tests",
+      "command": "node --check plugins/harness-bridge/index.js; node tests/test_harness_bridge_plugin.mjs; .venv/bin/python -m pytest -q tests/test_openclaw_bridge.py tests/test_openclaw_saju_bridge_timeout.py tests/test_notebook_query_planning.py",
+      "result": "Node checks passed; pytest 116 passed."
+    },
+    {
+      "name": "Static diff validation",
+      "target": "tests",
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "operational_note": "Code is committed locally but not yet pushed or deployed. Status remains residual_risk until Mac Mini plugin reinstall, restart, doctor, and real OpenClaw replay succeed."
+}
