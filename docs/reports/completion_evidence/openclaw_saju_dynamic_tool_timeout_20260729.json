@@ -1,6 +1,6 @@
 {
   "task": "openclaw_saju_dynamic_tool_timeout_20260729",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -41,7 +41,24 @@
       "target": "tests",
       "command": "git diff --check",
       "result": "passed"
+    },
+    {
+      "name": "Mac Mini OpenClaw production replay",
+      "target": "macmini production agent",
+      "command": "openclaw agent --agent main --session-key diag-saju-dynamic-timeout-final-20260729 --json --timeout 420 --message <daewoon-aware fresh query>",
+      "result": "status ok; durationMs 170911; fallbackUsed false; harness_saju_query failures 0; trajectory arguments included timeoutSeconds=300; final answer included 10-year daewoon, seun, wolun, iljin, and daewoon confirmation limits."
+    },
+    {
+      "name": "Mac Mini plugin health",
+      "target": "macmini production launchd service",
+      "command": "openclaw plugins install --force <harness-bridge>; openclaw daemon restart; openclaw plugins doctor",
+      "result": "plugin installed and gateway restarted; No plugin issues detected."
     }
   ],
-  "operational_note": "Code is committed locally but not yet pushed or deployed. Status remains residual_risk until Mac Mini plugin reinstall, restart, doctor, and real OpenClaw replay succeed."
+  "deploy": {
+    "target": "juntaepark@192.168.0.203:/Users/juntaepark/projects/harness-platform",
+    "method": "scripts/deploy_to_macmini.sh with three selected paths, followed by forced plugin install and gateway restart",
+    "result": "selected deployed paths matched origin/main with zero diff; production replay succeeded after 170.911 seconds."
+  },
+  "operational_note": "Fresh NotebookLM work can still take several minutes, but the OpenClaw dynamic-tool watchdog now allows the bridge's full query budget instead of failing at 90 seconds."
 }
