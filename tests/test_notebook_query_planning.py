@@ -248,6 +248,18 @@ def test_saju_enricher_accepts_unambiguous_twelve_hour_clock(time_text):
     assert result.facts[0].startswith("출생 양력 1974-02-02")
 
 
+def test_saju_enricher_preserves_exact_birth_minute_and_kst():
+    result = enrich_saju_question(
+        "양력 1974년 2월 2일 18시 37분(KST) 출생 남자 "
+        "2026년 7월 31일 운세"
+    )
+
+    assert result is not None
+    assert "출생 시각 18:37 KST" in result.facts[0]
+    assert result.facts[0].endswith("계유(癸酉)")
+    assert "출생 시각이 없어" not in result.warnings
+
+
 def test_saju_enricher_rejects_ambiguous_night_hour():
     with pytest.raises(ValueError, match="24시간제"):
         enrich_saju_question("양력 1974년 2월 2일 밤 3시생 남자 2026년 7월 24일 운세")

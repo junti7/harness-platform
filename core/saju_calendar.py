@@ -152,12 +152,17 @@ def enrich_saju_question(question: str) -> SupplementalFacts | None:
     if len(branch_matches) > 1:
         raise ValueError("출생 시지 표현이 둘 이상이라 모호합니다")
     hour = branch_matches[0][1] if branch_matches else None
+    birth_time_suffix = (
+        r"(?:\s*(?P<minute>[0-5]?\d)\s*분)?"
+        r"(?:\s*\(?(?:KST|한국\s*표준시)\)?)?\s*(?:생|출생)"
+    )
     twelve_hour = re.search(
         r"(?P<marker>오전|오후|a\.?m\.?|p\.?m\.?)\s*"
-        r"(?P<hour>\d{1,2})\s*시\s*(?:생|출생)",
+        rf"(?P<hour>\d{{1,2}})\s*시{birth_time_suffix}",
         birth_context,
         flags=re.IGNORECASE,
     )
+    minute = int(twelve_hour.group("minute") or 0) if twelve_hour else 0
     if twelve_hour:
         if hour is not None:
             raise ValueError("출생 시지와 숫자 시각이 중복되어 모호합니다")
@@ -169,13 +174,18 @@ def enrich_saju_question(question: str) -> SupplementalFacts | None:
             hour = 0 if twelve_value == 12 else twelve_value
         else:
             hour = 12 if twelve_value == 12 else twelve_value + 12
-    any_numeric_birth_hour = re.search(r"\d{1,2}\s*시\s*(?:생|출생)", birth_context)
+    any_numeric_birth_hour = re.search(
+        rf"\d{{1,2}}\s*시{birth_time_suffix}",
+        birth_context,
+        flags=re.IGNORECASE,
+    )
     explicit_hour = (
         None
         if twelve_hour
         else re.search(
-            r"(?<!\d)(?P<hour>[01]?\d|2[0-3])\s*시\s*(?:생|출생)",
+            rf"(?<!\d)(?P<hour>[01]?\d|2[0-3])\s*시{birth_time_suffix}",
             birth_context,
+            flags=re.IGNORECASE,
         )
     )
     if any_numeric_birth_hour and not (explicit_hour or twelve_hour):
@@ -184,8 +194,9 @@ def enrich_saju_question(question: str) -> SupplementalFacts | None:
         if hour is not None:
             raise ValueError("출생 시지와 숫자 시각이 중복되어 모호합니다")
         hour = int(explicit_hour.group("hour"))
+        minute = int(explicit_hour.group("minute") or 0)
     # Validate Gregorian dates before calling the native calendar library.
-    datetime(*birth_parts, hour or 12)
+    datetime(*birth_parts, hour or 12, minute)
     datetime(*target_parts)
     gender = "남성" if any(x in question for x in ("남자", "남성")) else (
         "여성" if any(x in question for x in ("여자", "여성")) else "미지정"
@@ -197,7 +208,9 @@ def enrich_saju_question(question: str) -> SupplementalFacts | None:
         provider="sxtwl-2.0.7 deterministic calendar",
         facts=(
             f"출생 양력 {birth_parts[0]:04d}-{birth_parts[1]:02d}-{birth_parts[2]:02d}, "
-            f"{gender}, 사주 원국: {_pillars(*birth_parts, hour)}",
+            f"{gender}, "
+            + (f"출생 시각 {hour:02d}:{minute:02d} KST, " if hour is not None else "")
+            + f"사주 원국: {_pillars(*birth_parts, hour)}",
             f"대상일 양력 {target_parts[0]:04d}-{target_parts[1]:02d}-{target_parts[2]:02d}, "
             f"연주·월주·일주: {_pillars(*target_parts)}",
         ),
