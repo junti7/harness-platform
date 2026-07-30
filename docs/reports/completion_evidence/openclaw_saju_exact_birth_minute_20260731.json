@@ -21,6 +21,7 @@
   ],
   "changes": [
     "core/saju_calendar.py: parse optional birth minutes and KST or 한국 표준시 labels, validate the full time, preserve HH:MM KST in supplemental facts, and calculate the hour pillar.",
+    "core/saju_calendar.py: accept HH:MM KST birth times and deduplicate repeated identical birth or target dates while still rejecting more than two distinct dates.",
     "tests/test_notebook_query_planning.py: cover exact 18:37 KST parsing and the 계유 hour pillar.",
     "OpenClaw workspace MEMORY.md and daily Saju cron now use 1974-02-02 18:37 KST; cron timeout increased from 180 to 360 seconds."
   ],
@@ -44,5 +45,5 @@
       "result": "pytest 117 passed; Node checks passed."
     }
   ],
-  "operational_note": "Code is not yet pushed or deployed. Status remains residual_risk until Mac Mini deployment and real OpenClaw replay succeed."
+  "operational_note": "The first deployment exposed two additional live OpenClaw query-shaping variants: repeated target dates and HH:MM birth time. Follow-up code is not yet pushed or deployed. Status remains residual_risk until the final Mac Mini deployment and replay succeed."
 }

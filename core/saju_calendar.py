@@ -115,18 +115,18 @@ def enrich_saju_question(question: str) -> SupplementalFacts | None:
     )
     if not is_saju_request:
         return None
-    if len(dates) < 2:
+    unique_dates: dict[tuple[int, int, int], re.Match[str]] = {}
+    for match in dates:
+        parts = tuple(int(match.group(key)) for key in ("year", "month", "day"))
+        unique_dates.setdefault(parts, match)
+    if len(unique_dates) < 2 and len(dates) >= 2:
+        raise ValueError("출생일과 대상일 역할이 모호합니다")
+    if len(unique_dates) < 2:
         raise ValueError("계산형 사주 질문에는 출생일과 대상일 두 날짜가 필요합니다")
-    if len(dates) != 2:
+    if len(unique_dates) != 2:
         raise ValueError("사주 계산에는 출생일과 대상일 두 날짜를 명확히 지정해야 합니다")
     parsed = sorted(
-        [
-            (
-            tuple(int(match.group(key)) for key in ("year", "month", "day")),
-            match,
-            )
-            for match in dates
-        ],
+        unique_dates.items(),
         key=lambda item: item[0],
     )
     if parsed[0][0] == parsed[1][0]:
@@ -188,6 +188,16 @@ def enrich_saju_question(question: str) -> SupplementalFacts | None:
             flags=re.IGNORECASE,
         )
     )
+    colon_time = (
+        None
+        if twelve_hour or explicit_hour
+        else re.search(
+            r"(?<!\d)(?P<hour>[01]?\d|2[0-3]):(?P<minute>[0-5]\d)"
+            r"(?:\s*\(?(?:KST|한국\s*표준시)\)?)?\s*(?:생|출생)",
+            birth_context,
+            flags=re.IGNORECASE,
+        )
+    )
     if any_numeric_birth_hour and not (explicit_hour or twelve_hour):
         raise ValueError("출생 시각은 00시부터 23시 사이 24시간제로 입력해야 합니다")
     if explicit_hour:
@@ -195,6 +205,11 @@ def enrich_saju_question(question: str) -> SupplementalFacts | None:
             raise ValueError("출생 시지와 숫자 시각이 중복되어 모호합니다")
         hour = int(explicit_hour.group("hour"))
         minute = int(explicit_hour.group("minute") or 0)
+    if colon_time:
+        if hour is not None:
+            raise ValueError("출생 시지와 숫자 시각이 중복되어 모호합니다")
+        hour = int(colon_time.group("hour"))
+        minute = int(colon_time.group("minute"))
     # Validate Gregorian dates before calling the native calendar library.
     datetime(*birth_parts, hour or 12, minute)
     datetime(*target_parts)
