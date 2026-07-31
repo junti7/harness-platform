@@ -953,7 +953,6 @@ await hooks.get("before_agent_finalize")(
 );
 const blockedUnverifiedPayload = await hooks.get("reply_payload_sending")(
   {
-    runId: "11111111-1111-4111-8111-111111111111",
     payload: { text: "오늘 일정은 없습니다." },
   },
   { sessionKey: genericVerificationContext.sessionKey },

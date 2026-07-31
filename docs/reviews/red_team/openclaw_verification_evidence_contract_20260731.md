@@ -61,6 +61,11 @@ outbound text)`. Expiry cleanup removes both pending and dispatched references. 
 cover outbound delivery context without a context-level run ID. Gemini returned
 `red_team_clear` after these changes.
 
+Live Discord read-back showed that this durable delivery path omitted `runId` even at
+`reply_payload_sending`. The final fallback therefore accepts a session-only match only when
+that owner session has exactly one pending evidence state; zero or multiple states fail closed.
+Gemini independently returned `red_team_clear` for this ambiguity guard and content-hash cleanup.
+
 ## Residual risk
 
 - A same-user local process with permission to alter Peekaboo output files can still interfere with

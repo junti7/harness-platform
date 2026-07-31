@@ -44,7 +44,13 @@
       "name": "incremental outbound correlation Red Team",
       "target": "session/run pending evidence and final-content delivery cleanup diff",
       "artifact": "../../reviews/red_team/openclaw_verification_evidence_contract_20260731.md",
-      "result": "red_team_clear after Gemini blocks for session-only cross-turn leakage; final design uses exact session+run attachment selection and session+SHA-256(final text) message_sent cleanup."
+      "result": "red_team_clear after Gemini blocks for session-only cross-turn leakage; final design uses exact session+run when present, an unambiguous single-pending-state session fallback when durable delivery omits runId, and session+SHA-256(final text) message_sent cleanup."
+    },
+    {
+      "name": "second production Discord read-back",
+      "target": "Discord channel 1492808588777754636",
+      "command": "openclaw message read --channel discord --target channel:1492808588777754636 --limit 8 --json",
+      "result": "CONFIRMED screen inspection and exact OCR answer delivery, but attachments=[] exposed that durable reply_payload_sending omitted runId; this directly motivated the single-state fail-closed fallback."
     },
     {
       "name": "production incident trajectory diagnosis",
@@ -99,8 +105,8 @@
   },
   "residual_risks": [
     {
-      "risk": "Final outbound-correlation commit still requires production deployment and one last Discord replay.",
-      "mitigation": "Deploy the scoped commit, force-install plugin, restart gateway, replay the exact request, and verify attached media plus immediate move of the original Peekaboo capture to Trash."
+      "risk": "Final unambiguous session fallback still requires production deployment and one last Discord replay.",
+      "mitigation": "Deploy the scoped commit, force-install plugin, restart gateway, replay the exact request, and verify Discord attachments plus immediate move of every generated Peekaboo capture to Trash."
     }
   ]
 }

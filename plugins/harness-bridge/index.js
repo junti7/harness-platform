@@ -3035,12 +3035,13 @@ export default {
       }
       return [];
     };
-    const pendingStateFor = (map, event, context) => {
+    const pendingStateFor = (map, sessions, event, context) => {
       for (const key of pendingEvidenceKeys(event, context)) {
         const state = map.get(key);
         if (state) return state;
       }
-      return undefined;
+      const queue = sessions.get(evidenceSessionKey(event, context)) ?? [];
+      return queue.length === 1 ? queue[0] : undefined;
     };
     const dispatchedEvidenceKey = (event = {}, context = {}) => {
       const sessionKey = evidenceSessionKey(event, context);
@@ -4066,8 +4067,18 @@ export default {
       "reply_payload_sending",
       async (event, context) => {
         pruneRuns();
-        const pending = pendingStateFor(pendingCoupangEvidenceReplies, event, context);
-        const verification = pendingStateFor(pendingVerificationReplies, event, context);
+        const pending = pendingStateFor(
+          pendingCoupangEvidenceReplies,
+          pendingCoupangEvidenceSessions,
+          event,
+          context,
+        );
+        const verification = pendingStateFor(
+          pendingVerificationReplies,
+          pendingVerificationSessions,
+          event,
+          context,
+        );
         if (!pending && !verification) return;
         const existingMedia = [
           ...(Array.isArray(event.payload?.mediaUrls) ? event.payload.mediaUrls : []),
