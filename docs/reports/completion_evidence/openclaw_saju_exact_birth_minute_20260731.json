@@ -1,6 +1,6 @@
 {
   "task": "openclaw_saju_exact_birth_minute_20260731",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -42,8 +42,19 @@
       "name": "Local regression suite",
       "target": "tests",
       "command": "pytest Saju planning, bridge, and timeout suites; Node plugin syntax and regression",
-      "result": "pytest 117 passed; Node checks passed."
+      "result": "final pytest 118 passed; Node checks passed."
+    },
+    {
+      "name": "Mac Mini final OpenClaw replay",
+      "target": "macmini production agent",
+      "command": "openclaw agent --agent main --session-key diag-saju-exact-1837-final-20260731 --json --timeout 360 --message <exact 18:37 KST daily Saju query>",
+      "result": "status ok; durationMs 156468; fallbackUsed false; harness_saju_query failures 0; answer stated 18:37 KST and hour pillar 계유(癸酉), with daewoon, seun, wolun, and iljin."
     }
   ],
-  "operational_note": "The first deployment exposed two additional live OpenClaw query-shaping variants: repeated target dates and HH:MM birth time. Follow-up code is not yet pushed or deployed. Status remains residual_risk until the final Mac Mini deployment and replay succeed."
+  "deploy": {
+    "target": "juntaepark@192.168.0.203:/Users/juntaepark/projects/harness-platform",
+    "method": "scripts/deploy_to_macmini.sh with three selected paths",
+    "result": "selected deployed paths matched origin/main with zero diff; backend reloaded and final OpenClaw replay succeeded."
+  },
+  "operational_note": "OpenClaw workspace MEMORY.md and the Codex memory extension note record 18:37 KST. Daily Saju cron uses the exact time and a 360-second timeout."
 }
