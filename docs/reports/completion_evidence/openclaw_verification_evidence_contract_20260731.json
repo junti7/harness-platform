@@ -59,6 +59,12 @@
       "result": "red_team_clear after adding authenticated isOwnerOnlyDiscordSession validation; CEO standing evidence instruction supplies explicit opt-in."
     },
     {
+      "name": "observed OpenClaw send success contract",
+      "target": "official Discord message send JSON",
+      "command": "openclaw message send --channel discord --target channel:1492808588777754636 --media <generated capture> --json",
+      "result": "CONFIRMED real attachment message 1532684612168323113; success JSON contained deliveryStatus=sent, matching receipt primaryPlatformMessageId, and nonempty outcomes all status=sent. Gemini red_team_clear for cleanup gated on all observed fields."
+    },
+    {
       "name": "production incident trajectory diagnosis",
       "target": "Mac mini OpenClaw Discord session 6ccdb6df-4068-4e64-b996-00c727305caf",
       "command": "inspect ~/.openclaw/agents/main/sessions/6ccdb6df-4068-4e64-b996-00c727305caf.jsonl and matching trajectory.jsonl",

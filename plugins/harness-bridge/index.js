@@ -1669,7 +1669,17 @@ async function deliverOwnerScreenEvidence(sessionKey, result) {
   } catch {
     return { attempted: true, ok: false, error: "evidence_delivery_invalid_response" };
   }
-  if (parsed?.payload?.ok !== true && parsed?.ok !== true) {
+  if (
+    parsed?.action !== "send" ||
+    parsed?.channel !== "discord" ||
+    parsed?.dryRun !== false ||
+    parsed?.payload?.deliveryStatus !== "sent" ||
+    !/^\d+$/.test(String(parsed?.messageId ?? "")) ||
+    parsed?.payload?.result?.receipt?.primaryPlatformMessageId !== parsed.messageId ||
+    !Array.isArray(parsed?.payload?.payloadOutcomes) ||
+    parsed.payload.payloadOutcomes.length === 0 ||
+    !parsed?.payload?.payloadOutcomes?.every((outcome) => outcome?.status === "sent")
+  ) {
     return { attempted: true, ok: false, error: "evidence_delivery_not_confirmed" };
   }
   let trashed = 0;

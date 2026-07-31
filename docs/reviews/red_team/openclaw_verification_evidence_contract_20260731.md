@@ -73,6 +73,12 @@ This path additionally requires `isOwnerOnlyDiscordSession`; the CEO's standing 
 instruction is the explicit opt-in. Gemini blocked the initial session-string-only version and
 returned `red_team_clear` after the authenticated owner allowlist gate was added.
 
+The first direct delivery uploaded the image but did not trash it because the assumed success
+field was wrong. A real official CLI send established the contract: exit zero,
+`deliveryStatus=sent`, numeric `messageId`, matching receipt platform ID, and nonempty outcomes
+all marked `sent`. Cleanup now requires every one of those fields. Gemini returned
+`red_team_clear` for the observed success-contract validation.
+
 ## Residual risk
 
 - A same-user local process with permission to alter Peekaboo output files can still interfere with
