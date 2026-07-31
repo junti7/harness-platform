@@ -52,6 +52,15 @@ the cleared state. Plugin and Python regressions passed, and Gemini's independen
 review returned `red_team_clear`. This incremental fix preserves the earlier Claude clear while
 addressing the production-only binding condition without weakening owner-session isolation.
 
+The second production replay successfully captured and OCR-inspected the real Chrome window,
+but exposed that outbound delivery hooks do not reliably carry the same context fields as the
+agent lifecycle. Gemini blocked session-only correlation because overlapping turns could borrow
+evidence. The final implementation permits attachment selection only through the exact
+`sessionKey + runId`, then correlates `message_sent` cleanup with `sessionKey + SHA-256(final
+outbound text)`. Expiry cleanup removes both pending and dispatched references. Regression tests
+cover outbound delivery context without a context-level run ID. Gemini returned
+`red_team_clear` after these changes.
+
 ## Residual risk
 
 - A same-user local process with permission to alter Peekaboo output files can still interfere with

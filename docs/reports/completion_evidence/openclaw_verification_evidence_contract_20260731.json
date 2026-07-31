@@ -35,6 +35,18 @@
       "result": "PASS: 37 passed"
     },
     {
+      "name": "first production replay after session binding remediation",
+      "target": "Mac mini OpenClaw Discord session 6ccdb6df-4068-4e64-b996-00c727305caf",
+      "command": "openclaw agent --session-id 6ccdb6df-4068-4e64-b996-00c727305caf --session-key agent:main:discord:channel:1492808588777754636 --message '쿠팡 띄워서 푸른친구들 효소력 가격 알아봐.' --deliver",
+      "result": "PARTIAL PASS: exact Coupang search URL opened and harness_screen_inspect returned ok=true for the real Google Chrome window with screenshot_raw and deterministic exact-card OCR; outbound media cleanup correlation still required remediation."
+    },
+    {
+      "name": "incremental outbound correlation Red Team",
+      "target": "session/run pending evidence and final-content delivery cleanup diff",
+      "artifact": "../../reviews/red_team/openclaw_verification_evidence_contract_20260731.md",
+      "result": "red_team_clear after Gemini blocks for session-only cross-turn leakage; final design uses exact session+run attachment selection and session+SHA-256(final text) message_sent cleanup."
+    },
+    {
       "name": "production incident trajectory diagnosis",
       "target": "Mac mini OpenClaw Discord session 6ccdb6df-4068-4e64-b996-00c727305caf",
       "command": "inspect ~/.openclaw/agents/main/sessions/6ccdb6df-4068-4e64-b996-00c727305caf.jsonl and matching trajectory.jsonl",
@@ -87,8 +99,8 @@
   },
   "residual_risks": [
     {
-      "risk": "Production deployment and Discord replay are not yet recorded.",
-      "mitigation": "Commit, push, deploy through scripts/deploy_to_macmini.sh, force-install plugin, restart gateway, run doctor/tests, then replay the incident request with delivery and inspect trajectory/media cleanup."
+      "risk": "Final outbound-correlation commit still requires production deployment and one last Discord replay.",
+      "mitigation": "Deploy the scoped commit, force-install plugin, restart gateway, replay the exact request, and verify attached media plus immediate move of the original Peekaboo capture to Trash."
     }
   ]
 }

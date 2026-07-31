@@ -3014,23 +3014,76 @@ export default {
     const activePumpRuns = new Map();
     const pendingPumpRequests = new Map();
     const pendingCoupangEvidenceReplies = new Map();
+    const pendingCoupangEvidenceSessions = new Map();
+    const dispatchedCoupangEvidenceSessions = new Map();
     const activeVerificationRuns = new Map();
     const pendingVerificationReplies = new Map();
-    const pendingEvidenceKey = (event = {}, context = {}) => {
+    const pendingVerificationSessions = new Map();
+    const dispatchedVerificationSessions = new Map();
+    const evidenceSessionKey = (event = {}, context = {}) =>
+      String(event.sessionKey ?? context.sessionKey ?? context.sessionId ?? "");
+    const pendingEvidenceKeys = (event = {}, context = {}) => {
       const runId = String(event.runId ?? context.runId ?? "");
-      const sessionKey = String(
-        event.sessionKey ?? context.sessionKey ?? context.sessionId ?? "",
-      );
-      return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        runId,
-      ) && sessionKey
-        ? `${sessionKey}:${runId}`
-        : undefined;
+      const sessionKey = evidenceSessionKey(event, context);
+      if (!sessionKey) return [];
+      if (
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          runId,
+        )
+      ) {
+        return [`${sessionKey}:${runId}`];
+      }
+      return [];
     };
-    const schedulePendingCaptureCleanup = (evidenceKey, state) => {
+    const pendingStateFor = (map, event, context) => {
+      for (const key of pendingEvidenceKeys(event, context)) {
+        const state = map.get(key);
+        if (state) return state;
+      }
+      return undefined;
+    };
+    const dispatchedEvidenceKey = (event = {}, context = {}) => {
+      const sessionKey = evidenceSessionKey(event, context);
+      const content = String(event.content ?? event.payload?.text ?? "");
+      if (!sessionKey || !content) return "";
+      return `${sessionKey}:${crypto.createHash("sha256").update(content).digest("hex")}`;
+    };
+    const enqueuePendingState = (sessions, sessionKey, state) => {
+      const queue = sessions.get(sessionKey) ?? [];
+      if (queue.at(-1) !== state) queue.push(state);
+      sessions.set(sessionKey, queue);
+    };
+    const deleteSessionState = (sessions, state) => {
+      const sessionKey = state?.sessionKey;
+      const queue = sessions.get(sessionKey);
+      if (!queue) return;
+      const remaining = queue.filter((candidate) => candidate !== state);
+      if (remaining.length > 0) sessions.set(sessionKey, remaining);
+      else sessions.delete(sessionKey);
+    };
+    const deleteStateFromAllQueues = (queues, state) => {
+      for (const [key, queue] of queues) {
+        const remaining = queue.filter((candidate) => candidate !== state);
+        if (remaining.length > 0) queues.set(key, remaining);
+        else queues.delete(key);
+      }
+    };
+    const deletePendingState = (map, sessions, state) => {
+      for (const key of state?.evidenceKeys ?? []) {
+        if (map.get(key) === state) map.delete(key);
+      }
+      deleteSessionState(sessions, state);
+    };
+    const schedulePendingCaptureCleanup = (state) => {
       const delayMs = Math.max(1_000, state.expiresAt - Date.now() + 1_000);
       const timer = setTimeout(() => {
-        if (pendingCoupangEvidenceReplies.get(evidenceKey) !== state) return;
+        if (
+          !pendingCoupangEvidenceSessions
+            .get(state.sessionKey)
+            ?.some((candidate) => candidate === state)
+        ) {
+          return;
+        }
         for (const imagePath of state.mediaPaths ?? []) {
           try {
             const moved = moveDisposableCaptureToTrash(
@@ -3042,16 +3095,29 @@ export default {
             api.logger?.warn?.(`peekaboo capture expiry cleanup failed: ${error.message}`);
           }
         }
-        pendingCoupangEvidenceReplies.delete(evidenceKey);
-        pendingVerificationReplies.delete(evidenceKey);
+        deletePendingState(
+          pendingCoupangEvidenceReplies,
+          pendingCoupangEvidenceSessions,
+          state,
+        );
+        deleteStateFromAllQueues(dispatchedCoupangEvidenceSessions, state);
       }, delayMs);
       state.cleanupTimer = timer;
       timer.unref?.();
     };
-    const schedulePendingVerificationCleanup = (evidenceKey, state) => {
+    const schedulePendingVerificationCleanup = (state) => {
       const timer = setTimeout(() => {
-        if (pendingVerificationReplies.get(evidenceKey) === state) {
-          pendingVerificationReplies.delete(evidenceKey);
+        if (
+          pendingVerificationSessions
+            .get(state.sessionKey)
+            ?.some((candidate) => candidate === state)
+        ) {
+          deletePendingState(
+            pendingVerificationReplies,
+            pendingVerificationSessions,
+            state,
+          );
+          deleteStateFromAllQueues(dispatchedVerificationSessions, state);
         }
       }, Math.max(1_000, state.expiresAt - Date.now() + 1_000));
       state.cleanupTimer = timer;
@@ -3899,7 +3965,8 @@ export default {
         const screenState = screenInspectRunState(event, context);
         const verificationState = verificationRunState(event, context);
         const runId = String(event.runId ?? context.runId ?? "");
-        const evidenceKey = pendingEvidenceKey(event, context);
+        const evidenceKeys = pendingEvidenceKeys(event, context);
+        const sessionKey = evidenceSessionKey(event, context);
         if (screenState && (!screenState.called || !screenState.result)) {
           return {
             action: "revise",
@@ -3928,12 +3995,14 @@ export default {
             },
           };
         }
-        if (evidenceKey && screenState?.result) {
+        if (sessionKey && screenState?.result) {
           const isCoupang = /(?:쿠팡|coupang)/i.test(screenState.question);
           const pendingScreenEvidence = {
             expiresAt: Date.now() + 5 * 60_000,
             text: isCoupang ? deterministicCoupangEvidenceReply(screenState.result) : undefined,
             mediaPaths: disposablePeekabooCapturePaths(screenState.result),
+            evidenceKeys,
+            sessionKey,
           };
           pendingScreenEvidence.mediaIdentities = Object.fromEntries(
             pendingScreenEvidence.mediaPaths.flatMap((imagePath) => {
@@ -3945,10 +4014,17 @@ export default {
               }
             }),
           );
-          pendingCoupangEvidenceReplies.set(evidenceKey, pendingScreenEvidence);
-          schedulePendingCaptureCleanup(evidenceKey, pendingScreenEvidence);
+          for (const key of evidenceKeys) {
+            pendingCoupangEvidenceReplies.set(key, pendingScreenEvidence);
+          }
+          enqueuePendingState(
+            pendingCoupangEvidenceSessions,
+            sessionKey,
+            pendingScreenEvidence,
+          );
+          schedulePendingCaptureCleanup(pendingScreenEvidence);
         }
-        if (verificationState && evidenceKey) {
+        if (verificationState && sessionKey) {
           const successfulTools = verificationState.toolResults
             .filter((result) => result.success)
             .map((result) => result.toolName);
@@ -3969,9 +4045,18 @@ export default {
             expiresAt: Date.now() + 5 * 60_000,
             successfulTools: [...new Set(successfulTools)],
             failed: successfulTools.length === 0,
+            evidenceKeys,
+            sessionKey,
           };
-          pendingVerificationReplies.set(evidenceKey, pendingVerification);
-          schedulePendingVerificationCleanup(evidenceKey, pendingVerification);
+          for (const key of evidenceKeys) {
+            pendingVerificationReplies.set(key, pendingVerification);
+          }
+          enqueuePendingState(
+            pendingVerificationSessions,
+            sessionKey,
+            pendingVerification,
+          );
+          schedulePendingVerificationCleanup(pendingVerification);
         }
         return { action: "continue" };
       },
@@ -3981,10 +4066,8 @@ export default {
       "reply_payload_sending",
       async (event, context) => {
         pruneRuns();
-        const evidenceKey = pendingEvidenceKey(event, context);
-        if (!evidenceKey) return;
-        const pending = pendingCoupangEvidenceReplies.get(evidenceKey);
-        const verification = pendingVerificationReplies.get(evidenceKey);
+        const pending = pendingStateFor(pendingCoupangEvidenceReplies, event, context);
+        const verification = pendingStateFor(pendingVerificationReplies, event, context);
         if (!pending && !verification) return;
         const existingMedia = [
           ...(Array.isArray(event.payload?.mediaUrls) ? event.payload.mediaUrls : []),
@@ -4000,15 +4083,26 @@ export default {
               : verification?.successfulTools?.length
                 ? `증빙: ${verification.successfulTools.join(", ")} 실제 실행 결과`
                 : "";
+        const text = composeEvidenceReplyText({
+          baseText,
+          pendingText: pending?.text,
+          evidenceText,
+          verificationFailed: verification?.failed,
+        });
+        const dispatchKey = dispatchedEvidenceKey(
+          { ...event, payload: { ...event.payload, text } },
+          context,
+        );
+        if (dispatchKey && pending) {
+          enqueuePendingState(dispatchedCoupangEvidenceSessions, dispatchKey, pending);
+        }
+        if (dispatchKey && verification) {
+          enqueuePendingState(dispatchedVerificationSessions, dispatchKey, verification);
+        }
         return {
           payload: {
             ...event.payload,
-            text: composeEvidenceReplyText({
-              baseText,
-              pendingText: pending?.text,
-              evidenceText,
-              verificationFailed: verification?.failed,
-            }),
+            text,
             ...(mediaUrls.length > 0 ? { mediaUrls, sensitiveMedia: true } : {}),
           },
         };
@@ -4016,11 +4110,10 @@ export default {
       { priority: 1000 },
     );
     api.on("message_sent", async (event, context) => {
-      const evidenceKey = pendingEvidenceKey(event, context);
-      if (!evidenceKey) return;
-      const pending = pendingCoupangEvidenceReplies.get(evidenceKey);
+      const dispatchKey = dispatchedEvidenceKey(event, context);
+      const pending = dispatchedCoupangEvidenceSessions.get(dispatchKey)?.[0];
       if (pending?.cleanupTimer) clearTimeout(pending.cleanupTimer);
-      const pendingVerification = pendingVerificationReplies.get(evidenceKey);
+      const pendingVerification = dispatchedVerificationSessions.get(dispatchKey)?.[0];
       if (pendingVerification?.cleanupTimer) clearTimeout(pendingVerification.cleanupTimer);
       for (const imagePath of pending?.mediaPaths ?? []) {
         try {
@@ -4033,8 +4126,18 @@ export default {
           api.logger?.warn?.(`peekaboo capture trash cleanup failed: ${error.message}`);
         }
       }
-      pendingCoupangEvidenceReplies.delete(evidenceKey);
-      pendingVerificationReplies.delete(evidenceKey);
+      deletePendingState(
+        pendingCoupangEvidenceReplies,
+        pendingCoupangEvidenceSessions,
+        pending,
+      );
+      deletePendingState(
+        pendingVerificationReplies,
+        pendingVerificationSessions,
+        pendingVerification,
+      );
+      deleteStateFromAllQueues(dispatchedCoupangEvidenceSessions, pending);
+      deleteStateFromAllQueues(dispatchedVerificationSessions, pendingVerification);
     });
     api.on("agent_end", async (event, context) => {
       clearSajuRun(event, context);

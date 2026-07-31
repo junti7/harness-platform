@@ -956,12 +956,12 @@ const blockedUnverifiedPayload = await hooks.get("reply_payload_sending")(
     runId: "11111111-1111-4111-8111-111111111111",
     payload: { text: "오늘 일정은 없습니다." },
   },
-  genericVerificationContext,
+  { sessionKey: genericVerificationContext.sessionKey },
 );
 assert.match(blockedUnverifiedPayload.payload.text, /증빙 확보 실패/);
 await hooks.get("message_sent")(
-  { runId: "11111111-1111-4111-8111-111111111111", success: true },
-  genericVerificationContext,
+  { success: true, content: blockedUnverifiedPayload.payload.text },
+  { sessionKey: genericVerificationContext.sessionKey },
 );
 await hooks.get("agent_end")(
   { runId: "11111111-1111-4111-8111-111111111111" },
@@ -999,12 +999,12 @@ const verifiedPayload = await hooks.get("reply_payload_sending")(
     runId: "22222222-2222-4222-8222-222222222222",
     payload: { text: "오늘 일정은 없습니다." },
   },
-  verifiedContext,
+  { sessionKey: verifiedContext.sessionKey },
 );
 assert.match(verifiedPayload.payload.text, /증빙: harness_calendar_list 실제 실행 결과/);
 await hooks.get("message_sent")(
-  { runId: "22222222-2222-4222-8222-222222222222", success: true },
-  verifiedContext,
+  { success: true, content: verifiedPayload.payload.text },
+  { sessionKey: verifiedContext.sessionKey },
 );
 await hooks.get("agent_end")(
   { runId: "22222222-2222-4222-8222-222222222222" },
