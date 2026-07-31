@@ -5,6 +5,9 @@ import path from "node:path";
 import harnessBridge from "../plugins/harness-bridge/index.js";
 import {
   collectHarnessWorkspaceStats,
+  composeEvidenceReplyText,
+  deterministicCoupangEvidenceReply,
+  disposablePeekabooCapturePaths,
   productCardCandidatesFromOcr,
   productSearchTermsFromCoupangWindowTitle,
   productSearchTermsFromQuestion,
@@ -18,11 +21,13 @@ import {
   shouldEnforceCopilotUsage,
   shouldEnforceBrowserOpen,
   shouldEnforceScreenInspect,
+  shouldEnforceVerificationEvidence,
   shouldEnforceSajuBridge,
   shouldEnforceSajuNotebookStatus,
   sajuNotebookStatusSearchTerm,
   shouldEnforceWorkspaceStats,
   validateWorkspaceCommand,
+  verificationEvidenceToolRelevant,
 } from "../plugins/harness-bridge/index.js";
 
 process.env.OPENCLAW_OWNER_SENDER_IDS = "owner-1,1158367139141521519";
@@ -290,6 +295,24 @@ assert.equal(
 );
 assert.equal(shouldEnforceScreenInspect("지금 떠 있는 쿠팡 화면에 어떤 것들이 보여?"), true);
 assert.equal(shouldEnforceScreenInspect("쿠팡에서 생수 검색해서 상품 보여줘"), true);
+assert.equal(shouldEnforceVerificationEvidence("오늘 캘린더 일정을 조회해줘."), true);
+assert.equal(
+  verificationEvidenceToolRelevant("오늘 캘린더 일정을 조회해줘.", "harness_calendar_list"),
+  true,
+);
+assert.equal(
+  verificationEvidenceToolRelevant("오늘 캘린더 일정을 조회해줘.", "web_search"),
+  false,
+);
+assert.equal(shouldEnforceVerificationEvidence("캘린더 조회가 가능한 기능이야?"), false);
+assert.equal(
+  shouldEnforceVerificationEvidence(
+    "아래 답변이 문제인지 분석해.\n---\n오늘 캘린더 일정을 조회해줘.",
+  ),
+  false,
+);
+assert.equal(shouldEnforceScreenInspect("쿠팡 띄워서 푸른친구들 효소력 가격 알아봐."), true);
+assert.equal(shouldEnforceBrowserOpen("쿠팡 띄워서 푸른친구들 효소력 가격 알아봐."), true);
 assert.equal(shouldEnforceScreenInspect("Current user request:\n어떤 제품들이 보여?"), false);
 assert.equal(shouldEnforceScreenInspect("쿠팡 장바구니에 어떤 제품 담아줘"), false);
 assert.equal(
@@ -298,6 +321,98 @@ assert.equal(
   ),
   true,
 );
+assert.equal(
+  deterministicCoupangEvidenceReply({
+    ok: true,
+    result: {
+      smart_collection: {
+        merged: {
+          strict_product_matches: [
+            {
+              title_candidates: ["푸른친구들 효소력 건강분말 45개입, 135g, 1개"],
+              current_price_candidates: ["52,200원"],
+            },
+            {
+              title_candidates: ["푸른친구들 효소력 프리미엄 3.5g x 45포"],
+              current_price_candidates: ["59,850원"],
+            },
+          ],
+        },
+      },
+    },
+  }),
+  [
+    "근거: 현재 쿠팡 화면 OCR",
+    "- 푸른친구들 효소력 건강분말 45개입, 135g, 1개: 52,200원",
+    "- 푸른친구들 효소력 프리미엄 3.5g x 45포: 59,850원",
+  ].join("\n"),
+);
+assert.equal(
+  deterministicCoupangEvidenceReply({
+    ok: false,
+    error: "peekaboo_bridge_socket_missing",
+  }),
+  "쿠팡 화면 판독 실패: peekaboo_bridge_socket_missing. 화면에서 가격을 확인하지 못했습니다.",
+);
+assert.equal(
+  deterministicCoupangEvidenceReply({
+    ok: false,
+    error: "failed at /Users/secret/private.sock",
+  }),
+  "쿠팡 화면 판독 실패: screen_inspection_failed. 화면에서 가격을 확인하지 못했습니다.",
+);
+assert.equal(
+  deterministicCoupangEvidenceReply({
+    ok: true,
+    result: {
+      smart_collection: {
+        merged: {
+          strict_product_matches: [
+            {
+              title_candidates: ["@everyone **무료** <script>"],
+              current_price_candidates: ["59,850원 @everyone"],
+            },
+          ],
+        },
+      },
+    },
+  }),
+  "근거: 현재 쿠팡 화면 OCR\n- @​everyone \\*\\*무료\\*\\* script: 59,850원",
+);
+assert.equal(
+  composeEvidenceReplyText({
+    baseText: "무시할 모델 답변",
+    pendingText: "화면 판독 실패: safe_error",
+    evidenceText: "증빙 확보 실패",
+    verificationFailed: true,
+  }),
+  "화면 판독 실패: safe_error\n\n증빙 확보 실패",
+);
+const disposableCaptureDir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-capture-policy-"));
+const disposableCapture = path.join(disposableCaptureDir, "peekaboo_see_123456.png");
+const rejectedCapture = path.join(disposableCaptureDir, "private.png");
+const symlinkCapture = path.join(disposableCaptureDir, "peekaboo_see_123457.png");
+fs.writeFileSync(disposableCapture, "generated capture");
+fs.writeFileSync(rejectedCapture, "not peekaboo");
+fs.symlinkSync(rejectedCapture, symlinkCapture);
+assert.deepEqual(
+  disposablePeekabooCapturePaths({
+    result: {
+      screenshot_raw: disposableCapture,
+      smart_collection: {
+        pages: [
+          { screenshot_raw: rejectedCapture },
+          { screenshot_raw: symlinkCapture },
+        ],
+      },
+    },
+  }),
+  [disposableCapture],
+);
+fs.unlinkSync(symlinkCapture);
+fs.unlinkSync(rejectedCapture);
+fs.unlinkSync(disposableCapture);
+fs.rmdirSync(disposableCaptureDir);
 assert.equal(shouldEnforceScreenInspect("쿠팡 화면에 로그인 상태가 보이는지 확인해"), true);
 assert.equal(
   shouldEnforceScreenInspect(
@@ -771,6 +886,130 @@ const coupangSearchRouting = await hooks.get("before_prompt_build")(
 );
 assert.match(coupangSearchRouting.appendSystemContext, /BROWSER OPEN \+ SCREEN INSPECT/);
 assert.match(coupangSearchRouting.appendSystemContext, /https:\/\/www\.coupang\.com\/np\/search\?q=/);
+const coupangPriceContext = {
+  runId: "run-coupang-price-evidence-1",
+  sessionKey: "agent:main:discord:channel:1492808588777754636",
+};
+const coupangPriceRouting = await hooks.get("before_prompt_build")(
+  {
+    prompt: discordPrompt(
+      "Current user request:\n쿠팡 띄워서 푸른친구들 효소력 가격 알아봐.",
+      "1158367139141521519",
+    ),
+    messages: [],
+    runId: "run-coupang-price-evidence-1",
+  },
+  coupangPriceContext,
+);
+assert.match(coupangPriceRouting.appendSystemContext, /BROWSER OPEN \+ SCREEN INSPECT/);
+assert.match(coupangPriceRouting.appendSystemContext, /q=%ED%91%B8%EB%A5%B8%EC%B9%9C%EA%B5%AC%EB%93%A4\+%ED%9A%A8%EC%86%8C%EB%A0%A5/);
+assert.match(coupangPriceRouting.appendSystemContext, /Do not use.*web_search/);
+assert.deepEqual(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "web_search",
+      params: { query: "site:coupang.com 푸른친구들 효소력" },
+      runId: "run-coupang-price-evidence-1",
+    },
+    coupangPriceContext,
+  ),
+  {
+    block: true,
+    blockReason:
+      "Browser-open plus screen-inspect routing is active; call only harness_browser_open then harness_screen_inspect.",
+  },
+);
+await hooks.get("agent_end")(
+  { runId: "run-coupang-price-evidence-1" },
+  coupangPriceContext,
+);
+const genericVerificationContext = {
+  runId: "11111111-1111-4111-8111-111111111111",
+  sessionKey: "agent:main:discord:channel:1492808588777754636",
+};
+await hooks.get("before_prompt_build")(
+  {
+    prompt: discordPrompt("Current user request:\n오늘 캘린더 일정을 조회해줘.", "1158367139141521519"),
+    messages: [],
+    runId: "11111111-1111-4111-8111-111111111111",
+  },
+  genericVerificationContext,
+);
+const missingEvidenceRevision = await hooks.get("before_agent_finalize")(
+  {
+    runId: "11111111-1111-4111-8111-111111111111",
+    lastAssistantMessage: "오늘 일정은 없습니다.",
+  },
+  genericVerificationContext,
+);
+assert.equal(missingEvidenceRevision.action, "revise");
+assert.match(missingEvidenceRevision.retry.instruction, /direct evidence|직접 확인/);
+await hooks.get("before_agent_finalize")(
+  {
+    runId: "11111111-1111-4111-8111-111111111111",
+    lastAssistantMessage: "오늘 일정은 없습니다.",
+  },
+  genericVerificationContext,
+);
+const blockedUnverifiedPayload = await hooks.get("reply_payload_sending")(
+  {
+    runId: "11111111-1111-4111-8111-111111111111",
+    payload: { text: "오늘 일정은 없습니다." },
+  },
+  genericVerificationContext,
+);
+assert.match(blockedUnverifiedPayload.payload.text, /증빙 확보 실패/);
+await hooks.get("message_sent")(
+  { runId: "11111111-1111-4111-8111-111111111111", success: true },
+  genericVerificationContext,
+);
+await hooks.get("agent_end")(
+  { runId: "11111111-1111-4111-8111-111111111111" },
+  genericVerificationContext,
+);
+const verifiedContext = {
+  runId: "22222222-2222-4222-8222-222222222222",
+  sessionKey: "agent:main:discord:channel:1492808588777754636",
+};
+await hooks.get("before_prompt_build")(
+  {
+    prompt: discordPrompt("Current user request:\n오늘 캘린더 일정을 조회해줘.", "1158367139141521519"),
+    messages: [],
+    runId: "22222222-2222-4222-8222-222222222222",
+  },
+  verifiedContext,
+);
+await hooks.get("after_tool_call")(
+  {
+    runId: "22222222-2222-4222-8222-222222222222",
+    toolName: "harness_calendar_list",
+    result: { ok: true, events: [] },
+  },
+  verifiedContext,
+);
+await hooks.get("before_agent_finalize")(
+  {
+    runId: "22222222-2222-4222-8222-222222222222",
+    lastAssistantMessage: "오늘 일정은 없습니다.",
+  },
+  verifiedContext,
+);
+const verifiedPayload = await hooks.get("reply_payload_sending")(
+  {
+    runId: "22222222-2222-4222-8222-222222222222",
+    payload: { text: "오늘 일정은 없습니다." },
+  },
+  verifiedContext,
+);
+assert.match(verifiedPayload.payload.text, /증빙: harness_calendar_list 실제 실행 결과/);
+await hooks.get("message_sent")(
+  { runId: "22222222-2222-4222-8222-222222222222", success: true },
+  verifiedContext,
+);
+await hooks.get("agent_end")(
+  { runId: "22222222-2222-4222-8222-222222222222" },
+  verifiedContext,
+);
 await hooks.get("agent_end")(
   { runId: "run-coupang-search-screen-inspect-1" },
   {

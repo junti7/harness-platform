@@ -1,0 +1,94 @@
+{
+  "task": "OpenClaw CEO verification evidence contract and truthful Coupang price reporting",
+  "status": "residual_risk",
+  "created_at": "2026-07-31T18:20:00+09:00",
+  "problem": "OpenClaw opened Coupang, skipped GUI inspection, called web_search, and stated prices that were absent from the recorded tool result as current visible prices.",
+  "implementation": [
+    {
+      "path": "plugins/harness-bridge/index.js",
+      "summary": "Added broad-but-imperative CEO verification tracking, question-relevant evidence-tool validation, fail-closed outbound evidence replacement, Coupang price intent routing, deterministic same-card OCR price replies, structured screenshot media attachment, session+run scoping, OCR sanitization, and delivery/expiry Trash cleanup."
+    },
+    {
+      "path": "plugins/harness-bridge/skills/harness-control/SKILL.md",
+      "summary": "Documented mandatory CEO verification evidence, GUI screenshot preference, non-GUI artifact hierarchy, unsupported-claim suppression, and ephemeral capture disposal."
+    },
+    {
+      "path": "tests/test_harness_bridge_plugin.mjs",
+      "summary": "Added regression coverage for the exact incident phrase, web_search blocking, deterministic multi-card price output, unsafe error and OCR sanitization, generated capture allowlisting, irrelevant evidence tools, fail-closed payload replacement, and verified evidence footers."
+    },
+    {
+      "path": "docs/operations/OPENCLAW_VERIFICATION_EVIDENCE_CONTRACT_20260731.md",
+      "summary": "Recorded incident, root causes, enforced architecture, cleanup lifecycle, and production acceptance criteria."
+    }
+  ],
+  "verification": [
+    {
+      "name": "local JavaScript syntax and plugin regression",
+      "target": "harness-bridge",
+      "command": "git diff --check && node --check plugins/harness-bridge/index.js && node tests/test_harness_bridge_plugin.mjs",
+      "result": "PASS"
+    },
+    {
+      "name": "local Python OpenClaw bridge regression",
+      "target": "OpenClaw bridge",
+      "command": ".venv/bin/python -m pytest -q tests/test_openclaw_bridge.py",
+      "result": "PASS: 37 passed"
+    },
+    {
+      "name": "production incident trajectory diagnosis",
+      "target": "Mac mini OpenClaw Discord session 6ccdb6df-4068-4e64-b996-00c727305caf",
+      "command": "inspect ~/.openclaw/agents/main/sessions/6ccdb6df-4068-4e64-b996-00c727305caf.jsonl and matching trajectory.jsonl",
+      "result": "CONFIRMED user-facing defect: harness_browser_open opened only https://www.coupang.com/; web_search returned only a completed query record with no product-price evidence; no screen inspection ran in the price turn; assistant nevertheless stated 52,200원, 52,780원, and 59,850원. The later evidence request returned screen_inspect_not_bound_to_routed_owner_request."
+    },
+    {
+      "name": "independent Gemini final review",
+      "target": "working-tree diff",
+      "artifact": "../../reviews/red_team/openclaw_verification_evidence_contract_20260731.md",
+      "result": "red_team_clear"
+    },
+    {
+      "name": "independent Claude final review",
+      "target": "working-tree diff",
+      "artifact": "../../reviews/red_team/openclaw_verification_evidence_contract_20260731.md",
+      "result": "red_team_clear"
+    },
+    {
+      "name": "independent GPT-OSS additional review",
+      "target": "working-tree diff",
+      "artifact": "../../reviews/red_team/openclaw_verification_evidence_contract_20260731.md",
+      "result": "red_team_clear"
+    }
+  ],
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-07-31T18:15:00+09:00",
+      "summary": "Confirmed requirement-to-evidence completion mapping and real user-entrypoint verification."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-07-31T18:16:00+09:00",
+      "summary": "Confirmed origin/main deployment SoT, Mac mini real-runtime verification, and completion guard requirements."
+    }
+  ],
+  "red_team": {
+    "models": [
+      "Claude",
+      "Gemini",
+      "GPT reasoning"
+    ],
+    "verdict": "red_team_clear",
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/openclaw_verification_evidence_contract_20260731.md",
+        "verdict": "red_team_clear"
+      }
+    ]
+  },
+  "residual_risks": [
+    {
+      "risk": "Production deployment and Discord replay are not yet recorded.",
+      "mitigation": "Commit, push, deploy through scripts/deploy_to_macmini.sh, force-install plugin, restart gateway, run doctor/tests, then replay the incident request with delivery and inspect trajectory/media cleanup."
+    }
+  ]
+}

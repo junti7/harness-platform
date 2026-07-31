@@ -8,6 +8,18 @@ user-invocable: true
 
 Use this skill when operating the `harness-platform` control plane from OpenClaw on the 24/7 host.
 
+## CEO verification evidence contract
+
+When the owner asks to 확인, 조회, 검증, 점검, or 알아봐:
+
+- Do not claim completion from model memory or an unsupported narrative.
+- Run the applicable read-only tool and provide evidence in the same reply.
+- Prefer an actual screen capture for GUI/browser state. Otherwise provide the strongest available artifact: URL/page ID/message ID/status ID, structured tool result, or repository path/line/hash.
+- If no successful evidence-producing tool result exists, say evidence collection failed and do not state the requested fact as confirmed.
+- The plugin adds a tool-result evidence footer automatically and suppresses an unsupported completion claim.
+- Screen captures are structured reply media, not Markdown or text attachment commands.
+- Peekaboo-generated captures move to macOS Trash as soon as delivery settles; expired or abandoned captures are also cleaned up. User-owned Desktop images are never cleanup targets.
+
 ## Native tools
 
 Prefer native `harness_*` tools over guessed shell commands:
@@ -340,6 +352,10 @@ Rules:
 - Do not run `peekaboo` through shell. The plugin owns the bounded Peekaboo bridge checks.
 - The tool must fail fast when the OpenClaw GUI bridge socket is missing or Screen Recording/Accessibility is not granted.
 - For Coupang product search/price questions, use `smart_collection.merged.strict_product_matches` when present. A strict match means all meaningful query terms appear in the same OCR card neighborhood. Do not attach global `price_candidates` to a product from a different card.
+- A request such as `쿠팡 띄워서 <제품> 가격 알아봐` is a GUI evidence request even when it does not contain the literal word `검색`. Open the Coupang search URL, inspect the screen, and use only each strict card's `current_price_candidates`.
+- Never substitute `web_search`, memory, a page-wide price, or a neighboring card when GUI inspection is required. If inspection fails or no strict match exists, report the exact failure instead of a price.
+- Coupang GUI price replies are normalized by the plugin to `현재 쿠팡 화면 OCR` evidence and include the captured screen as structured reply media when available.
+- Peekaboo capture files are ephemeral. After outbound delivery settles, move the generated capture to macOS Trash immediately; expired or abandoned captures receive the same cleanup. Never trash a user-owned Desktop image.
 - If the tool returns `peekaboo_bridge_socket_missing`, `peekaboo_bridge_not_ready`, or `peekaboo_permissions_not_granted`, report that operational blocker directly instead of guessing what is on screen.
 
 ### 18B. 쿠팡 검색 결과 상품 상세 진입 (harness_coupang_product_detail_open)

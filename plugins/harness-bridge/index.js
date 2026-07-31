@@ -50,6 +50,8 @@ const BROWSER_OPEN_REQUEST =
   /(?:(?:browser|브라우저|chrome|크롬).{0,40}(?:띄워|열어|켜|접속|open|launch|go\s*to)|(?:쿠팡|coupang).{0,40}(?:접속|열어|띄워|open|launch))/i;
 const COUPANG_SEARCH_REQUEST =
   /(?:쿠팡|coupang).{0,40}(?:검색|찾아|찾기|search).{0,80}(?:상품|제품|결과|보여|알려|수집|collect|product|item)|(?:쿠팡|coupang).{0,20}(?:에서|에)?\s*.{1,60}(?:검색|찾아|찾기|search)/i;
+const COUPANG_PRODUCT_EVIDENCE_REQUEST =
+  /(?:쿠팡|coupang).{0,100}(?:가격|최저가|판매가|얼마|상품|제품).{0,40}(?:알아|알려|확인|찾아|검색|보여|봐|check|find|price)|(?:쿠팡|coupang).{0,40}(?:띄워|열어|접속).{0,100}(?:가격|최저가|판매가|얼마)/i;
 const COUPANG_DETAIL_OPEN_REQUEST =
   /(?:(?:쿠팡|coupang).{0,80})?(?:(?:상품|제품).{0,30}(?:들어가|열어|상세)|(?:들어가|열어).{0,30}(?:상품|제품|상세)|[0-9]{1,3}(?:,[0-9]{3})+\s*원\s*짜리.{0,40}(?:들어가|열어|상세))/i;
 const SCREEN_INSPECT_REQUEST =
@@ -64,6 +66,8 @@ const HIGH_IMPACT_BROWSER_ACTION =
   /구매|결제|주문|checkout|buy|pay|order|(?:장바구니|cart).{0,20}(?:담아|넣어|추가|add)|(?:담아|넣어|추가|add).{0,20}(?:장바구니|cart)|로그인(?:을|를)?\s*(?:해|해줘|하라|진행|시도)|(?:login|log\s*in)\s*(?:do|attempt|submit|now)/i;
 const HIGH_IMPACT_BROWSER_BRIDGE_COMMAND =
   /\b(?:browser-fill|coupang-setup|coupang-cart|coupang-pay-approve)\b/i;
+const CEO_VERIFICATION_REQUEST =
+  /(?:(?:직접\s*)?(?:확인|조회|검증|점검)(?:해|해서|하고|하라|해주세요|해줘|해봐|해보|해라)|알아봐(?:\s*(?:줘|라|세요|주세요|해줘))?[.!?\s]*$|(?:근거|증빙).{0,30}(?:제공|보여|보내|첨부|확인))/i;
 let pluginOwnerSenderIds = new Set();
 let pluginOwnerSessionKeys = new Set();
 const browserOpenExecutionTokens = new Map();
@@ -110,12 +114,23 @@ export function shouldEnforceCopilotUsage(prompt) {
 
 export function shouldEnforceBrowserOpen(prompt) {
   const text = currentUserInstruction(prompt);
-  return (BROWSER_OPEN_REQUEST.test(text) || COUPANG_SEARCH_REQUEST.test(text)) && !HIGH_IMPACT_BROWSER_ACTION.test(text);
+  return (
+    BROWSER_OPEN_REQUEST.test(text) ||
+    COUPANG_SEARCH_REQUEST.test(text) ||
+    COUPANG_PRODUCT_EVIDENCE_REQUEST.test(text)
+  ) && !HIGH_IMPACT_BROWSER_ACTION.test(text);
+}
+
+export function shouldEnforceVerificationEvidence(prompt) {
+  return CEO_VERIFICATION_REQUEST.test(currentUserInstruction(prompt));
 }
 
 export function shouldEnforceScreenInspect(prompt, messages = [], context = {}) {
   const text = currentUserInstruction(prompt);
-  if (COUPANG_SEARCH_REQUEST.test(text) && !HIGH_IMPACT_BROWSER_ACTION.test(text)) {
+  if (
+    (COUPANG_SEARCH_REQUEST.test(text) || COUPANG_PRODUCT_EVIDENCE_REQUEST.test(text)) &&
+    !HIGH_IMPACT_BROWSER_ACTION.test(text)
+  ) {
     return true;
   }
   if (SCREEN_INSPECT_REQUEST.test(text) && !HIGH_IMPACT_BROWSER_ACTION.test(text)) {
@@ -275,6 +290,10 @@ export {
   productSearchTermsFromQuestion,
   productSearchTermsFromCoupangWindowTitle,
   productCardCandidatesFromOcr,
+  deterministicCoupangEvidenceReply,
+  composeEvidenceReplyText,
+  disposablePeekabooCapturePaths,
+  verificationEvidenceToolRelevant,
 };
 
 function compactPeekabooSeeResult(parsed) {
@@ -375,6 +394,168 @@ async function runMacVisionOcr(imagePath) {
   } catch (error) {
     return { ok: false, error: "ocr_exception", detail: error.message };
   }
+}
+
+function disposablePeekabooCapturePaths(result) {
+  const candidates = [
+    result?.result?.screenshot_raw,
+    ...(result?.result?.smart_collection?.pages ?? []).map((page) => page?.screenshot_raw),
+  ];
+  const disposableRoots = [
+    path.resolve(os.tmpdir()),
+    path.resolve(path.join(os.homedir(), ".peekaboo")),
+    path.resolve(path.join(os.homedir(), "Desktop")),
+  ];
+  return [...new Set(candidates.filter(Boolean).map((candidate) => path.resolve(String(candidate))))]
+    .filter((candidate) => /^peekaboo_see_[0-9]+\.png$/i.test(path.basename(candidate)))
+    .filter((candidate) => {
+      try {
+        const stat = fs.lstatSync(candidate);
+        const ageMs = Date.now() - stat.mtimeMs;
+        return (
+          stat.isFile() &&
+          !stat.isSymbolicLink() &&
+          stat.nlink === 1 &&
+          ageMs >= -10_000 &&
+          ageMs <= 5 * 60_000
+        );
+      } catch {
+        return false;
+      }
+    })
+    .filter((candidate) =>
+      disposableRoots.some(
+        (root) => candidate === root || candidate.startsWith(`${root}${path.sep}`),
+      ),
+    )
+    .slice(0, 4);
+}
+
+function moveDisposableCaptureToTrash(imagePath, expectedIdentity) {
+  const resolved = path.resolve(String(imagePath ?? ""));
+  const disposableRoots = [
+    path.resolve(os.tmpdir()),
+    path.resolve(path.join(os.homedir(), ".peekaboo")),
+    path.resolve(path.join(os.homedir(), "Desktop")),
+  ];
+  if (
+    !fs.existsSync(resolved) ||
+    !disposableRoots.some(
+      (root) => resolved === root || resolved.startsWith(`${root}${path.sep}`),
+    )
+  ) {
+    return false;
+  }
+  if (!/^peekaboo_see_[0-9]+\.png$/i.test(path.basename(resolved))) return false;
+  const currentStat = fs.lstatSync(resolved);
+  if (!currentStat.isFile() || currentStat.isSymbolicLink() || currentStat.nlink !== 1) return false;
+  if (
+    expectedIdentity &&
+    (currentStat.dev !== expectedIdentity.dev || currentStat.ino !== expectedIdentity.ino)
+  ) {
+    return false;
+  }
+  const trashDir = path.join(os.homedir(), ".Trash");
+  fs.mkdirSync(trashDir, { recursive: true });
+  const extension = path.extname(resolved).slice(0, 12);
+  const target = path.join(
+    trashDir,
+    `OpenClaw-Peekaboo-${Date.now()}-${crypto.randomUUID()}${extension}`,
+  );
+  try {
+    fs.renameSync(resolved, target);
+  } catch (error) {
+    if (error?.code === "EXDEV") {
+      const sourceFd = fs.openSync(
+        resolved,
+        fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0),
+      );
+      let targetFd;
+      try {
+        const sourceStat = fs.fstatSync(sourceFd);
+        if (sourceStat.dev !== currentStat.dev || sourceStat.ino !== currentStat.ino) {
+          return false;
+        }
+        targetFd = fs.openSync(
+          target,
+          fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL,
+          0o600,
+        );
+        const buffer = Buffer.alloc(64 * 1024);
+        let bytesRead;
+        while ((bytesRead = fs.readSync(sourceFd, buffer, 0, buffer.length, null)) > 0) {
+          let offset = 0;
+          while (offset < bytesRead) {
+            offset += fs.writeSync(targetFd, buffer, offset, bytesRead - offset);
+          }
+        }
+        const finalPathStat = fs.lstatSync(resolved);
+        if (
+          finalPathStat.dev !== sourceStat.dev ||
+          finalPathStat.ino !== sourceStat.ino ||
+          finalPathStat.isSymbolicLink()
+        ) {
+          fs.unlinkSync(target);
+          return false;
+        }
+        fs.unlinkSync(resolved);
+      } finally {
+        if (targetFd !== undefined) fs.closeSync(targetFd);
+        fs.closeSync(sourceFd);
+      }
+      return true;
+    }
+    throw error;
+  }
+  return true;
+}
+
+function deterministicCoupangEvidenceReply(result) {
+  if (!result?.ok) {
+    const rawError = sanitizeCollectedText(result?.error || "");
+    const safeError = /^[a-z0-9_:-]{1,120}$/i.test(rawError)
+      ? rawError
+      : "screen_inspection_failed";
+    return `쿠팡 화면 판독 실패: ${safeError}. 화면에서 가격을 확인하지 못했습니다.`;
+  }
+  const matches = result?.result?.smart_collection?.merged?.strict_product_matches ?? [];
+  if (!Array.isArray(matches) || matches.length === 0) {
+    return "현재 쿠팡 화면 OCR에서 검색어가 같은 상품 카드 안에 모두 들어간 제품과 가격을 확인하지 못했습니다.";
+  }
+  const rows = [];
+  const seen = new Set();
+  for (const match of matches) {
+    const title =
+      (match.title_candidates ?? []).find((candidate) => sanitizeCollectedText(candidate)) ||
+      (match.lines ?? []).find((candidate) => sanitizeCollectedText(candidate));
+    const price = (match.current_price_candidates ?? [])[0];
+    if (!title || !price) continue;
+    const cleanTitle = sanitizeOutboundEvidenceText(title).slice(0, 240);
+    const cleanPrice = sanitizeCollectedText(price).match(/[0-9]{1,3}(?:,[0-9]{3})*\s*원/)?.[0];
+    if (!cleanPrice) continue;
+    const key = `${normalizeProductText(cleanTitle)}:${normalizeProductText(cleanPrice)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push(`- ${cleanTitle}: ${cleanPrice}`);
+  }
+  if (rows.length === 0) {
+    return "현재 쿠팡 화면 OCR에서 상품명과 같은 카드에 속한 현재 가격을 확정하지 못했습니다.";
+  }
+  return ["근거: 현재 쿠팡 화면 OCR", ...rows].join("\n");
+}
+
+function sanitizeOutboundEvidenceText(value) {
+  return sanitizeCollectedText(value)
+    .replace(/@/g, "@\u200b")
+    .replace(/```/g, "'''")
+    .replace(/[<>]/g, "")
+    .replace(/([*_~\[\]])/g, "\\$1");
+}
+
+function composeEvidenceReplyText({ baseText, pendingText, evidenceText, verificationFailed }) {
+  return verificationFailed
+    ? [pendingText, evidenceText].filter(Boolean).join("\n\n")
+    : [baseText, evidenceText].filter(Boolean).join("\n\n");
 }
 
 function sanitizeCollectedText(value) {
@@ -982,17 +1163,21 @@ function browserOpenTargetFromPrompt(prompt) {
 
 function coupangSearchQueryFromPrompt(text) {
   const raw = String(text ?? "").replace(/\s+/g, " ").trim();
-  if (!/(?:쿠팡|coupang)/i.test(raw) || !/(?:검색|찾아|찾기|search)/i.test(raw)) {
+  if (
+    !/(?:쿠팡|coupang)/i.test(raw) ||
+    !/(?:검색|찾아|찾기|search|가격|최저가|판매가|얼마|알아봐)/i.test(raw)
+  ) {
     return undefined;
   }
   const patterns = [
     /(?:쿠팡|coupang)(?:에서|에)?\s+(.{1,80}?)(?:을|를)?\s*(?:검색|찾아|찾기|search)/i,
     /(?:검색|찾아|찾기|search)(?:어|어로|할|해|해서|하고)?\s+(.{1,80}?)(?:\s*(?:상품|제품|결과|보여|알려|수집|collect|product|item)|[.!?。]|$)/i,
+    /(?:쿠팡|coupang)(?:을|를)?\s*(?:띄워서|열어서|접속해서|에서|에)?\s+(.{1,80}?)(?:의|을|를)?\s*(?:가격|최저가|판매가|얼마)(?:\s*(?:알아봐|알려줘|확인해|찾아줘|봐줘))?/i,
   ];
   for (const pattern of patterns) {
     const match = raw.match(pattern);
     const query = match?.[1]
-      ?.replace(/(?:상품|제품|결과|목록|보여줘|알려줘|수집해|검색해|찾아줘|검색|찾아|찾기|search)$/i, "")
+      ?.replace(/(?:상품|제품|결과|목록|보여줘|알려줘|수집해|검색해|찾아줘|검색|찾아|찾기|가격|최저가|판매가|얼마|알아봐|search)$/i, "")
       .trim();
     if (query && !/(?:쿠팡|coupang)$/i.test(query)) return query.slice(0, 80);
   }
@@ -1028,6 +1213,30 @@ function isScreenInspectTool(toolName) {
 
 function isCoupangDetailOpenTool(toolName) {
   return String(toolName ?? "").toLowerCase().endsWith("harness_coupang_product_detail_open");
+}
+
+function verificationEvidenceToolRelevant(question, toolName) {
+  const text = String(question ?? "");
+  const tool = String(toolName ?? "").toLowerCase();
+  const routes = [
+    [/(?:화면|브라우저|chrome|크롬|쿠팡|coupang)/i, /harness_screen_inspect$/],
+    [/(?:gmail|메일|이메일)/i, /harness_gmail_(?:search|get)$/],
+    [/(?:calendar|캘린더|일정)/i, /harness_calendar_(?:list|create)$/],
+    [/(?:notion|노션)/i, /harness_notion_archive_create$/],
+    [/(?:cron|크론|예약|스케줄)/i, /harness_cron_(?:list|create|remove)$/],
+    [/(?:copilot|코파일럿|premium request)/i, /harness_copilot_usage$/],
+    [/(?:alpaca|ibkr|트레이딩|포지션|주문|계좌)/i, /harness_alpaca_status$/],
+    [/(?:사주|명리|운세|일진)/i, /harness_saju_(?:query|notebook_status)$/],
+    [
+      /(?:harness|하네스|저장소|repository|코드|파일|경로|라인|해시|구현|변경사항)/i,
+      /harness_(?:knowledge_query|workspace_(?:read|search|stats|exec))$/,
+    ],
+  ];
+  const matchedRoutes = routes.filter(([pattern]) => pattern.test(text));
+  if (matchedRoutes.length > 0) {
+    return matchedRoutes.some(([, toolPattern]) => toolPattern.test(tool));
+  }
+  return /^(?:web_search|web_fetch)$/.test(tool);
 }
 
 function browserOpenExecutionKeys(event = {}, context = {}) {
@@ -2438,6 +2647,7 @@ function registerHarnessAssistantTools(api) {
         const result = await inspectMacScreen({
           question: tokenState.question || params?.question,
         });
+        if (tokenState.runState) tokenState.runState.result = result;
         return toolText(result, !result.ok);
       } catch (error) {
         return toolText({ ok: false, error: error.message }, true);
@@ -2799,6 +3009,50 @@ export default {
     const activeCoupangDetailOpenRuns = new Map();
     const activePumpRuns = new Map();
     const pendingPumpRequests = new Map();
+    const pendingCoupangEvidenceReplies = new Map();
+    const activeVerificationRuns = new Map();
+    const pendingVerificationReplies = new Map();
+    const pendingEvidenceKey = (event = {}, context = {}) => {
+      const runId = String(event.runId ?? context.runId ?? "");
+      const sessionKey = String(
+        event.sessionKey ?? context.sessionKey ?? context.sessionId ?? "",
+      );
+      return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        runId,
+      ) && sessionKey
+        ? `${sessionKey}:${runId}`
+        : undefined;
+    };
+    const schedulePendingCaptureCleanup = (evidenceKey, state) => {
+      const delayMs = Math.max(1_000, state.expiresAt - Date.now() + 1_000);
+      const timer = setTimeout(() => {
+        if (pendingCoupangEvidenceReplies.get(evidenceKey) !== state) return;
+        for (const imagePath of state.mediaPaths ?? []) {
+          try {
+            const moved = moveDisposableCaptureToTrash(
+              imagePath,
+              state.mediaIdentities?.[imagePath],
+            );
+            if (!moved) api.logger?.warn?.("peekaboo capture expiry cleanup was not applied");
+          } catch (error) {
+            api.logger?.warn?.(`peekaboo capture expiry cleanup failed: ${error.message}`);
+          }
+        }
+        pendingCoupangEvidenceReplies.delete(evidenceKey);
+        pendingVerificationReplies.delete(evidenceKey);
+      }, delayMs);
+      state.cleanupTimer = timer;
+      timer.unref?.();
+    };
+    const schedulePendingVerificationCleanup = (evidenceKey, state) => {
+      const timer = setTimeout(() => {
+        if (pendingVerificationReplies.get(evidenceKey) === state) {
+          pendingVerificationReplies.delete(evidenceKey);
+        }
+      }, Math.max(1_000, state.expiresAt - Date.now() + 1_000));
+      state.cleanupTimer = timer;
+      timer.unref?.();
+    };
     const runKeys = (event = {}, context = {}) =>
       [event.runId, context.runId, context.sessionKey, context.sessionId]
         .filter(Boolean)
@@ -2836,6 +3090,28 @@ export default {
       }
       for (const [key, state] of pendingPumpRequests) {
         if (state.expiresAt <= now) pendingPumpRequests.delete(key);
+      }
+      for (const [key, state] of pendingCoupangEvidenceReplies) {
+        if (state.expiresAt > now) continue;
+        if (state.cleanupTimer) clearTimeout(state.cleanupTimer);
+        for (const imagePath of state.mediaPaths ?? []) {
+          try {
+            const moved = moveDisposableCaptureToTrash(
+              imagePath,
+              state.mediaIdentities?.[imagePath],
+            );
+            if (!moved) api.logger?.warn?.("peekaboo capture prune cleanup was not applied");
+          } catch (error) {
+            api.logger?.warn?.(`peekaboo capture prune cleanup failed: ${error.message}`);
+          }
+        }
+        pendingCoupangEvidenceReplies.delete(key);
+      }
+      for (const [key, state] of activeVerificationRuns) {
+        if (state.expiresAt <= now) activeVerificationRuns.delete(key);
+      }
+      for (const [key, state] of pendingVerificationReplies) {
+        if (state.expiresAt <= now) pendingVerificationReplies.delete(key);
       }
       while (activeSajuRuns.size > 1024) {
         activeSajuRuns.delete(activeSajuRuns.keys().next().value);
@@ -2917,6 +3193,33 @@ export default {
     };
     const browserRunKeys = (event = {}, context = {}) =>
       [event.runId, context.runId].filter(Boolean).map(String);
+    const verificationRunState = (event, context) => {
+      pruneRuns();
+      for (const key of browserRunKeys(event, context)) {
+        const state = activeVerificationRuns.get(key);
+        if (state) return state;
+      }
+      return undefined;
+    };
+    const markVerificationRun = (event, context) => {
+      const state = {
+        expiresAt: Date.now() + 10 * 60_000,
+        question: currentUserInstruction(event.prompt),
+        toolResults: [],
+        finalizeAttempts: 0,
+      };
+      const keys = browserRunKeys(event, context);
+      for (const key of keys) activeVerificationRuns.set(key, state);
+      const timer = setTimeout(() => {
+        for (const key of keys) {
+          if (activeVerificationRuns.get(key) === state) activeVerificationRuns.delete(key);
+        }
+      }, 10 * 60_000 + 1_000);
+      timer.unref?.();
+    };
+    const clearVerificationRun = (event, context) => {
+      for (const key of browserRunKeys(event, context)) activeVerificationRuns.delete(key);
+    };
     const markBrowserOpenRun = (event, context) => {
       pruneRuns();
       const state = {
@@ -3135,6 +3438,9 @@ export default {
           };
         }
         const ownerRequest = currentSenderIsOwner(event.prompt, context);
+        if (ownerRequest && shouldEnforceVerificationEvidence(requestText)) {
+          markVerificationRun(event, context);
+        }
         const browserOpenRequest = ownerRequest && shouldEnforceBrowserOpen(event.prompt);
         const screenInspectRequest =
           ownerRequest && shouldEnforceScreenInspect(event.prompt, event.messages, context);
@@ -3161,7 +3467,9 @@ export default {
           markBrowserOpenRun(event, context);
           markScreenInspectRun(event, context);
           const targetUrl = browserOpenTargetFromPrompt(event.prompt) ?? "https://www.coupang.com/";
-          const isCoupangSearch = COUPANG_SEARCH_REQUEST.test(requestText);
+          const isCoupangSearch =
+            COUPANG_SEARCH_REQUEST.test(requestText) ||
+            COUPANG_PRODUCT_EVIDENCE_REQUEST.test(requestText);
           return {
             appendSystemContext: [
               "[HARNESS BROWSER OPEN + SCREEN INSPECT — MANDATORY]",
@@ -3174,9 +3482,11 @@ export default {
                     "A strict product match means every meaningful search term appears inside the same OCR product-card cluster. Do not combine `price_candidates` from a different item with a product name.",
                     "If multiple strict_product_matches are present, enumerate every match unless the owner explicitly asks for only the cheapest, first, or one selected product.",
                     "If strict_product_matches is empty, say that no exact all-term product match was confirmed instead of guessing from loose OCR candidates.",
+                    "Every reported price must occur in that matching card's own `current_price_candidates`. Never answer a price from web search, memory, page-wide OCR, or a neighboring card.",
+                    "State the evidence mode as `현재 쿠팡 화면 OCR`. Do not say `웹 인덱스`, `체감 판매가`, or `대략`.",
                   ]
                 : []),
-              "Do not use shell, Peekaboo CLI, Playwright, Browser MCP, screenshots, web_fetch, browser-fill, coupang-cart, login, checkout, payment, or any form action for this request.",
+              "Do not use shell, Peekaboo CLI, Playwright, Browser MCP, screenshots, web_search, web_fetch, browser-fill, coupang-cart, login, checkout, payment, or any form action for this request.",
               "Report success only from the two Harness tool results. If screen inspection reports missing bridge socket or macOS permissions, answer with that exact operational blocker.",
             ].join(" "),
           };
@@ -3511,6 +3821,7 @@ export default {
           const executionKeys = screenInspectExecutionKeys(event, context);
           const tokenState = {
             question: screenInspectState.question,
+            runState: screenInspectState,
             expiresAt: Math.min(screenInspectState.expiresAt, Date.now() + 60_000),
             keys: executionKeys,
           };
@@ -3542,6 +3853,166 @@ export default {
       },
       { priority: 1000 },
     );
+    api.on("after_tool_call", async (event, context) => {
+      const state = verificationRunState(event, context);
+      if (!state) return;
+      if (!verificationEvidenceToolRelevant(state.question, event.toolName)) return;
+      let serialized = "";
+      try {
+        serialized = JSON.stringify(event.result ?? "");
+      } catch {}
+      const success =
+        !event.error &&
+        !/"ok"\s*:\s*false/i.test(serialized) &&
+        !/"isError"\s*:\s*true/i.test(serialized);
+      state.toolResults.push({
+        toolName: String(event.toolName ?? "unknown"),
+        success,
+      });
+    });
+    api.on(
+      "before_agent_finalize",
+      async (event, context) => {
+        const screenState = screenInspectRunState(event, context);
+        const verificationState = verificationRunState(event, context);
+        const runId = String(event.runId ?? context.runId ?? "");
+        const evidenceKey = pendingEvidenceKey(event, context);
+        if (screenState && (!screenState.called || !screenState.result)) {
+          return {
+            action: "revise",
+            reason: "GUI verification requires the routed screen-inspection result.",
+            retry: {
+              instruction:
+                "Call the required harness_screen_inspect tool. If it fails, state the exact blocker. Do not substitute memory or guessed facts.",
+              idempotencyKey: `harness-screen-evidence:${runId || "unknown"}`,
+              maxAttempts: 1,
+            },
+          };
+        }
+        if (screenState?.result?.ok === false && (screenState.failureRetries ?? 0) < 1) {
+          screenState.failureRetries = (screenState.failureRetries ?? 0) + 1;
+          screenState.called = false;
+          screenState.toolCallId = undefined;
+          screenState.result = undefined;
+          return {
+            action: "revise",
+            reason: "GUI verification failed; one bounded retry is required.",
+            retry: {
+              instruction:
+                "Retry harness_screen_inspect exactly once. If it fails again, report the returned safe error and no unverified fact.",
+              idempotencyKey: `harness-screen-failure-retry:${runId || "unknown"}`,
+              maxAttempts: 1,
+            },
+          };
+        }
+        if (evidenceKey && screenState?.result) {
+          const isCoupang = /(?:쿠팡|coupang)/i.test(screenState.question);
+          const pendingScreenEvidence = {
+            expiresAt: Date.now() + 5 * 60_000,
+            text: isCoupang ? deterministicCoupangEvidenceReply(screenState.result) : undefined,
+            mediaPaths: disposablePeekabooCapturePaths(screenState.result),
+          };
+          pendingScreenEvidence.mediaIdentities = Object.fromEntries(
+            pendingScreenEvidence.mediaPaths.flatMap((imagePath) => {
+              try {
+                const stat = fs.statSync(imagePath);
+                return [[imagePath, { dev: stat.dev, ino: stat.ino }]];
+              } catch {
+                return [];
+              }
+            }),
+          );
+          pendingCoupangEvidenceReplies.set(evidenceKey, pendingScreenEvidence);
+          schedulePendingCaptureCleanup(evidenceKey, pendingScreenEvidence);
+        }
+        if (verificationState && evidenceKey) {
+          const successfulTools = verificationState.toolResults
+            .filter((result) => result.success)
+            .map((result) => result.toolName);
+          if (successfulTools.length === 0 && verificationState.finalizeAttempts < 1) {
+            verificationState.finalizeAttempts += 1;
+            return {
+              action: "revise",
+              reason: "CEO verification answers require direct evidence.",
+              retry: {
+                instruction:
+                  "Use the applicable read-only tool and provide its direct evidence. Prefer a screen capture for GUI state. If no evidence can be obtained, explicitly report verification failure.",
+                idempotencyKey: `harness-ceo-verification:${runId}`,
+                maxAttempts: 1,
+              },
+            };
+          }
+          const pendingVerification = {
+            expiresAt: Date.now() + 5 * 60_000,
+            successfulTools: [...new Set(successfulTools)],
+            failed: successfulTools.length === 0,
+          };
+          pendingVerificationReplies.set(evidenceKey, pendingVerification);
+          schedulePendingVerificationCleanup(evidenceKey, pendingVerification);
+        }
+        return { action: "continue" };
+      },
+      { priority: 1000 },
+    );
+    api.on(
+      "reply_payload_sending",
+      async (event, context) => {
+        pruneRuns();
+        const evidenceKey = pendingEvidenceKey(event, context);
+        if (!evidenceKey) return;
+        const pending = pendingCoupangEvidenceReplies.get(evidenceKey);
+        const verification = pendingVerificationReplies.get(evidenceKey);
+        if (!pending && !verification) return;
+        const existingMedia = [
+          ...(Array.isArray(event.payload?.mediaUrls) ? event.payload.mediaUrls : []),
+          event.payload?.mediaUrl,
+        ].filter(Boolean);
+        const mediaUrls = [...new Set([...existingMedia, ...(pending?.mediaPaths ?? [])])];
+        const baseText = pending?.text ?? event.payload?.text ?? "";
+        const evidenceText =
+          mediaUrls.length > 0
+            ? "증빙: 첨부한 실제 화면 캡처"
+            : verification?.failed
+              ? "증빙 확보 실패: 직접 확인 가능한 도구 결과가 없어 완료로 처리하지 않았습니다."
+              : verification?.successfulTools?.length
+                ? `증빙: ${verification.successfulTools.join(", ")} 실제 실행 결과`
+                : "";
+        return {
+          payload: {
+            ...event.payload,
+            text: composeEvidenceReplyText({
+              baseText,
+              pendingText: pending?.text,
+              evidenceText,
+              verificationFailed: verification?.failed,
+            }),
+            ...(mediaUrls.length > 0 ? { mediaUrls, sensitiveMedia: true } : {}),
+          },
+        };
+      },
+      { priority: 1000 },
+    );
+    api.on("message_sent", async (event, context) => {
+      const evidenceKey = pendingEvidenceKey(event, context);
+      if (!evidenceKey) return;
+      const pending = pendingCoupangEvidenceReplies.get(evidenceKey);
+      if (pending?.cleanupTimer) clearTimeout(pending.cleanupTimer);
+      const pendingVerification = pendingVerificationReplies.get(evidenceKey);
+      if (pendingVerification?.cleanupTimer) clearTimeout(pendingVerification.cleanupTimer);
+      for (const imagePath of pending?.mediaPaths ?? []) {
+        try {
+          const moved = moveDisposableCaptureToTrash(
+            imagePath,
+            pending.mediaIdentities?.[imagePath],
+          );
+          if (!moved) api.logger?.warn?.("peekaboo capture delivery cleanup was not applied");
+        } catch (error) {
+          api.logger?.warn?.(`peekaboo capture trash cleanup failed: ${error.message}`);
+        }
+      }
+      pendingCoupangEvidenceReplies.delete(evidenceKey);
+      pendingVerificationReplies.delete(evidenceKey);
+    });
     api.on("agent_end", async (event, context) => {
       clearSajuRun(event, context);
       clearKnowledgeRun(event, context);
@@ -3550,6 +4021,7 @@ export default {
       clearScreenInspectRun(event, context);
       clearCoupangDetailOpenRun(event, context);
       clearPumpRun(event, context);
+      clearVerificationRun(event, context);
     });
   },
 };
