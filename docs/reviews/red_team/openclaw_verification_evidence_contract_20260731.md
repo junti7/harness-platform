@@ -43,6 +43,15 @@ Markdown evidence escaping, and EXDEV cleanup. After remediation Claude returned
 
 GPT-OSS independently reviewed the final diff and also returned `red_team_clear`.
 
+The first production replay then exposed a remaining lifecycle mismatch: agent routing state
+was keyed only by `runId`, while the executed screen tool retained the owner `sessionKey`.
+Gemini blocked an initial token-only fallback because active state creation and cleanup still
+used run-only keys. The implementation now uses one `runId + sessionKey + sessionId` key set
+for screen-state creation, lookup, and deletion, and removes every execution token referencing
+the cleared state. Plugin and Python regressions passed, and Gemini's independent incremental
+review returned `red_team_clear`. This incremental fix preserves the earlier Claude clear while
+addressing the production-only binding condition without weakening owner-session isolation.
+
 ## Residual risk
 
 - A same-user local process with permission to alter Peekaboo output files can still interfere with

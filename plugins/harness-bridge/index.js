@@ -1260,6 +1260,10 @@ function screenInspectExecutionKeys(event = {}, context = {}) {
   return [
     event.runId,
     context.runId,
+    event.sessionKey,
+    context.sessionKey,
+    event.sessionId,
+    context.sessionId,
     event.toolCallId,
     context.toolCallId,
     event.toolUseId,
@@ -3193,6 +3197,17 @@ export default {
     };
     const browserRunKeys = (event = {}, context = {}) =>
       [event.runId, context.runId].filter(Boolean).map(String);
+    const screenInspectRunKeys = (event = {}, context = {}) =>
+      [
+        event.runId,
+        context.runId,
+        event.sessionKey,
+        context.sessionKey,
+        event.sessionId,
+        context.sessionId,
+      ]
+        .filter(Boolean)
+        .map(String);
     const verificationRunState = (event, context) => {
       pruneRuns();
       for (const key of browserRunKeys(event, context)) {
@@ -3252,18 +3267,26 @@ export default {
         question: contextualQuestion,
         called: false,
       };
-      for (const key of browserRunKeys(event, context)) activeScreenInspectRuns.set(key, state);
+      for (const key of screenInspectRunKeys(event, context)) activeScreenInspectRuns.set(key, state);
     };
     const screenInspectRunState = (event, context) => {
       pruneRuns();
-      for (const key of browserRunKeys(event, context)) {
+      for (const key of screenInspectRunKeys(event, context)) {
         const state = activeScreenInspectRuns.get(key);
         if (state) return state;
       }
       return undefined;
     };
     const clearScreenInspectRun = (event, context) => {
-      for (const key of browserRunKeys(event, context)) activeScreenInspectRuns.delete(key);
+      const states = new Set(
+        screenInspectRunKeys(event, context)
+          .map((key) => activeScreenInspectRuns.get(key))
+          .filter(Boolean),
+      );
+      for (const [key, token] of screenInspectExecutionTokens) {
+        if (states.has(token.runState)) screenInspectExecutionTokens.delete(key);
+      }
+      for (const key of screenInspectRunKeys(event, context)) activeScreenInspectRuns.delete(key);
     };
     const markCoupangDetailOpenRun = (event, context) => {
       pruneRuns();
