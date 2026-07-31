@@ -1,6 +1,6 @@
 {
   "task": "OpenClaw CEO verification evidence contract and truthful Coupang price reporting",
-  "status": "residual_risk",
+  "status": "complete",
   "created_at": "2026-07-31T18:20:00+09:00",
   "problem": "OpenClaw opened Coupang, skipped GUI inspection, called web_search, and stated prices that were absent from the recorded tool result as current visible prices.",
   "implementation": [
@@ -65,6 +65,12 @@
       "result": "CONFIRMED real attachment message 1532684612168323113; success JSON contained deliveryStatus=sent, matching receipt primaryPlatformMessageId, and nonempty outcomes all status=sent. Gemini red_team_clear for cleanup gated on all observed fields."
     },
     {
+      "name": "final production Discord evidence and Trash replay",
+      "target": "Discord channel 1492808588777754636 and Mac mini generated captures",
+      "command": "replay exact Coupang request; openclaw message read; inspect tool evidenceDelivery; verify source paths and ~/.Trash",
+      "result": "PASS: Discord evidence message 1532685157096624328 contained one 1920x2040 PNG attachment; tool reported attempted=true, ok=true, attachmentCount=1, trashedCaptureCount=3; all three generated source captures were absent and three corresponding OpenClaw-Peekaboo Trash entries were present. Final text answer followed in message 1532685194627252266."
+    },
+    {
       "name": "production incident trajectory diagnosis",
       "target": "Mac mini OpenClaw Discord session 6ccdb6df-4068-4e64-b996-00c727305caf",
       "command": "inspect ~/.openclaw/agents/main/sessions/6ccdb6df-4068-4e64-b996-00c727305caf.jsonl and matching trajectory.jsonl",
@@ -117,8 +123,8 @@
   },
   "residual_risks": [
     {
-      "risk": "Final owner-bound direct evidence delivery still requires production deployment and one last Discord replay.",
-      "mitigation": "Deploy the scoped commit, force-install plugin, restart gateway, replay the exact request, and verify Discord attachments plus immediate move of every generated Peekaboo capture to Trash."
+      "risk": "A screenshot can contain sensitive content already visible in the CEO's own browser window.",
+      "mitigation": "Evidence delivery is restricted to authenticated owner-only Discord sessions, uses only generated allowlisted captures, and immediately moves every local capture to Trash after a fully confirmed delivery receipt."
     }
   ]
 }
