@@ -53,6 +53,12 @@
       "result": "CONFIRMED screen inspection and exact OCR answer delivery, but attachments=[] exposed that durable reply_payload_sending omitted runId; this directly motivated the single-state fail-closed fallback."
     },
     {
+      "name": "owner-bound direct evidence delivery Red Team",
+      "target": "harness_screen_inspect evidence send and immediate Trash lifecycle",
+      "artifact": "../../reviews/red_team/openclaw_verification_evidence_contract_20260731.md",
+      "result": "red_team_clear after adding authenticated isOwnerOnlyDiscordSession validation; CEO standing evidence instruction supplies explicit opt-in."
+    },
+    {
       "name": "production incident trajectory diagnosis",
       "target": "Mac mini OpenClaw Discord session 6ccdb6df-4068-4e64-b996-00c727305caf",
       "command": "inspect ~/.openclaw/agents/main/sessions/6ccdb6df-4068-4e64-b996-00c727305caf.jsonl and matching trajectory.jsonl",
@@ -105,7 +111,7 @@
   },
   "residual_risks": [
     {
-      "risk": "Final unambiguous session fallback still requires production deployment and one last Discord replay.",
+      "risk": "Final owner-bound direct evidence delivery still requires production deployment and one last Discord replay.",
       "mitigation": "Deploy the scoped commit, force-install plugin, restart gateway, replay the exact request, and verify Discord attachments plus immediate move of every generated Peekaboo capture to Trash."
     }
   ]

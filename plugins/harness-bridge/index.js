@@ -1629,6 +1629,68 @@ export function runProcess(executable, args, options = {}) {
   });
 }
 
+async function deliverOwnerScreenEvidence(sessionKey, result) {
+  if (!process.env.OPENCLAW_GATEWAY_PORT) return { attempted: false };
+  const channelMatch = String(sessionKey ?? "").match(/:discord:channel:(\d+)$/);
+  if (!channelMatch) return { attempted: false };
+  const mediaPaths = disposablePeekabooCapturePaths(result);
+  if (mediaPaths.length === 0) return { attempted: false };
+  const executable = "/opt/homebrew/bin/openclaw";
+  if (!fs.existsSync(executable)) return { attempted: false };
+  const text = deterministicCoupangEvidenceReply(result);
+  const delivery = await runProcess(
+    executable,
+    [
+      "message",
+      "send",
+      "--channel",
+      "discord",
+      "--target",
+      `channel:${channelMatch[1]}`,
+      "--message",
+      composeEvidenceReplyText({
+        baseText: text,
+        pendingText: text,
+        evidenceText: "증빙: 첨부한 실제 화면 캡처",
+        verificationFailed: false,
+      }),
+      "--media",
+      mediaPaths[0],
+      "--json",
+    ],
+    { cwd: os.homedir(), timeoutMs: 30_000 },
+  );
+  if (delivery.code !== 0) {
+    return { attempted: true, ok: false, error: "evidence_delivery_failed" };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(delivery.stdout);
+  } catch {
+    return { attempted: true, ok: false, error: "evidence_delivery_invalid_response" };
+  }
+  if (parsed?.payload?.ok !== true && parsed?.ok !== true) {
+    return { attempted: true, ok: false, error: "evidence_delivery_not_confirmed" };
+  }
+  let trashed = 0;
+  for (const imagePath of mediaPaths) {
+    let identity;
+    try {
+      const stat = fs.statSync(imagePath);
+      identity = { dev: stat.dev, ino: stat.ino };
+    } catch {
+      continue;
+    }
+    if (moveDisposableCaptureToTrash(imagePath, identity)) trashed += 1;
+  }
+  return {
+    attempted: true,
+    ok: true,
+    attachmentCount: 1,
+    trashedCaptureCount: trashed,
+  };
+}
+
 function toolText(value, isError = false) {
   return {
     content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }],
@@ -2651,6 +2713,28 @@ function registerHarnessAssistantTools(api) {
         const result = await inspectMacScreen({
           question: tokenState.question || params?.question,
         });
+        if (
+          result.ok &&
+          /(?:쿠팡|coupang)/i.test(tokenState.question ?? "") &&
+          isOwnerOnlyDiscordSession(
+            toolContext.sessionKey,
+            api.config,
+            pluginOwnerSenderIds,
+          )
+        ) {
+          try {
+            result.evidenceDelivery = await deliverOwnerScreenEvidence(
+              toolContext.sessionKey,
+              result,
+            );
+          } catch {
+            result.evidenceDelivery = {
+              attempted: true,
+              ok: false,
+              error: "evidence_delivery_failed",
+            };
+          }
+        }
         if (tokenState.runState) tokenState.runState.result = result;
         return toolText(result, !result.ok);
       } catch (error) {

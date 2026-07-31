@@ -66,6 +66,13 @@ Live Discord read-back showed that this durable delivery path omitted `runId` ev
 that owner session has exactly one pending evidence state; zero or multiple states fail closed.
 Gemini independently returned `red_team_clear` for this ambiguity guard and content-hash cleanup.
 
+Because the deployed CLI delivery path bypassed `reply_payload_sending` entirely, the owner-bound
+screen tool now sends the deterministic answer and first capture through OpenClaw's official
+message command, confirms JSON delivery success, and immediately trashes every generated capture.
+This path additionally requires `isOwnerOnlyDiscordSession`; the CEO's standing evidence
+instruction is the explicit opt-in. Gemini blocked the initial session-string-only version and
+returned `red_team_clear` after the authenticated owner allowlist gate was added.
+
 ## Residual risk
 
 - A same-user local process with permission to alter Peekaboo output files can still interfere with
