@@ -1522,6 +1522,20 @@ const sajuRouting = await hooks.get("before_prompt_build")(
 assert.match(sajuRouting.appendSystemContext, /HARNESS SAJU ROUTING/);
 assert.match(sajuRouting.appendSystemContext, /specific length, sentence count/);
 assert.match(sajuRouting.appendSystemContext, /exactly 8 to 12 Korean sentences/);
+assert.match(sajuRouting.appendSystemContext, /both a labeled good time window and a labeled avoid time window/);
+assert.match(sajuRouting.appendSystemContext, /`좋은 시간대:HH:MM~HH:MM - 쉬운 이유 한 문장`/);
+assert.match(sajuRouting.appendSystemContext, /`피할 시간대:HH:MM~HH:MM - 쉬운 이유 한 문장`/);
+assert.match(sajuRouting.appendSystemContext, /never omit either window/);
+assert.match(sajuRouting.appendSystemContext, /Use everyday Korean first/);
+assert.match(sajuRouting.appendSystemContext, /short paragraphs of 2 to 3 sentences with blank lines/);
+assert.match(sajuRouting.appendSystemContext, /each time-window label in its own paragraph/);
+assert.match(sajuRouting.appendSystemContext, /background to at most 3 sentences total/);
+assert.match(sajuRouting.appendSystemContext, /today's daily layer differs from that background/);
+assert.match(sajuRouting.appendSystemContext, /explicitly state 1 or 2 ways/);
+assert.match(sajuRouting.appendSystemContext, /do not use unexplained terms/);
+for (const jargon of ["십신", "식상", "재성", "편관", "칠살", "형살", "합", "충", "극", "지지"]) {
+  assert.match(sajuRouting.appendSystemContext, new RegExp(jargon));
+}
 assert.match(sajuRouting.appendSystemContext, /do not copy the long expert report verbatim/);
 assert.match(sajuRouting.appendSystemContext, /reserve one sentence inside that limit/);
 const openClawSajuRouting = await hooks.get("before_prompt_build")(

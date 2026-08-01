@@ -16,13 +16,13 @@
   "requirements": [
     {
       "requirement": "Future daily Saju briefings contain 8-12 easy Korean sentences.",
-      "status": "not_verified",
-      "evidence": "Routing change and tests pass locally; production plugin deployment and successful Discord replay remain pending."
+      "status": "pass",
+      "evidence": "Production Discord message 1532916661617692673 contained 10 easy Korean sentences after the first deployment."
     },
     {
-      "requirement": "Resend today's briefing in the requested format.",
-      "status": "fail",
-      "evidence": "Pre-fix production replay delivered a long expert report as Discord messages 1532914039666114744, 1532914042887209050, and 1532914045579956276."
+      "requirement": "Use short readable paragraphs, include both good and avoid time windows, and distinguish today's changes from the stable background.",
+      "status": "not_verified",
+      "evidence": "Prompt contract and local tests pass; final production deployment and Discord replay remain pending."
     }
   ],
   "verification": [
@@ -43,6 +43,12 @@
       "target": "current code, tests, and audit artifact",
       "command": "Codex GPT-5.6 Sol plus Antigravity Gemini 3.6 Flash Low",
       "result": "PASS: 2-of-2 red_team_clear; details in docs/reviews/red_team/openclaw_daily_saju_format_20260801.md."
+    },
+    {
+      "name": "Production first-fix Discord replay",
+      "target": "Mac mini OpenClaw Discord channel 1492808588777754636",
+      "command": "deploy plugin; restart gateway; openclaw cron run; openclaw message read",
+      "result": "PARTIAL PASS: message 1532916661617692673 had exactly 10 easy sentences but one dense paragraph and only the avoid window; this evidence drove the follow-up remediation."
     }
   ],
   "deploy": {
@@ -50,7 +56,7 @@
     "result": "Pending origin/main push, selected-path Mac mini deployment, forced plugin install, gateway restart, and Discord replay."
   },
   "residual_risks": [
-    "The changed system instruction is not complete until the production plugin is installed and an actual Discord result is confirmed at 8-12 sentences.",
+    "The follow-up paragraph, dual-window, and daily-difference instruction is not complete until deployed and confirmed through a new Discord replay.",
     "Claude Sonnet review was attempted through the subscription route but quota was exhausted; no paid fallback was used. Required Codex plus Gemini 2-of-2 review passed."
   ]
 }
