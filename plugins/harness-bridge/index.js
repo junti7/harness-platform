@@ -3769,7 +3769,10 @@ export default {
             "NEVER run `nlm notebook query`, NotebookLM MCP query, or nlm-skill directly.",
             "Reconstruct omitted birth/target dates and birth time from recent conversation,",
             "then call only the `harness_saju_query` tool. For daily fortune and every other person's Saju question, include that the answer must consider 10-year 대운 as the long-term layer.",
-            "Send delivery_text verbatim.",
+            "Send delivery_text verbatim only when the user did not request a specific length, sentence count, structure, or reading level.",
+            "When the user requests an output format, rewrite delivery_text to that format while preserving its dates, factual basis, uncertainty, and safety cautions; do not copy the long expert report verbatim.",
+            "For a requested 8-to-12-sentence easy-language daily briefing, output exactly 8 to 12 Korean sentences, minimize jargon, omit the raw chart and citation inventory, and keep the 10-year 대운, year, month, day, practical cautions, risky time window, and final action advice.",
+            "If the request also requires verification evidence, reserve one sentence inside that limit for the plugin evidence line so the delivered reply still totals 8 to 12 sentences.",
             "The bridge owns deterministic dates, expert contracts, privacy, and cache.",
           ].join(" "),
         };

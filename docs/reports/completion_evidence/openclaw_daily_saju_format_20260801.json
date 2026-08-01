@@ -1,0 +1,56 @@
+{
+  "task": "OpenClaw daily Saju 8-12 sentence easy-language briefing",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-08-01T09:45:00+09:00",
+      "summary": "Confirmed CEO authority boundaries and exact production verification requirements before changing OpenClaw behavior."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-08-01T10:05:00+09:00",
+      "summary": "Confirmed origin main deployment source of truth, completion evidence guard, and real user entrypoint verification requirement."
+    }
+  ],
+  "requirements": [
+    {
+      "requirement": "Future daily Saju briefings contain 8-12 easy Korean sentences.",
+      "status": "not_verified",
+      "evidence": "Routing change and tests pass locally; production plugin deployment and successful Discord replay remain pending."
+    },
+    {
+      "requirement": "Resend today's briefing in the requested format.",
+      "status": "fail",
+      "evidence": "Pre-fix production replay delivered a long expert report as Discord messages 1532914039666114744, 1532914042887209050, and 1532914045579956276."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Local JavaScript syntax and plugin regression",
+      "target": "harness-bridge runtime plugin",
+      "command": "git diff --check && node --check plugins/harness-bridge/index.js && node tests/test_harness_bridge_plugin.mjs",
+      "result": "PASS"
+    },
+    {
+      "name": "Production Discord pre-fix reproduction",
+      "target": "Mac mini OpenClaw Discord channel 1492808588777754636",
+      "command": "openclaw cron run aaf016cf-59aa-49c3-aeca-52a2efd1b2d3; openclaw cron runs; openclaw message read",
+      "result": "REAL ENTRYPOINT FAIL reproduced: run manual:aaf016cf-59aa-49c3-aeca-52a2efd1b2d3:1785545465233:1 delivered a multi-part expert report instead of 8-12 sentences."
+    },
+    {
+      "name": "Independent cross-model review",
+      "target": "current code, tests, and audit artifact",
+      "command": "Codex GPT-5.6 Sol plus Antigravity Gemini 3.6 Flash Low",
+      "result": "PASS: 2-of-2 red_team_clear; details in docs/reviews/red_team/openclaw_daily_saju_format_20260801.md."
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh plugins/harness-bridge/index.js tests/test_harness_bridge_plugin.mjs docs/reviews/red_team/openclaw_daily_saju_format_20260801.md docs/reports/completion_evidence/openclaw_daily_saju_format_20260801.json",
+    "result": "Pending origin/main push, selected-path Mac mini deployment, forced plugin install, gateway restart, and Discord replay."
+  },
+  "residual_risks": [
+    "The changed system instruction is not complete until the production plugin is installed and an actual Discord result is confirmed at 8-12 sentences.",
+    "Claude Sonnet review was attempted through the subscription route but quota was exhausted; no paid fallback was used. Required Codex plus Gemini 2-of-2 review passed."
+  ]
+}

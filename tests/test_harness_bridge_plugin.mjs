@@ -1520,6 +1520,10 @@ const sajuRouting = await hooks.get("before_prompt_build")(
   context,
 );
 assert.match(sajuRouting.appendSystemContext, /HARNESS SAJU ROUTING/);
+assert.match(sajuRouting.appendSystemContext, /specific length, sentence count/);
+assert.match(sajuRouting.appendSystemContext, /exactly 8 to 12 Korean sentences/);
+assert.match(sajuRouting.appendSystemContext, /do not copy the long expert report verbatim/);
+assert.match(sajuRouting.appendSystemContext, /reserve one sentence inside that limit/);
 const openClawSajuRouting = await hooks.get("before_prompt_build")(
   { prompt: "OpenClaw에서 오늘 사주 운세 알려줘", messages: [], runId: "run-saju-2" },
   { runId: "run-saju-2", sessionKey: "session-saju-2" },
