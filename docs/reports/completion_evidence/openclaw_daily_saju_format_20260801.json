@@ -1,6 +1,6 @@
 {
   "task": "OpenClaw daily Saju 8-12 sentence easy-language briefing",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -21,8 +21,8 @@
     },
     {
       "requirement": "Use short readable paragraphs, include both good and avoid time windows, and distinguish today's changes from the stable background.",
-      "status": "not_verified",
-      "evidence": "Prompt contract and local tests pass; final production deployment and Discord replay remain pending."
+      "status": "pass",
+      "evidence": "Production Discord message 1532919252154060890 contained 11 sentences across 6 short paragraphs, both exact time-window labels and ranges, plain Korean, and an explicit distinction between stable background and today's differences."
     }
   ],
   "verification": [
@@ -49,14 +49,19 @@
       "target": "Mac mini OpenClaw Discord channel 1492808588777754636",
       "command": "deploy plugin; restart gateway; openclaw cron run; openclaw message read",
       "result": "PARTIAL PASS: message 1532916661617692673 had exactly 10 easy sentences but one dense paragraph and only the avoid window; this evidence drove the follow-up remediation."
+    },
+    {
+      "name": "Production final Discord replay",
+      "target": "Mac mini OpenClaw Discord channel 1492808588777754636",
+      "command": "deploy plugin; restart gateway; openclaw cron run; openclaw cron runs; openclaw message read",
+      "result": "PASS: run manual:aaf016cf-59aa-49c3-aeca-52a2efd1b2d3:1785546731177:1 delivered message 1532919252154060890 with 11 sentences, 6 short paragraphs, 좋은 시간대:17:30~19:30, 피할 시간대:13:30~15:30, plain language, and daily-difference explanation."
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh plugins/harness-bridge/index.js tests/test_harness_bridge_plugin.mjs docs/reviews/red_team/openclaw_daily_saju_format_20260801.md docs/reports/completion_evidence/openclaw_daily_saju_format_20260801.json",
-    "result": "Pending origin/main push, selected-path Mac mini deployment, forced plugin install, gateway restart, and Discord replay."
+    "result": "Deployed from origin/main; selected paths matched with zero diff; plugin force-installed; gateway restarted; plugins doctor found no issues; final Discord replay passed."
   },
   "residual_risks": [
-    "The follow-up paragraph, dual-window, and daily-difference instruction is not complete until deployed and confirmed through a new Discord replay.",
     "Claude Sonnet review was attempted through the subscription route but quota was exhausted; no paid fallback was used. Required Codex plus Gemini 2-of-2 review passed."
   ]
 }
