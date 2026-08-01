@@ -35,3 +35,13 @@ Excluded review attempts:
 
 - Gemini conversation `357b9351-e783-47d8-a828-8636c7288a29` refused and was not counted.
 - Codex session `019fbadc-9520-7313-83b6-9f5ed3253367` blocked only because this prompt/output evidence was missing from the audit artifact; the missing evidence is supplied above, and that block is not counted as a substantive code clear.
+
+## Grounded trend follow-up
+
+- Requirement: show whether favorable or unfavorable energy is strengthening, flat, or easing instead of repeating static daily warnings.
+- Safety contract: `전날 대비:` requires yesterday's successful `harness_saju_query` result and today's result to support the same comparable factor; delivered wording alone is not evidence. Missing comparison data must return `전날 대비: 비교 자료 부족`.
+- Intraday contract: `오늘 시간 흐름:` may describe morning→afternoon→evening direction only when all three periods are grounded; otherwise it must return `오늘 시간 흐름: 비교 자료 부족`.
+- Multi-day trend cannot be inferred from repeated wording, and tomorrow cannot be predicted without separately grounded tomorrow data.
+- Gemini 3.6 Flash Low conversation `74d6df1e-1e85-47ca-ac03-e8f340d7a9f1`: final current-diff `AUDIT CLEAR` after stricter grounding.
+- Codex GPT-5.6 Sol initially blocked weak comparison grounding, then cleared the remediated contract in session `019fbaf0-f78d-7ee1-8285-dc45729c274b`.
+- Trend follow-up verdict: `red_team_clear` after Gemini clear plus Codex remediation clear; production replay remains required.

@@ -1,6 +1,6 @@
 {
   "task": "OpenClaw daily Saju 8-12 sentence easy-language briefing",
-  "status": "complete",
+  "status": "residual_risk",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -23,6 +23,11 @@
       "requirement": "Use short readable paragraphs, include both good and avoid time windows, and distinguish today's changes from the stable background.",
       "status": "pass",
       "evidence": "Production Discord message 1532919252154060890 contained 11 sentences across 6 short paragraphs, both exact time-window labels and ranges, plain Korean, and an explicit distinction between stable background and today's differences."
+    },
+    {
+      "requirement": "Report grounded prior-day and intraday trend direction without inventing missing comparisons.",
+      "status": "not_verified",
+      "evidence": "Local prompt contract and tests pass; production deployment and Discord replay remain pending."
     }
   ],
   "verification": [
@@ -62,6 +67,7 @@
     "result": "Deployed from origin/main; selected paths matched with zero diff; plugin force-installed; gateway restarted; plugins doctor found no issues; final Discord replay passed."
   },
   "residual_risks": [
+    "Grounded trend fields are not complete until the updated plugin is deployed and a new Discord replay is inspected.",
     "Claude Sonnet review was attempted through the subscription route but quota was exhausted; no paid fallback was used. Required Codex plus Gemini 2-of-2 review passed."
   ]
 }
