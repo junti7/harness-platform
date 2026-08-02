@@ -1,0 +1,58 @@
+{
+  "task": "Prevent stale OpenClaw verification state from replacing an ordinary Discord restaurant answer",
+  "status": "residual_risk",
+  "created_at": "2026-08-02T17:53:32+09:00",
+  "problem": "OpenClaw generated a source-backed restaurant recommendation after two successful web_search calls, but Discord received only the generic evidence-failure sentence because queued verification state could survive outside its originating run.",
+  "implementation": [
+    {
+      "path": "plugins/harness-bridge/index.js",
+      "summary": "Tightened owner identity resolution for event/context session metadata, removed unknown-channel owner fallback, and pruned expired pending/dispatched evidence session queues before outbound matching."
+    },
+    {
+      "path": "tests/test_harness_bridge_plugin.mjs",
+      "summary": "Added owner event-session, conflicting sender, shared-channel, and ordinary restaurant recommendation regressions."
+    }
+  ],
+  "verification": [
+    {
+      "name": "production incident trajectory diagnosis",
+      "target": "Mac mini OpenClaw Discord runtime session 2ab8d31b-c3c1-482d-83ba-3324411224ef",
+      "command": "inspect Mac mini session JSONL and trajectory JSONL for 2026-08-02 17:41 KST",
+      "result": "CONFIRMED model generated a detailed restaurant answer and web_search completed twice, while the user-visible Discord payload was replaced by the generic evidence-failure text."
+    },
+    {
+      "name": "local plugin and bridge regression",
+      "target": "OpenClaw plugin tests",
+      "command": "node --check plugins/harness-bridge/index.js && node tests/test_harness_bridge_plugin.mjs && .venv/bin/python -m pytest -q tests/test_openclaw_bridge.py",
+      "result": "PASS: JavaScript syntax and plugin regression passed; Python bridge 37 passed."
+    }
+  ],
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-08-02T17:52:00+09:00",
+      "summary": "Confirmed completion needs requirement-to-evidence mapping and verification at the real user entrypoint."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-08-02T17:52:00+09:00",
+      "summary": "Confirmed origin/main deployment source of truth, scoped Mac mini deployment, and real Discord runtime proof requirements."
+    }
+  ],
+  "red_team": {
+    "models": ["Claude", "Gemini", "Copilot"],
+    "verdict": "red_team_clear",
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/openclaw_discord_reply_state_isolation_20260802.md",
+        "verdict": "red_team_clear"
+      }
+    ]
+  },
+  "residual_risks": [
+    {
+      "risk": "The corrected plugin has not yet been deployed and replayed through the real Discord delivery path.",
+      "mitigation": "Commit and push to origin/main, deploy only plugin/test/evidence paths with scripts/deploy_to_macmini.sh, force-install the plugin, restart the gateway, and replay the exact restaurant question with delivery receipt verification."
+    }
+  ]
+}

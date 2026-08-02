@@ -307,6 +307,12 @@ assert.equal(
 assert.equal(shouldEnforceVerificationEvidence("캘린더 조회가 가능한 기능이야?"), false);
 assert.equal(
   shouldEnforceVerificationEvidence(
+    "오늘 저녁에 판교에 있는 이가네 양꼬치에 가족과 방문할 예정인데 추천 메뉴와 맛있게 먹는 꿀팁을 알려줘.",
+  ),
+  false,
+);
+assert.equal(
+  shouldEnforceVerificationEvidence(
     "아래 답변이 문제인지 분석해.\n---\n오늘 캘린더 일정을 조회해줘.",
   ),
   false,
@@ -839,7 +845,115 @@ const ownerSessionOnlyBrowserOpenRouting = await ownerSessionOnlyHooks.get("befo
     sessionKey: "agent:main:discord:channel:1492808588777754636",
   },
 );
-assert.match(ownerSessionOnlyBrowserOpenRouting.appendSystemContext, /HARNESS BROWSER OPEN/);
+assert.equal(ownerSessionOnlyBrowserOpenRouting, undefined);
+const runtimeEventHooks = new Map();
+harnessBridge.register({
+  pluginConfig: {
+    ownerSenderIds: ["1158367139141521519"],
+    ownerSessionKeys: ["agent:main:discord:channel:1492808588777754636"],
+  },
+  config: {
+    channels: {
+      discord: {
+        guilds: {
+          guild1: {
+            users: ["1158367139141521519"],
+            channels: { "1492808588777754636": { enabled: true } },
+          },
+        },
+      },
+    },
+  },
+  registerTool() {},
+  on(name, handler) {
+    runtimeEventHooks.set(name, handler);
+  },
+});
+const ownerEventSessionOnlyBrowserOpenRouting = await runtimeEventHooks.get("before_prompt_build")(
+  {
+    prompt: "browser 띄워서 쿠팡 접속해",
+    messages: [],
+    runId: "run-browser-open-owner-event-session-only",
+    sessionKey: "agent:main:discord:channel:1492808588777754636",
+  },
+  {
+    runId: "run-browser-open-owner-event-session-only",
+  },
+);
+assert.match(ownerEventSessionOnlyBrowserOpenRouting.appendSystemContext, /HARNESS BROWSER OPEN/);
+const ownerEventSessionOnlyNotionRouting = await runtimeEventHooks.get("before_prompt_build")(
+  {
+    prompt: "notion에 이 결과를 기록해",
+    messages: [],
+    runId: "run-notion-owner-event-session-only",
+    sessionKey: "agent:main:discord:channel:1492808588777754636",
+  },
+  { runId: "run-notion-owner-event-session-only" },
+);
+assert.match(ownerEventSessionOnlyNotionRouting.appendSystemContext, /HARNESS NOTION ARCHIVE/);
+const conflictingSenderEventSessionRouting = await runtimeEventHooks.get("before_prompt_build")(
+  {
+    prompt: discordPrompt("Current user request:\nbrowser 띄워서 쿠팡 접속해", "attacker"),
+    messages: [],
+    runId: "run-browser-open-conflicting-sender",
+    sessionKey: "agent:main:discord:channel:1492808588777754636",
+  },
+  { runId: "run-browser-open-conflicting-sender" },
+);
+assert.equal(conflictingSenderEventSessionRouting, undefined);
+const sharedEventHooks = new Map();
+harnessBridge.register({
+  pluginConfig: {
+    ownerSenderIds: ["1158367139141521519"],
+    ownerSessionKeys: ["agent:main:discord:channel:1492808588777754636"],
+  },
+  config: {
+    channels: {
+      discord: {
+        guilds: {
+          guild1: {
+            users: ["1158367139141521519", "attacker"],
+            channels: { "1492808588777754636": { enabled: true } },
+          },
+        },
+      },
+    },
+  },
+  registerTool() {},
+  on(name, handler) {
+    sharedEventHooks.set(name, handler);
+  },
+});
+const sharedChannelEventSessionRouting = await sharedEventHooks.get("before_prompt_build")(
+  {
+    prompt: "browser 띄워서 쿠팡 접속해",
+    messages: [],
+    runId: "run-browser-open-shared-event-session",
+    sessionKey: "agent:main:discord:channel:1492808588777754636",
+  },
+  { runId: "run-browser-open-shared-event-session" },
+);
+assert.equal(sharedChannelEventSessionRouting, undefined);
+harnessBridge.register({
+  pluginConfig: {
+    ownerSenderIds: ["1158367139141521519"],
+    ownerSessionKeys: ["agent:main:discord:channel:1492808588777754636"],
+  },
+  config: {
+    channels: {
+      discord: {
+        guilds: {
+          guild1: {
+            users: ["1158367139141521519"],
+            channels: { "1492808588777754636": { enabled: true } },
+          },
+        },
+      },
+    },
+  },
+  registerTool() {},
+  on() {},
+});
 const browserOpenContext = {
   runId: "run-browser-open-1",
   sessionKey: "agent:main:discord:channel:1492808588777754636",

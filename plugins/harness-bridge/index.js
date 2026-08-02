@@ -1352,10 +1352,23 @@ function contextSenderIds(context = {}) {
     .map(String);
 }
 
-function currentSenderIsOwner(prompt, context = {}) {
+function currentSenderIsOwner(prompt, context = {}, event = {}) {
   const senderId = currentSenderId(prompt);
-  const sessionKeys = [context.sessionKey, context.sessionId].filter(Boolean).map(String);
+  const sessionKeys = [
+    context.sessionKey,
+    context.sessionId,
+    context.session?.key,
+    event.sessionKey,
+    event.sessionId,
+    event.session?.key,
+  ]
+    .filter(Boolean)
+    .map(String);
   const ownerIds = configuredOwnerSenderIds();
+  const explicitSenderIds = [senderId, ...contextSenderIds(context)].filter(Boolean);
+  if (explicitSenderIds.length > 0 && explicitSenderIds.some((id) => !ownerIds.has(id))) {
+    return false;
+  }
   return (
     context.senderIsOwner === true ||
     (Boolean(senderId) && ownerIds.has(senderId)) ||
@@ -3092,8 +3105,7 @@ export default {
         ? api.pluginConfig.ownerSessionKeys
             .map(String)
             .filter((sessionKey) =>
-              isOwnerOnlyDiscordSession(sessionKey, api.config, pluginOwnerSenderIds) ||
-              !discordSessionChannelKnown(sessionKey, api.config),
+              isOwnerOnlyDiscordSession(sessionKey, api.config, pluginOwnerSenderIds),
             )
         : [],
     );
@@ -3160,6 +3172,13 @@ export default {
       for (const [key, queue] of queues) {
         const remaining = queue.filter((candidate) => candidate !== state);
         if (remaining.length > 0) queues.set(key, remaining);
+        else queues.delete(key);
+      }
+    };
+    const pruneExpiredQueuedStates = (queues, now) => {
+      for (const [key, queue] of queues) {
+        const active = queue.filter((state) => state?.expiresAt > now);
+        if (active.length > 0) queues.set(key, active);
         else queues.delete(key);
       }
     };
@@ -3278,6 +3297,10 @@ export default {
       for (const [key, state] of pendingVerificationReplies) {
         if (state.expiresAt <= now) pendingVerificationReplies.delete(key);
       }
+      pruneExpiredQueuedStates(pendingCoupangEvidenceSessions, now);
+      pruneExpiredQueuedStates(dispatchedCoupangEvidenceSessions, now);
+      pruneExpiredQueuedStates(pendingVerificationSessions, now);
+      pruneExpiredQueuedStates(dispatchedVerificationSessions, now);
       while (activeSajuRuns.size > 1024) {
         activeSajuRuns.delete(activeSajuRuns.keys().next().value);
       }
@@ -3608,7 +3631,7 @@ export default {
         }
         const requestText = currentUserInstruction(event.prompt);
         const notionArchiveRequest =
-          currentSenderIsOwner(event.prompt, context) &&
+          currentSenderIsOwner(event.prompt, context, event) &&
           NOTION_ARCHIVE_REQUEST.test(requestText);
         if (notionArchiveRequest) {
           return {
@@ -3621,7 +3644,7 @@ export default {
             ].join(" "),
           };
         }
-        const ownerRequest = currentSenderIsOwner(event.prompt, context);
+        const ownerRequest = currentSenderIsOwner(event.prompt, context, event);
         if (ownerRequest && shouldEnforceVerificationEvidence(requestText)) {
           markVerificationRun(event, context);
         }
