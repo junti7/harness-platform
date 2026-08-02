@@ -1,6 +1,6 @@
 {
   "task": "Prevent stale OpenClaw verification state from replacing an ordinary Discord restaurant answer",
-  "status": "residual_risk",
+  "status": "complete",
   "created_at": "2026-08-02T17:53:32+09:00",
   "problem": "OpenClaw generated a source-backed restaurant recommendation after two successful web_search calls, but Discord received only the generic evidence-failure sentence because queued verification state could survive outside its originating run.",
   "implementation": [
@@ -25,8 +25,24 @@
       "target": "OpenClaw plugin tests",
       "command": "node --check plugins/harness-bridge/index.js && node tests/test_harness_bridge_plugin.mjs && .venv/bin/python -m pytest -q tests/test_openclaw_bridge.py",
       "result": "PASS: JavaScript syntax and plugin regression passed; Python bridge 37 passed."
+    },
+    {
+      "name": "production OpenClaw agent Discord replay",
+      "target": "Mac mini OpenClaw Discord channel 1492808588777754636",
+      "command": "openclaw agent with exact restaurant question, explicit Discord reply target, delivery enabled, followed by openclaw message read",
+      "result": "PASS: run f0eed880-9eee-4249-aba0-ed854262e305 completed after four successful web_search results; Discord read-back showed the generated multi-part recommendation with final part message ID 1533397870143864832 and no generic evidence-failure replacement."
+    },
+    {
+      "name": "production Discord delivery receipt",
+      "target": "Discord channel 1492808588777754636",
+      "command": "openclaw message send --channel discord --target channel:1492808588777754636 --json",
+      "result": "PASS: deliveryStatus=sent, payload outcome status=sent, receipt primaryPlatformMessageId=1533398118236684299; subsequent message read returned the exact recommendation text."
     }
   ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh plugins/harness-bridge/index.js; force-install harness-bridge; restart ai.openclaw.gateway",
+    "result": "PASS: deployed origin/main commit 5e75e08 selected path with origin diff 0, plugin force-install succeeded, gateway restarted at PID 98385, and openclaw plugins doctor reported no issues."
+  },
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -49,10 +65,5 @@
       }
     ]
   },
-  "residual_risks": [
-    {
-      "risk": "The corrected plugin has not yet been deployed and replayed through the real Discord delivery path.",
-      "mitigation": "Commit and push to origin/main, deploy only plugin/test/evidence paths with scripts/deploy_to_macmini.sh, force-install the plugin, restart the gateway, and replay the exact restaurant question with delivery receipt verification."
-    }
-  ]
+  "residual_risks": []
 }
