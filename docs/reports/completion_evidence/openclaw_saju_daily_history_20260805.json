@@ -1,6 +1,6 @@
 {
   "task": "Persist daily Saju comparison snapshots and deliver grounded prior-day and intraday trends",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -21,8 +21,8 @@
     },
     {
       "requirement": "Replace repeated comparison-data-missing output with evidence-based prior-day and intraday flow.",
-      "status": "pending_production",
-      "evidence": "Bridge contract validates overall strength direction and requires morning, afternoon, and evening flow; production replay pending."
+      "status": "pass",
+      "evidence": "Production bridge returned comparison_available=true for 2026-08-04 versus 2026-08-05. Discord message 1534329611259744256 delivered 전날 대비: 강해짐 and an evidence-based morning rise, afternoon peak, evening easing flow."
     }
   ],
   "verification": [
@@ -48,15 +48,12 @@
       "name": "Production OpenClaw Discord replay",
       "target": "Mac mini OpenClaw Discord channel 1492808588777754636",
       "command": "deploy, seed yesterday, run today's query with delivery, then read the delivered Discord message",
-      "result": "PENDING: production deployment and read-back have not run yet"
+      "result": "PASS: run manual:aaf016cf-59aa-49c3-aeca-52a2efd1b2d3:1785882961673:2 status=ok, durationMs=124237, delivered=true, deliveryStatus=delivered; Discord read-back message 1534329611259744256 contains grounded prior-day and intraday trends."
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh core/notebook_query_planning.py scripts/openclaw_codex_bridge.py plugins/harness-bridge/index.js tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py tests/test_harness_bridge_plugin.mjs docs/reviews/red_team/openclaw_saju_daily_history_codex_20260805.md docs/reviews/red_team/openclaw_saju_daily_history_gemini_20260805.md docs/reports/completion_evidence/openclaw_saju_daily_history_20260805.json",
-    "result": "Pending commit, push, deployment, history seed, and real Discord replay."
+    "result": "Commit f963d66 pushed to origin/main; selected paths deployed with zero diff; plugin force-installed; gateway restarted; plugins doctor reported no issues; 2026-08-04 seed saved; 2026-08-05 comparison saved with previous_date=2026-08-04 and comparison_available=true; final Discord replay delivered and read back."
   },
-  "residual_risks": [
-    "Production history has not yet been seeded with yesterday's successful result.",
-    "Actual OpenClaw Discord delivery has not yet been read back."
-  ]
+  "residual_risks": []
 }
