@@ -1,0 +1,62 @@
+{
+  "task": "Persist daily Saju comparison snapshots and deliver grounded prior-day and intraday trends",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-08-05T10:00:00+09:00",
+      "summary": "Confirmed production verification, commit and push source of truth, and customer-facing completion evidence requirements."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-08-05T10:00:00+09:00",
+      "summary": "Confirmed atomic shared-state handling, secret protection, deployment path, and real-entrypoint verification rules."
+    }
+  ],
+  "requirements": [
+    {
+      "requirement": "Save each successful daily reading for grounded comparison on the next day.",
+      "status": "pass",
+      "evidence": "Local tests verify same-profile prior-day lookup, profile isolation, private HMAC IDs, immutable locked writes, and 45-day retention."
+    },
+    {
+      "requirement": "Replace repeated comparison-data-missing output with evidence-based prior-day and intraday flow.",
+      "status": "pending_production",
+      "evidence": "Bridge contract validates overall strength direction and requires morning, afternoon, and evening flow; production replay pending."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Focused Python regression",
+      "target": "local bridge and planning runtime",
+      "command": ".venv/bin/python -m pytest -q tests/test_openclaw_bridge.py tests/test_notebook_query_planning.py tests/test_openclaw_saju_bridge_timeout.py tests/test_atomic_io.py",
+      "result": "PASS: 129 tests"
+    },
+    {
+      "name": "Plugin syntax and routing regression",
+      "target": "local OpenClaw harness-bridge plugin",
+      "command": "node --check plugins/harness-bridge/index.js && node tests/test_harness_bridge_plugin.mjs",
+      "result": "PASS"
+    },
+    {
+      "name": "Independent code reviews",
+      "target": "final code diff",
+      "command": "scripts/redteam_review.sh codex and scripts/redteam_review.sh antigravity",
+      "result": "PASS: Codex and Antigravity Gemini final verdicts clear"
+    },
+    {
+      "name": "Production OpenClaw Discord replay",
+      "target": "Mac mini OpenClaw Discord channel 1492808588777754636",
+      "command": "deploy, seed yesterday, run today's query with delivery, then read the delivered Discord message",
+      "result": "PENDING: production deployment and read-back have not run yet"
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh core/notebook_query_planning.py scripts/openclaw_codex_bridge.py plugins/harness-bridge/index.js tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py tests/test_harness_bridge_plugin.mjs docs/reviews/red_team/openclaw_saju_daily_history_codex_20260805.md docs/reviews/red_team/openclaw_saju_daily_history_gemini_20260805.md docs/reports/completion_evidence/openclaw_saju_daily_history_20260805.json",
+    "result": "Pending commit, push, deployment, history seed, and real Discord replay."
+  },
+  "residual_risks": [
+    "Production history has not yet been seeded with yesterday's successful result.",
+    "Actual OpenClaw Discord delivery has not yet been read back."
+  ]
+}

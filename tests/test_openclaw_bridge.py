@@ -283,6 +283,11 @@ class OpenClawBridgeTests(unittest.TestCase):
             "원국 일간과 10년 대운, 세운 월운 일진 운세를 설명합니다. 천간과 지지 작용, 재물 대인 건강, "
             "해석 한계와 참고 사항을 근거와 함께 분석합니다. "
         ) * 20
+        answer_text += (
+            "전날 대비: 비교 자료 부족\n"
+            "오늘 시간 흐름: 오전부터 오후에 상승하고 저녁에 완화됩니다.\n"
+            "비교 기준 요약:전체 기세:중;유리 요소:문서 정리;주의 요소:성급한 결정"
+        )
         answer = {"answer": answer_text, "sources_used": ["source-1"]}
         verified = {
             "binary": "/mock/nlm",
@@ -303,6 +308,10 @@ class OpenClawBridgeTests(unittest.TestCase):
             "NOTEBOOKLM_CACHE_DIR",
             Path(tmpdir) / "cache",
         ), patch.object(
+            openclaw_codex_bridge,
+            "SAJU_DAILY_HISTORY_DIR",
+            Path(tmpdir) / "history",
+        ), patch.object(
             openclaw_codex_bridge, "_verified_saju_notebook", return_value=verified
         ), patch.object(
             openclaw_codex_bridge,
@@ -319,6 +328,80 @@ class OpenClawBridgeTests(unittest.TestCase):
         self.assertTrue(second["cache"]["hit"])
         self.assertFalse(third["cache"]["hit"])
         self.assertEqual(run_nlm.call_count, 2)
+
+    def test_daily_history_supplies_only_same_profiles_previous_day(self):
+        with TemporaryDirectory() as tmpdir, patch.object(
+            openclaw_codex_bridge,
+            "SAJU_DAILY_HISTORY_DIR",
+            Path(tmpdir) / "history",
+        ):
+            plan = openclaw_codex_bridge.build_query_plan(
+                "1974년 2월 2일 18시 37분 KST 출생 남자 2026년 8월 5일 운세",
+                (openclaw_codex_bridge.enrich_saju_question,),
+            )
+            other_plan = openclaw_codex_bridge.build_query_plan(
+                "1975년 2월 2일 18시 37분 KST 출생 남자 2026년 8월 5일 운세",
+                (openclaw_codex_bridge.enrich_saju_question,),
+            )
+            identity = openclaw_codex_bridge._saju_daily_identity(plan)
+            other_identity = openclaw_codex_bridge._saju_daily_identity(other_plan)
+            self.assertIsNotNone(identity)
+            yesterday = dict(identity, target_date="2026-08-04")
+            openclaw_codex_bridge._write_saju_daily_result(
+                yesterday,
+                "비교 기준 요약:전체 기세:중;유리 요소:문서 정리;주의 요소:성급한 결정",
+                "query-yesterday",
+            )
+            previous = openclaw_codex_bridge._read_previous_saju_daily_result(identity)
+            unrelated = openclaw_codex_bridge._read_previous_saju_daily_result(
+                other_identity
+            )
+
+        self.assertEqual(previous["target_date"], "2026-08-04")
+        self.assertEqual(previous["comparison_snapshot"]["overall"], "중")
+        self.assertIsNone(unrelated)
+
+    def test_daily_comparison_context_is_part_of_cache_identity(self):
+        with TemporaryDirectory() as tmpdir, patch.object(
+            openclaw_codex_bridge,
+            "SAJU_DAILY_HISTORY_DIR",
+            Path(tmpdir) / "history",
+        ):
+            plan = openclaw_codex_bridge.build_query_plan(
+                "1974년 2월 2일 18시 37분 KST 출생 남자 2026년 8월 5일 운세",
+                (openclaw_codex_bridge.enrich_saju_question,),
+            )
+            notebook = {"source_count": 26, "source_revision": "revision-1"}
+            missing = openclaw_codex_bridge._add_saju_daily_comparison_context(plan, None)
+            present = openclaw_codex_bridge._add_saju_daily_comparison_context(
+                plan,
+                {
+                    "target_date": "2026-08-04",
+                    "comparison_snapshot": {
+                        "overall": "중",
+                        "favorable": "문서 정리",
+                        "caution": "성급한 결정",
+                    },
+                },
+            )
+        self.assertNotEqual(
+            openclaw_codex_bridge._saju_cache_key(missing, notebook),
+            openclaw_codex_bridge._saju_cache_key(present, notebook),
+        )
+        self.assertIn("오전, 오후, 저녁", present.grounded_question)
+
+    def test_daily_history_write_failure_degrades_without_losing_answer(self):
+        with patch.object(
+            openclaw_codex_bridge,
+            "_write_saju_daily_result",
+            side_effect=OSError("read only"),
+        ):
+            status = openclaw_codex_bridge._safe_write_saju_daily_result(
+                {"profile_hash": "abc", "target_date": "2026-08-05"},
+                "answer",
+                "query-id",
+            )
+        self.assertEqual(status, "degraded_write_failed")
 
     def test_cache_key_changes_when_source_revision_changes(self):
         plan = openclaw_codex_bridge.build_query_plan(

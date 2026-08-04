@@ -1647,14 +1647,11 @@ assert.match(sajuRouting.appendSystemContext, /background to at most 3 sentences
 assert.match(sajuRouting.appendSystemContext, /today's daily layer differs from that background/);
 assert.match(sajuRouting.appendSystemContext, /explicitly state 1 or 2 ways/);
 assert.match(sajuRouting.appendSystemContext, /`전날 대비:` sentence/);
-assert.match(sajuRouting.appendSystemContext, /yesterday's corresponding successful `harness_saju_query` result/);
-assert.match(sajuRouting.appendSystemContext, /prior delivered wording alone is not evidence/);
-assert.match(sajuRouting.appendSystemContext, /강해짐`, `비슷함`, or `약해짐/);
-assert.match(sajuRouting.appendSystemContext, /전날 대비: 비교 자료 부족/);
+assert.match(sajuRouting.appendSystemContext, /daily_history\.comparison_available/);
+assert.match(sajuRouting.appendSystemContext, /only say `비교 자료 부족` when comparison_available is false/);
 assert.match(sajuRouting.appendSystemContext, /`오늘 시간 흐름:` sentence/);
-assert.match(sajuRouting.appendSystemContext, /morning through afternoon to evening/);
-assert.match(sajuRouting.appendSystemContext, /returned grounded result covers all three periods/);
-assert.match(sajuRouting.appendSystemContext, /오늘 시간 흐름: 비교 자료 부족/);
+assert.match(sajuRouting.appendSystemContext, /morning-to-afternoon-to-evening/);
+assert.match(sajuRouting.appendSystemContext, /do not replace a present grounded flow with `비교 자료 부족`/);
 assert.match(sajuRouting.appendSystemContext, /never predict tomorrow unless tomorrow was separately grounded/);
 assert.match(sajuRouting.appendSystemContext, /do not use unexplained terms/);
 for (const jargon of ["십신", "식상", "재성", "편관", "칠살", "형살", "합", "충", "극", "지지"]) {

@@ -7,6 +7,7 @@ interprets them, and a route-independent delivery check rejects non-answers.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from typing import Callable, Iterable
@@ -182,6 +183,19 @@ def build_query_plan(question: str, enrichers: Iterable[Enricher] = ()) -> Noteb
                     "각 표제 아래에 최소 한 개의 구체적인 시진과 24시간 값을 함께 제시하라.",
                 ]
             )
+        if "운세" in requirements:
+            expert_contract.extend(
+                [
+                    "일일 운세에는 아래 두 표제를 정확히 한 번씩 포함하라:",
+                    "전날 대비:",
+                    "오늘 시간 흐름:",
+                    "오늘 시간 흐름은 오전, 오후, 저녁 세 구간을 모두 검토하고 "
+                    "어느 때 상승, 정점, 완화 또는 평탄한지 쉬운 말로 설명하라.",
+                    "내부 비교 저장용으로 아래 형식을 정확히 한 줄 포함하라:",
+                    "비교 기준 요약:전체 기세:강|중|약 중 하나;유리 요소:짧은 명사구;"
+                    "주의 요소:짧은 명사구",
+                ]
+            )
     grounded = "\n".join(
         [
             "이 요청은 이전 대화와 독립적이다.",
@@ -252,6 +266,72 @@ def assess_notebook_answer(plan: NotebookQueryPlan, answer: str) -> tuple[bool, 
         elif requirement == "운세":
             if not any(marker in text for marker in ("운세", "종합운", "전체운", "총평")):
                 reasons.append("missing:운세")
+            if len(re.findall(r"(?:\*\*)?전날\s*대비\s*:(?:\*\*)?", text)) != 1:
+                reasons.append("missing_or_duplicate:전날 대비")
+            if len(
+                re.findall(r"(?:\*\*)?오늘\s*시간\s*흐름\s*:(?:\*\*)?", text)
+            ) != 1:
+                reasons.append("missing_or_duplicate:오늘 시간 흐름")
+            flow = re.search(
+                r"오늘\s*시간\s*흐름\s*:\s*(?:\*\*)?\s*(?P<body>[^\n]{1,500})",
+                text,
+            )
+            if not flow or not all(
+                marker in flow.group("body") for marker in ("오전", "오후", "저녁")
+            ):
+                reasons.append("missing:오전오후저녁흐름")
+            elif not any(
+                marker in flow.group("body")
+                for marker in ("상승", "강해", "정점", "완화", "약해", "평탄", "비슷")
+            ):
+                reasons.append("missing:시간흐름방향")
+            if not re.search(
+                r"비교 기준 요약:\s*전체 기세\s*:\s*(?:강|중|약)\s*[;；]\s*"
+                r"유리 요소\s*:\s*[^\n;；]{1,120}\s*[;；]\s*"
+                r"주의 요소\s*:\s*[^\n;；]{1,120}",
+                text,
+            ):
+                reasons.append("missing_or_invalid:비교기준요약")
+            history = next(
+                (
+                    item
+                    for item in plan.supplemental_facts
+                    if item.provider == "harness-saju-daily-history-v1"
+                ),
+                None,
+            )
+            comparison = re.search(
+                r"전날\s*대비\s*:\s*(?:\*\*)?\s*(?P<body>[^\n]{1,300})",
+                text,
+            )
+            if history and history.facts != ("전날 성공 결과 없음",):
+                if not comparison or "비교 자료 부족" in comparison.group("body"):
+                    reasons.append("missing:전날실제비교")
+                else:
+                    try:
+                        previous_snapshot = json.loads(history.facts[0])
+                    except (TypeError, ValueError):
+                        reasons.append("invalid:전날비교스냅샷")
+                    else:
+                        current = re.search(
+                            r"비교 기준 요약:\s*전체 기세\s*:\s*(강|중|약)", text
+                        )
+                        ranks = {"약": 0, "중": 1, "강": 2}
+                        if not current or previous_snapshot.get("overall") not in ranks:
+                            reasons.append("invalid:전날비교스냅샷")
+                        else:
+                            delta = ranks[current.group(1)] - ranks[previous_snapshot["overall"]]
+                            expected = "강해짐" if delta > 0 else "약해짐" if delta < 0 else "비슷함"
+                            direction = re.match(
+                                r"(강해짐|비슷함|약해짐)(?=\s|[,.!?:;-]|$)",
+                                comparison.group("body").strip(),
+                            )
+                            if not direction or direction.group(1) != expected:
+                                reasons.append("mismatch:전날비교방향")
+            elif not comparison or not comparison.group("body").strip().startswith(
+                "비교 자료 부족"
+            ):
+                reasons.append("mismatch:전날비교자료없음")
         elif requirement == "좋은 시간대":
             if requirement not in assigned_time_categories:
                 reasons.append("missing:좋은 시간대")
