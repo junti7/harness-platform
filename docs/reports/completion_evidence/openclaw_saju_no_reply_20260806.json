@@ -1,6 +1,6 @@
 {
   "task": "Prevent OpenClaw Saju follow-up suppression by a prior cron NO_REPLY instruction",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -31,9 +31,16 @@
       "target": "LLM dispatch read-only review",
       "command": "scripts/redteam_review.sh antigravity scratch/redteam/openclaw_no_reply_20260806.diff",
       "result": "VERDICT: clear; no blocker, major, or minor findings."
+    },
+    {
+      "name": "Mac mini production Saju replay and Discord read-back",
+      "target": "macmini production OpenClaw gateway and Discord API",
+      "command": "Replay the failed question in agent:main:discord:channel:1492808588777754636 with delivery, then read the latest channel messages through Discord REST",
+      "result": "Run 67639269-b304-4268-a8ea-3662809be580 completed with harness_saju_query calls, zero tool failures, deliverySucceeded=true, and deliveryStatus=sent. Discord message 1534866995927846942 contains the grounded 기미대운 answer after failed user message 1534864934230556884."
     }
   ],
-  "residual_risk": [
-    "The committed plugin has not yet been pushed, deployed, force-installed, restarted, or replayed through the production Discord channel."
-  ]
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh plugins/harness-bridge/index.js tests/test_harness_bridge_plugin.mjs docs/reports/completion_evidence/openclaw_saju_no_reply_20260806.json; force-install harness-bridge; restart gateway; run plugins doctor",
+    "result": "Selected paths matched origin/main with diff 0; backup scratch/pre_deploy_backup_20260806_191058 created; installed plugin matched repository; gateway safe restart completed; plugin doctor and production JavaScript regression passed."
+  }
 }
