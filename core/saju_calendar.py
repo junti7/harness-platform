@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from core.notebook_query_planning import SupplementalFacts
@@ -75,20 +75,45 @@ def _gz_text(gz: object) -> str:
     return f"{KOREAN_STEMS[stem]}{KOREAN_BRANCHES[branch]}({STEMS[stem]}{BRANCHES[branch]})"
 
 
-def _pillars(year: int, month: int, day: int, hour: int | None = None) -> str:
+def _pillars(
+    year: int,
+    month: int,
+    day: int,
+    hour: int | None = None,
+    *,
+    target_kst: datetime | None = None,
+) -> str:
     try:
         import sxtwl
     except ImportError as exc:  # pragma: no cover - deployment guard
         raise RuntimeError("sxtwl calendar engine is unavailable") from exc
     value = sxtwl.fromSolar(year, month, day)
     if value.hasJieQi():
-        raise ValueError(
-            f"{year:04d}-{month:02d}-{day:02d}은 절기 경계일이므로 정확한 시각과 "
-            "시간대 기반 계산이 필요합니다"
-        )
+        if target_kst is None:
+            raise ValueError(
+                f"{year:04d}-{month:02d}-{day:02d}은 절기 경계일이므로 정확한 시각과 "
+                "시간대 기반 계산이 필요합니다"
+            )
+        boundary = sxtwl.JD2DD(value.getJieQiJD())
+        boundary_utc8 = datetime(
+            int(boundary.Y),
+            int(boundary.M),
+            int(boundary.D),
+            int(boundary.h),
+            int(boundary.m),
+            tzinfo=timezone(timedelta(hours=8)),
+        ) + timedelta(seconds=float(boundary.s))
+        target_utc8 = target_kst.astimezone(timezone(timedelta(hours=8)))
+        if target_utc8 < boundary_utc8:
+            previous = datetime(year, month, day) - timedelta(days=1)
+            boundary_value = sxtwl.fromSolar(previous.year, previous.month, previous.day)
+        else:
+            boundary_value = value
+    else:
+        boundary_value = value
     fields = [
-        _gz_text(value.getYearGZ()),
-        _gz_text(value.getMonthGZ()),
+        _gz_text(boundary_value.getYearGZ()),
+        _gz_text(boundary_value.getMonthGZ()),
         _gz_text(value.getDayGZ()),
     ]
     if hour is not None:
@@ -213,6 +238,20 @@ def enrich_saju_question(question: str) -> SupplementalFacts | None:
     # Validate Gregorian dates before calling the native calendar library.
     datetime(*birth_parts, hour or 12, minute)
     datetime(*target_parts)
+    target_time_match = re.search(
+        r"(?:대상일?\s*)?기준\s*시각\s*(?P<hour>[01]?\d|2[0-3])"
+        r"(?::(?P<minute>[0-5]\d))?\s*(?:KST|한국\s*표준시)",
+        question,
+        flags=re.IGNORECASE,
+    )
+    target_kst = None
+    if target_time_match:
+        target_kst = datetime(
+            *target_parts,
+            int(target_time_match.group("hour")),
+            int(target_time_match.group("minute") or 0),
+            tzinfo=ZoneInfo("Asia/Seoul"),
+        )
     gender = "남성" if any(x in question for x in ("남자", "남성")) else (
         "여성" if any(x in question for x in ("여자", "여성")) else "미지정"
     )
@@ -227,7 +266,8 @@ def enrich_saju_question(question: str) -> SupplementalFacts | None:
             + (f"출생 시각 {hour:02d}:{minute:02d} KST, " if hour is not None else "")
             + f"사주 원국: {_pillars(*birth_parts, hour)}",
             f"대상일 양력 {target_parts[0]:04d}-{target_parts[1]:02d}-{target_parts[2]:02d}, "
-            f"연주·월주·일주: {_pillars(*target_parts)}",
+            + (f"기준 시각 {target_kst:%H:%M} KST, " if target_kst else "")
+            + f"연주·월주·일주: {_pillars(*target_parts, target_kst=target_kst)}",
         ),
         warnings=warnings,
     )

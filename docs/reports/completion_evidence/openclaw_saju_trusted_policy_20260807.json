@@ -44,6 +44,12 @@
       "target": "Mac mini OpenClaw cron and Discord delivery",
       "command": "openclaw cron run aaf016cf-59aa-49c3-aeca-52a2efd1b2d3 --wait --expect-final",
       "result": "Trusted policy loaded and harness_saju_query ran without approval; bridge remained unavailable and the run delivered an ungrounded failure notice, so status remains residual_risk. A later retry showed the model calling bash sleep after bridge failures, which caused a new approval wait and motivated the scoped shell block."
+    },
+    {
+      "name": "solar-term boundary regression",
+      "target": "local deterministic Saju calendar and bridge tests",
+      "command": ".venv/bin/python -m pytest -q tests/test_notebook_query_planning.py tests/test_openclaw_bridge.py tests/test_openclaw_saju_bridge_timeout.py",
+      "result": "122 passed; target solar-term day stays fail-closed without exact time and selects pre/post-boundary month pillars from an explicit KST target time. Production cron prompt update, deployment, and grounded replay remain pending."
     }
   ]
 }

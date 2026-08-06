@@ -349,6 +349,22 @@ def test_saju_enricher_fails_closed_on_solar_term_boundary_day():
         enrich_saju_question("양력 1974년 2월 4일 10시 남자 2026년 7월 24일 운세")
 
 
+def test_saju_enricher_uses_exact_kst_time_on_target_solar_term_boundary():
+    before = enrich_saju_question(
+        "양력 1974년 2월 2일 18시 37분 KST 출생 남자의 "
+        "2026년 8월 7일 운세, 대상일 기준 시각 06:05 KST"
+    )
+    after = enrich_saju_question(
+        "양력 1974년 2월 2일 18시 37분 KST 출생 남자의 "
+        "2026년 8월 7일 운세, 대상일 기준 시각 21:00 KST"
+    )
+    assert before is not None
+    assert after is not None
+    assert "기준 시각 06:05 KST" in before.facts[1]
+    assert "을미(乙未)" in before.facts[1]
+    assert "병신(丙申)" in after.facts[1]
+
+
 def test_saju_enricher_rejects_duplicate_dates_without_type_error():
     with pytest.raises(ValueError, match="역할이 모호"):
         enrich_saju_question("1990년 5월 3일생 남자 1990년 5월 3일 운세")
