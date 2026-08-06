@@ -1,6 +1,6 @@
 {
   "task": "gmail-mobile-oauth-20260806",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -55,11 +55,17 @@
       "target": "OpenClaw bridge and backend API",
       "command": ".venv/bin/pytest -q tests/test_openclaw_bridge.py tests/test_gmail_mobile_oauth.py; node --test tests/test_harness_bridge_plugin.mjs",
       "result": "45 Python tests and the JavaScript plugin regression passed; Gmail and Calendar commands use HARNESS_GMAIL_CLIENT"
+    },
+    {
+      "name": "Production OAuth final round trip",
+      "target": "mobile Tailnet production callback and Mac mini runtime",
+      "command": "publish Google Auth Platform app; approve final Discord link; gog auth list --client mobile --check; Gmail and Calendar direct and bridge reads; Discord read-back",
+      "result": "Publishing status observed as Production; mobile auth valid; direct and bridge Gmail and Calendar JSON valid; one-use state consumed; Discord completion message 1534861726355554507 read back"
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh core/gmail_mobile_oauth.py harness-os/backend/main.py harness-os/launchd/com.harness.harness-os-backend.plist scripts/openclaw_codex_bridge.py plugins/harness-bridge/index.js plugins/harness-bridge/openclaw.plugin.json plugins/harness-bridge/skills/harness-control/SKILL.md",
-    "result": "Selected-path deploy passed, backend restarted on port 8000, plugin force-installed, gateway restarted, and feature intentionally remains disabled pending Google Web OAuth client credentials"
+    "result": "Selected-path deploy passed, backend restarted on port 8000, plugin force-installed, gateway restarted, mobile OAuth enabled with the web client, and the production OAuth round trip passed"
   },
   "red_team": {
     "models": ["Claude", "Gemini"],
