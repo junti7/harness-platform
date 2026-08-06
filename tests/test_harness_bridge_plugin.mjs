@@ -1780,6 +1780,21 @@ assert.deepEqual(
       "Direct Saju NotebookLM queries are blocked; use the privacy-safe cached Harness bridge.",
   },
 );
+assert.deepEqual(
+  await hooks.get("before_tool_call")(
+    {
+      toolName: "bash",
+      params: { command: "/bin/zsh -lc 'sleep 10'" },
+      runId: "run-saju-1",
+    },
+    context,
+  ),
+  {
+    block: true,
+    blockReason:
+      "Saju routing is active; do not sleep or wait through shell. Retry harness_saju_query immediately with identical arguments.",
+  },
+);
 await hooks.get("agent_end")({ runId: "run-saju-1" }, context);
 assert.deepEqual(
   await hooks.get("before_tool_call")(

@@ -18,7 +18,7 @@
     {
       "requirement": "Prevent isolated daily Saju cron from waiting for interactive approval on read-only Saju tools.",
       "status": "pass",
-      "evidence": "Policy uses exact tool-name matching for harness_saju_query and harness_saju_notebook_status; all other tools fall through."
+      "evidence": "Policy uses exact tool-name matching for harness_saju_query and harness_saju_notebook_status; active Saju runs also block shell sleep/wait calls and require immediate identical-argument retry."
     },
     {
       "requirement": "Deliver a grounded daily Saju report through the production cron and Discord path.",
@@ -38,6 +38,12 @@
       "target": "local repository",
       "command": "node --check plugins/harness-bridge/index.js && node tests/test_harness_bridge_plugin.mjs && .venv/bin/python -m pytest -q tests/test_openclaw_bridge.py tests/test_openclaw_saju_bridge_timeout.py",
       "result": "JavaScript checks passed and Python reported 43 passed."
+    },
+    {
+      "name": "first production repair replay",
+      "target": "Mac mini OpenClaw cron and Discord delivery",
+      "command": "openclaw cron run aaf016cf-59aa-49c3-aeca-52a2efd1b2d3 --wait --expect-final",
+      "result": "Trusted policy loaded and harness_saju_query ran without approval; bridge remained unavailable and the run delivered an ungrounded failure notice, so status remains residual_risk. A later retry showed the model calling bash sleep after bridge failures, which caused a new approval wait and motivated the scoped shell block."
     }
   ]
 }

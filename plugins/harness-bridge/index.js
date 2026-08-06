@@ -4078,14 +4078,21 @@ export default {
               "Screen-inspect routing is active; call only harness_screen_inspect once.",
           };
         }
-        if (!isDirectSajuNotebookQuery(event.toolName, event.params, isSajuRun(event, context))) {
-          return;
+        const sajuRunActive = isSajuRun(event, context);
+        if (isDirectSajuNotebookQuery(event.toolName, event.params, sajuRunActive)) {
+          return {
+            block: true,
+            blockReason:
+              "Direct Saju NotebookLM queries are blocked; use the privacy-safe cached Harness bridge.",
+          };
         }
-        return {
-          block: true,
-          blockReason:
-            "Direct Saju NotebookLM queries are blocked; use the privacy-safe cached Harness bridge.",
-        };
+        if (sajuRunActive && isShellTool(event.toolName)) {
+          return {
+            block: true,
+            blockReason:
+              "Saju routing is active; do not sleep or wait through shell. Retry harness_saju_query immediately with identical arguments.",
+          };
+        }
       },
       { priority: 1000 },
     );
