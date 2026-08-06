@@ -1,0 +1,75 @@
+{
+  "task": "openclaw_saju_retry_until_success_20260806",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-08-06T09:00:00+09:00",
+      "summary": "Completion requires real runtime evidence and exact change, test, deploy, and repository state."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-08-06T09:00:00+09:00",
+      "summary": "Production changes require commit, push, deploy_to_macmini, and user-entrypoint verification."
+    }
+  ],
+  "codex_cli_rule": "Codex CLI 사용 시 caveman full 응답 규칙을 적용하되, 코드 변경 요약은 정확하게 유지한다",
+  "requirements": [
+    {
+      "requirement": "Retry a failed daily Saju query until success instead of publishing the bridge failure.",
+      "status": "pass",
+      "evidence": "Production manual cron rerun succeeded at 2026-08-06 08:52 KST and Discord deliveryStatus was delivered."
+    },
+    {
+      "requirement": "Make future automatic runs retry identical arguments and publish only grounded success.",
+      "status": "pass",
+      "evidence": "Plugin system context and skill contract require identical-argument retry within the platform execution window; production cron prompt matches and timeoutSeconds is 1800."
+    }
+  ],
+  "verification": [
+    {
+      "name": "local plugin syntax and routing regression",
+      "target": "local repository",
+      "command": "node --check plugins/harness-bridge/index.js && node tests/test_harness_bridge_plugin.mjs",
+      "result": "passed"
+    },
+    {
+      "name": "local Python bridge regression",
+      "target": "local repository",
+      "command": ".venv/bin/python -m pytest -q tests/test_openclaw_bridge.py",
+      "result": "40 passed"
+    },
+    {
+      "name": "production retry replay and Discord delivery",
+      "target": "Mac mini OpenClaw cron and Discord channel 1492808588777754636",
+      "command": "openclaw cron run aaf016cf-59aa-49c3-aeca-52a2efd1b2d3; openclaw cron runs --id aaf016cf-59aa-49c3-aeca-52a2efd1b2d3 --limit 1",
+      "result": "status ok; runId manual:aaf016cf-59aa-49c3-aeca-52a2efd1b2d3:1785973839663:3; grounded daily report; delivered true; deliveryStatus delivered"
+    },
+    {
+      "name": "production cron retry contract",
+      "target": "Mac mini OpenClaw cron job aaf016cf-59aa-49c3-aeca-52a2efd1b2d3",
+      "command": "openclaw cron list --json",
+      "result": "message requires identical-argument retry until success within 1800-second platform window; timeoutSeconds 1800"
+    }
+  ],
+  "red_team": {
+    "models": [
+      "gemini",
+      "claude"
+    ],
+    "artifacts": [
+      {
+        "artifact": "../../reviews/red_team/openclaw_saju_retry_gemini_20260806.md"
+      },
+      {
+        "artifact": "../../reviews/red_team/openclaw_saju_retry_claude_20260806.md"
+      }
+    ],
+    "verdict": "red_team_clear"
+  },
+  "deploy": {
+    "target": "Mac mini OpenClaw harness-bridge",
+    "method": "scripts/deploy_to_macmini.sh selected paths, force plugin install, gateway restart, and plugins doctor",
+    "result": "pending"
+  }
+}

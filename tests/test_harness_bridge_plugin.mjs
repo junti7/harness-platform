@@ -1659,6 +1659,9 @@ for (const jargon of ["십신", "식상", "재성", "편관", "칠살", "형살"
 }
 assert.match(sajuRouting.appendSystemContext, /do not copy the long expert report verbatim/);
 assert.match(sajuRouting.appendSystemContext, /reserve one sentence inside that limit/);
+assert.match(sajuRouting.appendSystemContext, /returns `saju_bridge_failed`/);
+assert.match(sajuRouting.appendSystemContext, /until it succeeds within the platform execution window/);
+assert.match(sajuRouting.appendSystemContext, /publish only the successful grounded result/);
 const openClawSajuRouting = await hooks.get("before_prompt_build")(
   { prompt: "OpenClaw에서 오늘 사주 운세 알려줘", messages: [], runId: "run-saju-2" },
   { runId: "run-saju-2", sessionKey: "session-saju-2" },

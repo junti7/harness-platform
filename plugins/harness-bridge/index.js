@@ -3804,6 +3804,8 @@ export default {
             "Never claim a multi-day trend from repeated wording alone, and never predict tomorrow unless tomorrow was separately grounded.",
             "If the request also requires verification evidence, reserve one sentence inside that limit for the plugin evidence line so the delivered reply still totals 8 to 12 sentences.",
             "The bridge owns deterministic dates, expert contracts, privacy, and cache.",
+            "If `harness_saju_query` returns `saju_bridge_failed`, do not send that failure as the final user report.",
+            "Retry `harness_saju_query` with the identical arguments until it succeeds within the platform execution window, and publish only the successful grounded result.",
           ].join(" "),
         };
       },
