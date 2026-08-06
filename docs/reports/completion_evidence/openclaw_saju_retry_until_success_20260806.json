@@ -1,6 +1,6 @@
 {
   "task": "openclaw_saju_retry_until_success_20260806",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -50,6 +50,12 @@
       "target": "Mac mini OpenClaw cron job aaf016cf-59aa-49c3-aeca-52a2efd1b2d3",
       "command": "openclaw cron list --json",
       "result": "message requires identical-argument retry until success within 1800-second platform window; timeoutSeconds 1800"
+    },
+    {
+      "name": "installed plugin and gateway verification",
+      "target": "Mac mini installed OpenClaw extension and gateway",
+      "command": "diff -q repository plugin and installed extension; openclaw plugins doctor; pgrep gateway",
+      "result": "repository and installed plugin matched; retry contract present; No plugin issues detected; gateway PID 99777"
     }
   ],
   "red_team": {
@@ -70,6 +76,6 @@
   "deploy": {
     "target": "Mac mini OpenClaw harness-bridge",
     "method": "scripts/deploy_to_macmini.sh selected paths, force plugin install, gateway restart, and plugins doctor",
-    "result": "pending"
+    "result": "selected paths matched origin/main with diff 0; Mac mini regressions passed; plugin force-installed; gateway restarted; plugins doctor reported No plugin issues detected"
   }
 }
