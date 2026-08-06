@@ -31,11 +31,29 @@
       "target": "macmini production runtime",
       "command": "ssh juntaepark@192.168.0.203 '/opt/homebrew/bin/gog auth add --help'; gog calendar events --help",
       "result": "v0.19.0 supports remote step 1/2, custom HTTPS redirect URI, five-minute timeout, selected client, and calendar --from"
+    },
+    {
+      "name": "Tailnet HTTPS production callback",
+      "target": "mobile Tailnet production URL",
+      "command": "curl https://macmini.tailad16a7.ts.net/api/gmail/oauth/mobile/callback?state=probe&code=probe",
+      "result": "HTTP 400 with safe disabled message; callback query absent from backend stdout and stderr logs"
+    },
+    {
+      "name": "Mac mini Gmail and Calendar regression",
+      "target": "macmini production gog runtime",
+      "command": "gog auth list --check; gog gmail search newer_than:1d; gog calendar events --from today",
+      "result": "auth_check=true, gmail_live=true, calendar_live=true"
+    },
+    {
+      "name": "Installed OpenClaw plugin receipt",
+      "target": "macmini production OpenClaw gateway",
+      "command": "openclaw plugins doctor; openclaw plugins inspect harness-bridge; compare installed and repository SHA-256",
+      "result": "doctor reported no issues, plugin loaded, installed hash matched repository, and mobile tool was present"
     }
   ],
   "deploy": {
-    "method": "scripts/deploy_to_macmini.sh (pending commit and push)",
-    "result": "Not yet deployed; feature must remain disabled until Google Web OAuth client credentials and exact Tailnet redirect URI are configured"
+    "method": "scripts/deploy_to_macmini.sh core/gmail_mobile_oauth.py harness-os/backend/main.py harness-os/launchd/com.harness.harness-os-backend.plist scripts/openclaw_codex_bridge.py plugins/harness-bridge/index.js plugins/harness-bridge/openclaw.plugin.json plugins/harness-bridge/skills/harness-control/SKILL.md",
+    "result": "Selected-path deploy passed, backend restarted on port 8000, plugin force-installed, gateway restarted, and feature intentionally remains disabled pending Google Web OAuth client credentials"
   },
   "red_team": {
     "models": ["Claude", "Gemini"],
