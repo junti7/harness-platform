@@ -19,6 +19,7 @@
       "harness_workspace_exec",
       "harness_copilot_usage",
       "harness_gmail_search",
+      "harness_gmail_oauth_mobile_start",
       "harness_gmail_get",
       "harness_calendar_list",
       "harness_calendar_create",

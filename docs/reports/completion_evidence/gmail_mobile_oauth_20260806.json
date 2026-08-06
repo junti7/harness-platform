@@ -1,0 +1,48 @@
+{
+  "task": "gmail-mobile-oauth-20260806",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-08-06T18:16:14+09:00",
+      "summary": "Checked mobile-first behavior, evidence-bound completion, commit-push-deploy source of truth, and mandatory production verification."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-08-06T18:16:14+09:00",
+      "summary": "Checked secret handling, completion evidence, real runtime verification, and Mac mini deployment invariants."
+    }
+  ],
+  "verification": [
+    {
+      "name": "OAuth state and delivery tests",
+      "target": "local API support module",
+      "command": ".venv/bin/pytest -q tests/test_gmail_mobile_oauth.py",
+      "result": "5 passed; hash-only state, TTL, replay rejection, service verification, and Discord retry failure covered"
+    },
+    {
+      "name": "OpenClaw plugin regression",
+      "target": "OpenClaw production plugin registration",
+      "command": "node --test tests/test_harness_bridge_plugin.mjs",
+      "result": "pass; harness_gmail_oauth_mobile_start is registered"
+    },
+    {
+      "name": "Mac mini gog CLI compatibility",
+      "target": "macmini production runtime",
+      "command": "ssh juntaepark@192.168.0.203 '/opt/homebrew/bin/gog auth add --help'; gog calendar events --help",
+      "result": "v0.19.0 supports remote step 1/2, custom HTTPS redirect URI, five-minute timeout, selected client, and calendar --from"
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh (pending commit and push)",
+    "result": "Not yet deployed; feature must remain disabled until Google Web OAuth client credentials and exact Tailnet redirect URI are configured"
+  },
+  "red_team": {
+    "models": ["Claude", "Gemini"],
+    "artifacts": [
+      {"artifact": "../../reviews/red_team/gmail_mobile_oauth_claude_20260806.md"},
+      {"artifact": "../../reviews/red_team/gmail_mobile_oauth_gemini_20260806.md"}
+    ],
+    "verdict": "red_team_clear"
+  }
+}

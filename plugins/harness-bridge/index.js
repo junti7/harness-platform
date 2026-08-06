@@ -2617,6 +2617,12 @@ function registerHarnessAssistantTools(api) {
     },
   );
   bridgeTool(
+    "harness_gmail_oauth_mobile_start",
+    "Create a five-minute, one-use Google approval link for the CEO's Tailnet-connected mobile. Use only after Gmail or Calendar returns invalid_grant; send the returned auth_url to the requesting Discord conversation without altering it.",
+    () => ["gmail-oauth-mobile-start"],
+    { type: "object", additionalProperties: false, properties: {} },
+  );
+  bridgeTool(
     "harness_gmail_get",
     "Retrieve one Gmail message body read-only by message ID.",
     (p) => ["gmail-get", p.messageId],

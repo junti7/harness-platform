@@ -64,6 +64,7 @@ from core.source_registry import (
 )
 from core.database import execute_query
 from core.topic_registry import ensure_fresh_topic_registry
+from core.gmail_mobile_oauth import MobileOAuthConfig, MobileOAuthError, exchange as exchange_mobile_oauth, start as start_mobile_oauth
 from agents.registry import get_active_personas, get_persona
 from scripts.llm_fallback_manager import get_fallback_info, load_recent_fallback_events
 from core.gemini_sdk import generate_text, gemini_model_name
@@ -4219,6 +4220,38 @@ def get_gmail_message(
     _: None = Depends(_require_secret),
 ) -> dict[str, Any]:
     return _gmail_message_runtime(message_id)
+
+
+@app.post("/api/gmail/oauth/mobile/start")
+def post_gmail_mobile_oauth_start(_: None = Depends(_require_secret)) -> dict[str, Any]:
+    try:
+        return start_mobile_oauth(MobileOAuthConfig.from_env())
+    except MobileOAuthError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/api/gmail/oauth/mobile/callback", include_in_schema=False)
+def get_gmail_mobile_oauth_callback(request: Request) -> FastAPIResponse:
+    config = MobileOAuthConfig.from_env()
+    # Use the configured HTTPS origin. The reverse proxy's internal request may be HTTP.
+    callback_url = f"{config.redirect_uri}?{request.url.query}"
+    try:
+        result = exchange_mobile_oauth(config, callback_url)
+    except MobileOAuthError as exc:
+        body = html.escape(str(exc))
+        return FastAPIResponse(
+            content=f"<!doctype html><meta charset=utf-8><title>인증 실패</title><h1>인증 실패</h1><p>{body}</p>",
+            status_code=400,
+            media_type="text/html",
+        )
+    account = html.escape(str(result["account"]))
+    return FastAPIResponse(
+        content=(
+            "<!doctype html><meta charset=utf-8><title>인증 완료</title>"
+            f"<h1>Gmail 인증 완료</h1><p>{account}</p><p>이 창을 닫아도 됩니다.</p>"
+        ),
+        media_type="text/html",
+    )
 
 
 

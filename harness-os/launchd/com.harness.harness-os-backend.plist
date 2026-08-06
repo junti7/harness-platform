@@ -14,6 +14,7 @@
     <string>0.0.0.0</string>
     <string>--port</string>
     <string>8000</string>
+    <string>--no-access-log</string>
   </array>
 
   <key>WorkingDirectory</key>

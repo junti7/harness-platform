@@ -34,6 +34,7 @@ from adapters.content.mobile_dispatcher import build_slack_payload
 from adapters.content.slack_router import route_label, send_slack_route
 from core.approval import APPROVAL_TARGET_TYPES, VALID_APPROVAL_TYPES, VALID_DECISIONS
 from core.atomic_io import atomic_write_json
+from core.gmail_mobile_oauth import MobileOAuthConfig, MobileOAuthError, start as start_mobile_oauth
 from core.notebook_query_planning import (
     SupplementalFacts,
     assess_notebook_answer,
@@ -2481,6 +2482,14 @@ def command_gmail_get(args: argparse.Namespace) -> None:
     _write_output(rendered, args.output)
 
 
+def command_gmail_mobile_oauth_start(args: argparse.Namespace) -> None:
+    try:
+        payload = {"ok": True, **start_mobile_oauth(MobileOAuthConfig.from_env())}
+    except MobileOAuthError as exc:
+        payload = {"ok": False, "error": str(exc)}
+    _write_output(_json_dump(payload), args.output)
+
+
 def command_gmail_search(args: argparse.Namespace) -> None:
     try:
         payload = _gmail_search_runtime(args.query, args.limit)
@@ -3920,6 +3929,13 @@ def build_parser() -> argparse.ArgumentParser:
     gmail_search.add_argument("--format", choices=["json", "text"], default="json")
     gmail_search.add_argument("--output")
     gmail_search.set_defaults(func=command_gmail_search)
+
+    gmail_oauth = subparsers.add_parser(
+        "gmail-oauth-mobile-start",
+        help="Create a five-minute, one-use Tailnet mobile Gmail OAuth link.",
+    )
+    gmail_oauth.add_argument("--output")
+    gmail_oauth.set_defaults(func=command_gmail_mobile_oauth_start)
 
     gmail_get = subparsers.add_parser("gmail-get", help="Read-only Gmail get message details via Mac Mini gog runtime.")
     gmail_get.add_argument("message_id")

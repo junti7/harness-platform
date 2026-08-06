@@ -28,7 +28,7 @@ Prefer native `harness_*` tools over guessed shell commands:
 - Repository: `harness_workspace_stats`, `harness_workspace_read`, `harness_workspace_search`, `harness_workspace_write`, `harness_workspace_exec`
 - Turtle live state: `harness_alpaca_status` (read-only)
 - Copilot usage: `harness_copilot_usage` (sanitized laptop CLI aggregates)
-- Gmail: `harness_gmail_search`, `harness_gmail_get`
+- Gmail: `harness_gmail_search`, `harness_gmail_get`, `harness_gmail_oauth_mobile_start` (invalid_grant 복구용 5분/1회 모바일 승인 링크)
 - Calendar: `harness_calendar_list`, `harness_calendar_create`
 - Scheduling: `harness_cron_list`, `harness_cron_create`, `harness_cron_remove`
 - Saju: `harness_saju_query`

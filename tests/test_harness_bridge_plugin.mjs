@@ -702,6 +702,7 @@ assert.deepEqual(
     "harness_cron_list",
     "harness_cron_remove",
     "harness_gmail_get",
+    "harness_gmail_oauth_mobile_start",
     "harness_gmail_search",
     "harness_knowledge_query",
     "harness_notion_archive_create",
