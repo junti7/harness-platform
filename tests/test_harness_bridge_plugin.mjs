@@ -62,6 +62,10 @@ assert.equal(
 
 assert.equal(shouldEnforceSajuBridge("오늘 사주 운세 알려줘"), true);
 assert.equal(
+  shouldEnforceSajuBridge("기미대운이 도래하는 시기면 나는 거의 환갑이 가까워서 노인인데"),
+  true,
+);
+assert.equal(
   shouldEnforceSajuNotebookStatus(
     "사주명리학 노트북에 10년 대운에 대한 리서치 자료를 추가했는데 잘 추가가 되었는지 확인해.",
   ),
@@ -1635,6 +1639,7 @@ const sajuRouting = await hooks.get("before_prompt_build")(
   context,
 );
 assert.match(sajuRouting.appendSystemContext, /HARNESS SAJU ROUTING/);
+assert.match(sajuRouting.appendSystemContext, /Never output `NO_REPLY`/);
 assert.match(sajuRouting.appendSystemContext, /specific length, sentence count/);
 assert.match(sajuRouting.appendSystemContext, /exactly 8 to 12 Korean sentences/);
 assert.match(sajuRouting.appendSystemContext, /both a labeled good time window and a labeled avoid time window/);
@@ -1668,6 +1673,25 @@ const openClawSajuRouting = await hooks.get("before_prompt_build")(
   { runId: "run-saju-2", sessionKey: "session-saju-2" },
 );
 assert.match(openClawSajuRouting.appendSystemContext, /HARNESS SAJU ROUTING/);
+const cronContaminatedSajuRouting = await hooks.get("before_prompt_build")(
+  {
+    prompt: [
+      "<conversation_context>",
+      "[assistant] Gmail 조회 결과가 없으면 NO_REPLY",
+      "</conversation_context>",
+      "Current user request:",
+      "기미대운이 도래하는 시기면 나는 거의 환갑이 가까워서 노인인데",
+    ].join("\n"),
+    messages: [
+      { role: "assistant", content: "[cron:important-gmail-hourly-briefing] NO_REPLY" },
+    ],
+    runId: "run-saju-cron-contamination",
+  },
+  { runId: "run-saju-cron-contamination", sessionKey: "session-saju-cron-contamination" },
+);
+assert.match(cronContaminatedSajuRouting.appendSystemContext, /HARNESS SAJU ROUTING/);
+assert.match(cronContaminatedSajuRouting.appendSystemContext, /current visible user request takes precedence/i);
+assert.match(cronContaminatedSajuRouting.appendSystemContext, /Never output `NO_REPLY`/);
 const copilotUsageContext = {
   runId: "run-copilot-usage-1",
   sessionKey: "session-copilot-usage-1",

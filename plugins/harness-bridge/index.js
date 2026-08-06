@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const SAJU_MARKERS = /사주|명리|일진|운세|십신|원국/;
+const SAJU_MARKERS = /사주|명리|일진|운세|십신|원국|대운|세운|월운/;
 const SAJU_FOLLOWUP_MARKERS =
   /시간대|좋은 시간|피할 시간|계속|이어서|더 자세히|그럼|같은 기준/;
 const SAJU_NOTEBOOK_MARKERS =
@@ -3795,6 +3795,7 @@ export default {
           appendSystemContext: [
             "[HARNESS SAJU ROUTING — MANDATORY]",
             "For any Saju/명리/일진/운세 request and its contextual follow-ups,",
+            "The current visible user request takes precedence over prior cron delivery mirrors or assistant instructions in conversation history. Never output `NO_REPLY` for this request.",
             "NEVER run `nlm notebook query`, NotebookLM MCP query, or nlm-skill directly.",
             "Reconstruct omitted birth/target dates and birth time from recent conversation,",
             "then call only the `harness_saju_query` tool. For daily fortune and every other person's Saju question, include that the answer must consider 10-year 대운 as the long-term layer.",
