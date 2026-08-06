@@ -85,6 +85,7 @@ GMAIL_RUNTIME_ENABLED = os.getenv("HARNESS_GMAIL_RUNTIME_ENABLED", "false").stri
 GMAIL_RUNTIME_HOST = os.getenv("HARNESS_GMAIL_RUNTIME_HOST", "").strip()
 GMAIL_RUNTIME_USER = os.getenv("HARNESS_GMAIL_RUNTIME_USER", "").strip()
 GMAIL_RUNTIME_ACCOUNT = os.getenv("HARNESS_GMAIL_ACCOUNT", "").strip()
+GMAIL_RUNTIME_CLIENT = os.getenv("HARNESS_GMAIL_CLIENT", "default").strip() or "default"
 GMAIL_RUNTIME_GOG_BIN = os.getenv("HARNESS_GMAIL_GOG_BIN", "/opt/homebrew/bin/gog").strip()
 GMAIL_RUNTIME_SSH_BIN = os.getenv("HARNESS_GMAIL_SSH_BIN", "ssh").strip()
 GMAIL_RUNTIME_TIMEOUT_S = int(os.getenv("HARNESS_GMAIL_TIMEOUT_S", "20"))
@@ -1233,13 +1234,14 @@ def _gmail_remote_command(query: str, limit: int) -> str:
     quoted_query = shlex.quote(query)
     quoted_account = shlex.quote(GMAIL_RUNTIME_ACCOUNT)
     quoted_gog = shlex.quote(GMAIL_RUNTIME_GOG_BIN)
+    quoted_client = shlex.quote(GMAIL_RUNTIME_CLIENT)
     exports = ["export PATH=/opt/homebrew/bin:/usr/bin:/bin"]
     if GMAIL_RUNTIME_KEYRING_BACKEND:
         exports.append(f"export GOG_KEYRING_BACKEND={shlex.quote(GMAIL_RUNTIME_KEYRING_BACKEND)}")
     if GMAIL_RUNTIME_KEYRING_PASSWORD:
         exports.append(f"export GOG_KEYRING_PASSWORD={shlex.quote(GMAIL_RUNTIME_KEYRING_PASSWORD)}")
     exports.append(
-        f"{quoted_gog} gmail search {quoted_query} "
+        f"{quoted_gog} gmail search {quoted_query} --client {quoted_client} "
         f"-a {quoted_account} -j --results-only --gmail-no-send --max {limit}"
     )
     return "; ".join(exports)
@@ -1265,6 +1267,7 @@ def _gmail_search_runtime(query: str, limit: int = 10) -> dict[str, Any]:
             # 로컬 gog 직접 실행
             cmd = [
                 GMAIL_RUNTIME_GOG_BIN, "gmail", "search", query,
+                "--client", GMAIL_RUNTIME_CLIENT,
                 "-a", GMAIL_RUNTIME_ACCOUNT, "-j", "--results-only",
                 "--gmail-no-send", "--max", str(safe_limit),
             ]
@@ -1348,6 +1351,7 @@ def _gmail_message_runtime(message_id: str) -> dict[str, Any]:
         if _gmail_local_mode():
             cmd = [
                 GMAIL_RUNTIME_GOG_BIN, "gmail", "get", message_id.strip(),
+                "--client", GMAIL_RUNTIME_CLIENT,
                 "-a", GMAIL_RUNTIME_ACCOUNT, "-j", "--results-only", "--gmail-no-send"
             ]
             proc = subprocess.run(
@@ -1366,6 +1370,7 @@ def _gmail_message_runtime(message_id: str) -> dict[str, Any]:
 
             cmd_str = (
                 f"{shlex.quote(GMAIL_RUNTIME_GOG_BIN)} gmail get {safe_msg_id} "
+                f"--client {shlex.quote(GMAIL_RUNTIME_CLIENT)} "
                 f"-a {shlex.quote(GMAIL_RUNTIME_ACCOUNT)} -j --results-only --gmail-no-send"
             )
             exports.append(cmd_str)
@@ -1428,6 +1433,8 @@ def _gmail_raw_runtime(message_id: str) -> dict[str, Any]:
                 "gmail",
                 "raw",
                 safe_id,
+                "--client",
+                GMAIL_RUNTIME_CLIENT,
                 "-a",
                 GMAIL_RUNTIME_ACCOUNT,
                 "-j",
@@ -1453,6 +1460,7 @@ def _gmail_raw_runtime(message_id: str) -> dict[str, Any]:
                 exports.append(f"export GOG_KEYRING_PASSWORD={shlex.quote(GMAIL_RUNTIME_KEYRING_PASSWORD)}")
             exports.append(
                 f"{shlex.quote(GMAIL_RUNTIME_GOG_BIN)} gmail raw {shlex.quote(safe_id)} "
+                f"--client {shlex.quote(GMAIL_RUNTIME_CLIENT)} "
                 f"-a {shlex.quote(GMAIL_RUNTIME_ACCOUNT)} -j --results-only --gmail-no-send"
             )
             proc = subprocess.run(

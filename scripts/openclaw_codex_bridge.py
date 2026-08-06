@@ -69,6 +69,7 @@ GMAIL_RUNTIME_ENABLED = os.getenv("HARNESS_GMAIL_RUNTIME_ENABLED", "false").stri
 GMAIL_RUNTIME_HOST = os.getenv("HARNESS_GMAIL_RUNTIME_HOST", "").strip()
 GMAIL_RUNTIME_USER = os.getenv("HARNESS_GMAIL_RUNTIME_USER", "").strip()
 GMAIL_RUNTIME_ACCOUNT = os.getenv("HARNESS_GMAIL_ACCOUNT", "").strip()
+GMAIL_RUNTIME_CLIENT = os.getenv("HARNESS_GMAIL_CLIENT", "default").strip() or "default"
 GMAIL_RUNTIME_GOG_BIN = os.getenv("HARNESS_GMAIL_GOG_BIN", "/opt/homebrew/bin/gog").strip()
 GMAIL_RUNTIME_SSH_BIN = os.getenv("HARNESS_GMAIL_SSH_BIN", "ssh").strip()
 GMAIL_RUNTIME_TIMEOUT_S = int(os.getenv("HARNESS_GMAIL_TIMEOUT_S", "20"))
@@ -1212,6 +1213,7 @@ def _gmail_remote_command(query: str, limit: int) -> str:
     quoted_query = shlex.quote(query)
     quoted_account = shlex.quote(GMAIL_RUNTIME_ACCOUNT)
     quoted_gog = shlex.quote(GMAIL_RUNTIME_GOG_BIN)
+    quoted_client = shlex.quote(GMAIL_RUNTIME_CLIENT)
     # file backend는 macOS Keychain 없이 SSH 환경에서도 동작 — 반드시 전달
     backend = GMAIL_RUNTIME_KEYRING_BACKEND or "file"
     quoted_backend = shlex.quote(backend)
@@ -1223,7 +1225,7 @@ def _gmail_remote_command(query: str, limit: int) -> str:
     if quoted_password:
         exports.append(f"export GOG_KEYRING_PASSWORD={quoted_password}")
     exports.append(
-        f"{quoted_gog} gmail search {quoted_query} -a {quoted_account} -j --results-only --gmail-no-send --max {limit}"
+        f"{quoted_gog} gmail search {quoted_query} --client {quoted_client} -a {quoted_account} -j --results-only --gmail-no-send --max {limit}"
     )
     return "; ".join(exports)
 
@@ -1277,6 +1279,7 @@ def _gmail_message_remote_command(message_id: str) -> str:
     safe_msg_id = shlex.quote(message_id.strip())
     quoted_account = shlex.quote(GMAIL_RUNTIME_ACCOUNT)
     quoted_gog = shlex.quote(GMAIL_RUNTIME_GOG_BIN)
+    quoted_client = shlex.quote(GMAIL_RUNTIME_CLIENT)
     backend = GMAIL_RUNTIME_KEYRING_BACKEND or "file"
     quoted_backend = shlex.quote(backend)
     quoted_password = shlex.quote(GMAIL_RUNTIME_KEYRING_PASSWORD) if GMAIL_RUNTIME_KEYRING_PASSWORD else None
@@ -1287,7 +1290,7 @@ def _gmail_message_remote_command(message_id: str) -> str:
     if quoted_password:
         exports.append(f"export GOG_KEYRING_PASSWORD={quoted_password}")
     exports.append(
-        f"{quoted_gog} gmail get {safe_msg_id} -a {quoted_account} -j --results-only --gmail-no-send"
+        f"{quoted_gog} gmail get {safe_msg_id} --client {quoted_client} -a {quoted_account} -j --results-only --gmail-no-send"
     )
     return "; ".join(exports)
 
@@ -1348,6 +1351,7 @@ def _parse_to_rfc3339(dt_str: str) -> str:
 def _calendar_events_remote_command(from_time: str, to_time: str, max_results: int) -> str:
     quoted_account = shlex.quote(GMAIL_RUNTIME_ACCOUNT)
     quoted_gog = shlex.quote(GMAIL_RUNTIME_GOG_BIN)
+    quoted_client = shlex.quote(GMAIL_RUNTIME_CLIENT)
     backend = GMAIL_RUNTIME_KEYRING_BACKEND or "file"
     quoted_backend = shlex.quote(backend)
     quoted_password = shlex.quote(GMAIL_RUNTIME_KEYRING_PASSWORD) if GMAIL_RUNTIME_KEYRING_PASSWORD else None
@@ -1358,7 +1362,7 @@ def _calendar_events_remote_command(from_time: str, to_time: str, max_results: i
     if quoted_password:
         exports.append(f"export GOG_KEYRING_PASSWORD={quoted_password}")
     
-    cmd = f"{quoted_gog} calendar events primary -a {quoted_account} -j --results-only --max {max_results}"
+    cmd = f"{quoted_gog} calendar events primary --client {quoted_client} -a {quoted_account} -j --results-only --max {max_results}"
     if from_time:
         cmd += f" --from {shlex.quote(from_time)}"
     if to_time:
@@ -1394,6 +1398,7 @@ def _calendar_events_runtime(from_time: str = "today", to_time: str = "", max_re
 def _calendar_create_remote_command(summary: str, from_time: str, to_time: str, description: str, location: str) -> str:
     quoted_account = shlex.quote(GMAIL_RUNTIME_ACCOUNT)
     quoted_gog = shlex.quote(GMAIL_RUNTIME_GOG_BIN)
+    quoted_client = shlex.quote(GMAIL_RUNTIME_CLIENT)
     backend = GMAIL_RUNTIME_KEYRING_BACKEND or "file"
     quoted_backend = shlex.quote(backend)
     quoted_password = shlex.quote(GMAIL_RUNTIME_KEYRING_PASSWORD) if GMAIL_RUNTIME_KEYRING_PASSWORD else None
@@ -1404,7 +1409,7 @@ def _calendar_create_remote_command(summary: str, from_time: str, to_time: str, 
     if quoted_password:
         exports.append(f"export GOG_KEYRING_PASSWORD={quoted_password}")
     
-    cmd = f"{quoted_gog} calendar create primary -a {quoted_account} -j --results-only"
+    cmd = f"{quoted_gog} calendar create primary --client {quoted_client} -a {quoted_account} -j --results-only"
     cmd += f" --summary {shlex.quote(summary)}"
     cmd += f" --from {shlex.quote(from_time)}"
     cmd += f" --to {shlex.quote(to_time)}"
