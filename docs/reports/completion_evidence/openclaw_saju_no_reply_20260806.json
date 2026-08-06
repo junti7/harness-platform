@@ -1,0 +1,39 @@
+{
+  "task": "Prevent OpenClaw Saju follow-up suppression by a prior cron NO_REPLY instruction",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-08-06T19:25:00+09:00",
+      "summary": "Checked scoped code verification, source-of-truth deployment, and exact runtime closeout requirements."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-08-06T19:25:00+09:00",
+      "summary": "Checked real-entrypoint evidence, completion guard, and production verification requirements."
+    }
+  ],
+  "verification": [
+    {
+      "name": "Mac mini production Discord session incident trace",
+      "target": "macmini production OpenClaw session transcript",
+      "command": "Inspect d8bddff1-38c6-4b93-b821-8ce6696bedfe.jsonl for Discord message 1534864934230556884",
+      "result": "Observed the visible Saju follow-up after a Gmail cron delivery mirror; the model generated literal NO_REPLY and made no Saju tool call."
+    },
+    {
+      "name": "Harness bridge regression",
+      "target": "local OpenClaw plugin runtime contract",
+      "command": "node tests/test_harness_bridge_plugin.mjs",
+      "result": "Passed, including 기미대운 direct routing and prior Gmail cron NO_REPLY contamination coverage."
+    },
+    {
+      "name": "Antigravity independent review",
+      "target": "LLM dispatch read-only review",
+      "command": "scripts/redteam_review.sh antigravity scratch/redteam/openclaw_no_reply_20260806.diff",
+      "result": "VERDICT: clear; no blocker, major, or minor findings."
+    }
+  ],
+  "residual_risk": [
+    "The committed plugin has not yet been pushed, deployed, force-installed, restarted, or replayed through the production Discord channel."
+  ]
+}
