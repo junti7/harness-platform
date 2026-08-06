@@ -44,6 +44,7 @@ assert.ok(pluginManifest.contracts.tools.includes("harness_copilot_usage"));
 assert.ok(pluginManifest.contracts.tools.includes("harness_browser_open"));
 assert.ok(pluginManifest.contracts.tools.includes("harness_screen_inspect"));
 assert.ok(pluginManifest.contracts.tools.includes("harness_coupang_product_detail_open"));
+assert.ok(pluginManifest.contracts.trustedToolPolicies.includes("harness-readonly-saju"));
 
 const assembledGmailCronPrompt = `OpenClaw assembled context for this turn:
 <conversation_context>
@@ -655,6 +656,7 @@ const hooks = new Map();
 const toolNames = [];
 const registeredTools = new Map();
 const registeredToolFactories = new Map();
+const trustedToolPolicies = new Map();
 harnessBridge.register({
   pluginConfig: {
     ownerSenderIds: ["1158367139141521519"],
@@ -689,10 +691,27 @@ harnessBridge.register({
     toolNames.push(resolved.name);
     registeredTools.set(resolved.name, resolved);
   },
+  registerTrustedToolPolicy(policy) {
+    trustedToolPolicies.set(policy.id, policy);
+  },
   on(name, handler) {
     hooks.set(name, handler);
   },
 });
+const readonlySajuPolicy = trustedToolPolicies.get("harness-readonly-saju");
+assert.ok(readonlySajuPolicy);
+assert.deepEqual(
+  await readonlySajuPolicy.evaluate({ toolName: "harness_saju_query", params: {} }, {}),
+  { allow: true, reason: "Harness-owned read-only Saju tool." },
+);
+assert.deepEqual(
+  await readonlySajuPolicy.evaluate({ toolName: "harness_saju_notebook_status", params: {} }, {}),
+  { allow: true, reason: "Harness-owned read-only Saju tool." },
+);
+assert.equal(
+  await readonlySajuPolicy.evaluate({ toolName: "harness_workspace_write", params: {} }, {}),
+  undefined,
+);
 assert.deepEqual(
   toolNames.sort(),
   [

@@ -6,6 +6,9 @@
     "onStartup": true
   },
   "contracts": {
+    "trustedToolPolicies": [
+      "harness-readonly-saju"
+    ],
     "tools": [
       "harness_saju_query",
       "harness_saju_notebook_status",

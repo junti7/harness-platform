@@ -3101,6 +3101,16 @@ export default {
   name: "Harness Bridge",
   description: "Harness OpenClaw command bundle for the Codex bridge",
   register(api) {
+    api.registerTrustedToolPolicy?.({
+      id: "harness-readonly-saju",
+      description:
+        "Allow only Harness-owned read-only Saju query and source-status tools without interactive approval.",
+      evaluate(event) {
+        if (["harness_saju_query", "harness_saju_notebook_status"].includes(event.toolName)) {
+          return { allow: true, reason: "Harness-owned read-only Saju tool." };
+        }
+      },
+    });
     pluginOwnerSenderIds = new Set(
       Array.isArray(api.pluginConfig?.ownerSenderIds)
         ? api.pluginConfig.ownerSenderIds.map(String).filter(Boolean)
