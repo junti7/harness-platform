@@ -1,0 +1,43 @@
+{
+  "task": "openclaw_saju_trusted_policy_20260807",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-08-07T07:36:00+09:00",
+      "summary": "Production code completion requires repository SoT, real runtime verification, and exact evidence mapping."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-08-07T07:36:00+09:00",
+      "summary": "OpenClaw production changes require commit, push, deploy_to_macmini, and user-entrypoint verification."
+    }
+  ],
+  "codex_cli_rule": "Codex CLI 사용 시 caveman full 응답 규칙을 적용하되, 코드 변경 요약은 정확하게 유지한다",
+  "requirements": [
+    {
+      "requirement": "Prevent isolated daily Saju cron from waiting for interactive approval on read-only Saju tools.",
+      "status": "pass",
+      "evidence": "Policy uses exact tool-name matching for harness_saju_query and harness_saju_notebook_status; all other tools fall through."
+    },
+    {
+      "requirement": "Deliver a grounded daily Saju report through the production cron and Discord path.",
+      "status": "not_verified",
+      "evidence": "Pre-change production run aborted after plugin.approval.waitDecision 119980ms; deployment and replay remain pending."
+    }
+  ],
+  "verification": [
+    {
+      "name": "production failure trajectory",
+      "target": "Mac mini OpenClaw gateway logs and cron run history",
+      "command": "openclaw logs; openclaw cron runs --id aaf016cf-59aa-49c3-aeca-52a2efd1b2d3 --limit 3",
+      "result": "harness_saju_query started, plugin.approval.waitDecision lasted 119980ms, then cron isolated agent run aborted after 419344ms."
+    },
+    {
+      "name": "local plugin and bridge regression",
+      "target": "local repository",
+      "command": "node --check plugins/harness-bridge/index.js && node tests/test_harness_bridge_plugin.mjs && .venv/bin/python -m pytest -q tests/test_openclaw_bridge.py tests/test_openclaw_saju_bridge_timeout.py",
+      "result": "JavaScript checks passed and Python reported 43 passed."
+    }
+  ]
+}
