@@ -1,0 +1,54 @@
+{
+  "task": "Mac mini Harness OS Refine Backlog 18,267 incident diagnosis and repair",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-08-08T16:35:00+09:00",
+      "summary": "Checked production source-of-truth, evidence mapping, and real-entrypoint verification requirements."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-08-08T16:35:00+09:00",
+      "summary": "Checked commit-push-deploy ordering, Mac mini runtime checks, and completion guard requirements."
+    }
+  ],
+  "codex_cli_rule": "Codex CLI 사용 시 caveman full 응답 규칙을 적용하되, 코드 변경 요약은 정확하게 유지한다",
+  "requirements": [
+    {
+      "requirement": "Identify why the Mac mini Harness OS reports 18,267 fresh refinement items.",
+      "status": "pass",
+      "evidence": "Production DB showed all 18,267 arrived on 2026-08-08; 18,077 were Naver blog, Knowledge iN, and cafe items. Worker logs showed hourly terminal triage of only 200 and no eligible refine candidates."
+    },
+    {
+      "requirement": "Repair the cause and resume safe draining.",
+      "status": "not_verified",
+      "evidence": "Code and tests are ready; origin push, selected-path deploy, drain, and post-state verification remain."
+    }
+  ],
+  "verification": [
+    {
+      "name": "production incident diagnosis",
+      "target": "Mac mini PostgreSQL, launchd, and worker logs",
+      "command": "ssh macmini; query harness_prod backlog/source/time distribution; inspect com.harness.edu-tier3-free and com.harness.retry-dlq logs",
+      "result": "edu_consulting filtered=116677, refined=98410, unrefined=18267; Naver sources=18077; free worker last exit 0 and triaged 200 at 15:53; DLQ retry failed on string score formatting."
+    },
+    {
+      "name": "focused regression",
+      "target": "local repository",
+      "command": "pytest candidate gate, Naver capacity, DLQ normalization, terminal-state and backlog tests; py_compile touched entrypoints",
+      "result": "20 passed; py_compile passed."
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh scripts/collect_naver_community.py scripts/run_edu_tier3_parallel.py scripts/retry_dlq.py",
+    "result": "pending origin/main push and production drain verification"
+  },
+  "red_team": {
+    "models": ["Codex", "Claude", "Gemini", "Copilot", "Gemma"],
+    "artifacts": [
+      {"artifact": "../../reviews/red_team/CEO-20260808-REFINE-18267.md"}
+    ],
+    "verdict": "red_team_clear"
+  }
+}

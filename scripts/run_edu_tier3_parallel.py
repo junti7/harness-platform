@@ -59,6 +59,9 @@ EDU_TIER3_SOURCE_ALLOWLIST = [
     "youtube_Common_Sense_Media",
     "EdSurge",
     "Wired_Education",
+    "Naver_블로그",
+    "Naver_지식iN",
+    "Naver_카페글",
 ]
 
 EDU_TIER3_TEXT_GATE_PATTERNS = [
@@ -215,6 +218,10 @@ def _fetch_candidates(min_score: float, shard_i: int, shard_n: int, limit: int |
         LEFT JOIN raw_signals rs ON rs.id = fs.raw_signal_id
         WHERE ro.id IS NULL
           AND fs.domain = 'edu_consulting'
+          AND NOT EXISTS (
+            SELECT 1 FROM dead_letter_queue d
+            WHERE d.item_type = 'filtered_signal' AND d.item_id = fs.id
+          )
           AND fs.score >= %s
           AND (MOD(fs.id, %s) = %s)
           {gate_sql}
@@ -247,6 +254,10 @@ def _fetch_rule_skip_candidates(min_score: float, shard_i: int, shard_n: int, li
         LEFT JOIN raw_signals rs ON rs.id = fs.raw_signal_id
         WHERE ro.id IS NULL
           AND fs.domain = 'edu_consulting'
+          AND NOT EXISTS (
+            SELECT 1 FROM dead_letter_queue d
+            WHERE d.item_type = 'filtered_signal' AND d.item_id = fs.id
+          )
           AND fs.score >= %s
           AND (MOD(fs.id, %s) = %s)
           -- Keep gate의 정확한 여집합을 terminal triage 대상으로 삼는다.

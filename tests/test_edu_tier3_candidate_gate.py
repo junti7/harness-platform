@@ -16,6 +16,8 @@ def test_parallel_candidate_fetch_uses_text_gate_by_default(monkeypatch):
 
     assert "ILIKE ANY" in captured["query"]
     assert "AND NOT" in captured["query"]
+    assert "dead_letter_queue" in captured["query"]
+    assert "d.resolved" not in captured["query"]
     assert captured["params"] == (
         0.1,
         1,
@@ -62,6 +64,8 @@ def test_rule_skip_fetch_excludes_high_precision_keep_gate(monkeypatch):
     assert "fs.source = ANY(%s)" in captured["query"]
     assert "outside-curated-source-allowlist" in captured["query"]
     assert "missing-required-topic-or-audience-signal" in captured["query"]
+    assert "dead_letter_queue" in captured["query"]
+    assert "d.resolved" not in captured["query"]
     # Keep gate 바깥 모든 row가 terminal triage 대상이어야 한다. 별도 pre-filter를 두면
     # allowlist 안이지만 topic/audience marker가 없는 row가 영구 backlog로 남는다.
     assert "OR NOT (fs.source = ANY(%s))" not in captured["query"]
@@ -94,3 +98,9 @@ def test_rule_skipped_output_is_recorded_as_irrelevant():
     assert result["final_title"] == row["title"]
     assert "tier3-triage-skip" in result["tags"]
     assert result["triage_reason"] == "source-skip"
+
+
+def test_naver_community_sources_are_tier3_eligible():
+    assert {"Naver_블로그", "Naver_지식iN", "Naver_카페글"} <= set(
+        tier3.EDU_TIER3_SOURCE_ALLOWLIST
+    )

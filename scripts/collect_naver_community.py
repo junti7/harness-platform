@@ -88,6 +88,7 @@ def _clean(text: str) -> str:
 # 일 25,000 요청 한도 — 페이지를 늘려도 여유 충분.
 DISPLAY = 100        # 요청당 100건
 PAGES = 3            # 쿼리당 페이지 수 (start=1,101,201 → 최대 300건/쿼리/소스)
+MAX_ITEMS_PER_SEGMENT = 1000  # 일일 Tier2/Tier3 처리 용량을 넘는 폭주 방지
 
 
 def _search(endpoint: str, query: str, display: int = DISPLAY, start: int = 1) -> list[dict]:
@@ -142,6 +143,9 @@ def collect(segment: str) -> list[dict]:
                     "cafe_or_blog": _clean(it.get("cafename") or it.get("bloggername") or ""),
                     "postdate": it.get("postdate", ""),
                 })
+                if len(out) >= MAX_ITEMS_PER_SEGMENT:
+                    print(f"  [CAP] {segment} 수집 상한 {MAX_ITEMS_PER_SEGMENT}건 도달")
+                    return out
             print(f"  [OK] {label} / '{q}' → 누적 {len(out)}건")
             time.sleep(0.3)  # rate limit 예의
     return out

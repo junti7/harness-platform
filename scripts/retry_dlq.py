@@ -83,6 +83,13 @@ def retry_tier3_signal(entry: dict, client: anthropic.Anthropic, dry_run: bool, 
     if not row.get("id"):
         return False
 
+    # JSONB/legacy payload의 numeric 필드가 문자열이면 refiner의
+    # ``{score:.2f}`` 로깅이 실패한다. DLQ 경계에서 canonical type으로 복구.
+    try:
+        row["score"] = float(row.get("score") or 0.0)
+    except (TypeError, ValueError):
+        row["score"] = 0.0
+
     try:
         result = refine_signal(client, row)
         check_and_alert(get_today_cost(logger), DAILY_COST_LIMIT, logger)
