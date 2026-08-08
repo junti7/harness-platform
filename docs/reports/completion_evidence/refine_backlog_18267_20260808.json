@@ -1,6 +1,6 @@
 {
   "task": "Mac mini Harness OS Refine Backlog 18,267 incident diagnosis and repair",
-  "status": "residual_risk",
+  "status": "complete",
   "governance_bootstrap": [
     {
       "path": "CLAUDE.md",
@@ -22,8 +22,8 @@
     },
     {
       "requirement": "Repair the cause and resume safe draining.",
-      "status": "not_verified",
-      "evidence": "Code and tests are ready; origin push, selected-path deploy, drain, and post-state verification remain."
+      "status": "pass",
+      "evidence": "Commit 99f3794 was pushed and selected paths deployed. Production drain persisted 17,712 rule-terminal outputs plus 10 model results, then the scheduled worker processed another 10. Live API fell from 18,267 to 335 with retry_backlog=0 and refined_per_hour=17,932."
     }
   ],
   "verification": [
@@ -38,11 +38,17 @@
       "target": "local repository",
       "command": "pytest candidate gate, Naver capacity, DLQ normalization, terminal-state and backlog tests; py_compile touched entrypoints",
       "result": "20 passed; py_compile passed."
+    },
+    {
+      "name": "production drain and scheduled worker replay",
+      "target": "Mac mini Tier3 worker, PostgreSQL, RAG index, and Harness OS API",
+      "command": "deploy selected paths; run one bounded free-tier terminal drain; kick com.harness.edu-tier3-free; read logs and /api/pipeline/backlog",
+      "result": "Bounded drain completed with refined=2, skipped=17720, failed=0; scheduled worker completed with refined=4, skipped=6, failed=0, last exit code 0; RAG index reached 103684; API returned refine_backlog=335, retry_backlog=0, refined_per_hour=17932."
     }
   ],
   "deploy": {
     "method": "scripts/deploy_to_macmini.sh scripts/collect_naver_community.py scripts/run_edu_tier3_parallel.py scripts/retry_dlq.py",
-    "result": "pending origin/main push and production drain verification"
+    "result": "Commit 99f3794 pushed to origin/main; selected-path deploy reported origin diff 0 for all three files, backend reloaded and served port 8000; production API and worker replay passed."
   },
   "red_team": {
     "models": ["Codex", "Claude", "Gemini", "Copilot", "Gemma"],
