@@ -1,0 +1,76 @@
+{
+  "task": "smartfarm_node_i2c_support",
+  "status": "residual_risk",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-08-08T19:30:00+09:00",
+      "summary": "배포 SoT(commit->push->origin/main, deploy_to_macmini.sh 전용), 강제 배포-청결 규칙, 완료 환각 방지(항목별 증거 매핑), 기존 안전장치 무단 삭제·축소 금지, red-team 은 CEO 주문 시에만 확인."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-08-08T19:31:00+09:00",
+      "summary": "§1 git/배포 불변식, §2.8 완료 증거 guard(최소 1개는 실제 런타임 진입점 검증, mock-only 불가), §2.9 완료 환각 방지 절차 확인."
+    }
+  ],
+  "verification": [
+    {
+      "name": "라즈베리파이 급수 폭주 정지 (실제 프로덕션 서비스)",
+      "target": "raspberry pi harness-smartfarm-hub systemd service",
+      "command": "ssh pi@192.168.0.23 'sudo systemctl stop harness-smartfarm-hub' ; mosquitto_sub -h 192.168.0.23 -t 'farm/+/pump/cmd' -v -W 40",
+      "result": "is-active=inactive. 이후 40초간 pump/cmd 발행 0건으로 급수 중단 확인. 정지 전 상태는 센서가 공기 중(soil_raw 768 = 건조 실측값, soil 0%)이라 5분마다 급수가 반복됐고, 2026-07-24~08-08 누적 zone2 2828회 / zone1 2712회(follows) 였다."
+    },
+    {
+      "name": "기존 노드 무영향 컴파일 (Mac Mini arduino-cli, ESP8266 zone2 실설정)",
+      "target": "macmini arduino-cli build",
+      "command": "arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 (config.zone2.esp8266.h 를 config.h 로 사용, 새 매크로 미정의)",
+      "result": "컴파일 성공. IROM 258360 bytes (변경 전 258104 대비 +256, 새 라이브러리 링크 없음). 새 매크로를 정의하지 않으면 DHT/analogRead 경로가 그대로 선택되고 capabilities 출력도 동일하다."
+    },
+    {
+      "name": "I2C 3종 동시 활성 컴파일 (ESP32)",
+      "target": "macmini arduino-cli build",
+      "command": "arduino-cli compile --fqbn esp32:esp32:esp32 (DHT_ENABLED 0 + BME280/BH1750/ADS1115 ENABLED 1)",
+      "result": "컴파일 성공. 프로그램 저장공간 948112 bytes(72%), 전역변수 49384 bytes(15%). 여유 충분."
+    },
+    {
+      "name": "I2C 3종 동시 활성 컴파일 (ESP8266) — 메모리 한계 실측",
+      "target": "macmini arduino-cli build",
+      "command": "arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 (DHT_ENABLED 0 + BME280/BH1750/ADS1115 ENABLED 1)",
+      "result": "컴파일 성공하나 IRAM 61007/65536 = 93%. 링크는 되지만 여유가 거의 없어, 이 조합에 코드를 더 얹으면 iram1_0_seg 초과로 실패한다. BENCH_WIRING.md 8장과 config.example.esp8266.h 에 실측값으로 경고를 남겼다."
+    },
+    {
+      "name": "온습도 소스 이중화 방지 가드가 컴파일 단계에서 실제로 차단",
+      "target": "macmini arduino-cli build",
+      "command": "arduino-cli compile --fqbn esp32:esp32:esp32 (BME280_ENABLED 1 + DHT_ENABLED 1 동시)",
+      "result": "soil_node.ino:73 에서 #error 발생, 'Error during build: exit status 1'. 둘 다 켜지면 같은 temp 토픽에 두 값이 번갈아 발행되는데, 런타임에 조용히 어긋나는 대신 빌드가 실패한다."
+    },
+    {
+      "name": "발행 토픽이 기존 허브/대시보드 계약과 맞는지 코드 대조",
+      "target": "pi_hub/hub.py + core/smartfarm_dashboard.py 소스",
+      "command": "grep subscribe hardware/smartfarm/pi_hub/hub.py core/smartfarm_dashboard.py ; VALID_METRICS/LEGACY_METRICS 확인",
+      "result": "허브는 farm/+/soil, soil_raw, temp, humidity, pump/status 만 구독하므로 BME280/ADS1115 로 소스를 바꿔도 기존 토픽을 유지한 본 구현에서는 허브 코드 변경이 불필요하다. 조도는 대시보드가 이미 구독하는 farm/+/telemetry/+ 경로에 light_lux 로 발행하며, light_lux 는 VALID_METRICS(smartfarm_dashboard.py:119)에 이미 포함돼 있어 대시보드 변경도 불필요하다."
+    }
+  ],
+  "residual_risks": [
+    {
+      "risk": "펌웨어를 실제 노드에 플래싱하지 않았다. 하드웨어 검증 0건이다.",
+      "detail": "컴파일과 정적 대조까지만 수행했다. 부품이 방금 도착해 벤치 재조립이 시작되지 않았고, I2C 센서가 아직 배선되지 않아 지금 플래싱해도 검증할 대상이 없다. 또한 zone2 토양센서가 공기 중이라 노드를 재부팅시키면 급수 조건이 다시 성립한다(현재는 허브 정지로 차단).",
+      "mitigation": "BENCH_WIRING.md 7장 조립·검증 절차를 마친 뒤 플래싱하고, device/status 의 i2c 배열과 sensor_capabilities, telemetry/light_lux 실측값으로 검증한다."
+    },
+    {
+      "risk": "허브가 정지 상태다. 재개하지 않으면 급수가 영구 중단된다.",
+      "detail": "systemctl is-enabled = enabled 이므로 파이가 재부팅되면 자동 기동한다. 즉 조립 중 정전이나 재부팅이 있으면 센서가 공기 중인 상태로 급수가 재개될 수 있다.",
+      "mitigation": "조립 완료 후 센서를 흙/물에 배치하고 systemctl start 로 재개한다. 조립이 길어지면 systemctl disable 로 자동 기동까지 막고, 재개 시 enable 을 잊지 않는다."
+    },
+    {
+      "risk": "펌프 공회전 가능성이 확인되지 않았다.",
+      "detail": "2주간 zone2 2828회(회당 약 200mL 기준 약 565L) 급수가 발생했다. 물통 용량을 넘었을 가능성이 크고, 그렇다면 펌프가 무부하로 장시간 돌았다. 펌프 손상 여부는 물리 점검이 필요하다.",
+      "mitigation": "CEO 가 펌프/물통/배관 상태를 물리적으로 확인한다."
+    },
+    {
+      "risk": "ADS1115 로 토양수분 소스를 옮기면 허브 config.yaml 재실측이 필요하다.",
+      "detail": "raw 스케일이 0~1023/0~4095 에서 0~32767 로 바뀐다. SOIL_DRY_RAW/SOIL_WET_RAW 뿐 아니라 허브의 soil_raw_min/soil_raw_max 도 함께 고치지 않으면, 허브가 정상 센서를 범위 이탈로 판정해 급수를 영구 보류한다(fail-safe 방향이라 물 피해는 없으나 급수가 멈춘다).",
+      "mitigation": "펌웨어 매크로와 config.example 주석, BENCH_WIRING.md 8장에 경고를 명시했다. 실제 전환 시 공기 중/침수 raw 를 재실측한다."
+    }
+  ]
+}

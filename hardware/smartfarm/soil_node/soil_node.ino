@@ -5,6 +5,8 @@
 // 필요 라이브러리 (Arduino Library Manager):
 //   - PubSubClient (Nick O'Leary)
 //   - DHT sensor library (Adafruit) + Adafruit Unified Sensor
+//   - I2C 센서를 켠 경우에만: Adafruit BME280 Library / BH1750 / Adafruit ADS1X15
+//     (+ Adafruit BusIO). config.h에서 끄면 링크되지 않는다.
 //
 // 구역 추가 시: 보드에 맞는 config.example.esp32.h 또는 config.example.esp8266.h를
 // config.h로 복사 -> ZONE_ID/MQTT_CLIENT_ID만 바꿔서 재플래싱.
@@ -17,7 +19,6 @@
 #error "ESP32 또는 ESP8266 보드 core로만 컴파일 가능"
 #endif
 #include <PubSubClient.h>
-#include <DHT.h>
 #include "config.h"
 
 // 토양수분 센서가 아직 배선되지 않은 구역을 위한 스위치.
@@ -29,9 +30,106 @@
 #define SOIL_SENSOR_ENABLED 1
 #endif
 
+// ── I2C 센서 확장 (기본 전부 꺼짐) ────────────────────────────────────────────
+// 아래 매크로를 config.h에 정의하지 않으면 이 파일은 예전과 완전히 동일하게 동작한다.
+// 배선 규격과 핀 매핑은 ../BENCH_WIRING.md 2~3장을 따른다.
+#ifndef DHT_ENABLED
+#define DHT_ENABLED 1          // 기존 노드 호환. BME280을 쓰면 0으로 내린다.
+#endif
+#ifndef BME280_ENABLED
+#define BME280_ENABLED 0
+#endif
+#ifndef BH1750_ENABLED
+#define BH1750_ENABLED 0
+#endif
+#ifndef ADS1115_ENABLED
+#define ADS1115_ENABLED 0
+#endif
+
+#define I2C_ENABLED (BME280_ENABLED || BH1750_ENABLED || ADS1115_ENABLED)
+
+#if I2C_ENABLED
+// 보드별 기본 I2C 핀. config.h에서 덮어쓸 수 있다.
+#ifndef I2C_SDA_PIN
+#if defined(ESP32)
+#define I2C_SDA_PIN 21
+#else
+#define I2C_SDA_PIN 4          // ESP8266 D2
+#endif
+#endif
+#ifndef I2C_SCL_PIN
+#if defined(ESP32)
+#define I2C_SCL_PIN 22
+#else
+#define I2C_SCL_PIN 5          // ESP8266 D1
+#endif
+#endif
+#endif
+
+// 온습도 소스가 둘이면 같은 토픽에 두 값이 번갈아 발행되어 허브/대시보드가
+// 원인을 알 수 없는 튀는 값을 보게 된다. 런타임에 조용히 어긋나게 두지 않고
+// 컴파일 단계에서 막는다.
+#if BME280_ENABLED && DHT_ENABLED
+#error "온습도 소스가 둘입니다. BME280을 쓰려면 config.h에 #define DHT_ENABLED 0 을 추가하세요."
+#endif
+#if !BME280_ENABLED && !DHT_ENABLED
+#warning "온습도 센서가 없습니다 (temp/humidity 미발행)."
+#endif
+
+// ADS1115를 토양수분 소스로 쓰면 raw 스케일이 보드 내장 ADC와 달라진다
+// (ESP8266 0~1023 / ESP32 0~4095 → ADS1115 0~32767). SOIL_DRY_RAW/SOIL_WET_RAW는
+// 물론 허브 config.yaml의 soil_raw_min/soil_raw_max도 반드시 다시 실측해야 한다.
+#ifndef SOIL_SOURCE_ADS1115
+#define SOIL_SOURCE_ADS1115 0
+#endif
+#if SOIL_SOURCE_ADS1115 && !ADS1115_ENABLED
+#error "SOIL_SOURCE_ADS1115=1 이면 ADS1115_ENABLED 1 도 필요합니다."
+#endif
+#ifndef ADS1115_SOIL_CHANNEL
+#define ADS1115_SOIL_CHANNEL 0
+#endif
+#ifndef ADS1115_ADDRESS
+#define ADS1115_ADDRESS 0x48
+#endif
+
+#if DHT_ENABLED
+#include <DHT.h>
+#endif
+#if I2C_ENABLED
+#include <Wire.h>
+#endif
+#if BME280_ENABLED
+#include <Adafruit_BME280.h>
+#endif
+#if BH1750_ENABLED
+#include <BH1750.h>
+#endif
+#if ADS1115_ENABLED
+#include <Adafruit_ADS1X15.h>
+#endif
+
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
+#if DHT_ENABLED
 DHT dht(DHT_PIN, DHT22);
+#endif
+#if BME280_ENABLED
+Adafruit_BME280 bme;
+bool bmeReady = false;
+#endif
+#if BH1750_ENABLED
+BH1750 lightMeter;
+bool lightReady = false;
+#endif
+#if ADS1115_ENABLED
+Adafruit_ADS1115 ads;
+bool adsReady = false;
+#endif
+#if I2C_ENABLED
+// 부팅 스캔 결과. 센서를 하나씩 붙이며 검증할 때(BENCH_WIRING.md 7장 4번)
+// 시리얼 모니터 없이 MQTT만으로 주소를 확인할 수 있도록 heartbeat에 실어 보낸다.
+String i2cFound;
+#endif
 
 bool pumpOn = false;
 unsigned long pumpStartedAt = 0;
@@ -51,6 +149,13 @@ char topicCommandRequest[80];
 char topicCommandAck[80];
 char topicDiagnosticRequest[80];
 char topicDiagnosticResult[80];
+#if BH1750_ENABLED
+// 조도는 기존 스칼라 토픽이 아니라 확장 경로로 보낸다. 대시보드가
+// farm/+/telemetry/+ 를 구독하고 light_lux 를 유효 지표로 이미 인정한다
+// (core/smartfarm_dashboard.py). 파이 허브는 이 토픽을 구독하지 않으므로
+// 급수 판단에는 영향이 없다 — 조도로 물을 주지는 않는다.
+char topicLight[80];
+#endif
 
 void buildTopics() {
   snprintf(topicSoil, sizeof(topicSoil), "farm/%s/soil", ZONE_ID);
@@ -64,7 +169,63 @@ void buildTopics() {
   snprintf(topicCommandAck, sizeof(topicCommandAck), "farm/%s/command/ack", ZONE_ID);
   snprintf(topicDiagnosticRequest, sizeof(topicDiagnosticRequest), "farm/%s/diagnostic/request", ZONE_ID);
   snprintf(topicDiagnosticResult, sizeof(topicDiagnosticResult), "farm/%s/diagnostic/result", ZONE_ID);
+#if BH1750_ENABLED
+  snprintf(topicLight, sizeof(topicLight), "farm/%s/telemetry/light_lux", ZONE_ID);
+#endif
 }
+
+#if I2C_ENABLED
+// 버스에 실제로 응답하는 주소만 남긴다. 배선을 바꾼 뒤 "센서가 안 읽힌다"가
+// 배선 문제인지 라이브러리 문제인지 가르는 첫 번째 판정 도구다.
+void i2cScan() {
+  i2cFound = "";
+  for (uint8_t addr = 0x08; addr < 0x78; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      char buf[8];
+      snprintf(buf, sizeof(buf), "0x%02X", addr);
+      if (i2cFound.length()) i2cFound += ",";
+      i2cFound += buf;
+    }
+  }
+  Serial.print("[i2c] SDA=GPIO");
+  Serial.print(I2C_SDA_PIN);
+  Serial.print(" SCL=GPIO");
+  Serial.print(I2C_SCL_PIN);
+  Serial.print(" found: ");
+  Serial.println(i2cFound.length() ? i2cFound : "(없음 — 배선/전원 확인)");
+}
+#endif
+
+// 온습도 소스를 한 곳으로 모은다. 호출부는 어느 센서가 달렸는지 몰라도 된다.
+// 값을 못 읽으면 NAN을 채워 호출부가 발행을 건너뛰게 한다.
+void readAmbient(float& temp, float& humidity) {
+  temp = NAN;
+  humidity = NAN;
+#if BME280_ENABLED
+  if (bmeReady) {
+    temp = bme.readTemperature();
+    humidity = bme.readHumidity();
+  }
+#elif DHT_ENABLED
+  temp = dht.readTemperature();
+  humidity = dht.readHumidity();
+#endif
+}
+
+#if SOIL_SENSOR_ENABLED
+// 토양수분 raw. ADS1115를 쓰면 16비트(0~32767) 스케일이라 캘리브레이션 값이
+// 보드 내장 ADC와 전혀 다르다. 읽기 실패는 -1로 알린다.
+int readSoilRaw() {
+#if SOIL_SOURCE_ADS1115
+  if (!adsReady) return -1;
+  int16_t raw = ads.readADC_SingleEnded(ADS1115_SOIL_CHANNEL);
+  return raw < 0 ? 0 : (int)raw;
+#else
+  return analogRead(SOIL_MOISTURE_PIN);
+#endif
+}
+#endif
 
 void setPump(bool on) {
   pumpOn = on;
@@ -127,15 +288,43 @@ void publishHeartbeat(const char* state) {
 #else
   payload += "esp8266";
 #endif
-  payload += "\",\"board\":\"" + board + "\",\"firmware\":\"smartfarm-node-2.0\"";
+  payload += "\",\"board\":\"" + board + "\",\"firmware\":\"smartfarm-node-2.1\"";
   payload += ",\"boot_id\":\"" + bootId + "\",\"ip\":\"" + WiFi.localIP().toString() + "\"";
   payload += ",\"rssi_dbm\":" + String(WiFi.RSSI()) + ",\"uptime_s\":" + String(millis() / 1000);
   payload += ",\"watchdog_max_run_ms\":" + String(PUMP_MAX_RUN_MS);
-  payload += ",\"sensor_capabilities\":[\"dht22\"";
-#if SOIL_SENSOR_ENABLED
-  payload += ",\"soil_adc\"";
+  // 실제로 초기화에 성공한 센서만 신고한다. config.h에서 켰다는 사실이 아니라
+  // 부팅 시 응답했다는 사실을 보고해야, 대시보드의 capabilities가 배선 상태를 반영한다.
+  String caps = "";
+#if DHT_ENABLED
+  caps += "\"dht22\"";
 #endif
-  payload += "],\"actuator_capabilities\":[\"pump_relay\"],\"state\":\"" + String(state);
+#if BME280_ENABLED
+  if (bmeReady) { if (caps.length()) caps += ","; caps += "\"bme280\""; }
+#endif
+#if BH1750_ENABLED
+  if (lightReady) { if (caps.length()) caps += ","; caps += "\"bh1750\""; }
+#endif
+#if ADS1115_ENABLED
+  if (adsReady) { if (caps.length()) caps += ","; caps += "\"ads1115\""; }
+#endif
+#if SOIL_SENSOR_ENABLED
+  if (caps.length()) caps += ",";
+  caps += "\"soil_adc\"";
+#endif
+  payload += ",\"sensor_capabilities\":[" + caps + "]";
+#if I2C_ENABLED
+  String i2cList = "";
+  int from = 0;
+  while (from < (int)i2cFound.length()) {
+    int comma = i2cFound.indexOf(',', from);
+    if (comma < 0) comma = i2cFound.length();
+    if (i2cList.length()) i2cList += ",";
+    i2cList += "\"" + i2cFound.substring(from, comma) + "\"";
+    from = comma + 1;
+  }
+  payload += ",\"i2c\":[" + i2cList + "]";
+#endif
+  payload += ",\"actuator_capabilities\":[\"pump_relay\"],\"state\":\"" + String(state);
   payload += "\",\"ts\":" + String(millis() / 1000) + "}";
   mqtt.publish(topicDeviceStatus, payload.c_str(), true);
 }
@@ -171,18 +360,47 @@ void handleStructuredCommand(const String& msg) {
 void handleDiagnostic(const String& msg) {
   String commandId = jsonStringValue(msg, "command_id");
   if (commandId.length() == 0) return;
-  float temp = dht.readTemperature();
-  float humidity = dht.readHumidity();
+  float temp, humidity;
+  readAmbient(temp, humidity);
   String payload = "{\"command_id\":\"" + commandId + "\",\"accepted\":true,\"phase\":\"result\"";
   payload += ",\"connectivity\":{\"wifi\":true,\"mqtt\":true,\"rssi_dbm\":" + String(WiFi.RSSI()) + "}";
+#if BME280_ENABLED
+  payload += ",\"bme280\":{\"pass\":" + String((bmeReady && !isnan(temp) && !isnan(humidity)) ? "true" : "false");
+#elif DHT_ENABLED
   payload += ",\"dht22\":{\"pass\":" + String((!isnan(temp) && !isnan(humidity)) ? "true" : "false");
+#else
+  payload += ",\"ambient\":{\"pass\":false,\"reason\":\"no_sensor\"";
+#endif
   if (!isnan(temp)) payload += ",\"temp_c\":" + String(temp, 1);
   if (!isnan(humidity)) payload += ",\"humidity_pct\":" + String(humidity, 1);
   payload += "}";
+#if BH1750_ENABLED
+  if (lightReady) {
+    float lux = lightMeter.readLightLevel();
+    payload += ",\"bh1750\":{\"pass\":" + String(lux >= 0 ? "true" : "false");
+    if (lux >= 0) payload += ",\"light_lux\":" + String(lux, 1);
+    payload += "}";
+  } else {
+    payload += ",\"bh1750\":{\"pass\":false,\"reason\":\"init_failed\"}";
+  }
+#endif
 #if SOIL_SENSOR_ENABLED
-  payload += ",\"soil_adc\":{\"pass\":true,\"raw\":" + String(analogRead(SOIL_MOISTURE_PIN)) + "}";
+  {
+    // 읽기 실패(-1)를 pass:true 로 덮지 않는다. 대시보드는 pass:false 를 보고
+    // diagnostic_failed 경보를 올리므로, 여기서 거짓 통과를 내면 고장이 묻힌다.
+    int raw = readSoilRaw();
+    payload += ",\"soil_adc\":{\"pass\":" + String(raw >= 0 ? "true" : "false");
+    if (raw >= 0) payload += ",\"raw\":" + String(raw);
+    payload += ",\"source\":\"" + String(SOIL_SOURCE_ADS1115 ? "ads1115" : "onboard_adc") + "\"}";
+  }
 #else
   payload += ",\"soil_adc\":{\"pass\":false,\"reason\":\"disabled\"}";
+#endif
+#if I2C_ENABLED
+  // 진단 때마다 다시 스캔한다. 센서를 하나씩 붙이며 검증할 때 재부팅 없이
+  // 원격에서 주소를 확인할 수 있는 경로다.
+  i2cScan();
+  payload += ",\"i2c_scan\":\"" + i2cFound + "\"";
 #endif
   payload += ",\"pump_state\":\"" + String(pumpOn ? "on" : "off") + "\",\"ts\":" + String(millis() / 1000) + "}";
   mqtt.publish(topicDiagnosticResult, payload.c_str(), false);
@@ -274,7 +492,26 @@ void setup() {
 #else
   bootId = String(ESP.getChipId(), HEX) + "-" + String(micros(), HEX);
 #endif
+#if DHT_ENABLED
   dht.begin();
+#endif
+#if I2C_ENABLED
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  i2cScan();
+#endif
+#if BME280_ENABLED
+  // 모듈마다 주소가 0x76 또는 0x77이라 둘 다 시도한다.
+  bmeReady = bme.begin(0x76) || bme.begin(0x77);
+  Serial.println(bmeReady ? "[bme280] ok" : "[bme280] init 실패 — 주소/배선 확인");
+#endif
+#if BH1750_ENABLED
+  lightReady = lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE);
+  Serial.println(lightReady ? "[bh1750] ok" : "[bh1750] init 실패 — 주소/배선 확인");
+#endif
+#if ADS1115_ENABLED
+  adsReady = ads.begin(ADS1115_ADDRESS);
+  Serial.println(adsReady ? "[ads1115] ok" : "[ads1115] init 실패 — 주소/배선 확인");
+#endif
   connectWifi();
   mqtt.setServer(MQTT_BROKER_HOST, MQTT_BROKER_PORT);
   // Device heartbeat and diagnostic JSON exceed PubSubClient's 256-byte
@@ -303,35 +540,51 @@ void loop() {
   if (now - lastSensorRead >= SENSOR_READ_INTERVAL_MS) {
     lastSensorRead = now;
 
-    float temp = dht.readTemperature();
-    float humidity = dht.readHumidity();
+    float temp, humidity;
+    readAmbient(temp, humidity);
 
-    Serial.print("[debug] DHT22 GPIO");
-    Serial.print(DHT_PIN);
-    Serial.print(" temp=");
+    Serial.print("[debug] ambient temp=");
     Serial.print(temp);
     Serial.print(" humidity=");
     Serial.println(humidity);
     if (isnan(temp) || isnan(humidity)) {
-      Serial.println("[error] DHT22 read failed");
+      Serial.println("[error] 온습도 읽기 실패");
     }
 
     char buf[16];
 #if SOIL_SENSOR_ENABLED
-    int soilRaw = analogRead(SOIL_MOISTURE_PIN);
+    int soilRaw = readSoilRaw();
     Serial.print("[debug] soil raw=");
     Serial.println(soilRaw);
 
-    // raw를 soil보다 먼저 발행한다. MQTT는 하나의 연결 안에서 발행 순서를 보존하므로,
-    // 허브가 soil(급수 판단을 트리거하는 토픽)을 처리하는 시점에는 같은 주기의 raw가
-    // 이미 도착해 있다. 순서가 바뀌면 허브가 직전 주기의 낡은 raw로 검증하게 된다.
-    snprintf(buf, sizeof(buf), "%d", soilRaw);
-    mqtt.publish(topicSoilRaw, buf);
+    // 읽기 실패(-1)는 발행하지 않는다. 발행하면 허브가 이를 실측값으로 믿고
+    // 급수를 판단한다 — 값이 없는 것과 0인 것은 다르다.
+    if (soilRaw >= 0) {
+      // raw를 soil보다 먼저 발행한다. MQTT는 하나의 연결 안에서 발행 순서를 보존하므로,
+      // 허브가 soil(급수 판단을 트리거하는 토픽)을 처리하는 시점에는 같은 주기의 raw가
+      // 이미 도착해 있다. 순서가 바뀌면 허브가 직전 주기의 낡은 raw로 검증하게 된다.
+      snprintf(buf, sizeof(buf), "%d", soilRaw);
+      mqtt.publish(topicSoilRaw, buf);
 
-    snprintf(buf, sizeof(buf), "%d", soilPercentFromRaw(soilRaw));
-    mqtt.publish(topicSoil, buf);
+      snprintf(buf, sizeof(buf), "%d", soilPercentFromRaw(soilRaw));
+      mqtt.publish(topicSoil, buf);
+    } else {
+      Serial.println("[error] 토양수분 읽기 실패 — soil 미발행");
+    }
 #else
     Serial.println("[info] SOIL_SENSOR_ENABLED=0 — soil 미발행 (허브 급수 트리거 없음)");
+#endif
+
+#if BH1750_ENABLED
+    if (lightReady) {
+      float lux = lightMeter.readLightLevel();
+      Serial.print("[debug] light lux=");
+      Serial.println(lux);
+      if (lux >= 0) {
+        dtostrf(lux, 4, 1, buf);
+        mqtt.publish(topicLight, buf);
+      }
+    }
 #endif
 
     if (!isnan(temp)) {
