@@ -26,6 +26,10 @@ docs/reports/*.html
 *.png
 *.jpg
 
+# 예외: 벤치 조립도는 산출물이지만 하드웨어 작업의 참조 도면이라 버전관리한다.
+# (원본 HTML + render.sh 가 같은 폴더에 있어 언제든 재생성 가능하다)
+!hardware/smartfarm/diagrams/*.png
+
 # Claude internal
 .claude/
 harness-os/backend/passwords.json

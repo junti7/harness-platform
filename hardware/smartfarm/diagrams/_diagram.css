@@ -1,0 +1,76 @@
+/* 벤치 조립도 공통 스타일.
+ * 화면이 아니라 "작업대에서 보는 인쇄물"이 기준이라 라이트 고정이다.
+ * 색은 BENCH_WIRING.md 4장 배선 색 규약과 1:1로 맞춘다 — 여기서 색을 바꾸면 문서도 고쳐야 한다. */
+
+html, body { margin: 0; padding: 0; background: #FFFFFF; }
+body {
+  width: 960px;
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  color: #0F1A1E;
+  padding: 22px 24px 20px;
+  box-sizing: border-box;
+}
+
+.head { border-bottom: 2px solid #0F1A1E; padding-bottom: 10px; margin-bottom: 14px; }
+.eyebrow {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #0B6E8A;
+}
+h1 { font-size: 25px; margin: 4px 0 6px; letter-spacing: -0.02em; font-weight: 750; }
+.sub { font-size: 13.5px; color: #56686F; line-height: 1.55; }
+.sub b { color: #0F1A1E; font-weight: 650; }
+
+h2 { font-size: 15px; margin: 18px 0 8px; font-weight: 700; letter-spacing: -0.01em; }
+
+svg { display: block; width: 100%; height: auto; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 7px; margin: 14px 0 0; }
+.sw {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid #D2DBDF; border-radius: 999px;
+  padding: 3px 11px 3px 5px; font-size: 12px; background: #FFF;
+}
+.sw i { width: 12px; height: 12px; border-radius: 50%; border: 1px solid #A9B8BE; flex: none; }
+
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin-top: 4px; }
+th, td { padding: 5px 9px; text-align: left; border-bottom: 1px solid #D2DBDF; }
+th {
+  background: #E8EDEF; font-family: ui-monospace, Menlo, monospace;
+  font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #56686F;
+  border-bottom: 1px solid #A9B8BE; white-space: nowrap;
+}
+tbody tr:last-child td { border-bottom: none; }
+td.sig { font-family: ui-monospace, Menlo, monospace; font-weight: 600; }
+td.mono, th.mono { font-family: ui-monospace, Menlo, monospace; }
+
+.note {
+  border-left: 3px solid #0B6E8A; background: #DCEEF4;
+  padding: 8px 11px; margin-top: 12px; font-size: 12.5px; line-height: 1.6; border-radius: 0 3px 3px 0;
+}
+.warn {
+  border-left: 3px solid #E0484D; background: #FBEAEA;
+  padding: 8px 11px; margin-top: 12px; font-size: 12.5px; line-height: 1.6; border-radius: 0 3px 3px 0;
+}
+.note b, .warn b { font-weight: 680; }
+
+.foot {
+  margin-top: 12px; padding-top: 9px; border-top: 1px solid #D2DBDF;
+  font-size: 11.5px; color: #56686F; display: flex; justify-content: space-between; gap: 16px;
+}
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; }
+
+/* SVG 안 텍스트 */
+.svg-label { font-family: ui-monospace, Menlo, monospace; font-size: 11px; fill: #0F1A1E; }
+.svg-label-sm { font-family: ui-monospace, Menlo, monospace; font-size: 9.5px; fill: #56686F; }
+.svg-title {
+  font-size: 12px; font-weight: 700; fill: #0F1A1E;
+  font-family: -apple-system, "Apple SD Gothic Neo", sans-serif;
+}
+.svg-zone {
+  font-family: ui-monospace, Menlo, monospace; font-size: 10px; fill: #56686F; letter-spacing: 0.06em;
+}
+/* 배선 라벨 — 선 위에 얹히므로 흰 테두리로 가독성을 확보한다 */
+.wtag {
+  font-family: ui-monospace, Menlo, monospace; font-size: 8.5px; fill: #56686F;
+  paint-order: stroke; stroke: #FFFFFF; stroke-width: 3px; stroke-linejoin: round;
+}

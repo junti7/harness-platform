@@ -10,6 +10,20 @@
 **핀 할당의 단일 출처(single source of truth)는 이 문서이며, `soil_node/config.h`는 이 표를 따른다.**
 둘이 어긋나면 배선 사고가 난다 — 변경 시 이 문서를 먼저 고친다.
 
+## 도면
+
+`diagrams/`에 이 문서의 그림 버전이 있다. 작업대에서 폰으로 띄워놓고 조립하라고 만든 PNG다.
+
+| 도면 | 내용 |
+|---|---|
+| [01 베이스 플레이트 배치](diagrams/01_baseplate_layout.png) | 부품을 어디에 놓는가. 전원존/신호존 분리, 배선 색 규약 |
+| [02 DIN 레일 단자대](diagrams/02_din_terminals.png) | T1~T10 + 쇼트바 3개, star ground, 펌프 회로 |
+| [03 노드 캐리어](diagrams/03_node_carrier.png) | 만능기판 커넥터 배치 + 칩별 핀 매핑표 (3장과 동일 내용) |
+| [04 I2C 허브](diagrams/04_i2c_hub.png) | 4줄 버스 배선 + I2C 주소·토픽·매크로 표 |
+
+PNG는 산출물이고 원본은 같은 폴더의 HTML이다.
+배선을 바꾸면 **이 문서 → HTML → `diagrams/render.sh` 실행** 순으로 갱신한다. PNG만 고치지 않는다.
+
 ## 0. 왜 바꾸는가
 
 현재 방식(브레드보드 + 20cm 듀폰 점퍼 + 공중 배선)의 한계는 미관이 아니다.

@@ -1,0 +1,86 @@
+<meta charset="utf-8">
+<link rel="stylesheet" href="_diagram.css">
+
+<div class="head">
+  <div class="eyebrow">Harness Smartfarm · 벤치 조립도 04</div>
+  <h1>I2C 허브 (만능기판)</h1>
+  <div class="sub">
+    만능기판에 4줄 버스를 납땜하고 커넥터를 나란히 세운다. 노드에서 케이블 <b>한 가닥</b>만 들어오고
+    센서는 여기서 갈라진다. <b>센서를 추가할 때 노드 쪽 배선은 손대지 않는다.</b>
+  </div>
+</div>
+
+<svg viewBox="0 0 560 250" role="img" aria-label="I2C 허브 만능기판 버스 배선 도면">
+  <rect x="60" y="26" width="440" height="180" rx="4" fill="#FFFFFF" stroke="#A9B8BE" stroke-width="2"/>
+  <text class="svg-zone" x="72" y="46">I2C 허브 · 만능기판</text>
+
+  <!-- 버스 4줄 -->
+  <line x1="96" y1="72" x2="470" y2="72" stroke="#EF8410" stroke-width="3"/>
+  <line x1="96" y1="104" x2="470" y2="104" stroke="#2F80ED" stroke-width="3"/>
+  <line x1="96" y1="136" x2="470" y2="136" stroke="#159A4E" stroke-width="3"/>
+  <line x1="96" y1="168" x2="470" y2="168" stroke="#37444C" stroke-width="3"/>
+  <text class="svg-label-sm" x="478" y="76">3V3</text>
+  <text class="svg-label-sm" x="478" y="108">SDA</text>
+  <text class="svg-label-sm" x="478" y="140">SCL</text>
+  <text class="svg-label-sm" x="478" y="172">GND</text>
+
+  <!-- 입력 -->
+  <rect x="66" y="60" width="30" height="120" rx="2" fill="#E8EDEF" stroke="#0B6E8A" stroke-width="1.8"/>
+  <text class="svg-label" x="72" y="126">IN</text>
+  <path d="M40 120 H66" stroke="#0B6E8A" stroke-width="2.5"/>
+  <text class="svg-label-sm" x="4" y="114">노드 P2</text>
+
+  <!-- 출력 -->
+  <rect x="150" y="60" width="30" height="120" rx="2" fill="#E8EDEF" stroke="#A9B8BE"/>
+  <text class="svg-label-sm" x="152" y="200">BME280</text>
+  <rect x="230" y="60" width="30" height="120" rx="2" fill="#E8EDEF" stroke="#A9B8BE"/>
+  <text class="svg-label-sm" x="230" y="200">ADS1115</text>
+  <rect x="310" y="60" width="30" height="120" rx="2" fill="#E8EDEF" stroke="#A9B8BE"/>
+  <text class="svg-label-sm" x="312" y="200">BH1750</text>
+  <rect x="390" y="60" width="30" height="120" rx="2" fill="#E8EDEF" stroke="#A9B8BE" stroke-dasharray="3 2"/>
+  <text class="svg-label-sm" x="392" y="200">예비</text>
+
+  <text class="svg-label-sm" x="150" y="222">4핀 커넥터 5개를 같은 방향으로 세운다 — 핀 순서 3V3 · SDA · SCL · GND 고정</text>
+</svg>
+
+<h2>I2C 주소 — 스캐너로 확인할 값</h2>
+<table>
+  <thead>
+    <tr><th>센서</th><th class="mono">기본 주소</th><th>발행 토픽</th><th>펌웨어 매크로</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>BME280 (온습도)</td><td class="mono">0x76 또는 0x77</td><td class="mono">temp · humidity</td>
+        <td class="mono">BME280_ENABLED 1<br>+ DHT_ENABLED 0</td></tr>
+    <tr><td>BH1750 (조도)</td><td class="mono">0x23 (ADDR HIGH면 0x5C)</td><td class="mono">telemetry/light_lux</td>
+        <td class="mono">BH1750_ENABLED 1</td></tr>
+    <tr><td>ADS1115 (아날로그 4채널)</td><td class="mono">0x48 ~ 0x4B</td><td class="mono">soil · soil_raw</td>
+        <td class="mono">ADS1115_ENABLED 1<br>+ SOIL_SOURCE_ADS1115 1</td></tr>
+  </tbody>
+</table>
+
+<div class="note">
+  <b>스캐너가 펌웨어 2.1에 내장돼 있다.</b> 부팅 시 자동 스캔해 시리얼(115200)에 찍고
+  <code>device/status</code>의 <code>i2c</code> 배열로도 발행한다 — 시리얼 케이블 없이 MQTT만으로 확인된다.
+  재부팅 없이 다시 스캔하려면 <code>diagnostic/request</code>를 보내면 된다.
+  <br>
+  <code>mosquitto_sub -h &lt;파이IP&gt; -t 'farm/+/device/status' -v -W 40</code>
+  <br>
+  아무것도 안 잡히면 순서대로 의심한다: ① 센서 전원(3.3V) ② SDA/SCL 뒤바뀜 ③ GND 미공유 ④ 커넥터 접촉.
+  <b>센서는 한 번에 하나씩</b> 붙이고 매번 스캔한다.
+</div>
+
+<div class="warn">
+  <b>풀업 저항이 겹친다.</b> I2C 모듈 대부분은 SDA·SCL 풀업을 내장하고 있어, 여러 개를 병렬로 달면
+  합성 저항이 낮아져 버스가 무거워진다. 3개까지는 대개 문제없지만 통신이 불안정하면
+  <b>모듈 한 개만 남기고 나머지 풀업을 제거</b>한다.
+  <br>
+  <b>ADS1115로 토양수분을 옮기면 캘리브레이션을 전부 다시 실측해야 한다.</b> raw 스케일이
+  0~1023/0~4095에서 <b>0~32767</b>로 바뀐다. <code>SOIL_DRY_RAW</code>/<code>SOIL_WET_RAW</code>는 물론
+  허브 <code>config.yaml</code>의 <code>soil_raw_min</code>/<code>soil_raw_max</code>까지 고치지 않으면
+  허브가 정상 센서를 범위 이탈로 보고 급수를 영구 보류한다.
+</div>
+
+<div class="foot">
+  <span>I2C는 1m 이내 · 보드 위 확장은 I2C, 구역 확장은 ESP 노드 추가 + MQTT</span>
+  <span>단일 출처: <code>hardware/smartfarm/BENCH_WIRING.md</code></span>
+</div>

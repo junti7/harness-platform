@@ -1,0 +1,105 @@
+<meta charset="utf-8">
+<link rel="stylesheet" href="_diagram.css">
+
+<div class="head">
+  <div class="eyebrow">Harness Smartfarm · 벤치 조립도 03</div>
+  <h1>노드 캐리어 (만능기판)</h1>
+  <div class="sub">
+    만능기판 한 장에 <b>핀헤더 소켓 + JST 커넥터 4개</b>를 납땜한다. ESP 모듈은 소켓에 꽂기만 하므로
+    고장 시 모듈만 교체하면 되고, 커넥터 위치가 같으니 <b>ESP32 캐리어와 ESP8266 캐리어를 하네스에서 서로 바꿔 꽂을 수 있다.</b>
+  </div>
+</div>
+
+<!-- viewBox 폭 600: 오른쪽 P4 라벨(3V3/AIN1/DHT/GND)이 560 에서는 잘린다 -->
+<svg viewBox="0 0 600 330" role="img" aria-label="노드 캐리어 만능기판 배선 도면">
+  <rect x="120" y="30" width="320" height="270" rx="4" fill="#FFFFFF" stroke="#A9B8BE" stroke-width="2"/>
+  <text class="svg-zone" x="132" y="50">만능기판 7 × 9 cm</text>
+
+  <!-- 소켓 2열 -->
+  <rect x="188" y="80" width="24" height="176" rx="2" fill="#E8EDEF" stroke="#0B6E8A"/>
+  <rect x="348" y="80" width="24" height="176" rx="2" fill="#E8EDEF" stroke="#0B6E8A"/>
+  <text class="svg-label-sm" x="228" y="160">핀헤더 소켓 2열</text>
+  <text class="svg-label-sm" x="228" y="176">ESP 모듈은 꽂기만</text>
+  <text class="svg-label-sm" x="228" y="192">(직접 납땜 금지)</text>
+
+  <!-- P1 전원 -->
+  <rect x="120" y="88" width="46" height="30" rx="2" fill="#FFFFFF" stroke="#E0484D" stroke-width="1.8"/>
+  <text class="svg-label" x="130" y="108">P1</text>
+  <text class="svg-label-sm" x="16" y="96">2P · 전원</text>
+  <text class="svg-label-sm" x="16" y="112">5V / GND</text>
+  <path d="M96 103 H120" stroke="#E0484D" stroke-width="2.5"/>
+
+  <!-- P3 릴레이 -->
+  <rect x="238" y="30" width="86" height="28" rx="2" fill="#FFFFFF" stroke="#D9A404" stroke-width="1.8"/>
+  <text class="svg-label" x="248" y="49">P3</text>
+  <text class="svg-label-sm" x="280" y="49">릴레이 4P</text>
+  <path d="M281 30 V12" stroke="#D9A404" stroke-width="2.5"/>
+  <text class="svg-label-sm" x="292" y="16">RELAY1·2·3 / GND</text>
+
+  <!-- P2 I2C -->
+  <rect x="394" y="88" width="46" height="30" rx="2" fill="#FFFFFF" stroke="#159A4E" stroke-width="1.8"/>
+  <text class="svg-label" x="404" y="108">P2</text>
+  <path d="M440 103 H466" stroke="#159A4E" stroke-width="2.5"/>
+  <text class="svg-label-sm" x="470" y="96">4P · I2C</text>
+  <text class="svg-label-sm" x="470" y="112">3V3/SDA/SCL/GND</text>
+
+  <!-- P4 센서 (흰색 AIN 계열 — 흰 바탕에서 보이도록 검정 케이싱을 깐다) -->
+  <rect x="394" y="218" width="46" height="30" rx="2" fill="#FFFFFF" stroke="#37444C" stroke-width="3.6"/>
+  <rect x="394" y="218" width="46" height="30" rx="2" fill="none" stroke="#FFFFFF" stroke-width="1.6"/>
+  <text class="svg-label" x="404" y="238">P4</text>
+  <path d="M440 233 H466" stroke="#37444C" stroke-width="4"/>
+  <path d="M440 233 H466" stroke="#FFFFFF" stroke-width="2"/>
+  <text class="svg-label-sm" x="470" y="226">4P · 센서</text>
+  <text class="svg-label-sm" x="470" y="242">3V3/AIN1/DHT/GND</text>
+
+  <!-- 내부 배선 -->
+  <path d="M166 103 H188" stroke="#E0484D" stroke-width="2"/>
+  <path d="M281 58 V80" stroke="#D9A404" stroke-width="2"/>
+  <path d="M394 103 H372" stroke="#159A4E" stroke-width="2"/>
+  <path d="M394 233 H372" stroke="#37444C" stroke-width="4"/>
+  <path d="M394 233 H372" stroke="#FFFFFF" stroke-width="2"/>
+
+  <text class="svg-label-sm" x="132" y="284">부품면 기준 · 배선은 뒷면(납땜면)에서, 커넥터는 모두 바깥쪽을 향하게</text>
+</svg>
+
+<h2>커넥터 안쪽 배선 — 칩별 매핑</h2>
+<table>
+  <thead>
+    <tr><th class="mono">커넥터 핀</th><th>신호</th><th>ESP32 (zone1)</th><th>ESP8266 (zone2)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="mono">P1-1</td><td class="sig">+5V</td><td colspan="2">VIN</td></tr>
+    <tr><td class="mono">P1-2</td><td class="sig">GND</td><td colspan="2">GND</td></tr>
+    <tr><td class="mono">P2-1</td><td class="sig">+3.3V</td><td colspan="2">3V3</td></tr>
+    <tr><td class="mono">P2-2</td><td class="sig">SDA</td><td>GPIO21</td><td>D2 (GPIO4)</td></tr>
+    <tr><td class="mono">P2-3</td><td class="sig">SCL</td><td>GPIO22</td><td>D1 (GPIO5)</td></tr>
+    <tr><td class="mono">P2-4</td><td class="sig">GND</td><td colspan="2">GND</td></tr>
+    <tr><td class="mono">P3-1</td><td class="sig">RELAY1</td><td>GPIO26</td><td>D5 (GPIO14)</td></tr>
+    <tr><td class="mono">P3-2</td><td class="sig">RELAY2</td><td>GPIO25</td><td>D6 (GPIO12)</td></tr>
+    <tr><td class="mono">P3-3</td><td class="sig">RELAY3</td><td>GPIO27</td><td>없음 — 미결선</td></tr>
+    <tr><td class="mono">P3-4</td><td class="sig">GND</td><td colspan="2">GND</td></tr>
+    <tr><td class="mono">P4-1</td><td class="sig">+3.3V</td><td colspan="2">3V3</td></tr>
+    <tr><td class="mono">P4-2</td><td class="sig">AIN1</td><td>GPIO34</td><td>A0</td></tr>
+    <tr><td class="mono">P4-3</td><td class="sig">DHT</td><td>GPIO4</td><td>D7 (GPIO13)</td></tr>
+    <tr><td class="mono">P4-4</td><td class="sig">GND</td><td colspan="2">GND</td></tr>
+  </tbody>
+</table>
+
+<div class="note">
+  <b>zone2 핀 이동 완료 (2026-07-25).</b> ESP8266의 <code>DHT</code>를 D7(13), <code>RELAY1</code>을 D5(14)로
+  옮기고 재플래싱해 <b>D1/D2가 I2C 전용으로 열렸다.</b> zone1(ESP32)은 배선이 이미 표와 일치해 재플래싱이 없었다.
+  <br>
+  실설정 파일(<code>config.zone*.h</code>)은 <b>보드가 꽂혀 있는 Mac Mini에만</b> 둔다.
+  두 대에 사본을 두면 값이 갈라진다 — 실제로 <code>PUMP_MAX_RUN_MS</code>가 5000/15000으로 어긋났다.
+</div>
+
+<div class="warn">
+  <b>금지 핀.</b> ESP32 <code>GPIO6–11</code>(내장 플래시) · <code>0·2·12·15</code>(스트래핑, 특히 12는 부팅 실패) ·
+  <code>5·14</code>(부팅 시 출력 튐). ESP8266 <code>D3·D4·D8</code>(부팅 스트랩).
+  ESP32 아날로그는 <b>ADC1(32·33·34·35·36·39)에서만</b> 읽는다 — ADC2는 WiFi 사용 중 동작하지 않는다.
+</div>
+
+<div class="foot">
+  <span>캐리어 두 장을 같은 배치로 만드는 것이 핵심 · 라벨 형식 <code>Z&lt;구역&gt;-&lt;신호&gt;</code> (칩 이름 금지)</span>
+  <span>단일 출처: <code>hardware/smartfarm/BENCH_WIRING.md</code></span>
+</div>

@@ -1,0 +1,109 @@
+<meta charset="utf-8">
+<link rel="stylesheet" href="_diagram.css">
+
+<div class="head">
+  <div class="eyebrow">Harness Smartfarm · 벤치 조립도 02</div>
+  <h1>DIN 레일 단자대 배선</h1>
+  <div class="sub">
+    단자대 한 칸은 나사 두 개가 내부에서 이어진 <b>1:1 통과</b>일 뿐이다.
+    하나의 5V를 여러 갈래로 나누는 것은 <b>쇼트바</b>가 한다. JOTN 15A 10개 + 쇼트바 3개로 버스 세 개를 만든다.
+  </div>
+</div>
+
+<svg viewBox="0 0 560 500" role="img" aria-label="DIN 레일 단자대 10칸 배선 도면">
+  <text class="svg-zone" x="16" y="20">← 입력측</text>
+  <text class="svg-zone" x="470" y="20">출력측 →</text>
+
+  <!-- 레일 -->
+  <rect x="150" y="34" width="240" height="440" fill="#E8EDEF" stroke="#D2DBDF"/>
+
+  <!-- 12V 그룹 -->
+  <rect x="160" y="44" width="220" height="76" fill="#FFFFFF" stroke="#E0484D" stroke-width="2"/>
+  <line x1="160" y1="82" x2="380" y2="82" stroke="#D2DBDF"/>
+  <text class="svg-label" x="172" y="68">T1</text>
+  <text class="svg-label" x="172" y="106">T2</text>
+  <rect x="330" y="50" width="14" height="64" fill="#E0484D" opacity="0.35"/>
+  <text class="svg-label-sm" x="352" y="86">쇼트바</text>
+  <text class="svg-title" x="200" y="68">12V+</text>
+  <text class="svg-title" x="200" y="106">12V+</text>
+
+  <text class="svg-label-sm" x="16" y="68">12V 어댑터 (+)</text>
+  <path d="M124 63 H160" stroke="#E0484D" stroke-width="2.5"/>
+  <text class="svg-label-sm" x="396" y="106">릴레이 1·2 COM</text>
+  <path d="M380 101 H392" stroke="#E0484D" stroke-width="2.5"/>
+
+  <!-- 세파레타 -->
+  <rect x="160" y="124" width="220" height="8" fill="#A9B8BE"/>
+  <text class="svg-label-sm" x="396" y="134">세파레타</text>
+
+  <!-- 5V 그룹 -->
+  <rect x="160" y="136" width="220" height="114" fill="#FFFFFF" stroke="#E0484D" stroke-width="2"/>
+  <line x1="160" y1="174" x2="380" y2="174" stroke="#D2DBDF"/>
+  <line x1="160" y1="212" x2="380" y2="212" stroke="#D2DBDF"/>
+  <text class="svg-label" x="172" y="160">T3</text>
+  <text class="svg-label" x="172" y="198">T4</text>
+  <text class="svg-label" x="172" y="236">T5</text>
+  <rect x="330" y="142" width="14" height="102" fill="#E0484D" opacity="0.35"/>
+  <text class="svg-title" x="200" y="160">5V+</text>
+  <text class="svg-title" x="200" y="198">5V+</text>
+  <text class="svg-title" x="200" y="236">5V+</text>
+
+  <text class="svg-label-sm" x="16" y="160">5V 어댑터 (+)</text>
+  <path d="M124 155 H160" stroke="#E0484D" stroke-width="2.5"/>
+  <text class="svg-label-sm" x="396" y="198">캐리어 P1 ×2</text>
+  <path d="M380 193 H392" stroke="#E0484D" stroke-width="2.5"/>
+  <text class="svg-label-sm" x="396" y="236">릴레이 코일 VCC ×2</text>
+  <path d="M380 231 H392" stroke="#E0484D" stroke-width="2.5"/>
+
+  <rect x="160" y="254" width="220" height="8" fill="#A9B8BE"/>
+
+  <!-- GND 그룹 -->
+  <rect x="160" y="266" width="220" height="190" fill="#FFFFFF" stroke="#37444C" stroke-width="2"/>
+  <line x1="160" y1="304" x2="380" y2="304" stroke="#D2DBDF"/>
+  <line x1="160" y1="342" x2="380" y2="342" stroke="#D2DBDF"/>
+  <line x1="160" y1="380" x2="380" y2="380" stroke="#D2DBDF"/>
+  <line x1="160" y1="418" x2="380" y2="418" stroke="#D2DBDF"/>
+  <text class="svg-label" x="172" y="290">T6</text>
+  <text class="svg-label" x="172" y="328">T7</text>
+  <text class="svg-label" x="172" y="366">T8</text>
+  <text class="svg-label" x="172" y="404">T9</text>
+  <text class="svg-label" x="172" y="442">T10</text>
+  <rect x="330" y="272" width="14" height="178" fill="#37444C" opacity="0.35"/>
+  <text class="svg-title" x="200" y="290">GND</text>
+  <text class="svg-title" x="200" y="328">GND</text>
+  <text class="svg-title" x="200" y="366">GND</text>
+  <text class="svg-title" x="200" y="404">GND</text>
+  <text class="svg-title" x="200" y="442">GND</text>
+
+  <text class="svg-label-sm" x="16" y="290">12V 어댑터 (−)</text>
+  <path d="M124 285 H160" stroke="#37444C" stroke-width="2.5"/>
+  <text class="svg-label-sm" x="16" y="328">5V 어댑터 (−)</text>
+  <path d="M124 323 H160" stroke="#37444C" stroke-width="2.5"/>
+  <text class="svg-label-sm" x="396" y="366">캐리어 P1 GND ×2</text>
+  <path d="M380 361 H392" stroke="#37444C" stroke-width="2.5"/>
+  <text class="svg-label-sm" x="396" y="404">릴레이 GND ×2</text>
+  <path d="M380 399 H392" stroke="#37444C" stroke-width="2.5"/>
+  <text class="svg-label-sm" x="396" y="442">펌프 (−) 리턴</text>
+  <path d="M380 437 H392" stroke="#37444C" stroke-width="2.5"/>
+
+  <text class="svg-label-sm" x="160" y="472">스토퍼 JTSN 2 — 레일 양 끝에 하나씩</text>
+</svg>
+
+<div class="note">
+  <b>12V 어댑터와 5V 어댑터의 (−)가 T6–T10 한 덩어리에서 만난다.</b> 이 지점이 star ground다.
+  <br>
+  <b>펌프 회로는 단자대에서 끝낸다.</b>
+  <code>T2(12V+) → 릴레이 COM</code>, <code>릴레이 NO → 펌프(+)</code>, <code>펌프(−) → T10(GND)</code>.
+  이 경로는 브레드보드도 만능기판도 거치지 않는다.
+</div>
+
+<div class="warn">
+  <b>얇은 선을 물릴 때.</b> JOTN 15A는 M3.5 볼트에 최대 2.5mm²라 22AWG(0.33mm²) 신호선에는 과하게 크다.
+  전원 계통은 굵은 선을 쓰고, 어쩔 수 없이 얇은 선을 물려야 하면 <b>봉단자(페럴)를 압착</b>하거나
+  선 끝을 두 번 접어 단면적을 키운 뒤 조인다. 헐거우면 접촉저항이 열이 된다.
+</div>
+
+<div class="foot">
+  <span>DIN 찬넬 20~30cm · 단자대 JOTN 15A × 10 · 쇼트바 JOST-1512 × 3 · 스토퍼 × 2</span>
+  <span>단일 출처: <code>hardware/smartfarm/BENCH_WIRING.md</code></span>
+</div>

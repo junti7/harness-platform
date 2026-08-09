@@ -1,0 +1,138 @@
+<meta charset="utf-8">
+<link rel="stylesheet" href="_diagram.css">
+<!-- 렌더 높이: 880 (render.sh 가 바닥 여백을 자동으로 잘라낸다) -->
+
+<div class="head">
+  <div class="eyebrow">Harness Smartfarm · 벤치 조립도 01</div>
+  <h1>베이스 플레이트 배치도</h1>
+  <div class="sub">
+    <b>왼쪽은 전원, 오른쪽은 신호, 둘은 교차하지 않는다.</b>
+    12V 펌프 전류가 흐르는 선과 I2C 신호선이 나란히 가거나 엇갈리면 노이즈와 오배선이 같이 따라온다.
+  </div>
+</div>
+
+<svg viewBox="0 0 620 430" role="img" aria-label="베이스 플레이트 위 부품 배치 도면">
+  <rect x="14" y="14" width="592" height="402" rx="6" fill="none" stroke="#A9B8BE" stroke-width="2"/>
+  <text class="svg-zone" x="24" y="34">베이스 플레이트 A4 297 × 210 mm (MDF 6mm)</text>
+
+  <!-- 전원존 -->
+  <rect x="26" y="46" width="150" height="356" rx="4" fill="#E8EDEF" stroke="#D2DBDF" stroke-dasharray="4 3"/>
+  <text class="svg-zone" x="36" y="64">전원존 · 고전압</text>
+
+  <!-- DIN rail -->
+  <rect x="44" y="74" width="26" height="316" fill="#D2DBDF" stroke="#A9B8BE"/>
+  <text class="svg-label-sm" x="34" y="404" transform="rotate(-90 34 404)">DIN 찬넬</text>
+
+  <!-- 단자대 -->
+  <rect x="70" y="78" width="86" height="56" fill="#FFFFFF" stroke="#E0484D" stroke-width="1.6"/>
+  <text class="svg-label" x="80" y="100">T1–T2</text>
+  <text class="svg-label-sm" x="80" y="116">12V+ 쇼트바</text>
+
+  <rect x="70" y="142" width="86" height="76" fill="#FFFFFF" stroke="#E0484D" stroke-width="1.6"/>
+  <text class="svg-label" x="80" y="164">T3–T5</text>
+  <text class="svg-label-sm" x="80" y="180">5V+ 쇼트바</text>
+
+  <rect x="70" y="226" width="86" height="120" fill="#FFFFFF" stroke="#37444C" stroke-width="1.6"/>
+  <text class="svg-label" x="80" y="248">T6–T10</text>
+  <text class="svg-label-sm" x="80" y="264">GND 쇼트바</text>
+  <text class="svg-label-sm" x="80" y="280">star point</text>
+
+  <text class="svg-label-sm" x="70" y="368">세파레타로 구간 분리</text>
+  <text class="svg-label-sm" x="70" y="384">스토퍼 양끝 2개</text>
+
+  <!-- 릴레이 -->
+  <rect x="196" y="60" width="136" height="64" rx="3" fill="#FFFFFF" stroke="#A9B8BE"/>
+  <text class="svg-title" x="208" y="84">릴레이 모듈 1</text>
+  <text class="svg-label-sm" x="208" y="102">zone1 펌프 · 광절연</text>
+  <text class="svg-label-sm" x="208" y="116">JD-VCC 점퍼 분리</text>
+
+  <rect x="196" y="136" width="136" height="64" rx="3" fill="#FFFFFF" stroke="#A9B8BE"/>
+  <text class="svg-title" x="208" y="160">릴레이 모듈 2</text>
+  <text class="svg-label-sm" x="208" y="178">zone2 펌프</text>
+
+  <!-- 노드 캐리어 -->
+  <rect x="196" y="222" width="136" height="80" rx="3" fill="#FFFFFF" stroke="#0B6E8A" stroke-width="1.8"/>
+  <text class="svg-title" x="208" y="246">노드 캐리어 · zone1</text>
+  <text class="svg-label-sm" x="208" y="264">ESP32 DevKit</text>
+  <text class="svg-label-sm" x="208" y="280">핀헤더 소켓 — 뽑힘</text>
+
+  <rect x="196" y="314" width="136" height="80" rx="3" fill="#FFFFFF" stroke="#0B6E8A" stroke-width="1.8"/>
+  <text class="svg-title" x="208" y="338">노드 캐리어 · zone2</text>
+  <text class="svg-label-sm" x="208" y="356">ESP8266 NodeMCU</text>
+  <text class="svg-label-sm" x="208" y="372">커넥터 위치 동일</text>
+
+  <!-- 신호존 -->
+  <rect x="352" y="46" width="242" height="182" rx="4" fill="#E8EDEF" stroke="#D2DBDF" stroke-dasharray="4 3"/>
+  <text class="svg-zone" x="362" y="64">신호존 · 저전압</text>
+
+  <rect x="366" y="76" width="104" height="56" rx="3" fill="#FFFFFF" stroke="#159A4E" stroke-width="1.6"/>
+  <text class="svg-title" x="376" y="98">I2C 허브</text>
+  <text class="svg-label-sm" x="376" y="116">만능기판 자작</text>
+
+  <rect x="490" y="76" width="90" height="26" rx="3" fill="#FFFFFF" stroke="#A9B8BE"/>
+  <text class="svg-label-sm" x="498" y="93">BME280</text>
+  <rect x="490" y="106" width="90" height="26" rx="3" fill="#FFFFFF" stroke="#A9B8BE"/>
+  <text class="svg-label-sm" x="498" y="123">ADS1115</text>
+  <rect x="490" y="136" width="90" height="26" rx="3" fill="#FFFFFF" stroke="#A9B8BE" stroke-dasharray="3 2"/>
+  <text class="svg-label-sm" x="498" y="153">BH1750 (예비)</text>
+
+  <rect x="366" y="150" width="104" height="60" rx="3" fill="#FFFFFF" stroke="#A9B8BE"/>
+  <text class="svg-label-sm" x="376" y="170">토양센서</text>
+  <text class="svg-label-sm" x="376" y="186">→ zone2 AIN1</text>
+
+  <!-- 브레드보드 -->
+  <rect x="352" y="248" width="242" height="146" rx="4" fill="none" stroke="#A9B8BE" stroke-dasharray="6 4"/>
+  <text class="svg-zone" x="362" y="268">임시 실험 구역</text>
+  <rect x="366" y="280" width="214" height="98" rx="3" fill="#FFFFFF" stroke="#D2DBDF"/>
+  <text class="svg-title" x="378" y="304">브레드보드</text>
+  <text class="svg-label-sm" x="378" y="322">새 부품 시험용으로만 사용</text>
+  <text class="svg-label-sm" x="378" y="338">검증 끝난 회로는 만능기판으로 이전</text>
+  <text class="svg-label-sm" x="378" y="356">펌프 전류 통과 금지</text>
+
+  <!-- 전원 배선 -->
+  <path d="M156 100 H186 V92 H196" fill="none" stroke="#E0484D" stroke-width="2"/>
+  <path d="M156 170 H176 V254 H196" fill="none" stroke="#E0484D" stroke-width="2"/>
+  <path d="M156 178 H184 V346 H196" fill="none" stroke="#E0484D" stroke-width="2"/>
+  <path d="M156 286 H172 V270 H196" fill="none" stroke="#37444C" stroke-width="2"/>
+  <path d="M156 296 H188 V362 H196" fill="none" stroke="#37444C" stroke-width="2"/>
+  <text class="wtag" x="160" y="164">5V</text>
+  <text class="wtag" x="160" y="312">GND</text>
+
+  <!-- 신호 배선: 통로 안에서 신호마다 전용 레인을 준다 (겹치면 추적이 안 된다) -->
+  <!-- SDA 341 / SCL 337 → I2C 허브 -->
+  <path d="M332 238 H341 V104 H366" fill="none" stroke="#2F80ED" stroke-width="2"/>
+  <path d="M332 246 H337 V112 H366" fill="none" stroke="#159A4E" stroke-width="2"/>
+  <path d="M470 104 H490 V89" fill="none" stroke="#2F80ED" stroke-width="2"/>
+  <path d="M470 112 H484 V119 H490" fill="none" stroke="#159A4E" stroke-width="2"/>
+  <text class="wtag" x="300" y="216">SDA · SCL</text>
+
+  <!-- RELAY1 345 / RELAY2 349 → 릴레이 모듈 -->
+  <path d="M332 268 H345 V116 H332" fill="none" stroke="#D9A404" stroke-width="2"/>
+  <path d="M332 352 H349 V192 H332" fill="none" stroke="#D9A404" stroke-width="2"/>
+  <text class="wtag" x="286" y="311">RELAY1 · 2</text>
+
+  <!-- AIN1 356 → 토양센서. 흰 신호선은 흰 바탕에서 안 보이므로 검정 케이싱을 깐다 -->
+  <path d="M332 330 H356 V180 H366" fill="none" stroke="#37444C" stroke-width="4" stroke-linecap="round"/>
+  <path d="M332 330 H356 V180 H366" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+  <text class="wtag" x="360" y="243">AIN1</text>
+</svg>
+
+<div class="legend">
+  <span class="sw"><i style="background:#E0484D"></i>+12V / +5V 빨강</span>
+  <span class="sw"><i style="background:#EF8410"></i>+3.3V 주황</span>
+  <span class="sw"><i style="background:#37444C"></i>GND 검정</span>
+  <span class="sw"><i style="background:#D9A404"></i>릴레이 · DHT 노랑</span>
+  <span class="sw"><i style="background:#159A4E"></i>SCL 초록</span>
+  <span class="sw"><i style="background:#2F80ED"></i>SDA 파랑</span>
+  <span class="sw"><i style="background:#FFFFFF"></i>아날로그 AIN 흰색</span>
+</div>
+
+<div class="warn">
+  <b>브레드보드는 임시 실험 구역으로 격리한다.</b> 접점 하나가 뜨면 허브는 그것을 <code>soil 0%</code>로 읽고
+  펌프를 켠다. 상시 회로를 브레드보드에 두는 한 그 위험은 사라지지 않는다.
+</div>
+
+<div class="foot">
+  <span>zone1 = ESP32 (토양센서 없음) · zone2 = ESP8266 (토양센서) · 단자대 JOTN 15A × 10</span>
+  <span>단일 출처: <code>hardware/smartfarm/BENCH_WIRING.md</code></span>
+</div>
