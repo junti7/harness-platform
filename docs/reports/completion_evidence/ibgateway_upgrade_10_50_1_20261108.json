@@ -1,0 +1,70 @@
+{
+  "task": "ibgateway_upgrade_10_45_to_10_50_1",
+  "status": "complete",
+  "governance_bootstrap": [
+    {
+      "path": "CLAUDE.md",
+      "read_at": "2026-11-08T14:40:00+09:00",
+      "summary": "배포 SoT(commit->push->origin/main, deploy_to_macmini.sh 전용, Mac Mini 수동 코드수정/scp 금지), 강제 배포-청결 규칙, 완료 환각 방지(항목별 증거 매핑) 확인."
+    },
+    {
+      "path": "docs/governance/LLM_GROUND_RULES.md",
+      "read_at": "2026-11-08T14:40:00+09:00",
+      "summary": "§1 git/배포 불변식, §2.8 완료 증거 guard(실제 런타임 진입점 검증 필수), §2.9 완료 환각 방지 절차 확인."
+    }
+  ],
+  "verification": [
+    {
+      "name": "공식 배포 채널 버전 확인 — 요청 버전 10.50.1 = stable",
+      "target": "download2.interactivebrokers.com/installers/ibgateway/{stable,latest}-standalone/version.json",
+      "command": "ssh macmini 'curl -fsSL .../stable-standalone/version.json'",
+      "result": "stable=10.50.1f(20261005), latest=10.51.1e(20261026). 요청 버전과 일치하는 stable 10.50.1f 채택."
+    },
+    {
+      "name": "설치 파일 서명/공증 확인",
+      "target": "IB Gateway 10.50 Installer.app (ibgateway-stable-standalone-macos-arm.dmg, 301556360 bytes)",
+      "command": "codesign -dv ; spctl -a -vv",
+      "result": "Developer ID Application: Interactive Brokers LLC (L6H6D9Q7DY), source=Notarized Developer ID."
+    },
+    {
+      "name": "무인 설치 — 10.45 와 별도 폴더(롤백 보존)",
+      "target": "macmini ~/Applications/IB Gateway 10.50",
+      "command": "JavaApplicationStub -q -dir ~/Applications/IB Gateway 10.50",
+      "result": "exit 0, jars/jts4launch-1050.jar·twslaunch-1050.jar 존재. ~/Applications/IB Gateway 10.45 는 그대로 유지."
+    },
+    {
+      "name": "IBC 런처 버전 전환 (repo 밖 Mac Mini 로컬 설정)",
+      "target": "macmini ~/IBC/gatewaystartmacos.sh",
+      "command": "백업 gatewaystartmacos.sh.bak_10.45_20261108 후 TWS_MAJOR_VRSN=10.45 -> 10.50",
+      "result": "grep 결과 21:TWS_MAJOR_VRSN=10.50."
+    },
+    {
+      "name": "기존 10.45 종료 후 launchd(gui/501) 경로로 10.50 재기동 + 무인 로그인",
+      "target": "launchctl kickstart gui/501/com.harness.ibgateway ; ~/IBC/logs ; ~/Jts/launcher.log",
+      "command": "pkill IbcGateway/ibcstart -> 4002 closed 확인 -> kickstart -> 4002 LISTEN 대기",
+      "result": "~10s 내 4002 LISTEN. 실행 프로세스 경로 'IB Gateway 10.50'. IBC 3.19.0 로그 'TWS version = 10.50', '14:46:15 IBC: Login has completed'(수동 입력 0). launcher.log version=10501."
+    },
+    {
+      "name": "API 핸드셰이크 실측",
+      "target": "127.0.0.1:4002 (paper)",
+      "command": "ib_insync IB().connect('127.0.0.1',4002,clientId=917)",
+      "result": "serverVersion 176, managedAccounts=['DUQ***'] (paper 계좌) 접속 성공."
+    }
+  ],
+  "deploy": {
+    "method": "scripts/deploy_to_macmini.sh scripts/start_ibgateway_ibc.sh scripts/ibkr_turtle_monitor.py docs/reports/completion_evidence/ibgateway_upgrade_10_50_1_20261108.json",
+    "result": "open 폴백 경로를 10.50 앱으로(10.45 는 후순위 롤백 후보로 유지), monitor 주석 경로 갱신."
+  },
+  "residual_risks": [
+    {
+      "risk": "IBC 3.19.0 은 그대로 사용",
+      "detail": "10.50 에서 무인 로그인은 실측 성공했으나 IBC 최신 릴리스 여부는 미확인. 장중(월요일) 자동 재연결/일일 재시작 동작은 아직 관찰 전.",
+      "mitigation": "watchdog 5분 주기 복구 유지. 월요일 장 시작 후 4002/주문 경로 정상 여부 확인 필요."
+    },
+    {
+      "risk": "~/IBC/gatewaystartmacos.sh 는 repo 밖 머신 로컬 설정",
+      "detail": "버전 전환은 repo 로 추적되지 않음. 롤백 시 백업 파일 복원 + kickstart.",
+      "mitigation": "롤백: cp ~/IBC/gatewaystartmacos.sh.bak_10.45_20261108 ~/IBC/gatewaystartmacos.sh 후 게이트웨이 재기동."
+    }
+  ]
+}
