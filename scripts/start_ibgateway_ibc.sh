@@ -57,6 +57,7 @@ resolve_gateway_app() {
         return 0
     fi
     for candidate in \
+        "$HOME/Applications/IB Gateway 10.50/IB Gateway 10.50.app" \
         "$HOME/Applications/IB Gateway 10.45/IB Gateway 10.45-1.app" \
         "$HOME/Applications/IB Gateway.app" \
         "/Applications/IB Gateway.app"

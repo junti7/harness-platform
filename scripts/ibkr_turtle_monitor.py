@@ -14,7 +14,7 @@ ib_insync 기반. TWS / IB Gateway가 실행 중이어야 함 (포트 4002, 페�
   python scripts/ibkr_turtle_monitor.py --json    # 구조화된 JSON 한 줄 출력 (stdout)
 
 전제조건:
-  1. IB Gateway 실행 중 (~/Applications/IB Gateway 10.45/)
+  1. IB Gateway 실행 중 (~/Applications/IB Gateway 10.50/)
   2. 포트 4002 API 활성화, Read-Only API 해제
   3. .venv에 ib_insync 설치됨
 """
